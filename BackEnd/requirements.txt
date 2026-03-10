@@ -4,6 +4,6 @@ psycopg2-binary
 python-dotenv
 sqlparse
 openpyxl
-
+PyJWT 
 
 
