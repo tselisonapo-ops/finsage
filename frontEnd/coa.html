@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>COA Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 960px; margin: 32px auto; }
+    input, button { padding: 8px; }
+    table { width:100%; border-collapse: collapse; margin-top: 16px;}
+    th, td { border:1px solid #ddd; padding:6px; }
+  </style>
+</head>
+<body>
+  <h1>Chart of Accounts</h1>
+
+  <div>
+    <label for="companyId">Company ID:</label>
+    <input id="companyId" placeholder="e.g. 1" />
+    <button id="loadBtn">Load COA</button>
+  </div>
+
+  <div id="msg" style="margin-top:12px;"></div>
+  <div id="tableWrap"></div>
+
+  <script>
+    const API = 'http://127.0.0.1:5000';
+
+    function renderTable(rows) {
+      if (!rows || !rows.length) return '<p>No accounts found.</p>';
+      const head = `
+        <thead><tr>
+          <th>Code</th><th>Name</th><th>Category</th><th>Reporting group</th><th>Description</th><th>IFRS Tag</th>
+        </tr></thead>`;
+      const body = rows.map(r => `
+        <tr>
+          <td>${r.code}</td>
+          <td>${r.name}</td>
+          <td>${r.category}</td>
+          <td>${r.reporting_group}</td>
+          <td>${r.description || ''}</td>
+          <td>${r.ifrs_tag || ''}</td>
+        </tr>`).join('');
+      return `<table>${head}<tbody>${body}</tbody></table>`;
+    }
+
+    async function loadCOA(id) {
+      const msg = document.getElementById('msg');
+      const wrap = document.getElementById('tableWrap');
+      msg.textContent = 'Loading...';
+      wrap.innerHTML = '';
+      try {
+        const res = await fetch(`${API}/api/coa/${id}`);
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.message || `HTTP ${res.status}`);
+        msg.textContent = payload.message || 'Loaded.';
+        wrap.innerHTML = renderTable(payload.coa || []);
+      } catch (e) {
+        msg.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    // support ?id=123
+    const url = new URL(window.location.href);
+    const qid = url.searchParams.get('id');
+    const inp = document.getElementById('companyId');
+    const btn = document.getElementById('loadBtn');
+    btn.addEventListener('click', () => {
+      const val = (inp.value || '').trim();
+      if (val) loadCOA(val);
+    });
+
+    if (qid) {
+      inp.value = qid;
+      loadCOA(qid);
+    }
+  </script>
+</body>
+</html>

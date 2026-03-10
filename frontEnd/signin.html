@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sign in - FinSage</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- optional: kill favicon 404 -->
+  <link rel="icon" href="data:,">
+  <style>
+    body {
+      font-family: system-ui, Arial, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 320px;
+      text-align: center;
+    }
+    h2 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #555;
+      text-align: left;
+    }
+    input {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background: #004d40;
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #00695c;
+    }
+    .status {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: #555;
+    }
+    .link {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+    }
+    .link a {
+      color: #00c8c8;
+      text-decoration: none;
+    }
+    .link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Sign in</h2>
+    <form id="signinForm">
+      <label for="signinEmail">Email address</label>
+      <input
+        type="email"
+        id="signinEmail"
+        autocomplete="email"
+        required
+        placeholder="you@example.com"
+      />
+
+      <label for="signinPassword">Password</label>
+      <input
+        type="password"
+        id="signinPassword"
+        autocomplete="current-password"
+        required
+        placeholder="••••••••"
+      />
+
+      <button type="submit">Sign in</button>
+      <p class="status" id="status"></p>
+    </form>
+
+    <p class="link">
+      <a href="reset-request.html">Forgot password?</a>
+    </p>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:5000";
+
+    function consumeIntendedScreen() {
+      const s = localStorage.getItem("fs:intended_screen");
+      if (s) localStorage.removeItem("fs:intended_screen");
+      return s || null;
+    }
+
+    function normalizeRole(raw) {
+      if (!raw) return "viewer";
+      let r = String(raw).toLowerCase().trim();
+      r = r.replace(/\(.*?\)/g, "");
+      r = r.replace(/\/.*/g, "");
+      r = r.replace(/\s+/g, " ").trim();
+
+      if (
+        r.includes("cfo") ||
+        r.includes("owner") ||
+        r === "admin" ||
+        r === "administrator" ||
+        r === "superadmin"
+      ) return "cfo";
+
+      const MAP = {
+        "owner": "cfo",
+        "business owner": "cfo",
+        "founder": "cfo",
+        "cfo": "cfo",
+        "head of finance": "cfo",
+        "finance manager": "manager",
+        "ceo": "manager",
+        "managing director": "manager",
+        "accounts clerk": "clerk",
+        "finance assistant": "assistant",
+        "junior accountant": "junior",
+        "senior accountant": "senior",
+        "financial accountant": "accountant",
+        "credit controller": "credit controller",
+        "read-only": "viewer",
+        "readonly": "viewer",
+        "other": "viewer",
+        "other professional role": "viewer",
+      };
+
+      return MAP[r] || r || "viewer";
+    }
+
+    function pickDashboardTarget(user) {
+      const userType = String(user.user_type || "").trim().toLowerCase();
+      const canPractitioner = !!user?.dashboards?.practitioner;
+      const canEnterprise = !!user?.dashboards?.enterprise;
+
+      if (userType === "practitioner" && canPractitioner) {
+        return "practitionerdashboard.html";
+      }
+
+      if (canEnterprise) {
+        return "dashboard.html";
+      }
+
+      return "dashboard.html";
+    }
+
+    document.getElementById("signinForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById("signinEmail").value.trim().toLowerCase();
+      const password = document.getElementById("signinPassword").value;
+      const statusEl = document.getElementById("status");
+
+      if (!email || !password) {
+        statusEl.textContent = "Please enter your email and password.";
+        statusEl.style.color = "#b91c1c";
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/signin`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.textContent = data.detail || data.error || "Sign in failed.";
+          statusEl.style.color = "#b91c1c";
+          return;
+        }
+
+        const user = data.user || {};
+
+        if (data.token) {
+          localStorage.setItem("fs_user_token", data.token);
+          sessionStorage.setItem("fs_user_token", data.token);
+          localStorage.setItem("authToken", data.token);
+          sessionStorage.setItem("authToken", data.token);
+        }
+
+        localStorage.setItem("userEmail", user.email || email);
+
+        const rawRole = user.role || user.system_role || user.user_role || "viewer";
+        localStorage.setItem("userRole", normalizeRole(rawRole));
+
+        if (user.id != null) localStorage.setItem("userId", String(user.id));
+        if (user.user_type) localStorage.setItem("userType", user.user_type);
+        if (user.access_scope) localStorage.setItem("access_scope", user.access_scope);
+        if (user.company_id != null) localStorage.setItem("company_id", String(user.company_id));
+        if (user.company_name) localStorage.setItem("companyName", user.company_name);
+        if (user.industry) localStorage.setItem("fs_industry", user.industry);
+        if (user.sub_industry) localStorage.setItem("fs_subindustry", user.sub_industry);
+        if (Array.isArray(user.allowed_company_ids)) {
+          localStorage.setItem("allowed_company_ids", JSON.stringify(user.allowed_company_ids));
+        }
+
+        const mergedUser = {
+          ...user,
+          dashboards: user.dashboards || {},
+          permissions: user.permissions || {}
+        };
+
+        localStorage.setItem("fs_user", JSON.stringify(mergedUser));
+
+        statusEl.textContent = "Signed in successfully. Redirecting…";
+        statusEl.style.color = "#16a34a";
+
+        if (user?.dashboards) {
+          localStorage.setItem(
+            "can_access_practitioner_dashboard",
+            String(!!user.dashboards.practitioner)
+          );
+          localStorage.setItem(
+            "can_access_enterprise_dashboard",
+            String(!!user.dashboards.enterprise)
+          );
+        }
+
+        const intended = consumeIntendedScreen();
+        const targetBase = pickDashboardTarget(user);
+        const target = intended
+          ? `${targetBase}#screen=${encodeURIComponent(intended)}`
+          : targetBase;
+
+        setTimeout(() => {
+          window.location.href = target;
+        }, 300);
+
+      } catch (err) {
+        console.error("Sign in error:", err);
+        statusEl.textContent = "Network error.";
+        statusEl.style.color = "#b91c1c";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FinSage · Accept Invite</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f3f4f6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: white;
+      max-width: 420px;
+      width: 100%;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+    }
+    .brand {
+      font-weight: 700;
+      font-size: 20px;
+      color: #0f172a;
+      margin-bottom: 6px;
+    }
+    .brand span {
+      color: #00c8c8;
+    }
+    .status {
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .status.error {
+      color: #b91c1c;
+    }
+    .status.ok {
+      color: #16a34a;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #4b5563;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 14px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      outline: none;
+    }
+    input:focus {
+      border-color: #00c8c8;
+      box-shadow: 0 0 0 2px rgba(0, 200, 200, 0.2);
+    }
+    button {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: none;
+      background: #00c8c8;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .meta {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">Fin<span>Sage</span> · Invite</div>
+    <p id="inviteMeta" class="meta">Checking your invitation…</p>
+
+    <form id="acceptForm" style="display:none;">
+      <div style="margin-bottom:8px;">
+        <label>Email</label>
+        <div id="inviteEmail" style="font-size:13px; color:#4b5563;"></div>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label>Role</label>
+        <div id="inviteRole" style="font-size:13px; color:#4b5563;"></div>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label for="firstName">First name</label>
+        <input id="firstName" type="text" required />
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label for="lastName">Last name</label>
+        <input id="lastName" type="text" required />
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label for="password">Password</label>
+        <input id="password" type="password" required />
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label for="confirmPassword">Confirm password</label>
+        <input id="confirmPassword" type="password" required />
+      </div>
+
+      <button type="submit">Create my account</button>
+      <div id="status" class="status"></div>
+    </form>
+
+    <div id="fatalStatus" class="status error"></div>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:5000";
+
+    function getTokenFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("token") || "";
+    }
+
+    async function loadInviteInfo(token) {
+      const metaEl = document.getElementById("inviteMeta");
+      const fatalEl = document.getElementById("fatalStatus");
+      const form = document.getElementById("acceptForm");
+
+      if (!token) {
+        fatalEl.textContent = "Missing invitation token in URL.";
+        metaEl.textContent = "";
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/auth/invite-info?token=${encodeURIComponent(token)}`
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          fatalEl.textContent = data.error || "This invitation is not valid.";
+          metaEl.textContent = "";
+          return;
+        }
+
+        document.getElementById("inviteEmail").textContent = data.email;
+        document.getElementById("inviteRole").textContent =
+          `${data.roleLabel || data.role} · ${data.companyName || ""}`.trim();
+
+        metaEl.textContent = "Fill in your details to finish setting up your account.";
+        form.style.display = "block";
+      } catch (err) {
+        fatalEl.textContent = "Network error loading invitation. Please try again.";
+        metaEl.textContent = "";
+      }
+    }
+
+    async function handleAcceptSubmit(event) {
+      event.preventDefault();
+      const token = getTokenFromUrl();
+      const firstName = document.getElementById("firstName").value.trim();
+      const lastName = document.getElementById("lastName").value.trim();
+      const password = document.getElementById("password").value;
+      const confirmPassword = document.getElementById("confirmPassword").value;
+      const statusEl = document.getElementById("status");
+
+      statusEl.className = "status";
+      statusEl.textContent = "";
+
+      if (!firstName || !lastName) {
+        statusEl.textContent = "First name and last name are required.";
+        statusEl.classList.add("error");
+        return;
+      }
+      if (!password || password !== confirmPassword) {
+        statusEl.textContent = "Passwords must match.";
+        statusEl.classList.add("error");
+        return;
+      }
+
+      const btn = event.target.querySelector("button[type=submit]");
+      btn.disabled = true;
+      statusEl.textContent = "Creating your account…";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/accept-invite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            firstName,
+            lastName,
+            password,
+            confirmPassword,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.textContent = data.error || "Could not accept invitation.";
+          statusEl.classList.add("error");
+          btn.disabled = false;
+          return;
+        }
+
+        // Save JWT token just like normal signin
+        if (data.token) {
+          localStorage.setItem("fs_user_token", data.token);
+          localStorage.setItem("authToken", data.token);
+          if (data.email) {
+            localStorage.setItem("userEmail", data.email);
+          }
+        }
+
+        statusEl.textContent = "Account created! Redirecting to dashboard…";
+        statusEl.classList.add("ok");
+
+        setTimeout(() => {
+          window.location.href = "dashboard.html";
+        }, 1200);
+      } catch (err) {
+        statusEl.textContent = "Network error. Please try again.";
+        statusEl.classList.add("error");
+        btn.disabled = false;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const token = getTokenFromUrl();
+      loadInviteInfo(token);
+      document
+        .getElementById("acceptForm")
+        .addEventListener("submit", handleAcceptSubmit);
+    });
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+    

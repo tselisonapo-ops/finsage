@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company Registration</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="registration-container">
+    <form id="registrationForm" onsubmit="return false;">
+      <h2>User & Company Registration</h2>
+
+      <!-- Progress Bar -->
+      <div class="progress-bar">
+        <span id="step1-indicator" class="active" data-step="1">Admin Details</span>
+        <span id="step2-indicator" data-step="2">Company Setup</span>
+      </div>
+
+      <!-- STEP 1 -->
+      <fieldset id="step-1" class="active-step">
+        <legend>Step 1: Administrator Details</legend>
+
+        <div class="input-group">
+          <label for="firstName">First Name</label>
+          <input type="text" id="firstName" name="firstName" required>
+        </div>
+        <div class="input-group">
+          <label for="lastName">Last Name</label>
+          <input type="text" id="lastName" name="lastName" required>
+        </div>
+        <div class="input-group">
+          <label for="email">Email Address (Login ID)</label>
+          <input type="email" id="email" name="email" required>
+          <small id="emailError" class="error" style="display:none;color:#b00020;"></small>
+        </div>
+        <div class="input-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required>
+          <small id="passwordError" class="error" style="display:none;color:#b00020;"></small>
+        </div>
+        <div class="input-group">
+          <label for="confirmPassword">Confirm Password</label>
+          <input type="password" id="confirmPassword" name="confirmPassword" required>
+          <small id="confirmError" class="error" style="display:none;color:#b00020;"></small>
+        </div>
+        <div class="input-group">
+          <label for="phone">Phone Number (Optional)</label>
+          <input type="tel" id="phone" name="phone">
+        </div>
+
+        <div class="button-group">
+          <button type="button" onclick="nextStep(1)">Next: Company Setup</button>
+        </div>
+      </fieldset>
+
+      <!-- STEP 2 -->
+      <fieldset id="step-2" class="hidden-step">
+        <legend>Step 2: Company Setup & Financial Basis</legend>
+
+        <div class="input-group">
+          <label for="companyName">Company/Entity Name</label>
+          <input type="text" id="companyName" name="companyName" required>
+        </div>
+
+        <div class="input-group">
+          <label for="regNumber">Company Registration Number</label>
+          <input type="text" id="regNumber" name="regNumber" required>
+        </div>
+
+        <div class="input-group">
+          <label for="taxNumber">Tax Identification Number (TIN)</label>
+          <input type="text" id="taxNumber" name="taxNumber" required>
+        </div>
+
+        <div class="input-group">
+          <label for="vatNumber">VAT/Sales Tax Number (Optional)</label>
+          <input type="text" id="vatNumber" name="vatNumber" placeholder="Leave blank if not VAT registered">
+        </div>
+
+        <div class="input-group">
+          <label for="address">Registered Address</label>
+          <textarea id="address" name="address" required></textarea>
+        </div>
+
+        <!-- Country (new, aligned with validation.py) -->
+        <div class="input-group">
+          <label for="country">Country</label>
+          <select id="country" name="country" required>
+            <option value="" disabled selected>Select your country...</option>
+            <!-- Southern Africa -->
+            <option value="ZA">ZA — South Africa</option>
+            <option value="LS">LS — Lesotho</option>
+            <option value="BW">BW — Botswana</option>
+            <option value="NA">NA — Namibia</option>
+            <option value="ZW">ZW — Zimbabwe</option>
+
+            <!-- UK / Europe -->
+            <option value="GB">GB — United Kingdom</option>
+            <option value="IE">IE — Ireland</option>
+            <option value="DE">DE — Germany</option>
+            <option value="FR">FR — France</option>
+            <option value="ES">ES — Spain</option>
+            <option value="IT">IT — Italy</option>
+            <option value="NL">NL — Netherlands</option>
+            <option value="BE">BE — Belgium</option>
+            <option value="PT">PT — Portugal</option>
+            <option value="PL">PL — Poland</option>
+            <option value="RO">RO — Romania</option>
+            <option value="SE">SE — Sweden</option>
+            <option value="DK">DK — Denmark</option>
+            <option value="FI">FI — Finland</option>
+            <option value="NO">NO — Norway</option>
+            <option value="CH">CH — Switzerland</option>
+
+            <!-- Americas -->
+            <option value="US">US — United States</option>
+            <option value="CA">CA — Canada</option>
+            <option value="MX">MX — Mexico</option>
+
+            <!-- Oceania -->
+            <option value="AU">AU — Australia</option>
+            <option value="NZ">NZ — New Zealand</option>
+
+            <!-- Asia / Middle East -->
+            <option value="IN">IN — India</option>
+            <option value="SG">SG — Singapore</option>
+            <option value="HK">HK — Hong Kong</option>
+            <option value="AE">AE — United Arab Emirates</option>
+            <option value="SA">SA — Saudi Arabia</option>
+
+            <!-- East Africa -->
+            <option value="KE">KE — Kenya</option>
+            <option value="TZ">TZ — Tanzania</option>
+            <option value="UG">UG — Uganda</option>
+          </select>
+        </div>
+
+        <!-- Industry (you can still swap to dynamic via API) -->
+        <div class="input-group">
+          <label for="industry">Industry (Select COA Template)</label>
+          <select id="industry" name="industry" required>
+            <option value="" disabled selected>Select your industry...</option>
+            <option value="Construction">Construction</option>
+            <option value="Restaurant">Restaurant</option>
+            <option value="Professional Services">Professional Services</option>
+            <option value="Retail & Wholesale">Retail & Wholesale</option>
+            <option value="NPO Education">NPO Education</option>
+            <option value="NPO Healthcare">NPO Healthcare</option>
+            <option value="NPO IT">NPO IT</option>
+            <option value="NPO Transport">NPO Transport</option>
+            <option value="Manufacturing">Manufacturing</option>
+            <option value="Transport">Transport</option>
+            <option value="Property Management">Property Management</option>
+            <option value="Body Corporate">Body Corporate</option>
+            <option value="Private Healthcare">Private Healthcare</option>
+            <option value="Hospitality">Hospitality</option>
+            <option value="Management Services">Management Services</option>
+            <option value="Agriculture">Agriculture</option>
+            <option value="Call Center">Call Center</option>
+            <option value="Car Dealership">Car Dealership</option>
+          </select>
+        </div>
+
+        <!-- Optional sub-industry hook (works with your app.js if you enable API-driven fill) -->
+        <div class="input-group">
+          <label for="subIndustry">Sub-Industry</label>
+          <select id="subIndustry" name="subIndustry" disabled>
+            <option value="" disabled selected>Select sub-industry...</option>
+          </select>
+        </div>
+
+        <!-- COA message -->
+        <div id="coa-message" style="
+          padding:10px;margin-top:-10px;margin-bottom:20px;
+          background-color:#e8f5e9;border:1px solid #c8e6c9;border-radius:6px;color:#2e7d32;
+          display:none;font-size:0.9em;">
+        </div>
+
+        <!-- Currency (expanded to everything in COUNTRY_CURRENCY) -->
+        <div class="input-group">
+          <label for="currency">Base Currency</label>
+          <select id="currency" name="currency" required>
+            <option value="" disabled selected>Select currency...</option>
+            <option value="ZAR">ZAR — South African Rand</option>
+            <option value="LSL">LSL — Lesotho Loti</option>
+            <option value="BWP">BWP — Botswana Pula</option>
+            <option value="NAD">NAD — Namibian Dollar</option>
+            <option value="ZWL">ZWL — Zimbabwean Dollar</option>
+
+            <option value="GBP">GBP — British Pound</option>
+            <option value="EUR">EUR — Euro</option>
+            <option value="PLN">PLN — Polish Złoty</option>
+            <option value="RON">RON — Romanian Leu</option>
+            <option value="SEK">SEK — Swedish Krona</option>
+            <option value="DKK">DKK — Danish Krone</option>
+            <option value="NOK">NOK — Norwegian Krone</option>
+            <option value="CHF">CHF — Swiss Franc</option>
+
+            <option value="USD">USD — US Dollar</option>
+            <option value="CAD">CAD — Canadian Dollar</option>
+            <option value="MXN">MXN — Mexican Peso</option>
+
+            <option value="AUD">AUD — Australian Dollar</option>
+            <option value="NZD">NZD — New Zealand Dollar</option>
+
+            <option value="INR">INR — Indian Rupee</option>
+            <option value="SGD">SGD — Singapore Dollar</option>
+            <option value="HKD">HKD — Hong Kong Dollar</option>
+            <option value="AED">AED — UAE Dirham</option>
+            <option value="SAR">SAR — Saudi Riyal</option>
+
+            <option value="KES">KES — Kenyan Shilling</option>
+            <option value="TZS">TZS — Tanzanian Shilling</option>
+            <option value="UGX">UGX — Ugandan Shilling</option>
+          </select>
+        </div>
+
+        <!-- Financial Year Start -->
+        <div class="input-group tooltip-container">
+          <label for="finYearStart">
+            Financial Year Start Date (DD/MM)
+            <span class="info-icon" title="This date determines the start of your 12-month accounting cycle for reporting purposes.">&#9432;</span>
+          </label>
+          <input type="text" id="finYearStart" name="finYearStart" placeholder="e.g., 01/03" required>
+        </div>
+
+        <div class="button-group">
+          <button type="button" onclick="prevStep(2)">Back</button>
+          <button type="submit">Complete Registration</button>
+        </div>
+      </fieldset>
+    </form>
+  </div>
+
+  <!-- Your registration logic -->
+  <script src="app.js"></script>
+
+  <script>
+/* FinSage — Country-specific format hints + live validation for Reg No / TIN / VAT
+   Place this <script> RIGHT AFTER in your registration page.
+   It attaches itself to the existing form without changing app.js. */
+
+(function(){
+  "use strict";
+
+  // ---- Keep in sync with BackEnd/Services/validation.py ----
+  var REGNO_REGEX = {
+    "ZA": /^\d{4}\/\d{6}\/(07|08)$/,
+    "LS": /^A\d{4}\/\d{5,6}$/,
+    "BW": /^\d{2,6}\/\d{2,6}$/,
+    "NA": /^\d{2,6}\/\d{2,6}$/,
+    "ZW": /^\d{2,6}\/\d{2,6}$/,
+
+    "GB": /^(?:\d{8}|[A-Z]{2}\d{6})$/,
+    "IE": /^\d{6,7}[A-Z]?$/,
+    "DE": /^HR[BAG]\s?\d{1,6}$/,
+    "FR": /^\d{9}$/,
+    "ES": /^[A-Z]\d{7}[A-Z0-9]$/,
+    "IT": /^\d{11}$/,
+    "NL": /^\d{8}$/,
+    "BE": /^\d{10}$/,
+    "PT": /^\d{9}$/,
+    "PL": /^\d{10}$/,
+
+    "US": /^[A-Z0-9\-]{5,20}$/,
+    "CA": /^\d{9}$/,
+    "MX": /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/,
+
+    "AU": /^(?:\d{9}|\d{11})$/,
+    "NZ": /^\d{13}$/,
+
+    "IN": /^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$/,
+    "SG": /^\d{4,10}[A-Z]?$/,
+    "HK": /^\d{7,8}$/,
+    "AE": /^\d{4,8}$/,
+    "SA": /^\d{10}$/,
+
+    "KE": /^[A-Z0-9/\-]{7,20}$/,
+    "TZ": /^[A-Z0-9/\-]{7,20}$/,
+    "UG": /^[A-Z0-9/\-]{7,20}$/
+  };
+
+  var TIN_REGEX = {
+    "ZA": /^\d{10}$/,
+    "US": /^\d{2}-\d{7}$/,
+    "GB": /^\d{10}$/,
+    "IE": /^\d{7}[A-Za-z]{1,2}$/,
+    "DE": /^\d{9}$/,
+    "FR": /^\d{11}$/,
+    "IT": /^\d{11}$/,
+    "ES": /^[A-Z]\d{7}[A-Z0-9]$/,
+    "NL": /^[A-Z0-9]{10,12}$/,
+    "BE": /^\d{11}$/,
+    "PT": /^\d{9}$/,
+    "PL": /^\d{10}$/,
+    "RO": /^\d{2,10}$/,
+    "SE": /^\d{10,12}$/,
+    "DK": /^\d{8}$/,
+    "FI": /^\d{8}$/,
+    "NO": /^\d{9}$/,
+    "CH": /^\d{9}$/,
+    "CA": /^\d{9}$/,
+    "MX": /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/,
+    "AU": /^\d{8,9}$/,
+    "NZ": /^\d{8,9}$/,
+    "IN": /^[A-Z]{5}\d{4}[A-Z]$/,
+    "SG": /^[A-Z0-9]{8,10}$/,
+    "HK": /^\d{8}$/,
+    "AE": /^\d{9,15}$/,
+    "SA": /^\d{10,15}$/,
+    "LS": /^\d{6,12}$/,
+    "KE": /^[A-Z]\d{9}[A-Z]$/
+  };
+
+  var VAT_REGEX = {
+    "ZA": /^\d{10}$/,
+    "GB": /^GB?\d{9}(\d{3})?$/,
+    "DE": /^DE\d{9}$/,
+    "FR": /^FR[A-HJ-NP-Z0-9]{2}\d{9}$/,
+    "IT": /^IT\d{11}$/,
+    "ES": /^ES[A-Z0-9]\d{7}[A-Z0-9]$/,
+    "NL": /^NL\d{9}B\d{2}$/,
+    "BE": /^BE0?\d{9}$/,
+    "PT": /^PT\d{9}$/,
+    "PL": /^PL\d{10}$/,
+    "RO": /^RO\d{2,10}$/,
+    "SE": /^SE\d{12}$/,
+    "DK": /^DK\d{8}$/,
+    "FI": /^FI\d{8}$/,
+    "NO": /^NO\d{9}MVA$/,
+    "IE": /^IE\d[A-Z0-9]\d{5}[A-Z]{1,2}$/,
+
+    "CH": /^CHE\d{9}(TVA|MWST|IVA)$/,
+
+    "AE": /^\d{15}$/,
+    "SA": /^\d{15}$/,
+
+    "LS": /^[A-Z0-9\-]{6,15}$/,
+    "KE": /^P\d{9}[A-Z]$/,
+
+    "CA": /^\d{9}RT\d{4}$/,
+    "AU": /^\d{11}$/,
+    "NZ": /^\d{9}$/,
+    "MX": /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/,
+    "US": /^[A-Z0-9\-]{5,20}$/
+  };
+
+  // Example strings for user hints
+  var HINTS = {
+    REG: {
+      "ZA": "e.g. 2014/123456/07",
+      "LS": "e.g. A1234/12345",
+      "GB": "e.g. 01234567 or AB123456",
+      "DE": "e.g. HRB 12345",
+      "US": "e.g. DE-12345 (relaxed)",
+      "MX": "RFC, e.g. ABC0102031H0",
+      "IN": "CIN, 21 chars: L12345XX0000ABC123456"
+    },
+    TIN: {
+      "ZA": "10 digits",
+      "US": "EIN: 12-3456789",
+      "GB": "10 digits",
+      "IN": "PAN: AAAAA9999A",
+      "CA": "9 digits",
+      "MX": "RFC, e.g. ABC0102031H0"
+    },
+    VAT: {
+      "ZA": "10 digits",
+      "GB": "GB123456789 (or 12 digits)",
+      "DE": "DE123456789",
+      "FR": "FRxx123456789",
+      "NL": "NL123456789B01",
+      "NO": "NO123456789MVA",
+      "CH": "CHE123456789TVA",
+      "AE": "15 digits"
+    }
+  };
+
+  // DOM helpers
+  function $(id){ return document.getElementById(id); }
+  function ensureHintEl(input, idSuffix){
+    var id = input.id + idSuffix;
+    var el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('small');
+      el.id = id;
+      el.style.display = 'block';
+      el.style.marginTop = '4px';
+      el.style.color = '#6b7280';
+      input.insertAdjacentElement('afterend', el);
+    }
+    return el;
+  }
+  function ensureErrEl(input, idSuffix){
+    var id = input.id + idSuffix;
+    var el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('small');
+      el.id = id;
+      el.className = 'error';
+      el.style.display = 'none';
+      el.style.color = '#b00020';
+      el.style.marginTop = '4px';
+      input.insertAdjacentElement('afterend', el);
+    }
+    return el;
+  }
+  function setOK(input){
+    input.style.border = "1px solid var(--color-border, #cbd5e1)";
+  }
+  function setBAD(input){
+    input.style.border = "2px solid var(--color-error, #b00020)";
+  }
+
+  // Validate one field against a map keyed by country
+  function validateByCountry(input, country, regexMap, required, label){
+    var val = (input.value || '').trim();
+    var errEl = ensureErrEl(input, "-error");
+    errEl.style.display = 'none';
+    errEl.textContent = "";
+
+    if (!val) {
+      if (required) {
+        setBAD(input);
+        errEl.textContent = label + " is required.";
+        errEl.style.display = 'block';
+        return false;
+      } else {
+        setOK(input);
+        return true;
+      }
+    }
+
+    var re = regexMap[country];
+    if (!re) { // No strict rule for this country
+      setOK(input);
+      return true;
+    }
+
+    var ok = re.test(val);
+    if (!ok) {
+      setBAD(input);
+      errEl.textContent = "Invalid " + label + " format for " + country + ".";
+      errEl.style.display = 'block';
+      return false;
+    } else {
+      setOK(input);
+      return true;
+    }
+  }
+
+  function updateHintsForCountry(country){
+    var reg = $("regNumber"), tin = $("taxNumber"), vat = $("vatNumber");
+    if (!reg || !tin || !vat) return;
+
+    var regHintEl = ensureHintEl(reg, "-hint");
+    var tinHintEl = ensureHintEl(tin, "-hint");
+    var vatHintEl = ensureHintEl(vat, "-hint");
+
+    regHintEl.textContent = "Format depends on country" + (HINTS.REG[country] ? (" — " + HINTS.REG[country]) : "");
+    tinHintEl.textContent = "Format depends on country" + (HINTS.TIN[country] ? (" — " + HINTS.TIN[country]) : "");
+    vatHintEl.textContent = "(Optional) Format depends on country" + (HINTS.VAT[country] ? (" — " + HINTS.VAT[country]) : "");
+
+    // Optional: tweak placeholders for UX
+    if (HINTS.REG[country]) reg.placeholder = HINTS.REG[country];
+    if (HINTS.TIN[country]) tin.placeholder = HINTS.TIN[country];
+    if (HINTS.VAT[country]) vat.placeholder = HINTS.VAT[country];
+  }
+
+  function runCountryValidation(){
+    var countrySel = $("country");
+    var reg = $("regNumber"), tin = $("taxNumber"), vat = $("vatNumber");
+    if (!countrySel || !reg || !tin || !vat) return true;
+
+    var cc = (countrySel.value || "").toUpperCase();
+    var ok1 = validateByCountry(reg, cc, REGNO_REGEX, true,  "Registration number");
+    var ok2 = validateByCountry(tin, cc, TIN_REGEX,   true,  "TIN");
+    var ok3 = validateByCountry(vat, cc, VAT_REGEX,   false, "VAT number");
+    return (ok1 && ok2 && ok3);
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var form = $("registrationForm");
+    var countrySel = $("country");
+    var reg = $("regNumber"), tin = $("taxNumber"), vat = $("vatNumber");
+
+    // initialize hints
+    if (countrySel) updateHintsForCountry((countrySel.value || "").toUpperCase());
+
+    // update hints when country changes
+    if (countrySel) {
+      countrySel.addEventListener('change', function(){
+        var cc = (this.value || "").toUpperCase();
+        updateHintsForCountry(cc);
+        // re-validate on change to give immediate feedback
+        runCountryValidation();
+      });
+    }
+
+    // live validation on input/blur
+    [reg, tin, vat].forEach(function(inp){
+      if (!inp) return;
+      inp.addEventListener('input', runCountryValidation);
+      inp.addEventListener('blur', runCountryValidation);
+    });
+
+    // HARD BLOCK submit before app.js runs if invalid (capture = true)
+    if (form) {
+      form.addEventListener('submit', function(e){
+        if (!runCountryValidation()) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
+          // scroll to first error
+          var bad = form.querySelector('input[style*="2px solid"]');
+          if (bad && bad.scrollIntoView) {
+            bad.scrollIntoView({behavior:'smooth', block:'center'});
+            bad.focus();
+          }
+        }
+      }, true);
+    }
+  });
+})();
+</script>
+
+
+  <!-- Small helper to default currency when country changes (keeps manual override) -->
+  <script>
+    (function(){
+      var map = {
+        "ZA":"ZAR","LS":"LSL","BW":"BWP","NA":"NAD","ZW":"ZWL",
+        "GB":"GBP","IE":"EUR","DE":"EUR","FR":"EUR","ES":"EUR","IT":"EUR","NL":"EUR","BE":"EUR","PT":"EUR","PL":"PLN",
+        "RO":"RON","SE":"SEK","DK":"DKK","FI":"EUR","NO":"NOK","CH":"CHF",
+        "US":"USD","CA":"CAD","MX":"MXN",
+        "AU":"AUD","NZ":"NZD",
+        "IN":"INR","SG":"SGD","HK":"HKD","AE":"AED","SA":"SAR",
+        "KE":"KES","TZ":"TZS","UG":"UGX"
+      };
+      var countrySel = document.getElementById('country');
+      var currencySel = document.getElementById('currency');
+      if (countrySel && currencySel) {
+        countrySel.addEventListener('change', function(){
+          var cur = map[this.value];
+          if (!cur) return;
+          // if user hasn’t picked a currency yet or the current one doesn’t match the new country’s default, select it
+          if (!currencySel.value || currencySel.value !== cur) {
+            currencySel.value = cur;
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

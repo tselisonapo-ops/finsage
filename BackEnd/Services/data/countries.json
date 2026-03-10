@@ -1,0 +1,406 @@
+[
+  {
+    "code": "ZA",
+    "iso3": "ZAF",
+    "name": "South Africa",
+    "currency": "ZAR",
+    "phone": "+27",
+    "flag": "🇿🇦"
+  },
+  {
+    "code": "LS",
+    "iso3": "LSO",
+    "name": "Lesotho",
+    "currency": "LSL",
+    "phone": "+266",
+    "flag": "🇱🇸"
+  },
+  {
+    "code": "BW",
+    "iso3": "BWA",
+    "name": "Botswana",
+    "currency": "BWP",
+    "phone": "+267",
+    "flag": "🇧🇼"
+  },
+  {
+    "code": "NA",
+    "iso3": "NAM",
+    "name": "Namibia",
+    "currency": "NAD",
+    "phone": "+264",
+    "flag": "🇳🇦"
+  },
+  {
+    "code": "ZW",
+    "iso3": "ZWE",
+    "name": "Zimbabwe",
+    "currency": "ZWL",
+    "phone": "+263",
+    "flag": "🇿🇼"
+  },
+
+  {
+    "code": "NG",
+    "iso3": "NGA",
+    "name": "Nigeria",
+    "currency": "NGN",
+    "phone": "+234",
+    "flag": "🇳🇬"
+  },
+  {
+    "code": "KE",
+    "iso3": "KEN",
+    "name": "Kenya",
+    "currency": "KES",
+    "phone": "+254",
+    "flag": "🇰🇪"
+  },
+  {
+    "code": "TZ",
+    "iso3": "TZA",
+    "name": "Tanzania",
+    "currency": "TZS",
+    "phone": "+255",
+    "flag": "🇹🇿"
+  },
+  {
+    "code": "UG",
+    "iso3": "UGA",
+    "name": "Uganda",
+    "currency": "UGX",
+    "phone": "+256",
+    "flag": "🇺🇬"
+  },
+  {
+    "code": "GH",
+    "iso3": "GHA",
+    "name": "Ghana",
+    "currency": "GHS",
+    "phone": "+233",
+    "flag": "🇬🇭"
+  },
+  {
+    "code": "DZ",
+    "iso3": "DZA",
+    "name": "Algeria",
+    "currency": "DZD",
+    "phone": "+213",
+    "flag": "🇩🇿"
+  },
+  {
+    "code": "MA",
+    "iso3": "MAR",
+    "name": "Morocco",
+    "currency": "MAD",
+    "phone": "+212",
+    "flag": "🇲🇦"
+  },
+  {
+    "code": "EG",
+    "iso3": "EGY",
+    "name": "Egypt",
+    "currency": "EGP",
+    "phone": "+20",
+    "flag": "🇪🇬"
+  },
+
+  {
+    "code": "GB",
+    "iso3": "GBR",
+    "name": "United Kingdom",
+    "currency": "GBP",
+    "phone": "+44",
+    "flag": "🇬🇧"
+  },
+  {
+    "code": "IE",
+    "iso3": "IRL",
+    "name": "Ireland",
+    "currency": "EUR",
+    "phone": "+353",
+    "flag": "🇮🇪"
+  },
+  {
+    "code": "DE",
+    "iso3": "DEU",
+    "name": "Germany",
+    "currency": "EUR",
+    "phone": "+49",
+    "flag": "🇩🇪"
+  },
+  {
+    "code": "FR",
+    "iso3": "FRA",
+    "name": "France",
+    "currency": "EUR",
+    "phone": "+33",
+    "flag": "🇫🇷"
+  },
+  {
+    "code": "ES",
+    "iso3": "ESP",
+    "name": "Spain",
+    "currency": "EUR",
+    "phone": "+34",
+    "flag": "🇪🇸"
+  },
+  {
+    "code": "IT",
+    "iso3": "ITA",
+    "name": "Italy",
+    "currency": "EUR",
+    "phone": "+39",
+    "flag": "🇮🇹"
+  },
+  {
+    "code": "NL",
+    "iso3": "NLD",
+    "name": "Netherlands",
+    "currency": "EUR",
+    "phone": "+31",
+    "flag": "🇳🇱"
+  },
+  {
+    "code": "BE",
+    "iso3": "BEL",
+    "name": "Belgium",
+    "currency": "EUR",
+    "phone": "+32",
+    "flag": "🇧🇪"
+  },
+  {
+    "code": "PT",
+    "iso3": "PRT",
+    "name": "Portugal",
+    "currency": "EUR",
+    "phone": "+351",
+    "flag": "🇵🇹"
+  },
+  {
+    "code": "SE",
+    "iso3": "SWE",
+    "name": "Sweden",
+    "currency": "SEK",
+    "phone": "+46",
+    "flag": "🇸🇪"
+  },
+  {
+    "code": "NO",
+    "iso3": "NOR",
+    "name": "Norway",
+    "currency": "NOK",
+    "phone": "+47",
+    "flag": "🇳🇴"
+  },
+  {
+    "code": "DK",
+    "iso3": "DNK",
+    "name": "Denmark",
+    "currency": "DKK",
+    "phone": "+45",
+    "flag": "🇩🇰"
+  },
+  {
+    "code": "FI",
+    "iso3": "FIN",
+    "name": "Finland",
+    "currency": "EUR",
+    "phone": "+358",
+    "flag": "🇫🇮"
+  },
+  {
+    "code": "CH",
+    "iso3": "CHE",
+    "name": "Switzerland",
+    "currency": "CHF",
+    "phone": "+41",
+    "flag": "🇨🇭"
+  },
+  {
+    "code": "AT",
+    "iso3": "AUT",
+    "name": "Austria",
+    "currency": "EUR",
+    "phone": "+43",
+    "flag": "🇦🇹"
+  },
+  {
+    "code": "PL",
+    "iso3": "POL",
+    "name": "Poland",
+    "currency": "PLN",
+    "phone": "+48",
+    "flag": "🇵🇱"
+  },
+
+  {
+    "code": "US",
+    "iso3": "USA",
+    "name": "United States",
+    "currency": "USD",
+    "phone": "+1",
+    "flag": "🇺🇸"
+  },
+  {
+    "code": "CA",
+    "iso3": "CAN",
+    "name": "Canada",
+    "currency": "CAD",
+    "phone": "+1",
+    "flag": "🇨🇦"
+  },
+  {
+    "code": "MX",
+    "iso3": "MEX",
+    "name": "Mexico",
+    "currency": "MXN",
+    "phone": "+52",
+    "flag": "🇲🇽"
+  },
+  {
+    "code": "BR",
+    "iso3": "BRA",
+    "name": "Brazil",
+    "currency": "BRL",
+    "phone": "+55",
+    "flag": "🇧🇷"
+  },
+  {
+    "code": "AR",
+    "iso3": "ARG",
+    "name": "Argentina",
+    "currency": "ARS",
+    "phone": "+54",
+    "flag": "🇦🇷"
+  },
+  {
+    "code": "CL",
+    "iso3": "CHL",
+    "name": "Chile",
+    "currency": "CLP",
+    "phone": "+56",
+    "flag": "🇨🇱"
+  },
+  {
+    "code": "CO",
+    "iso3": "COL",
+    "name": "Colombia",
+    "currency": "COP",
+    "phone": "+57",
+    "flag": "🇨🇴"
+  },
+  {
+    "code": "PE",
+    "iso3": "PER",
+    "name": "Peru",
+    "currency": "PEN",
+    "phone": "+51",
+    "flag": "🇵🇪"
+  },
+
+  {
+    "code": "CN",
+    "iso3": "CHN",
+    "name": "China",
+    "currency": "CNY",
+    "phone": "+86",
+    "flag": "🇨🇳"
+  },
+  {
+    "code": "JP",
+    "iso3": "JPN",
+    "name": "Japan",
+    "currency": "JPY",
+    "phone": "+81",
+    "flag": "🇯🇵"
+  },
+  {
+    "code": "IN",
+    "iso3": "IND",
+    "name": "India",
+    "currency": "INR",
+    "phone": "+91",
+    "flag": "🇮🇳"
+  },
+  {
+    "code": "PK",
+    "iso3": "PAK",
+    "name": "Pakistan",
+    "currency": "PKR",
+    "phone": "+92",
+    "flag": "🇵🇰"
+  },
+  {
+    "code": "BD",
+    "iso3": "BGD",
+    "name": "Bangladesh",
+    "currency": "BDT",
+    "phone": "+880",
+    "flag": "🇧🇩"
+  },
+  {
+    "code": "ID",
+    "iso3": "IDN",
+    "name": "Indonesia",
+    "currency": "IDR",
+    "phone": "+62",
+    "flag": "🇮🇩"
+  },
+  {
+    "code": "PH",
+    "iso3": "PHL",
+    "name": "Philippines",
+    "currency": "PHP",
+    "phone": "+63",
+    "flag": "🇵🇭"
+  },
+  {
+    "code": "SG",
+    "iso3": "SGP",
+    "name": "Singapore",
+    "currency": "SGD",
+    "phone": "+65",
+    "flag": "🇸🇬"
+  },
+  {
+    "code": "MY",
+    "iso3": "MYS",
+    "name": "Malaysia",
+    "currency": "MYR",
+    "phone": "+60",
+    "flag": "🇲🇾"
+  },
+  {
+    "code": "TH",
+    "iso3": "THA",
+    "name": "Thailand",
+    "currency": "THB",
+    "phone": "+66",
+    "flag": "🇹🇭"
+  },
+  {
+    "code": "KR",
+    "iso3": "KOR",
+    "name": "South Korea",
+    "currency": "KRW",
+    "phone": "+82",
+    "flag": "🇰🇷"
+  },
+  {
+    "code": "AU",
+    "iso3": "AUS",
+    "name": "Australia",
+    "currency": "AUD",
+    "phone": "+61",
+    "flag": "🇦🇺"
+  },
+  {
+    "code": "NZ",
+    "iso3": "NZL",
+    "name": "New Zealand",
+    "currency": "NZD",
+    "phone": "+64",
+    "flag": "🇳🇿"
+  }
+]

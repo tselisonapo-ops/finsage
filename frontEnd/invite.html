@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Accept FinSage Invitation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Tailwind CDN (same as other pages) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    :root {
+      --color-primary: #004d40;   /* Dark Green */
+      --color-secondary: #009688; /* Teal */
+      --color-text: #212121;
+      --color-light-text: #757575;
+      --color-bg: #f4f4f9;
+      --color-card-bg: #ffffff;
+      --color-border: #e0e0e0;
+      --color-success: #4caf50;
+      --color-error: #e53935;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(circle at top, #e0f2f1 0, #f4f4f9 55%);
+      color: var(--color-text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      max-width: 460px;
+      width: 100%;
+      background: var(--color-card-bg);
+      border-radius: 16px;
+      box-shadow: 0 18px 38px rgba(0,0,0,.15);
+      padding: 24px 22px 26px;
+    }
+
+    .brand-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(0,77,64,0.06);
+      color: var(--color-primary);
+      font-size: .75rem;
+      font-weight: 500;
+    }
+
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--color-secondary);
+      box-shadow: 0 0 0 3px rgba(0,150,136,0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="flex justify-between items-start mb-4">
+      <div>
+        <div class="brand-pill mb-2">
+          <span class="brand-dot"></span>
+          FinSage · Role Invitation
+        </div>
+        <h1 class="text-xl sm:text-2xl font-bold text-[var(--color-primary)] leading-snug">
+          Join your FinSage workspace
+        </h1>
+      </div>
+      <div class="hidden sm:block text-right text-xs text-[var(--color-light-text)]">
+        Secure invite<br>
+        <span id="invite-expiry" class="font-medium"></span>
+      </div>
+    </div>
+
+    <p id="invite-intro" class="text-sm text-[var(--color-light-text)] mb-4">
+      Loading your invitation details...
+    </p>
+
+    <div id="alert" class="hidden mb-4 text-sm font-medium p-3 rounded-lg"></div>
+
+    <form id="acceptInviteForm" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-[var(--color-light-text)] mb-1">
+          Invited email
+        </label>
+        <input id="inviteEmailDisplay" type="email" disabled
+               class="w-full p-3 rounded-lg border border-[var(--color-border)] bg-gray-50 text-sm cursor-not-allowed">
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label for="firstName" class="block text-sm font-medium text-[var(--color-light-text)] mb-1">
+            First name
+          </label>
+          <input type="text" id="firstName" name="firstName" required
+                 class="w-full p-3 rounded-lg border border-gray-300 focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+        </div>
+        <div>
+          <label for="lastName" class="block text-sm font-medium text-[var(--color-light-text)] mb-1">
+            Last name
+          </label>
+          <input type="text" id="lastName" name="lastName" required
+                 class="w-full p-3 rounded-lg border border-gray-300 focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+        </div>
+      </div>
+
+      <div>
+        <label for="password" class="block text-sm font-medium text-[var(--color-light-text)] mb-1">
+          Create password
+        </label>
+        <input type="password" id="password" name="password" required
+               class="w-full p-3 rounded-lg border border-gray-300 focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+        <p class="mt-1 text-xs text-gray-500">
+          Minimum 8 characters, with at least one uppercase letter and one number.
+        </p>
+      </div>
+
+      <div>
+        <label for="confirmPassword" class="block text-sm font-medium text-[var(--color-light-text)] mb-1">
+          Confirm password
+        </label>
+        <input type="password" id="confirmPassword" name="confirmPassword" required
+               class="w-full p-3 rounded-lg border border-gray-300 focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+      </div>
+
+      <input type="hidden" id="inviteToken" name="token">
+
+      <button type="submit"
+              class="w-full mt-2 py-3 rounded-lg text-sm font-semibold text-white bg-[var(--color-primary)] hover:bg-[#003c32] shadow-md hover:shadow-lg transition active:scale-[0.99]">
+        Accept invite &amp; create my login
+      </button>
+
+      <p class="text-xs text-center text-[var(--color-light-text)] mt-2">
+        By accepting, you agree to access only the data and features allowed for your role.
+      </p>
+    </form>
+
+    <div id="successBlock" class="hidden mt-4 text-center text-sm">
+      <p class="mb-3 text-[var(--color-success)] font-semibold">
+        Invitation accepted successfully.
+      </p>
+      <button type="button"
+              onclick="window.location.href='dashboard.html?action=signin'"
+              class="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[var(--color-secondary)] hover:bg-[#007d6f]">
+        Go to Sign-in
+      </button>
+    </div>
+  </div>
+
+  <script src="accept-invite.js"></script>
+</body>
+</html>

@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinSage Practitioner Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg: #f4f8fb;
+      --panel: #ffffff;
+      --panel-2: #f8fbfd;
+      --line: #d7e4ea;
+      --text: #123040;
+      --muted: #5c7481;
+      --brand: #0f766e;
+      --brand-2: #0b5f59;
+      --brand-soft: #e7f6f4;
+      --warn: #b45309;
+      --warn-soft: #fff7ed;
+      --danger: #b91c1c;
+      --danger-soft: #fef2f2;
+      --ok: #166534;
+      --ok-soft: #effcf3;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: linear-gradient(180deg, #0f2b39 0%, #12394b 100%);
+      color: #e6f4f7;
+      border-right: 1px solid rgba(255,255,255,0.08);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .sidebar .nav-link,
+    .sidebar .nav-sub-link {
+      transition: all 0.18s ease;
+    }
+
+    .sidebar .nav-link:hover,
+    .sidebar .nav-sub-link:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .sidebar .nav-link.active {
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .modal-label {
+      display: block;
+      margin-bottom: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #5c7481;
+    }
+
+    #prSidebarNav .sub-item {
+      color: #e6f4f7;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 0.85rem;
+      padding: 0.75rem 0.85rem;
+      cursor: pointer;
+    }
+
+    #prSidebarNav .sub-item:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    #prSidebarNav .sub-item .text-sm {
+      color: rgba(230,244,247,0.72);
+    }
+
+    #prSidebarNav .nav-link.active {
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #prSidebarNav .sub-item.active {
+      background: rgba(15,118,110,0.22);
+      color: #ffffff;
+      border-left: 3px solid #5eead4;
+    }
+
+    .sidebar .nav-sub-link.active,
+    .engagement-nav .sub-item.active {
+      background: rgba(15,118,110,0.22);
+      color: #ffffff;
+      border-left: 3px solid #5eead4;
+    }
+
+    .content-shell {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-width: 0;
+    }
+
+    .topbar {
+      background: rgba(244,248,251,0.92);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      box-shadow: var(--shadow);
+    }
+
+    .card-soft {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-radius: 999px;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .badge-brand { background: var(--brand-soft); color: var(--brand-2); }
+    .badge-warn { background: var(--warn-soft); color: var(--warn); }
+    .badge-danger { background: var(--danger-soft); color: var(--danger); }
+    .badge-ok { background: var(--ok-soft); color: var(--ok); }
+    .badge-slate { background: #eef4f7; color: #49606d; }
+
+    .metric-number {
+      font-size: 1.9rem;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .mini-chart {
+      height: 7px;
+      border-radius: 999px;
+      background: #e7eff3;
+      overflow: hidden;
+    }
+
+    .mini-chart > span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #14b8a6, #0f766e);
+      width: 0%;
+    }
+
+    .panel-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #163848;
+    }
+
+    .panel-subtitle {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 0.8rem 0.9rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 0.86rem;
+    }
+
+    .data-table th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #617987;
+      background: #f7fbfc;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 1rem;
+    }
+
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .engagement-layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 1rem;
+    }
+
+    .engagement-nav .section-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #9cc3cf;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .engagement-nav .sub-item {
+      border: 1px solid transparent;
+      border-radius: 0.85rem;
+      padding: 0.75rem 0.85rem;
+      cursor: pointer;
+    }
+
+    .role-chip {
+      border-radius: 999px;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .header-profile-card {
+      min-width: 280px;
+    }
+
+    .screen.hidden {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    .modal-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.9rem;
+    }
+
+    @media (max-width: 768px) {
+      .modal-form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid #cbd5e1;
+      border-radius: 0.85rem;
+      background: #ffffff;
+      color: #123040;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.95rem;
+      line-height: 1.35;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .input::placeholder {
+      color: #94a3b8;
+    }
+
+    .input:focus {
+      border-color: #0f766e;
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    textarea.input {
+      min-height: 96px;
+      resize: vertical;
+    }
+
+    select.input {
+      appearance: auto;
+      cursor: pointer;
+    }
+
+    #prExpandedSidebarNav .pr-section-toggle {
+      color: #d6eef5;
+      border: 1px solid transparent;
+    }
+
+    #prExpandedSidebarNav .pr-section-toggle:hover {
+      background: rgba(255,255,255,0.06);
+    }
+
+    #prExpandedSidebarNav .pr-parent-toggle:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    #prExpandedSidebarNav .sub-item {
+      color: #e6f4f7;
+      background: transparent;
+    }
+
+    #prExpandedSidebarNav .sub-item:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    #prExpandedSidebarNav .sub-item .text-sm {
+      color: rgba(230,244,247,0.72);
+    }
+
+    @media (max-width: 1280px) {
+      .kpi-grid,
+      .analytics-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .main-grid,
+      .engagement-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: relative;
+        height: auto;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .kpi-grid,
+      .analytics-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<script>
+window.__STOP_REDIRECTS__ = true;
+
+window.safeRedirect = function (url, mode = "href") {
+  if (window.__STOP_REDIRECTS__) {
+    console.warn("[REDIRECT BLOCKED]", url, mode);
+    return;
+  }
+  if (mode === "replace") window.location.replace(url);
+  else window.location.href = url;
+};
+
+(function () {
+  const token =
+    localStorage.getItem("fs_user_token") ||
+    sessionStorage.getItem("fs_user_token") ||
+    localStorage.getItem("authToken") ||
+    sessionStorage.getItem("authToken");
+
+  if (!token) {
+    window.safeRedirect("signin.html", "replace");
+    return;
+  }
+
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem("fs_user") || "null");
+  } catch (_) {
+    user = null;
+  }
+
+  const canPractitioner =
+    !!user?.dashboards?.practitioner ||
+    localStorage.getItem("can_access_practitioner_dashboard") === "true";
+
+  if (!canPractitioner) {
+    window.safeRedirect("dashboard.html", "replace");
+  }
+})();
+</script>
+
+<div id="dashboardModeSwitcherWrap" class="hidden px-6 pt-4">
+  <label class="text-xs text-slate-500">Dashboard</label>
+  <select id="dashboardModeSwitcher" class="input">
+    <option value="internal">Internal Dashboard</option>
+    <option value="practitioner">Practitioner Dashboard</option>
+  </select>
+</div>
+
+<div class="app-shell">
+  <aside class="sidebar p-4">
+    <div class="flex items-center gap-3 px-2 py-3">
+      <div class="h-11 w-11 rounded-2xl bg-teal-400/20 flex items-center justify-center text-lg font-bold text-teal-200">FS</div>
+      <div>
+        <div class="text-sm uppercase tracking-[0.18em] text-teal-100/70">FinSage</div>
+        <div class="text-lg font-semibold">Practitioner</div>
+      </div>
+    </div>
+
+    <div id="prSidebarNav" class="space-y-2"></div>
+
+    <div class="mt-8 rounded-2xl border border-white/10 bg-slate-900/20 p-3">
+      <div class="text-xs uppercase tracking-[0.16em] text-slate-300/60">Engagement Context</div>
+      <div class="mt-3 text-sm font-semibold" data-bind="engagement.title">--</div>
+      <div class="text-sm text-slate-200/70" data-bind="engagement.client_name">--</div>
+      <div class="mt-3 space-y-2 text-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-200/70">Due date</span>
+          <span data-bind="engagement.due_date">--</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-200/70">Cycle</span>
+          <span data-bind="engagement.cycle">--</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-200/70">Mode</span>
+          <span data-bind="engagement.mode">--</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="content-shell">
+    <!-- top strip: old area 2 moved into old area 3 -->
+    <header class="topbar px-6 pt-0">
+      <div class="w-full">
+        <div class="card rounded-t-none p-4">
+          <div class="flex flex-col gap-4">
+
+            <!-- TOP ROW -->
+            <div class="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
+              <!-- active context -->
+              <div class="min-w-0 flex-1">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Active Client Context</div>
+                <div class="mt-1 text-sm leading-6 text-slate-700">
+                  You are working in
+                  <span class="font-bold text-slate-900" data-bind="summary.client_name">--</span>
+                  as
+                  <span class="font-semibold text-slate-800" data-bind="summary.role_name">--</span>
+                  under
+                  <span class="font-semibold text-slate-800" data-bind="summary.access_scope">--</span>.
+                </div>
+              </div>
+
+              <!-- controls + profile -->
+              <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-end xl:shrink-0">
+                <div class="flex flex-col gap-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <label class="card flex items-center gap-2 px-2.5 py-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">View</span>
+                      <select class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[170px]" data-bind="filters.view">
+                        <option value="assignment">Engagement Dashboard</option>
+                        <option value="internal">Internal Dashboard</option>
+                      </select>
+                    </label>
+
+                    <label class="card flex items-center gap-2 px-2.5 py-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Client</span>
+                      <select class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[250px]" data-bind="filters.client_id"></select>
+                    </label>
+
+                    <label class="card flex items-center gap-2 px-2.5 py-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Access</span>
+                      <select class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[130px]" data-bind="filters.access_scope">
+                        <option value="assignment">Engagement</option>
+                        <option value="core">Core / Internal</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2">
+                    <button class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white" data-action="open-engagement">
+                      Open Engagement
+                    </button>
+                    <button class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700" data-action="view-deliverables">
+                      View Deliverables
+                    </button>
+                    <button class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700" data-action="open-action-center">
+                      Action Center
+                    </button>
+                  </div>
+                </div>
+
+                <div class="w-full xl:w-[280px] shrink-0">
+                  <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="text-xs uppercase tracking-[0.16em] text-slate-500">Active Profile</div>
+
+                    <div class="mt-3 flex items-center justify-between gap-2">
+                      <div>
+                        <div class="font-semibold text-slate-900" data-bind="profile.full_name">--</div>
+                        <div class="text-sm text-slate-600" data-bind="profile.title">--</div>
+                      </div>
+                      <span class="role-chip" data-bind="profile.role_chip">--</span>
+                    </div>
+
+                    <div class="mt-3 flex flex-wrap gap-2">
+                      <span class="badge badge-slate">Firm: <span data-bind="profile.firm_name">--</span></span>
+                      <span class="badge badge-brand">Scope: <span data-bind="profile.access_scope">--</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="px-6 py-6">
+      <!-- DASHBOARD -->
+      <section id="screen-dashboard" class="screen active space-y-6">
+        <section class="kpi-grid">
+          <div class="card p-5">
+            <div class="panel-subtitle">Active Engagements</div>
+            <div class="mt-2 metric-number" data-bind="kpis.active_assignments.value">--</div>
+            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.active_assignments.subtext">--</div>
+          </div>
+
+          <div class="card p-5">
+            <div class="panel-subtitle">Upcoming Deadlines</div>
+            <div class="mt-2 metric-number" data-bind="kpis.upcoming_deadlines.value">--</div>
+            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.upcoming_deadlines.subtext">--</div>
+          </div>
+
+          <div class="card p-5">
+            <div class="panel-subtitle">Trial Balance Snapshot</div>
+            <div class="mt-2 metric-number" data-bind="kpis.trial_balance_snapshot.value">--</div>
+            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.trial_balance_snapshot.subtext">--</div>
+          </div>
+
+          <div class="card p-5">
+            <div class="panel-subtitle">Approval Queue</div>
+            <div class="mt-2 metric-number" data-bind="kpis.approval_queue.value">--</div>
+            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.approval_queue.subtext">--</div>
+          </div>
+        </section>
+      </section>
+
+      <!-- ASSIGNMENTS -->
+      <section id="screen-assignments" class="screen hidden space-y-6">
+        <div class="card p-6">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div class="panel-title">Assignments</div>
+              <div class="panel-subtitle mt-1">Assignment work queue and engagement ownership</div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <input
+                id="assignmentsSearch"
+                type="text"
+                placeholder="Search engagement, code, or client"
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none min-w-[280px]"
+              />
+              <select id="assignmentsStatusFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none">
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="pending">Pending</option>
+                <option value="active">Active</option>
+                <option value="on_hold">On hold</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="archived">Archived</option>
+              </select>
+              <select id="assignmentsTypeFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none">
+                <option value="">All types</option>
+                <option value="bookkeeping">Bookkeeping</option>
+                <option value="compilation">Compilation</option>
+                <option value="audit">Audit</option>
+                <option value="tax">Tax</option>
+                <option value="advisory">Advisory</option>
+              </select>
+              <button id="assignmentsCreateBtn" class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white">
+                New Engagement
+              </button>
+              <button id="assignmentsRefreshBtn" class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div id="assignmentsMsg" class="mt-4 text-sm text-slate-500"></div>
+
+          <div class="mt-4 overflow-auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Engagement</th>
+                  <th>Client</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Cycle</th>
+                  <th>Due Date</th>
+                  <th>Manager</th>
+                  <th>Partner</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="assignmentsTableBody">
+                <tr>
+                  <td colspan="9" class="text-center text-slate-500">Loading assignments...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="assignmentDetailCard" class="card p-6 hidden">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div class="panel-title" id="assignmentDetailTitle">Engagement Detail</div>
+              <div class="panel-subtitle mt-1" id="assignmentDetailSubtitle">Select an engagement to see more detail.</div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button id="assignmentOpenReportingBtn" class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white">
+                Open Reporting Overview
+              </button>
+              <button id="assignmentOpenDeliverablesBtn" class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+                Pending Deliverables
+              </button>
+            </div>
+          </div>
+
+          <div id="assignmentDetailBody" class="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- CLIENTS -->
+      <section id="screen-clients" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Clients</div>
+          <div class="panel-subtitle mt-1">Client list, service status, and relationship context</div>
+          <div class="mt-4 text-sm text-slate-600">Clients screen placeholder.</div>
+        </div>
+      </section>
+
+      <!-- TEAM -->
+      <section id="screen-team" class="screen hidden space-y-6">
+        <div class="card p-6">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div class="panel-title">Team</div>
+              <div class="panel-subtitle mt-1">Team allocation and collaboration view</div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <select id="teamEngagementFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none min-w-[260px]">
+                <option value="">Select engagement</option>
+              </select>
+              <select id="teamActiveFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none">
+                <option value="true">Active only</option>
+                <option value="false">All team rows</option>
+              </select>
+              <button id="teamRefreshBtn" class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+                Refresh
+              </button>
+              <button id="teamAddMemberBtn" class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white">
+                Add Team Member
+              </button>
+            </div>
+          </div>
+
+          <div id="teamMsg" class="mt-4 text-sm text-slate-500"></div>
+
+          <div class="mt-4 overflow-auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Email</th>
+                  <th>Role on Engagement</th>
+                  <th>Allocation %</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="teamTableBody">
+                <tr>
+                  <td colspan="7" class="text-center text-slate-500">Select an engagement to load team members.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="teamSummaryCard" class="card p-6 hidden">
+          <div class="panel-title">Team Summary</div>
+          <div class="panel-subtitle mt-1" id="teamSummarySubtitle">--</div>
+          <div id="teamSummaryBody" class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- ANALYTICS -->
+      <section id="screen-analytics" class="screen hidden">
+        <div class="analytics-grid">
+          <div class="card p-5">
+            <div class="panel-title">Engagement Profitability</div>
+            <div class="panel-subtitle mt-1">Portfolio profitability snapshot</div>
+            <div class="mt-4 text-sm text-slate-600">Analytics placeholder.</div>
+          </div>
+          <div class="card p-5">
+            <div class="panel-title">Client Service Trends</div>
+            <div class="panel-subtitle mt-1">Relationship and service delivery trends</div>
+            <div class="mt-4 text-sm text-slate-600">Analytics placeholder.</div>
+          </div>
+          <div class="card p-5">
+            <div class="panel-title">Risk Alerts</div>
+            <div class="panel-subtitle mt-1">Escalations and monitoring</div>
+            <div class="mt-4 text-sm text-slate-600">Analytics placeholder.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REPORTING OVERVIEW -->
+      <section id="screen-reporting-overview" class="screen hidden">
+        <div class="space-y-6">
+          <div class="card p-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="panel-title">Reporting Overview</div>
+                <div class="panel-subtitle mt-1">
+                  Engagement summary, reporting cycle, deadlines, and readiness for the selected client engagement.
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <span id="reportingOverviewCycleBadge" class="badge badge-brand">--</span>
+                <span id="reportingOverviewStatusBadge" class="badge badge-warn">--</span>
+              </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Engagement</div>
+                <div id="reportingOverviewEngagementName" class="mt-2 font-semibold text-slate-900">--</div>
+                <div id="reportingOverviewClientName" class="mt-1 text-sm text-slate-600">--</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Reporting Cycle</div>
+                <div id="reportingOverviewCycleText" class="mt-2 font-semibold text-slate-900">--</div>
+                <div id="reportingOverviewYearEndText" class="mt-1 text-sm text-slate-600">--</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Due Date</div>
+                <div id="reportingOverviewDueDate" class="mt-2 font-semibold text-slate-900">--</div>
+                <div class="mt-1 text-sm text-slate-600">Final reporting package due</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Readiness</div>
+                <div id="reportingOverviewReadinessValue" class="mt-2 font-semibold text-slate-900">0%</div>
+                <div class="mini-chart mt-3"><span id="reportingOverviewReadinessBar" style="width:0%"></span></div>
+                <div id="reportingOverviewReadinessText" class="mt-2 text-sm text-slate-600">No reporting items yet</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div class="card p-6">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="panel-title">Reporting Milestones</div>
+                  <div class="panel-subtitle mt-1">Key engagement reporting steps and target dates</div>
+                </div>
+                <button id="reportingOverviewRefreshBtn" class="badge badge-slate">Refresh</button>
+              </div>
+
+              <div id="reportingOverviewMsg" class="mt-3 text-sm text-slate-500"></div>
+
+              <div class="mt-4 overflow-auto">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Milestone</th>
+                      <th>Owner</th>
+                      <th>Due Date</th>
+                      <th>Actions</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportingOverviewMilestonesBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card p-6">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="panel-title">Reporting Components</div>
+                  <div class="panel-subtitle mt-1">Status of core reporting deliverables for this engagement</div>
+                </div>
+                <button id="reportingComponentsRefreshBtn" class="badge badge-slate">Refresh</button>
+              </div>
+
+              <div class="mt-4 overflow-auto">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Component</th>
+                      <th>Prepared By</th>
+                      <th>Reviewed By</th>
+                      <th>Actions</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportingOverviewComponentsBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PENDING DELIVERABLES -->
+      <section id="screen-pending-deliverables" class="screen hidden">
+        <div class="space-y-6">
+          <div class="card p-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="panel-title">Pending Deliverables</div>
+                <div class="panel-subtitle mt-1">
+                  Client and engagement reporting items still outstanding for submission, preparation, or review.
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <button id="deliverablesRefreshBtn" class="badge badge-slate">Refresh</button>
+                <button id="deliverablesAddBtn" class="badge badge-brand">Add Deliverable</button>
+              </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Outstanding Items</div>
+                <div id="deliverablesOutstandingCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Still awaiting completion</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Overdue</div>
+                <div id="deliverablesOverdueCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Require follow-up</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Awaiting Client</div>
+                <div id="deliverablesAwaitingClientCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Pending client submission</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">In Review</div>
+                <div id="deliverablesInReviewCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Prepared and under review</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="panel-title">Deliverables Tracker</div>
+                <div class="panel-subtitle mt-1">Outstanding documents, reports, and supporting schedules</div>
+              </div>
+              <input
+                id="deliverablesSearch"
+                type="text"
+                placeholder="Search deliverables..."
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div id="deliverablesMsg" class="mt-3 text-sm text-slate-500"></div>
+
+            <div class="mt-4 overflow-auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Deliverable</th>
+                    <th>Requested From</th>
+                    <th>Assigned To</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                    <th>Priority</th>
+                  </tr>
+                </thead>
+                <tbody id="deliverablesTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DAY TO DAY POSTINGS -->
+      <section id="screen-day-to-day-postings" class="screen hidden">
+        <div class="space-y-6">
+          <div class="card p-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="panel-title">Day-to-Day Postings</div>
+                <div class="panel-subtitle mt-1">
+                  Daily client posting workflow across journals, receivables, payables, leases, and fixed assets.
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="badge badge-brand">Client Ledger Scope</span>
+                <button id="postingActivityRefreshBtn" class="badge badge-slate">Refresh</button>
+              </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Unposted Items</div>
+                <div id="postingUnpostedCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Awaiting processing</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Under Review</div>
+                <div id="postingUnderReviewCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Prepared and pending review</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Rejected / Returned</div>
+                <div id="postingReturnedCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Need correction and resubmission</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Posted Today</div>
+                <div id="postingPostedTodayCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Approved and posted</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="panel-title">Posting Activity</div>
+                <div class="panel-subtitle mt-1">Operational posting items for the selected engagement</div>
+              </div>
+              <input
+                id="postingActivitySearch"
+                type="text"
+                placeholder="Search posting activity..."
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div id="postingActivityMsg" class="mt-3 text-sm text-slate-500"></div>
+
+            <div class="mt-4 overflow-auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Module</th>
+                    <th>Reference</th>
+                    <th>Description</th>
+                    <th>Prepared By</th>
+                    <th>Reviewer</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="postingActivityTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MONTHLY CLOSE ROUTINES -->
+      <section id="screen-monthly-close-routines" class="screen hidden">
+        <div class="space-y-6">
+          <div class="card p-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="panel-title">Monthly Close Routines</div>
+                <div class="panel-subtitle mt-1">
+                  Month-end close checklist, progress tracking, and review workflow for the selected engagement.
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <span id="monthlyClosePeriodBadge" class="badge badge-brand">--</span>
+                <button id="monthlyCloseRefreshBtn" class="badge badge-slate">Refresh</button>
+              </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Close Progress</div>
+                <div id="monthlyCloseProgressValue" class="mt-2 font-semibold text-slate-900">0%</div>
+                <div class="mini-chart mt-3"><span id="monthlyCloseProgressBar" style="width:0%"></span></div>
+                <div class="mt-2 text-sm text-slate-600">Tasks completed this month</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Open Tasks</div>
+                <div id="monthlyCloseOpenCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Still to be completed</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Awaiting Review</div>
+                <div id="monthlyCloseReviewCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Prepared and pending sign-off</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Overdue</div>
+                <div id="monthlyCloseOverdueCount" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Requires immediate action</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-6">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="panel-title">Monthly Close Checklist</div>
+                <div class="panel-subtitle mt-1">Recurring period-end tasks for the engagement team</div>
+              </div>
+              <button id="monthlyCloseAddBtn" class="badge badge-brand">Add Task</button>
+            </div>
+
+            <div id="monthlyCloseMsg" class="mt-3 text-sm text-slate-500"></div>
+
+            <div class="mt-4 overflow-auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Owner</th>
+                    <th>Due Date</th>
+                    <th>Reviewer</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="monthlyCloseTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- YEAR-END REPORTING -->
+      <section id="screen-year-end-reporting" class="screen hidden">
+        <div class="space-y-6">
+          <div class="card p-6">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="panel-title">Year-End Reporting</div>
+                <div class="panel-subtitle mt-1">
+                  Annual reporting workflow, finalization controls, and partner sign-off readiness for the selected engagement.
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <span id="yearEndStageBadge" class="badge badge-warn">--</span>
+                <button id="yearEndRefreshBtn" class="badge badge-slate">Refresh</button>
+              </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Finalization Progress</div>
+                <div id="yearEndProgressValue" class="mt-2 font-semibold text-slate-900">0%</div>
+                <div class="mini-chart mt-3"><span id="yearEndProgressBar" style="width:0%"></span></div>
+                <div class="mt-2 text-sm text-slate-600">Year-end checklist completion</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Open Review Points</div>
+                <div id="yearEndOpenReviewPoints" class="mt-2 metric-number">0</div>
+                <div class="mt-1 text-sm text-slate-600">Need team resolution</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Approval Stage</div>
+                <div id="yearEndApprovalStage" class="mt-2 font-semibold text-slate-900">--</div>
+                <div class="mt-1 text-sm text-slate-600">Current sign-off stage</div>
+              </div>
+
+              <div class="card-soft p-4">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Expected Sign-Off</div>
+                <div id="yearEndExpectedSignoff" class="mt-2 font-semibold text-slate-900">--</div>
+                <div class="mt-1 text-sm text-slate-600">Target completion date</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div class="xl:col-span-2 card p-6">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="panel-title">Year-End Checklist</div>
+                  <div class="panel-subtitle mt-1">Core annual reporting controls and deliverables</div>
+                </div>
+                <button id="yearEndAddTaskBtn" class="badge badge-brand">Add Checklist Item</button>
+              </div>
+
+              <div id="yearEndMsg" class="mt-3 text-sm text-slate-500"></div>
+
+              <div class="mt-4 overflow-auto">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Task</th>
+                      <th>Owner</th>
+                      <th>Due Date</th>
+                      <th>Reviewer</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="yearEndTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card p-6">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="panel-title">Approvals & Sign-Off</div>
+                  <div class="panel-subtitle mt-1">Final review chain for the engagement reporting pack</div>
+                </div>
+                <button id="signoffAddBtn" class="badge badge-brand">Add Step</button>
+              </div>
+              <div id="yearEndSignoffWrap" class="mt-5 space-y-4"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ACTION CENTER -->
+      <section id="screen-action-center" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Action Center</div>
+          <div class="panel-subtitle mt-1">Approvals, sign-offs, escalations, and routing</div>
+          <div class="mt-4 text-sm text-slate-600">Action Center placeholder.</div>
+        </div>
+      </section>
+
+      <!-- JOURNAL ENTRIES -->
+      <section id="screen-journal-entries" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Journal Entries</div>
+          <div class="panel-subtitle mt-1">Manual postings and control-aware redirects</div>
+          <div class="mt-4 text-sm text-slate-600">Journal Entries placeholder.</div>
+        </div>
+      </section>
+
+      <!-- ACCOUNTS RECEIVABLE -->
+      <section id="screen-accounts-receivable" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Accounts Receivable</div>
+          <div class="panel-subtitle mt-1">Receipts, aging, controls, and review routing</div>
+          <div class="mt-4 text-sm text-slate-600">Accounts Receivable placeholder.</div>
+        </div>
+      </section>
+
+      <!-- ACCOUNTS PAYABLE -->
+      <section id="screen-accounts-payable" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Accounts Payable</div>
+          <div class="panel-subtitle mt-1">Bills, vendor workflows, and review stages</div>
+          <div class="mt-4 text-sm text-slate-600">Accounts Payable placeholder.</div>
+        </div>
+      </section>
+
+      <!-- LEASES -->
+      <section id="screen-leases" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Leases</div>
+          <div class="panel-subtitle mt-1">Monthly postings, modifications, terminations, and register views</div>
+          <div class="mt-4 text-sm text-slate-600">Leases placeholder.</div>
+        </div>
+      </section>
+
+      <!-- PPE -->
+      <section id="screen-ppe" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">PPE</div>
+          <div class="panel-subtitle mt-1">Asset events, depreciation, transfers, revaluations, and disposals</div>
+          <div class="mt-4 text-sm text-slate-600">PPE placeholder.</div>
+        </div>
+      </section>
+
+      <!-- REVIEW QUEUE -->
+      <section id="screen-review-queue" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Review Queue</div>
+          <div class="panel-subtitle mt-1">Manager review queue for postings and deliverables</div>
+          <div class="mt-4 text-sm text-slate-600">Review Queue placeholder.</div>
+        </div>
+      </section>
+
+      <!-- DELIVERABLES -->
+      <section id="screen-deliverables" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Deliverables</div>
+          <div class="panel-subtitle mt-1">Final reporting pack, documents, and outputs</div>
+          <div class="mt-4 text-sm text-slate-600">Deliverables placeholder.</div>
+        </div>
+      </section>
+
+      <!-- PARTNER SIGNOFF -->
+      <section id="screen-partner-signoff" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Partner Sign-Off</div>
+          <div class="panel-subtitle mt-1">Final approval and partner sign-off workflow</div>
+          <div class="mt-4 text-sm text-slate-600">Partner Sign-Off placeholder.</div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="screen-settings" class="screen hidden space-y-6">
+        <div class="card p-6">
+          <div class="panel-title">Settings</div>
+          <div class="panel-subtitle mt-1">Practice setup, user administration, and access controls</div>
+        </div>
+
+        <div id="settingsContent"></div>
+      </section>
+
+      <!-- SETTINGS: OVERVIEW -->
+      <section id="screen-settings-overview" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Settings Overview</div>
+          <div class="panel-subtitle mt-1">General settings, firm controls, and preferences</div>
+          <div class="mt-4 text-sm text-slate-600">Settings Overview placeholder.</div>
+        </div>
+      </section>
+
+      <!-- SETTINGS: USERS -->
+      <section id="screen-users" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Users</div>
+          <div class="panel-subtitle mt-1">Manage users, roles, and client access</div>
+          <div class="mt-4 text-sm text-slate-600">Users screen placeholder.</div>
+        </div>
+      </section>
+
+      <!-- SETTINGS: ROLES -->
+      <section id="screen-roles-permissions" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Roles & Permissions</div>
+          <div class="panel-subtitle mt-1">Control posting, review, sign-off, and access rules</div>
+          <div class="mt-4 text-sm text-slate-600">Roles & Permissions placeholder.</div>
+        </div>
+      </section>
+
+      <!-- SETTINGS: FIRM PREFS -->
+      <section id="screen-firm-preferences" class="screen hidden">
+        <div class="card p-6">
+          <div class="panel-title">Firm Preferences</div>
+          <div class="panel-subtitle mt-1">Practice defaults, engagement settings, and workspace preferences</div>
+          <div class="mt-4 text-sm text-slate-600">Firm Preferences placeholder.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="engagementModal" class="fixed inset-0 z-50 hidden flex items-start justify-center overflow-y-auto p-4">
+  <div id="engagementModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+
+<div class="relative w-[min(980px,94vw)] my-8">
+  <div class="border rounded-2xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+      <div class="p-4 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold text-slate-900">Create Engagement</div>
+          <div class="text-sm text-slate-500">Create a practitioner engagement and optionally assign a manager and partner.</div>
+        </div>
+        <button id="engagementModalClose" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+          Close
+        </button>
+      </div>
+
+      <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1">
+        <div>
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Customer *</label>
+            <button
+              id="engAddCustomerBtn"
+              type="button"
+              class="text-sm font-semibold text-teal-700 hover:text-teal-800"
+            >
+              Add Customer
+            </button>
+          </div>
+
+          <select id="engCustomerId" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="">Select customer</option>
+          </select>
+
+          <div class="mt-1 text-xs text-slate-500">
+            Only approved active customers should be used for engagements.
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Engagement Code</label>
+          <input id="engCode" type="text" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="ENG-2026-001" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Engagement Name *</label>
+          <input id="engName" type="text" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="ABC Traders Monthly Bookkeeping" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Type *</label>
+          <select id="engType" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="">Select type</option>
+            <option value="bookkeeping">Bookkeeping</option>
+            <option value="compilation">Compilation</option>
+            <option value="audit">Audit</option>
+            <option value="tax">Tax</option>
+            <option value="advisory">Advisory</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Status</label>
+          <select id="engStatus" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="draft">Draft</option>
+            <option value="pending">Pending</option>
+            <option value="active">Active</option>
+            <option value="on_hold">On hold</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Reporting Cycle</label>
+          <select id="engReportingCycle" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="">Select cycle</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="annual">Annual</option>
+            <option value="ad_hoc">Ad hoc</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Start Date</label>
+          <input id="engStartDate" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Due Date</label>
+          <input id="engDueDate" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">End Date</label>
+          <input id="engEndDate" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Priority</label>
+          <select id="engPriority" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="normal">Normal</option>
+            <option value="low">Low</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Workflow Stage</label>
+          <select id="engWorkflowStage" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="planning">Planning</option>
+            <option value="execution">Execution</option>
+            <option value="review">Review</option>
+            <option value="signoff">Sign-off</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+            Manager
+          </label>
+          <select
+            id="engManagerUserId"
+            class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none"
+          >
+            <option value="">Select manager</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+            Partner
+          </label>
+          <select
+            id="engPartnerUserId"
+            class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none"
+          >
+            <option value="">Select partner</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Description</label>
+          <textarea id="engDescription" rows="3" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="Short engagement description"></textarea>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Scope Summary</label>
+          <textarea id="engScopeSummary" rows="3" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="Bank recs, AR, AP, month-end close, FS drafting..."></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Fiscal Year End</label>
+          <input id="engFiscalYearEnd" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" />
+        </div>
+      </div>
+
+      <div class="px-5 pb-5">
+        <div id="engagementModalMsg" class="text-sm text-slate-500"></div>
+
+        <div class="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <button id="engagementModalCancel" class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+            Cancel
+          </button>
+          <button id="engagementModalSave" class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white">
+            Create Engagement
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="teamMemberModal" class="fixed inset-0 z-50 hidden">
+  <div id="teamMemberModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+
+  <div class="absolute left-1/2 top-12 w-[min(760px,92vw)] -translate-x-1/2">
+    <div class="border rounded-2xl bg-white shadow-xl overflow-hidden">
+      <div class="p-4 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold text-slate-900">Add Team Member</div>
+          <div class="text-sm text-slate-500">Assign a user to the selected engagement.</div>
+        </div>
+        <button id="teamMemberModalClose" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+          Close
+        </button>
+      </div>
+
+      <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="md:col-span-2">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Selected Engagement</label>
+          <div id="teamMemberEngagementLabel" class="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+            --
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">User ID *</label>
+          <input id="teamMemberUserId" type="number" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="e.g. 17" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Role on Engagement *</label>
+          <select id="teamMemberRole" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
+            <option value="">Select role</option>
+            <option value="preparer">Preparer</option>
+            <option value="reviewer">Reviewer</option>
+            <option value="manager">Manager</option>
+            <option value="partner">Partner</option>
+            <option value="qc">QC</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Allocation %</label>
+          <input id="teamMemberAllocation" type="number" min="0" max="100" step="0.01" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="e.g. 60" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Start Date</label>
+          <input id="teamMemberStartDate" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" />
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">End Date</label>
+          <input id="teamMemberEndDate" type="date" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Notes</label>
+          <textarea id="teamMemberNotes" rows="3" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none" placeholder="Optional assignment notes"></textarea>
+        </div>
+      </div>
+
+      <div class="px-5 pb-5">
+        <div id="teamMemberModalMsg" class="text-sm text-slate-500"></div>
+
+        <div class="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <button id="teamMemberModalCancel" class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+            Cancel
+          </button>
+          <button id="teamMemberModalSave" class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white">
+            Add Member
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REPORTING ITEM MODAL -->
+<div id="reportingItemModal" class="fixed inset-0 z-50 hidden">
+  <div id="reportingItemModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+  <div class="absolute left-1/2 top-10 w-[min(860px,92vw)] -translate-x-1/2">
+    <div class="border rounded-xl bg-white shadow-xl overflow-hidden">
+      <div class="p-3 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold" id="reportingItemModalTitle">Add reporting item</div>
+          <div class="text-xs text-slate-500" id="reportingItemModalSubtitle">Milestone or component for the selected engagement.</div>
+        </div>
+        <button id="reportingItemModalClose" class="btn">Close</button>
+      </div>
+
+      <div class="p-4 modal-form-grid">
+        <input type="hidden" id="reportingItemId" />
+
+        <div>
+          <label class="text-xs text-slate-500">Type</label>
+          <select id="reportingItemType" class="input w-full">
+            <option value="milestone">Milestone</option>
+            <option value="component">Component</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="modal-label">Code</label>
+          <input id="reportingItemCode" class="input w-full" placeholder="Optional code" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Name</label>
+          <input id="reportingItemName" class="input w-full" placeholder="Item name" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Description</label>
+          <textarea id="reportingItemDescription" class="input w-full min-h-[84px]" placeholder="Description"></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Owner</label>
+          <select id="reportingItemOwnerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Reviewer</label>
+          <select id="reportingItemReviewerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Due date</label>
+          <input id="reportingItemDueDate" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Status</label>
+          <select id="reportingItemStatus" class="input w-full">
+            <option value="not_started">Not started</option>
+            <option value="in_progress">In progress</option>
+            <option value="ready">Ready</option>
+            <option value="in_review">In review</option>
+            <option value="approved">Approved</option>
+            <option value="completed">Completed</option>
+            <option value="blocked">Blocked</option>
+            <option value="waived">Waived</option>
+            <option value="returned">Returned</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Priority</label>
+          <select id="reportingItemPriority" class="input w-full">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Sort order</label>
+          <input id="reportingItemSortOrder" type="number" class="input w-full" placeholder="0" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Notes</label>
+          <textarea id="reportingItemNotes" class="input w-full min-h-[84px]" placeholder="Notes"></textarea>
+        </div>
+
+        <div id="reportingItemModalMsg" class="col-span-2 text-sm text-slate-500"></div>
+      </div>
+
+      <div class="p-3 border-t flex items-center justify-end gap-2">
+        <button id="reportingItemModalCancel" class="btn">Cancel</button>
+        <button id="reportingItemModalSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DELIVERABLE MODAL -->
+<div id="deliverableModal" class="fixed inset-0 z-50 hidden">
+  <div id="deliverableModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+  <div class="absolute left-1/2 top-10 w-[min(860px,92vw)] -translate-x-1/2">
+    <div class="border rounded-xl bg-white shadow-xl overflow-hidden">
+      <div class="p-3 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold" id="deliverableModalTitle">Add deliverable</div>
+          <div class="text-xs text-slate-500">Outstanding document or reporting submission for the selected engagement.</div>
+        </div>
+        <button id="deliverableModalClose" class="btn">Close</button>
+      </div>
+
+      <div class="p-4 modal-form-grid">
+        <input type="hidden" id="deliverableId" />
+
+        <div>
+          <label class="modal-label">Code</label>
+          <input id="deliverableCode" class="input w-full" placeholder="Optional code" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Type</label>
+          <select id="deliverableType" class="input w-full">
+            <option value="">Select type</option>
+            <option value="client_document">Client document</option>
+            <option value="working_paper">Working paper</option>
+            <option value="fs_draft">FS draft</option>
+            <option value="confirmation">Confirmation</option>
+            <option value="tax_support">Tax support</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Deliverable name</label>
+          <input id="deliverableName" class="input w-full" placeholder="Deliverable name" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Requested from</label>
+          <input id="deliverableRequestedFrom" class="input w-full" placeholder="Client, bank, FS compiler..." />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Assigned to</label>
+          <select id="deliverableAssignedUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Reviewer</label>
+          <select id="deliverableReviewerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Due date</label>
+          <input id="deliverableDueDate" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Received date</label>
+          <input id="deliverableReceivedDate" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Status</label>
+          <select id="deliverableStatus" class="input w-full">
+            <option value="not_started">Not started</option>
+            <option value="requested">Requested</option>
+            <option value="outstanding">Outstanding</option>
+            <option value="received">Received</option>
+            <option value="in_review">In review</option>
+            <option value="completed">Completed</option>
+            <option value="waived">Waived</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Priority</label>
+          <select id="deliverablePriority" class="input w-full">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Document count</label>
+          <input id="deliverableDocumentCount" type="number" class="input w-full" placeholder="0" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Notes</label>
+          <textarea id="deliverableNotes" class="input w-full min-h-[84px]" placeholder="Notes"></textarea>
+        </div>
+
+        <div id="deliverableModalMsg" class="col-span-2 text-sm text-slate-500"></div>
+      </div>
+
+      <div class="p-3 border-t flex items-center justify-end gap-2">
+        <button id="deliverableModalCancel" class="btn">Cancel</button>
+        <button id="deliverableModalSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MONTHLY CLOSE TASK MODAL -->
+<div id="monthlyCloseModal" class="fixed inset-0 z-50 hidden">
+  <div id="monthlyCloseModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+  <div class="absolute left-1/2 top-10 w-[min(860px,92vw)] -translate-x-1/2">
+    <div class="border rounded-xl bg-white shadow-xl overflow-hidden">
+      <div class="p-3 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold" id="monthlyCloseModalTitle">Add monthly close task</div>
+          <div class="text-xs text-slate-500">Period-end task for the selected engagement.</div>
+        </div>
+        <button id="monthlyCloseModalClose" class="btn">Close</button>
+      </div>
+
+      <div class="p-4 modal-form-grid">
+        <input type="hidden" id="monthlyCloseTaskId" />
+
+        <div>
+          <label class="text-xs text-slate-500">Close period</label>
+          <input id="monthlyClosePeriod" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="modal-label">Code</label>
+          <input id="monthlyCloseTaskCode" class="input w-full" placeholder="Optional code" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Task name</label>
+          <input id="monthlyCloseTaskName" class="input w-full" placeholder="Task name" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Description</label>
+          <textarea id="monthlyCloseTaskDescription" class="input w-full min-h-[84px]" placeholder="Description"></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Owner</label>
+          <select id="monthlyCloseOwnerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Reviewer</label>
+          <select id="monthlyCloseReviewerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Due date</label>
+          <input id="monthlyCloseDueDate" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Status</label>
+          <select id="monthlyCloseStatus" class="input w-full">
+            <option value="not_started">Not started</option>
+            <option value="in_progress">In progress</option>
+            <option value="in_review">In review</option>
+            <option value="completed">Completed</option>
+            <option value="blocked">Blocked</option>
+            <option value="skipped">Skipped</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Priority</label>
+          <select id="monthlyClosePriority" class="input w-full">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Sort order</label>
+          <input id="monthlyCloseSortOrder" type="number" class="input w-full" placeholder="0" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Notes</label>
+          <textarea id="monthlyCloseNotes" class="input w-full min-h-[84px]" placeholder="Notes"></textarea>
+        </div>
+
+        <div id="monthlyCloseModalMsg" class="col-span-2 text-sm text-slate-500"></div>
+      </div>
+
+      <div class="p-3 border-t flex items-center justify-end gap-2">
+        <button id="monthlyCloseModalCancel" class="btn">Cancel</button>
+        <button id="monthlyCloseModalSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- YEAR END TASK MODAL -->
+<div id="yearEndTaskModal" class="fixed inset-0 z-50 hidden">
+  <div id="yearEndTaskModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+  <div class="absolute left-1/2 top-10 w-[min(860px,92vw)] -translate-x-1/2">
+    <div class="border rounded-xl bg-white shadow-xl overflow-hidden">
+      <div class="p-3 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold" id="yearEndTaskModalTitle">Add year-end task</div>
+          <div class="text-xs text-slate-500">Annual reporting control or checklist item.</div>
+        </div>
+        <button id="yearEndTaskModalClose" class="btn">Close</button>
+      </div>
+
+      <div class="p-4 modal-form-grid">
+        <input type="hidden" id="yearEndTaskId" />
+
+        <div>
+          <label class="text-xs text-slate-500">Reporting year end</label>
+          <input id="yearEndReportingYearEnd" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="modal-label">Code</label>
+          <input id="yearEndTaskCode" class="input w-full" placeholder="Optional code" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Task name</label>
+          <input id="yearEndTaskName" class="input w-full" placeholder="Task name" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Description</label>
+          <textarea id="yearEndTaskDescription" class="input w-full min-h-[84px]" placeholder="Description"></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Owner</label>
+          <select id="yearEndOwnerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Reviewer</label>
+          <select id="yearEndReviewerUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Due date</label>
+          <input id="yearEndDueDate" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Status</label>
+          <select id="yearEndStatus" class="input w-full">
+            <option value="not_started">Not started</option>
+            <option value="in_progress">In progress</option>
+            <option value="in_review">In review</option>
+            <option value="completed">Completed</option>
+            <option value="blocked">Blocked</option>
+            <option value="waived">Waived</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Priority</label>
+          <select id="yearEndPriority" class="input w-full">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Sort order</label>
+          <input id="yearEndSortOrder" type="number" class="input w-full" placeholder="0" />
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Notes</label>
+          <textarea id="yearEndNotes" class="input w-full min-h-[84px]" placeholder="Notes"></textarea>
+        </div>
+
+        <div id="yearEndTaskModalMsg" class="col-span-2 text-sm text-slate-500"></div>
+      </div>
+
+      <div class="p-3 border-t flex items-center justify-end gap-2">
+        <button id="yearEndTaskModalCancel" class="btn">Cancel</button>
+        <button id="yearEndTaskModalSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SIGNOFF STEP MODAL -->
+<div id="signoffStepModal" class="fixed inset-0 z-50 hidden">
+  <div id="signoffStepModalBackdrop" class="absolute inset-0 bg-black/40"></div>
+  <div class="absolute left-1/2 top-10 w-[min(860px,92vw)] -translate-x-1/2">
+    <div class="border rounded-xl bg-white shadow-xl overflow-hidden">
+      <div class="p-3 border-b flex items-center justify-between">
+        <div>
+          <div class="font-semibold" id="signoffStepModalTitle">Add sign-off step</div>
+          <div class="text-xs text-slate-500">Approval chain step for the selected engagement.</div>
+        </div>
+        <button id="signoffStepModalClose" class="btn">Close</button>
+      </div>
+
+      <div class="p-4 modal-form-grid">
+        <input type="hidden" id="signoffStepId" />
+
+        <div>
+          <label class="text-xs text-slate-500">Reporting year end</label>
+          <input id="signoffReportingYearEnd" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Step code</label>
+          <select id="signoffStepCode" class="input w-full">
+            <option value="manager_review">Manager review</option>
+            <option value="partner_review">Partner review</option>
+            <option value="qc_review">QC review</option>
+            <option value="final_signoff">Final sign-off</option>
+          </select>
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Step name</label>
+          <input id="signoffStepName" class="input w-full" placeholder="Step name" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Assigned user</label>
+          <select id="signoffAssignedUserId" class="input w-full"></select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Due date</label>
+          <input id="signoffDueDate" type="date" class="input w-full" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Status</label>
+          <select id="signoffStatus" class="input w-full">
+            <option value="not_started">Not started</option>
+            <option value="in_progress">In progress</option>
+            <option value="completed">Completed</option>
+            <option value="blocked">Blocked</option>
+            <option value="waived">Waived</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Sort order</label>
+          <input id="signoffSortOrder" type="number" class="input w-full" placeholder="0" />
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Required?</label>
+          <select id="signoffIsRequired" class="input w-full">
+            <option value="true" selected>Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+
+        <div class="col-span-2">
+          <label class="text-xs text-slate-500">Notes</label>
+          <textarea id="signoffNotes" class="input w-full min-h-[84px]" placeholder="Notes"></textarea>
+        </div>
+
+        <div id="signoffStepModalMsg" class="col-span-2 text-sm text-slate-500"></div>
+      </div>
+
+      <div class="p-3 border-t flex items-center justify-end gap-2">
+        <button id="signoffStepModalCancel" class="btn">Cancel</button>
+        <button id="signoffStepModalSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function getStoredUser() {
+    try {
+      return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function bindText(path, value) {
+    document.querySelectorAll(`[data-bind="${path}"]`).forEach((el) => {
+      el.textContent = value ?? "--";
+    });
+  }
+
+  function bindSelect(path, value) {
+    const el = document.querySelector(`[data-bind="${path}"]`);
+    if (el) el.value = value ?? "";
+  }
+
+  const user = getStoredUser();
+
+  bindText("profile.full_name", [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "--");
+  bindText("profile.title", user.role || "--");
+  bindText("profile.role_chip", user.role || "--");
+  bindText("profile.firm_name", localStorage.getItem("companyName") || user.company_name || "--");
+  bindText("profile.access_scope", user.access_scope || localStorage.getItem("access_scope") || "assignment");
+
+  bindText("engagement.client_name", user.company_name || localStorage.getItem("companyName") || "--");
+
+  bindSelect("filters.access_scope", user.access_scope || localStorage.getItem("access_scope") || "assignment");
+})();
+</script>
+
+<script src="practitionerdashboard.js" defer></script>
+</body>
+</html>

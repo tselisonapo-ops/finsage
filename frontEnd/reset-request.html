@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Forgot Password - FinSage</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui; background: #f5f7fb;
+           display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; margin: 0; }
+    .card { background: #fff; padding: 32px 40px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            max-width: 420px; width: 100%; text-align: center; }
+    input { width: 100%; padding: 10px; margin: 8px 0;
+            border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    .btn { margin-top: 16px; padding: 10px 18px; border-radius: 999px;
+           border: none; background: #00c8c8; color: #fff;
+           width: 100%; font-weight: 500; cursor: pointer; }
+    .status { margin-top: 12px; font-size: 0.9rem; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Forgot Password</h1>
+    <input type="email" id="resetEmail" placeholder="Email address" />
+    <button class="btn" onclick="requestPasswordReset()">Send reset link</button>
+    <p class="status" id="resetStatus"></p>
+  </div>
+
+  <script>
+    async function requestPasswordReset() {
+      const email = document.getElementById("resetEmail").value.trim();
+      const statusEl = document.getElementById("resetStatus");
+
+      if (!email) {
+        statusEl.textContent = "Please enter your email address.";
+        return;
+      }
+
+      try {
+        const res = await fetch("http://127.0.0.1:5000/api/auth/request-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+
+        const data = await res.json();
+        statusEl.textContent = res.ok
+          ? "If an account exists, a reset link has been sent."
+          : data.error || "Request failed.";
+      } catch (err) {
+        console.error("Reset request error:", err);
+        statusEl.textContent = "Network error.";
+      }
+    }
+  </script>
+</body>
+</html>

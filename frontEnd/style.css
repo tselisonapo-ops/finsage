@@ -1,0 +1,397 @@
+/* style.css - Complete Styling for Registration & COA Display */
+
+/* --- 1. Global Variables & Base Styles --- */
+:root {
+    /* Brand Colors */
+    --color-primary: #004d40; /* Deep Teal/Green - Primary Action */
+    --color-secondary: #009688; /* Accent Teal */
+    --color-text: #212121; /* Dark Grey for text */
+    --color-light-text: #757575; /* Medium Grey for labels/hints */
+    --color-bg: #f4f4f9; /* Light background */
+    --color-card-bg: #ffffff; /* White card background */
+    --color-border: #e0e0e0; /* Light grey border */
+    --color-success: #4caf50; /* Green */
+    --color-error: #e53935; /* Red for validation errors */
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.6;
+}
+
+/* --- 2. Registration Form Container & Layout --- */
+
+.registration-container {
+    max-width: 600px;
+    margin: 50px auto;
+    padding: 30px;
+    background-color: var(--color-card-bg);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.registration-container h2 {
+    text-align: center;
+    color: var(--color-primary);
+    margin-bottom: 25px;
+    padding-bottom: 10px;
+    border-bottom: 3px solid var(--color-secondary);
+}
+
+/* --- 3. Form Steps and Fields --- */
+
+fieldset {
+    border: none;
+    padding: 0;
+    margin: 0 0 20px 0;
+}
+
+.hidden-step {
+    display: none;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+}
+
+.active-step {
+    display: block;
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+
+legend {
+    font-size: 1.3em;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 20px;
+    padding: 0;
+}
+
+.input-group {
+    margin-bottom: 20px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--color-light-text);
+}
+
+.input-group input[required]:valid,
+.input-group select[required]:valid,
+.input-group textarea[required]:valid {
+    /* Subtle green border after successful initial entry */
+    border: 1px solid var(--color-border);
+}
+
+.input-group input:focus,
+.input-group select:focus,
+.input-group textarea:focus {
+    border-color: var(--color-secondary) !important;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.2);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
+select,
+textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 1em;
+}
+
+textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* --- 4. Tooltip and Helper Icon Styling (NEW) --- */
+.tooltip-container label {
+    display: flex;
+    align-items: center;
+}
+
+.info-icon {
+    font-size: 0.9em;
+    color: var(--color-secondary);
+    margin-left: 5px;
+    cursor: help;
+    position: relative;
+}
+
+.info-icon::before {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--color-text);
+    color: white;
+    padding: 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+    z-index: 20;
+    font-weight: 400;
+}
+
+.info-icon:hover::before {
+    opacity: 1;
+    visibility: visible;
+}
+
+
+/* --- 5. Button Styles --- */
+
+.button-group {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    margin-top: 30px;
+}
+
+.button-group button {
+    flex: 1;
+}
+
+button {
+    padding: 12px 25px;
+    font-size: 1.1em;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.1s, box-shadow 0.3s;
+}
+
+button[type="button"] { /* Next/Back button */
+    background-color: var(--color-secondary);
+    color: white;
+}
+
+button[type="submit"] { /* Complete Registration */
+    background-color: var(--color-primary);
+    color: white;
+}
+
+button:hover {
+    filter: brightness(1.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+button:active {
+    transform: scale(0.99);
+}
+
+/* --- 6. Progress Bar (NEW) --- */
+
+.progress-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    position: relative;
+    padding: 0 20px;
+}
+
+.progress-bar::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    right: 20px;
+    height: 3px;
+    background-color: var(--color-border);
+    transform: translateY(-50%);
+    z-index: 1;
+}
+
+.progress-bar span {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 0.9em;
+    color: var(--color-light-text);
+    transition: color 0.3s;
+    text-align: center;
+    max-width: 45%;
+}
+
+.progress-bar span::before {
+    content: attr(data-step);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background-color: var(--color-border);
+    color: var(--color-light-text);
+    font-weight: bold;
+    margin-bottom: 8px;
+    border: 3px solid var(--color-card-bg); /* White border to lift it over the line */
+    box-shadow: 0 0 0 1px var(--color-border);
+    transition: background-color 0.3s, color 0.3s, box-shadow 0.3s;
+}
+
+.progress-bar .active {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.progress-bar .active::before {
+    background-color: var(--color-primary);
+    color: white;
+    box-shadow: 0 0 0 3px rgba(0, 77, 64, 0.3);
+}
+
+.progress-bar .completed {
+    color: var(--color-secondary);
+}
+
+.progress-bar .completed::before {
+    content: '✓'; /* Checkmark for completed steps */
+    background-color: var(--color-secondary);
+    color: white;
+    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.3);
+}
+
+
+/* --- 7. COA Display Specific Styles --- */
+
+.coa-container { 
+    max-width: 1200px; 
+    margin: 40px auto; 
+    background-color: var(--color-card-bg); 
+    padding: 20px; 
+    border-radius: 8px; 
+    box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+    overflow-x: auto; 
+}
+
+.coa-container h2 { 
+    border-bottom: 2px solid var(--color-border); 
+    padding-bottom: 10px; 
+    text-align: left; 
+    color: var(--color-primary);
+}
+
+#controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    align-items: center;
+}
+
+#search-input {
+    flex-grow: 1; 
+    max-width: 400px;
+    padding: 10px; 
+    border-radius: 8px;
+}
+
+table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    margin-top: 20px; 
+}
+th, td { 
+    padding: 12px 15px; 
+    text-align: left; 
+    border-bottom: 1px solid var(--color-border); 
+}
+th { 
+    background-color: var(--color-primary); 
+    color: white; 
+    cursor: pointer; 
+    position: sticky; 
+    top: 0; 
+    z-index: 10;
+}
+tr:hover { 
+    background-color: #f1f1f1; 
+}
+.loading { 
+    text-align: center; 
+    padding: 50px; 
+}
+
+@media (max-width: 650px) {
+    .registration-container {
+        margin: 20px;
+        padding: 20px;
+    }
+    .progress-bar span {
+        font-size: 0.8em;
+    }
+    .button-group {
+        flex-direction: column;
+    }
+    .coa-container {
+        margin: 20px;
+    }
+}
+
+/* Header divider */
+.registration-container h2{
+  text-align:center;
+  color:#0f5132;
+  border-bottom:4px solid #0f8b6a;
+  border-bottom-left-radius:0;
+  border-bottom-right-radius:0;
+}
+
+/* Stepper (1 — 2) */
+.progress-bar{
+  margin-top:14px;
+  margin-bottom:18px;
+  gap:24px;
+  justify-content:space-between;
+}
+.progress-bar span{
+  display:flex; align-items:center; gap:10px;
+  color:#6b7280; font-weight:600; font-size:0.95rem;
+}
+.progress-bar span::before{
+  content:attr(data-step);
+  width:32px; height:32px; border-radius:999px;
+  display:grid; place-items:center;
+  background:#eef2f1; color:#0f5132; border:2px solid #cfe7e0;
+  font-weight:700;
+}
+.progress-bar .active{ color:#0f5132; }
+.progress-bar .active::before{ background:#e7fbf4; border-color:#0f8b6a; }
+.progress-bar .completed{ color:#0f8b6a; }
+.progress-bar .completed::before{ content:"✓"; background:#0f8b6a; color:#fff; border-color:#0f8b6a; }
+
+/* Card + fields */
+.registration-container{
+  max-width:760px; border-radius:14px;
+  box-shadow:0 12px 30px rgba(0,0,0,.12);
+}
+.input-group input, .input-group select, .input-group textarea{
+  border-radius:8px;
+}
+
+/* Full-width primary button */
+.button-group{ margin-top:22px; }
+.button-group button[type="button"],
+.button-group button[type="submit"]{
+  width:100%;
+  background:#0f8b6a;
+}
+.button-group button:hover{ filter:brightness(1.06); }

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Company Registration</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- ✅ load your custom css -->
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+
+<div class="registration-container">
+    <!-- Mini header / hero for registration page -->
+    <div class="mb-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="text-center sm:text-left">
+            <h2 class="text-xl font-bold text-[var(--color-primary)]">Create your FinSage account</h2>
+            <p class="text-sm text-[var(--color-light-text)]">30-day free trial • No credit card required to begin</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <button id="signinBtn" type="button"
+                    class="px-4 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50">
+                Sign in
+            </button>
+            <button id="signupBtn" type="button"
+                    class="px-4 py-2 rounded-lg text-white"
+                    style="background: var(--color-primary);">
+                Start 30-day free trial
+            </button>
+        </div>
+    </div>
+
+    <form id="registrationForm">
+        <h2>User & Company Registration</h2>
+
+        <div class="progress-bar">
+            <span id="step1-indicator" class="active" data-step="1">Admin Details</span>
+            <span id="step2-indicator" data-step="2">Company Setup</span>
+        </div>
+
+        <p id="formMessage" class="mt-3 text-sm text-center font-medium p-3 rounded-lg hidden"></p>
+
+        <!-- STEP 1 -->
+        <fieldset id="step-1" class="active-step">
+            <legend>Step 1: Administrator Details</legend>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                    <label for="firstName">First Name</label>
+                    <input type="text" id="firstName" name="firstName" required
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+                <div class="input-group">
+                    <label for="lastName">Last Name</label>
+                    <input type="text" id="lastName" name="lastName" required
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="email">Email Address (Login ID)</label>
+                <input type="email" id="email" name="email" required
+                       class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                    <small class="text-xs text-gray-500">Min 8 chars, must include 1 uppercase and 1 number.</small>
+                </div>
+                <div class="input-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="input-group relative">
+                <label for="phone">Phone Number (Optional)</label>
+
+                <!-- Wrapper for dial-code selector + phone input -->
+                <div class="flex">
+                    <!-- Country / dial-code button -->
+                    <button
+                        type="button"
+                        id="phoneCountryBtn"
+                        class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-l-lg bg-gray-50 text-sm
+                            focus:outline-none focus:ring-2 focus:ring-[rgba(0,150,136,0.3)] focus:border-[var(--color-secondary)]">
+                        <span id="phoneCountryFlag">🇿🇦</span>
+                        <span id="phoneCountryDial">+27</span>
+                    </button>
+
+                    <!-- Phone number input -->
+                    <input
+                        type="tel"
+                        id="phone"
+                        name="phone"
+                        placeholder="+27 82 123 4567"
+                        class="w-full p-3 border border-gray-300 border-l-0 rounded-r-lg
+                            focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+
+                <!-- Hidden field to store ISO country code for backend if needed -->
+                <input type="hidden" id="phoneCountryIso" name="phoneCountryIso" value="ZA">
+
+                <!-- Dropdown -->
+                <div
+                    id="phoneCountryDropdown"
+                    class="hidden absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-auto">
+                    <div class="p-2 border-b border-gray-200">
+                        <input
+                            type="text"
+                            id="phoneCountrySearch"
+                            placeholder="Search country / code..."
+                            class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none
+                                focus:border-[var(--color-secondary)] focus:ring-1 focus:ring-[rgba(0,150,136,0.3)]">
+                    </div>
+                    <div id="phoneCountryList" class="py-1 text-sm">
+                        <!-- options injected by app.js -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="accountType">Account Type</label>
+                <select id="accountType" name="accountType" required
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                    <option value="" disabled selected>Select...</option>
+                    <option value="practitioner">Practitioner (Accounting Practice)</option>
+                    <option value="enterprise">Enterprise (Company)</option>
+                </select>
+                <small class="text-xs text-gray-500">This changes wording later (e.g., Practice vs Company).</small>
+            </div>
+
+            <div class="input-group">
+            <label for="userRole">Your role in this organisation</label>
+            <select id="userRole" name="userRole" required
+                    class="w-full p-3 border border-gray-300 rounded-lg
+                            focus:border-[var(--color-secondary)]
+                            focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <option value="" disabled selected>Select your role...</option>
+            </select>
+            <small class="text-xs text-gray-500">
+                This helps FinSage tailor your dashboard, onboarding, and company defaults.
+            </small>
+            </div>
+
+            <div class="input-group">
+            <label for="needTeam" class="flex items-center font-normal text-gray-700">
+                <input type="checkbox" id="needTeam" name="needTeam"
+                    class="mr-2 h-4 w-4 text-[var(--color-secondary)] border-gray-300 rounded focus:ring-[var(--color-secondary)]">
+                I need to invite a team / give role-based access
+            </label>
+            <small class="text-xs text-gray-500">
+                Owners/Admins can add users later. Tick if you want to set it up now.
+            </small>
+            </div>
+
+            <!-- ✅ Wrap invite fields properly (so tags are balanced) -->
+            <div id="teamInviteBlock" class="hidden">
+            <div class="input-group">
+                <label for="ownerEmail">Owner email (recommended if you are not the Owner)</label>
+                <input type="email" id="ownerEmail" name="ownerEmail"
+                    placeholder="owner@company.com"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <small class="text-xs text-gray-500">
+                If you choose CFO/CEO/etc, invite the real Owner so they can take ownership and manage credit policy.
+                </small>
+            </div>
+
+            <div class="input-group">
+                <label for="inviteEmails">Team member email(s) to invite</label>
+                <textarea id="inviteEmails" name="inviteEmails"
+                        placeholder="e.g. clerk1@yourfirm.co.za, junior@yourfirm.co.za"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)] resize-y min-h-[70px]"></textarea>
+                <small class="text-xs text-gray-500">
+                Separate multiple emails with commas, spaces, or new lines.
+                </small>
+            </div>
+
+            <div class="input-group mb-0">
+                <label for="teamNote">Team Note (optional)</label>
+                <input type="text" id="teamNote" name="teamNote"
+                    placeholder="e.g., Load AP team after go-live"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+            </div>
+
+            <div class="button-group flex justify-end mt-6">
+                <button type="button" onclick="nextStep(1)"
+                        class="py-3 px-6 text-lg font-semibold rounded-lg shadow-md transition duration-200 ease-in-out bg-[var(--color-secondary)] text-white hover:bg-[#007d6f] hover:shadow-xl active:scale-[0.99] w-full sm:w-auto">
+                    Next: Company Setup
+                </button>
+            </div>
+        </fieldset>
+
+        <!-- STEP 2 -->
+        <fieldset id="step-2" class="hidden-step">
+            <legend>Step 2: Company Setup & Financial Basis</legend>
+
+            <div class="input-group">
+                <label for="companyName">Company/Entity Name</label>
+                <input type="text" id="companyName" name="companyName" required
+                class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="companyEmail">Company Email Address</label>
+                <input type="email" id="companyEmail" name="companyEmail" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+
+                <!-- ✅ NEW -->
+                <div class="input-group">
+                <label for="companyPhone">Company Phone (Optional)</label>
+                <input type="tel" id="companyPhone" name="companyPhone" placeholder="e.g., +27 11 123 4567"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="country">Country of Operation</label>
+                <select id="country" name="country" required
+                class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <option value="" disabled selected>Select country...</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="regNumber">Company Registration Number</label>
+                <input type="text" id="regNumber" name="regNumber" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+                <div class="input-group">
+                <label for="taxNumber">Tax Identification Number (TIN)</label>
+                <input type="text" id="taxNumber" name="taxNumber" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="vatNumber">VAT/Sales Tax Number (Optional)</label>
+                <input type="text" id="vatNumber" name="vatNumber" placeholder="Leave blank if not VAT registered"
+                class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+
+            <!-- 🔍 Google Places address search (optional helper) -->
+            <div class="input-group">
+            <label for="addressSearch">Registered Address (Search)</label>
+            <input type="text" id="addressSearch" name="addressSearch"
+                    placeholder="Start typing street, suburb, city..."
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            <small class="text-xs text-gray-500">
+                Optional: Use search to auto-fill structured fields. You can still type manually.
+            </small>
+            </div>
+
+            <!-- ✅ Registered address (structured) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            <div class="input-group">
+                <label for="regAddressLine1">Address Line 1</label>
+                <input type="text" id="regAddressLine1" name="regAddressLine1" required
+                    placeholder="Building/Unit + Street number + Street name"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+
+            <div class="input-group">
+                <label for="regAddressLine2">Address Line 2 (Optional)</label>
+                <input type="text" id="regAddressLine2" name="regAddressLine2"
+                    placeholder="Complex, Suite, Floor, etc."
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            <div class="input-group">
+                <label for="regLocality">Suburb / Locality</label>
+                <input type="text" id="regLocality" name="regLocality"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+
+            <div class="input-group">
+                <label for="regCity">City / Town</label>
+                <input type="text" id="regCity" name="regCity" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            <div class="input-group">
+                <label for="regRegion">State / Province / Region</label>
+                <input type="text" id="regRegion" name="regRegion"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+
+            <div class="input-group">
+                <label for="regPostalCode">Postal / ZIP Code</label>
+                <input type="text" id="regPostalCode" name="regPostalCode"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+            </div>
+            </div>
+
+            <!-- Optional google metadata -->
+            <input type="hidden" id="regPlaceId" name="regPlaceId">
+            <input type="hidden" id="regFormatted" name="regFormatted">
+            <input type="hidden" id="regLat" name="regLat">
+            <input type="hidden" id="regLng" name="regLng">
+
+            <hr class="my-4">
+
+            <!-- ✅ Postal address -->
+            <div class="input-group">
+            <label for="postalSameAsReg" class="flex items-center font-normal text-gray-700">
+                <input type="checkbox" id="postalSameAsReg" class="mr-2 h-4 w-4">
+                Postal address is the same as registered address
+            </label>
+            </div>
+
+            <div id="postalAddressBlock">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="postAddressLine1">Postal Address Line 1</label>
+                <input type="text" id="postAddressLine1" name="postAddressLine1"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+
+                <div class="input-group">
+                <label for="postAddressLine2">Postal Address Line 2 (Optional)</label>
+                <input type="text" id="postAddressLine2" name="postAddressLine2"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="postLocality">Suburb / Locality</label>
+                <input type="text" id="postLocality" name="postLocality"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+
+                <div class="input-group">
+                <label for="postCity">City / Town</label>
+                <input type="text" id="postCity" name="postCity"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="postRegion">State / Province / Region</label>
+                <input type="text" id="postRegion" name="postRegion"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+
+                <div class="input-group">
+                <label for="postPostalCode">Postal / ZIP Code</label>
+                <input type="text" id="postPostalCode" name="postPostalCode"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+            </div>
+
+            <!-- ✅ NEW -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="logoUrl">Company Logo URL (Optional)</label>
+                <input type="url" id="logoUrl" name="logoUrl" placeholder="https://example.com/logo.png"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <small class="text-xs text-gray-500">Use a direct public image URL (PNG/JPG/SVG).</small>
+                </div>
+
+                <!-- optional but useful for branding -->
+                <div class="input-group">
+                <label for="companyWebsite">Website (Optional)</label>
+                <input type="url" id="companyWebsite" name="companyWebsite" placeholder="https://yourcompany.com"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group">
+                <label for="industry">Industry (Select COA Template)</label>
+                <select id="industry" name="industry" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                    <option value="" disabled selected>Select your industry</option>
+                </select>
+                </div>
+                <div class="input-group">
+                <label for="subIndustry">Sub-industry</label>
+                <select id="subIndustry" name="subIndustry" disabled required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)] bg-gray-100 disabled:opacity-50">
+                    <option value="" disabled selected>Select sub-industry...</option>
+                </select>
+                </div>
+            </div>
+
+            <div id="coa-message" style="padding:10px;margin-top:-10px;margin-bottom:20px;background:#e8f5e9;border:1px solid #c8e6c9;border-radius:6px;color:#2e7d32;display:none;font-size:.9em;font-weight: 500;"></div>
+
+            <div class="input-group">
+                <label for="currency">Base Currency</label>
+                <select id="currency" name="currency" required
+                class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <option value="ZAR">ZAR - South African Rand</option>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
+                <option value="GBP">GBP - British Pound</option>
+                <option value="AUD">AUD - Australian Dollar</option>
+                <option value="CAD">CAD - Canadian Dollar</option>
+                <option value="INR">INR - Indian Rupee</option>
+                <option value="NGN">NGN - Nigerian Naira</option>
+                <option value="JPY">JPY - Japanese Yen</option>
+                <option value="BRL">BRL - Brazilian Real</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                <div class="input-group tooltip-container">
+                <label for="companyRegDate">
+                    Company Registration Date
+                    <span class="info-icon" title="Official date from the registrar (e.g., CIPC). Used for records and to suggest your first financial year.">
+                    &#9432;
+                    </span>
+                </label>
+                <input type="date" id="companyRegDate" name="companyRegDate" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <small class="text-xs text-gray-500 block">Date cannot be in the future.</small>
+                </div>
+
+                <div class="input-group tooltip-container">
+                <label for="finYearStart">
+                    Financial Year Start Date (DD/MM)
+                    <span class="info-icon" title="This date determines the start of your 12-month accounting cycle for reporting purposes.">
+                    &#9432;
+                    </span>
+                </label>
+                <input type="text" id="finYearStart" name="finYearStart" placeholder="e.g., 01/03" pattern="\d{2}/\d{2}" required
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:border-[var(--color-secondary)] focus:ring-2 focus:ring-[rgba(0,150,136,0.3)]">
+                <small class="text-xs text-gray-500 block">Must be exactly DD/MM format.</small>
+                </div>
+            </div>
+
+            <div class="button-group flex flex-col sm:flex-row-reverse gap-3 mt-8">
+                <button type="submit"
+                class="py-3 px-6 text-lg font-semibold rounded-lg shadow-md transition duration-200 ease-in-out bg-[var(--color-primary)] text-white hover:bg-[#003c32] hover:shadow-xl active:scale-[0.99] w-full sm:w-auto">
+                Complete Registration
+                </button>
+                <button type="button" onclick="prevStep(2)"
+                class="py-3 px-6 text-lg font-semibold rounded-lg shadow-md transition duration-200 ease-in-out bg-gray-400 text-white hover:bg-gray-500 active:scale-[0.99] w-full sm:w-auto">
+                Back
+                </button>
+            </div>
+         </fieldset>
+    </form>
+</div>
+
+<!-- Google Maps JS (Places library) -->
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
+
+<!-- Single JS file that handles everything -->
+<script src="app.js"></script>
+</body>
+</html>
+

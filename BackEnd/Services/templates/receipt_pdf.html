@@ -1,0 +1,557 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Receipt {{ receipt.number or ("RCPT-" ~ receipt.id) }}</title>
+
+  <style>
+    :root{
+      --ink:#0F2A3D;    /* navy */
+      --teal:#2FA4A9;   /* blue/teal */
+      --muted:#6B7280;
+      --line:#D6DAD8;
+      --soft:#EEF1F3;
+      --thead:#F4F6F7;
+    }
+
+    @page{ size:A4 portrait; margin:0; }
+
+    html, body{
+      margin:0;
+      padding:0;
+      background:#fff;
+      color:var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      font-size:12px;
+    }
+
+    /* ===== Toolbar (web only) ===== */
+    .toolbar{
+      position:sticky;
+      top:0;
+      z-index:50;
+      background:#fff;
+      border-bottom:1px solid var(--line);
+    }
+    .toolbar-inner{
+      max-width:1100px;
+      margin:0 auto;
+      padding:10px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .toolbar-title{ font-weight:900; color:var(--ink); font-size:13px; }
+    .toolbar-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .tbtn{
+      font-size:12px;
+      padding:7px 10px;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fff;
+      cursor:pointer;
+    }
+    .tbtn.primary{
+      background:var(--ink);
+      border-color:var(--ink);
+      color:#fff;
+    }
+
+    /* ===== Screen frame ===== */
+    .wrap{ padding:20px 0; background:#f3f4f6; }
+    .page{
+      width:210mm;
+      min-height:297mm;
+      margin:0 auto;
+      background:#fff;
+      box-shadow:0 0 0 1px rgba(15,42,61,0.12), 0 18px 45px rgba(15,42,61,0.25);
+      border-radius:4px;
+      box-sizing:border-box;
+    }
+
+    /* ===== Print/PDF ===== */
+    @media print{
+      .toolbar{ display:none !important; }
+      body{
+        background:#fff;
+        -webkit-print-color-adjust:exact;
+        print-color-adjust:exact;
+      }
+      .wrap{ padding:0; background:#fff; }
+      .page{
+        width:100% !important;
+        max-width:100% !important;
+        min-height:auto !important;
+        margin:0 !important;
+        border:none !important;
+        box-shadow:none !important;
+        border-radius:0 !important;
+      }
+      .debug-stamp{ display:none !important; }
+    }
+
+    /* ✅ RECEIPT deco (as requested)
+       - Small navy line at top
+       - Small teal line under header block (right above recipient/details)
+    */
+    .topline{
+      height:6px;
+      background:var(--ink) !important;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+    .midline{
+      height:3px;
+      background:var(--teal) !important;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+
+    /* ===== Content wrapper ===== */
+    .content{ padding:0 16px; box-sizing:border-box; }
+
+    /* ===== Header block ===== */
+    .headerblock{ padding:18px 0 10px 0; }
+
+    .receipt-title{
+      font-weight:900;
+      font-size:24px;
+      letter-spacing:1px;
+      color:var(--ink);
+      text-align:center;
+      margin:0;
+    }
+
+    .header-table{
+      width:100%;
+      border-collapse:collapse;
+      table-layout:fixed;
+    }
+    .header-table td{ vertical-align:top; }
+
+    /* 3 columns (PDF-safe) */
+    .h-left  { width:24%; }
+    .h-mid   { width:52%; text-align:center; }
+    .h-right { width:24%; }
+
+    .logo-box{
+      width:96px;
+      height:96px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+      overflow:hidden;
+      display:inline-block;
+      margin-top:6px;
+    }
+    .logo-box img{
+      width:100%;
+      height:100%;
+      object-fit:contain;
+      display:block;
+    }
+
+    .company-right{
+      text-align:right;
+      padding-top:2px;
+    }
+
+    .company-details{
+      display:inline-block;
+      text-align:left;
+      margin-top:6px;
+      transform:translateX(-26px);
+    }
+
+    .company-addr-right{
+      font-size:11px;
+      color:var(--muted);
+      line-height:1.45;
+    }
+
+    .company-contacts-right{
+      margin-top:6px;
+      font-size:11px;
+      color:var(--muted);
+      line-height:1.45;
+    }
+    .company-contacts-right .line{ display:block; }
+
+    .company-ids-right{
+      margin-top:8px;
+      font-size:11px;
+      color:var(--ink);
+      line-height:1.35;
+    }
+    .company-ids-right > div{ display:flex; gap:10px; }
+    .id-label{ min-width:56px; color:var(--muted); }
+    .id-val{ white-space:nowrap; font-size:11px; font-weight:800; }
+
+    .company-name-right{
+      font-weight:900 !important;
+      font-size:14px;
+      color:var(--ink);
+    }
+
+    /* ===== Shared blocks ===== */
+    .section{ padding:14px 0 0 0; }
+
+    .grid2{ width:100%; border-collapse:collapse; table-layout:fixed; }
+    .grid2 td{ vertical-align:top; width:50%; padding-right:10px; }
+    .grid2 td:last-child{ padding-right:0; }
+
+    .box{
+      border:1px solid var(--line) !important;
+      padding:10px 12px;
+      background:#fff;
+    }
+
+    .stitle{
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.35px;
+      font-size:11px;
+      margin:0 0 8px 0;
+    }
+    .muted{ color:var(--muted); line-height:1.55; }
+    .big{ font-weight:900; font-size:13px; margin:0 0 2px 0; }
+
+    .kv{ width:100%; border-collapse:collapse; font-size:12px; }
+    .kv td{ padding:4px 0; }
+    .kv td:first-child{ color:var(--muted); width:42%; }
+    .kv td:last-child{ text-align:right; font-weight:800; color:var(--ink); white-space:nowrap; }
+
+    /* ===== Allocations table ===== */
+    .lines-wrap{ padding:14px 0; }
+
+    table.lines{
+      width:100%;
+      border-collapse:collapse;
+      border:1px solid var(--line) !important;
+      font-size:12px;
+      table-layout:fixed;
+    }
+
+    table.lines thead th{
+      background:var(--thead) !important;
+      border-bottom:1px solid var(--line) !important;
+      padding:9px 8px;
+      text-transform:uppercase;
+      letter-spacing:.3px;
+      font-size:11px;
+      text-align:left;
+      color:var(--ink) !important;
+      white-space:nowrap;
+    }
+
+    table.lines tbody td{
+      border-top:1px solid var(--soft);
+      padding:9px 8px;
+      vertical-align:top;
+    }
+
+    table.lines tbody tr:nth-child(even) td{ background:#FAFBFB; }
+
+    .right{ text-align:right !important; white-space:nowrap; }
+    .center{ text-align:center !important; white-space:nowrap; }
+
+    /* ===== Totals ===== */
+    .bottom{ padding:0 0 14px 0; }
+    .bottom-grid{ width:100%; border-collapse:collapse; table-layout:fixed; }
+    .bottom-left{ width:60%; padding-right:10px; vertical-align:top; }
+    .bottom-right{ width:40%; padding-left:10px; vertical-align:top; }
+
+    .notes{
+      border:1px solid var(--line) !important;
+      padding:10px 12px;
+      min-height:62px;
+      background:#fff;
+    }
+
+    .totals{
+      border:1px solid var(--line) !important;
+      padding:10px 12px;
+      background:#fff;
+      box-sizing:border-box;
+    }
+
+    .totals-kv{
+      width:100%;
+      border-collapse:collapse;
+      font-size:12px;
+    }
+    .totals-kv td{
+      padding:6px 0;
+      border-top:1px solid var(--soft);
+    }
+    .totals-kv tr:first-child td{ border-top:none; }
+    .totals-kv td:first-child{ color:var(--muted); }
+    .totals-kv td:last-child{
+      text-align:right;
+      font-weight:800;
+      color:var(--ink);
+      white-space:nowrap;
+    }
+
+    .grand-row{
+      width:100%;
+      margin-top:8px;
+      padding-top:10px;
+      border-top:1px dashed var(--line);
+      border-collapse:collapse;
+    }
+    .grand-row td{
+      font-weight:900;
+      font-size:14px;
+      padding-top:8px;
+    }
+    .grand-row .glabel{ text-align:left; }
+    .grand-row .gamt{
+      text-align:right;
+      color:var(--teal) !important;
+      font-size:16px;
+      white-space:nowrap;
+    }
+
+    /* ===== Footer ===== */
+    .footer{
+      border-top:1px solid var(--line) !important;
+      padding:12px 16px;
+      font-size:11px;
+      color:var(--muted);
+      line-height:1.45;
+      background:#fff;
+    }
+
+    .box, table.lines, .notes, .totals, .headerblock { page-break-inside:avoid; }
+  </style>
+</head>
+
+<body>
+{# ---------- Helpers ---------- #}
+{% macro address_lines(address) -%}
+  {%- if address -%}
+    {%- for part in address.replace('\r','').replace('\n', ',').split(',') -%}
+      {%- set line = part.strip() -%}
+      {%- if line -%}
+        {{ line }}<br>
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro money(x) -%}
+  {{ "{:,.2f}".format((x or 0) | float) }}
+{%- endmacro %}
+
+{# ---------- Safe context ---------- #}
+{% set company = (company if company is defined and company else {}) %}
+{% set b = (branding if branding is defined and branding else (receipt.branding if receipt is defined and receipt.branding else {})) %}
+
+{% set rcpt_no = receipt.number or ("RCPT-" ~ receipt.id) %}
+{% set ccy = (receipt.currency or "ZAR") %}
+
+{% set c_name  = company.get('name') %}
+{% set c_reg   = company.get('company_reg_no') %}
+{% set c_vat   = company.get('vat') %}
+{% set c_email = company.get('company_email') %}
+{% set c_phone = company.get('company_phone') %}
+{% set c_addr  = company.get('physical_address') or company.get('postal_address') %}
+{% set addr_raw = b.address or c_addr or "" %}
+
+{% set logo = (company.get('logo_url') or b.logo_url or '') %}
+{% if logo and logo.startswith('/') %}
+  {% set logo = request.host_url.rstrip('/') ~ logo %}
+{% endif %}
+
+{% set company_name = b.company_name or receipt.company_name or c_name or "Company Name" %}
+
+<div class="toolbar"
+     id="receiptToolbar"
+     data-company-id="{{ receipt.company_id }}"
+     data-receipt-id="{{ receipt.id }}">
+  <div class="toolbar-inner">
+    <div class="toolbar-title">Receipt {{ rcpt_no }}</div>
+    <div class="toolbar-actions">
+      <button type="button" class="tbtn" onclick="window.print()">Print</button>
+      <button type="button" class="tbtn primary" onclick="history.back()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="page">
+
+    <!-- ✅ small navy line at top -->
+    <div class="topline"></div>
+
+    <div class="content">
+
+      <!-- Header -->
+      <div class="headerblock">
+        <table class="header-table">
+          <tr>
+            <!-- LEFT: Logo -->
+            <td class="h-left">
+              <span class="logo-box">
+                {% if logo %}
+                  <img src="{{ logo }}" alt="Logo" />
+                {% endif %}
+              </span>
+            </td>
+
+            <!-- MIDDLE: RECEIPT -->
+            <td class="h-mid">
+              <div class="receipt-title">RECEIPT</div>
+            </td>
+
+            <!-- RIGHT: Company block -->
+            <td class="h-right">
+              <div class="company-right">
+                <div class="company-name-right">{{ company_name }}</div>
+
+                <div class="company-details">
+                  {% if addr_raw %}
+                    <div class="company-addr-right">
+                      {{ address_lines(addr_raw) }}
+                    </div>
+                  {% endif %}
+
+                  <div class="company-contacts-right">
+                    {% set phone_out = b.contact_phone or c_phone %}
+                    {% set email_out = b.contact_email or c_email %}
+                    {% if phone_out %}<span class="line">{{ phone_out }}</span>{% endif %}
+                    {% if email_out %}<span class="line">{{ email_out }}</span>{% endif %}
+                  </div>
+
+                  <div class="company-ids-right">
+                    {% if b.reg_no or c_reg %}
+                      <div><span class="id-label">Reg #</span><span class="id-val">{{ b.reg_no or c_reg }}</span></div>
+                    {% endif %}
+                    {% if b.vat_no or c_vat %}
+                      <div><span class="id-label">VAT</span><span class="id-val">{{ b.vat_no or c_vat }}</span></div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- ✅ small blue/teal line below company details (just above recipient/details) -->
+      <div class="midline"></div>
+
+      <!-- RECEIVED FROM + RECEIPT DETAILS -->
+      <div class="section">
+        <table class="grid2">
+          <tr>
+            <td>
+              <div class="box">
+                <div class="stitle">Received From</div>
+                <div class="big">{{ receipt.customer_name or "—" }}</div>
+                <div class="muted">
+                  {{ receipt.customer_address or "" }}{% if receipt.customer_address %}<br>{% endif %}
+                  {% if receipt.customer_phone %}{{ receipt.customer_phone }}{% endif %}
+                  {% if receipt.customer_email %}{% if receipt.customer_phone %} • {% endif %}{{ receipt.customer_email }}{% endif %}
+                </div>
+              </div>
+            </td>
+
+            <td>
+              <div class="box">
+                <div class="stitle">Receipt Details</div>
+                <table class="kv">
+                  <tr><td>Receipt #</td><td>{{ rcpt_no }}</td></tr>
+                  <tr><td>Date</td><td>{{ receipt.receipt_date or receipt.date or "" }}</td></tr>
+                  <tr><td>Reference</td><td>{{ receipt.reference or "—" }}</td></tr>
+                  <tr><td>Method</td><td>{{ receipt.method or "Bank / Cash" }}</td></tr>
+                </table>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- ALLOCATIONS (optional) -->
+      <div class="lines-wrap">
+        <table class="lines">
+          <thead>
+            <tr>
+              <th style="width:38%;">Applied To</th>
+              <th style="width:22%;">Document #</th>
+              <th style="width:20%;">Document Date</th>
+              <th class="right" style="width:20%;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if receipt.allocations and receipt.allocations|length %}
+              {% for a in receipt.allocations %}
+                <tr>
+                  <td>Invoice</td>
+                  <td>{{ a.invoice_number or ("INV-" ~ a.invoice_id) }}</td>
+                  <td class="center">{{ a.invoice_date or "" }}</td>
+                  <td class="right">{{ ccy }} {{ money(a.amount) }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4" class="muted" style="padding:12px;">
+                  No allocations listed. (This receipt may be unallocated or recorded as a general payment.)
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- BOTTOM -->
+      <div class="bottom">
+        <table class="bottom-grid">
+          <tr>
+            <td class="bottom-left">
+              <div class="notes">
+                <div class="stitle">Notes</div>
+                <div class="muted">
+                  {{ receipt.description or "Thank you. This receipt confirms payment received." }}
+                </div>
+              </div>
+            </td>
+
+            <td class="bottom-right">
+              <div class="totals">
+                <div class="stitle">Totals</div>
+                <table class="totals-kv">
+                  <tr><td>Amount Received</td><td>{{ ccy }} {{ money(receipt.amount) }}</td></tr>
+                </table>
+
+                <table class="grand-row">
+                  <tr>
+                    <td class="glabel">Total</td>
+                    <td class="gamt">{{ ccy }} {{ money(receipt.amount) }}</td>
+                  </tr>
+                </table>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+    </div><!-- /.content -->
+
+    <div class="footer">
+      <div><b>{{ b.footer_text or "Thank you for your payment." }}</b></div>
+      <div>Generated by FinSage.</div>
+    </div>
+
+  </div>
+</div>
+
+<div class="debug-stamp" style="position:fixed;top:6px;left:6px;font-size:10px;color:#f00;z-index:9999;">
+  RECEIPT TEMPLATE v2026-01-06
+</div>
+
+</body>
+</html>

@@ -1,0 +1,676 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quotation {{ quote.number or ("QTE-" ~ quote.id) }}</title>
+
+  <style>
+    :root{
+      --ink:#0F2A3D;
+      --teal:#2FA4A9;
+      --muted:#6B7280;
+      --line:#D6DAD8;
+      --soft:#EEF1F3;
+      --thead:#F4F6F7;
+    }
+
+    @page{ size:A4 portrait; margin:0; }
+
+    html, body{
+      margin:0;
+      padding:0;
+      background:#fff;
+      color:var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      font-size:12px;
+    }
+
+    .toolbar{
+      position:sticky;
+      top:0;
+      z-index:50;
+      background:#fff;
+      border-bottom:1px solid var(--line);
+    }
+    .toolbar-inner{
+      max-width:1100px;
+      margin:0 auto;
+      padding:10px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .toolbar-title{ font-weight:900; color:var(--ink); font-size:13px; }
+    .toolbar-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .tbtn{
+      font-size:12px;
+      padding:7px 10px;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fff;
+      cursor:pointer;
+    }
+    .tbtn.primary{
+      background:var(--ink);
+      border-color:var(--ink);
+      color:#fff;
+    }
+
+    .wrap{ padding:20px 0; background:#f3f4f6; }
+    .page{
+      width:210mm;
+      min-height:297mm;
+      margin:0 auto;
+      background:#fff;
+      box-shadow:0 0 0 1px rgba(15,42,61,0.12), 0 18px 45px rgba(15,42,61,0.25);
+      border-radius:4px;
+      box-sizing:border-box;
+    }
+
+    @media print{
+      .toolbar{ display:none !important; }
+      body{
+        background:#fff;
+        -webkit-print-color-adjust:exact;
+        print-color-adjust:exact;
+      }
+      .wrap{ padding:0; background:#fff; }
+      .page{
+        width:100% !important;
+        max-width:100% !important;
+        min-height:auto !important;
+        margin:0 !important;
+        border:none !important;
+        box-shadow:none !important;
+        border-radius:0 !important;
+      }
+      .debug-stamp{ display:none !important; }
+    }
+
+    .hdrbar{
+      height:40px;
+      background:#0F2A3D !important;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+    .accent{
+      height:6px;
+      background:#2FA4A9 !important;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+
+    .content{ padding:0 16px; box-sizing:border-box; }
+
+    .headerblock{ padding:22px 0 14px 0; }
+
+    .doc-title{
+      font-weight:900;
+      font-size:24px;
+      letter-spacing:1px;
+      color:#0F2A3D;
+      text-align:center;
+      margin:0;
+    }
+
+    .header-table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+    .header-table td{ vertical-align:top; }
+
+    .h-left  { width:24%; }
+    .h-mid   { width:52%; text-align:center; }
+    .h-right { width:24%; }
+
+    .logo-box{
+      width:110px;
+      height:110px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+      overflow:hidden;
+      display:inline-block;
+      margin-top:10px;
+    }
+    .logo-box img{
+      width:100%;
+      height:100%;
+      object-fit:contain;
+      display:block;
+    }
+
+    .company-right{ text-align:right; padding-top:2px; }
+
+    .company-details{
+      display:inline-block;
+      text-align:left;
+      margin-top:6px;
+      transform:translateX(-26px);
+    }
+
+    .company-addr-right{
+      font-size:11px;
+      color:var(--muted);
+      line-height:1.45;
+    }
+
+    .company-contacts-right{
+      margin-top:6px;
+      font-size:11px;
+      color:var(--muted);
+      line-height:1.45;
+    }
+    .company-contacts-right .line{ display:block; }
+
+    .company-ids-right{
+      margin-top:8px;
+      font-size:11px;
+      color:var(--ink);
+      line-height:1.35;
+    }
+    .company-ids-right > div{
+      display:flex;
+      gap:10px;
+    }
+    .id-label{ min-width:56px; color:var(--muted); }
+    .id-val{ white-space:nowrap; font-size:11px; font-weight:800; }
+
+    .top-sep{
+      height:3px;
+      background:#2FA4A9 !important;
+      margin:0 0 10px 0;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+
+    .section{ padding:14px 0 0 0; }
+
+    .grid2{ width:100%; border-collapse:collapse; table-layout:fixed; }
+    .grid2 td{ vertical-align:top; width:50%; padding-right:10px; }
+    .grid2 td:last-child{ padding-right:0; }
+
+    .box{
+      border:1px solid #D6DAD8 !important;
+      padding:10px 12px;
+      background:#fff;
+    }
+
+    .stitle{
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.35px;
+      font-size:11px;
+      margin:0 0 8px 0;
+    }
+    .muted{ color:#6B7280; line-height:1.55; }
+    .big{ font-weight:900; font-size:13px; margin:0 0 2px 0; }
+
+    .kv{ width:100%; border-collapse:collapse; font-size:12px; }
+    .kv td{ padding:4px 0; }
+    .kv td:first-child{ color:#6B7280; width:42%; }
+    .kv td:last-child{ text-align:right; font-weight:800; color:#0F2A3D; white-space:nowrap; }
+
+    .lines-wrap{ padding:14px 0; }
+
+    table.lines{
+      width:100%;
+      border-collapse:collapse;
+      border:1px solid #D6DAD8 !important;
+      font-size:12px;
+      table-layout:fixed;
+    }
+
+    table.lines thead th{
+      background:#F4F6F7 !important;
+      border-bottom:1px solid #D6DAD8 !important;
+      padding:9px 8px;
+      text-transform:uppercase;
+      letter-spacing:.3px;
+      font-size:11px;
+      text-align:left;
+      color:#0F2A3D !important;
+      white-space:nowrap;
+    }
+
+    table.lines tbody td{
+      border-top:1px solid #EEF1F3;
+      padding:9px 8px;
+      vertical-align:top;
+    }
+
+    table.lines tbody td:nth-child(1),
+    table.lines tbody td:nth-child(2){
+      text-align:left;
+      word-wrap:break-word;
+      overflow-wrap:break-word;
+    }
+
+    table.lines tbody tr:nth-child(even) td{ background:#FAFBFB; }
+
+    table.lines td.qty,
+    table.lines td.unit,
+    table.lines td.vat,
+    table.lines td.total{
+      white-space:nowrap !important;
+    }
+
+    table.lines th.qty, table.lines td.qty,
+    table.lines th.unit, table.lines td.unit,
+    table.lines th.vat, table.lines td.vat{
+      text-align:center !important;
+    }
+
+    table.lines th.total,
+    table.lines td.total{
+      text-align:right !important;
+    }
+    table.lines td.total{ font-weight:400 !important; }
+
+    .item-name{ font-weight:900; }
+    .item-desc{ color:#6B7280; margin-top:3px; white-space:pre-wrap; }
+
+    .bottom{ padding:0 0 14px 0; }
+    .bottom-grid{ width:100%; border-collapse:collapse; table-layout:fixed; }
+    .bottom-left{ width:60%; padding-right:10px; vertical-align:top; }
+    .bottom-right{ width:40%; padding-left:10px; vertical-align:top; }
+
+    .notes{
+      border:1px solid #D6DAD8 !important;
+      padding:10px 12px;
+      min-height:62px;
+      background:#fff;
+    }
+
+    .totals{
+      border:1px solid #D6DAD8 !important;
+      padding:10px 12px;
+      background:#fff;
+      box-sizing:border-box;
+    }
+
+    .totals-kv{
+      width:100%;
+      border-collapse:collapse;
+      font-size:12px;
+    }
+    .totals-kv td{
+      padding:6px 0;
+      border-top:1px solid #EEF1F3;
+    }
+    .totals-kv tr:first-child td{ border-top:none; }
+    .totals-kv td:first-child{ color:#6B7280; }
+    .totals-kv td:last-child{
+      text-align:right;
+      font-weight:800;
+      color:#0F2A3D;
+      white-space:nowrap;
+    }
+
+    .company-name-right{
+      font-weight:900 !important;
+      font-size:14px;
+      color:var(--ink);
+    }
+
+    .grand-row{
+      width:100%;
+      margin-top:8px;
+      padding-top:10px;
+      border-top:1px dashed #D6DAD8;
+      border-collapse:collapse;
+    }
+    .grand-row td{
+      font-weight:900;
+      font-size:14px;
+      padding-top:8px;
+    }
+    .grand-row .glabel{ text-align:left; }
+    .grand-row .gamt{
+      text-align:right;
+      color:#2FA4A9 !important;
+      font-size:16px;
+      white-space:nowrap;
+    }
+
+    .company-name-right{
+      font-weight:900 !important;
+      font-size:14px;
+      color:var(--ink);
+    }
+
+    .footer{
+      border-top:1px solid #D6DAD8 !important;
+      padding:12px 16px;
+      font-size:11px;
+      color:#6B7280;
+      line-height:1.45;
+      background:#fff;
+    }
+
+    .box, table.lines, .notes, .totals, .headerblock { page-break-inside:avoid; }
+  </style>
+</head>
+
+<body>
+{# ---------- Helpers ---------- #}
+{% macro address_lines(address) -%}
+  {%- if address -%}
+    {%- for part in address.replace('\r','').replace('\n', ',').split(',') -%}
+      {%- set line = part.strip() -%}
+      {%- if line -%}
+        {{ line }}<br>
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro money(x) -%}
+  {{ "{:,.2f}".format((x or 0) | float) }}
+{%- endmacro %}
+
+{% macro qty_int(x) -%}
+  {{ ((x or 0) | float) | round(0, 'common') | int }}
+{%- endmacro %}
+
+{% macro money_paren(x) -%}
+  {% set v = ((x or 0) | float) %}
+  {% if v != 0 %}
+    ({{ "{:,.2f}".format(v | abs) }})
+  {% else %}
+    {{ "{:,.2f}".format(0) }}
+  {% endif %}
+{%- endmacro %}
+
+{# ---------- Safe context ---------- #}
+{% set company = (company if company is defined and company else {}) %}
+{% set b = quote.branding or {} %}
+{% set q_no = quote.number or ("QTE-" ~ quote.id) %}
+{% set ccy = (quote.currency or "ZAR") %}
+
+{# dict-safe company fields #}
+{% set c_name  = company.get('name') %}
+{% set c_reg   = company.get('company_reg_no') %}
+{% set c_vat   = company.get('vat') %}
+{% set c_email = company.get('company_email') %}
+{% set c_phone = company.get('company_phone') %}
+{% set c_addr  = company.get('physical_address') or company.get('postal_address') %}
+{% set addr_raw = b.address or c_addr or "" %}
+
+{# logo url #}
+{% set logo = (company.get('logo_url') or b.logo_url or '') %}
+{% if logo and logo.startswith('/') %}
+  {% set logo = request.host_url.rstrip('/') ~ logo %}
+{% endif %}
+
+{% set company_name = b.company_name or quote.company_name or c_name or "Company Name" %}
+
+<div class="toolbar"
+     id="quoteToolbar"
+     data-company-id="{{ quote.company_id }}"
+     data-quote-id="{{ quote.id }}"
+     data-pdf-url="{{ pdf_url | default('', true) }}">
+  <div class="toolbar-inner">
+    <div class="toolbar-title">Quotation {{ q_no }}</div>
+    <div class="toolbar-actions">
+      <button type="button" class="tbtn" id="btnExportPdf">Export PDF</button>
+      <button type="button" class="tbtn" id="btnPrintPdf">Print PDF</button>
+      <button type="button" class="tbtn" id="btnSendEmail">Send Email</button>
+      <button type="button" class="tbtn primary"
+        onclick="window.location.href='http://127.0.0.1:5500/dashboard.html?company_id={{ quote.company_id }}'">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="page">
+
+    <div class="hdrbar"></div>
+    <div class="accent"></div>
+
+    <div class="content">
+
+      <!-- Header -->
+      <div class="headerblock">
+        <table class="header-table">
+          <tr>
+            <td class="h-left">
+              <span class="logo-box">
+                {% if logo %}
+                  <img src="{{ logo }}" alt="Logo" />
+                {% endif %}
+              </span>
+            </td>
+
+            <td class="h-mid">
+              <div class="doc-title">QUOTATION</div>
+            </td>
+
+            <td class="h-right">
+              <div class="company-right">
+                <div class="company-name-right">{{ company_name }}</div>
+
+                <div class="company-details">
+                  {% if addr_raw %}
+                    <div class="company-addr-right">
+                      {{ address_lines(addr_raw) }}
+                    </div>
+                  {% endif %}
+
+                  <div class="company-contacts-right">
+                    {% set phone_out = b.contact_phone or c_phone %}
+                    {% set email_out = b.contact_email or c_email %}
+                    {% if phone_out %}<span class="line">{{ phone_out }}</span>{% endif %}
+                    {% if email_out %}<span class="line">{{ email_out }}</span>{% endif %}
+                  </div>
+
+                  <div class="company-ids-right">
+                    {% if b.reg_no or c_reg %}
+                      <div><span class="id-label">Reg #</span><span class="id-val">{{ b.reg_no or c_reg }}</span></div>
+                    {% endif %}
+                    {% if b.vat_no or c_vat %}
+                      <div><span class="id-label">VAT</span><span class="id-val">{{ b.vat_no or c_vat }}</span></div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="top-sep"></div>
+
+      <!-- BILL TO + QUOTE DETAILS -->
+      <div class="section">
+        <table class="grid2">
+          <tr>
+            <td>
+              <div class="box">
+                <div class="stitle">Bill To</div>
+                <div class="big">{{ quote.customer_name or "" }}</div>
+                <div class="muted">
+                  {{ quote.customer_address or quote.billing_address or "" }}<br>
+                  {% if quote.customer_phone %}{{ quote.customer_phone }}{% endif %}
+                  {% if quote.customer_email %}{% if quote.customer_phone %} • {% endif %}{{ quote.customer_email }}{% endif %}
+                </div>
+              </div>
+            </td>
+
+            <td>
+              <div class="box">
+                <div class="stitle">Quotation Details</div>
+                <table class="kv">
+                  <tr><td>Quote #</td><td>{{ q_no }}</td></tr>
+                  <tr><td>Date</td><td>{{ quote.quotation_date or "" }}</td></tr>
+                  <tr><td>Valid Until</td><td>{{ quote.valid_until or "" }}</td></tr>
+                </table>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- LINES -->
+      <div class="lines-wrap">
+        <table class="lines">
+          <thead>
+            <tr>
+              <th style="width:22%;">Item / Service</th>
+              <th style="width:24%;">Description</th>
+              <th class="qty"  style="width:6%;">Qty</th>
+              <th class="unit" style="width:12%;">Unit</th>
+              <th class="vat"  style="width:10%;">VAT</th>
+              <th class="total" style="width:16%;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if quote.lines and quote.lines|length %}
+              {% for ln in quote.lines %}
+                <tr>
+                  <td><div class="item-name">{{ ln.item_name or "—" }}</div></td>
+                  <td>{% if ln.description %}<div class="item-desc">{{ ln.description }}</div>{% endif %}</td>
+                  <td class="qty">{{ qty_int(ln.quantity) }}</td>
+                  <td class="unit">{{ ccy }} {{ money(ln.unit_price) }}</td>
+                  <td class="vat">{{ ccy }} {{ money(ln.vat_amount) }}</td>
+                  <td class="total">{{ ccy }} {{ money(ln.total_amount) }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr><td colspan="6" class="muted" style="padding:12px;">No lines</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- BOTTOM -->
+      <div class="bottom">
+        <table class="bottom-grid">
+          <tr>
+            <td class="bottom-left">
+              <div class="notes">
+                <div class="stitle">Terms</div>
+                <div class="muted">
+                  {{ quote.terms or "This quotation is valid until the date shown above. Prices and availability may change after expiry." }}
+                </div>
+              </div>
+
+              {% if quote.notes %}
+                <div class="notes" style="margin-top:10px;">
+                  <div class="stitle">Notes</div>
+                  <div class="muted">{{ quote.notes }}</div>
+                </div>
+              {% endif %}
+            </td>
+
+            <td class="bottom-right">
+              <div class="totals">
+                <div class="stitle">Totals</div>
+                <table class="totals-kv">
+                  <tr><td>Subtotal</td><td>{{ ccy }} {{ money(quote.subtotal_amount) }}</td></tr>
+                  <tr><td>Discount</td><td>{{ ccy }} {{ money_paren(quote.discount_amount) }}</td></tr>
+                  <tr><td>VAT</td><td>{{ ccy }} {{ money(quote.vat_amount) }}</td></tr>
+                </table>
+
+                <table class="grand-row">
+                  <tr>
+                    <td class="glabel">Total</td>
+                    <td class="gamt">{{ ccy }} {{ money(quote.total_amount or quote.total) }}</td>
+                  </tr>
+                </table>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+    </div><!-- /.content -->
+
+    <div class="footer">
+      <div><b>{{ b.footer_text or "Thank you for your interest." }}</b></div>
+      <div>This quotation is not a tax invoice. Generated by FinSage.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const tb = document.getElementById("quoteToolbar");
+  if (!tb) return;
+
+  const pdfUrl    = tb.dataset.pdfUrl || "";
+  const companyId = tb.dataset.companyId;
+  const quoteId   = tb.dataset.quoteId;
+
+  const btnExport = document.getElementById("btnExportPdf");
+  const btnPrint  = document.getElementById("btnPrintPdf");
+  const btnSend   = document.getElementById("btnSendEmail");
+  const btnClose  = document.getElementById("btnClose");
+
+  if (btnExport) {
+    btnExport.addEventListener("click", () => {
+      if (!pdfUrl) return alert("PDF URL not provided by server.");
+      window.open(pdfUrl, "_blank");
+    });
+  }
+
+  if (btnPrint) {
+    btnPrint.addEventListener("click", () => {
+      if (!pdfUrl) return alert("PDF URL not provided by server.");
+      const w = window.open(pdfUrl, "_blank");
+      w?.addEventListener("load", () => { try { w.print(); } catch (e) {} });
+    });
+  }
+
+  const API_BASE = "http://127.0.0.1:5000";
+
+  btnSend.addEventListener("click", async () => {
+    const token = (typeof window.getToken === "function" ? window.getToken() : "") || "";
+    if (!token) {
+      alert("You are not logged in. Please sign in again.");
+      return;
+    }
+
+    try {
+      btnSend.disabled = true;
+      btnSend.textContent = "Sending...";
+
+      const res = await fetch(`${API_BASE}/api/companies/${companyId}/quotes/${quoteId}/email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return alert(data?.error || "Failed to send email.");
+
+      alert(`Email sent ✅ to ${data.sent_to || "customer"}`);
+    } catch (e) {
+      console.error(e);
+      alert("Error sending email.");
+    } finally {
+      btnSend.disabled = false;
+      btnSend.textContent = "Send Email";
+    }
+  });
+
+  if (btnClose) {
+    btnClose.addEventListener("click", () => {
+      const cid = companyId || "{{ quote.company_id }}";
+      window.location.href = `http://127.0.0.1:5500/dashboard.html?company_id=${cid}`;
+    });
+  }
+});
+</script>
+
+<div class="debug-stamp" style="position:fixed;top:6px;left:6px;font-size:10px;color:#f00;z-index:9999;">
+  QUOTE TEMPLATE v2026-01-26
+</div>
+
+</body>
+</html>

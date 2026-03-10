@@ -1,0 +1,16 @@
+{
+  "files.autoSave": "afterDelay",
+  "editor.unicodeHighlight.invisibleCharacters": false,
+
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/backend",
+    "${workspaceFolder}/BackEnd",
+    "${workspaceFolder}/BackEnd/Services"
+  ],
+
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+
+  "files.associations": {
+    "*.py": "python"
+  }
+}
