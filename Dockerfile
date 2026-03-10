@@ -1,6 +1,5 @@
 FROM python:3.14-slim
 
-# Install wkhtmltopdf
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     wget \
@@ -16,20 +15,14 @@ RUN apt-get update && apt-get install -y \
     libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install wkhtmltopdf
-RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6.1-1.buster_amd64.deb \
-    && apt-get install -y ./wkhtmltox_0.12.6.1-1.buster_amd64.deb \
-    && rm wkhtmltox_0.12.6.1-1.buster_amd64.deb
+# Download and install wkhtmltopdf binary
+RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.6.1/wkhtmltox-0.12.6.1_linux-generic-amd64.tar.xz \
+    && tar -xf wkhtmltox-0.12.6.1_linux-generic-amd64.tar.xz \
+    && cp wkhtmltox/bin/wkhtmltopdf /usr/local/bin/ \
+    && rm -rf wkhtmltox wkhtmltox-0.12.6.1_linux-generic-amd64.tar.xz
 
-
-# Set workdir
 WORKDIR /app
-
-# Copy code
 COPY . .
-
-# Install Python dependencies
 RUN pip install -r BackEnd/requirements.txt
 
-# Start command
 CMD ["gunicorn", "BackEnd.Services.api_server:app"]
