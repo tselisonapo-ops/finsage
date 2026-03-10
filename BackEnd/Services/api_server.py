@@ -187,6 +187,14 @@ def get_db_connection():
 
 from flask import Flask
 
+import pdfkit
+
+try:
+    config = pdfkit.configuration()
+    print(f"[DEBUG] wkhtmltopdf path: {config.wkhtmltopdf}")
+except Exception as e:
+    print(f"[DEBUG] wkhtmltopdf not found: {e}")
+
 # keep your existing app initialization
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
 
