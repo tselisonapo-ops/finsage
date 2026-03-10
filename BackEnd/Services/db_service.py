@@ -64,6 +64,8 @@ if TYPE_CHECKING:
 DEFAULT_AR_LEDGER_CODE = "BS_CA_9002"
 
 DB_CONNECTION_STRING = os.getenv("MASTER_DB_DSN") or os.getenv("DATABASE_URL")
+print("[DEBUG] MASTER_DB_DSN =", os.getenv("MASTER_DB_DSN"))
+
 if not DB_CONNECTION_STRING:
     raise RuntimeError("MASTER_DB_DSN (or DATABASE_URL) is not set")
 
