@@ -34559,7 +34559,7 @@ class DatabaseService:
                 # journal header
                 j_date = row.get("period_end")
                 lease = self.get_lease(company_id, int(row["lease_id"])) or {}
-                desc = f"IFRS 16 monthly posting – {lease.get('lease_name') or f'Lease {row['lease_id']}'} – P{row['period_no']}"
+                desc = f"IFRS 16 monthly posting – {lease.get('lease_name') or 'Lease ' + str(row['lease_id'])} – P{row['period_no']}"
 
                 entry = {
                     "date": j_date,
