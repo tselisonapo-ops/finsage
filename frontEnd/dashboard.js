@@ -21783,6 +21783,7 @@ window.postTerm = async function postTerm() {
   const leaseFrame    = document.getElementById("leaseWizardFrame");
 
   if (!leaseNavBtn || !leaseDrawer || !leaseFrame) return;
+
   if (leaseNavBtn.dataset.bound === "1") return;
   leaseNavBtn.dataset.bound = "1";
 
@@ -21801,14 +21802,35 @@ window.postTerm = async function postTerm() {
       leaseFrame.setAttribute("src", LEASE_WIZARD_URL);
     }
 
-    const send = () => window.openLeaseWizard?.({ source: "nav" });
+    const send = () => {
+      const token =
+        window.getToken?.() ||
+        localStorage.getItem("fs_user_token") ||
+        sessionStorage.getItem("fs_user_token");
+
+      const companyId = window.getActiveCompanyId?.();
+
+      leaseFrame.contentWindow?.postMessage(
+        {
+          type: "lease_wizard_context",
+          token,
+          companyId,
+          source: "nav",
+        },
+        "*"
+      );
+    };
 
     if (leaseFrame.dataset.loaded === "1") send();
     else {
-      leaseFrame.addEventListener("load", () => {
-        leaseFrame.dataset.loaded = "1";
-        send();
-      }, { once: true });
+      leaseFrame.addEventListener(
+        "load",
+        () => {
+          leaseFrame.dataset.loaded = "1";
+          send();
+        },
+        { once: true }
+      );
     }
   });
 
