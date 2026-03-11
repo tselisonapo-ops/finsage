@@ -224,6 +224,8 @@ def must_approve_customer_before_invoicing(mode: str, policy: dict) -> bool:
     # ✅ tie invoicing permission to customer approval gate
     return customer_approval_required(mode, policy)
 
+from typing import Optional
+
 def invoice_review_required(mode: str, policy: dict, user: Optional[dict] = None) -> bool:
     user = user or {}
     if is_assignment_execution_context(user):
@@ -239,6 +241,7 @@ def invoice_review_required(mode: str, policy: dict, user: Optional[dict] = None
         p.get("review_enabled", False) or
         p.get("require_customer_approval", False)
     )
+
 
 def must_approve_customer_before_invoicing(mode: str, policy: dict) -> bool:
     return invoice_review_required(mode, policy)
