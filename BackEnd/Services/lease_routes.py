@@ -933,7 +933,8 @@ def leases_monthly_due(company_id: int):
                     "action": "post_lease_month",
                     "entity_type": "lease_schedule",
                     "entity_id": schedule_id,
-                    "entity_ref": f"{r.get('lease_name') or f'Lease {int(r['lease_id'])}'} P{int(r['period_no'])}",
+                    "entity_ref": f"{r.get('lease_name') or 'Lease ' + str(int(r['lease_id']))} P{int(r['period_no'])}",
+
                     "amount": float(r.get("payment") or 0.0),
                     # currency is optional; include if your rows include it
                     "currency": (r.get("currency") or None),
