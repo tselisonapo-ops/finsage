@@ -1,6 +1,13 @@
 from BackEnd.Services.company_context import normalize_role
 from flask import jsonify
+import sys
+from typing import Optional
 
+if sys.version_info >= (3, 10):
+    UserType = dict | None
+else:
+    UserType = Optional[dict]
+    
 def user_role(user: dict) -> str:
     return normalize_role(user.get("user_role") or user.get("role") or user.get("system_role") or "")
 
