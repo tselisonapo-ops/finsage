@@ -31,7 +31,7 @@ function App() {
     const read = () => {
       try {
         const cid = getWizardCompanyId();
-        setCompanyId(cid);
+        if (cid) setCompanyId(Number(cid));
       } catch {
         // not ready yet
       }
@@ -50,8 +50,9 @@ function App() {
       localStorage.setItem("fs_user_token", token);
       sessionStorage.setItem("fs_user_token", token);
       sessionStorage.setItem("active_company_id", String(companyId));
+      localStorage.setItem("active_company_id", String(companyId));
 
-      read();
+      setCompanyId(Number(companyId));
     };
 
     window.addEventListener("message", onMessage);
