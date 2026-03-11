@@ -21783,10 +21783,13 @@ window.postTerm = async function postTerm() {
   const leaseFrame    = document.getElementById("leaseWizardFrame");
 
   if (!leaseNavBtn || !leaseDrawer || !leaseFrame) return;
-
-  // bind-once guard
   if (leaseNavBtn.dataset.bound === "1") return;
   leaseNavBtn.dataset.bound = "1";
+
+  const LEASE_WIZARD_URL =
+    window.location.hostname === "localhost"
+      ? "http://localhost:5173/"
+      : "https://finsage-1.onrender.com/lease-wizard.html";
 
   leaseNavBtn.addEventListener("click", () => {
     const cid = window.getActiveCompanyId?.();
@@ -21794,13 +21797,12 @@ window.postTerm = async function postTerm() {
 
     leaseDrawer.classList.add("active");
 
-    // load iframe once
     if (!leaseFrame.getAttribute("src")) {
-      leaseFrame.setAttribute("src", "http://localhost:5173/");
+      leaseFrame.setAttribute("src", LEASE_WIZARD_URL);
     }
 
-    // ✅ send context ONLY after iframe is loaded
     const send = () => window.openLeaseWizard?.({ source: "nav" });
+
     if (leaseFrame.dataset.loaded === "1") send();
     else {
       leaseFrame.addEventListener("load", () => {
