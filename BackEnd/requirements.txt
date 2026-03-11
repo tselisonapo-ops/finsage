@@ -6,5 +6,6 @@ sqlparse
 openpyxl
 PyJWT 
 pdfkit
+Flask-Cors
 
 
