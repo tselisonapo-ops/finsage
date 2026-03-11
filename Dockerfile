@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-bullseye
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
