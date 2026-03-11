@@ -21773,6 +21773,7 @@ window.postTerm = async function postTerm() {
     
   }, true);
 })();
+
 // ===============================
 // IFRS 16 Lease Wizard drawer open/close
 // ===============================
@@ -21783,14 +21784,41 @@ window.postTerm = async function postTerm() {
   const leaseFrame    = document.getElementById("leaseWizardFrame");
 
   if (!leaseNavBtn || !leaseDrawer || !leaseFrame) return;
-
   if (leaseNavBtn.dataset.bound === "1") return;
   leaseNavBtn.dataset.bound = "1";
 
-  const LEASE_WIZARD_URL =
-    window.location.hostname === "localhost"
-      ? "http://localhost:5173/"
-      : "https://finsage-1.onrender.com/lease-wizard.html";
+  const IS_LOCAL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+
+  const LEASE_WIZARD_URL = IS_LOCAL
+    ? "http://localhost:5173/"
+    : "https://finsage-1.onrender.com/lease-wizard.html";
+
+  const LEASE_WIZARD_ORIGIN = IS_LOCAL
+    ? "http://localhost:5173"
+    : "https://finsage-1.onrender.com";
+
+  function sendLeaseWizardContext() {
+    const token =
+      window.getToken?.() ||
+      localStorage.getItem("fs_user_token") ||
+      sessionStorage.getItem("fs_user_token") ||
+      localStorage.getItem("authToken") ||
+      sessionStorage.getItem("authToken");
+
+    const companyId = window.getActiveCompanyId?.();
+
+    if (!token || !companyId || !leaseFrame.contentWindow) return;
+
+    leaseFrame.contentWindow.postMessage(
+      {
+        type: "lease_wizard_context",
+        token,
+        companyId,
+        source: "nav"
+      },
+      LEASE_WIZARD_ORIGIN
+    );
+  }
 
   leaseNavBtn.addEventListener("click", () => {
     const cid = window.getActiveCompanyId?.();
@@ -21802,35 +21830,27 @@ window.postTerm = async function postTerm() {
       leaseFrame.setAttribute("src", LEASE_WIZARD_URL);
     }
 
-    const send = () => {
-      const token =
-        window.getToken?.() ||
-        localStorage.getItem("fs_user_token") ||
-        sessionStorage.getItem("fs_user_token");
+    if (leaseFrame.dataset.loaded === "1") {
+      sendLeaseWizardContext();
+    } else {
+      leaseFrame.addEventListener("load", () => {
+        leaseFrame.dataset.loaded = "1";
+        setTimeout(sendLeaseWizardContext, 150);
+      }, { once: true });
+    }
+  });
 
-      const companyId = window.getActiveCompanyId?.();
+  window.addEventListener("message", (event) => {
+    if (event.origin !== LEASE_WIZARD_ORIGIN) return;
 
-      leaseFrame.contentWindow?.postMessage(
-        {
-          type: "lease_wizard_context",
-          token,
-          companyId,
-          source: "nav",
-        },
-        "*"
-      );
-    };
+    const data = event.data || {};
 
-    if (leaseFrame.dataset.loaded === "1") send();
-    else {
-      leaseFrame.addEventListener(
-        "load",
-        () => {
-          leaseFrame.dataset.loaded = "1";
-          send();
-        },
-        { once: true }
-      );
+    if (data.type === "lease_wizard_ready") {
+      sendLeaseWizardContext();
+    }
+
+    if (data.type === "lease_wizard_close") {
+      leaseDrawer.classList.remove("active");
     }
   });
 

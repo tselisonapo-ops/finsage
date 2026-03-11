@@ -1,4 +1,3 @@
-// src/App.tsx
 import { useEffect, useState } from "react";
 import "./App.css";
 import LeaseWizard from "./components/leaseWizard";
@@ -20,8 +19,15 @@ function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>("ifrs16_new");
   const [companyId, setCompanyId] = useState<number | null>(null);
 
-  // ✅ wait until postMessage hydrates localStorage/sessionStorage
   useEffect(() => {
+    const IS_LOCAL =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+
+    const PARENT_ORIGIN = IS_LOCAL
+      ? "http://127.0.0.1:5500"
+      : "https://finsage-1.onrender.com";
+
     const read = () => {
       try {
         const cid = getWizardCompanyId();
@@ -31,18 +37,36 @@ function App() {
       }
     };
 
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== PARENT_ORIGIN) return;
+
+      const data = event.data || {};
+      if (data.type !== "lease_wizard_context") return;
+
+      const { token, companyId } = data;
+
+      if (!token || !companyId) return;
+
+      localStorage.setItem("fs_user_token", token);
+      sessionStorage.setItem("fs_user_token", token);
+      sessionStorage.setItem("active_company_id", String(companyId));
+
+      read();
+    };
+
+    window.addEventListener("message", onMessage);
+
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: "lease_wizard_ready" }, PARENT_ORIGIN);
+    }
+
     read();
 
-    // retry a few times quickly (iframe hydrate usually happens immediately)
     const t = setInterval(read, 200);
-
-    // also re-check when message arrives
-    const onMsg = () => read();
-    window.addEventListener("message", onMsg);
 
     return () => {
       clearInterval(t);
-      window.removeEventListener("message", onMsg);
+      window.removeEventListener("message", onMessage);
     };
   }, []);
 
@@ -102,13 +126,10 @@ function App() {
               {...({
                 companyId,
                 mode: isNewLease ? "inception" : "existing",
-
                 defaultLeaseLiabilityAccount: "BS_CL_2610",
                 defaultRouAssetAccount: "BS_NCA_1610",
-
                 defaultInterestExpenseAccount: "PL_OPEX_6019",
                 defaultDepreciationExpenseAccount: "PL_OPEX_6017",
-
                 defaultDirectCostOffsetAccount: "BS_CL_2200",
               } as LeaseWizardProps)}
             />
