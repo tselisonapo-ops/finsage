@@ -6864,15 +6864,13 @@ window.safeRedirect = function (url, mode = "href") {
     localStorage.getItem("authToken") ||
     sessionStorage.getItem("authToken");
 
-  // 🚨 No token → go to signin
   if (!token) {
     if (!window.location.pathname.includes("signin")) {
-      window.location.replace("/signin");
+      window.location.replace("/signin.html");
     }
     return;
   }
 
-  // try get user
   let user = null;
   try {
     user = JSON.parse(localStorage.getItem("fs_user") || "null");
@@ -6884,32 +6882,18 @@ window.safeRedirect = function (url, mode = "href") {
     !!user?.dashboards?.enterprise ||
     localStorage.getItem("can_access_enterprise_dashboard") === "true";
 
-  // 🚨 redirect based on dashboard permission
   if (!canEnterprise) {
     if (!window.location.pathname.includes("practitionerdashboard")) {
-      window.location.replace("/practitionerdashboard");
+      window.location.replace("/practitionerdashboard.html");
     }
   }
 })();
 </script>
 
-<!-- ✅ DEV ONLY: Vite preamble/client MUST come first -->
-<!-- Dev only: Vite client + React refresh -->
-<script type="module" src="http://localhost:5173/@vite/client"></script>
-<script type="module">
-  import RefreshRuntime from "http://localhost:5173/@react-refresh";
-  RefreshRuntime.injectIntoGlobalHook(window);
-  window.$RefreshReg$ = () => {};
-  window.$RefreshSig$ = () => (type) => type;
-  window.__vite_plugin_react_preamble_installed__ = true;
-</script>
-<script type="module" src="http://localhost:5173/src/drawer/hostMount.ts"></script>
-
 <!-- Dashboard JS -->
 <script src="dashboard.js" defer></script>
 
 <script>
-  // Make autocomplete explicitly global
   window.initCustomerAddressAutocomplete = function () {
     const configs = [
       { inputId: "custBillSearch", mode: "billing" },
@@ -6920,7 +6904,6 @@ window.safeRedirect = function (url, mode = "href") {
       const input = document.getElementById(inputId);
       if (!input || !window.google || !google.maps || !google.maps.places) return;
 
-      // NOTE: Google recommends PlaceAutocompleteElement for new customers
       const ac = new google.maps.places.Autocomplete(input, {
         types: ["geocode"],
         componentRestrictions: { country: "za" },
@@ -6956,7 +6939,6 @@ window.safeRedirect = function (url, mode = "href") {
     });
   };
 
-  // Global callback for Google Maps API
   window.onMapsLoaded = function () {
     console.log("Google Maps loaded");
 
@@ -6973,8 +6955,6 @@ window.safeRedirect = function (url, mode = "href") {
   };
 </script>
 
-
-<!-- 4️⃣ Load Maps API last, with callback -->
 <script
   src="https://maps.googleapis.com/maps/api/js?key=YOUR_REAL_KEY_HERE&libraries=places&callback=onMapsLoaded"
   async
@@ -6982,4 +6962,3 @@ window.safeRedirect = function (url, mode = "href") {
 ></script>
 </body>
 </html>
-
