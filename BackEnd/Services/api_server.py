@@ -241,6 +241,10 @@ CORS(
 )
 
 
+@app.after_request
+def apply_cors(resp):
+    return _corsify(resp)
+
 
 for r in app.url_map.iter_rules():
     if "invoices" in str(r) and "view" in str(r):
