@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import "./App.css";
+import { useEffect, useRef, useState } from "react";import "./App.css";
 import LeaseWizard from "./components/leaseWizard";
 import { getWizardCompanyId } from "./context/company";
 
@@ -18,6 +17,7 @@ interface LeaseWizardProps {
 function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>("ifrs16_new");
   const [companyId, setCompanyId] = useState<number | null>(null);
+  const redirectScheduledRef = useRef(false);
 
   useEffect(() => {
     const IS_LOCAL =
@@ -28,10 +28,18 @@ function App() {
       ? "http://127.0.0.1:5500"
       : "https://finsage-1.onrender.com";
 
+    let intervalId: number | null = null;
+
     const read = () => {
       try {
         const cid = getWizardCompanyId();
-        if (cid) setCompanyId(Number(cid));
+        if (cid) {
+          setCompanyId(Number(cid));
+          if (intervalId) {
+            window.clearInterval(intervalId);
+            intervalId = null;
+          }
+        }
       } catch {
         // not ready yet
       }
@@ -53,6 +61,11 @@ function App() {
       localStorage.setItem("active_company_id", String(companyId));
 
       setCompanyId(Number(companyId));
+
+      if (intervalId) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
     };
 
     window.addEventListener("message", onMessage);
@@ -62,20 +75,48 @@ function App() {
     }
 
     read();
-
-    const t = setInterval(read, 200);
+    intervalId = window.setInterval(read, 200);
 
     return () => {
-      clearInterval(t);
+      if (intervalId) window.clearInterval(intervalId);
       window.removeEventListener("message", onMessage);
     };
   }, []);
+
+  useEffect(() => {
+    if (companyId || redirectScheduledRef.current) return;
+
+    const IS_LOCAL =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+
+    const token =
+      localStorage.getItem("fs_user_token") ||
+      sessionStorage.getItem("fs_user_token");
+
+    const REDIRECT_URL = !token
+      ? (IS_LOCAL
+          ? "http://127.0.0.1:5500/signin.html"
+          : "https://finsage-1.onrender.com/signin.html")
+      : (IS_LOCAL
+          ? "http://127.0.0.1:5500/dashboard.html"
+          : "https://finsage-1.onrender.com/dashboard.html");
+
+    redirectScheduledRef.current = true;
+
+    const t = window.setTimeout(() => {
+      window.location.replace(REDIRECT_URL);
+    }, 3000);
+
+    return () => window.clearTimeout(t);
+  }, [companyId]);
 
   if (!companyId) {
     return (
       <div style={{ padding: 16 }}>
         <h2>Loading wizard context…</h2>
         <p>Waiting for company + token from parent app.</p>
+        <p>If this takes too long you will be redirected.</p>
       </div>
     );
   }
