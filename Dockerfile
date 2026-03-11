@@ -17,5 +17,8 @@ COPY . .
 RUN pip install --upgrade pip \
     && pip install -r BackEnd/requirements.txt
 
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Start Gunicorn
-CMD ["gunicorn", "BackEnd.Services.api_server:app"]
+CMD ["/app/entrypoint.sh"]
