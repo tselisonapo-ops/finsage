@@ -130,14 +130,16 @@ async function resolveCompanyProfile(currentUser) {
     return { company: null, companyId: cid };
   }
 }
-
-
+window.resolveCompanyProfile = resolveCompanyProfile
 // dashboard.js — FinSage Command Center
-(function () {
+(async function () {
   "use strict";
 
   // 0) API BASE (must exist BEFORE toApiUrl/apiFetch/ENDPOINTS)
-  const API_BASE = import.meta.env.VITE_API_BASE;
+  const baseUrl = import.meta.env.VITE_API_BASE;
+  const response = await fetch(`${baseUrl}/your-endpoint`);
+  const data = await response.json();
+  console.log("API test:", data);
 
   // 1) BOOTSTRAP SAFETY: define token helpers globally FIRST
   const TOKEN_KEY = "fs_user_token";
