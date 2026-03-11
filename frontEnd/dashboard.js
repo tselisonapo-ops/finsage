@@ -2,7 +2,6 @@
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
 
-  // If someone overwrote it to a non-function, fix it
   if (typeof window.getToken !== "function") {
     window.getToken = function () {
       return (
@@ -28,6 +27,11 @@
   }
 
   console.log("[bootstrap] typeof window.getToken =", typeof window.getToken);
+
+  // 🚀 Redirect if no token
+  if (!window.getToken()) {
+    window.location.href = "/signin.html";
+  }
 })();
 
 console.log("✅ dashboard.js booting");
