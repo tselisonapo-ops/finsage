@@ -6870,9 +6870,8 @@ window.safeRedirect = function (url, mode = "href") {
 </script>
 
 <!-- ✅ DEV ONLY: Vite preamble/client MUST come first -->
+<!-- Dev only: Vite client + React refresh -->
 <script type="module" src="http://localhost:5173/@vite/client"></script>
-
-<!-- 2) ✅ React Refresh preamble (this is what you're missing) -->
 <script type="module">
   import RefreshRuntime from "http://localhost:5173/@react-refresh";
   RefreshRuntime.injectIntoGlobalHook(window);
@@ -6880,8 +6879,6 @@ window.safeRedirect = function (url, mode = "href") {
   window.$RefreshSig$ = () => (type) => type;
   window.__vite_plugin_react_preamble_installed__ = true;
 </script>
-
-<!-- ✅ Then load your drawer host -->
 <script type="module" src="http://localhost:5173/src/drawer/hostMount.ts"></script>
 
 <!-- Dashboard JS -->

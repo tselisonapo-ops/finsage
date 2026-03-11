@@ -137,7 +137,7 @@ async function resolveCompanyProfile(currentUser) {
   "use strict";
 
   // 0) API BASE (must exist BEFORE toApiUrl/apiFetch/ENDPOINTS)
-  const API_BASE = window.API_BASE || "http://127.0.0.1:5000";
+  const API_BASE = import.meta.env.VITE_API_BASE;
 
   // 1) BOOTSTRAP SAFETY: define token helpers globally FIRST
   const TOKEN_KEY = "fs_user_token";

@@ -211,31 +211,36 @@ app.config["GET_TRIAL_BALANCE_FN"] = getattr(db_service, "get_trial_balance", No
 
 bank_service = BankService(db_service)
 
+# Origins for local development
+ALLOWED_ORIGINS_DEV = {
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://localhost:5173",
+    "http://localhost:3000",
+}
+
+# Origins for production
+ALLOWED_ORIGINS_PROD = {
+    "https://finsage-web.onrender.com",  # your frontend domain
+}
+
+# Pick which set to use based on environment
+origins = ALLOWED_ORIGINS_DEV if os.getenv("FLASK_ENV") == "development" else ALLOWED_ORIGINS_PROD
+
+# Apply CORS
 CORS(
     app,
     resources={
-        r"/api/*": {
-            "origins": [
-                "http://127.0.0.1:5500",
-                "http://localhost:5500",
-                "http://localhost:5173",
-                "http://localhost:3000",
-            ]
-        },
-        r"/uploads/*": {
-            "origins": [
-                "http://127.0.0.1:5500",
-                "http://localhost:5500",
-                "http://localhost:5173",
-                "http://localhost:3000",
-            ]
-        },
+        r"/api/*": {"origins": list(origins)},
+        r"/uploads/*": {"origins": list(origins)},
     },
     supports_credentials=True,
     allow_headers=["Content-Type", "Authorization"],
     expose_headers=["Content-Type", "Authorization"],
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
+
+
 
 for r in app.url_map.iter_rules():
     if "invoices" in str(r) and "view" in str(r):
