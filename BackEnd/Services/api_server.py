@@ -198,6 +198,10 @@ except Exception as e:
 # keep your existing app initialization
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
 
+@app.route("/")
+def home():
+    return {"ok": True, "message": "FinSage API is live"}
+
 # add this route anywhere after app is defined
 @app.route("/health")
 def health():
