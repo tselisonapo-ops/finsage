@@ -238,3 +238,11 @@ def list_supported_vat_countries() -> Dict[str, str]:
 
 def list_country_currency() -> Dict[str, str]:
     return dict(COUNTRY_CURRENCY)
+
+from datetime import datetime
+from zoneinfo import ZoneInfo  # built-in since Python 3.9
+
+utc_now = datetime.utcnow()
+maseru_time = utc_now.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Africa/Maseru"))
+print("UTC:", utc_now)
+print("Maseru:", maseru_time)
