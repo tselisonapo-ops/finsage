@@ -6,7 +6,8 @@
    * Config
    * =======================================================*/
   const USE_BACKEND      = true;
-  const API_BASE         = "http://127.0.0.1:5000";   // ⬅️ Flask server
+  const API_BASE = import.meta.env.VITE_API_BASE;
+   // ⬅️ Flask server
   const AUTH_SIGNUP_URL  = API_BASE + "/api/auth/signup";
   const COUNTRY_META_URL = API_BASE + "/api/meta/countries";
   // INDUSTRIES_URL removed from usage – we now use static catalog
