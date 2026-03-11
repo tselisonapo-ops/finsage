@@ -4,7 +4,7 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Africa/Maseru
 
-# Install only the essentials
+# Install Python, wkhtmltopdf, and tzdata without recommended extras
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
