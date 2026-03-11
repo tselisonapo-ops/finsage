@@ -106,8 +106,8 @@
     </p>
   </div>
 
-  <script>
-    const API_BASE = import.meta.env.VITE_API_BASE;
+  <script type="module">
+  const API_BASE = import.meta.env.VITE_API_BASE;
 
     function consumeIntendedScreen() {
       const s = localStorage.getItem("fs:intended_screen");
@@ -164,10 +164,10 @@
       }
 
       if (canEnterprise) {
-        return "dashboard.html";
+        return "/dashboard";
       }
 
-      return "dashboard.html";
+      return "/dashboard";
     }
 
     document.getElementById("signinForm").addEventListener("submit", async (e) => {
@@ -251,7 +251,7 @@
           : targetBase;
 
         setTimeout(() => {
-          window.location.href = target;
+          window.location.assign(target);
         }, 300);
 
       } catch (err) {

@@ -225,7 +225,8 @@ ALLOWED_ORIGINS_DEV = {
 
 # Origins for production
 ALLOWED_ORIGINS_PROD = {
-    "https://finsage-web.onrender.com",  # your frontend domain
+    "https://finsage-1.onrender.com",
+    "https://finsage-web.onrender.com",
 }
 
 # Pick which set to use based on environment

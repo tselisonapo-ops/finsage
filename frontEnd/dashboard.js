@@ -28,9 +28,11 @@
 
   console.log("[bootstrap] typeof window.getToken =", typeof window.getToken);
 
-  // 🚀 Redirect if no token
-  if (!window.getToken()) {
-    window.location.href = "/signin.html";
+  // 🚀 Redirect guard
+  if (!window.getToken() && !window.location.pathname.includes("signin")) {
+    window.location.href = "/signin";
+    console.log("Token:", window.getToken());
+    console.log("Path:", window.location.pathname);
   }
 })();
 
