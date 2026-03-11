@@ -24,9 +24,9 @@ function App() {
       window.location.hostname === "localhost" ||
       window.location.hostname === "127.0.0.1";
 
-    const PARENT_ORIGIN = IS_LOCAL
-      ? "http://127.0.0.1:5500"
-      : "https://finsage-1.onrender.com";
+    const ALLOWED_ORIGINS = IS_LOCAL
+      ? ["http://127.0.0.1:5500", "http://localhost:5500"]
+      : ["https://finsage-1.onrender.com"];
 
     let intervalId: number | null = null;
 
@@ -46,7 +46,7 @@ function App() {
     };
 
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== PARENT_ORIGIN) return;
+      if (!ALLOWED_ORIGINS.includes(event.origin)) return;
 
       const data = event.data || {};
       if (data.type !== "lease_wizard_context") return;
@@ -57,8 +57,8 @@ function App() {
 
       localStorage.setItem("fs_user_token", token);
       sessionStorage.setItem("fs_user_token", token);
-      sessionStorage.setItem("active_company_id", String(companyId));
       localStorage.setItem("active_company_id", String(companyId));
+      sessionStorage.setItem("active_company_id", String(companyId));
 
       setCompanyId(Number(companyId));
 
@@ -70,8 +70,9 @@ function App() {
 
     window.addEventListener("message", onMessage);
 
+    // tell parent iframe host that wizard is ready
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: "lease_wizard_ready" }, PARENT_ORIGIN);
+      window.parent.postMessage({ type: "lease_wizard_ready" }, "*");
     }
 
     read();

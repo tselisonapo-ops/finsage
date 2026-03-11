@@ -106,160 +106,160 @@
     </p>
   </div>
 
-  <script type="module">
+<script type="module">
   const API_BASE = import.meta.env.VITE_API_BASE;
 
-    function consumeIntendedScreen() {
-      const s = localStorage.getItem("fs:intended_screen");
-      if (s) localStorage.removeItem("fs:intended_screen");
-      return s || null;
+  function consumeIntendedScreen() {
+    const s = localStorage.getItem("fs:intended_screen");
+    if (s) localStorage.removeItem("fs:intended_screen");
+    return s || null;
+  }
+
+  function normalizeRole(raw) {
+    if (!raw) return "viewer";
+    let r = String(raw).toLowerCase().trim();
+    r = r.replace(/\(.*?\)/g, "");
+    r = r.replace(/\/.*/g, "");
+    r = r.replace(/\s+/g, " ").trim();
+
+    if (
+      r.includes("cfo") ||
+      r.includes("owner") ||
+      r === "admin" ||
+      r === "administrator" ||
+      r === "superadmin"
+    ) return "cfo";
+
+    const MAP = {
+      "owner": "cfo",
+      "business owner": "cfo",
+      "founder": "cfo",
+      "cfo": "cfo",
+      "head of finance": "cfo",
+      "finance manager": "manager",
+      "ceo": "manager",
+      "managing director": "manager",
+      "accounts clerk": "clerk",
+      "finance assistant": "assistant",
+      "junior accountant": "junior",
+      "senior accountant": "senior",
+      "financial accountant": "accountant",
+      "credit controller": "credit controller",
+      "read-only": "viewer",
+      "readonly": "viewer",
+      "other": "viewer",
+      "other professional role": "viewer",
+    };
+
+    return MAP[r] || r || "viewer";
+  }
+
+  function pickDashboardTarget(user) {
+    const userType = String(user.user_type || "").trim().toLowerCase();
+    const canPractitioner = !!user?.dashboards?.practitioner;
+    const canEnterprise = !!user?.dashboards?.enterprise;
+
+    if (userType === "practitioner" && canPractitioner) {
+      return "practitionerdashboard.html";
     }
 
-    function normalizeRole(raw) {
-      if (!raw) return "viewer";
-      let r = String(raw).toLowerCase().trim();
-      r = r.replace(/\(.*?\)/g, "");
-      r = r.replace(/\/.*/g, "");
-      r = r.replace(/\s+/g, " ").trim();
-
-      if (
-        r.includes("cfo") ||
-        r.includes("owner") ||
-        r === "admin" ||
-        r === "administrator" ||
-        r === "superadmin"
-      ) return "cfo";
-
-      const MAP = {
-        "owner": "cfo",
-        "business owner": "cfo",
-        "founder": "cfo",
-        "cfo": "cfo",
-        "head of finance": "cfo",
-        "finance manager": "manager",
-        "ceo": "manager",
-        "managing director": "manager",
-        "accounts clerk": "clerk",
-        "finance assistant": "assistant",
-        "junior accountant": "junior",
-        "senior accountant": "senior",
-        "financial accountant": "accountant",
-        "credit controller": "credit controller",
-        "read-only": "viewer",
-        "readonly": "viewer",
-        "other": "viewer",
-        "other professional role": "viewer",
-      };
-
-      return MAP[r] || r || "viewer";
+    if (canEnterprise) {
+      return "dashboard.html";
     }
 
-    function pickDashboardTarget(user) {
-      const userType = String(user.user_type || "").trim().toLowerCase();
-      const canPractitioner = !!user?.dashboards?.practitioner;
-      const canEnterprise = !!user?.dashboards?.enterprise;
+    return "dashboard.html";
+  }
 
-      if (userType === "practitioner" && canPractitioner) {
-        return "practitionerdashboard.html";
-      }
+  document.getElementById("signinForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-      if (canEnterprise) {
-        return "/dashboard";
-      }
+    const email = document.getElementById("signinEmail").value.trim().toLowerCase();
+    const password = document.getElementById("signinPassword").value;
+    const statusEl = document.getElementById("status");
 
-      return "/dashboard";
+    if (!email || !password) {
+      statusEl.textContent = "Please enter your email and password.";
+      statusEl.style.color = "#b91c1c";
+      return;
     }
 
-    document.getElementById("signinForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/signin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-      const email = document.getElementById("signinEmail").value.trim().toLowerCase();
-      const password = document.getElementById("signinPassword").value;
-      const statusEl = document.getElementById("status");
-
-      if (!email || !password) {
-        statusEl.textContent = "Please enter your email and password.";
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || data.error || "Sign in failed.";
         statusEl.style.color = "#b91c1c";
         return;
       }
 
-      try {
-        const res = await fetch(`${API_BASE}/api/auth/signin`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
+      const user = data.user || {};
 
-        const data = await res.json();
-        if (!res.ok) {
-          statusEl.textContent = data.detail || data.error || "Sign in failed.";
-          statusEl.style.color = "#b91c1c";
-          return;
-        }
-
-        const user = data.user || {};
-
-        if (data.token) {
-          localStorage.setItem("fs_user_token", data.token);
-          sessionStorage.setItem("fs_user_token", data.token);
-          localStorage.setItem("authToken", data.token);
-          sessionStorage.setItem("authToken", data.token);
-        }
-
-        localStorage.setItem("userEmail", user.email || email);
-
-        const rawRole = user.role || user.system_role || user.user_role || "viewer";
-        localStorage.setItem("userRole", normalizeRole(rawRole));
-
-        if (user.id != null) localStorage.setItem("userId", String(user.id));
-        if (user.user_type) localStorage.setItem("userType", user.user_type);
-        if (user.access_scope) localStorage.setItem("access_scope", user.access_scope);
-        if (user.company_id != null) localStorage.setItem("company_id", String(user.company_id));
-        if (user.company_name) localStorage.setItem("companyName", user.company_name);
-        if (user.industry) localStorage.setItem("fs_industry", user.industry);
-        if (user.sub_industry) localStorage.setItem("fs_subindustry", user.sub_industry);
-        if (Array.isArray(user.allowed_company_ids)) {
-          localStorage.setItem("allowed_company_ids", JSON.stringify(user.allowed_company_ids));
-        }
-
-        const mergedUser = {
-          ...user,
-          dashboards: user.dashboards || {},
-          permissions: user.permissions || {}
-        };
-
-        localStorage.setItem("fs_user", JSON.stringify(mergedUser));
-
-        statusEl.textContent = "Signed in successfully. Redirecting…";
-        statusEl.style.color = "#16a34a";
-
-        if (user?.dashboards) {
-          localStorage.setItem(
-            "can_access_practitioner_dashboard",
-            String(!!user.dashboards.practitioner)
-          );
-          localStorage.setItem(
-            "can_access_enterprise_dashboard",
-            String(!!user.dashboards.enterprise)
-          );
-        }
-
-        const intended = consumeIntendedScreen();
-        const targetBase = pickDashboardTarget(user);
-        const target = intended
-          ? `${targetBase}#screen=${encodeURIComponent(intended)}`
-          : targetBase;
-
-        setTimeout(() => {
-          window.location.assign(target);
-        }, 300);
-
-      } catch (err) {
-        console.error("Sign in error:", err);
-        statusEl.textContent = "Network error.";
-        statusEl.style.color = "#b91c1c";
+      if (data.token) {
+        localStorage.setItem("fs_user_token", data.token);
+        sessionStorage.setItem("fs_user_token", data.token);
+        localStorage.setItem("authToken", data.token);
+        sessionStorage.setItem("authToken", data.token);
       }
-    });
-  </script>
+
+      localStorage.setItem("userEmail", user.email || email);
+
+      const rawRole = user.role || user.system_role || user.user_role || "viewer";
+      localStorage.setItem("userRole", normalizeRole(rawRole));
+
+      if (user.id != null) localStorage.setItem("userId", String(user.id));
+      if (user.user_type) localStorage.setItem("userType", user.user_type);
+      if (user.access_scope) localStorage.setItem("access_scope", user.access_scope);
+      if (user.company_id != null) localStorage.setItem("company_id", String(user.company_id));
+      if (user.company_name) localStorage.setItem("companyName", user.company_name);
+      if (user.industry) localStorage.setItem("fs_industry", user.industry);
+      if (user.sub_industry) localStorage.setItem("fs_subindustry", user.sub_industry);
+      if (Array.isArray(user.allowed_company_ids)) {
+        localStorage.setItem("allowed_company_ids", JSON.stringify(user.allowed_company_ids));
+      }
+
+      const mergedUser = {
+        ...user,
+        dashboards: user.dashboards || {},
+        permissions: user.permissions || {}
+      };
+
+      localStorage.setItem("fs_user", JSON.stringify(mergedUser));
+
+      statusEl.textContent = "Signed in successfully. Redirecting…";
+      statusEl.style.color = "#16a34a";
+
+      if (user?.dashboards) {
+        localStorage.setItem(
+          "can_access_practitioner_dashboard",
+          String(!!user.dashboards.practitioner)
+        );
+        localStorage.setItem(
+          "can_access_enterprise_dashboard",
+          String(!!user.dashboards.enterprise)
+        );
+      }
+
+      const intended = consumeIntendedScreen();
+      const targetBase = pickDashboardTarget(user);
+      const target = intended
+        ? `${targetBase}#screen=${encodeURIComponent(intended)}`
+        : targetBase;
+
+      setTimeout(() => {
+        window.location.assign(target);
+      }, 300);
+
+    } catch (err) {
+      console.error("Sign in error:", err);
+      statusEl.textContent = "Network error.";
+      statusEl.style.color = "#b91c1c";
+    }
+  });
+</script>
 </body>
 </html>
