@@ -8,7 +8,7 @@ import { apiFetch } from "./api/apiFetch";
 
 declare global {
   interface Window {
-    apiFetch?: typeof apiFetch;
+    apiFetch?: (url: string, opts?: RequestInit) => Promise<unknown>;
   }
 }
 

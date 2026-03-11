@@ -1,9 +1,12 @@
-import type { apiFetch as ApiFetch } from "./api/apiFetch";
+import { apiFetch } from "./api/apiFetch";
 
 declare global {
   interface Window {
-    apiFetch?: typeof ApiFetch;
+    apiFetch?: typeof apiFetch;
   }
 }
 
-export {};
+if (import.meta.env.DEV) {
+  window.apiFetch = apiFetch;
+}
+
