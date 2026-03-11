@@ -193,7 +193,8 @@ def is_company_owner(user: dict, company_profile: dict) -> bool:
     owner_user_id = (company_profile or {}).get("owner_user_id")
     return owner_user_id is not None and str(owner_user_id) == str(user.get("id"))
 
-def customer_approval_required(mode: str, policy: dict, user: dict | None = None) -> bool:
+
+def customer_approval_required(mode: str, policy: dict, user: Optional[dict] = None) -> bool:
     user = user or {}
     if is_assignment_execution_context(user):
         return False
@@ -210,6 +211,7 @@ def customer_approval_required(mode: str, policy: dict, user: dict | None = None
         p.get("require_invoice_review", False) or
         p.get("require_customer_approval", False)
     )
+
 
 def must_approve_customer_before_invoicing(mode: str, policy: dict) -> bool:
     # ✅ tie invoicing permission to customer approval gate
