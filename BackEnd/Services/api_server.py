@@ -6333,17 +6333,19 @@ def email_quote(company_id: int, quote_id: int):
 
     text_body = f"""Dear {customer_name},
 
-Please find your quotation attached.
+    Please find your quotation attached.
 
-Quote number : {q_no}
-Quote date   : {quote_date}
-Valid until  : {valid_until}
+    Quote number : {q_no}
+    Quote date   : {quote_date}
+    Valid until  : {valid_until}
 
-Total: {currency} {total:,.2f}
+    Total: {currency} {total:,.2f}
 
-{extra_message + "\n\n" if extra_message else ""}Kind regards,
-{company_name}
-"""
+    {extra_message if extra_message else ""}
+
+    Kind regards,
+    {company_name}
+    """
 
     html_body = f"<pre style='font-family:system-ui,monospace'>{text_body}</pre>"
 
