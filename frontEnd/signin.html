@@ -106,8 +106,9 @@
     </p>
   </div>
 
-<script type="module">
-  const API_BASE = import.meta.env.VITE_API_BASE;
+  <script src="config.js"></script>
+  <script type="module">
+    const API_BASE = window.APP_CONFIG.API_BASE;
 
   function consumeIntendedScreen() {
     const s = localStorage.getItem("fs:intended_screen");

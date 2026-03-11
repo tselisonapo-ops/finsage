@@ -27,6 +27,7 @@
     <p class="status" id="resetStatus"></p>
   </div>
 
+  <script src="config.js"></script>
   <script>
     async function requestPasswordReset() {
       const email = document.getElementById("resetEmail").value.trim();
@@ -38,8 +39,9 @@
       }
 
       try {
-        const res = await fetch("http://127.0.0.1:5000/api/auth/request-reset", {
-          method: "POST",
+          const API_BASE = window.APP_CONFIG.API_BASE;
+
+          await fetch(`${API_BASE}/api/auth/request-reset`, {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email })
         });

@@ -23,8 +23,9 @@
   <div id="msg" style="margin-top:12px;"></div>
   <div id="tableWrap"></div>
 
+  <script src="config.js"></script>
   <script>
-    const API = 'http://127.0.0.1:5000';
+    const API_BASE = window.APP_CONFIG.API_BASE;
 
     function renderTable(rows) {
       if (!rows || !rows.length) return '<p>No accounts found.</p>';

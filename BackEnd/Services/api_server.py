@@ -140,7 +140,7 @@ from BackEnd.Services.reporting.reporting_helpers import build_income_statement_
 from BackEnd.Services.utils.view_token import create_invoice_pdf_token, verify_invoice_pdf_token, make_invoice_view_token, verify_quote_pdf_token, create_quote_pdf_token
 from BackEnd.Services.periods import parse_date_maybe
 from BackEnd.Services.reporting.statement_renderer import render_statement_html
-
+from BackEnd.Services.config import Config
 # ────────────────────────────────────────────────────────────────
 # Blueprints
 # ────────────────────────────────────────────────────────────────
@@ -197,12 +197,12 @@ except Exception as e:
 
 # keep your existing app initialization
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
+app.config.from_object(Config)
 
 @app.route("/")
 def home():
     return {"ok": True, "message": "FinSage API is live"}
 
-# add this route anywhere after app is defined
 @app.route("/health")
 def health():
     return "OK", 200
@@ -215,29 +215,14 @@ app.config["GET_TRIAL_BALANCE_FN"] = getattr(db_service, "get_trial_balance", No
 
 bank_service = BankService(db_service)
 
-# Origins for local development
-ALLOWED_ORIGINS_DEV = {
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-    "http://localhost:5173",
-    "http://localhost:3000",
-}
+origins = app.config.get("FRONTEND_ORIGINS", [])
+print("[BOOT] FRONTEND_ORIGINS:", origins)
 
-# Origins for production
-ALLOWED_ORIGINS_PROD = {
-    "https://finsage-1.onrender.com",
-    "https://finsage-web.onrender.com",
-}
-
-# Pick which set to use based on environment
-origins = ALLOWED_ORIGINS_DEV if os.getenv("FLASK_ENV") == "development" else ALLOWED_ORIGINS_PROD
-
-# Apply CORS
 CORS(
     app,
     resources={
-        r"/api/*": {"origins": list(origins)},
-        r"/uploads/*": {"origins": list(origins)},
+        r"/api/*": {"origins": origins},
+        r"/uploads/*": {"origins": origins},
     },
     supports_credentials=True,
     allow_headers=["Content-Type", "Authorization"],
@@ -245,16 +230,9 @@ CORS(
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 
-
-@app.after_request
-def apply_cors(resp):
-    return _corsify(resp)
-
-
 for r in app.url_map.iter_rules():
     if "invoices" in str(r) and "view" in str(r):
         print("ROUTE:", r, "->", r.endpoint)
-
 
 @app.errorhandler(Exception)
 def handle_any_exception(e):
@@ -8958,11 +8936,24 @@ def _should_run_bootstrap() -> bool:
 # ────────────────────────────────────────────────────────────────
 # api_server.py (or wherever your Flask boot code lives)
 
+import os
+
 if __name__ == "__main__":
+
+    APP_ENV = os.getenv("APP_ENV", "development").lower()
+    DEBUG = os.getenv("DEBUG", "true").lower() in ("1", "true", "yes")
+    PORT = int(os.getenv("PORT", "5000"))
+
+    print(f"[BOOT] Environment: {APP_ENV}")
+    print(f"[BOOT] Debug: {DEBUG}")
+    print(f"[BOOT] Port: {PORT}")
+
     if _should_run_bootstrap():
         print("[BOOT] About to init master schema")
+
         with app.app_context():
-            # ✅ Master/public bootstrap should hard-fail if it can't run
+
+            # master/public bootstrap
             try:
                 db_service.init_master_schema()
                 db_service.initialize_public_schema()
@@ -8970,7 +8961,6 @@ if __name__ == "__main__":
                 print("[BOOT][FATAL] Master/public schema bootstrap failed:", e)
                 raise
 
-            # ✅ Tenant migrations: isolate each company so one failure doesn't poison the loop
             company_ids = []
             try:
                 company_ids = db_service.list_company_ids()
@@ -8980,12 +8970,12 @@ if __name__ == "__main__":
                 raise
 
             failed = []
+
             for cid in company_ids:
                 try:
                     print("[BOOT] Migrating tenant schema for company:", cid)
                     db_service.ensure_company_schema(int(cid))
                 except Exception as e:
-                    # ✅ keep going; don't stop whole app boot for one tenant
                     print(f"[BOOT][WARN] Tenant migration failed for company {cid}:", e)
                     failed.append((cid, str(e)))
 
@@ -9000,8 +8990,8 @@ if __name__ == "__main__":
 
     app.run(
         host="0.0.0.0",
-        port=5000,
-        debug=True,
+        port=PORT,
+        debug=DEBUG,
         use_reloader=False,
     )
 

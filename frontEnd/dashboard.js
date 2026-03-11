@@ -46,110 +46,17 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 // ✅ Resolve company profile from API (source of truth)
-async function resolveCompanyProfile(currentUser) {
-  // Always prefer server truth first:
-  // /api/auth/me should return company_id + allowed_company_ids
-  const serverCid =
-    currentUser?.company_id ||
-    currentUser?.companyId ||
-    currentUser?.company?.id ||
-    null;
 
-  const allowed = Array.isArray(currentUser?.allowed_company_ids)
-    ? currentUser.allowed_company_ids.map(Number).filter(Boolean)
-    : null;
-
-  // Legacy/cache fallback (ONLY use if allowed or no allowed list provided)
-  const cachedCidRaw =
-    localStorage.getItem("CURRENT_COMPANY_ID") ||
-    localStorage.getItem("company_id") ||
-    null;
-
-  const cachedCid = cachedCidRaw ? Number(cachedCidRaw) : null;
-
-  // Decide cid safely
-  let cid = serverCid ? Number(serverCid) : null;
-
-  if (!cid) {
-    // If server didn't provide cid, only use cache if it is allowed (when allowed list exists)
-    if (cachedCid && (!allowed || allowed.includes(cachedCid))) {
-      cid = cachedCid;
-    }
-  } else {
-    // If server did provide cid but it's not allowed, pick first allowed
-    if (allowed && !allowed.includes(cid)) {
-      cid = allowed[0] || null;
-    }
-  }
-
-  if (!cid) return { company: null, companyId: null };
-
-  const applyCompanyGlobals = (company, fallbackCid) => {
-    const curRaw =
-      company?.currency ||
-      company?.company?.currency ||
-      window.CURRENT_CURRENCY ||
-      null;
-
-    const cur = curRaw ? String(curRaw).trim().toUpperCase() : null;
-
-    const finalCid = company?.id || fallbackCid || null;
-
-    window.CURRENT_COMPANY_ID = finalCid;
-    window.CURRENT_COMPANY = company || null;
-    window.CURRENT_CURRENCY = cur;
-
-    // ✅ persist ONE key consistently
-    if (finalCid) {
-      localStorage.setItem("CURRENT_COMPANY_ID", String(finalCid));
-      localStorage.setItem("company_id", String(finalCid)); // optional: keep for backward compat
-    }
-
-    const invCur = document.getElementById("invCurrency");
-    if (invCur && !invCur.value && cur) invCur.value = cur;
-
-    const quoteCur = document.getElementById("quoteCurrency");
-    if (quoteCur && !quoteCur.value && cur) quoteCur.value = cur;
-  };
-
-  // If user payload already contains company object, prefer it
-  if (currentUser?.company && currentUser.company.id) {
-    const company = currentUser.company;
-    applyCompanyGlobals(company, company.id);
-    return { company, companyId: company.id };
-  }
-
-  try {
-    const company = await apiFetch(`/api/companies/${encodeURIComponent(cid)}`, { method: "GET" });
-    applyCompanyGlobals(company, cid);
-    return { company, companyId: company?.id || cid };
-  } catch (e) {
-    console.error("resolveCompanyProfile: failed to fetch company", cid, e);
-
-    // If cachedCid caused 403, wipe it so you don't keep booting into a forbidden company
-    if (cachedCid && cachedCid === cid) {
-      localStorage.removeItem("CURRENT_COMPANY_ID");
-      localStorage.removeItem("company_id");
-    }
-
-    applyCompanyGlobals(null, cid);
-    return { company: null, companyId: cid };
-  }
-}
-window.resolveCompanyProfile = resolveCompanyProfile
 // dashboard.js — FinSage Command Center
 (async function () {
   "use strict";
 
   // 0) API BASE (must exist BEFORE toApiUrl/apiFetch/ENDPOINTS)
-  const baseUrl = import.meta.env.VITE_API_BASE;
-  const response = await fetch(`${baseUrl}/your-endpoint`);
-  const data = await response.json();
-  console.log("API test:", data);
+  const API_BASE = window.APP_CONFIG.API_BASE;
+  window.API_BASE = API_BASE;
 
-  // 1) BOOTSTRAP SAFETY: define token helpers globally FIRST
   const TOKEN_KEY = "fs_user_token";
-  const COMPANY_KEY = "company_id"; // keep if you use it later
+  const COMPANY_KEY = "company_id";
 
   if (typeof window.getToken !== "function") {
     window.getToken = function () {
@@ -327,6 +234,98 @@ window.resolveCompanyProfile = resolveCompanyProfile
 
     return data;
   };
+
+async function resolveCompanyProfile(currentUser) {
+  // Always prefer server truth first:
+  // /api/auth/me should return company_id + allowed_company_ids
+  const serverCid =
+    currentUser?.company_id ||
+    currentUser?.companyId ||
+    currentUser?.company?.id ||
+    null;
+
+  const allowed = Array.isArray(currentUser?.allowed_company_ids)
+    ? currentUser.allowed_company_ids.map(Number).filter(Boolean)
+    : null;
+
+  // Legacy/cache fallback (ONLY use if allowed or no allowed list provided)
+  const cachedCidRaw =
+    localStorage.getItem("CURRENT_COMPANY_ID") ||
+    localStorage.getItem("company_id") ||
+    null;
+
+  const cachedCid = cachedCidRaw ? Number(cachedCidRaw) : null;
+
+  // Decide cid safely
+  let cid = serverCid ? Number(serverCid) : null;
+
+  if (!cid) {
+    // If server didn't provide cid, only use cache if it is allowed (when allowed list exists)
+    if (cachedCid && (!allowed || allowed.includes(cachedCid))) {
+      cid = cachedCid;
+    }
+  } else {
+    // If server did provide cid but it's not allowed, pick first allowed
+    if (allowed && !allowed.includes(cid)) {
+      cid = allowed[0] || null;
+    }
+  }
+
+  if (!cid) return { company: null, companyId: null };
+
+  const applyCompanyGlobals = (company, fallbackCid) => {
+    const curRaw =
+      company?.currency ||
+      company?.company?.currency ||
+      window.CURRENT_CURRENCY ||
+      null;
+
+    const cur = curRaw ? String(curRaw).trim().toUpperCase() : null;
+
+    const finalCid = company?.id || fallbackCid || null;
+
+    window.CURRENT_COMPANY_ID = finalCid;
+    window.CURRENT_COMPANY = company || null;
+    window.CURRENT_CURRENCY = cur;
+
+    // ✅ persist ONE key consistently
+    if (finalCid) {
+      localStorage.setItem("CURRENT_COMPANY_ID", String(finalCid));
+      localStorage.setItem("company_id", String(finalCid)); // optional: keep for backward compat
+    }
+
+    const invCur = document.getElementById("invCurrency");
+    if (invCur && !invCur.value && cur) invCur.value = cur;
+
+    const quoteCur = document.getElementById("quoteCurrency");
+    if (quoteCur && !quoteCur.value && cur) quoteCur.value = cur;
+  };
+
+  // If user payload already contains company object, prefer it
+  if (currentUser?.company && currentUser.company.id) {
+    const company = currentUser.company;
+    applyCompanyGlobals(company, company.id);
+    return { company, companyId: company.id };
+  }
+
+  try {
+    const company = await apiFetch(`/api/companies/${encodeURIComponent(cid)}`, { method: "GET" });
+    applyCompanyGlobals(company, cid);
+    return { company, companyId: company?.id || cid };
+  } catch (e) {
+    console.error("resolveCompanyProfile: failed to fetch company", cid, e);
+
+    // If cachedCid caused 403, wipe it so you don't keep booting into a forbidden company
+    if (cachedCid && cachedCid === cid) {
+      localStorage.removeItem("CURRENT_COMPANY_ID");
+      localStorage.removeItem("company_id");
+    }
+
+    applyCompanyGlobals(null, cid);
+    return { company: null, companyId: cid };
+  }
+}
+window.resolveCompanyProfile = resolveCompanyProfile
 
   async function apiFetchText(url, options = {}) {
     try {
@@ -4197,6 +4196,12 @@ function fillRoleSelect(sel, current) {
   ).join("");
 }
 
+function isSeniorFullAccess() {
+  const role = window.normalizeRole?.(window.getCurrentRole?.() || localStorage.getItem("userRole") || "viewer");
+  return role === "senior";
+}
+window.isSeniorFullAccess = isSeniorFullAccess;
+
 function openRoleModal({ companyId, userId, email, role }) {
   if (!canEditRoles()) return;
 
@@ -4829,6 +4834,8 @@ window.getCurrentPermissions = function getCurrentPermissions() {
 };
 
 window.hasPermission = function hasPermission(key) {
+  if (window.isSeniorFullAccess?.()) return true;
+
   const perms = window.getCurrentPermissions?.() || {};
   return perms[key] === true;
 };
@@ -4836,41 +4843,31 @@ window.hasPermission = function hasPermission(key) {
 function canSeeMenuItem(item) {
   if (!item) return false;
 
-  // feature gate first
-  if (item.feature) {
-    const ok = (typeof featureAllowed === "function")
-      ? featureAllowed(item.feature)
-      : (typeof hasFeature === "function")
-        ? hasFeature(item.feature)
-        : true;
-    if (!ok) return false;
-  }
+  // ✅ Senior Accountant sees all menu items
+  if (window.isSeniorFullAccess?.()) return true;
 
-  // permission-first
+  if (item.feature && !hasFeature(item.feature)) return false;
+
   if (item.permission) {
     return window.hasPermission?.(item.permission) === true;
   }
 
-  // legacy minRole fallback
   if (item.minRole) {
-    const me = String(window.getCurrentRole?.() || "viewer").toLowerCase();
-    if (me === "owner" || me === "admin") return true;
-
-    if (typeof canSeeRole === "function") {
-      return canSeeRole(item.minRole);
-    }
+    return window.canSeeRole?.(item.minRole) === true;
   }
 
   return true;
 }
+window.canSeeMenuItem = canSeeMenuItem;
 
 function shouldShowNavItem(item) {
   if (!item) return false;
 
-  // Enterprise-only menu gate
+  // ✅ Senior Accountant sees all nav items
+  if (window.isSeniorFullAccess?.()) return true;
+
   if (item.enterpriseOnly && !window.CURRENT_COMPANY?.is_enterprise) return false;
 
-  // Feature gate
   if (item.feature) {
     const ok = (typeof featureAllowed === "function")
       ? featureAllowed(item.feature)
@@ -4880,19 +4877,16 @@ function shouldShowNavItem(item) {
     if (!ok) return false;
   }
 
-  // ✅ SCREEN ITEMS: use unified screen guard
   if (item.screen) {
     if (!canOpenScreen(item.screen)) return false;
     const access = window.guardScreenAccess?.(item.screen);
     if (!access?.ok) return false;
   }
 
-  // ✅ WIZARD OR NON-SCREEN ITEM: permission-first, then minRole fallback
   if (!item.screen) {
     if (!canSeeMenuItem(item)) return false;
   }
 
-  // ✅ PARENTS: only show if at least 1 visible child
   if (!item.screen && Array.isArray(item.children)) {
     return item.children.some(shouldShowNavItem);
   }
@@ -5036,10 +5030,12 @@ window.canOpenScreen = canOpenScreen;
 
 // Optional feature check
 function hasFeature(flag) {
+  if (window.isSeniorFullAccess?.()) return true;
   if (!flag) return true;
+
   const f = window.CURRENT_COMPANY?.features || {};
   if (flag in f) return !!f[flag];
-  return true; // fallback
+  return true;
 }
 
 function canSeeMenuItem(item) {
@@ -5135,13 +5131,17 @@ function guardScreenAccess(name) {
     return { ok: false, reason: "auth" };
   }
 
+  // ✅ Senior Accountant full-access override
+  if (window.isSeniorFullAccess?.()) {
+    return { ok: true, resolved };
+  }
+
   // Permission-first gate
   if (rule.permission) {
     if (!window.hasPermission?.(rule.permission)) {
       return { ok: false, reason: "permission" };
     }
   } else if (rule.minRole && !window.canSeeRole(rule.minRole)) {
-    // Legacy enterprise fallback
     return { ok: false, reason: "role" };
   }
 
@@ -5400,6 +5400,9 @@ async function switchScreen(name) {
   ].includes(name);
 
   // 🔐 Auth guard
+  let base = "dashboard";
+
+  // 🔐 Auth guard
   if (!isLoggedIn() && isAuthRequired(name)) {
     showSignupPrompt(name);
     console.log("[switchScreen] early return at:", name, "base:", base);
@@ -5423,8 +5426,6 @@ async function switchScreen(name) {
     return;
   }
 
-  // ✅ DEFINE base EARLY (prevents TDZ error)
-  let base = "dashboard";
   if (isCustApprovals) base = "cust";
   else if (isControlRoom) base = "controls";
   else if (name === "customers") base = "customers";

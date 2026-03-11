@@ -4,32 +4,21 @@ from flask import request, jsonify, g, make_response, current_app
 from BackEnd.Services.auth_service import decode_jwt
 from BackEnd.Services.db_service import db_service
 
-import os
-
-ALLOWED_ORIGINS_DEV = {
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-    "http://localhost:5173",
-    "http://localhost:3000",
-}
-
-ALLOWED_ORIGINS_PROD = {
-    "https://finsage-web.onrender.com",  # your frontend domain
-}
-
-# Pick which set to use
-ALLOWED_ORIGINS = ALLOWED_ORIGINS_DEV if os.getenv("FLASK_ENV") == "development" else ALLOWED_ORIGINS_PROD
-
 def _corsify(resp):
     origin = request.headers.get("Origin")
-    if origin in ALLOWED_ORIGINS:
+    allowed_origins = current_app.config.get("FRONTEND_ORIGINS", [])
+
+    if origin and origin in allowed_origins:
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
         resp.headers["Access-Control-Allow-Credentials"] = "true"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-    return resp
+    else:
+        if origin:
+            print(f"[CORS BLOCKED] {origin}")
 
+    return resp
 
 def require_auth(_f=None, *, require_company: bool = True):
     def decorator(f):
