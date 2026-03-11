@@ -234,6 +234,23 @@ for r in app.url_map.iter_rules():
     if "invoices" in str(r) and "view" in str(r):
         print("ROUTE:", r, "->", r.endpoint)
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        resp = app.make_default_options_response()
+        return _corsify(resp)
+
+@app.after_request
+def apply_cors(resp):
+    return _corsify(resp)
+
+@app.before_request
+def log_and_handle_preflight():
+    print("[REQ]", request.method, request.path, "Origin=", request.headers.get("Origin"))
+    if request.method == "OPTIONS":
+        resp = app.make_default_options_response()
+        return _corsify(resp)
+    
 @app.errorhandler(Exception)
 def handle_any_exception(e):
     if isinstance(e, HTTPException):
