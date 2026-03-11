@@ -1,11 +1,11 @@
 FROM ubuntu:20.04
 
-# Set environment variables to avoid tzdata prompt
+# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Africa/Maseru
 
-# Install Python, wkhtmltopdf, and tzdata
-RUN apt-get update && apt-get install -y \
+# Install only the essentials
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     wkhtmltopdf \
