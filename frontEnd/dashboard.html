@@ -4,9 +4,24 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FinSage - Command Center</title>
+
+  <!-- ✅ Redirect to signin if no token -->
+  <script>
+
+  (function () {
+    const token =
+      localStorage.getItem("fs_user_token") ||
+      sessionStorage.getItem("fs_user_token");
+
+    if (!token && window.location.pathname === "/") {
+      window.location.replace("/signin.html");
+    }
+  })();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="icon" href="data:,">
+
 <style>
   :root{
     --fs-navy:#00284F;
@@ -6841,17 +6856,23 @@ window.safeRedirect = function (url, mode = "href") {
 };
 
 (function () {
+  const TOKEN_KEY = "fs_user_token";
+
   const token =
-    localStorage.getItem("fs_user_token") ||
-    sessionStorage.getItem("fs_user_token") ||
+    localStorage.getItem(TOKEN_KEY) ||
+    sessionStorage.getItem(TOKEN_KEY) ||
     localStorage.getItem("authToken") ||
     sessionStorage.getItem("authToken");
 
+  // 🚨 No token → go to signin
   if (!token) {
-    window.safeRedirect("signin.html");
+    if (!window.location.pathname.includes("signin")) {
+      window.location.replace("/signin");
+    }
     return;
   }
 
+  // try get user
   let user = null;
   try {
     user = JSON.parse(localStorage.getItem("fs_user") || "null");
@@ -6863,8 +6884,11 @@ window.safeRedirect = function (url, mode = "href") {
     !!user?.dashboards?.enterprise ||
     localStorage.getItem("can_access_enterprise_dashboard") === "true";
 
+  // 🚨 redirect based on dashboard permission
   if (!canEnterprise) {
-    window.safeRedirect("practitionerdashboard.html");
+    if (!window.location.pathname.includes("practitionerdashboard")) {
+      window.location.replace("/practitionerdashboard");
+    }
   }
 })();
 </script>
