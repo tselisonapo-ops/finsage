@@ -7,7 +7,7 @@ if sys.version_info >= (3, 10):
     UserType = dict | None
 else:
     UserType = Optional[dict]
-    
+
 def user_role(user: dict) -> str:
     return normalize_role(user.get("user_role") or user.get("role") or user.get("system_role") or "")
 
@@ -224,7 +224,7 @@ def must_approve_customer_before_invoicing(mode: str, policy: dict) -> bool:
     # ✅ tie invoicing permission to customer approval gate
     return customer_approval_required(mode, policy)
 
-def invoice_review_required(mode: str, policy: dict, user: dict | None = None) -> bool:
+def invoice_review_required(mode: str, policy: dict, user: Optional[dict] = None) -> bool:
     user = user or {}
     if is_assignment_execution_context(user):
         return False
