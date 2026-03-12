@@ -4961,10 +4961,10 @@ const SCREEN_POLICY = {
   "bank-recon": { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
 
   // Accounting views
-  ledger: { auth: "private", minRole: "assistant", permission: "can_view_accounting" },
-  trial:  { auth: "private", minRole: "assistant", permission: "can_view_accounting" },
-  vat:    { auth: "private", minRole: "assistant", permission: "can_view_accounting" },
-  coa:    { auth: "private", minRole: "assistant", permission: "can_view_accounting" },
+  ledger: { auth: "private", minRole: "assistant", permission: "can_view_reports" },
+  trial:  { auth: "private", minRole: "assistant", permission: "can_view_reports" },
+  vat:    { auth: "private", minRole: "assistant", permission: "can_view_reports" },
+  coa:    { auth: "private", minRole: "assistant", permission: "can_view_reports" },
 
   // Financial statements
   reports: { auth: "private", minRole: "junior", permission: "can_prepare_financials" },

@@ -8966,18 +8966,20 @@ if __name__ == "__main__":
     print(f"[BOOT] Port: {PORT}")
 
     if _should_run_bootstrap():
-        print("[BOOT] About to init master schema")
+        print("[BOOT] About to init master/public schema")
 
         with app.app_context():
 
-            # master/public bootstrap
+            # 1) master/public bootstrap
             try:
                 db_service.init_master_schema()
                 db_service.initialize_public_schema()
+                print("[BOOT] Master/public schema bootstrap done")
             except Exception as e:
                 print("[BOOT][FATAL] Master/public schema bootstrap failed:", e)
                 raise
 
+            # 2) list companies
             company_ids = []
             try:
                 company_ids = db_service.list_company_ids()
@@ -8986,24 +8988,25 @@ if __name__ == "__main__":
                 print("[BOOT][FATAL] Could not list companies:", e)
                 raise
 
+            # 3) provision each company fully
             failed = []
 
             for cid in company_ids:
                 try:
-                    print("[BOOT] Migrating tenant schema for company:", cid)
-                    db_service.ensure_company_schema(int(cid))
+                    print("[BOOT] Initializing company schema for company:", cid)
+                    db_service.initialize_company_schema(int(cid))
                 except Exception as e:
-                    print(f"[BOOT][WARN] Tenant migration failed for company {cid}:", e)
+                    print(f"[BOOT][WARN] Company initialization failed for company {cid}:", e)
                     failed.append((cid, str(e)))
 
             if failed:
-                print("[BOOT][WARN] Some tenants failed to migrate:")
+                print("[BOOT][WARN] Some companies failed to initialize:")
                 for cid, msg in failed:
                     print(f"  - company {cid}: {msg}")
             else:
-                print("[BOOT] Tenant migrations done")
+                print("[BOOT] Company initialization done")
 
-        print("[BOOT] Master schema init done")
+        print("[BOOT] Bootstrap complete")
 
     app.run(
         host="0.0.0.0",

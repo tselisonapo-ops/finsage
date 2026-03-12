@@ -1714,7 +1714,7 @@ class DatabaseService:
                     raise
 
             print("[MASTER-DDL] base tables done, calling initialize_public_schema()")
-            self.initialize_public_schema()
+            # self.initialize_public_schema()
             print("[MASTER-DDL] initialize_public_schema() done")
 
 
@@ -4167,22 +4167,12 @@ class DatabaseService:
     # per-company schema bootstrap
     # ---------------------------
     def initialize_company_schema(self, company_id: int) -> None:
-        """
-        Company creation provisioning (run once).
-        """
-        # 0) Ensure public schema objects exist (pool, settings, etc.)
-        self.initialize_public_schema()
-
-        # 1) DDL-only bootstrap for tenant schema
         self.ensure_company_schema(company_id)
-
-        # 2) One-time setup
         self.ensure_mandatory_company_accounts(company_id)
         self.apply_basic_cashflow_tags(company_id)
         self.ensure_required_control_accounts(company_id)
-        self.ensure_company_account_settings(company_id)       
+        self.ensure_company_account_settings(company_id)
         self.ensure_company_account_settings_defaults(company_id)
-
         # 3) Optional: seed COA from pool once (your pool-first seeding)
         # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
 
