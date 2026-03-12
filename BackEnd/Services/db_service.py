@@ -3827,7 +3827,7 @@ class DatabaseService:
         # ✅ mark owner's home/employment company membership
         if owner_user_id:
             # unset any previous primary membership for this user
-            self.execute(
+            self.execute_sql(
                 """
                 UPDATE public.company_users
                 SET is_primary = FALSE
@@ -3838,7 +3838,7 @@ class DatabaseService:
             )
 
             # upsert owner membership as primary/core
-            self.execute(
+            self.execute_sql(
                 """
                 INSERT INTO public.company_users
                 (
@@ -17358,7 +17358,8 @@ class DatabaseService:
             description = EXCLUDED.description,
             posting = EXCLUDED.posting;
         """
-        self.execute(sql, (
+        self.execute_sql(
+            sql,
             "Unallocated Customer Receipts",
             "BS_CL_2325",
             "Liability",
@@ -17368,7 +17369,7 @@ class DatabaseService:
             "",
             True,
             "2325",
-        ))
+        )
 
 
     def get_journal_lines_for_ids(
