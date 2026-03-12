@@ -1556,11 +1556,11 @@ class DatabaseService:
                     (
                         SELECT MAX(split_part(system_company_code, '-', 2)::bigint)
                         FROM public.companies
-                        WHERE system_company_code ~ '^FS-\\d{6}$'
+                        WHERE system_company_code ~ '^FS-\d{6}$'
                     ),
-                    0
+                    1
                 ),
-                0
+                1
             ),
             true
         );
