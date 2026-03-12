@@ -1573,6 +1573,21 @@ class DatabaseService:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_companies_system_company_code
             ON public.companies(system_company_code);
 
+        CREATE TABLE IF NOT EXISTS public.company_branding (
+            company_id INT PRIMARY KEY REFERENCES public.companies(id) ON DELETE CASCADE,
+            logo_url TEXT NULL,
+            footer_text TEXT NULL,
+            contact_phone TEXT NULL,
+            contact_email TEXT NULL,
+            website TEXT NULL,
+            address TEXT NULL,
+            vat_no TEXT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS company_branding_contact_email_idx
+            ON public.company_branding(contact_email);
+
         -- ==========================================
         -- COMPANY USERS (membership + per-company role)
         -- ==========================================

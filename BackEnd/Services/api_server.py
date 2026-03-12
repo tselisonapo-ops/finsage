@@ -1313,19 +1313,22 @@ def api_auth_signup():
     html = f"<p>Welcome {first_name}, confirm your account: <a href='{link}'>Confirm</a></p>"
     text = f"Welcome {first_name}, confirm your account: {link}"
 
+    email_sent = True
+
     try:
         send_mail(to_email=email, subject=subject, html_body=html, text_body=text)
     except Exception as e:
-        print(f"[AUTH] EMAIL SEND FAILED for {email}: {e}")
-
+        email_sent = False
+        current_app.logger.warning("[AUTH] EMAIL SEND FAILED for %s: %s", email, e)
+        
     return jsonify({
-        "message": "Registration successful. Please check your email.",
-        "status": "confirmation_pending",
+        "message": "Registration successful.",
+        "status": "confirmation_pending" if email_sent else "confirmation_email_failed",
         "user_email": email,
         "owner_id": owner_id,
         "company_id": created_company_id,
-        "confirm_expires_hours": 48
-
+        "confirm_expires_hours": 48,
+        "email_sent": email_sent
     }), 201
 
 

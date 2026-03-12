@@ -1095,10 +1095,15 @@ function handleRegistration(event) {
         resp.userEmail ||
         (step1.email || val("email") || "");
 
-      alert("Registration successful! Please check your email to confirm your account.");
-
       const query = email ? `?email=${encodeURIComponent(email)}` : "";
-      window.location.href = `check-email.html${query}`;
+
+      if (resp.email_sent === false || resp.status === "confirmation_email_failed") {
+        alert("Your account was created, but we could not send the confirmation email right now.");
+        window.location.href = `check-email.html${query}&email_failed=1`;
+      } else {
+        alert("Registration successful! Please check your email to confirm your account.");
+        window.location.href = `check-email.html${query}`;
+      }
     })
     .catch(function (err) {
       alert("Error: " + (err && err.message ? err.message : "Unexpected error"));
