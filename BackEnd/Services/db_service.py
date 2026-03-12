@@ -1480,8 +1480,10 @@ class DatabaseService:
         ALTER TABLE public.companies
             ADD COLUMN IF NOT EXISTS inventory_mode TEXT DEFAULT 'none',
             ADD COLUMN IF NOT EXISTS inventory_valuation TEXT NULL,
-            ADD COLUMN IF NOT EXISTS vat_settings JSONB NULL;
-
+            ADD COLUMN IF NOT EXISTS vat_settings JSONB NULL,
+            ADD COLUMN IF NOT EXISTS default_pnl_layout TEXT NULL,
+            ADD COLUMN IF NOT EXISTS pnl_labels_json JSONB NULL;
+            
         ALTER TABLE public.companies
             ADD COLUMN IF NOT EXISTS credit_policy JSONB NULL;
 
