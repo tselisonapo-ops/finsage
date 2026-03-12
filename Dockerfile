@@ -14,4 +14,6 @@ COPY . .
 RUN pip install --upgrade pip \
     && pip install -r BackEnd/requirements.txt
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} BackEnd.Services.api_server:app"]
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]
