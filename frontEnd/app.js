@@ -5,11 +5,11 @@
   /* =========================================================
    * Config
    * =======================================================*/
-  const USE_BACKEND      = true;
+  const USE_BACKEND = true;
   const API_BASE =
     window.APP_CONFIG?.API_BASE ||
-    "http://127.0.0.1:5000";
-   // ⬅️ Flask server
+    "https://finsage-backend-ab25.onrender.com";
+
   const AUTH_SIGNUP_URL  = API_BASE + "/api/auth/signup";
   const COUNTRY_META_URL = API_BASE + "/api/meta/countries";
   // INDUSTRIES_URL removed from usage – we now use static catalog
