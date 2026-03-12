@@ -6,7 +6,9 @@
    * Config
    * =======================================================*/
   const USE_BACKEND      = true;
-  const API_BASE = import.meta.env.VITE_API_BASE;
+  const API_BASE =
+    window.APP_CONFIG?.API_BASE ||
+    "http://127.0.0.1:5000";
    // ⬅️ Flask server
   const AUTH_SIGNUP_URL  = API_BASE + "/api/auth/signup";
   const COUNTRY_META_URL = API_BASE + "/api/meta/countries";
@@ -197,14 +199,17 @@ const INDUSTRY_CATALOG = {
   function populateRoleOptions() {
     const accountTypeEl = document.getElementById("accountType");
     const roleEl = document.getElementById("userRole");
-    if (!accountTypeEl || !roleEl) return;
+    if (!accountTypeEl || !roleEl) {
+      console.warn("[roles] accountType or userRole element missing");
+      return;
+    }
 
-    const selectedType = String(accountTypeEl.value || "").toLowerCase();
+    const selectedType = String(accountTypeEl.value || "").toLowerCase().trim();
     const roleSet = ROLE_OPTIONS[selectedType] || [];
 
     const currentValue = roleEl.value || "";
 
-    roleEl.innerHTML = '<option value="" disabled selected>Select your role...</option>';
+    roleEl.innerHTML = '<option value="">Select your role...</option>';
 
     roleSet.forEach(function (role) {
       const opt = document.createElement("option");
@@ -214,11 +219,7 @@ const INDUSTRY_CATALOG = {
     });
 
     const stillExists = roleSet.some(r => r.value === currentValue);
-    if (stillExists) {
-      roleEl.value = currentValue;
-    } else {
-      roleEl.value = "";
-    }
+    roleEl.value = stillExists ? currentValue : "";
   }
 
   function adaptLabelsByAccountType() {
@@ -1155,6 +1156,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Rehydrate step 1
   loadStep1Data();
+
+  populateRoleOptions();
+  adaptLabelsByAccountType();
 
   // Init static industries first
   initIndustryDropdowns();
