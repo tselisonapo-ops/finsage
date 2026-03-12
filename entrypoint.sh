@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 echo "[ENTRYPOINT] Running database bootstrap..."
 
-python -m BackEnd.bootstrap_master || true
+python -m BackEnd.Services.bootstrap_master || true
 
 echo "[ENTRYPOINT] Starting Gunicorn..."
 
