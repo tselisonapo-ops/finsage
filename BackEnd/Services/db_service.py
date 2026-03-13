@@ -3882,6 +3882,8 @@ class DatabaseService:
                     (company_id, int(owner_user_id)),
                 )
 
+            conn.commit()
+
         self.initialize_public_schema()
         self.ensure_company_account_settings(company_id)
         return company_id
