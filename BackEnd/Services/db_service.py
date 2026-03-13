@@ -3783,101 +3783,100 @@ class DatabaseService:
         reg_json = Json(registered_address_json) if registered_address_json is not None else None
         post_json = Json(postal_address_json) if postal_address_json is not None else None
 
-        row = self.fetch_one(
-            """
-            INSERT INTO public.companies
-            (
-                name, client_code, industry, sub_industry,
-                industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
-                currency, fin_year_start, company_reg_date,
-                country, company_reg_no, tin, vat,
-                company_email, owner_user_id, is_active,
-                default_pnl_layout, pnl_labels_json,
-                physical_address, postal_address, company_phone, logo_url,
-                registered_address_json, postal_address_json,
-                address_place_id, address_lat, address_lng
-            )
-            VALUES
-            (
-                %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, TRUE,
-                %s, %s,
-                %s, %s, %s, %s,
-                %s, %s,
-                %s, %s, %s
-            )
-            RETURNING id;
-            """,
-            (
-                name, client_code, industry, sub_industry,
-                industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
-                currency, fin_year_start, company_reg_date,
-                country, company_reg_no, tin, vat,
-                company_email, owner_user_id,
-                default_pnl_layout, pnl_labels_json,
-                physical_address, postal_address, company_phone, logo_url,
-                reg_json, post_json,
-                address_place_id, address_lat, address_lng,
-            ),
-        )
-
-        if not row:
-            raise RuntimeError("Failed to insert company")
-
-        company_id = int(row["id"])
-
-        # ✅ mark owner's home/employment company membership
-        if owner_user_id:
-            # unset any previous primary membership for this user
-            self.execute_sql(
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
                 """
-                UPDATE public.company_users
-                SET is_primary = FALSE
-                WHERE user_id = %s
-                  AND is_primary = TRUE;
-                """,
-                (int(owner_user_id),),
-            )
-
-            # upsert owner membership as primary/core
-            self.execute_sql(
-                """
-                INSERT INTO public.company_users
+                INSERT INTO public.companies
                 (
-                    company_id,
-                    user_id,
-                    role,
-                    access_scope,
-                    membership_kind,
-                    is_primary,
-                    is_active,
-                    joined_at
+                    name, client_code, industry, sub_industry,
+                    industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
+                    currency, fin_year_start, company_reg_date,
+                    country, company_reg_no, tin, vat,
+                    company_email, owner_user_id, is_active,
+                    default_pnl_layout, pnl_labels_json,
+                    physical_address, postal_address, company_phone, logo_url,
+                    registered_address_json, postal_address_json,
+                    address_place_id, address_lat, address_lng
                 )
                 VALUES
                 (
-                    %s,
-                    %s,
-                    'owner',
-                    'core',
-                    'primary',
-                    TRUE,
-                    TRUE,
-                    NOW()
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, TRUE,
+                    %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s
                 )
-                ON CONFLICT (company_id, user_id) DO UPDATE
-                SET
-                    role = 'owner',
-                    access_scope = 'core',
-                    membership_kind = 'primary',
-                    is_primary = TRUE,
-                    is_active = TRUE,
-                    joined_at = COALESCE(public.company_users.joined_at, NOW());
+                RETURNING id;
                 """,
-                (company_id, int(owner_user_id)),
+                (
+                    name, client_code, industry, sub_industry,
+                    industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
+                    currency, fin_year_start, company_reg_date,
+                    country, company_reg_no, tin, vat,
+                    company_email, owner_user_id,
+                    default_pnl_layout, pnl_labels_json,
+                    physical_address, postal_address, company_phone, logo_url,
+                    reg_json, post_json,
+                    address_place_id, address_lat, address_lng,
+                ),
             )
+
+            row = cur.fetchone()
+            if not row:
+                raise RuntimeError("Failed to insert company")
+
+            company_id = int(row["id"])
+
+            if owner_user_id:
+                cur.execute(
+                    """
+                    UPDATE public.company_users
+                    SET is_primary = FALSE
+                    WHERE user_id = %s
+                    AND is_primary = TRUE;
+                    """,
+                    (int(owner_user_id),),
+                )
+
+                cur.execute(
+                    """
+                    INSERT INTO public.company_users
+                    (
+                        company_id,
+                        user_id,
+                        role,
+                        access_scope,
+                        membership_kind,
+                        is_primary,
+                        is_active,
+                        joined_at
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        'owner',
+                        'core',
+                        'primary',
+                        TRUE,
+                        TRUE,
+                        NOW()
+                    )
+                    ON CONFLICT (company_id, user_id) DO UPDATE
+                    SET
+                        role = 'owner',
+                        access_scope = 'core',
+                        membership_kind = 'primary',
+                        is_primary = TRUE,
+                        is_active = TRUE,
+                        joined_at = COALESCE(public.company_users.joined_at, NOW());
+                    """,
+                    (company_id, int(owner_user_id)),
+                )
 
         self.initialize_public_schema()
         self.ensure_company_account_settings(company_id)
