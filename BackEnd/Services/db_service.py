@@ -988,21 +988,26 @@ class DatabaseService:
 
     @contextmanager
     def _conn_cursor(self, *, ddl: bool = False):
-        conn = self.pool.getconn()
+        conn = None
         try:
+            conn = self.pool.getconn()
+
             try:
+                if conn.closed:
+                    raise Exception("pooled connection already closed")
                 with conn.cursor() as ping_cur:
                     ping_cur.execute("SELECT 1")
                     ping_cur.fetchone()
             except Exception:
                 try:
-                    conn.close()
+                    if conn is not None:
+                        self.pool.putconn(conn, close=True)
                 except Exception:
                     pass
                 conn = psycopg2.connect(self.dsn)
                 conn.autocommit = False
 
-            with conn:
+            try:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     if ddl:
                         cur.execute("SET LOCAL lock_timeout = '60s';")
@@ -1011,8 +1016,24 @@ class DatabaseService:
                         cur.execute("SET LOCAL lock_timeout = '5s';")
                         cur.execute("SET LOCAL statement_timeout = '60s';")
                     yield conn, cur
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
         finally:
-            self.pool.putconn(conn)
+            if conn is not None:
+                try:
+                    if getattr(conn, "closed", 1):
+                        try:
+                            self.pool.putconn(conn, close=True)
+                        except Exception:
+                            pass
+                    else:
+                        self.pool.putconn(conn)
+                except Exception:
+                    pass
 
 
     def execute_sql(
@@ -1024,15 +1045,7 @@ class DatabaseService:
         conn=None,
         commit: bool = True,
     ) -> Optional[int]:
-        """
-        Execute SQL with optional external cursor/connection.
-        - If cur is provided, uses it (and commits only if commit=True and conn provided).
-        - If cur is NOT provided, opens its own connection/cursor and commits.
-        - Preserves your RETURNING handling (extract id/first column).
-        """
-
         def _extract_returning(_cur) -> Optional[int]:
-            # If the statement returns rows (RETURNING ...)
             row = _cur.fetchone()
             if not row:
                 return None
@@ -1045,11 +1058,10 @@ class DatabaseService:
                 return int(row[0])
             return None
 
-        # ✅ Use provided cursor (caller controls transaction)
         if cur is not None:
             cur.execute(sql, params)
 
-            if cur.description:
+            if cur.description is not None:
                 out = _extract_returning(cur)
                 if commit and conn is not None:
                     conn.commit()
@@ -1059,16 +1071,17 @@ class DatabaseService:
                 conn.commit()
             return None
 
-        # ✅ Default behavior: open own transaction like before
         with self._conn_cursor() as (conn2, cur2):
             cur2.execute(sql, params)
 
-            if cur2.description:
+            if cur2.description is not None:
                 out = _extract_returning(cur2)
-                conn2.commit()
+                if commit:
+                    conn2.commit()
                 return out
 
-            conn2.commit()
+            if commit:
+                conn2.commit()
             return None
 
 
@@ -1106,14 +1119,8 @@ class DatabaseService:
         if cur is not None:
             return _run(cur)
 
-        conn = self.pool.getconn()
-        try:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as _cur:
-                _cur.execute("SET LOCAL lock_timeout = '5s';")
-                _cur.execute("SET LOCAL statement_timeout = '60s';")
-                return _run(_cur)
-        finally:
-            self.pool.putconn(conn)
+        with self._conn_cursor() as (_c, _cur):
+            return _run(_cur)
 
 
     def fetch_all(
@@ -1122,11 +1129,6 @@ class DatabaseService:
         params: ParamsType = (),
         cur=None,
     ) -> list[Dict[str, Any]]:
-        """
-        Execute a SELECT and return all rows as list[dict] (RealDictCursor).
-        If cur is provided, uses it.
-        """
-
         exec_params = None
 
         if isinstance(params, dict) and "%(" not in sql:
@@ -1155,7 +1157,7 @@ class DatabaseService:
                 except Exception:
                     placeholders = None
 
-                print("\n[DB] fetch_all FAILED")
+                print("\\n[DB] fetch_all FAILED")
                 print("[DB] Error:", repr(e))
                 print("[DB] Placeholders:", placeholders)
                 if isinstance(exec_params, dict):
@@ -1164,9 +1166,12 @@ class DatabaseService:
                 else:
                     print("[DB] Params len:", (len(exec_params) if exec_params else 0))
                     print("[DB] Params:", exec_params)
-                print("[DB] SQL:\n", sql)
-                print("[DB] ---\n")
+                print("[DB] SQL:\\n", sql)
+                print("[DB] ---\\n")
                 raise
+
+            if _cur.description is None:
+                return []
 
             rows = _cur.fetchall()
             return [dict(r) for r in rows]
@@ -1176,7 +1181,6 @@ class DatabaseService:
 
         with self._conn_cursor() as (_c, _cur):
             return _run(_cur)
-
 
     def fetch_val(
         self,
