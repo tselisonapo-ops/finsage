@@ -18,7 +18,7 @@ ALLOWED_LOGO_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # ✅ Load env FIRST (before importing db_service/auth_service/etc.)
 ENV_PATH = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=ENV_PATH, override=True)
+load_dotenv(dotenv_path=ENV_PATH, override=False)
 
 import logging
 import re
