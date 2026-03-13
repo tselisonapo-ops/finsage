@@ -15984,17 +15984,26 @@ class DatabaseService:
         # 🔎 DEBUG: detect who is calling insert_coa with 1501/1502
         import traceback
         try:
-            tc_set  = {str(r.get("template_code") or "").strip() for r in (rows or []) if isinstance(r, dict)}
-            tcs_set = {str(r.get("template_code_scoped") or "").strip() for r in (rows or []) if isinstance(r, dict)}
+            tc_set = {
+                str(r.get("template_code") or "").strip()
+                for r in (rows or [])
+                if isinstance(r, dict)
+            }
+            tcs_set = {
+                str(r.get("template_code_scoped") or "").strip()
+                for r in (rows or [])
+                if isinstance(r, dict)
+            }
 
-            if {"1501","1502"} & tc_set or {"G::1501","G::1502"} & tcs_set:
+            if {"1501", "1502"} & tc_set or {"G::1501", "G::1502"} & tcs_set:
                 print("\n[DEBUG][insert_coa] payload contains 1501/1502 for company", company_id)
-                print("  tc_hit =", sorted(list({"1501","1502"} & tc_set)))
-                print("  tcs_hit=", sorted(list({"G::1501","G::1502"} & tcs_set)))
+                print("  tc_hit =", sorted(list({"1501", "1502"} & tc_set)))
+                print("  tcs_hit=", sorted(list({"G::1501", "G::1502"} & tcs_set)))
                 print("  stack:\n" + "".join(traceback.format_stack(limit=25)))
         except Exception as e:
             print("[DEBUG][insert_coa] debug failed:", e)
-            # ------------------------------------------------------------
+
+        # ------------------------------------------------------------
         # 1) Ensure schema + COA table (DDL-only)
         # ------------------------------------------------------------
         self.execute_ddl(f"CREATE SCHEMA IF NOT EXISTS {schema};")
@@ -16002,7 +16011,7 @@ class DatabaseService:
         self.execute_ddl(f"""
             CREATE TABLE IF NOT EXISTS {schema}.coa (
                 id SERIAL PRIMARY KEY,
-                company_id INT NOT NULL DEFAULT {company_id},   -- ✅ ADD THIS
+                company_id INT NOT NULL DEFAULT {company_id},
                 code TEXT NOT NULL,
                 name TEXT NOT NULL,
                 section TEXT NULL,
@@ -16031,7 +16040,6 @@ class DatabaseService:
             );
         """)
 
-        # legacy-safe additive ALTERs (safe if table existed earlier)
         self.execute_ddl(f"ALTER TABLE {schema}.coa ADD COLUMN IF NOT EXISTS template_code_base TEXT NULL;")
         self.execute_ddl(f"ALTER TABLE {schema}.coa ADD COLUMN IF NOT EXISTS template_code_scoped TEXT NULL;")
         self.execute_ddl(f"ALTER TABLE {schema}.coa ADD COLUMN IF NOT EXISTS company_id INT;")
@@ -16063,14 +16071,13 @@ class DatabaseService:
             WHERE template_code_scoped IS NOT NULL;
         """)
 
-        # 🚫 DO NOT enforce UNIQUE(template_code) anymore
+        # 🚫 DO NOT enforce UNIQUE(template_code)
         self.execute_ddl(f"ALTER TABLE {schema}.coa DROP CONSTRAINT IF EXISTS {schema}_coa_template_code_uniq;")
         self.execute_ddl(f"DROP INDEX IF EXISTS {schema}.{schema}_coa_template_code_uniq;")
         self.execute_ddl(f"DROP INDEX IF EXISTS {schema}_coa_template_code_uniq;")
 
-        import time, traceback
+        import time
 
-        # If COA already has rows, log who is calling insert_coa anyway
         try:
             existing_n = self.fetch_val(f"SELECT COUNT(*) FROM {schema}.coa;") or 0
             if int(existing_n) > 0:
@@ -16080,87 +16087,107 @@ class DatabaseService:
             print("[COA-WRITE] precheck failed:", e)
 
         # ------------------------------------------------------------
-        # 3) Collect existing reporting codes (avoid collisions)
+        # 3) Reserved control identities
         # ------------------------------------------------------------
+        canonical_by_tc = {
+            "1410": "BS_CA_1410",
+            "2310": "BS_CL_2310",
+            "2300": "BS_CL_2300",
+            "2105": "BS_CL_2105",
+            "9002": "BS_CA_9002",
+            "2200": "BS_CL_2200",
+            "2350": "BS_CL_2350",
+            "2325": "BS_CL_2325",
+            "1730": "BS_CA_1730",
+            "2360": "BS_CL_2360",
+            "2215": "BS_CL_2215",
+            "5305": "BS_PL_5305",
+            "1500": "BS_CA_1500",
+            "1000": "BS_CA_1000",
+            "1010": "BS_CA_1010",
+            "1050": "BS_CA_1050",
+            "8010": "PL_REV_ADJ_8010",
+            "8011": "PL_EXP_ADJ_8011",
+            "1610": "BS_NCA_1610",
+            "2610": "BS_CL_2610",
+            "2620": "BS_NCL_2620",
+            "7110": "PL_OPEX_7110",
+            "6017": "PL_OPEX_6017",
+            "1590": "BS_NCA_1590",
+        }
+
+        reserved_template_codes = set(canonical_by_tc.keys())
+        reserved_template_code_scoped = {f"G::{tc}" for tc in reserved_template_codes}
+
+        # Existing reporting codes
         existing_codes: Set[str] = set()
-        for r in (self.fetch_all(f"SELECT code FROM {schema}.coa;") or []):
-            c = r.get("code") if isinstance(r, dict) else (r[0] if r else "")
-            c = str(c or "").strip()
-            if c:
-                existing_codes.add(c)
+        existing_reserved_owner_by_scoped: Dict[str, str] = {}
+        existing_reserved_owner_by_tc: Dict[str, str] = {}
+
+        existing_rows = self.fetch_all(
+            f"""
+            SELECT code, template_code, template_code_scoped
+            FROM {schema}.coa;
+            """
+        ) or []
+
+        for r in existing_rows:
+            code = str(r.get("code") or "").strip()
+            tc = str(r.get("template_code") or "").strip()
+            tcs = str(r.get("template_code_scoped") or "").strip()
+
+            if code:
+                existing_codes.add(code)
+
+            if tc in canonical_by_tc:
+                existing_reserved_owner_by_tc[tc] = code
+                existing_reserved_owner_by_scoped[f"G::{tc}"] = code
+
+            if tcs in reserved_template_code_scoped:
+                existing_reserved_owner_by_scoped[tcs] = code
 
         # Reserved reporting codes (never allocate these)
         reserved_codes = {
-            # ----------------------------
-            # VAT
-            # ----------------------------
-            "BS_CA_1410",  # VAT input
-            "BS_CL_2310",  # VAT output
-            "BS_CL_2300",  # VAT payable (net) (optional, if you use net-off control)
+            "BS_CA_1410",
+            "BS_CL_2310",
+            "BS_CL_2300",
 
-            # ----------------------------
-            # Banking / Cash system controls
-            # ----------------------------
-            "BS_CA_1000",  # Cash & Bank (main bank GL)
-            "BS_CA_1010",  # Petty Cash
-            "BS_CA_1050",  # Bank Clearing / Suspense
-            "BS_CL_2105",  # Bank Overdraft (auto when bank GL goes negative)
+            "BS_CA_1000",
+            "BS_CA_1010",
+            "BS_CA_1050",
+            "BS_CL_2105",
 
-            # ----------------------------
-            # Receivables / Payables controls
-            # ----------------------------
-            "BS_CA_9002",  # AR control (trade receivables control)
-            "BS_CL_2200",  # AP control (accounts payable control)
-            "BS_CL_2210",  # Accrued Expenses (common control-ish liability)
-            "BS_CL_2215",  # GRNI control (goods received not invoiced)
+            "BS_CA_9002",
+            "BS_CL_2200",
+            "BS_CL_2210",
+            "BS_CL_2215",
 
-            # ----------------------------
-            # Unallocated / Advances (clearing)
-            # ----------------------------
-            "BS_CL_2350",  # Customer overpayments / unallocated receipts (canonical)
-            "BS_CL_2325",  # Unallocated receipts (legacy/variant) - keep reserved if still exists anywhere
-            "BS_CA_1730",  # Supplier advances / unallocated payments (vendor prepayments)
+            "BS_CL_2350",
+            "BS_CL_2325",
+            "BS_CA_1730",
 
-            # ----------------------------
-            # Inventory controls
-            # ----------------------------
-            "BS_CA_1500",  # Inventory (canonical)
-            "BS_CA_1001",  # Vehicle Inventory (if dealership template uses a separate inventory bucket)
-            "BS_CA_1509",  # Inventory write-down / obsolescence (contra inventory)
+            "BS_CA_1500",
+            "BS_CA_1001",
+            "BS_CA_1509",
 
-            # ----------------------------
-            # Tax controls (beyond VAT)
-            # ----------------------------
-            "BS_CL_2360",  # Withholding tax payable
-            "BS_CL_2320",  # PAYE / withholding tax payable (payroll)
-            "BS_CL_2330",  # Income tax payable
+            "BS_CL_2360",
+            "BS_CL_2320",
+            "BS_CL_2330",
 
-            # ----------------------------
-            # Price variance / purchasing controls
-            # ----------------------------
-            "BS_PL_5305",  # Purchase Price Variance (PPV) / IR-GR variance control
+            "BS_PL_5305",
 
-            # ----------------------------
-            # Discounts / contra accounts
-            # ----------------------------
-            "PL_REV_ADJ_8010",  # Sales discounts (contra revenue)
-            "PL_EXP_ADJ_8011",  # Purchases discounts (contra expense)
+            "PL_REV_ADJ_8010",
+            "PL_EXP_ADJ_8011",
 
-            # ----------------------------
-            # IFRS 16 lease controls (from your control template reminders)
-            # ----------------------------
-            "BS_NCA_1610",   # Right-of-Use Asset
-            "BS_CL_2610",    # Lease Liability - Current
-            "BS_NCL_2620",   # Lease Liability - Non-Current
-            "PL_OPEX_7110",  # Lease interest expense (your mapping)
-            "PL_OPEX_6017",  # Lease amortization / ROU depreciation expense
-            "BS_NCA_1590",   # Accumulated depreciation (placeholder for ROU accum depr)
+            "BS_NCA_1610",
+            "BS_CL_2610",
+            "BS_NCL_2620",
+            "PL_OPEX_7110",
+            "PL_OPEX_6017",
+            "BS_NCA_1590",
 
-            # ----------------------------
-            # (Optional) other “system safety” codes you may want reserved
-            # ----------------------------
-            "BS_EQ_3100",  # Retained Earnings (common system lock)
-            "BS_EQ_3110",  # Drawings / dividends (often protected)
+            "BS_EQ_3100",
+            "BS_EQ_3110",
         }
 
         normalized = _normalize_coa_rows_codes(
@@ -16175,7 +16202,7 @@ class DatabaseService:
         sql_by_code = f"""
             INSERT INTO {schema}.coa
             (
-                company_id,                      -- ✅ ADD
+                company_id,
                 name, code, category, section,
                 description, reporting_description,
                 standard,
@@ -16188,7 +16215,7 @@ class DatabaseService:
                 is_contra, role
             )
             VALUES (
-                %s,                               -- ✅ ADD
+                %s,
                 %s,%s,%s,%s,
                 %s,%s,
                 %s,
@@ -16228,85 +16255,53 @@ class DatabaseService:
 
                 is_contra = COALESCE(EXCLUDED.is_contra, {schema}.coa.is_contra),
                 role      = COALESCE(NULLIF(EXCLUDED.role,''), {schema}.coa.role)
-        
-                WHERE {schema}.coa.code NOT IN (
 
-                    -- ----------------------------
-                    -- VAT
-                    -- ----------------------------
-                    'BS_CA_1410',   -- VAT Input
-                    'BS_CL_2310',   -- VAT Output
-                    'BS_CL_2300',   -- VAT Payable (Net optional)
+            WHERE {schema}.coa.code NOT IN (
+                'BS_CA_1410',
+                'BS_CL_2310',
+                'BS_CL_2300',
 
-                    -- ----------------------------
-                    -- Banking / Cash
-                    -- ----------------------------
-                    'BS_CA_1000',   -- Cash & Bank
-                    'BS_CA_1010',   -- Petty Cash
-                    'BS_CA_1050',   -- Bank Clearing
-                    'BS_CL_2105',   -- Bank Overdraft
+                'BS_CA_1000',
+                'BS_CA_1010',
+                'BS_CA_1050',
+                'BS_CL_2105',
 
-                    -- ----------------------------
-                    -- Receivables / Payables
-                    -- ----------------------------
-                    'BS_CA_9002',   -- AR Control
-                    'BS_CL_2200',   -- AP Control
-                    'BS_CL_2210',   -- Accrued Expenses
-                    'BS_CL_2215',   -- GRNI
+                'BS_CA_9002',
+                'BS_CL_2200',
+                'BS_CL_2210',
+                'BS_CL_2215',
 
-                    -- ----------------------------
-                    -- Unallocated / Advances
-                    -- ----------------------------
-                    'BS_CL_2350',   -- Customer Overpayments
-                    'BS_CL_2325',   -- Variant legacy unallocated receipts
-                    'BS_CA_1730',   -- Supplier Advances
+                'BS_CL_2350',
+                'BS_CL_2325',
+                'BS_CA_1730',
 
-                    -- ----------------------------
-                    -- Inventory
-                    -- ----------------------------
-                    'BS_CA_1500',   -- Inventory
-                    'BS_CA_1001',   -- Vehicle Inventory
-                    'BS_CA_1509',   -- Inventory Write-down
+                'BS_CA_1500',
+                'BS_CA_1001',
+                'BS_CA_1509',
 
-                    -- ----------------------------
-                    -- Tax controls
-                    -- ----------------------------
-                    'BS_CL_2360',   -- Withholding Tax
-                    'BS_CL_2320',   -- PAYE / payroll tax
-                    'BS_CL_2330',   -- Income Tax Payable
+                'BS_CL_2360',
+                'BS_CL_2320',
+                'BS_CL_2330',
 
-                    -- ----------------------------
-                    -- Purchasing / variance
-                    -- ----------------------------
-                    'BS_PL_5305',   -- Purchase Price Variance (FIXED)
+                'BS_PL_5305',
 
-                    -- ----------------------------
-                    -- Discounts
-                    -- ----------------------------
-                    'PL_REV_ADJ_8010',   -- Sales Discounts
-                    'PL_EXP_ADJ_8011',   -- Purchases Discounts
+                'PL_REV_ADJ_8010',
+                'PL_EXP_ADJ_8011',
 
-                    -- ----------------------------
-                    -- IFRS 16 Lease controls
-                    -- ----------------------------
-                    'BS_NCA_1610',   -- ROU Asset
-                    'BS_CL_2610',    -- Lease Liability Current
-                    'BS_NCL_2620',   -- Lease Liability Non-Current
-                    'PL_OPEX_7110',  -- Lease Interest Expense
-                    'PL_OPEX_6017',  -- Lease Amortization
-                    'BS_NCA_1590',   -- Accumulated Depreciation (ROU placeholder)
+                'BS_NCA_1610',
+                'BS_CL_2610',
+                'BS_NCL_2620',
+                'PL_OPEX_7110',
+                'PL_OPEX_6017',
+                'BS_NCA_1590',
 
-                    -- ----------------------------
-                    -- Equity protections (optional but recommended)
-                    -- ----------------------------
-                    'BS_EQ_3100',   -- Retained Earnings
-                    'BS_EQ_3110'    -- Drawings / Dividends
-                );
-
+                'BS_EQ_3100',
+                'BS_EQ_3110'
+            );
         """
 
         # ------------------------------------------------------------
-        # 5) Insert rows
+        # 5) Insert rows with reserved control protection
         # ------------------------------------------------------------
         count = 0
         with self._conn_cursor() as (conn, cur):
@@ -16323,16 +16318,67 @@ class DatabaseService:
                 tc = (row.get("template_code") or "").strip() or None
                 tcs = (row.get("template_code_scoped") or "").strip() or None
 
-                import traceback
+                # --------------------------------------------------------
+                # HARD RESERVATION RULE:
+                # non-canonical rows may NOT claim reserved control IDs
+                # --------------------------------------------------------
+                if tc in canonical_by_tc:
+                    canonical_code = canonical_by_tc[tc]
 
-                if (tc in ("1501", "1502")):
+                    # If this row is not the canonical control row, strip reserved IDs
+                    if code != canonical_code:
+                        print(
+                            f"[COA-RESERVE] stripping reserved tc/tcs from non-canonical row "
+                            f"code={code} tc={tc} tcs={tcs!r} canonical={canonical_code}"
+                        )
+                        tc = None
+                        tcs = None
+
+                if tcs in reserved_template_code_scoped:
+                    reserved_tc = tcs.split("::")[-1]
+                    canonical_code = canonical_by_tc.get(reserved_tc)
+
+                    if canonical_code and code != canonical_code:
+                        print(
+                            f"[COA-RESERVE] stripping reserved scoped template from non-canonical row "
+                            f"code={code} tc={tc} tcs={tcs!r} canonical={canonical_code}"
+                        )
+                        tcs = None
+                        if tc == reserved_tc:
+                            tc = None
+
+                # If company already has an owner for reserved tc, nobody else may claim it
+                if tc and tc in existing_reserved_owner_by_tc:
+                    owner_code = existing_reserved_owner_by_tc[tc]
+                    if owner_code and owner_code != code:
+                        print(
+                            f"[COA-RESERVE] existing tenant owner for tc={tc} is {owner_code}, "
+                            f"stripping from incoming code={code}"
+                        )
+                        tc = None
+                        if tcs == f"G::{tc}":
+                            tcs = None
+
+                # If company already has an owner for reserved scoped tc, nobody else may claim it
+                if tcs and tcs in existing_reserved_owner_by_scoped:
+                    owner_code = existing_reserved_owner_by_scoped[tcs]
+                    if owner_code and owner_code != code:
+                        print(
+                            f"[COA-RESERVE] existing tenant owner for tcs={tcs} is {owner_code}, "
+                            f"stripping from incoming code={code}"
+                        )
+                        if tc and f"G::{tc}" == tcs:
+                            tc = None
+                        tcs = None
+
+                if tc in ("1501", "1502"):
                     print("[COA-DEBUG] inserting tc=", tc, "tcs=", tcs, "name=", name, "code=", code)
                     print("[COA-DEBUG] stack:\n", "".join(traceback.format_stack(limit=12)))
 
                 cur.execute(
                     sql_by_code,
                     (
-                        company_id,  # ✅ ADD
+                        company_id,
                         name,
                         code,
                         row.get("category"),
@@ -16359,6 +16405,16 @@ class DatabaseService:
                 )
                 count += 1
 
+                # Track newly claimed reserved ownership inside this same batch
+                if tc in canonical_by_tc:
+                    existing_reserved_owner_by_tc[tc] = code
+                    existing_reserved_owner_by_scoped[f"G::{tc}"] = code
+
+                if tcs in reserved_template_code_scoped:
+                    existing_reserved_owner_by_scoped[tcs] = code
+
+                existing_codes.add(code)
+
             conn.commit()
 
         # ------------------------------------------------------------
@@ -16368,7 +16424,6 @@ class DatabaseService:
             try:
                 self.dedupe_company_coa(company_id)
             except Exception:
-                # Don't fail inserts due to dedupe issues
                 pass
 
         return count
