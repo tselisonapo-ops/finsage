@@ -1066,19 +1066,12 @@ class DatabaseService:
         params: ParamsType = (),
         cur=None,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Execute a SELECT and return one row as a dict (RealDictCursor).
-
-        If cur is provided, uses it (no new connection/transaction).
-        """
-
-        # Normalize params (IMPORTANT: preserve dict for named placeholders)
         exec_params = None
 
         if params is None:
             exec_params = None
         elif isinstance(params, dict):
-            exec_params = params  # keep dict for %(name)s
+            exec_params = params
         elif isinstance(params, tuple):
             exec_params = params if len(params) else None
         elif isinstance(params, list):
@@ -1087,43 +1080,28 @@ class DatabaseService:
             exec_params = (params,)
 
         def _run(_cur):
-            try:
-                if exec_params is None:
-                    _cur.execute(sql)
-                else:
-                    _cur.execute(sql, exec_params)
-            except Exception as e:
-                try:
-                    placeholders = sql.count("%s")
-                except Exception:
-                    placeholders = None
+            if exec_params is None:
+                _cur.execute(sql)
+            else:
+                _cur.execute(sql, exec_params)
 
-                print("\n[DB] fetch_one FAILED")
-                print("[DB] Error:", repr(e))
-                print("[DB] Placeholders:", placeholders)
-
-                if isinstance(exec_params, dict):
-                    print("[DB] Params type: dict")
-                    print("[DB] Params keys:", list(exec_params.keys()))
-                    print("[DB] Params:", exec_params)
-                else:
-                    print("[DB] Params len:", (len(exec_params) if exec_params else 0))
-                    print("[DB] Params:", exec_params)
-
-                print("[DB] SQL:\n", sql)
-                print("[DB] ---\n")
-                raise
+            if _cur.description is None:
+                return None
 
             row = _cur.fetchone()
             return dict(row) if row else None
 
-        # ✅ If caller passed a cursor, reuse it (transaction-safe)
         if cur is not None:
             return _run(cur)
 
-        # Otherwise open our own cursor/tx
-        with self._conn_cursor() as (_c, _cur):
-            return _run(_cur)
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as _cur:
+                _cur.execute("SET LOCAL lock_timeout = '5s';")
+                _cur.execute("SET LOCAL statement_timeout = '60s';")
+                return _run(_cur)
+        finally:
+            self.pool.putconn(conn)
 
 
     def fetch_all(
