@@ -990,6 +990,18 @@ class DatabaseService:
     def _conn_cursor(self, *, ddl: bool = False):
         conn = self.pool.getconn()
         try:
+            try:
+                with conn.cursor() as ping_cur:
+                    ping_cur.execute("SELECT 1")
+                    ping_cur.fetchone()
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = psycopg2.connect(self.dsn)
+                conn.autocommit = False
+
             with conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     if ddl:
