@@ -15818,33 +15818,66 @@ class DatabaseService:
             try:
                 # migration_key examples: "company_7:bootstrap", "company_7:ap"
                 if migration_key.startswith("company_") and ":" in migration_key:
-                    schema = migration_key.split(":", 1)[0]  # "company_7"
+                    schema = migration_key.split(":", 1)[0]  # e.g. "company_7"
 
-                    # For bootstrap, COA must exist
                     if migration_key.endswith(":bootstrap"):
                         cursor.execute(
                             """
                             SELECT 1
                             FROM information_schema.tables
-                            WHERE table_schema = %s AND table_name = 'coa'
+                            WHERE table_schema = %s
+                              AND table_name = 'coa'
                             LIMIT 1;
                             """,
                             (schema,),
                         )
+                        coa_exists = cursor.fetchone() is not None
 
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             SELECT 1
                             FROM pg_proc p
                             JOIN pg_namespace n ON n.oid = p.pronamespace
                             WHERE n.nspname = %s
-                                AND p.proname = 'fn_assert_asset_company'
+                              AND p.proname = 'fn_assert_asset_company'
                             LIMIT 1;
-                            """, (schema,))
-                        if cursor.fetchone() is None:
-                            # schema or table is gone -> rerun bootstrap
-                            print(f"[MIG] {migration_key} marked applied, but {schema}.coa missing -> rerun")
+                            """,
+                            (schema,),
+                        )
+                        fn_exists = cursor.fetchone() is not None
+
+                        if not coa_exists or not fn_exists:
+                            print(
+                                f"[MIG] {migration_key} marked applied, but bootstrap objects missing "
+                                f"(coa_exists={coa_exists}, fn_exists={fn_exists}) -> rerun"
+                            )
                             return False
 
+                    if migration_key.endswith(":ap"):
+                        required_ap_tables = (
+                            "bills",
+                            "bill_lines",
+                            "vendor_payments",
+                            "vendor_payment_allocations",
+                        )
+
+                        for table_name in required_ap_tables:
+                            cursor.execute(
+                                """
+                                SELECT 1
+                                FROM information_schema.tables
+                                WHERE table_schema = %s
+                                  AND table_name = %s
+                                LIMIT 1;
+                                """,
+                                (schema, table_name),
+                            )
+                            exists = cursor.fetchone() is not None
+                            if not exists:
+                                print(
+                                    f"[MIG] {migration_key} marked applied, but {schema}.{table_name} missing -> rerun"
+                                )
+                                return False
 
             except Exception as e:
                 # If introspection fails, be safe: rerun DDL
