@@ -19,18 +19,16 @@ Attachment = Union[str, Tuple[str, bytes, str]]
 
 
 def _cfg():
-    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.getenv("SMTP_PORT", "587"))
+    host = os.getenv("SMTP_HOST", "")
+    port = int(os.getenv("SMTP_PORT", "465"))
     user = os.getenv("SMTP_USER", "")
-    pwd  = os.getenv("SMTP_PASS", "")
-    mail_from = os.getenv("MAIL_FROM", user)  # can be 'Name <email@x.com>'
+    pwd = os.getenv("SMTP_PASS", "")
+    mail_from = os.getenv("MAIL_FROM", user)
     return host, port, user, pwd, mail_from
 
-
-def _ensure_config(user: str, pwd: str, mail_from: str):
-    if not user or not pwd or not mail_from:
-        raise RuntimeError("SMTP not configured. Set SMTP_USER, SMTP_PASS, MAIL_FROM.")
-
+def _ensure_config(host: str, user: str, pwd: str, mail_from: str):
+    if not host or not user or not pwd or not mail_from:
+        raise RuntimeError("SMTP not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM.")
 
 def _add_attachments(msg: EmailMessage, attachments: Optional[Iterable[Attachment]]):
     if not attachments:
