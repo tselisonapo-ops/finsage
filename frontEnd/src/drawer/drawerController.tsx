@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import FixedAssetsDrawer from "./FixedAssetsDrawer";
-import type { FixedAssetsDrawerOpenArgs, FixedAssetsDrawerResult } from "./FixedAssetsDrawer";
+import type {
+  FixedAssetsDrawerOpenArgs,
+  FixedAssetsDrawerResult,
+} from "./FixedAssetsDrawer";
 
-declare global {
-  interface Window {
-    FS_OPEN_FIXED_ASSETS_DRAWER?: (args: FixedAssetsDrawerOpenArgs) => Promise<FixedAssetsDrawerResult>;
-  }
-}
+type OpenEventDetail = {
+  args: FixedAssetsDrawerOpenArgs;
+  resolve: (res: FixedAssetsDrawerResult) => void;
+};
 
 export default function DrawerController() {
   const [open, setOpen] = useState(false);
@@ -25,20 +27,30 @@ export default function DrawerController() {
   }, []);
 
   useEffect(() => {
-    window.FS_OPEN_FIXED_ASSETS_DRAWER = (newArgs: FixedAssetsDrawerOpenArgs) => {
-      setArgs(newArgs);
+    const onOpen = (event: Event) => {
+      const customEvent = event as CustomEvent<OpenEventDetail>;
+      const detail = customEvent.detail;
+      if (!detail) return;
+
+      setArgs(detail.args);
       setOpen(true);
 
-      return new Promise<FixedAssetsDrawerResult>((resolve) => {
-        resolverRef.current = (res) => {
-          resolve(res);
-          close();
-        };
-      });
+      resolverRef.current = (res) => {
+        detail.resolve(res);
+        close();
+      };
     };
 
+    const onClose = () => {
+      close();
+    };
+
+    window.addEventListener("fs:open-fixed-assets-drawer", onOpen);
+    window.addEventListener("fs:close-fixed-assets-drawer", onClose);
+
     return () => {
-      delete window.FS_OPEN_FIXED_ASSETS_DRAWER;
+      window.removeEventListener("fs:open-fixed-assets-drawer", onOpen);
+      window.removeEventListener("fs:close-fixed-assets-drawer", onClose);
     };
   }, [close]);
 
@@ -53,5 +65,3 @@ export default function DrawerController() {
     />
   );
 }
-
-

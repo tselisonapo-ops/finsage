@@ -6050,15 +6050,12 @@ function openFixedAssetsDrawer(ctx = {}) {
     return Promise.resolve({ action: "close" });
   }
 
-  const companyName =
-    ctx.companyName || getActiveCompanyName();   // ✅ NEW
-
-  const mode = (ctx.mode === "dispose" ? "dispose" : "acquire");
+  const companyName = ctx.companyName || getActiveCompanyName();
+  const mode = ctx.mode === "dispose" ? "dispose" : "acquire";
 
   const args = {
     companyId,
-    companyName,        // ✅ PASS TO REACT
-
+    companyName,
     mode,
     accountCode: ctx.accountCode,
     accountName: ctx.accountName,
@@ -6066,13 +6063,19 @@ function openFixedAssetsDrawer(ctx = {}) {
     defaults: ctx.defaults,
   };
 
-  const fn = window.FS_OPEN_FIXED_ASSETS_DRAWER;
-  if (typeof fn !== "function") {
-    console.warn("[PPE] FS_OPEN_FIXED_ASSETS_DRAWER not available");
-    return Promise.resolve({ action: "close" });
-  }
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const fn = window.FS_OPEN_FIXED_ASSETS_DRAWER;
 
-  return fn(args);
+      if (typeof fn !== "function") {
+        console.warn("[PPE] FS_OPEN_FIXED_ASSETS_DRAWER not available");
+        resolve({ action: "close" });
+        return;
+      }
+
+      resolve(fn(args));
+    }, 0);
+  });
 }
 
 window.openFixedAssetsDrawer = openFixedAssetsDrawer;
@@ -21815,15 +21818,17 @@ window.postTerm = async function postTerm() {
   if (leaseNavBtn.dataset.bound === "1") return;
   leaseNavBtn.dataset.bound = "1";
 
-  const IS_LOCAL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const IS_LOCAL =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
 
   const LEASE_WIZARD_URL = IS_LOCAL
     ? "http://localhost:5173/"
-    : "https://finsage-1.onrender.com/lease-wizard.html";
+    : `${window.location.origin}/lease-wizard.html`;
 
   const LEASE_WIZARD_ORIGIN = IS_LOCAL
     ? "http://localhost:5173"
-    : "https://finsage-1.onrender.com";
+    : window.location.origin;
 
   function sendLeaseWizardContext() {
     const token =
@@ -21850,12 +21855,16 @@ window.postTerm = async function postTerm() {
 
   leaseNavBtn.addEventListener("click", () => {
     const cid = window.getActiveCompanyId?.();
-    if (!cid) return alert("Select a company first.");
+    if (!cid) {
+      alert("Select a company first.");
+      return;
+    }
 
     leaseDrawer.classList.add("active");
 
-    if (!leaseFrame.getAttribute("src")) {
-      leaseFrame.setAttribute("src", LEASE_WIZARD_URL);
+    if (leaseFrame.src !== LEASE_WIZARD_URL) {
+      leaseFrame.src = LEASE_WIZARD_URL;
+      leaseFrame.dataset.loaded = "0";
     }
 
     if (leaseFrame.dataset.loaded === "1") {
