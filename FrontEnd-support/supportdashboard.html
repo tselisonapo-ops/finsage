@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Support Dashboard</title>
+  <style>
+    body {
+      display: flex;
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
+    nav {
+      width: 250px;
+      background: #2c3e50;
+      color: #ecf0f1;
+      height: 100vh;
+      padding: 20px;
+    }
+    nav details {
+      margin-bottom: 10px;
+    }
+    nav summary {
+      cursor: pointer;
+      font-weight: bold;
+      padding: 5px 0;
+    }
+    nav ul {
+      list-style: none;
+      padding-left: 15px;
+    }
+    nav li {
+      margin: 5px 0;
+    }
+    main {
+      flex: 1;
+      padding: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #bdc3c7;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #34495e;
+      color: #ecf0f1;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <h2>Support Menu</h2>
+    <details open>
+      <summary>Tickets</summary>
+      <ul>
+        <li><a href="#">Open Tickets</a></li>
+        <li><a href="#">In Progress</a></li>
+        <li><a href="#">Resolved</a></li>
+      </ul>
+    </details>
+    <details>
+      <summary>Reports</summary>
+      <ul>
+        <li><a href="#">Ticket Volume</a></li>
+        <li><a href="#">Resolution Time</a></li>
+      </ul>
+    </details>
+    <details>
+      <summary>Settings</summary>
+      <ul>
+        <li><a href="#">User Roles</a></li>
+        <li><a href="#">System Config</a></li>
+      </ul>
+    </details>
+  </nav>
+
+  <main>
+    <h1>Support Dashboard</h1>
+    <p>Welcome to the support dashboard. Below is a stub table of tickets.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Email</th>
+          <th>Subject</th>
+          <th>Status</th>
+          <th>Created At</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>client@example.com</td>
+          <td>Login issue</td>
+          <td>Open</td>
+          <td>2026-03-14 11:30</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>user@domain.com</td>
+          <td>PDF export error</td>
+          <td>In Progress</td>
+          <td>2026-03-14 11:45</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

@@ -14877,250 +14877,305 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_audit_module_severity_time_idx
         ON {schema}.audit_trail(company_id, module, severity, occurred_at DESC);
 
-    -- ==================================================
-    -- LESSORS (IFRS 16 counterparties)
-    -- ==================================================
-    CREATE TABLE IF NOT EXISTS {schema}.lessors (
-        id SERIAL PRIMARY KEY,
-        company_id INT NOT NULL DEFAULT {company_id},
+        -- ==================================================
+        -- LESSORS (IFRS 16 counterparties)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.lessors (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
 
-        name TEXT NOT NULL,
-        reg_no TEXT NULL,
-        vat_no TEXT NULL,
+            name TEXT NOT NULL,
+            reg_no TEXT NULL,
+            vat_no TEXT NULL,
 
-        email TEXT NULL,
-        phone TEXT NULL,
-        address TEXT NULL,
+            email TEXT NULL,
+            phone TEXT NULL,
+            address TEXT NULL,
 
-        is_related_party BOOLEAN NOT NULL DEFAULT FALSE,
-        active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_related_party BOOLEAN NOT NULL DEFAULT FALSE,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
 
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
-    -- legacy-safe additive columns
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS company_id INT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS name TEXT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS reg_no TEXT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS vat_no TEXT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS email TEXT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS phone TEXT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS address TEXT;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS is_related_party BOOLEAN;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS active BOOLEAN;
-    ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+        -- legacy-safe additive columns
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS name TEXT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS reg_no TEXT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS vat_no TEXT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS email TEXT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS phone TEXT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS address TEXT;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS is_related_party BOOLEAN;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS active BOOLEAN;
+        ALTER TABLE {schema}.lessors ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 
-    -- backfill company_id + defaults
-    UPDATE {schema}.lessors
-    SET company_id = {company_id}
-    WHERE company_id IS NULL;
+        -- backfill company_id + defaults
+        UPDATE {schema}.lessors
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN company_id SET NOT NULL;
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN company_id SET NOT NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN company_id SET DEFAULT {company_id};
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN company_id SET DEFAULT {company_id};
 
-    UPDATE {schema}.lessors
-    SET is_related_party = COALESCE(is_related_party, FALSE)
-    WHERE is_related_party IS NULL;
+        UPDATE {schema}.lessors
+        SET is_related_party = COALESCE(is_related_party, FALSE)
+        WHERE is_related_party IS NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN is_related_party SET NOT NULL;
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN is_related_party SET NOT NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN is_related_party SET DEFAULT FALSE;
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN is_related_party SET DEFAULT FALSE;
 
-    UPDATE {schema}.lessors
-    SET active = COALESCE(active, TRUE)
-    WHERE active IS NULL;
+        UPDATE {schema}.lessors
+        SET active = COALESCE(active, TRUE)
+        WHERE active IS NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN active SET NOT NULL;
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN active SET NOT NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN active SET DEFAULT TRUE;
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN active SET DEFAULT TRUE;
 
-    UPDATE {schema}.lessors
-    SET created_at = COALESCE(created_at, NOW())
-    WHERE created_at IS NULL;
+        UPDATE {schema}.lessors
+        SET created_at = COALESCE(created_at, NOW())
+        WHERE created_at IS NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN created_at SET NOT NULL;
 
-    ALTER TABLE {schema}.lessors
-    ALTER COLUMN created_at SET DEFAULT NOW();
+        ALTER TABLE {schema}.lessors
+        ALTER COLUMN created_at SET DEFAULT NOW();
 
-    -- ==================================================
-    -- Uniqueness / constraints
-    -- ==================================================
-    DO $uq_lessors_id_company$
-    BEGIN
+        -- ==================================================
+        -- Uniqueness / constraints
+        -- ==================================================
+        DO $uq_lessors_id_company$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'uq_lessors_id_company'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessors ADD CONSTRAINT uq_lessors_id_company UNIQUE (id, company_id)',
+                    '{schema}'
+                );
+            END IF;
+        END $uq_lessors_id_company$;
+
+        -- Unique lessor name per company (case/space-insensitive), only for active lessors
+        DO $uq_lessors_company_name$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname = '{schema}'
+                AND indexname  = 'uq_lessors_company_name_active'
+            ) THEN
+                EXECUTE format(
+                    'CREATE UNIQUE INDEX uq_lessors_company_name_active
+                    ON %I.lessors(company_id, lower(trim(name)))
+                    WHERE name IS NOT NULL AND trim(name) <> '''' AND active = TRUE',
+                    '{schema}'
+                );
+            END IF;
+        END $uq_lessors_company_name$;
+
+        -- Helpful indexes for dropdown/search
+        CREATE INDEX IF NOT EXISTS {schema}_lessors_company_active_name_idx
+        ON {schema}.lessors(company_id, active, lower(trim(name)));
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessors_company_active_idx
+        ON {schema}.lessors(company_id, active);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessors_related_party_idx
+        ON {schema}.lessors(company_id, is_related_party);
+
+        -- ==================================================
+        -- LESSOR CONTACTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_contacts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            lessor_id INT NOT NULL REFERENCES {schema}.lessors(id) ON DELETE CASCADE,
+
+            full_name TEXT NOT NULL,
+            email TEXT NULL,
+            phone TEXT NULL,
+            phone_type TEXT NULL,
+            role_title TEXT NULL,              -- e.g. Account Manager
+            is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- legacy-safe additive
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS lessor_id INT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS full_name TEXT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS email TEXT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS phone TEXT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS phone_type TEXT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS role_title TEXT;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS is_primary BOOLEAN;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS active BOOLEAN;
+        ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+
+        -- backfill company_id
+        UPDATE {schema}.lessor_contacts
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        -- defaults
+        UPDATE {schema}.lessor_contacts
+        SET is_primary = COALESCE(is_primary, FALSE)
+        WHERE is_primary IS NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN is_primary SET NOT NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN is_primary SET DEFAULT FALSE;
+
+        UPDATE {schema}.lessor_contacts
+        SET active = COALESCE(active, TRUE)
+        WHERE active IS NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN active SET NOT NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN active SET DEFAULT TRUE;
+
+        UPDATE {schema}.lessor_contacts
+        SET created_at = COALESCE(created_at, NOW())
+        WHERE created_at IS NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN created_at SET NOT NULL;
+
+        ALTER TABLE {schema}.lessor_contacts
+        ALTER COLUMN created_at SET DEFAULT NOW();
+
+        -- ==================================================
+        -- Uniqueness / helpful indexes
+        -- ==================================================
+
+        -- Unique (id, company_id) like your other tables
+        DO $uq_lessor_contacts_id_company$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'uq_lessor_contacts_id_company'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_contacts
+                    ADD CONSTRAINT uq_lessor_contacts_id_company UNIQUE (id, company_id)',
+                    '{schema}'
+                );
+            END IF;
+        END $uq_lessor_contacts_id_company$;
+
+        -- Only one primary contact per lessor (active ones)
+        DO $uq_lessor_contacts_primary$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname = '{schema}'
+                AND indexname  = 'uq_lessor_contacts_one_primary'
+            ) THEN
+                EXECUTE format(
+                    'CREATE UNIQUE INDEX uq_lessor_contacts_one_primary
+                    ON %I.lessor_contacts(company_id, lessor_id)
+                    WHERE is_primary = TRUE AND active = TRUE',
+                    '{schema}'
+                );
+            END IF;
+        END $uq_lessor_contacts_primary$;
+
+        -- Lookup indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_contacts_lessor_idx
+        ON {schema}.lessor_contacts(lessor_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_contacts_company_lessor_idx
+        ON {schema}.lessor_contacts(company_id, lessor_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_contacts_email_idx
+        ON {schema}.lessor_contacts(company_id, lower(email))
+        WHERE email IS NOT NULL AND trim(email) <> '';
+
+        -- ==================================================
+        -- CLIENT SUPPORT TICKETS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.support_tickets (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,          -- tenant/company
+            user_id INT NULL,                 -- FK to users table if logged in
+            email TEXT NOT NULL,              -- contact email
+            subject TEXT NOT NULL,            -- short issue title
+            description TEXT NULL,            -- detailed issue
+            status TEXT NOT NULL DEFAULT 'open', -- open|in_progress|resolved|void
+            priority TEXT NOT NULL DEFAULT 'normal', -- low|normal|high|urgent
+
+            assigned_to INT NULL,             -- FK to support_users table
+            resolved_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,                  -- internal notes
+            created_by INT NULL,              -- who logged it
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_support_company_idx
+        ON {schema}.support_tickets(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_support_status_idx
+        ON {schema}.support_tickets(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_support_priority_idx
+        ON {schema}.support_tickets(priority);
+
+        CREATE INDEX IF NOT EXISTS {schema}_support_assigned_idx
+        ON {schema}.support_tickets(assigned_to);
+
+        -- Checks
+        DO $ck_support_valid$
+        BEGIN
         IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = 'uq_lessors_id_company'
-            AND n.nspname = '{schema}'
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_support_valid' AND n.nspname='{schema}'
         ) THEN
             EXECUTE format(
-                'ALTER TABLE %I.lessors ADD CONSTRAINT uq_lessors_id_company UNIQUE (id, company_id)',
-                '{schema}'
+            'ALTER TABLE %I.support_tickets
+            ADD CONSTRAINT ck_support_valid
+            CHECK (
+                status IN (''open'',''in_progress'',''resolved'',''void'')
+                AND priority IN (''low'',''normal'',''high'',''urgent'')
+            )',
+            '{schema}'
             );
         END IF;
-    END $uq_lessors_id_company$;
+        END $ck_support_valid$;
 
-    -- Unique lessor name per company (case/space-insensitive), only for active lessors
-    DO $uq_lessors_company_name$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_indexes
-            WHERE schemaname = '{schema}'
-            AND indexname  = 'uq_lessors_company_name_active'
-        ) THEN
-            EXECUTE format(
-                'CREATE UNIQUE INDEX uq_lessors_company_name_active
-                ON %I.lessors(company_id, lower(trim(name)))
-                WHERE name IS NOT NULL AND trim(name) <> '''' AND active = TRUE',
-                '{schema}'
-            );
-        END IF;
-    END $uq_lessors_company_name$;
-
-    -- Helpful indexes for dropdown/search
-    CREATE INDEX IF NOT EXISTS {schema}_lessors_company_active_name_idx
-    ON {schema}.lessors(company_id, active, lower(trim(name)));
-
-    CREATE INDEX IF NOT EXISTS {schema}_lessors_company_active_idx
-    ON {schema}.lessors(company_id, active);
-
-    CREATE INDEX IF NOT EXISTS {schema}_lessors_related_party_idx
-    ON {schema}.lessors(company_id, is_related_party);
-
-    -- ==================================================
-    -- LESSOR CONTACTS
-    -- ==================================================
-    CREATE TABLE IF NOT EXISTS {schema}.lessor_contacts (
-        id SERIAL PRIMARY KEY,
-        company_id INT NOT NULL DEFAULT {company_id},
-        lessor_id INT NOT NULL REFERENCES {schema}.lessors(id) ON DELETE CASCADE,
-
-        full_name TEXT NOT NULL,
-        email TEXT NULL,
-        phone TEXT NULL,
-        phone_type TEXT NULL,
-        role_title TEXT NULL,              -- e.g. Account Manager
-        is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    -- legacy-safe additive
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS company_id INT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS lessor_id INT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS full_name TEXT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS email TEXT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS phone TEXT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS phone_type TEXT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS role_title TEXT;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS is_primary BOOLEAN;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS active BOOLEAN;
-    ALTER TABLE {schema}.lessor_contacts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
-
-    -- backfill company_id
-    UPDATE {schema}.lessor_contacts
-    SET company_id = {company_id}
-    WHERE company_id IS NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN company_id SET NOT NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN company_id SET DEFAULT {company_id};
-
-    -- defaults
-    UPDATE {schema}.lessor_contacts
-    SET is_primary = COALESCE(is_primary, FALSE)
-    WHERE is_primary IS NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN is_primary SET NOT NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN is_primary SET DEFAULT FALSE;
-
-    UPDATE {schema}.lessor_contacts
-    SET active = COALESCE(active, TRUE)
-    WHERE active IS NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN active SET NOT NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN active SET DEFAULT TRUE;
-
-    UPDATE {schema}.lessor_contacts
-    SET created_at = COALESCE(created_at, NOW())
-    WHERE created_at IS NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN created_at SET NOT NULL;
-
-    ALTER TABLE {schema}.lessor_contacts
-    ALTER COLUMN created_at SET DEFAULT NOW();
-
-    -- ==================================================
-    -- Uniqueness / helpful indexes
-    -- ==================================================
-
-    -- Unique (id, company_id) like your other tables
-    DO $uq_lessor_contacts_id_company$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = 'uq_lessor_contacts_id_company'
-            AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.lessor_contacts
-                ADD CONSTRAINT uq_lessor_contacts_id_company UNIQUE (id, company_id)',
-                '{schema}'
-            );
-        END IF;
-    END $uq_lessor_contacts_id_company$;
-
-    -- Only one primary contact per lessor (active ones)
-    DO $uq_lessor_contacts_primary$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_indexes
-            WHERE schemaname = '{schema}'
-            AND indexname  = 'uq_lessor_contacts_one_primary'
-        ) THEN
-            EXECUTE format(
-                'CREATE UNIQUE INDEX uq_lessor_contacts_one_primary
-                ON %I.lessor_contacts(company_id, lessor_id)
-                WHERE is_primary = TRUE AND active = TRUE',
-                '{schema}'
-            );
-        END IF;
-    END $uq_lessor_contacts_primary$;
-
-    -- Lookup indexes
-    CREATE INDEX IF NOT EXISTS {schema}_lessor_contacts_lessor_idx
-    ON {schema}.lessor_contacts(lessor_id);
-
-    CREATE INDEX IF NOT EXISTS {schema}_lessor_contacts_company_lessor_idx
-    ON {schema}.lessor_contacts(company_id, lessor_id);
-
-    CREATE INDEX IF NOT EXISTS {schema}_lessor_contacts_email_idx
-    ON {schema}.lessor_contacts(company_id, lower(email))
-    WHERE email IS NOT NULL AND trim(email) <> '';
 
         """
         ddl_ap = """
@@ -15638,12 +15693,12 @@ class DatabaseService:
                 # single-tenant DDL lock for the whole transaction
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v36")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v37")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=36,
+                    migration_version=37,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -18594,7 +18649,7 @@ class DatabaseService:
         out: List[Dict[str, Any]] = []
 
         if rows:
-            print("TB RANGE:", rows[0].get("min_date"), "→", rows[0].get("max_date"))
+            print("TB RANGE:", rows[0].get("min_date"), "->", rows[0].get("max_date"))
 
         if rows:
             print("TB sample row keys:", rows[0].keys())
@@ -40821,7 +40876,167 @@ class DatabaseService:
         row = cur.fetchone()
         return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
+    def insert_ticket(
+        self,
+        cur,
+        company_id: int,
+        *,
+        user_id: int = None,
+        email: str,
+        subject: str,
+        description: str,
+        priority: str = "normal",
+        created_by: int = None,
+    ):
+        schema = self.company_schema(company_id)
 
+        cur.execute(f"""
+            INSERT INTO {schema}.support_tickets (
+                company_id,
+                user_id,
+                email,
+                subject,
+                description,
+                status,
+                priority,
+                created_by
+            )
+            VALUES (%s,%s,%s,%s,%s,'open',%s,%s)
+            RETURNING id
+        """, (
+            company_id,
+            user_id,
+            email,
+            subject,
+            description,
+            priority,
+            created_by,
+        ))
+        return cur.fetchone()["id"]
+
+    # List all tickets for a company
+    def list_tickets(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+        cur.execute(f"""
+            SELECT id, email, subject, status, priority, created_at, updated_at
+            FROM {schema}.support_tickets
+            WHERE company_id = %s
+            ORDER BY created_at DESC
+        """, (company_id,))
+        rows = cur.fetchall() or []
+
+        result = []
+        for row in rows:
+            if isinstance(row, dict):
+                item = row.copy()
+            else:
+                item = {
+                    "id": row[0] if len(row) > 0 else None,
+                    "email": row[1] if len(row) > 1 else None,
+                    "subject": row[2] if len(row) > 2 else None,
+                    "status": row[3] if len(row) > 3 else None,
+                    "priority": row[4] if len(row) > 4 else None,
+                    "created_at": str(row[5]) if len(row) > 5 and row[5] is not None else None,
+                    "updated_at": str(row[6]) if len(row) > 6 and row[6] is not None else None,
+                }
+            result.append(item)
+
+        return result
+
+    # Get tickets for a specific user
+    def get_tickets(self, cur, company_id: int, user_id: int):
+        schema = self.company_schema(company_id)
+        cur.execute(f"""
+            SELECT id, email, subject, status, priority, created_at, updated_at
+            FROM {schema}.support_tickets
+            WHERE company_id = %s AND user_id = %s
+            ORDER BY created_at DESC
+        """, (company_id, user_id))
+        return cur.fetchall()
+
+    # Get a single ticket by ID
+    def get_ticket_by_id(self, cur, company_id: int, ticket_id: int):
+        schema = self.company_schema(company_id)
+        cur.execute(f"""
+            SELECT *
+            FROM {schema}.support_tickets
+            WHERE company_id = %s AND id = %s
+            LIMIT 1
+        """, (company_id, ticket_id))
+        return cur.fetchone()
+
+    def update_ticket(
+        self,
+        cur,
+        company_id: int,
+        ticket_id: int,
+        *,
+        status: str = None,
+        priority: str = None,
+        assigned_to: int = None,
+        notes: str = None,
+        resolved_at=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        fields = []
+        values = []
+
+        if status:
+            fields.append("status = %s")
+            values.append(status)
+        if priority:
+            fields.append("priority = %s")
+            values.append(priority)
+        if assigned_to:
+            fields.append("assigned_to = %s")
+            values.append(assigned_to)
+        if notes:
+            fields.append("notes = %s")
+            values.append(notes)
+        if resolved_at:
+            fields.append("resolved_at = %s")
+            values.append(resolved_at)
+
+        if not fields:
+            return None  # nothing to update
+
+        fields.append("updated_at = NOW()")
+
+        sql = f"""
+            UPDATE {schema}.support_tickets
+            SET {", ".join(fields)}
+            WHERE company_id = %s AND id = %s
+            RETURNING id
+        """
+        values.extend([company_id, ticket_id])
+
+        cur.execute(sql, tuple(values))
+        row = cur.fetchone()
+        return row["id"] if row else None
+
+    def void_ticket(self, cur, company_id: int, ticket_id: int, *, notes: str = None):
+        schema = self.company_schema(company_id)
+
+        fields = ["status = 'void'", "updated_at = NOW()"]
+        values = []
+
+        if notes:
+            fields.append("notes = %s")
+            values.append(notes)
+
+        sql = f"""
+            UPDATE {schema}.support_tickets
+            SET {", ".join(fields)}
+            WHERE company_id = %s AND id = %s
+            RETURNING id
+        """
+        values.extend([company_id, ticket_id])
+
+        cur.execute(sql, tuple(values))
+        row = cur.fetchone()
+        return row["id"] if row else None
+      
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

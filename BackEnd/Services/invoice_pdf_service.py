@@ -6,7 +6,8 @@ from flask import render_template, current_app
 # wkhtmltopdf configuration (LAZY + SAFE)
 # -------------------------------------------------
 
-WKHTMLTOPDF_PATH = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+WKHTMLTOPDF_PATH = r"C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe"
+
 _PDFKIT_CONFIG = None  # initialized lazily
 
 

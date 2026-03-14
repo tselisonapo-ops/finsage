@@ -1673,6 +1673,16 @@ const ENDPOINTS = {
     bankReconAttachJournal: (companyId, reconItemId) =>
      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/attach_journal`,
 
+  supportUser: {
+    // List tickets for the logged-in user
+    list: (companyId) => 
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/support/tickets`,
+
+    // Update a ticket (user can add clarifications or check status)
+    update: (companyId, ticketId) => 
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/support/tickets/${encodeURIComponent(ticketId)}`
+  },
+
   // --- Journal / posting engine ---
   journal: {
     postBatch: (companyId) =>
@@ -1746,6 +1756,9 @@ const ENDPOINTS = {
 
   vatSettings: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
 };
+
+
+
 window.ENDPOINTS = ENDPOINTS;
 window.endpoints = ENDPOINTS;
 
@@ -4035,7 +4048,7 @@ function renderNavTree(items) {
         },
 
         { name: "Users & Roles", screen: "users", icon: "👥", minRole: "assistant", permission: "can_manage_users" },
-        { name: "Help", screen: "help", icon: "❓", minRole: "viewer" },
+        { name: "Help", screen: "help", icon: "❓", minRole: "clerk" },
       ],
     },
   ];
@@ -5016,6 +5029,7 @@ const SCREEN_POLICY = {
 
   // Fixed Assets
   fixedassets: { auth: "private", minRole: "assistant", permission: "can_manage_fixed_assets" },
+  help: { auth: "private", minRole: "clerk" },
 };
 
 
@@ -5351,6 +5365,14 @@ async function switchScreen(name) {
   if (name === "receipts") name = "ar-receipts";
   if (name === "journal-desk") name = "journal";
 
+  console.log("[switchScreen] before resolve:", name);
+  name = resolveScreenName(name);
+  console.log("[switchScreen] after resolve:", name);
+
+  console.log("[switchScreen] canOpenScreen?", canOpenScreen(name));
+  console.log("[switchScreen] access?", guardScreenAccess(name));
+  console.log("[switchScreen] screen-help exists?", !!document.getElementById("screen-help"));
+
   // normalize names like you already do
   if (name === "pnl") setActiveStmtType("pnl");
   if (name === "bs") setActiveStmtType("bs");
@@ -5409,8 +5431,6 @@ async function switchScreen(name) {
     return;
   }
 
-  name = resolveScreenName(name);
-
   if (!canOpenScreen(name)) {
     console.warn("[NAV] blocked by allowlist:", name);
     alert("This screen is not enabled yet.");
@@ -5444,7 +5464,7 @@ async function switchScreen(name) {
 
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
-
+  else if (name === "help") base = "help";
   else base = name.split("-")[0];
 
   // Remember current screen
@@ -5660,6 +5680,12 @@ async function switchScreen(name) {
     return;
   }
 
+  if (name === "help") {
+    const companyId = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    await renderHelpScreen(companyId);
+    console.log("[switchScreen] early return at:", name, "base:", base);
+    return;
+  }
 
   if (base === "inventory") {
     const sub =
@@ -5784,6 +5810,7 @@ async function switchScreen(name) {
     "lease-mods":    "IFRS 16 - Modifications",
     "lease-terms":   "IFRS 16 - Terminations",
     "lease-register": "IFRS 16 - Lease Register",
+    help: "Help & Support",
   };
 
   $("#screenTitle").textContent = titles[name] || titles[base] || "FinSage";
@@ -48387,6 +48414,89 @@ window.renderAPAging = renderAPAging;
     allPeriods.sort((a, b) => b.dueDate - a.dueDate);
     return allPeriods[0];
   }
+
+// Submit ticket
+async function loadUserTickets(companyId) {
+  try {
+    const data = await apiFetch(ENDPOINTS.supportUser.list(companyId));
+    const tbody = document.querySelector("#userTicketsTable tbody");
+    tbody.innerHTML = "";
+
+    if (data.ok && data.tickets) {
+      data.tickets.forEach(ticket => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${ticket.id}</td>
+          <td>${ticket.subject}</td>
+          <td>${ticket.status}</td>
+          <td>${ticket.priority}</td>
+          <td>${ticket.created_at}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+  } catch (err) {
+    console.error("Error loading tickets:", err);
+    console.error("Status:", err.status);
+    console.error("URL:", err.url);
+    console.error("Data:", err.data);
+  }
+}
+
+
+function bindSupportForm(companyId) {
+  const form = document.getElementById("supportForm");
+  if (!form || form.dataset.bound === "1") return;
+
+  form.dataset.bound = "1";
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("jwt");
+
+    const payload = {
+      email: document.getElementById("email").value,
+      subject: document.getElementById("subject").value,
+      description: document.getElementById("description").value,
+      priority: "normal"
+    };
+
+    try {
+      const res = await fetch(ENDPOINTS.supportUser.list(companyId), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      console.log("Ticket submitted:", data);
+
+      await loadUserTickets(companyId);
+    } catch (err) {
+      console.error("Error submitting ticket:", err);
+      console.error("Status:", err.status);
+      console.error("URL:", err.url);
+      console.error("Data:", err.data);
+    }
+  });
+}
+
+async function renderHelpScreen(companyId) {
+  const section = document.getElementById("screen-help");
+  if (!section) return;
+
+  section.classList.add("active");
+  section.classList.remove("hidden");
+
+  bindSupportForm(companyId);
+  await loadUserTickets(companyId);
+}
+
+window.renderHelpScreen = renderHelpScreen;
+
 
 async function renderTaxComplianceCard() {
   const card = document.getElementById("taxComplianceCard");
