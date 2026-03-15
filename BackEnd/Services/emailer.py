@@ -65,7 +65,7 @@ def send_mail(
     timeout: int = 20,
 ) -> None:
     host, port, user, pwd, mail_from = _cfg()
-    _ensure_config(user, pwd, mail_from)
+    _ensure_config(host, user, pwd, mail_from)
 
     msg = EmailMessage()
     msg["Subject"] = subject
