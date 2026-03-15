@@ -15356,7 +15356,7 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_bill_lines_bill_line_idx
         ON {schema}.bill_lines(bill_id, line_no);
 
-                -- 7) GRNI ↔ Bill linking (receipt accrual clearing traceability)
+        -- 7) GRNI ↔ Bill linking (receipt accrual clearing traceability)
         CREATE TABLE IF NOT EXISTS {schema}.bill_grni_links (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -15654,7 +15654,7 @@ class DatabaseService:
         END $fk_vpa_bill_company$;                
         """
         ddl_bootstrap_sql = ddl_bootstrap.format(schema=schema, company_id=int(company_id))
-        ddl_ap_sql = ddl_ap.format(schema=schema)
+        ddl_ap_sql = ddl_ap.format(schema=schema, company_id=company_id)
 
         # BEFORE opening the cursor: catch Python .format errors
         try:
@@ -15668,7 +15668,7 @@ class DatabaseService:
             raise
 
         try:
-            ddl_ap_sql = ddl_ap.format(schema=schema)
+            ddl_ap_sql = ddl_ap.format(schema=schema, company_id=company_id)
         except Exception as e:
             print("\n[TENANT-FORMAT-FAIL] ap")
             print("company_id =", company_id, "schema =", schema)
