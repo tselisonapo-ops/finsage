@@ -4258,6 +4258,359 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_coa_role_idx
             ON {schema}.coa(role);
 
+                    -- ==================================================
+        -- APPROVAL REQUESTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.approval_requests (
+            id                  BIGSERIAL PRIMARY KEY,
+            company_id           INT NOT NULL DEFAULT {company_id},
+
+            entity_type          TEXT NOT NULL,     -- 'journal','vendor','customer','bill','payment', etc
+            entity_id            TEXT NOT NULL,     -- string form of id (safe for uuid/int)
+            entity_ref           TEXT NULL,
+
+            module               TEXT NOT NULL,     -- 'gl','ap','ar','control_room'
+            action               TEXT NOT NULL,     -- 'post','release','approve','reverse', etc
+
+            requested_by_user_id INT NOT NULL,      -- public.users.id
+            requested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            status               TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected/cancelled/expired
+            decided_by_user_id   INT NULL,
+            decided_at           TIMESTAMPTZ NULL,
+            decision_note        TEXT NULL,
+
+            amount               NUMERIC(18,2) NOT NULL DEFAULT 0,
+            currency             TEXT NULL,
+            risk_level           TEXT NOT NULL DEFAULT 'low', -- low/medium/high/critical
+
+            dedupe_key           TEXT NULL,         -- app-computed key to avoid duplicates
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- --------------------------
+        -- Safe additive evolution
+        -- --------------------------
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS entity_type TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS entity_id TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS entity_ref TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS module TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS action TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS requested_by_user_id INT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS status TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS decided_by_user_id INT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS decision_note TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS amount NUMERIC(18,2);
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS currency TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS risk_level TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS payload_json JSONB;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        -- backfill/enforce company_id
+        UPDATE {schema}.approval_requests
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.approval_requests
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        -- default/backfill stability
+        UPDATE {schema}.approval_requests
+        SET status = COALESCE(NULLIF(status,''), 'pending')
+        WHERE status IS NULL OR status = '';
+
+        UPDATE {schema}.approval_requests
+        SET risk_level = COALESCE(NULLIF(risk_level,''), 'low')
+        WHERE risk_level IS NULL OR risk_level = '';
+
+        UPDATE {schema}.approval_requests
+        SET payload_json = COALESCE(payload_json, '{{}}'::jsonb)
+        WHERE payload_json IS NULL;
+
+        ALTER TABLE {schema}.approval_requests
+        ALTER COLUMN status SET NOT NULL,
+        ALTER COLUMN status SET DEFAULT 'pending',
+        ALTER COLUMN risk_level SET NOT NULL,
+        ALTER COLUMN risk_level SET DEFAULT 'low',
+        ALTER COLUMN payload_json SET NOT NULL,
+        ALTER COLUMN payload_json SET DEFAULT '{{}}'::jsonb;
+
+        -- --------------------------
+        -- CHECK constraints
+        -- --------------------------
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_requests_status_ck' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_requests
+            ADD CONSTRAINT %I
+            CHECK (status IN (''pending'',''approved'',''rejected'',''cancelled'',''expired''))',
+            '{schema}', '{schema}_approval_requests_status_ck'
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_requests_risk_ck' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_requests
+            ADD CONSTRAINT %I
+            CHECK (risk_level IN (''low'',''medium'',''high'',''critical''))',
+            '{schema}', '{schema}_approval_requests_risk_ck'
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_requests_amt_ck' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_requests
+            ADD CONSTRAINT %I
+            CHECK (amount >= 0)',
+            '{schema}', '{schema}_approval_requests_amt_ck'
+            );
+        END IF;
+        END $$;
+
+        -- --------------------------
+        -- Uniqueness
+        -- --------------------------
+
+        -- A) dedupe_key uniqueness (optional but recommended)
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = '{schema}' AND indexname = '{schema}_approval_requests_dedupe_uq'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX %I
+            ON %I.approval_requests(company_id, dedupe_key)
+            WHERE dedupe_key IS NOT NULL AND dedupe_key <> ''''',
+            '{schema}_approval_requests_dedupe_uq', '{schema}'
+            );
+        END IF;
+        END $$;
+
+        -- B) one ACTIVE pending request per entity+module+action (hard safety)
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = '{schema}' AND indexname = '{schema}_approval_active_entity_action_uq'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX %I
+            ON %I.approval_requests(company_id, entity_type, entity_id, module, action)
+            WHERE status IN (''pending'')',
+            '{schema}_approval_active_entity_action_uq',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
+        -- C) composite unique for (id, company_id) to support composite FKs
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = '{schema}' AND indexname = '{schema}_approval_requests_id_company_uq'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX %I ON %I.approval_requests(id, company_id)',
+            '{schema}_approval_requests_id_company_uq',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
+        -- --------------------------
+        -- Indexes
+        -- --------------------------
+        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_status_idx
+        ON {schema}.approval_requests(company_id, status, requested_at DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_entity_idx
+        ON {schema}.approval_requests(company_id, entity_type, entity_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_entity_time_idx
+        ON {schema}.approval_requests(company_id, entity_type, entity_id, requested_at DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_module_status_idx
+        ON {schema}.approval_requests(company_id, module, status, requested_at DESC);
+
+        -- --------------------------
+        -- FKs to users
+        -- --------------------------
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_requests_requested_by_fk' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_requests
+            ADD CONSTRAINT %I
+            FOREIGN KEY (requested_by_user_id)
+            REFERENCES public.users(id)
+            ON DELETE RESTRICT',
+            '{schema}', '{schema}_approval_requests_requested_by_fk'
+            );
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_requests_decided_by_fk' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_requests
+            ADD CONSTRAINT %I
+            FOREIGN KEY (decided_by_user_id)
+            REFERENCES public.users(id)
+            ON DELETE SET NULL',
+            '{schema}', '{schema}_approval_requests_decided_by_fk'
+            );
+        END IF;
+        END $$;
+
+        -- --------------------------
+        -- OPTIONAL: auto touch updated_at on updates
+        -- --------------------------
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_trigger
+            WHERE tgname = '{schema}_approval_requests_touch'
+        ) THEN
+        EXECUTE format(
+        'CREATE TRIGGER %I
+        BEFORE UPDATE ON %I.approval_requests
+        FOR EACH ROW
+        EXECUTE PROCEDURE %I.touch_updated_at()',
+        '{schema}_approval_requests_touch',
+        '{schema}',
+        '{schema}'
+        );
+        END IF;
+        END $$;
+
+        -- ==================================================
+        -- APPROVAL DECISIONS (history)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.approval_decisions (
+            id                  BIGSERIAL PRIMARY KEY,
+            company_id           INT NOT NULL DEFAULT {company_id},
+            approval_request_id  BIGINT NOT NULL,
+
+            decision             TEXT NOT NULL,    -- approve/reject/comment/cancel/reassign
+            decided_by_user_id   INT NOT NULL,     -- public.users.id
+            decided_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            note                 TEXT NULL,
+
+            meta_json    JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+
+        -- safe additive
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS approval_request_id BIGINT;
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS decision TEXT;
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS decided_by_user_id INT;
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS note TEXT;
+        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS meta_json JSONB;
+
+        UPDATE {schema}.approval_decisions
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.approval_decisions
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        UPDATE {schema}.approval_decisions
+        SET meta_json = COALESCE(meta_json, '{{}}'::jsonb)
+        WHERE meta_json IS NULL;
+
+        ALTER TABLE {schema}.approval_decisions
+        ALTER COLUMN meta_json SET NOT NULL,
+        ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb;
+
+        -- decision check
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_decisions_decision_ck' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_decisions
+            ADD CONSTRAINT %I
+            CHECK (decision IN (''approve'',''reject'',''comment'',''cancel'',''reassign''))',
+            '{schema}', '{schema}_approval_decisions_decision_ck'
+            );
+        END IF;
+        END $$;
+
+        -- FKs (composite FK ensures same company)
+        DO $$
+        BEGIN
+        -- Composite request FK: (approval_request_id, company_id) -> approval_requests(id, company_id)
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_decisions_request_company_fk' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_decisions
+            ADD CONSTRAINT %I
+            FOREIGN KEY (approval_request_id, company_id)
+            REFERENCES %I.approval_requests(id, company_id)
+            ON DELETE CASCADE',
+            '{schema}', '{schema}_approval_decisions_request_company_fk', '{schema}'
+            );
+        END IF;
+
+        -- decided_by -> public.users
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_approval_decisions_user_fk' AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.approval_decisions
+            ADD CONSTRAINT %I
+            FOREIGN KEY (decided_by_user_id)
+            REFERENCES public.users(id)
+            ON DELETE RESTRICT',
+            '{schema}', '{schema}_approval_decisions_user_fk'
+            );
+        END IF;
+        END $$;
+
+        -- indexes
+        CREATE INDEX IF NOT EXISTS {schema}_approval_decisions_req_idx
+        ON {schema}.approval_decisions(company_id, approval_request_id, decided_at DESC);
+
         -- ==================================================
         -- JOURNAL
         -- ==================================================
@@ -4334,7 +4687,7 @@ class DatabaseService:
 
         -- backfill NULL currency from the company's base currency
         UPDATE {schema}.journal j
-        SET currency = COALESCE(NULLIF(trim(c.currency), ''), currency)
+        SET currency = COALESCE(NULLIF(trim(c.currency), ''), j.currency)
         FROM public.companies c
         WHERE c.id = {company_id}
         AND j.currency IS NULL;
@@ -6476,115 +6829,115 @@ class DatabaseService:
         ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN step_name SET NOT NULL;
         ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN status SET NOT NULL;
         ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN sort_order SET NOT NULL;
-    ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN is_required SET NOT NULL;
-    ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN is_active SET NOT NULL;
-    ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN created_at SET NOT NULL;
-    ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN updated_at SET NOT NULL;
+        ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN is_required SET NOT NULL;
+        ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN is_active SET NOT NULL;
+        ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE {schema}.engagement_signoff_steps ALTER COLUMN updated_at SET NOT NULL;
 
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_eng_signoff_steps_engagement_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.engagement_signoff_steps
-                ADD CONSTRAINT %I
-                FOREIGN KEY (engagement_id)
-                REFERENCES %I.engagements(id)
-                ON DELETE CASCADE',
-                '{schema}', '{schema}_eng_signoff_steps_engagement_fk', '{schema}'
-            );
-        END IF;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_signoff_steps_engagement_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_signoff_steps
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (engagement_id)
+                    REFERENCES %I.engagements(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_eng_signoff_steps_engagement_fk', '{schema}'
+                );
+            END IF;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_eng_signoff_steps_assigned_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.engagement_signoff_steps
-                ADD CONSTRAINT %I
-                FOREIGN KEY (assigned_user_id)
-                REFERENCES public.users(id)
-                ON DELETE SET NULL',
-                '{schema}', '{schema}_eng_signoff_steps_assigned_fk'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_signoff_steps_assigned_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_signoff_steps
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (assigned_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_signoff_steps_assigned_fk'
+                );
+            END IF;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_eng_signoff_steps_created_by_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.engagement_signoff_steps
-                ADD CONSTRAINT %I
-                FOREIGN KEY (created_by_user_id)
-                REFERENCES public.users(id)
-                ON DELETE SET NULL',
-                '{schema}', '{schema}_eng_signoff_steps_created_by_fk'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_signoff_steps_created_by_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_signoff_steps
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (created_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_signoff_steps_created_by_fk'
+                );
+            END IF;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_eng_signoff_steps_updated_by_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.engagement_signoff_steps
-                ADD CONSTRAINT %I
-                FOREIGN KEY (updated_by_user_id)
-                REFERENCES public.users(id)
-                ON DELETE SET NULL',
-                '{schema}', '{schema}_eng_signoff_steps_updated_by_fk'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_signoff_steps_updated_by_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_signoff_steps
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (updated_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_signoff_steps_updated_by_fk'
+                );
+            END IF;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_eng_signoff_steps_status_chk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.engagement_signoff_steps
-                ADD CONSTRAINT %I
-                CHECK (status IN (''not_started'', ''in_progress'', ''completed'', ''blocked'', ''waived''))',
-                '{schema}', '{schema}_eng_signoff_steps_status_chk'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_signoff_steps_status_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_signoff_steps
+                    ADD CONSTRAINT %I
+                    CHECK (status IN (''not_started'', ''in_progress'', ''completed'', ''blocked'', ''waived''))',
+                    '{schema}', '{schema}_eng_signoff_steps_status_chk'
+                );
+            END IF;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_eng_signoff_steps_step_code_chk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.engagement_signoff_steps
-                ADD CONSTRAINT %I
-                CHECK (step_code IN (''manager_review'', ''partner_review'', ''qc_review'', ''final_signoff''))',
-                '{schema}', '{schema}_eng_signoff_steps_step_code_chk'
-            );
-        END IF;
-    END $$;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_signoff_steps_step_code_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_signoff_steps
+                    ADD CONSTRAINT %I
+                    CHECK (step_code IN (''manager_review'', ''partner_review'', ''qc_review'', ''final_signoff''))',
+                    '{schema}', '{schema}_eng_signoff_steps_step_code_chk'
+                );
+            END IF;
+        END $$;
 
-    CREATE UNIQUE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_active_uq
-        ON {schema}.engagement_signoff_steps(company_id, engagement_id, reporting_year_end, LOWER(step_code))
-        WHERE is_active = TRUE;
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_active_uq
+            ON {schema}.engagement_signoff_steps(company_id, engagement_id, reporting_year_end, LOWER(step_code))
+            WHERE is_active = TRUE;
 
-    CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_company_id_idx
-        ON {schema}.engagement_signoff_steps(company_id);
+        CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_company_id_idx
+            ON {schema}.engagement_signoff_steps(company_id);
 
-    CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_engagement_id_idx
-        ON {schema}.engagement_signoff_steps(engagement_id);
+        CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_engagement_id_idx
+            ON {schema}.engagement_signoff_steps(engagement_id);
 
-    CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_reporting_year_end_idx
-        ON {schema}.engagement_signoff_steps(reporting_year_end);
+        CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_reporting_year_end_idx
+            ON {schema}.engagement_signoff_steps(reporting_year_end);
 
-    CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_status_idx
-        ON {schema}.engagement_signoff_steps(status);
+        CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_status_idx
+            ON {schema}.engagement_signoff_steps(status);
 
-    CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_assigned_user_id_idx
-        ON {schema}.engagement_signoff_steps(assigned_user_id);
+        CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_assigned_user_id_idx
+            ON {schema}.engagement_signoff_steps(assigned_user_id);
 
-    CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_is_active_idx
-        ON {schema}.engagement_signoff_steps(is_active);
+        CREATE INDEX IF NOT EXISTS {schema}_eng_signoff_steps_is_active_idx
+            ON {schema}.engagement_signoff_steps(is_active);
 
         -- ==================================================
         -- NOTES
@@ -6769,6 +7122,34 @@ class DatabaseService:
         END IF;
         END
         $ledger_vendor_fk$;
+
+        -- ==================================================
+        -- COMPANY BANK ACCOUNTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.company_bank_accounts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            name TEXT NOT NULL,
+            bank_name TEXT NOT NULL,
+            account_name TEXT NOT NULL,
+            account_number TEXT NOT NULL,
+            branch_code TEXT NULL,
+            swift_code TEXT NULL,
+            currency TEXT NULL,
+            ledger_account_code TEXT NULL,
+            is_default_receipts BOOLEAN NOT NULL DEFAULT FALSE,
+            is_default_payments BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_idx
+        ON {schema}.company_bank_accounts(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_receipts_idx
+        ON {schema}.company_bank_accounts(company_id, is_default_receipts);
+
+        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_payments_idx
+        ON {schema}.company_bank_accounts(company_id, is_default_payments);
 
         -- ==================================================
         -- LEASES
@@ -8911,7 +9292,7 @@ class DatabaseService:
         BEFORE INSERT OR UPDATE OF company_id, asset_id
         ON {schema}.asset_depreciation
         FOR EACH ROW
-        EXECUTE FUNCTION {schema}.fn_assert_asset_company();
+        EXECUTE PROCEDURE {schema}.fn_assert_asset_company();
 
         -- ==================================================
         -- ASSETS: Company consistency trigger function
@@ -8927,14 +9308,14 @@ class DatabaseService:
             AND table_name = 'asset_depreciation'
         ) THEN
             EXECUTE format('DROP TRIGGER IF EXISTS tr_asset_depreciation_assert_company ON %I.asset_depreciation', '{schema}');
-            EXECUTE format(
-            'CREATE TRIGGER tr_asset_depreciation_assert_company
-            BEFORE INSERT OR UPDATE OF company_id, asset_id
-            ON %I.asset_depreciation
-            FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()',
-            '{schema}', '{schema}'
-            );
+        EXECUTE format(
+        'CREATE TRIGGER tr_asset_depreciation_assert_company
+        BEFORE INSERT OR UPDATE OF company_id, asset_id
+        ON %I.asset_depreciation
+        FOR EACH ROW
+        EXECUTE PROCEDURE %I.fn_assert_asset_company()',
+        '{schema}', '{schema}'
+        );
         END IF;
         END
         $tr_asset_dep_assert_company$;
@@ -9353,13 +9734,14 @@ class DatabaseService:
             AND t.tgname = 'tr_asset_depreciation_assert_company'
         ) THEN
             EXECUTE format(
-            'CREATE TRIGGER tr_asset_depreciation_assert_company
-            BEFORE INSERT OR UPDATE OF company_id, asset_id
-            ON %I.asset_depreciation
-            FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()',
-            '{schema}', '{schema}'
-            );
+        EXECUTE format(
+        'CREATE TRIGGER tr_asset_depreciation_assert_company
+        BEFORE INSERT OR UPDATE OF company_id, asset_id
+        ON %I.asset_depreciation
+        FOR EACH ROW
+        EXECUTE PROCEDURE %I.fn_assert_asset_company()',
+        '{schema}', '{schema}'
+        );
         END IF;
         END
         $tr_asset_depreciation_company_consistency$;
@@ -10625,14 +11007,14 @@ class DatabaseService:
             JOIN pg_class c ON c.oid=t.tgrelid
             JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname='{schema}' AND t.tgname='tr_asset_documents_assert_company'
-        ) THEN
+        ) THEN           
         EXECUTE format(
-            'CREATE TRIGGER tr_asset_documents_assert_company
-            BEFORE INSERT OR UPDATE OF company_id, asset_id
-            ON %I.asset_documents
-            FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()',
-            '{schema}','{schema}'
+        'CREATE TRIGGER tr_asset_documents_assert_company
+        BEFORE INSERT OR UPDATE OF company_id, asset_id
+        ON %I.asset_documents
+        FOR EACH ROW
+        EXECUTE PROCEDURE %I.fn_assert_asset_company()',
+        '{schema}','{schema}'
         );
         END IF;
         END $tr_asset_documents_company_consistency$;
@@ -10712,12 +11094,12 @@ class DatabaseService:
             WHERE n.nspname='{schema}' AND t.tgname='tr_asset_verifications_assert_company'
         ) THEN
         EXECUTE format(
-            'CREATE TRIGGER tr_asset_verifications_assert_company
-            BEFORE INSERT OR UPDATE OF company_id, asset_id
-            ON %I.asset_verifications
-            FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()',
-            '{schema}','{schema}'
+        'CREATE TRIGGER tr_asset_verifications_assert_company
+        BEFORE INSERT OR UPDATE OF company_id, asset_id
+        ON %I.asset_verifications
+        FOR EACH ROW
+        EXECUTE PROCEDURE %I.fn_assert_asset_company()',
+        '{schema}','{schema}'
         );
         END IF;
         END $tr_asset_verifications_company_consistency$;
@@ -10820,7 +11202,7 @@ class DatabaseService:
             BEFORE INSERT OR UPDATE OF company_id, asset_id
             ON %I.asset_usage
             FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()
+            EXECUTE PROCEDURE %I.fn_assert_asset_company()
             $sql$, '{schema}', '{schema}');
         END IF;
         END $$;
@@ -11059,7 +11441,7 @@ class DatabaseService:
             BEFORE INSERT OR UPDATE OF company_id, asset_id
             ON %I.asset_subsequent_measurements
             FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()
+            EXECUTE PROCEDURE %I.fn_assert_asset_company()
             $sql$, '{schema}', '{schema}');
         END IF;
         END $$;
@@ -11180,11 +11562,11 @@ class DatabaseService:
         WHERE n.nspname='{schema}' AND t.tgname='tr_ach_assert_company'
         ) THEN
         EXECUTE format($sql$
-            CREATE TRIGGER tr_ach_assert_company
-            BEFORE INSERT OR UPDATE OF company_id, asset_id
-            ON %I.asset_carrying_amount_history
-            FOR EACH ROW
-            EXECUTE FUNCTION %I.fn_assert_asset_company()
+        CREATE TRIGGER tr_ach_assert_company
+        BEFORE INSERT OR UPDATE OF company_id, asset_id
+        ON %I.asset_carrying_amount_history
+        FOR EACH ROW
+        EXECUTE PROCEDURE %I.fn_assert_asset_company()
         $sql$, '{schema}', '{schema}');
         END IF;
         END $$;
@@ -11650,13 +12032,13 @@ class DatabaseService:
             WHERE n.nspname = '{schema}'
             AND t.tgname = 'tr_asset_reval_valuations_assert_company'
         ) THEN
-            EXECUTE format($sql$
-                CREATE TRIGGER tr_asset_reval_valuations_assert_company
-                BEFORE INSERT OR UPDATE OF company_id, asset_id
-                ON %I.asset_revaluation_valuations
-                FOR EACH ROW
-                EXECUTE FUNCTION %I.fn_assert_asset_company()
-            $sql$, '{schema}', '{schema}');
+        EXECUTE format($sql$
+            CREATE TRIGGER tr_asset_reval_valuations_assert_company
+            BEFORE INSERT OR UPDATE OF company_id, asset_id
+            ON %I.asset_revaluation_valuations
+            FOR EACH ROW
+            EXECUTE PROCEDURE %I.fn_assert_asset_company()
+        $sql$, '{schema}', '{schema}');
         END IF;
         END $$;
 
@@ -11735,13 +12117,13 @@ class DatabaseService:
             WHERE n.nspname = '{schema}'
             AND t.tgname = 'tr_asset_reval_valuations_consistency'
         ) THEN
-            EXECUTE format($sql$
-                CREATE TRIGGER tr_asset_reval_valuations_consistency
-                BEFORE INSERT OR UPDATE OF company_id, asset_id, revaluation_id, valuer_id
-                ON %I.asset_revaluation_valuations
-                FOR EACH ROW
-                EXECUTE FUNCTION %I.fn_assert_asset_reval_valuation_consistency()
-            $sql$, '{schema}', '{schema}');
+        EXECUTE format($sql$
+            CREATE TRIGGER tr_asset_reval_valuations_consistency
+            BEFORE INSERT OR UPDATE OF company_id, asset_id, revaluation_id, valuer_id
+            ON %I.asset_revaluation_valuations
+            FOR EACH ROW
+            EXECUTE PROCEDURE %I.fn_assert_asset_reval_valuation_consistency()
+        $sql$, '{schema}', '{schema}');
         END IF;
         END $$;
 
@@ -12544,40 +12926,6 @@ class DatabaseService:
         );
         END $$;
 
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_vendor_fk'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (vendor_id) REFERENCES %I.vendors(id)
-            ON DELETE SET NULL',
-            '{schema}', '{schema}_inv_tx_vendor_fk', '{schema}'
-            );
-        END IF;
-        END $$;
-
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_po_fk'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (po_id) REFERENCES %I.purchase_orders(id)
-            ON DELETE SET NULL',
-            '{schema}', '{schema}_inv_tx_po_fk', '{schema}'
-            );
-        END IF;
-        END $$;
-
         -- 3) inventory_layers
         CREATE TABLE IF NOT EXISTS {schema}.inventory_layers (
             id SERIAL PRIMARY KEY,
@@ -12807,16 +13155,16 @@ class DatabaseService:
         END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.inventory_landed_cost_allocations (
-        id SERIAL PRIMARY KEY,
-        company_id INT NOT NULL DEFAULT {company_id},
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
 
-        landed_cost_id INT NOT NULL,     -- FK to header
-        item_id INT NOT NULL,
-        layer_id INT NOT NULL,
+            landed_cost_id INT NOT NULL,     -- FK to header
+            item_id INT NOT NULL,
+            layer_id INT NOT NULL,
 
-        amount NUMERIC(18,6) NOT NULL DEFAULT 0,
+            amount NUMERIC(18,6) NOT NULL DEFAULT 0,
 
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_lca_lookup_idx
@@ -12835,21 +13183,6 @@ class DatabaseService:
         );
         END IF;
         END $$;
-
-        CREATE TABLE IF NOT EXISTS {schema}.inventory_landed_cost_allocations (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            item_id INT NOT NULL,
-            layer_id INT NOT NULL,
-            source TEXT NOT NULL,        -- e.g. 'bill' / 'grv'
-            source_id INT NOT NULL,
-            tx_date DATE NOT NULL,
-            amount NUMERIC(18,6) NOT NULL DEFAULT 0,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        CREATE INDEX IF NOT EXISTS {schema}_lca_lookup_idx
-        ON {schema}.inventory_landed_cost_allocations(company_id, source, source_id);
 
         CREATE TABLE IF NOT EXISTS {schema}.purchase_order_lines (
             id SERIAL PRIMARY KEY,
@@ -12885,47 +13218,6 @@ class DatabaseService:
             REFERENCES %I.purchase_order_lines(id)
             ON DELETE SET NULL',
             '{schema}', '{schema}_inv_tx_lines_po_line_fk', '{schema}'
-            );
-        END IF;
-        END $$;
-
-        -- 7) GRNI ↔ Bill linking (receipt accrual clearing traceability)
-        CREATE TABLE IF NOT EXISTS {schema}.bill_grni_links (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-
-            bill_id INT NOT NULL
-                REFERENCES {schema}.bills(id)
-                ON DELETE CASCADE,
-
-            receipt_tx_id INT NOT NULL
-                REFERENCES {schema}.inventory_tx(id)
-                ON DELETE CASCADE,
-
-            amount NUMERIC(18,2) NOT NULL DEFAULT 0,  -- GRNI portion cleared by this bill
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        CREATE INDEX IF NOT EXISTS {schema}_bill_grni_links_bill_idx
-        ON {schema}.bill_grni_links(company_id, bill_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_bill_grni_links_tx_idx
-        ON {schema}.bill_grni_links(company_id, receipt_tx_id);
-
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE n.nspname='{schema}'
-            AND c.conname='{schema}_uq_bill_grni_link'
-        ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.bill_grni_links
-                ADD CONSTRAINT %I UNIQUE (bill_id, receipt_tx_id)',
-                '{schema}',
-                '{schema}_uq_bill_grni_link'
             );
         END IF;
         END $$;
@@ -13395,33 +13687,39 @@ class DatabaseService:
             END IF;
         END $$;
 
-        -- ==================================================
-        -- COMPANY BANK ACCOUNTS
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.company_bank_accounts (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            name TEXT NOT NULL,
-            bank_name TEXT NOT NULL,
-            account_name TEXT NOT NULL,
-            account_number TEXT NOT NULL,
-            branch_code TEXT NULL,
-            swift_code TEXT NULL,
-            currency TEXT NULL,
-            ledger_account_code TEXT NULL,
-            is_default_receipts BOOLEAN NOT NULL DEFAULT FALSE,
-            is_default_payments BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
+                DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_vendor_fk'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (vendor_id) REFERENCES %I.vendors(id)
+            ON DELETE SET NULL',
+            '{schema}', '{schema}_inv_tx_vendor_fk', '{schema}'
+            );
+        END IF;
+        END $$;
 
-        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_idx
-        ON {schema}.company_bank_accounts(company_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_receipts_idx
-        ON {schema}.company_bank_accounts(company_id, is_default_receipts);
-
-        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_payments_idx
-        ON {schema}.company_bank_accounts(company_id, is_default_payments);
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_po_fk'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (po_id) REFERENCES %I.purchase_orders(id)
+            ON DELETE SET NULL',
+            '{schema}', '{schema}_inv_tx_po_fk', '{schema}'
+            );
+        END IF;
+        END $$;
 
         -- ==================================================
         -- BANK STATEMENTS
@@ -13679,13 +13977,13 @@ class DatabaseService:
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM pg_constraint
-                WHERE conname = 'fk_invoice_lines_invoice_company'
+                WHERE conname = 'fk_invoice_lines_invoice'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.invoice_lines
-                    ADD CONSTRAINT fk_invoice_lines_invoice_company
-                    FOREIGN KEY (company_id, invoice_id)
-                    REFERENCES %I.invoices(company_id, id)
+                    ADD CONSTRAINT fk_invoice_lines_invoice
+                    FOREIGN KEY (invoice_id)
+                    REFERENCES %I.invoices(id)
                     ON DELETE CASCADE',
                     '{schema}',
                     '{schema}'
@@ -14061,8 +14359,7 @@ class DatabaseService:
 
         CREATE TRIGGER check_receipt_allocation
         BEFORE INSERT OR UPDATE ON {schema}.receipt_allocations
-        FOR EACH ROW EXECUTE FUNCTION {schema}.trg_check_receipt_allocation();
-
+        FOR EACH ROW EXECUTE PROCEDURE {schema}.trg_check_receipt_allocation();
 
         -- ==================================================
         -- PERIOD LOCKS
@@ -14359,358 +14656,6 @@ class DatabaseService:
             RETURN NEW;
         END; $$ LANGUAGE plpgsql;
 
-        -- ==================================================
-        -- APPROVAL REQUESTS
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.approval_requests (
-            id                  BIGSERIAL PRIMARY KEY,
-            company_id           INT NOT NULL DEFAULT {company_id},
-
-            entity_type          TEXT NOT NULL,     -- 'journal','vendor','customer','bill','payment', etc
-            entity_id            TEXT NOT NULL,     -- string form of id (safe for uuid/int)
-            entity_ref           TEXT NULL,
-
-            module               TEXT NOT NULL,     -- 'gl','ap','ar','control_room'
-            action               TEXT NOT NULL,     -- 'post','release','approve','reverse', etc
-
-            requested_by_user_id INT NOT NULL,      -- public.users.id
-            requested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            status               TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected/cancelled/expired
-            decided_by_user_id   INT NULL,
-            decided_at           TIMESTAMPTZ NULL,
-            decision_note        TEXT NULL,
-
-            amount               NUMERIC(18,2) NOT NULL DEFAULT 0,
-            currency             TEXT NULL,
-            risk_level           TEXT NOT NULL DEFAULT 'low', -- low/medium/high/critical
-
-            dedupe_key           TEXT NULL,         -- app-computed key to avoid duplicates
-            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-
-            created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        -- --------------------------
-        -- Safe additive evolution
-        -- --------------------------
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS company_id INT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS entity_type TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS entity_id TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS entity_ref TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS module TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS action TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS requested_by_user_id INT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS status TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS decided_by_user_id INT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS decision_note TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS amount NUMERIC(18,2);
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS currency TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS risk_level TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS payload_json JSONB;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
-        ALTER TABLE {schema}.approval_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
-
-        -- backfill/enforce company_id
-        UPDATE {schema}.approval_requests
-        SET company_id = {company_id}
-        WHERE company_id IS NULL;
-
-        ALTER TABLE {schema}.approval_requests
-        ALTER COLUMN company_id SET NOT NULL,
-        ALTER COLUMN company_id SET DEFAULT {company_id};
-
-        -- default/backfill stability
-        UPDATE {schema}.approval_requests
-        SET status = COALESCE(NULLIF(status,''), 'pending')
-        WHERE status IS NULL OR status = '';
-
-        UPDATE {schema}.approval_requests
-        SET risk_level = COALESCE(NULLIF(risk_level,''), 'low')
-        WHERE risk_level IS NULL OR risk_level = '';
-
-        UPDATE {schema}.approval_requests
-        SET payload_json = COALESCE(payload_json, '{{}}'::jsonb)
-        WHERE payload_json IS NULL;
-
-        ALTER TABLE {schema}.approval_requests
-        ALTER COLUMN status SET NOT NULL,
-        ALTER COLUMN status SET DEFAULT 'pending',
-        ALTER COLUMN risk_level SET NOT NULL,
-        ALTER COLUMN risk_level SET DEFAULT 'low',
-        ALTER COLUMN payload_json SET NOT NULL,
-        ALTER COLUMN payload_json SET DEFAULT '{{}}'::jsonb;
-
-        -- --------------------------
-        -- CHECK constraints
-        -- --------------------------
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_requests_status_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_requests
-            ADD CONSTRAINT %I
-            CHECK (status IN (''pending'',''approved'',''rejected'',''cancelled'',''expired''))',
-            '{schema}', '{schema}_approval_requests_status_ck'
-            );
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_requests_risk_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_requests
-            ADD CONSTRAINT %I
-            CHECK (risk_level IN (''low'',''medium'',''high'',''critical''))',
-            '{schema}', '{schema}_approval_requests_risk_ck'
-            );
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_requests_amt_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_requests
-            ADD CONSTRAINT %I
-            CHECK (amount >= 0)',
-            '{schema}', '{schema}_approval_requests_amt_ck'
-            );
-        END IF;
-        END $$;
-
-        -- --------------------------
-        -- Uniqueness
-        -- --------------------------
-
-        -- A) dedupe_key uniqueness (optional but recommended)
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname = '{schema}' AND indexname = '{schema}_approval_requests_dedupe_uq'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX %I
-            ON %I.approval_requests(company_id, dedupe_key)
-            WHERE dedupe_key IS NOT NULL AND dedupe_key <> ''''',
-            '{schema}_approval_requests_dedupe_uq', '{schema}'
-            );
-        END IF;
-        END $$;
-
-        -- B) one ACTIVE pending request per entity+module+action (hard safety)
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname = '{schema}' AND indexname = '{schema}_approval_active_entity_action_uq'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX %I
-            ON %I.approval_requests(company_id, entity_type, entity_id, module, action)
-            WHERE status IN (''pending'')',
-            '{schema}_approval_active_entity_action_uq',
-            '{schema}'
-            );
-        END IF;
-        END $$;
-
-        -- C) composite unique for (id, company_id) to support composite FKs
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname = '{schema}' AND indexname = '{schema}_approval_requests_id_company_uq'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX %I ON %I.approval_requests(id, company_id)',
-            '{schema}_approval_requests_id_company_uq',
-            '{schema}'
-            );
-        END IF;
-        END $$;
-
-        -- --------------------------
-        -- Indexes
-        -- --------------------------
-        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_status_idx
-        ON {schema}.approval_requests(company_id, status, requested_at DESC);
-
-        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_entity_idx
-        ON {schema}.approval_requests(company_id, entity_type, entity_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_entity_time_idx
-        ON {schema}.approval_requests(company_id, entity_type, entity_id, requested_at DESC);
-
-        CREATE INDEX IF NOT EXISTS {schema}_approval_requests_module_status_idx
-        ON {schema}.approval_requests(company_id, module, status, requested_at DESC);
-
-        -- --------------------------
-        -- FKs to users
-        -- --------------------------
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_requests_requested_by_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_requests
-            ADD CONSTRAINT %I
-            FOREIGN KEY (requested_by_user_id)
-            REFERENCES public.users(id)
-            ON DELETE RESTRICT',
-            '{schema}', '{schema}_approval_requests_requested_by_fk'
-            );
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_requests_decided_by_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_requests
-            ADD CONSTRAINT %I
-            FOREIGN KEY (decided_by_user_id)
-            REFERENCES public.users(id)
-            ON DELETE SET NULL',
-            '{schema}', '{schema}_approval_requests_decided_by_fk'
-            );
-        END IF;
-        END $$;
-
-        -- --------------------------
-        -- OPTIONAL: auto touch updated_at on updates
-        -- --------------------------
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_trigger
-            WHERE tgname = '{schema}_approval_requests_touch'
-        ) THEN
-            EXECUTE format(
-            'CREATE TRIGGER %I
-            BEFORE UPDATE ON %I.approval_requests
-            FOR EACH ROW
-            EXECUTE FUNCTION %I.touch_updated_at()',
-            '{schema}_approval_requests_touch',
-            '{schema}',
-            '{schema}'
-            );
-        END IF;
-        END $$;
-
-        -- ==================================================
-        -- APPROVAL DECISIONS (history)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.approval_decisions (
-            id                  BIGSERIAL PRIMARY KEY,
-            company_id           INT NOT NULL DEFAULT {company_id},
-            approval_request_id  BIGINT NOT NULL,
-
-            decision             TEXT NOT NULL,    -- approve/reject/comment/cancel/reassign
-            decided_by_user_id   INT NOT NULL,     -- public.users.id
-            decided_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            note                 TEXT NULL,
-
-            meta_json    JSONB NOT NULL DEFAULT '{{}}'::jsonb
-        );
-
-        -- safe additive
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS company_id INT;
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS approval_request_id BIGINT;
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS decision TEXT;
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS decided_by_user_id INT;
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ;
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS note TEXT;
-        ALTER TABLE {schema}.approval_decisions ADD COLUMN IF NOT EXISTS meta_json JSONB;
-
-        UPDATE {schema}.approval_decisions
-        SET company_id = {company_id}
-        WHERE company_id IS NULL;
-
-        ALTER TABLE {schema}.approval_decisions
-        ALTER COLUMN company_id SET NOT NULL,
-        ALTER COLUMN company_id SET DEFAULT {company_id};
-
-        UPDATE {schema}.approval_decisions
-        SET meta_json = COALESCE(meta_json, '{{}}'::jsonb)
-        WHERE meta_json IS NULL;
-
-        ALTER TABLE {schema}.approval_decisions
-        ALTER COLUMN meta_json SET NOT NULL,
-        ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb;
-
-        -- decision check
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_decisions_decision_ck' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_decisions
-            ADD CONSTRAINT %I
-            CHECK (decision IN (''approve'',''reject'',''comment'',''cancel'',''reassign''))',
-            '{schema}', '{schema}_approval_decisions_decision_ck'
-            );
-        END IF;
-        END $$;
-
-        -- FKs (composite FK ensures same company)
-        DO $$
-        BEGIN
-        -- Composite request FK: (approval_request_id, company_id) -> approval_requests(id, company_id)
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_decisions_request_company_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_decisions
-            ADD CONSTRAINT %I
-            FOREIGN KEY (approval_request_id, company_id)
-            REFERENCES %I.approval_requests(id, company_id)
-            ON DELETE CASCADE',
-            '{schema}', '{schema}_approval_decisions_request_company_fk', '{schema}'
-            );
-        END IF;
-
-        -- decided_by -> public.users
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_approval_decisions_user_fk' AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.approval_decisions
-            ADD CONSTRAINT %I
-            FOREIGN KEY (decided_by_user_id)
-            REFERENCES public.users(id)
-            ON DELETE RESTRICT',
-            '{schema}', '{schema}_approval_decisions_user_fk'
-            );
-        END IF;
-        END $$;
-
-        -- indexes
-        CREATE INDEX IF NOT EXISTS {schema}_approval_decisions_req_idx
-        ON {schema}.approval_decisions(company_id, approval_request_id, decided_at DESC);
 
         -- ==================================================
         -- AUDIT TRAIL
@@ -15410,6 +15355,47 @@ class DatabaseService:
         -- Most common query: fetch lines for a bill (and keep order)
         CREATE INDEX IF NOT EXISTS {schema}_bill_lines_bill_line_idx
         ON {schema}.bill_lines(bill_id, line_no);
+
+                -- 7) GRNI ↔ Bill linking (receipt accrual clearing traceability)
+        CREATE TABLE IF NOT EXISTS {schema}.bill_grni_links (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bill_id INT NOT NULL
+                REFERENCES {schema}.bills(id)
+                ON DELETE CASCADE,
+
+            receipt_tx_id INT NOT NULL
+                REFERENCES {schema}.inventory_tx(id)
+                ON DELETE CASCADE,
+
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,  -- GRNI portion cleared by this bill
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_bill_grni_links_bill_idx
+        ON {schema}.bill_grni_links(company_id, bill_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_bill_grni_links_tx_idx
+        ON {schema}.bill_grni_links(company_id, receipt_tx_id);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}'
+            AND c.conname='{schema}_uq_bill_grni_link'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.bill_grni_links
+                ADD CONSTRAINT %I UNIQUE (bill_id, receipt_tx_id)',
+                '{schema}',
+                '{schema}_uq_bill_grni_link'
+            );
+        END IF;
+        END $$;
 
         -- ==================================================
         -- AP: Vendor payments (base table)
