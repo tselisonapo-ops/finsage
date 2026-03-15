@@ -5992,7 +5992,7 @@ function openLeaseWizard(ctx = {}) {
   const role = localStorage.getItem("userRole");
 
   const payload = { token, companyId, role, source: "journal", ctx };
-  const origin = window.LEASE_WIZARD_ORIGIN || "http://localhost:5173";
+  const origin = window.LEASE_WIZARD_ORIGIN || window.location.origin;
   frame.contentWindow.postMessage(payload, origin);
 }
 window.openLeaseWizard = openLeaseWizard;
