@@ -15658,7 +15658,10 @@ class DatabaseService:
 
         # BEFORE opening the cursor: catch Python .format errors
         try:
-            ddl_bootstrap_sql = ddl_bootstrap.format(schema=schema, company_id=int(company_id))
+            ddl_bootstrap_sql = ddl_bootstrap.format(
+                schema=schema,
+                company_id=int(company_id)
+            )
         except Exception as e:
             print("\n[TENANT-FORMAT-FAIL] bootstrap")
             print("company_id =", company_id, "schema =", schema)
@@ -15668,7 +15671,10 @@ class DatabaseService:
             raise
 
         try:
-            ddl_ap_sql = ddl_ap.format(schema=schema, company_id=company_id)
+            ddl_ap_sql = ddl_ap.format(
+                schema=schema,
+                company_id=int(company_id)
+            )
         except Exception as e:
             print("\n[TENANT-FORMAT-FAIL] ap")
             print("company_id =", company_id, "schema =", schema)
