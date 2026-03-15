@@ -1983,23 +1983,26 @@ class DatabaseService:
         token = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(ttl_seconds))
 
-        row = self.fetch_one("""
-            INSERT INTO public.company_invites
-                (token, company_id, email, role, access_scope, note, created_by, expires_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING token, company_id, email, role, access_scope, expires_at;
-        """, (
-            token,
-            int(company_id),
-            email.lower().strip(),
-            role.strip().lower(),
-            (access_scope or "core").strip().lower(),
-            note,
-            created_by,
-            expires_at
-        )) or {}
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                INSERT INTO public.company_invites
+                    (token, company_id, email, role, access_scope, note, created_by, expires_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING token, company_id, email, role, access_scope, expires_at;
+            """, (
+                token,
+                int(company_id),
+                email.lower().strip(),
+                role.strip().lower(),
+                (access_scope or "core").strip().lower(),
+                note,
+                created_by,
+                expires_at
+            ))
 
-        return row
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else {}
 
     def get_company_invite_by_token(self, token:str) -> dict|None:
         return self.fetch_one("""
