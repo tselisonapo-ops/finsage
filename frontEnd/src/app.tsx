@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";import "./App.css";
+import { useEffect, useRef, useState } from "react";
+import "./App.css";
 import LeaseWizard from "./components/leaseWizard";
 import { getWizardCompanyId } from "./context/company";
 
@@ -24,9 +25,11 @@ function App() {
       window.location.hostname === "localhost" ||
       window.location.hostname === "127.0.0.1";
 
+    const PROD_ORIGIN = "https://finspheresolutions.com";
+
     const ALLOWED_ORIGINS = IS_LOCAL
       ? ["http://127.0.0.1:5500", "http://localhost:5500"]
-      : ["https://finsage-1.onrender.com"];
+      : [PROD_ORIGIN];
 
     let intervalId: number | null = null;
 
@@ -70,9 +73,11 @@ function App() {
 
     window.addEventListener("message", onMessage);
 
-    // tell parent iframe host that wizard is ready
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: "lease_wizard_ready" }, "*");
+      window.parent.postMessage(
+        { type: "lease_wizard_ready" },
+        IS_LOCAL ? "*" : PROD_ORIGIN
+      );
     }
 
     read();
@@ -91,6 +96,8 @@ function App() {
       window.location.hostname === "localhost" ||
       window.location.hostname === "127.0.0.1";
 
+    const PROD_ORIGIN = "https://finspheresolutions.com";
+
     const token =
       localStorage.getItem("fs_user_token") ||
       sessionStorage.getItem("fs_user_token");
@@ -98,10 +105,10 @@ function App() {
     const REDIRECT_URL = !token
       ? (IS_LOCAL
           ? "http://127.0.0.1:5500/signin.html"
-          : "https://finsage-1.onrender.com/signin.html")
+          : `${PROD_ORIGIN}/signin.html`)
       : (IS_LOCAL
           ? "http://127.0.0.1:5500/dashboard.html"
-          : "https://finsage-1.onrender.com/dashboard.html");
+          : `${PROD_ORIGIN}/dashboard.html`);
 
     redirectScheduledRef.current = true;
 

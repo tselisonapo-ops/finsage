@@ -1,4 +1,4 @@
-import "./drawer/hostMount"; // ✅ Registers window.FS_MOUNT_FIXED_ASSETS_DRAWER at module load
+import "./drawer/hostMount";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,32 +20,42 @@ type WizardHydrationMessage = {
   token?: string;
   companyId?: number | string;
   role?: string;
+  type?: string;
 };
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   console.log("📨 Message received in wizard:", event.data);
 
   const origin = event.origin || "";
-  const isDevOrigin = origin.includes("localhost") || origin.includes("127.0.0.1");
+  const isDevOrigin =
+    origin.includes("localhost") || origin.includes("127.0.0.1");
   const isNullOriginDev = import.meta.env.DEV && origin === "null";
+  const isProdOrigin = origin === "https://finspheresolutions.com";
 
-  // ✅ Allow only your dev hosts (and null origin for dev file:// or sandbox if needed)
-  if (!isDevOrigin && !isNullOriginDev) return;
+  if (!isDevOrigin && !isNullOriginDev && !isProdOrigin) return;
 
-  // ✅ No `any`, keep it safe
-  const data = (event.data && typeof event.data === "object")
-    ? (event.data as WizardHydrationMessage)
-    : ({} as WizardHydrationMessage);
+  const data =
+    event.data && typeof event.data === "object"
+      ? (event.data as WizardHydrationMessage)
+      : ({} as WizardHydrationMessage);
 
-  const { token, companyId, role } = data;
+  const { token, companyId, role, type } = data;
+
+  if (type && type !== "lease_wizard_context") return;
 
   if (token) {
     localStorage.setItem("fs_user_token", token);
     sessionStorage.setItem("fs_user_token", token);
+    localStorage.setItem("auth_token", token);
+    sessionStorage.setItem("auth_token", token);
   }
+
   if (companyId != null) {
     localStorage.setItem("company_id", String(companyId));
+    localStorage.setItem("active_company_id", String(companyId));
+    sessionStorage.setItem("active_company_id", String(companyId));
   }
+
   if (role) {
     localStorage.setItem("userRole", role);
   }
@@ -59,4 +69,3 @@ createRoot(rootEl).render(
     <App />
   </StrictMode>
 );
-

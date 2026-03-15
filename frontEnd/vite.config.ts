@@ -13,6 +13,8 @@ export default defineConfig({
     minify: "esbuild",
     rollupOptions: {
       input: {
+        dashboard: path.resolve(__dirname, "dashboard.html"),
+        leaseWizard: path.resolve(__dirname, "lease-wizard.html"),
         hostMount: path.resolve(__dirname, "src/drawer/hostMount.ts"),
       },
       output: {
