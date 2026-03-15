@@ -588,6 +588,51 @@ def _merge_meta(existing_meta, new_meta: dict):
 # ✅ Helpers (paste once in api_server.py near your endpoints)
 # ------------------------------------------------------------
 
+from datetime import datetime, timezone, timedelta, date
+
+def _as_utc_aware(dt):
+    """Return dt as timezone-aware UTC datetime (or None)."""
+    if not dt:
+        return None
+
+    if isinstance(dt, str):
+        # Support common DB-returned ISO strings.
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+
+    return dt.astimezone(timezone.utc)
+
+
+def _invite_is_expired(rec):
+    expires_at = _as_utc_aware(rec.get("expires_at"))
+    if not expires_at:
+        return False
+    return datetime.now(timezone.utc) > expires_at
+
+
+def _invite_state_error(rec):
+    """
+    Return (message, status_code) if invite is unusable, else None.
+    """
+    if not rec:
+        return ("Invalid or expired invitation link.", 404)
+
+    if rec.get("revoked_at"):
+        return ("This invitation link was revoked.", 400)
+
+    if rec.get("accepted_at") or rec.get("accepted"):
+        return ("This invitation link has already been used.", 400)
+
+    if _invite_is_expired(rec):
+        return ("This invitation link has expired.", 400)
+
+    return None
+
 def parse_date_arg(request, name: str) -> Optional[date]:
     s = request.args.get(name)
     if not s:
@@ -1319,8 +1364,10 @@ def api_auth_signup():
 
     try:
         send_mail(to_email=email, subject=subject, html_body=html, text_body=text)
+        print(f"[AUTH] EMAIL SENT OK for {email}")
     except Exception as e:
         email_sent = False
+        print(f"[AUTH] EMAIL SEND FAILED for {email}: {type(e).__name__}: {e}")
         current_app.logger.warning("[AUTH] EMAIL SEND FAILED for %s: %s", email, e)
         
     return jsonify({
@@ -1836,26 +1883,21 @@ def api_invite_info():
         return jsonify({"error": "Missing invite token."}), 400
 
     rec = db_service.get_company_invite_by_token(token)
-    if not rec:
-        return jsonify({"error": "Invalid or expired invitation link."}), 404
-    if rec.get("revoked_at"):
-        return jsonify({"error": "This invitation link was revoked."}), 400
-    if rec.get("accepted_at") or rec.get("accepted"):
-        return jsonify({"error": "This invitation link has already been used."}), 400
 
-    if _is_expired_expires_at(rec.get("expires_at")):
-        return jsonify({"error": "This invitation link has expired."}), 400
+    current_app.logger.warning(
+        "[INVITE INFO DEBUG] token=%s rec_found=%s expires_at=%r now_utc=%r",
+        token,
+        bool(rec),
+        (rec or {}).get("expires_at"),
+        datetime.now(timezone.utc),
+    )
 
-    try:
-        created_ts = int(rec.get("created") or 0)
-    except Exception:
-        created_ts = 0
-
-    if created_ts and (int(time.time()) - created_ts > int(INVITE_TTL_SECONDS)):
-        return jsonify({"error": "This invitation link has expired."}), 400
+    state_error = _invite_state_error(rec)
+    if state_error:
+        msg, code = state_error
+        return jsonify({"error": msg}), code
 
     ROLE_LABELS = {
-        # core/internal
         "clerk": "Accounts Clerk",
         "assistant": "Finance Assistant",
         "junior": "Junior Accountant",
@@ -1867,8 +1909,6 @@ def api_invite_info():
         "owner": "Owner",
         "admin": "Admin",
         "bookkeeper": "Bookkeeper",
-
-        # assignment/practitioner
         "audit_staff": "Audit Staff",
         "senior_associate": "Senior Associate",
         "audit_manager": "Audit Manager",
@@ -1894,6 +1934,7 @@ def api_invite_info():
         "accessScope": access_scope,
         "companyName": rec.get("company_name") or rec.get("companyName") or "",
         "companyId": rec.get("company_id"),
+        "expiresAt": _as_utc_aware(rec.get("expires_at")).isoformat() if rec.get("expires_at") else None,
     }), 200
 
 @app.route("/api/invites", methods=["POST"])
@@ -2013,6 +2054,17 @@ def api_create_invite():
         created_by=actor_user_id,
         ttl_seconds=INVITE_TTL_SECONDS
     )
+
+    current_app.logger.warning(
+        "[CREATE INVITE DEBUG] token=%s email=%s company_id=%s ttl=%r expires_at=%r created=%r",
+        rec.get("token"),
+        email,
+        company_id,
+        INVITE_TTL_SECONDS,
+        rec.get("expires_at"),
+        rec.get("created"),
+    )
+
     token = rec["token"]
 
     invite_link = f"{FRONTEND_BASE}/accept-invite.html?token={token}"
@@ -2061,21 +2113,6 @@ def api_create_invite():
         "reason": "multi_user_company" if recommended_mode else None,
     }), 201
 
-def _as_utc_aware(dt):
-    """Return dt as timezone-aware UTC datetime (or None)."""
-    if not dt:
-        return None
-    if isinstance(dt, str):
-        # if your DB returns string sometimes, parse if needed
-        # (skip for now; add parser if your db_service returns strings)
-        return None
-    if dt.tzinfo is None:
-        # assume it's UTC if stored naive
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-from datetime import datetime, timezone, timedelta, date
-
 @app.route("/api/auth/accept-invite", methods=["POST"])
 def api_accept_invite():
     data = request.get_json(silent=True) or {}
@@ -2089,14 +2126,19 @@ def api_accept_invite():
         return jsonify({"error": "Missing invitation token."}), 400
 
     rec = db_service.get_company_invite_by_token(token)
-    if not rec:
-        return jsonify({"error": "Invalid or expired invitation link."}), 404
-    if rec.get("revoked_at"):
-        return jsonify({"error": "This invitation link was revoked."}), 400
-    if rec.get("accepted_at"):
-        return jsonify({"error": "This invitation link has already been used."}), 400
-    if rec.get("expires_at") and datetime.now(timezone.utc) > rec["expires_at"]:
-        return jsonify({"error": "This invitation link has expired."}), 400
+
+    current_app.logger.warning(
+        "[ACCEPT INVITE DEBUG] token=%s rec_found=%s expires_at=%r now_utc=%r",
+        token,
+        bool(rec),
+        (rec or {}).get("expires_at"),
+        datetime.now(timezone.utc),
+    )
+
+    state_error = _invite_state_error(rec)
+    if state_error:
+        msg, code = state_error
+        return jsonify({"error": msg}), code
 
     email        = (rec.get("email") or "").strip().lower()
     user_role    = (rec.get("role") or "other").strip().lower()
@@ -2124,11 +2166,9 @@ def api_accept_invite():
         (email,)
     )
 
-    # invited memberships should default to secondary
     membership_kind = "secondary"
     is_primary = False
 
-    # 1) Existing user
     if existing:
         user_id = int(existing["id"])
         existing_user_type = (existing.get("user_type") or "").strip() or "Enterprise"
@@ -2142,8 +2182,6 @@ def api_accept_invite():
             is_primary=is_primary,
         )
 
-        # ✅ Do NOT overwrite the user's home/default company here.
-        # Optional fallback only if they have no primary membership at all.
         has_primary = db_service.fetch_one(
             """
             SELECT 1
@@ -2182,8 +2220,8 @@ def api_accept_invite():
             SELECT company_id
             FROM public.company_users
             WHERE user_id=%s
-            AND is_active=TRUE
-            AND is_primary=TRUE
+              AND is_active=TRUE
+              AND is_primary=TRUE
             LIMIT 1
             """,
             (int(user_id),)
@@ -2210,11 +2248,12 @@ def api_accept_invite():
             "existingUser": True,
         }), 200
 
-    # 2) New user
     if not first_name or not last_name:
         return jsonify({"error": "First name and last name are required."}), 400
+
     if not password or password != confirm_pw:
         return jsonify({"error": "Passwords do not match."}), 400
+
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters."}), 400
 
@@ -2232,10 +2271,9 @@ def api_accept_invite():
         confirmation_token_expires_at=None,
         trial_start_date=str(date.today()),
         trial_end_date=str(date.today() + timedelta(days=30)),
-        company_id=company_id,  # acceptable for brand-new user bootstrap
+        company_id=company_id,
     )
 
-    # brand-new invited user may start with this as their primary until they later get a home company
     db_service.upsert_company_user(
         company_id=int(company_id),
         user_id=int(new_id),
