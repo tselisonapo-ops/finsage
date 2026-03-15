@@ -5979,22 +5979,63 @@ function openLeaseWizard(ctx = {}) {
   console.log("[LEASE] openLeaseWizard called", ctx);
 
   const drawer = document.getElementById("leaseWizardDrawer");
-  drawer?.classList.add("active");
-
   const frame = document.getElementById("leaseWizardFrame");
-  if (!frame || !frame.contentWindow) return;
+
+  if (!drawer || !frame) {
+    console.error("[LEASE] drawer or iframe missing");
+    return;
+  }
+
+  drawer.classList.add("active");
+
+  const LEASE_WIZARD_URL =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+      ? "http://localhost:5173/"
+      : `${window.location.origin}/lease-wizard.html`;
+
+  const LEASE_WIZARD_ORIGIN =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+      ? "http://localhost:5173"
+      : window.location.origin;
 
   const token =
     sessionStorage.getItem("fs_user_token") ||
     localStorage.getItem("fs_user_token");
 
-  const companyId = window.getActiveCompanyId?.() || localStorage.getItem("company_id");
+  const companyId =
+    window.getActiveCompanyId?.() ||
+    localStorage.getItem("company_id");
+
   const role = localStorage.getItem("userRole");
 
-  const payload = { token, companyId, role, source: "journal", ctx };
-  const origin = window.LEASE_WIZARD_ORIGIN || window.location.origin;
-  frame.contentWindow.postMessage(payload, origin);
+  const payload = {
+    type: "lease_wizard_context",
+    token,
+    companyId,
+    role,
+    source: "journal",
+    ctx
+  };
+
+  const sendContext = () => {
+    if (!frame.contentWindow) return;
+    console.log("[LEASE] posting context to iframe", payload);
+    frame.contentWindow.postMessage(payload, LEASE_WIZARD_ORIGIN);
+  };
+
+  if (!frame.src || frame.src === "about:blank") {
+    frame.src = LEASE_WIZARD_URL;
+    frame.onload = () => {
+      console.log("[LEASE] iframe loaded:", frame.src);
+      setTimeout(sendContext, 150);
+    };
+  } else {
+    sendContext();
+  }
 }
+
 window.openLeaseWizard = openLeaseWizard;
 
 function closeLeaseWizard() {
