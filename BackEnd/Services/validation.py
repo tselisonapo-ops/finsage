@@ -20,7 +20,7 @@ REGNO_REGEX: Dict[str, str] = {
     # Southern Africa
     "ZA": r"^\d{4}/\d{6}/(07|08)$",        # South Africa: 2014/123456/07 or /08
     "LS": r"^A\d{4}/\d{5,6}$",             # Lesotho (your rule): A1234/12345 or /123456
-    "BW": r"^\d{2,6}/\d{2,6}$",            # Botswana (very simplified CIPA)
+    "BW": r"^[A-Z0-9/\-]{6,20}$",          # Botswana (very simplified CIPA)
     "NA": r"^\d{2,6}/\d{2,6}$",            # Namibia (simplified)
     "ZW": r"^\d{2,6}/\d{2,6}$",            # Zimbabwe (simplified)
 
@@ -98,6 +98,7 @@ TIN_REGEX: Dict[str, str] = {
     "SA": r"^\d{10,15}$",                  # Saudi (simplified)
     "LS": r"^\d{6,12}$",                   # Lesotho (relaxed)
     "KE": r"^[A-Z]\d{9}[A-Z]$",            # Kenya KRA PIN format (e.g., A123456789B)
+    "BW": r"^BW\d{11}$",                   # Botswana income tax no. e.g. BW00005290056
 }
 
 def validate_tin(country_code: str, tin: Optional[str]) -> bool:
@@ -137,6 +138,11 @@ VAT_REGEX: Dict[str, str] = {
     # Middle East
     "AE": r"^\d{15}$",               # UAE TRN is 15 digits
     "SA": r"^\d{15}$",               # KSA VAT often 15 digits
+
+    # Africa (relaxed if no strict public spec handy)
+    "LS": r"^[A-Z0-9\-]{6,15}$",
+    "KE": r"^P\d{9}[A-Z]$",
+    "BW": r"^BW\d{11}$",   # Botswana taxpayer number e.g. BW00005290056
 
     # Africa (relaxed if no strict public spec handy)
     "LS": r"^[A-Z0-9\-]{6,15}$",
