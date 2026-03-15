@@ -332,6 +332,135 @@ const ENDPOINTS = {
       const qs = params.toString();
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/customers${qs ? `?${qs}` : ""}`;
     }
+  },
+
+  analytics: {
+    overview: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/overview`,
+
+    engagementProfitability: (
+      companyId,
+      {
+        date_range = "",
+        customer_id = "",
+        engagement_type = "",
+        manager_user_id = "",
+        status = "",
+        priority = ""
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (date_range) params.set("date_range", date_range);
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_type) params.set("engagement_type", engagement_type);
+      if (manager_user_id) params.set("manager_user_id", String(manager_user_id));
+      if (status) params.set("status", status);
+      if (priority) params.set("priority", priority);
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/engagement-profitability${qs ? `?${qs}` : ""}`;
+    },
+
+    engagementProfitabilityRows: (
+      companyId,
+      {
+        date_range = "",
+        customer_id = "",
+        engagement_type = "",
+        manager_user_id = "",
+        status = "",
+        priority = ""
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (date_range) params.set("date_range", date_range);
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_type) params.set("engagement_type", engagement_type);
+      if (manager_user_id) params.set("manager_user_id", String(manager_user_id));
+      if (status) params.set("status", status);
+      if (priority) params.set("priority", priority);
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/engagement-profitability/rows${qs ? `?${qs}` : ""}`;
+    },
+
+    clientServiceTrends: (
+      companyId,
+      {
+        date_range = "",
+        customer_id = "",
+        engagement_type = "",
+        status = ""
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (date_range) params.set("date_range", date_range);
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_type) params.set("engagement_type", engagement_type);
+      if (status) params.set("status", status);
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/client-service-trends${qs ? `?${qs}` : ""}`;
+    },
+
+    clientServiceTrendsRows: (
+      companyId,
+      {
+        date_range = "",
+        customer_id = "",
+        engagement_type = "",
+        status = ""
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (date_range) params.set("date_range", date_range);
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_type) params.set("engagement_type", engagement_type);
+      if (status) params.set("status", status);
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/client-service-trends/rows${qs ? `?${qs}` : ""}`;
+    },
+
+    riskAlerts: (
+      companyId,
+      {
+        date_range = "",
+        customer_id = "",
+        engagement_type = "",
+        manager_user_id = "",
+        status = "",
+        priority = ""
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (date_range) params.set("date_range", date_range);
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_type) params.set("engagement_type", engagement_type);
+      if (manager_user_id) params.set("manager_user_id", String(manager_user_id));
+      if (status) params.set("status", status);
+      if (priority) params.set("priority", priority);
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/risk-alerts${qs ? `?${qs}` : ""}`;
+    },
+
+    riskAlertsRows: (
+      companyId,
+      {
+        date_range = "",
+        customer_id = "",
+        engagement_type = "",
+        manager_user_id = "",
+        status = "",
+        priority = ""
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (date_range) params.set("date_range", date_range);
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_type) params.set("engagement_type", engagement_type);
+      if (manager_user_id) params.set("manager_user_id", String(manager_user_id));
+      if (status) params.set("status", status);
+      if (priority) params.set("priority", priority);
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/risk-alerts/rows${qs ? `?${qs}` : ""}`;
+    }
   }
 };
 
@@ -364,6 +493,13 @@ const ENDPOINTS = {
   let PR_YEAR_END_MODAL_BOUND = false;
   let PR_SIGNOFF_MODAL_BOUND = false;
 
+  let PR_ANALYTICS_OVERVIEW_CACHE = null;
+  let PR_ANALYTICS_DETAIL_CACHE = null;
+  let PR_ANALYTICS_DETAIL_ROWS_CACHE = [];
+  let PR_ANALYTICS_SELECTED_MODULE = null; // "engagement-profitability" | "client-service-trends" | "risk-alerts"
+  let PR_ANALYTICS_EVENTS_BOUND = false;
+  let PR_ANALYTICS_DETAIL_EVENTS_BOUND = false;
+
   const PR_NAV = {
     dashboard: "dashboard",
     assignments: "assignments",
@@ -390,7 +526,8 @@ const ENDPOINTS = {
     yearEndReporting: "year-end-reporting",
     reviewQueue: "review-queue",
     deliverables: "deliverables",
-    partnerSignoff: "partner-signoff"
+    partnerSignoff: "partner-signoff",
+    analyticsDetail: "analytics-detail",
   };
 
   /* ======================================================
@@ -613,7 +750,25 @@ function getUserLabelById(userId) {
       .replace(/'/g, "&#39;");
   }
 
-  function renderProfile(me) {
+function formatDateShort(value) {
+  if (!value) return "--";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString();
+}
+
+function analyticsCurrentFilters() {
+  return {
+    date_range: document.getElementById("analyticsFilterDateRange")?.value || "",
+    customer_id: document.getElementById("analyticsFilterClient")?.value || "",
+    engagement_type: document.getElementById("analyticsFilterEngagementType")?.value || "",
+    manager_user_id: document.getElementById("analyticsFilterManager")?.value || "",
+    status: document.getElementById("analyticsFilterStatus")?.value || "",
+    priority: document.getElementById("analyticsFilterPriority")?.value || ""
+  };
+}
+
+function renderProfile(me) {
   const fullName =
     [me.first_name, me.last_name].filter(Boolean).join(" ").trim() ||
     me.email ||
@@ -954,25 +1109,6 @@ function resolvePractitionerScreenName(name) {
 function canOpenPractitionerScreen(name) {
   const resolved = resolvePractitionerScreenName(name);
   return !!PR_SCREEN_POLICY[resolved];
-}
-
-function guardPractitionerScreenAccess(name, me) {
-  const resolved = resolvePractitionerScreenName(name);
-  const rule = PR_SCREEN_POLICY[resolved];
-  if (!rule) return { ok: false, reason: "unknown", resolved };
-
-  if (rule.auth !== "public" && !getAuthToken()) {
-    return { ok: false, reason: "auth", resolved };
-  }
-
-  const role = String(me?.role || "").toLowerCase();
-  const allowedRoles = Array.isArray(rule.roles) ? rule.roles.map(r => String(r).toLowerCase()) : [];
-
-  if (allowedRoles.length && !allowedRoles.includes(role)) {
-    return { ok: false, reason: "role", resolved };
-  }
-
-  return { ok: true, resolved };
 }
 
 async function switchPractitionerScreen(name, me, opts = {}) {
@@ -1666,7 +1802,8 @@ function runPractitionerScreenBinder(screen, me) {
       break;
 
     case PR_NAV.analytics:
-      renderAnalyticsScreen?.(me);
+    case PR_NAV.analyticsDetail:
+      renderAnalyticsScreen?.(me, screen);
       break;
 
     case PR_NAV.actionCenter:
@@ -4202,15 +4339,343 @@ async function renderYearEndReportingScreen(me) {
   await refreshYearEndScreen();
 }
 
-function renderDashboardHome(me) {}
-function renderClientsScreen(me) {}
+async function loadPractitionerAnalyticsOverview(me, { force = false } = {}) {
+  const companyId = getActiveCompanyId(me);
+  if (!companyId) throw new Error("No active company selected.");
 
-function renderAnalyticsScreen(me) {}
+  if (!force && PR_ANALYTICS_OVERVIEW_CACHE) {
+    renderPractitionerAnalyticsOverview(PR_ANALYTICS_OVERVIEW_CACHE);
+    return PR_ANALYTICS_OVERVIEW_CACHE;
+  }
+
+  const [overviewRes, profitabilityRes, trendsRes, riskRes] = await Promise.all([
+    apiFetch(ENDPOINTS.analytics.overview(companyId)),
+    apiFetch(ENDPOINTS.analytics.engagementProfitability(companyId)),
+    apiFetch(ENDPOINTS.analytics.clientServiceTrends(companyId)),
+    apiFetch(ENDPOINTS.analytics.riskAlerts(companyId))
+  ]);
+
+  PR_ANALYTICS_OVERVIEW_CACHE = {
+    overview: overviewRes?.row || {},
+    profitability: profitabilityRes?.row || {},
+    trends: trendsRes?.row || {},
+    risk: riskRes?.row || {}
+  };
+
+  renderPractitionerAnalyticsOverview(PR_ANALYTICS_OVERVIEW_CACHE);
+  return PR_ANALYTICS_OVERVIEW_CACHE;
+}
+
+function renderPractitionerAnalyticsOverview(data) {
+  const overview = data?.overview || {};
+  const profitability = data?.profitability || {};
+  const trends = data?.trends || {};
+  const risk = data?.risk || {};
+
+  setText("analyticsOverviewActiveEngagements", overview.active_engagements);
+  setText("analyticsOverviewDueThisMonth", overview.due_this_month);
+  setText("analyticsOverviewAtRiskItems", overview.at_risk_items);
+  setText("analyticsOverviewCompletionRate", overview.completion_rate != null ? `${overview.completion_rate}%` : "--%");
+
+  setText("analyticsProfitHealthy", profitability.healthy_count);
+  setText("analyticsProfitAttention", (Number(profitability.watchlist_count || 0) + Number(profitability.critical_count || 0)));
+  setText("analyticsProfitCycleLoad", profitability.portfolio_total);
+  setText("analyticsProfitPriorityMix", profitability.watchlist_count != null && profitability.critical_count != null
+    ? `${profitability.watchlist_count}/${profitability.critical_count}`
+    : "--");
+
+  setText("analyticsClientsServed", trends.clients_served);
+  setText("analyticsServiceLines", trends.active_service_lines);
+  setText("analyticsRecurringEngagements", trends.recurring_engagements);
+  setText("analyticsUpcomingDueDates", trends.upcoming_due_dates);
+
+  setText("analyticsRiskOverdue", risk.overdue_engagements);
+  setText("analyticsRiskBlocked", risk.blocked_items);
+  setText("analyticsRiskOutstanding", risk.outstanding_deliverables);
+  setText("analyticsRiskPendingSignoffs", risk.pending_signoffs);
+}
+
+function bindPractitionerAnalyticsOverviewEvents(me) {
+  if (PR_ANALYTICS_EVENTS_BOUND) return;
+  PR_ANALYTICS_EVENTS_BOUND = true;
+
+  document.getElementById("analyticsOpenEngagementProfitability")?.addEventListener("click", async () => {
+    await openPractitionerAnalyticsDetail("engagement-profitability", me);
+  });
+
+  document.getElementById("analyticsOpenClientServiceTrends")?.addEventListener("click", async () => {
+    await openPractitionerAnalyticsDetail("client-service-trends", me);
+  });
+
+  document.getElementById("analyticsOpenRiskAlerts")?.addEventListener("click", async () => {
+    await openPractitionerAnalyticsDetail("risk-alerts", me);
+  });
+}
+
+async function openPractitionerAnalyticsDetail(moduleName, me, { force = false } = {}) {
+  PR_ANALYTICS_SELECTED_MODULE = moduleName;
+  PR_ANALYTICS_FORCE_RELOAD = force === true;
+
+  await switchPractitionerScreen(PR_NAV.analyticsDetail, me);
+}
+
+async function showPractitionerAnalyticsOverviewScreen(me) {
+  await switchPractitionerScreen(PR_NAV.analytics, me);
+}
+
+function showPractitionerAnalyticsOverviewScreen() {
+  document.getElementById("screen-analytics-detail")?.classList.add("hidden");
+  document.getElementById("screen-analytics-detail")?.classList.remove("active");
+
+  document.getElementById("screen-analytics")?.classList.remove("hidden");
+  document.getElementById("screen-analytics")?.classList.add("active");
+}
+
+async function loadPractitionerAnalyticsDetail(me, { moduleName, force = false } = {}) {
+  const companyId = getActiveCompanyId(me);
+  if (!companyId) throw new Error("No active company selected.");
+
+  const filters = analyticsCurrentFilters();
+
+  let summaryUrl = "";
+  let rowsUrl = "";
+
+  if (moduleName === "engagement-profitability") {
+    summaryUrl = ENDPOINTS.analytics.engagementProfitability(companyId, filters);
+    rowsUrl = ENDPOINTS.analytics.engagementProfitabilityRows(companyId, filters);
+  } else if (moduleName === "client-service-trends") {
+    summaryUrl = ENDPOINTS.analytics.clientServiceTrends(companyId, filters);
+    rowsUrl = ENDPOINTS.analytics.clientServiceTrendsRows(companyId, filters);
+  } else if (moduleName === "risk-alerts") {
+    summaryUrl = ENDPOINTS.analytics.riskAlerts(companyId, filters);
+    rowsUrl = ENDPOINTS.analytics.riskAlertsRows(companyId, filters);
+  } else {
+    throw new Error(`Unsupported analytics module: ${moduleName}`);
+  }
+
+  const [summaryRes, rowsRes] = await Promise.all([
+    apiFetch(summaryUrl),
+    apiFetch(rowsUrl)
+  ]);
+
+  PR_ANALYTICS_DETAIL_CACHE = summaryRes?.row || {};
+  PR_ANALYTICS_DETAIL_ROWS_CACHE = rowsRes?.rows || [];
+
+  renderPractitionerAnalyticsDetail(moduleName, PR_ANALYTICS_DETAIL_CACHE, PR_ANALYTICS_DETAIL_ROWS_CACHE);
+}
+
+function renderPractitionerAnalyticsDetail(moduleName, summary, rows) {
+  if (moduleName === "engagement-profitability") {
+    setText("analyticsDetailTitle", "Engagement Profitability");
+    setText("analyticsDetailSubtitle", "Detailed view of engagement health, workflow pressure, deadlines, and performance indicators.");
+
+    setText("analyticsDetailKpi1", summary.portfolio_total);
+    setText("analyticsDetailKpi2", summary.healthy_count);
+    setText("analyticsDetailKpi3", summary.watchlist_count);
+    setText("analyticsDetailKpi4", summary.critical_count);
+
+    setText("analyticsException1Title", "Overdue due dates");
+    setText("analyticsException1Text", "Engagements that have missed deadlines or are approaching risk thresholds.");
+    setText("analyticsException2Title", "Watchlist pressure");
+    setText("analyticsException2Text", "High-priority and near-due engagements needing attention.");
+    setText("analyticsException3Title", "Critical engagements");
+    setText("analyticsException3Text", "Urgent, overdue, or paused work requiring escalation.");
+  }
+
+  if (moduleName === "client-service-trends") {
+    setText("analyticsDetailTitle", "Client Service Trends");
+    setText("analyticsDetailSubtitle", "Detailed view of client concentration, service line spread, and upcoming delivery obligations.");
+
+    setText("analyticsDetailKpi1", summary.clients_served);
+    setText("analyticsDetailKpi2", summary.active_service_lines);
+    setText("analyticsDetailKpi3", summary.recurring_engagements);
+    setText("analyticsDetailKpi4", summary.upcoming_due_dates);
+
+    setText("analyticsException1Title", "Service concentration");
+    setText("analyticsException1Text", "Clients with a high dependency on multiple open engagements.");
+    setText("analyticsException2Title", "Upcoming delivery clusters");
+    setText("analyticsException2Text", "Due dates concentrated around the same period.");
+    setText("analyticsException3Title", "Coverage gaps");
+    setText("analyticsException3Text", "Clients with limited service spread or recurring engagement imbalance.");
+  }
+
+  if (moduleName === "risk-alerts") {
+    setText("analyticsDetailTitle", "Risk Alerts");
+    setText("analyticsDetailSubtitle", "Detailed view of overdue engagements, blocked workflow, missing deliverables, and incomplete approvals.");
+
+    setText("analyticsDetailKpi1", summary.overdue_engagements);
+    setText("analyticsDetailKpi2", summary.blocked_items);
+    setText("analyticsDetailKpi3", summary.outstanding_deliverables);
+    setText("analyticsDetailKpi4", summary.pending_signoffs);
+
+    setText("analyticsException1Title", "Overdue engagements");
+    setText("analyticsException1Text", "Open engagements whose due dates have passed.");
+    setText("analyticsException2Title", "Blocked workflow");
+    setText("analyticsException2Text", "Reporting items or work steps currently blocked.");
+    setText("analyticsException3Title", "Pending sign-offs");
+    setText("analyticsException3Text", "Required approval steps not yet completed.");
+  }
+
+  renderPractitionerAnalyticsDetailRows(moduleName, rows);
+}
+
+function renderPractitionerAnalyticsDetailRows(moduleName, rows) {
+  const tbody = document.getElementById("analyticsDetailTableBody");
+  if (!tbody) return;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    tbody.innerHTML = `
+      <tr class="border-b border-slate-100">
+        <td colspan="7" class="px-3 py-6 text-center text-slate-500">No records found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  if (moduleName === "engagement-profitability") {
+    tbody.innerHTML = rows.map((row) => `
+      <tr class="border-b border-slate-100">
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.engagement_name || row.engagement_code || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.customer_name || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.engagement_type || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.status || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(formatDateShort(row.due_date))}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.priority || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.signal || "--")}</td>
+      </tr>
+    `).join("");
+    return;
+  }
+
+  if (moduleName === "client-service-trends") {
+    tbody.innerHTML = rows.map((row) => `
+      <tr class="border-b border-slate-100">
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.customer_name || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.customer_name || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(String(row.service_line_count ?? "--"))}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(String(row.open_engagements ?? "--"))}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(formatDateShort(row.next_due_date))}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(String(row.engagement_count ?? "--"))}</td>
+        <td class="px-3 py-3 text-slate-700">trend</td>
+      </tr>
+    `).join("");
+    return;
+  }
+
+  if (moduleName === "risk-alerts") {
+    tbody.innerHTML = rows.map((row) => `
+      <tr class="border-b border-slate-100">
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.engagement_name || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.customer_name || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.engagement_status || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(row.priority || "--")}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(formatDateShort(row.due_date))}</td>
+        <td class="px-3 py-3 text-slate-700">${escapeHtml(String(row.outstanding_deliverables ?? 0))}</td>
+        <td class="px-3 py-3 text-slate-700">
+          blocked:${escapeHtml(String(row.blocked_reporting_items ?? 0))},
+          signoff:${escapeHtml(String(row.pending_signoffs ?? 0))}
+        </td>
+      </tr>
+    `).join("");
+  }
+}
+
+function bindPractitionerAnalyticsDetailEvents(me) {
+  if (PR_ANALYTICS_DETAIL_EVENTS_BOUND) return;
+  PR_ANALYTICS_DETAIL_EVENTS_BOUND = true;
+
+  document.getElementById("analyticsBackToOverview")?.addEventListener("click", async () => {
+    await showPractitionerAnalyticsOverviewScreen(me);
+  });
+
+  document.getElementById("analyticsRefreshDetail")?.addEventListener("click", async () => {
+    if (!PR_ANALYTICS_SELECTED_MODULE) return;
+
+    await loadPractitionerAnalyticsDetail(me, {
+      moduleName: PR_ANALYTICS_SELECTED_MODULE,
+      force: true
+    });
+  });
+
+  [
+    "analyticsFilterDateRange",
+    "analyticsFilterClient",
+    "analyticsFilterEngagementType",
+    "analyticsFilterManager",
+    "analyticsFilterStatus",
+    "analyticsFilterPriority"
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", async () => {
+      if (!PR_ANALYTICS_SELECTED_MODULE) return;
+
+      await loadPractitionerAnalyticsDetail(me, {
+        moduleName: PR_ANALYTICS_SELECTED_MODULE,
+        force: true
+      });
+    });
+  });
+}
+
+async function loadAnalyticsFilterOptions(me) {
+  const companyId = getActiveCompanyId(me);
+  if (!companyId) return;
+
+  const [customersRes, usersRes] = await Promise.all([
+    apiFetch(ENDPOINTS.customers.list(companyId, { limit: 500, offset: 0 })),
+    apiFetch(ENDPOINTS.users.list(companyId))
+  ]);
+
+  const customers = customersRes?.rows || customersRes?.data || [];
+  const users = usersRes?.rows || usersRes?.data || [];
+
+  const clientSelect = document.getElementById("analyticsFilterClient");
+  const managerSelect = document.getElementById("analyticsFilterManager");
+
+  if (clientSelect) {
+    clientSelect.innerHTML = `
+      <option value="">All clients</option>
+      ${customers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.customer_name || c.name || `Customer ${c.id}`)}</option>`).join("")}
+    `;
+  }
+
+  if (managerSelect) {
+    managerSelect.innerHTML = `
+      <option value="">All managers</option>
+      ${users.map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml((u.full_name || `${u.first_name || ""} ${u.last_name || ""}`).trim() || u.email || `User ${u.id}`)}</option>`).join("")}
+    `;
+  }
+}
+
+
+async function renderAnalyticsScreen(me, screen = PR_NAV.analytics) {
+  if (screen === PR_NAV.analytics) {
+    bindPractitionerAnalyticsOverviewEvents(me);
+    await loadPractitionerAnalyticsOverview(me, { force: false });
+    return;
+  }
+
+  if (screen === PR_NAV.analyticsDetail) {
+    bindPractitionerAnalyticsDetailEvents(me);
+    await loadAnalyticsFilterOptions(me);
+
+    if (!PR_ANALYTICS_SELECTED_MODULE) {
+      PR_ANALYTICS_SELECTED_MODULE = "engagement-profitability";
+    }
+
+    await loadPractitionerAnalyticsDetail(me, {
+      moduleName: PR_ANALYTICS_SELECTED_MODULE,
+      force: PR_ANALYTICS_FORCE_RELOAD === true
+    });
+
+    PR_ANALYTICS_FORCE_RELOAD = false;
+  }
+}
 
 function renderSettingsScreen(me, screen) {
   console.log("Settings screen:", screen);
 }
-
+function renderDashboardHome(me) {}
+function renderClientsScreen(me) {}
 
 /* ======================================================
  * Bootstrapping

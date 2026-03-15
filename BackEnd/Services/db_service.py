@@ -40871,6 +40871,309 @@ class DatabaseService:
         row = cur.fetchone()
         return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
+    def get_analytics_overview(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH engagement_base AS (
+                SELECT
+                    e.id,
+                    e.customer_id,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.due_date,
+                    e.is_active
+                FROM {schema}.engagements e
+                WHERE e.company_id = %s
+                AND e.is_active = TRUE
+            ),
+            overdue_engagements AS (
+                SELECT COUNT(*) AS cnt
+                FROM engagement_base
+                WHERE due_date IS NOT NULL
+                AND due_date < CURRENT_DATE
+                AND status NOT IN ('completed', 'cancelled', 'archived')
+            ),
+            blocked_reporting_items AS (
+                SELECT COUNT(*) AS cnt
+                FROM {schema}.engagement_reporting_items i
+                WHERE i.company_id = %s
+                AND i.is_active = TRUE
+                AND i.status = 'blocked'
+            ),
+            outstanding_deliverables AS (
+                SELECT COUNT(*) AS cnt
+                FROM {schema}.engagement_deliverables d
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+                AND d.status IN ('requested', 'outstanding', 'in_review')
+            ),
+            pending_signoffs AS (
+                SELECT COUNT(*) AS cnt
+                FROM {schema}.engagement_signoff_steps s
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+                AND s.status IN ('not_started', 'in_progress', 'blocked')
+            ),
+            completion_stats AS (
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE status IN ('completed')
+                    ) AS completed_count,
+                    COUNT(*) FILTER (
+                        WHERE status NOT IN ('cancelled', 'archived')
+                    ) AS total_live_count
+                FROM engagement_base
+            )
+            SELECT
+                (SELECT COUNT(*) FROM engagement_base) AS active_engagements,
+                (SELECT COUNT(*) FROM engagement_base
+                WHERE due_date IS NOT NULL
+                AND DATE_TRUNC('month', due_date) = DATE_TRUNC('month', CURRENT_DATE)
+                ) AS due_this_month,
+                (
+                    COALESCE((SELECT cnt FROM overdue_engagements), 0) +
+                    COALESCE((SELECT cnt FROM blocked_reporting_items), 0) +
+                    COALESCE((SELECT cnt FROM outstanding_deliverables), 0) +
+                    COALESCE((SELECT cnt FROM pending_signoffs), 0)
+                ) AS at_risk_items,
+                CASE
+                    WHEN COALESCE((SELECT total_live_count FROM completion_stats), 0) = 0 THEN 0
+                    ELSE ROUND(
+                        ((SELECT completed_count FROM completion_stats)::numeric /
+                        NULLIF((SELECT total_live_count FROM completion_stats), 0)::numeric) * 100, 2
+                    )
+                END AS completion_rate
+        """
+        cur.execute(sql, (company_id, company_id, company_id, company_id))
+        return cur.fetchone()
+
+    def get_engagement_profitability_summary(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE is_active = TRUE
+                ) AS portfolio_total,
+
+                COUNT(*) FILTER (
+                    WHERE is_active = TRUE
+                    AND status IN ('active', 'pending')
+                    AND (due_date IS NULL OR due_date >= CURRENT_DATE)
+                    AND priority IN ('low', 'normal')
+                ) AS healthy_count,
+
+                COUNT(*) FILTER (
+                    WHERE is_active = TRUE
+                    AND (
+                        priority = 'high'
+                        OR workflow_stage IN ('planning')
+                        OR (due_date IS NOT NULL AND due_date < CURRENT_DATE + INTERVAL '14 days')
+                    )
+                ) AS watchlist_count,
+
+                COUNT(*) FILTER (
+                    WHERE is_active = TRUE
+                    AND (
+                        status = 'on_hold'
+                        OR priority = 'urgent'
+                        OR (due_date IS NOT NULL AND due_date < CURRENT_DATE)
+                    )
+                ) AS critical_count
+            FROM {schema}.engagements
+            WHERE company_id = %s
+        """
+        cur.execute(sql, (company_id,))
+        return cur.fetchone()
+
+    def list_engagement_profitability_rows(
+        self,
+        cur,
+        company_id: int,
+        *,
+        status: str = None,
+        engagement_type: str = None,
+        manager_user_id: int = None,
+        priority: str = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                e.id,
+                e.engagement_code,
+                e.engagement_name,
+                c.customer_name,
+                e.engagement_type,
+                e.status,
+                e.priority,
+                e.workflow_stage,
+                e.due_date,
+                e.manager_user_id,
+                CASE
+                    WHEN e.status = 'on_hold'
+                        OR e.priority = 'urgent'
+                        OR (e.due_date IS NOT NULL AND e.due_date < CURRENT_DATE)
+                        THEN 'critical'
+                    WHEN e.priority = 'high'
+                        OR (e.due_date IS NOT NULL AND e.due_date <= CURRENT_DATE + INTERVAL '14 days')
+                        THEN 'watchlist'
+                    ELSE 'healthy'
+                END AS signal
+            FROM {schema}.engagements e
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            WHERE e.company_id = %s
+            AND e.is_active = TRUE
+            AND (%s IS NULL OR e.status = %s)
+            AND (%s IS NULL OR e.engagement_type = %s)
+            AND (%s IS NULL OR e.manager_user_id = %s)
+            AND (%s IS NULL OR e.priority = %s)
+            ORDER BY
+                CASE
+                    WHEN e.due_date IS NULL THEN 1
+                    ELSE 0
+                END,
+                e.due_date ASC,
+                e.engagement_name ASC
+        """
+        cur.execute(sql, (
+            company_id,
+            status, status,
+            engagement_type, engagement_type,
+            manager_user_id, manager_user_id,
+            priority, priority,
+        ))
+        return cur.fetchall()
+
+    def get_client_service_trends_summary(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                COUNT(DISTINCT e.customer_id) AS clients_served,
+                COUNT(DISTINCT e.engagement_type) AS active_service_lines,
+                COUNT(*) FILTER (
+                    WHERE e.reporting_cycle IS NOT NULL
+                ) AS recurring_engagements,
+                COUNT(*) FILTER (
+                    WHERE e.due_date IS NOT NULL
+                    AND e.due_date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '30 days')
+                    AND e.status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS upcoming_due_dates
+            FROM {schema}.engagements e
+            WHERE e.company_id = %s
+            AND e.is_active = TRUE
+        """
+        cur.execute(sql, (company_id,))
+        return cur.fetchone()
+
+
+    def get_risk_alerts_summary(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagements e
+                    WHERE e.company_id = %s
+                    AND e.is_active = TRUE
+                    AND e.due_date IS NOT NULL
+                    AND e.due_date < CURRENT_DATE
+                    AND e.status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS overdue_engagements,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_reporting_items i
+                    WHERE i.company_id = %s
+                    AND i.is_active = TRUE
+                    AND i.status = 'blocked'
+                ) AS blocked_items,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_deliverables d
+                    WHERE d.company_id = %s
+                    AND d.is_active = TRUE
+                    AND d.status IN ('requested', 'outstanding')
+                ) AS outstanding_deliverables,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_signoff_steps s
+                    WHERE s.company_id = %s
+                    AND s.is_active = TRUE
+                    AND s.status IN ('not_started', 'in_progress', 'blocked')
+                ) AS pending_signoffs
+        """
+        cur.execute(sql, (company_id, company_id, company_id, company_id))
+        return cur.fetchone()
+
+    def list_risk_alert_rows(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                e.id AS engagement_id,
+                e.engagement_name,
+                c.customer_name,
+                e.status AS engagement_status,
+                e.priority,
+                e.due_date,
+                COALESCE(ri.blocked_count, 0) AS blocked_reporting_items,
+                COALESCE(dv.outstanding_count, 0) AS outstanding_deliverables,
+                COALESCE(sf.pending_count, 0) AS pending_signoffs
+            FROM {schema}.engagements e
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            LEFT JOIN (
+                SELECT engagement_id, COUNT(*) AS blocked_count
+                FROM {schema}.engagement_reporting_items
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND status = 'blocked'
+                GROUP BY engagement_id
+            ) ri ON ri.engagement_id = e.id
+            LEFT JOIN (
+                SELECT engagement_id, COUNT(*) AS outstanding_count
+                FROM {schema}.engagement_deliverables
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND status IN ('requested', 'outstanding')
+                GROUP BY engagement_id
+            ) dv ON dv.engagement_id = e.id
+            LEFT JOIN (
+                SELECT engagement_id, COUNT(*) AS pending_count
+                FROM {schema}.engagement_signoff_steps
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND status IN ('not_started', 'in_progress', 'blocked')
+                GROUP BY engagement_id
+            ) sf ON sf.engagement_id = e.id
+            WHERE e.company_id = %s
+            AND e.is_active = TRUE
+            AND (
+                (e.due_date IS NOT NULL AND e.due_date < CURRENT_DATE)
+                OR COALESCE(ri.blocked_count, 0) > 0
+                OR COALESCE(dv.outstanding_count, 0) > 0
+                OR COALESCE(sf.pending_count, 0) > 0
+            )
+            ORDER BY
+                CASE
+                    WHEN e.due_date IS NOT NULL AND e.due_date < CURRENT_DATE THEN 0
+                    ELSE 1
+                END,
+                e.due_date ASC NULLS LAST,
+                e.engagement_name ASC
+        """
+        cur.execute(sql, (company_id, company_id, company_id, company_id))
+        return cur.fetchall()
+
     def insert_ticket(
         self,
         cur,

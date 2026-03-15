@@ -718,13 +718,9 @@ window.safeRedirect = function (url, mode = "href") {
         </div>
       </section>
 
-      <!-- =========================================================
-          ANALYTICS OVERVIEW
-      ========================================================= -->
       <section id="screen-analytics" class="screen hidden">
         <div class="space-y-5">
 
-          <!-- Header -->
           <div class="card p-5">
             <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -735,51 +731,48 @@ window.safeRedirect = function (url, mode = "href") {
               </div>
 
               <div class="flex flex-wrap gap-3">
-                <button class="btn btn-secondary" type="button">Filter period</button>
-                <button class="btn btn-secondary" type="button">Filter client</button>
-                <button class="btn btn-secondary" type="button">Export</button>
+                <button id="analyticsOverviewFilterPeriodBtn" class="btn btn-secondary" type="button">Filter period</button>
+                <button id="analyticsOverviewFilterClientBtn" class="btn btn-secondary" type="button">Filter client</button>
+                <button id="analyticsOverviewExportBtn" class="btn btn-secondary" type="button">Export</button>
               </div>
             </div>
 
-            <!-- KPI row -->
             <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div class="rounded-2xl border border-slate-200 bg-white p-4">
                 <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Active engagements</div>
-                <div class="mt-2 text-2xl font-semibold text-slate-900">--</div>
+                <div id="analyticsOverviewActiveEngagements" class="mt-2 text-2xl font-semibold text-slate-900">--</div>
                 <div class="mt-1 text-xs text-slate-500">Currently open and in workflow</div>
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-white p-4">
                 <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Due this month</div>
-                <div class="mt-2 text-2xl font-semibold text-slate-900">--</div>
+                <div id="analyticsOverviewDueThisMonth" class="mt-2 text-2xl font-semibold text-slate-900">--</div>
                 <div class="mt-1 text-xs text-slate-500">Reporting deadlines approaching</div>
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-white p-4">
                 <div class="text-xs font-medium uppercase tracking-wide text-slate-500">At-risk items</div>
-                <div class="mt-2 text-2xl font-semibold text-amber-600">--</div>
+                <div id="analyticsOverviewAtRiskItems" class="mt-2 text-2xl font-semibold text-amber-600">--</div>
                 <div class="mt-1 text-xs text-slate-500">Overdue, blocked, or pending escalation</div>
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-white p-4">
                 <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Completion rate</div>
-                <div class="mt-2 text-2xl font-semibold text-emerald-600">--%</div>
+                <div id="analyticsOverviewCompletionRate" class="mt-2 text-2xl font-semibold text-emerald-600">--%</div>
                 <div class="mt-1 text-xs text-slate-500">Portfolio progress against active workflow</div>
               </div>
             </div>
           </div>
 
-          <!-- Summary cards -->
           <div class="analytics-grid grid grid-cols-1 gap-5 xl:grid-cols-3">
 
-            <!-- Engagement Profitability -->
             <div class="card p-5">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="panel-title">Engagement Profitability</div>
                   <div class="panel-subtitle mt-1">Portfolio profitability snapshot</div>
                 </div>
-                <button class="btn btn-secondary btn-sm" type="button">
+                <button id="analyticsOpenEngagementProfitability" class="btn btn-secondary btn-sm" type="button">
                   View details
                 </button>
               </div>
@@ -787,25 +780,25 @@ window.safeRedirect = function (url, mode = "href") {
               <div class="mt-4 grid grid-cols-2 gap-3">
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Healthy engagements</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsProfitHealthy" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Needs attention</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsProfitAttention" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Avg cycle load</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsProfitCycleLoad" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Priority mix</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsProfitPriorityMix" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
               </div>
 
               <div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
                 <div class="text-sm font-medium text-slate-700">Trend preview</div>
-                <div class="mt-2 h-32 rounded-xl bg-white"></div>
+                <div id="analyticsProfitTrendPreview" class="mt-2 h-32 rounded-xl bg-white"></div>
               </div>
 
               <div class="mt-4 text-xs text-slate-500">
@@ -813,14 +806,13 @@ window.safeRedirect = function (url, mode = "href") {
               </div>
             </div>
 
-            <!-- Client Service Trends -->
             <div class="card p-5">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="panel-title">Client Service Trends</div>
                   <div class="panel-subtitle mt-1">Relationship and service delivery trends</div>
                 </div>
-                <button class="btn btn-secondary btn-sm" type="button">
+                <button id="analyticsOpenClientServiceTrends" class="btn btn-secondary btn-sm" type="button">
                   View details
                 </button>
               </div>
@@ -828,25 +820,25 @@ window.safeRedirect = function (url, mode = "href") {
               <div class="mt-4 grid grid-cols-2 gap-3">
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Clients served</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsClientsServed" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Active service lines</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsServiceLines" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Recurring engagements</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsRecurringEngagements" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Upcoming due dates</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsUpcomingDueDates" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
               </div>
 
               <div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
                 <div class="text-sm font-medium text-slate-700">Trend preview</div>
-                <div class="mt-2 h-32 rounded-xl bg-white"></div>
+                <div id="analyticsClientTrendPreview" class="mt-2 h-32 rounded-xl bg-white"></div>
               </div>
 
               <div class="mt-4 text-xs text-slate-500">
@@ -854,14 +846,13 @@ window.safeRedirect = function (url, mode = "href") {
               </div>
             </div>
 
-            <!-- Risk Alerts -->
             <div class="card p-5">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="panel-title">Risk Alerts</div>
                   <div class="panel-subtitle mt-1">Escalations and monitoring</div>
                 </div>
-                <button class="btn btn-secondary btn-sm" type="button">
+                <button id="analyticsOpenRiskAlerts" class="btn btn-secondary btn-sm" type="button">
                   View details
                 </button>
               </div>
@@ -869,25 +860,25 @@ window.safeRedirect = function (url, mode = "href") {
               <div class="mt-4 grid grid-cols-2 gap-3">
                 <div class="rounded-xl bg-amber-50 p-3">
                   <div class="text-xs text-amber-700">Overdue engagements</div>
-                  <div class="mt-1 text-lg font-semibold text-amber-800">--</div>
+                  <div id="analyticsRiskOverdue" class="mt-1 text-lg font-semibold text-amber-800">--</div>
                 </div>
                 <div class="rounded-xl bg-rose-50 p-3">
                   <div class="text-xs text-rose-700">Blocked items</div>
-                  <div class="mt-1 text-lg font-semibold text-rose-800">--</div>
+                  <div id="analyticsRiskBlocked" class="mt-1 text-lg font-semibold text-rose-800">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Outstanding deliverables</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsRiskOutstanding" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">Pending sign-offs</div>
-                  <div class="mt-1 text-lg font-semibold text-slate-900">--</div>
+                  <div id="analyticsRiskPendingSignoffs" class="mt-1 text-lg font-semibold text-slate-900">--</div>
                 </div>
               </div>
 
               <div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
                 <div class="text-sm font-medium text-slate-700">Risk preview</div>
-                <div class="mt-2 h-32 rounded-xl bg-white"></div>
+                <div id="analyticsRiskTrendPreview" class="mt-2 h-32 rounded-xl bg-white"></div>
               </div>
 
               <div class="mt-4 text-xs text-slate-500">
@@ -898,110 +889,120 @@ window.safeRedirect = function (url, mode = "href") {
         </div>
       </section>
 
-
-      <!-- =========================================================
-          ANALYTICS DETAIL WORKSPACE
-          Reusable full screen for any selected analytics card
-      ========================================================= -->
       <section id="screen-analytics-detail" class="screen hidden">
         <div class="space-y-5">
 
-          <!-- Top bar -->
           <div class="card p-5">
             <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <div class="text-xs font-medium uppercase tracking-wide text-slate-500">
                   Analytics detail
                 </div>
-                <h2 class="mt-1 text-xl font-semibold text-slate-900">
+                <h2 id="analyticsDetailTitle" class="mt-1 text-xl font-semibold text-slate-900">
                   Engagement Profitability
                 </h2>
-                <p class="mt-1 text-sm text-slate-500">
+                <p id="analyticsDetailSubtitle" class="mt-1 text-sm text-slate-500">
                   Detailed view of engagement health, workflow pressure, deadlines, and performance indicators.
                 </p>
               </div>
 
               <div class="flex flex-wrap gap-3">
-                <button class="btn btn-secondary" type="button">Back to overview</button>
-                <button class="btn btn-secondary" type="button">Export CSV</button>
-                <button class="btn btn-primary" type="button">Refresh</button>
+                <button id="analyticsBackToOverview" class="btn btn-secondary" type="button">Back to overview</button>
+                <button id="analyticsExportDetail" class="btn btn-secondary" type="button">Export CSV</button>
+                <button id="analyticsRefreshDetail" class="btn btn-primary" type="button">Refresh</button>
               </div>
             </div>
 
-            <!-- Filters -->
             <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
               <div>
                 <label class="mb-1 block text-xs font-medium text-slate-600">Date range</label>
-                <select class="input">
-                  <option>Current month</option>
+                <select id="analyticsFilterDateRange" class="input">
+                  <option value="">Current month</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                  <option value="ytd">Year to date</option>
                 </select>
               </div>
 
               <div>
                 <label class="mb-1 block text-xs font-medium text-slate-600">Client</label>
-                <select class="input">
-                  <option>All clients</option>
+                <select id="analyticsFilterClient" class="input">
+                  <option value="">All clients</option>
                 </select>
               </div>
 
               <div>
                 <label class="mb-1 block text-xs font-medium text-slate-600">Engagement type</label>
-                <select class="input">
-                  <option>All types</option>
+                <select id="analyticsFilterEngagementType" class="input">
+                  <option value="">All types</option>
+                  <option value="bookkeeping">Bookkeeping</option>
+                  <option value="compilation">Compilation</option>
+                  <option value="audit">Audit</option>
+                  <option value="tax">Tax</option>
+                  <option value="advisory">Advisory</option>
                 </select>
               </div>
 
               <div>
                 <label class="mb-1 block text-xs font-medium text-slate-600">Manager</label>
-                <select class="input">
-                  <option>All managers</option>
+                <select id="analyticsFilterManager" class="input">
+                  <option value="">All managers</option>
                 </select>
               </div>
 
               <div>
                 <label class="mb-1 block text-xs font-medium text-slate-600">Status</label>
-                <select class="input">
-                  <option>All statuses</option>
+                <select id="analyticsFilterStatus" class="input">
+                  <option value="">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="on_hold">On hold</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="archived">Archived</option>
                 </select>
               </div>
 
               <div>
                 <label class="mb-1 block text-xs font-medium text-slate-600">Priority</label>
-                <select class="input">
-                  <option>All priorities</option>
+                <select id="analyticsFilterPriority" class="input">
+                  <option value="">All priorities</option>
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
                 </select>
               </div>
             </div>
           </div>
 
-          <!-- KPI tiles -->
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div class="card p-4">
               <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Portfolio total</div>
-              <div class="mt-2 text-2xl font-semibold text-slate-900">--</div>
+              <div id="analyticsDetailKpi1" class="mt-2 text-2xl font-semibold text-slate-900">--</div>
               <div class="mt-1 text-xs text-slate-500">Active records in scope</div>
             </div>
 
             <div class="card p-4">
               <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Healthy</div>
-              <div class="mt-2 text-2xl font-semibold text-emerald-600">--</div>
+              <div id="analyticsDetailKpi2" class="mt-2 text-2xl font-semibold text-emerald-600">--</div>
               <div class="mt-1 text-xs text-slate-500">Meeting current performance signals</div>
             </div>
 
             <div class="card p-4">
               <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Watchlist</div>
-              <div class="mt-2 text-2xl font-semibold text-amber-600">--</div>
+              <div id="analyticsDetailKpi3" class="mt-2 text-2xl font-semibold text-amber-600">--</div>
               <div class="mt-1 text-xs text-slate-500">Needs intervention soon</div>
             </div>
 
             <div class="card p-4">
               <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Critical</div>
-              <div class="mt-2 text-2xl font-semibold text-rose-600">--</div>
+              <div id="analyticsDetailKpi4" class="mt-2 text-2xl font-semibold text-rose-600">--</div>
               <div class="mt-1 text-xs text-slate-500">Escalations requiring action</div>
             </div>
           </div>
 
-          <!-- Main visual area -->
           <div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
             <div class="card p-5 xl:col-span-2">
               <div class="flex items-center justify-between">
@@ -1009,10 +1010,10 @@ window.safeRedirect = function (url, mode = "href") {
                   <div class="panel-title">Trend Analysis</div>
                   <div class="panel-subtitle mt-1">Historical movement across the selected period</div>
                 </div>
-                <button class="btn btn-secondary btn-sm" type="button">Change chart</button>
+                <button id="analyticsChangeChartBtn" class="btn btn-secondary btn-sm" type="button">Change chart</button>
               </div>
 
-              <div class="mt-4 h-80 rounded-2xl border border-dashed border-slate-300 bg-slate-50"></div>
+              <div id="analyticsTrendChartArea" class="mt-4 h-80 rounded-2xl border border-dashed border-slate-300 bg-slate-50"></div>
             </div>
 
             <div class="card p-5">
@@ -1022,23 +1023,22 @@ window.safeRedirect = function (url, mode = "href") {
               <div class="mt-4 space-y-3">
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">By status</div>
-                  <div class="mt-2 h-16 rounded-lg bg-white"></div>
+                  <div id="analyticsBreakdownStatus" class="mt-2 h-16 rounded-lg bg-white"></div>
                 </div>
 
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">By engagement type</div>
-                  <div class="mt-2 h-16 rounded-lg bg-white"></div>
+                  <div id="analyticsBreakdownType" class="mt-2 h-16 rounded-lg bg-white"></div>
                 </div>
 
                 <div class="rounded-xl bg-slate-50 p-3">
                   <div class="text-xs text-slate-500">By priority</div>
-                  <div class="mt-2 h-16 rounded-lg bg-white"></div>
+                  <div id="analyticsBreakdownPriority" class="mt-2 h-16 rounded-lg bg-white"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Exceptions + table -->
           <div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
             <div class="card p-5">
               <div class="panel-title">Exceptions</div>
@@ -1046,18 +1046,18 @@ window.safeRedirect = function (url, mode = "href") {
 
               <div class="mt-4 space-y-3">
                 <div class="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <div class="text-sm font-medium text-amber-800">Overdue due dates</div>
-                  <div class="mt-1 text-xs text-amber-700">Engagements past due and still open</div>
+                  <div id="analyticsException1Title" class="text-sm font-medium text-amber-800">Overdue due dates</div>
+                  <div id="analyticsException1Text" class="mt-1 text-xs text-amber-700">Engagements past due and still open</div>
                 </div>
 
                 <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
-                  <div class="text-sm font-medium text-rose-800">Blocked workflow items</div>
-                  <div class="mt-1 text-xs text-rose-700">Tasks or reporting items preventing completion</div>
+                  <div id="analyticsException2Title" class="text-sm font-medium text-rose-800">Blocked workflow items</div>
+                  <div id="analyticsException2Text" class="mt-1 text-xs text-rose-700">Tasks or reporting items preventing completion</div>
                 </div>
 
                 <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div class="text-sm font-medium text-slate-800">Pending approvals</div>
-                  <div class="mt-1 text-xs text-slate-600">Sign-offs and review steps still incomplete</div>
+                  <div id="analyticsException3Title" class="text-sm font-medium text-slate-800">Pending approvals</div>
+                  <div id="analyticsException3Text" class="mt-1 text-xs text-slate-600">Sign-offs and review steps still incomplete</div>
                 </div>
               </div>
             </div>
@@ -1069,8 +1069,8 @@ window.safeRedirect = function (url, mode = "href") {
                   <div class="panel-subtitle mt-1">Underlying records behind this analytics view</div>
                 </div>
                 <div class="flex gap-2">
-                  <button class="btn btn-secondary btn-sm" type="button">Sort</button>
-                  <button class="btn btn-secondary btn-sm" type="button">Export</button>
+                  <button id="analyticsSortTableBtn" class="btn btn-secondary btn-sm" type="button">Sort</button>
+                  <button id="analyticsExportTableBtn" class="btn btn-secondary btn-sm" type="button">Export</button>
                 </div>
               </div>
 
@@ -1087,7 +1087,7 @@ window.safeRedirect = function (url, mode = "href") {
                       <th class="px-3 py-3 font-medium">Signal</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody id="analyticsDetailTableBody">
                     <tr class="border-b border-slate-100">
                       <td class="px-3 py-3 text-slate-700">--</td>
                       <td class="px-3 py-3 text-slate-700">--</td>

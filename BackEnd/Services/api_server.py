@@ -170,6 +170,7 @@ from BackEnd.Services.assets.asset_reports_routes import asset_reports_bp
 from BackEnd.Services.practitioner.practitioner_engagements import engagements_bp
 from BackEnd.Services.practitioner.engagement_ops import engagement_ops_bp
 from BackEnd.Services.support import support_bp
+from BackEnd.Services.practitioner.analytics_routes  import analytics_bp
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -289,6 +290,7 @@ app.register_blueprint(asset_reports_bp)
 app.register_blueprint(engagements_bp)
 app.register_blueprint(engagement_ops_bp)
 app.register_blueprint(support_bp)
+app.register_blueprint(analytics_bp)
 
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
