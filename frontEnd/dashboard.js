@@ -21822,13 +21822,15 @@ window.postTerm = async function postTerm() {
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1";
 
+  const PROD_ORIGIN = "https://finspheresolutions.com";
+
   const LEASE_WIZARD_URL = IS_LOCAL
     ? "http://localhost:5173/"
-    : `${window.location.origin}/lease-wizard.html`;
+    : `${PROD_ORIGIN}/lease-wizard.html`;
 
   const LEASE_WIZARD_ORIGIN = IS_LOCAL
     ? "http://localhost:5173"
-    : window.location.origin;
+    : PROD_ORIGIN;
 
   function sendLeaseWizardContext() {
     const token =
