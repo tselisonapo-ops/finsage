@@ -7,7 +7,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from .db_service import db_service
 from typing import Any, Dict, Optional
 from datetime import datetime, timedelta, timezone
-
+from BackEnd.Services.emailer import send_mail
 from BackEnd.Services.industry_profiles import normalize_industry_pair
 from BackEnd.Services.coa_service import initialize_coa  # ✅ now exists in coa_service.py
 
@@ -78,8 +78,28 @@ def generate_confirmation_token(email: str) -> str:
 def create_confirmation_link(token: str) -> str:
     return f"{BASE_URL}?action=confirm&token={token}"
 
+
 def send_confirmation_email(email: str, link: str):
-    print(f"📧 Confirmation email to {email}: {link}")
+    subject = "Confirm your FinSage account"
+    html = f"""
+    <h2>Confirm your email</h2>
+    <p>Please confirm your FinSage account by clicking the link below:</p>
+    <p>
+      <a href="{link}" style="background:#00C8C8;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block;">
+        Confirm email
+      </a>
+    </p>
+    <p>If the button does not work, use this link:</p>
+    <p><code>{link}</code></p>
+    """
+    text = f"Confirm your FinSage account: {link}"
+
+    send_mail(
+        to_email=email,
+        subject=subject,
+        html_body=html,
+        text_body=text,
+    )
     return True
 
 # -----------------------------
