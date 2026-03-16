@@ -6749,7 +6749,7 @@ def email_invoice(company_id: int, invoice_id: int):
     if not inv:
         return jsonify({"error": "Invoice not found"}), 404
 
-    preferred = (body.get("to_email") or "").strip() or None  # optional override
+    preferred = (body.get("to_email") or "").strip() or None
     contact_email = _first_contact_email(inv)
 
     to_email = preferred or contact_email or inv.get("customer_email") or inv.get("company_email")
@@ -6758,7 +6758,6 @@ def email_invoice(company_id: int, invoice_id: int):
 
     cc_emails = get_company_emails_by_role(company_id, cc_role) if cc_role else []
 
-    # ✅ FETCH company just like your pdf/view endpoints
     company = db_service.fetch_one(
         """
         SELECT
@@ -6779,7 +6778,6 @@ def email_invoice(company_id: int, invoice_id: int):
         (company_id,),
     ) or {}
 
-    # --- build your bodies (your existing code) ---
     def _fmt(d):
         if isinstance(d, (datetime, date)):
             return d.strftime("%Y-%m-%d")
@@ -6789,10 +6787,10 @@ def email_invoice(company_id: int, invoice_id: int):
     due_date = _fmt(inv.get("due_date"))
 
     currency = inv.get("currency") or ""
-    total = float(inv.get("total") or 0.0)
+    total = float(inv.get("total") or inv.get("total_amount") or 0.0)
     customer_name = inv.get("customer_name") or "Customer"
     company_name = inv.get("company_name") or company.get("name") or "Our Company"
-    inv_no = inv.get("number") or f"INV-{invoice_id}"
+    inv_no = (inv.get("number") or f"INV-{invoice_id}").strip()
 
     if inv.get("bank_name") and inv.get("account_number"):
         bank_block = f"""
@@ -6824,8 +6822,12 @@ Kind regards,
     html_body = f"<pre style='font-family:system-ui,monospace'>{text_body}</pre>"
     subject = f"Invoice {inv_no} from {company_name}"
 
-    # ✅ Generate + attach PDF
-    pdf_bytes = generate_invoice_pdf(inv, company=company)
+    try:
+        pdf_bytes = generate_invoice_pdf(inv, company=company)
+    except Exception as e:
+        current_app.logger.exception("Failed to generate invoice PDF")
+        return jsonify({"error": "Failed to generate invoice PDF", "detail": str(e)}), 500
+
     attachments = [(f"invoice-{inv_no}.pdf", pdf_bytes, "application/pdf")]
 
     send_mail(
@@ -6842,7 +6844,7 @@ Kind regards,
             subject=f"CC: {subject}",
             html_body=html_body,
             text_body=text_body,
-            attachments=attachments,  # optional: keep or remove
+            attachments=attachments,
         )
 
     db_service.mark_invoice_sent(company_id, invoice_id)
@@ -6854,7 +6856,7 @@ Kind regards,
         severity="info",
         entity_type="invoice",
         entity_id=str(invoice_id),
-        entity_ref=str(inv.get("number") or f"INV-{invoice_id}"),
+        entity_ref=str(inv_no),
         customer_id=int(inv.get("customer_id")) if inv.get("customer_id") else None,
         amount=float(total or 0.0),
         currency=str(currency).upper() if currency else None,
@@ -6864,6 +6866,7 @@ Kind regards,
             "subject": subject,
             "source": "preferred" if preferred else ("contacts" if contact_email else "fallback"),
             "attachment": f"invoice-{inv_no}.pdf",
+            "pdf_builder": "reportlab",
         },
         message="Invoice emailed successfully",
     )

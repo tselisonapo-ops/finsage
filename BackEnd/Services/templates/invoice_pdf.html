@@ -28,8 +28,8 @@
 
     /* ===== Toolbar (web only) ===== */
     .toolbar{
-      position:sticky;
-      top:0;
+      position:relative;
+      top:auto;
       z-index:50;
       background:#fff;
       border-bottom:1px solid var(--line);
@@ -134,9 +134,9 @@
     .header-table td{ vertical-align:top; }
 
     /* 3 columns (PDF-safe) */
-    .h-left  { width:24%; }
-    .h-mid   { width:52%; text-align:center; }
-    .h-right { width:24%; }
+    .h-left  { width:22%; }
+    .h-mid   { width:33%; text-align:center; }
+    .h-right { width:45%; text-align:right; }
 
     /* Bigger logo + slightly lower */
     .logo-box{
@@ -160,13 +160,14 @@
     .company-right{
       text-align:right;
       padding-top:2px;
+      padding-right:12px;
     }
 
     .company-details{
       display:inline-block;
       text-align:left;
       margin-top:6px;
-      transform:translateX(-26px);   /* ✅ shift left to create room for Reg/VAT */
+      width:190px;
     }
 
     .company-addr-right{
