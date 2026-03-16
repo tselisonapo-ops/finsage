@@ -4825,33 +4825,56 @@ class DatabaseService:
         END IF;
         END $$;
 
+        -- ==================================================
+        -- Journal source check (keep in sync with app features)
+        -- ==================================================
         DO $$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_journal_source_check'
-            AND n.nspname = '{schema}'
-        ) THEN
+            -- drop old constraint (if any)
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_journal_source_check'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.journal DROP CONSTRAINT %I',
+                    '{schema}', '{schema}_journal_source_check'
+                );
+            END IF;
+
+            -- recreate with expanded list
             EXECUTE format(
             'ALTER TABLE %I.journal
-            ADD CONSTRAINT %I
-            CHECK (
-                source IS NULL
-                OR source IN (
-                    ''asset_depreciation'',
-                    ''asset_revaluation'',
-                    ''asset_impairment'',
-                    ''asset_disposal'',
-                    ''asset_hfs'',
-                    ''lease_payment'',
-                    ''lease_modification''
-                )
-            )',
+             ADD CONSTRAINT %I
+             CHECK (
+                 source IS NULL
+                 OR source = ANY (ARRAY[
+                     ''manual'',
+                     ''invoice'',
+                     ''bill'',
+                     ''payment'',
+                     ''receipt'',
+                     ''credit_note'',
+                     ''debit_note'',
+                     ''inventory'',
+                     ''asset'',
+                     ''asset_depreciation'',
+                     ''asset_revaluation'',
+                     ''asset_impairment'',
+                     ''asset_disposal'',
+                     ''asset_hfs'',
+                     ''lease_payment'',
+                     ''lease_modification'',
+                     ''bank'',
+                     ''adjustment'',
+                     ''opening_balance'',
+                     ''year_end''
+                 ]::text[])
+             )',
             '{schema}', '{schema}_journal_source_check'
             );
-        END IF;
         END $$;
         
         DO $$
@@ -29973,7 +29996,7 @@ class DatabaseService:
                 if self.requires_notes(code):
                     self.insert_note(company_id, journal_id, code, desc, cur=_cur)
                     print("[post_invoice_to_gl] insert_note done", flush=True)
-                    
+
             # 8) inventory hook (same transaction)
             self.post_invoice_inventory_if_needed(
                 company_id,
