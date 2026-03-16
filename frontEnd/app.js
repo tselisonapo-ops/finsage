@@ -602,15 +602,15 @@ countrySel.addEventListener("change", function () {
   }
 
   // Convert ISO country code ("ZA") to flag emoji
-function countryCodeToFlagEmoji(code) {
-  if (!code || code.length !== 2) return "🏳️";
-  const base = 0x1F1E6;
-  const cc = code.toUpperCase();
-  return String.fromCodePoint(
-    base + cc.charCodeAt(0) - 65,
-    base + cc.charCodeAt(1) - 65
-  );
-}
+  function countryCodeToFlagEmoji(code) {
+    if (!code || code.length !== 2) return "🏳️";
+    const base = 0x1F1E6;
+    const cc = code.toUpperCase();
+    return String.fromCodePoint(
+      base + cc.charCodeAt(0) - 65,
+      base + cc.charCodeAt(1) - 65
+    );
+  }
 
   // Phone country selector (uses COUNTRY_META)
   function initPhoneCountrySelector(metaList) {
@@ -624,7 +624,8 @@ function countryCodeToFlagEmoji(code) {
     const isoHidden = document.getElementById("phoneCountryIso");
 
     if (!btn || !dd || !listEl || !searchEl || !phoneInp || !flagSpan || !dialSpan || !isoHidden) return;
-
+    if (btn.dataset.bound === "1") return;   // ✅ prevent rebinding
+    btn.dataset.bound = "1";
     // Build option list
     listEl.innerHTML = "";
     const countries = (metaList || []).slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -648,18 +649,37 @@ function countryCodeToFlagEmoji(code) {
       const country = countries.find(c => c.code === code) || countries[0];
       const dialCode = dial || (country && country.phone) || "";
 
+      const previousDial = dialSpan.textContent.trim();
+
       flagSpan.textContent = countryCodeToFlagEmoji(country.code);
       dialSpan.textContent = dialCode || "+";
-      isoHidden.value      = country.code;
+      isoHidden.value = country.code;
 
-      // Only prefill if user hasn't typed anything yet
-      if (!phoneInp.value.trim() && dialCode) {
-        phoneInp.value = dialCode + " ";
+      let value = phoneInp.value.trim();
+
+      // Remove previous dial code if present
+      if (previousDial && value.startsWith(previousDial)) {
+        value = value.slice(previousDial.length).trim();
       }
+
+      // Apply new dial code
       if (dialCode) {
+        phoneInp.value = value ? `${dialCode} ${value}` : `${dialCode} `;
         phoneInp.placeholder = `${dialCode} 82 123 4567`;
       }
     }
+
+    // Format phone number and keep dial code intact
+    phoneInp.addEventListener("input", () => {
+      let val = phoneInp.value.replace(/[^\d+]/g, "");
+
+      const dial = dialSpan.textContent.trim();
+
+      if (val.startsWith(dial)) {
+        const rest = val.slice(dial.length).replace(/\D/g, "");
+        phoneInp.value = `${dial} ${rest}`;
+      }
+    });
 
     // Default: ZA if present, else first country
     const defaultCountry =
@@ -672,6 +692,14 @@ function countryCodeToFlagEmoji(code) {
       if (!dd.classList.contains("hidden")) {
         searchEl.value = "";
         Array.from(listEl.children).forEach(ch => ch.classList.remove("hidden"));
+        searchEl.focus();
+      }
+    });
+
+    // Allow keyboard opening of dropdown
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        dd.classList.remove("hidden");
         searchEl.focus();
       }
     });
@@ -702,33 +730,33 @@ function countryCodeToFlagEmoji(code) {
     });
   }
 
-  function fetchCountryMeta() {
-    // Optional fallback if backend fails
-    const fallback = [
-      { code: "ZA", name: "South Africa", currency: "ZAR", phone: "+27" },
-      { code: "LS", name: "Lesotho",      currency: "LSL", phone: "+266" },
-      { code: "BW", name: "Botswana",     currency: "BWP", phone: "+267" },
-      { code: "NA", name: "Namibia",      currency: "NAD", phone: "+264" },
-      { code: "ZW", name: "Zimbabwe",     currency: "ZWL", phone: "+263" },
-    ];
+function fetchCountryMeta() {
+  const fallback = [
+    { code: "ZA", name: "South Africa", currency: "ZAR", phone: "+27" },
+    { code: "LS", name: "Lesotho",      currency: "LSL", phone: "+266" },
+    { code: "BW", name: "Botswana",     currency: "BWP", phone: "+267" },
+    { code: "NA", name: "Namibia",      currency: "NAD", phone: "+264" },
+    { code: "ZW", name: "Zimbabwe",     currency: "ZWL", phone: "+263" },
+  ];
 
-    return fetch(COUNTRY_META_URL)
-      .then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.json();
-      })
-      .then(function (data) {
-        const list = (data && data.countries) || [];
-        if (!Array.isArray(list) || !list.length) throw new Error("Empty list");
-        populateCountryAndCurrency(list);
-      })
-      .catch(function (err) {
-        console.error("Error fetching countries:", err);
-        populateCountryAndCurrency(fallback);
-        initPhoneCountrySelector(fallback);  // ⬅️ add this too
-      });
-  }
+  return fetch(COUNTRY_META_URL)
+    .then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(function (data) {
+      const list = (data && data.countries) || [];
+      if (!Array.isArray(list) || !list.length) throw new Error("Empty list");
 
+      populateCountryAndCurrency(list);
+      initPhoneCountrySelector(list);   // ✅ add this
+    })
+    .catch(function (err) {
+      console.error("Error fetching countries:", err);
+      populateCountryAndCurrency(fallback);
+      initPhoneCountrySelector(fallback);
+    });
+}
   // =========================================================
   // Google Places Autocomplete for Registered Address
   // =========================================================
