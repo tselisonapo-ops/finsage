@@ -1,15 +1,39 @@
 import os
+import shutil
 import pdfkit
-from flask import render_template, current_app
+from flask import render_template
 
 # -------------------------------------------------
 # wkhtmltopdf configuration (LAZY + SAFE)
 # -------------------------------------------------
 
-WKHTMLTOPDF_PATH = r"C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe"
-
 _PDFKIT_CONFIG = None  # initialized lazily
 
+
+def _resolve_wkhtmltopdf_path():
+    """
+    Resolve wkhtmltopdf path in this order:
+    1. WKHTMLTOPDF_PATH env var
+    2. system PATH via shutil.which()
+    3. common Windows install locations
+    """
+    env_path = os.getenv("WKHTMLTOPDF_PATH", "").strip()
+    if env_path:
+        return env_path
+
+    auto_path = shutil.which("wkhtmltopdf")
+    if auto_path:
+        return auto_path
+
+    common_windows_paths = [
+        r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
+        r"C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe",
+    ]
+    for p in common_windows_paths:
+        if os.path.exists(p):
+            return p
+
+    return None
 
 def _get_pdfkit_config():
     """
@@ -19,12 +43,13 @@ def _get_pdfkit_config():
     global _PDFKIT_CONFIG
 
     if _PDFKIT_CONFIG is None:
-        if not os.path.exists(WKHTMLTOPDF_PATH):
-            raise RuntimeError(f"wkhtmltopdf not found at: {WKHTMLTOPDF_PATH}")
+        wkhtmltopdf_path = _resolve_wkhtmltopdf_path()
+        if not wkhtmltopdf_path:
+            raise RuntimeError(
+                "wkhtmltopdf not found. Set WKHTMLTOPDF_PATH or install it on the server."
+            )
 
-        _PDFKIT_CONFIG = pdfkit.configuration(
-            wkhtmltopdf=WKHTMLTOPDF_PATH
-        )
+        _PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
 
     return _PDFKIT_CONFIG
 
@@ -36,19 +61,13 @@ def _get_pdfkit_config():
 PDF_OPTIONS = {
     "page-size": "A4",
     "encoding": "UTF-8",
-
-    # rendering
     "print-media-type": None,
     "background": None,
     "enable-local-file-access": None,
-
-    # margins
     "margin-top": "10mm",
     "margin-right": "10mm",
     "margin-bottom": "10mm",
     "margin-left": "10mm",
-
-    # stability / layout
     "disable-smart-shrinking": None,
     "zoom": "1.0",
     "javascript-delay": "200",
@@ -65,12 +84,11 @@ def html_to_pdf(html: str) -> bytes:
 
     pdf_bytes = pdfkit.from_string(
         html,
-        False,  # return bytes
+        False,
         configuration=config,
         options=PDF_OPTIONS,
     )
 
-    # Hard validation (VERY GOOD PRACTICE)
     if not pdf_bytes or not isinstance(pdf_bytes, (bytes, bytearray)):
         raise RuntimeError("pdfkit returned empty/invalid bytes")
 
@@ -92,17 +110,19 @@ def generate_invoice_pdf(invoice, company=None) -> bytes:
     html = render_template(
         "invoice_pdf.html",
         invoice=invoice,
-        company=company,  # ✅ now template has it
+        company=company,
         pdf_url="",
     )
     return html_to_pdf(html)
 
+
 def generate_quote_pdf(quote, company=None) -> bytes:
     company = company or {}
+
     html = render_template(
         "quote_pdf.html",
         quote=quote,
         company=company,
-        pdf_url="",  # empty inside actual PDF response
+        pdf_url="",
     )
     return html_to_pdf(html)
