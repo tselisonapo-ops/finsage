@@ -4416,11 +4416,6 @@ function bindPractitionerAnalyticsOverviewEvents(me) {
 
 async function openPractitionerAnalyticsDetail(moduleName, me, { force = false } = {}) {
   PR_ANALYTICS_SELECTED_MODULE = moduleName;
-
-  if (typeof PR_ANALYTICS_FORCE_RELOAD === "undefined") {
-    globalThis.PR_ANALYTICS_FORCE_RELOAD = false;
-  }
-
   PR_ANALYTICS_FORCE_RELOAD = force === true;
 
   await switchPractitionerScreen(PR_NAV.analyticsDetail, me);
@@ -4653,7 +4648,6 @@ async function loadAnalyticsFilterOptions(me) {
   }
 }
 
-
 async function renderAnalyticsScreen(me, screen = PR_NAV.analytics) {
   if (screen === PR_NAV.analytics) {
     bindPractitionerAnalyticsOverviewEvents(me);
@@ -4671,7 +4665,7 @@ async function renderAnalyticsScreen(me, screen = PR_NAV.analytics) {
 
     await loadPractitionerAnalyticsDetail(me, {
       moduleName: PR_ANALYTICS_SELECTED_MODULE,
-      force: PR_ANALYTICS_FORCE_RELOAD === true
+      force: PR_ANALYTICS_FORCE_RELOAD
     });
 
     PR_ANALYTICS_FORCE_RELOAD = false;

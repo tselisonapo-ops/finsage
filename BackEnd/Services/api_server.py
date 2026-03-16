@@ -5220,11 +5220,14 @@ def create_invoice(cid: int):
         # --------------------------
         # 6) Save invoice
         # --------------------------
+        current_app.logger.info("create_invoice: before insert")
         invoice_id = db_service.insert_invoice_with_lines(company_id, header, mapped_lines)
+        current_app.logger.info("create_invoice: inserted invoice_id=%s", invoice_id)
 
-        # If review is ON and draft, just return it
         if not should_post:
+            current_app.logger.info("create_invoice: review enabled, skipping auto-post")
             inv_saved = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
+            current_app.logger.info("create_invoice: fetched saved invoice invoice_id=%s", invoice_id)
 
             db_service.audit_log(
                 company_id=company_id,
@@ -5243,17 +5246,39 @@ def create_invoice(cid: int):
                 message=f"Invoice created ({status_to_save})",
             )
 
+            current_app.logger.info("create_invoice: returning saved invoice invoice_id=%s", invoice_id)
             return jsonify(inv_saved), 201
 
-        # --------------------------
-        # Post immediately (review OFF)
-        # --------------------------
+        current_app.logger.info("create_invoice: auto-post starting invoice_id=%s", invoice_id)
+
+        current_app.logger.info("create_invoice: before approve_invoice")
         db_service.approve_invoice(company_id, invoice_id, user.get("id"))
+        current_app.logger.info("create_invoice: approve_invoice done")
 
+        current_app.logger.info("create_invoice: before get_invoice_with_lines for posting")
         inv = db_service.get_invoice_with_lines(company_id, invoice_id)
-        payload2 = build_invoice_journal_lines(inv, company_id)
+        current_app.logger.info("create_invoice: get_invoice_with_lines done inv_is_none=%s", inv is None)
 
+        if not inv:
+            raise RuntimeError(f"Invoice {invoice_id} inserted but could not be reloaded")
+
+        current_app.logger.info("create_invoice: before build_invoice_journal_lines")
+        payload2 = build_invoice_journal_lines(inv, company_id)
+        current_app.logger.info(
+            "create_invoice: journal payload built ar_account=%r lines=%s",
+            payload2.get("ar_account") if isinstance(payload2, dict) else None,
+            len((payload2 or {}).get("lines") or []) if isinstance(payload2, dict) else None
+        )
+
+        if not isinstance(payload2, dict):
+            raise RuntimeError("build_invoice_journal_lines returned invalid payload")
+        if not payload2.get("lines"):
+            raise RuntimeError("No journal lines generated for invoice posting")
+
+        current_app.logger.info("create_invoice: before get_company_profile")
         company = db_service.get_company_profile(company_id) or {}
+        current_app.logger.info("create_invoice: get_company_profile done")
+
         owner_user_id = company.get("owner_user_id")
         is_owner = owner_user_id is not None and str(owner_user_id) == str(user.get("id"))
 
@@ -5261,6 +5286,10 @@ def create_invoice(cid: int):
         can_override = role in {"cfo", "admin"} or is_owner
         enforce_credit = not can_override
 
+        current_app.logger.info(
+            "create_invoice: before post_invoice_to_gl invoice_id=%s user_id=%r role=%s enforce_credit=%s require_approved=%s",
+            invoice_id, user.get("id"), role, enforce_credit, require_customer_approved
+        )
         journal_id = db_service.post_invoice_to_gl(
             company_id,
             invoice_id,
@@ -5269,9 +5298,15 @@ def create_invoice(cid: int):
             enforce_credit=enforce_credit,
             require_approved=require_customer_approved,
         )
+        current_app.logger.info("create_invoice: post_invoice_to_gl done journal_id=%s", journal_id)
 
+        current_app.logger.info("create_invoice: before set_invoice_status posted")
         db_service.set_invoice_status(company_id, invoice_id, "posted")
+        current_app.logger.info("create_invoice: set_invoice_status done")
+
+        current_app.logger.info("create_invoice: before reload posted invoice")
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
+        current_app.logger.info("create_invoice: reload posted invoice done")
         posted["_posted_journal_id"] = journal_id
 
         db_service.audit_log(
@@ -5295,9 +5330,14 @@ def create_invoice(cid: int):
         return jsonify(posted), 201
 
     except Exception as e:
-        current_app.logger.exception("❌ create_invoice crashed")
+        current_app.logger.exception(
+            "❌ create_invoice crashed | cid=%s | user=%r | payload=%r",
+            cid,
+            getattr(g, "current_user", {}),
+            request.get_json(silent=True),
+        )
         return jsonify({"error": "Internal server error in create_invoice", "detail": str(e)}), 500
-
+    
 
 # =========================================================
 # INVOICES (UPDATE)
