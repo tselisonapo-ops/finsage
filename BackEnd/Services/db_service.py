@@ -29819,6 +29819,15 @@ class DatabaseService:
         schema = f"company_{company_id}"
 
         def _run(_cur):
+            print("[post_invoice_to_gl] START", {
+                "company_id": company_id,
+                "invoice_id": invoice_id,
+                "passed_ar_account": ar_account,
+                "enforce_credit": enforce_credit,
+                "require_approved": require_approved,
+                "line_count": len(jlines or []),
+            }, flush=True)
+
             # 1) lock invoice row (idempotency gate)
             _cur.execute(
                 f"SELECT status, posted_journal_id FROM {schema}.invoices WHERE id=%s FOR UPDATE;",
@@ -29861,8 +29870,21 @@ class DatabaseService:
                 raise ValueError("No journal lines provided for posting")
 
             # 4) resolve controls (ok if these read outside, but best if your helpers accept cur too)
-            AR_ACCOUNT  = (self.get_control_account_code(company_id, "AR_CONTROL") or "").strip()
+            # 4) resolve controls (prefer passed ar_account from journal builder)
+            AR_ACCOUNT  = (ar_account or self.get_control_account_code(company_id, "AR_CONTROL") or "").strip()
             VAT_ACCOUNT = (self.get_control_account_code(company_id, "VAT_OUTPUT") or "").strip()
+
+            print("[post_invoice_to_gl] controls before resolve", {
+                "passed_ar_account": ar_account,
+                "AR_ACCOUNT": AR_ACCOUNT,
+                "VAT_ACCOUNT": VAT_ACCOUNT,
+            }, flush=True)
+
+            if not AR_ACCOUNT:
+                raise ValueError("AR control account not configured (AR_CONTROL)")
+            if not VAT_ACCOUNT:
+                raise ValueError("VAT output account not configured (VAT_OUTPUT)")
+            
             if not AR_ACCOUNT:
                 raise ValueError("AR control account not configured (AR_CONTROL)")
             if not VAT_ACCOUNT:
@@ -29897,6 +29919,8 @@ class DatabaseService:
 
             # 7) ledger lines
             for jl in jlines:
+                print("[post_invoice_to_gl] processing line", jl, flush=True)
+
                 raw_code = (jl.get("account_code") or "").strip()
                 dc = (jl.get("dc") or "").upper()
                 amt = money(jl.get("amount") or 0.0)
@@ -29904,6 +29928,8 @@ class DatabaseService:
                     raise ValueError(f"Bad journal line: {jl}")
 
                 row = self.get_account_row_for_posting(company_id, raw_code)
+                print("[post_invoice_to_gl] resolved row", row, flush=True)
+
                 if not row:
                     raise ValueError(f"Account '{raw_code}' not found in company COA.")
                 code = (row[1] or "").strip()
@@ -34713,6 +34739,7 @@ class DatabaseService:
                     "source_id": int(schedule_id),
                 }
                 journal_id = int(self.insert_journal(company_id, entry, cur=cur) or 0)
+                print("[post_invoice_to_gl] journal_id", journal_id, flush=True)
                 if journal_id <= 0:
                     raise ValueError("Failed to create journal header")
 
