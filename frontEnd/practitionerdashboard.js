@@ -501,7 +501,7 @@ const ENDPOINTS = {
   let PR_ANALYTICS_DETAIL_EVENTS_BOUND = false;
   let PR_ANALYTICS_FORCE_RELOAD = false;
 
-  
+
   const PR_NAV = {
     dashboard: "dashboard",
     assignments: "assignments",
@@ -4416,6 +4416,11 @@ function bindPractitionerAnalyticsOverviewEvents(me) {
 
 async function openPractitionerAnalyticsDetail(moduleName, me, { force = false } = {}) {
   PR_ANALYTICS_SELECTED_MODULE = moduleName;
+
+  if (typeof PR_ANALYTICS_FORCE_RELOAD === "undefined") {
+    globalThis.PR_ANALYTICS_FORCE_RELOAD = false;
+  }
+
   PR_ANALYTICS_FORCE_RELOAD = force === true;
 
   await switchPractitionerScreen(PR_NAV.analyticsDetail, me);
