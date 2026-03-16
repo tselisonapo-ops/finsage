@@ -29913,8 +29913,10 @@ class DatabaseService:
                 "source": "invoice",
                 "source_id": int(invoice_id),
             }
+            print("[post_invoice_to_gl] journal_entry", journal_entry, flush=True)
             journal_id = int(self.insert_journal(company_id, journal_entry, cur=_cur) or 0)
-            if journal_id <= 0:
+            print("[post_invoice_to_gl] journal_id", journal_id, flush=True)
+            if not journal_id:
                 raise ValueError("Failed to create journal header")
 
             # 7) ledger lines
@@ -29945,6 +29947,13 @@ class DatabaseService:
 
                 cust_for_line = cust_id if (code == AR_ACCOUNT) else None
 
+                print("[post_invoice_to_gl] ledger line", {
+                    "account_code": code,
+                    "debit": line["debit"],
+                    "credit": line["credit"],
+                    "customer_id": cust_for_line,
+                }, flush=True)
+
                 self.insert_ledger(
                     company_id=company_id,
                     journal_id=journal_id,
@@ -29956,11 +29965,15 @@ class DatabaseService:
                     source_id=int(invoice_id),
                     cur=_cur,
                 )
+                print("[post_invoice_to_gl] insert_ledger done", flush=True)
+
                 self.update_trial_balance(company_id, line, cur=_cur)
+                print("[post_invoice_to_gl] update_trial_balance done", flush=True)
 
                 if self.requires_notes(code):
                     self.insert_note(company_id, journal_id, code, desc, cur=_cur)
-
+                    print("[post_invoice_to_gl] insert_note done", flush=True)
+                    
             # 8) inventory hook (same transaction)
             self.post_invoice_inventory_if_needed(
                 company_id,
