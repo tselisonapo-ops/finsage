@@ -29872,7 +29872,28 @@ class DatabaseService:
             if not inv:
                 raise ValueError("Invoice not found")
 
-            # ✅ ADD THIS RIGHT HERE (before journal insert)
+            # after: inv = self.get_invoice_with_lines_cur(...)
+            inv_no = (inv.get("number") or "").strip()
+
+            if not inv_no:
+                inv_no = self.next_invoice_number_cur(company_id, _cur)
+
+                _cur.execute(
+                    f"""
+                    UPDATE {schema}.invoices
+                    SET number = %s, updated_at = NOW()
+                    WHERE id = %s
+                    AND (number IS NULL OR btrim(number) = '')
+                    RETURNING number;
+                    """,
+                    (inv_no, int(invoice_id)),
+                )
+                row = _cur.fetchone()
+                if row:
+                    inv_no = (row.get("number") if isinstance(row, dict) else row[0]) or inv_no
+
+                inv["number"] = inv_no
+
             self.validate_invoice_stock_before_post(company_id, inv, cur=_cur)
 
             inv_date = inv.get("invoice_date") or inv.get("date") or _date.today()
@@ -29882,7 +29903,10 @@ class DatabaseService:
                 except Exception:
                     inv_date = _date.today()
 
-            inv_no = (inv.get("number") or f"INV-{invoice_id}").strip()
+            inv_no = (inv.get("number") or inv_no or "").strip()
+            if not inv_no:
+                raise ValueError("Invoice number could not be assigned before posting")
+
             cust_id = inv.get("customer_id")
 
             # 3) credit enforcement (NO extra connections)
