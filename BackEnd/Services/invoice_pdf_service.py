@@ -1,128 +1,256 @@
-import os
-import shutil
-import pdfkit
+from io import BytesIO
+from decimal import Decimal, ROUND_HALF_UP
+
 from flask import render_template
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer,
+)
 
 # -------------------------------------------------
-# wkhtmltopdf configuration (LAZY + SAFE)
+# Helpers
 # -------------------------------------------------
 
-_PDFKIT_CONFIG = None  # initialized lazily
+def _money(x) -> float:
+    return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
-def _resolve_wkhtmltopdf_path():
-    """
-    Resolve wkhtmltopdf path in this order:
-    1. WKHTMLTOPDF_PATH env var
-    2. system PATH via shutil.which()
-    3. common Windows install locations
-    """
-    env_path = os.getenv("WKHTMLTOPDF_PATH", "").strip()
-    if env_path:
-        return env_path
-
-    auto_path = shutil.which("wkhtmltopdf")
-    if auto_path:
-        return auto_path
-
-    common_windows_paths = [
-        r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
-        r"C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe",
-    ]
-    for p in common_windows_paths:
-        if os.path.exists(p):
-            return p
-
-    return None
-
-def _get_pdfkit_config():
-    """
-    Lazily create and cache pdfkit configuration.
-    Prevents Flask app from crashing at import time.
-    """
-    global _PDFKIT_CONFIG
-
-    if _PDFKIT_CONFIG is None:
-        wkhtmltopdf_path = _resolve_wkhtmltopdf_path()
-        if not wkhtmltopdf_path:
-            raise RuntimeError(
-                "wkhtmltopdf not found. Set WKHTMLTOPDF_PATH or install it on the server."
-            )
-
-        _PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
-
-    return _PDFKIT_CONFIG
+def _fmt_currency(amount, currency="ZAR") -> str:
+    return f"{currency} {_money(amount):,.2f}"
 
 
-# -------------------------------------------------
-# wkhtmltopdf options (stable defaults)
-# -------------------------------------------------
-
-PDF_OPTIONS = {
-    "page-size": "A4",
-    "encoding": "UTF-8",
-    "print-media-type": None,
-    "background": None,
-    "enable-local-file-access": None,
-    "margin-top": "10mm",
-    "margin-right": "10mm",
-    "margin-bottom": "10mm",
-    "margin-left": "10mm",
-    "disable-smart-shrinking": None,
-    "zoom": "1.0",
-    "javascript-delay": "200",
-    "no-stop-slow-scripts": None,
-}
+def _safe(value, default="") -> str:
+    if value is None:
+        return default
+    return str(value).strip()
 
 
-# -------------------------------------------------
-# Core PDF generator
-# -------------------------------------------------
-
-def html_to_pdf(html: str) -> bytes:
-    config = _get_pdfkit_config()
-
-    pdf_bytes = pdfkit.from_string(
-        html,
-        False,
-        configuration=config,
-        options=PDF_OPTIONS,
+def _extract_customer_name(obj) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    return (
+        _safe(obj.get("customer_name"))
+        or _safe((obj.get("customer") or {}).get("name"))
+        or _safe((obj.get("customer") or {}).get("customer_name"))
+        or _safe(obj.get("name"))
     )
 
-    if not pdf_bytes or not isinstance(pdf_bytes, (bytes, bytearray)):
-        raise RuntimeError("pdfkit returned empty/invalid bytes")
 
-    if not pdf_bytes.startswith(b"%PDF"):
-        raise RuntimeError(
-            f"wkhtmltopdf did not return a PDF. Head={pdf_bytes[:200]!r}"
+def _extract_lines(obj) -> list:
+    if not isinstance(obj, dict):
+        return []
+    lines = obj.get("lines") or obj.get("invoice_lines") or obj.get("quote_lines") or []
+    return lines if isinstance(lines, list) else []
+
+
+# -------------------------------------------------
+# Core PDF builder
+# -------------------------------------------------
+
+def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> bytes:
+    company = company or {}
+    doc_obj = doc_obj or {}
+
+    buffer = BytesIO()
+    pdf = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(
+        ParagraphStyle(
+            name="SmallMuted",
+            parent=styles["Normal"],
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor("#666666"),
         )
+    )
+
+    story = []
+
+    company_name = (
+        _safe(company.get("name"))
+        or _safe(company.get("company_name"))
+        or _safe(company.get("legal_name"))
+        or "Company"
+    )
+
+    company_email = _safe(company.get("email"))
+    company_phone = _safe(company.get("phone"))
+    company_address = _safe(company.get("address"))
+
+    doc_number = (
+        _safe(doc_obj.get("number"))
+        or _safe(doc_obj.get("quote_number"))
+        or _safe(doc_obj.get("invoice_number"))
+        or f"DRAFT-{doc_obj.get('id', '')}"
+    )
+
+    customer_name = _extract_customer_name(doc_obj)
+    invoice_date = _safe(doc_obj.get("invoice_date") or doc_obj.get("date"))
+    due_date = _safe(doc_obj.get("due_date"))
+    currency = _safe(doc_obj.get("currency"), "ZAR")
+    notes = _safe(doc_obj.get("notes"))
+
+    # Header
+    story.append(Paragraph(f"<b>{company_name}</b>", styles["Title"]))
+    if company_address:
+        story.append(Paragraph(company_address, styles["SmallMuted"]))
+    if company_email or company_phone:
+        story.append(
+            Paragraph(
+                " | ".join([x for x in [company_email, company_phone] if x]),
+                styles["SmallMuted"],
+            )
+        )
+
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"<b>{title}</b>", styles["Heading2"]))
+    story.append(Spacer(1, 6))
+
+    meta_data = [
+        ["Document No.", doc_number],
+        ["Customer", customer_name or "-"],
+        ["Date", invoice_date or "-"],
+    ]
+    if title.lower() == "invoice":
+        meta_data.append(["Due Date", due_date or "-"])
+
+    meta_table = Table(meta_data, colWidths=[35 * mm, 120 * mm])
+    meta_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story.append(meta_table)
+    story.append(Spacer(1, 10))
+
+    # Line items
+    lines = _extract_lines(doc_obj)
+    line_rows = [["Description", "Qty", "Unit Price", "VAT", "Total"]]
+
+    for line in lines:
+        if not isinstance(line, dict):
+            continue
+
+        desc = (
+            _safe(line.get("description"))
+            or _safe(line.get("item_name"))
+            or _safe(line.get("item"))
+            or "-"
+        )
+        qty = _money(line.get("quantity") or line.get("qty") or 0)
+        unit_price = _money(line.get("unit_price") or line.get("rate") or 0)
+        vat_amount = _money(line.get("vat_amount") or 0)
+        total_amount = _money(line.get("total_amount") or line.get("amount") or 0)
+
+        qty_text = f"{qty:,.2f}".rstrip("0").rstrip(".") if qty % 1 else f"{int(qty)}"
+
+        line_rows.append(
+            [
+                desc,
+                qty_text,
+                _fmt_currency(unit_price, currency),
+                _fmt_currency(vat_amount, currency),
+                _fmt_currency(total_amount, currency),
+            ]
+        )
+
+    if len(line_rows) == 1:
+        line_rows.append(["No line items", "-", "-", "-", "-"])
+
+    line_table = Table(
+        line_rows,
+        colWidths=[78 * mm, 18 * mm, 28 * mm, 26 * mm, 28 * mm],
+        repeatRows=1,
+    )
+    line_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cfcfcf")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story.append(line_table)
+    story.append(Spacer(1, 10))
+
+    # Totals
+    subtotal = _money(doc_obj.get("subtotal_amount") or doc_obj.get("net_amount") or 0)
+    vat_total = _money(doc_obj.get("vat_amount") or doc_obj.get("vat_total") or 0)
+    grand_total = _money(doc_obj.get("total_amount") or doc_obj.get("total") or 0)
+
+    totals_rows = [
+        ["Subtotal", _fmt_currency(subtotal, currency)],
+        ["VAT", _fmt_currency(vat_total, currency)],
+        ["Total", _fmt_currency(grand_total, currency)],
+    ]
+
+    totals_table = Table(totals_rows, colWidths=[35 * mm, 40 * mm], hAlign="RIGHT")
+    totals_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.black),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story.append(totals_table)
+
+    if notes:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("<b>Notes</b>", styles["Heading3"]))
+        story.append(Paragraph(notes.replace("\n", "<br/>"), styles["Normal"]))
+
+    pdf.build(story)
+
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+        raise RuntimeError("Failed to generate valid PDF bytes")
 
     return pdf_bytes
 
 
 # -------------------------------------------------
-# Invoice PDF entry point
+# Public entry points
 # -------------------------------------------------
 
-def generate_invoice_pdf(invoice, company=None) -> bytes:
-    company = company or {}
+def html_to_pdf(html: str) -> bytes:
+    raise RuntimeError("html_to_pdf is no longer used. Invoice PDFs are built with ReportLab.")
 
-    html = render_template(
-        "invoice_pdf.html",
-        invoice=invoice,
-        company=company,
-        pdf_url="",
-    )
-    return html_to_pdf(html)
+
+def generate_invoice_pdf(invoice, company=None) -> bytes:
+    return _build_document("Invoice", invoice or {}, company or {})
 
 
 def generate_quote_pdf(quote, company=None) -> bytes:
-    company = company or {}
-
-    html = render_template(
-        "quote_pdf.html",
-        quote=quote,
-        company=company,
-        pdf_url="",
-    )
-    return html_to_pdf(html)
+    return _build_document("Quote", quote or {}, company or {})
