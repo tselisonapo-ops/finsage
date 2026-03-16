@@ -6,9 +6,7 @@
    * Config
    * =======================================================*/
   const USE_BACKEND = true;
-  const API_BASE =
-    window.APP_CONFIG?.API_BASE ||
-    "https://finsage-backend-ab25.onrender.com";
+  const API_BASE = window.APP_CONFIG?.API_BASE || "";
 
   const AUTH_SIGNUP_URL  = API_BASE + "/api/auth/signup";
   const COUNTRY_META_URL = API_BASE + "/api/meta/countries";
