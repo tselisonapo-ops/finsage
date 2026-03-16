@@ -40890,28 +40890,28 @@ class DatabaseService:
                 AND e.is_active = TRUE
             ),
             overdue_engagements AS (
-                SELECT COUNT(*) AS cnt
+                SELECT COUNT(*)::int AS cnt
                 FROM engagement_base
                 WHERE due_date IS NOT NULL
                 AND due_date < CURRENT_DATE
                 AND status NOT IN ('completed', 'cancelled', 'archived')
             ),
             blocked_reporting_items AS (
-                SELECT COUNT(*) AS cnt
+                SELECT COUNT(*)::int AS cnt
                 FROM {schema}.engagement_reporting_items i
                 WHERE i.company_id = %s
                 AND i.is_active = TRUE
                 AND i.status = 'blocked'
             ),
             outstanding_deliverables AS (
-                SELECT COUNT(*) AS cnt
+                SELECT COUNT(*)::int AS cnt
                 FROM {schema}.engagement_deliverables d
                 WHERE d.company_id = %s
                 AND d.is_active = TRUE
                 AND d.status IN ('requested', 'outstanding', 'in_review')
             ),
             pending_signoffs AS (
-                SELECT COUNT(*) AS cnt
+                SELECT COUNT(*)::int AS cnt
                 FROM {schema}.engagement_signoff_steps s
                 WHERE s.company_id = %s
                 AND s.is_active = TRUE
@@ -40919,36 +40919,53 @@ class DatabaseService:
             ),
             completion_stats AS (
                 SELECT
+                    COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_count,
+                    COUNT(*) FILTER (WHERE status NOT IN ('cancelled', 'archived'))::int AS total_live_count
+                FROM engagement_base
+            ),
+            engagement_counts AS (
+                SELECT
+                    COUNT(*)::int AS active_engagements,
                     COUNT(*) FILTER (
-                        WHERE status IN ('completed')
-                    ) AS completed_count,
-                    COUNT(*) FILTER (
-                        WHERE status NOT IN ('cancelled', 'archived')
-                    ) AS total_live_count
+                        WHERE due_date IS NOT NULL
+                        AND date_trunc('month', due_date::timestamp) = date_trunc('month', CURRENT_DATE::timestamp)
+                    )::int AS due_this_month
                 FROM engagement_base
             )
             SELECT
-                (SELECT COUNT(*) FROM engagement_base) AS active_engagements,
-                (SELECT COUNT(*) FROM engagement_base
-                WHERE due_date IS NOT NULL
-                AND DATE_TRUNC('month', due_date) = DATE_TRUNC('month', CURRENT_DATE)
-                ) AS due_this_month,
+                ec.active_engagements,
+                ec.due_this_month,
                 (
-                    COALESCE((SELECT cnt FROM overdue_engagements), 0) +
-                    COALESCE((SELECT cnt FROM blocked_reporting_items), 0) +
-                    COALESCE((SELECT cnt FROM outstanding_deliverables), 0) +
-                    COALESCE((SELECT cnt FROM pending_signoffs), 0)
-                ) AS at_risk_items,
+                    COALESCE(oe.cnt, 0) +
+                    COALESCE(bri.cnt, 0) +
+                    COALESCE(od.cnt, 0) +
+                    COALESCE(ps.cnt, 0)
+                )::int AS at_risk_items,
                 CASE
-                    WHEN COALESCE((SELECT total_live_count FROM completion_stats), 0) = 0 THEN 0
+                    WHEN COALESCE(cs.total_live_count, 0) = 0 THEN 0
                     ELSE ROUND(
-                        ((SELECT completed_count FROM completion_stats)::numeric /
-                        NULLIF((SELECT total_live_count FROM completion_stats), 0)::numeric) * 100, 2
+                        (cs.completed_count::numeric / NULLIF(cs.total_live_count, 0)::numeric) * 100,
+                        2
                     )
                 END AS completion_rate
+            FROM engagement_counts ec
+            CROSS JOIN overdue_engagements oe
+            CROSS JOIN blocked_reporting_items bri
+            CROSS JOIN outstanding_deliverables od
+            CROSS JOIN pending_signoffs ps
+            CROSS JOIN completion_stats cs
         """
         cur.execute(sql, (company_id, company_id, company_id, company_id))
-        return cur.fetchone()
+        row = cur.fetchone()
+        if row:
+            return row
+
+        return {
+            "active_engagements": 0,
+            "due_this_month": 0,
+            "at_risk_items": 0,
+            "completion_rate": 0,
+        }
 
     def get_engagement_profitability_summary(self, cur, company_id: int):
         schema = self.company_schema(company_id)
