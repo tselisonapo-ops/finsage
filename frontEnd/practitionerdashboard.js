@@ -499,7 +499,9 @@ const ENDPOINTS = {
   let PR_ANALYTICS_SELECTED_MODULE = null; // "engagement-profitability" | "client-service-trends" | "risk-alerts"
   let PR_ANALYTICS_EVENTS_BOUND = false;
   let PR_ANALYTICS_DETAIL_EVENTS_BOUND = false;
+  let PR_ANALYTICS_FORCE_RELOAD = false;
 
+  
   const PR_NAV = {
     dashboard: "dashboard",
     assignments: "assignments",
