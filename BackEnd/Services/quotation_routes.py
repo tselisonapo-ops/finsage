@@ -5,7 +5,7 @@ from BackEnd.Services.routes.invoice_routes import build_invoice_journal_lines, 
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 from BackEnd.Services.utils.view_token import create_quote_pdf_token, verify_quote_pdf_token
 from BackEnd.Services.utils.quote_utils import can_issue_quote, can_accept_quote, can_create_quote
-from BackEnd.Services.invoice_pdf_service import html_to_pdf
+from BackEnd.Services.invoice_pdf_service import generate_quote_pdf
 from BackEnd.Services.credit_policy import (
     
     can_post_invoices,
@@ -781,7 +781,7 @@ def quote_view(company_id: int, quote_id: int):
 def quote_pdf(company_id: int, quote_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
-    
+
     token = request.args.get("t", "")
     payload = verify_quote_pdf_token(token)
     if not payload:
@@ -796,8 +796,11 @@ def quote_pdf(company_id: int, quote_id: int):
     quote["branding"] = db_service.get_company_branding(company_id) or {}
     company = db_service.get_company_profile(company_id) or {}
 
-    html = render_template("quote_pdf.html", quote=quote, company=company, pdf_url="")
-    pdf_bytes = html_to_pdf(html)
+    try:
+        pdf_bytes = generate_quote_pdf(quote, company=company)
+    except Exception as e:
+        current_app.logger.exception("Failed to generate quote PDF")
+        return jsonify({"error": "Failed to generate quote PDF", "detail": str(e)}), 500
 
     resp = make_response(pdf_bytes)
     resp.headers["Content-Type"] = "application/pdf"
