@@ -3925,7 +3925,7 @@ class DatabaseService:
     # Also makes "name" default to companyName if you pass that upstream.
 
 
-    def _addr_to_text(addr: Optional[Dict[str, Any]]) -> Optional[str]:
+    def _addr_to_text(self, addr: Optional[Dict[str, Any]]) -> Optional[str]:
         """
         Make a human-readable multi-line string from your structured address object.
         Safe for legacy templates/branding.
