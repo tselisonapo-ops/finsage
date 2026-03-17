@@ -2669,6 +2669,23 @@ def create_related_company(parent_company_id: int):
         "notes": notes,
     }), 201
 
+@app.route("/api/companies/<int:company_id>/group-structure", methods=["GET"])
+@require_auth
+def api_company_group_structure(company_id: int):
+    current_user = getattr(g, "current_user", None)
+    if not current_user:
+        return jsonify({"message": "Not authenticated"}), 401
+
+    if current_user.get("company_id") != company_id:
+        return jsonify({"message": "Not authorised for this company"}), 403
+
+    try:
+        data = db_service.get_company_group_structure(company_id)
+        return jsonify(data), 200
+    except Exception as e:
+        current_app.logger.exception("api_company_group_structure failed")
+        return jsonify({"message": str(e)}), 500
+    
 @app.route("/api/auth/switch-company", methods=["POST", "OPTIONS"])
 @require_auth(require_company=False)
 def api_auth_switch_company():

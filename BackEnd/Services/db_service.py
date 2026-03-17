@@ -3982,6 +3982,7 @@ class DatabaseService:
         address_lng: Optional[str] = None,
         industry_slug: Optional[str] = None,
         sub_industry_slug: Optional[str] = None,
+        entity_kind: Optional[str] = None,
     ) -> int:
 
         try:
@@ -3997,6 +3998,10 @@ class DatabaseService:
                 sub_industry_slug = sub_industry_slug or sub_slug
         except Exception:
             pass
+
+        entity_kind = (entity_kind or "company").strip().lower()
+        if entity_kind not in {"company", "branch_entity"}:
+            entity_kind = "company"
 
         profile = get_industry_profile(industry, sub_industry)
 
@@ -4030,7 +4035,8 @@ class DatabaseService:
                     default_pnl_layout, pnl_labels_json,
                     physical_address, postal_address, company_phone, logo_url,
                     registered_address_json, postal_address_json,
-                    address_place_id, address_lat, address_lng
+                    address_place_id, address_lat, address_lng,
+                    entity_kind
                 )
                 VALUES
                 (
@@ -4042,7 +4048,8 @@ class DatabaseService:
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s,
-                    %s, %s, %s
+                    %s, %s, %s,
+                    %s
                 )
                 RETURNING id;
                 """,
@@ -4056,6 +4063,7 @@ class DatabaseService:
                     physical_address, postal_address, company_phone, logo_url,
                     reg_json, post_json,
                     address_place_id, address_lat, address_lng,
+                    entity_kind,
                 ),
             )
 
@@ -4118,6 +4126,56 @@ class DatabaseService:
         self.ensure_company_account_settings(company_id)
         return company_id
 
+    def get_company_group_structure(self, company_id: int) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                "SELECT * FROM public.companies WHERE id = %s",
+                (company_id,)
+            )
+            company = cur.fetchone()
+
+            cur.execute("""
+                SELECT
+                    r.*,
+                    c.name AS child_company_name,
+                    c.system_company_code,
+                    c.country,
+                    c.currency,
+                    c.entity_kind
+                FROM public.company_relationships r
+                JOIN public.companies c
+                ON c.id = r.child_company_id
+                WHERE r.parent_company_id = %s
+                AND r.is_active = TRUE
+                ORDER BY c.name
+            """, (company_id,))
+            relationships = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT *
+                FROM public.company_branches
+                WHERE company_id = %s
+                AND is_active = TRUE
+                ORDER BY name
+            """, (company_id,))
+            branches = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT *
+                FROM public.company_segments
+                WHERE company_id = %s
+                AND is_active = TRUE
+                ORDER BY name
+            """, (company_id,))
+            segments = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "company": dict(company) if company else None,
+                "relationships": relationships,
+                "branches": branches,
+                "segments": segments,
+            }
+    
     def get_company_profile(self, company_id: int) -> Optional[Dict[str, Any]]:
         sql = """
             SELECT
