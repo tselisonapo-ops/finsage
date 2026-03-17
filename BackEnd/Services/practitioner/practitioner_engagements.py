@@ -106,7 +106,7 @@ def create_engagement_route(cid: int):
         body = request.get_json(silent=True) or {}
 
         customer_id = _parse_int(body.get("customer_id"))
-        target_company_id = _parse_int(body.get("target_company_id")) or customer_id
+        target_company_id = _parse_int(body.get("target_company_id"))
         engagement_name = (body.get("engagement_name") or "").strip()
         engagement_type = (body.get("engagement_type") or "").strip().lower()
 
@@ -116,6 +116,10 @@ def create_engagement_route(cid: int):
             return _json_err("engagement_name is required.", 400)
         if not engagement_type:
             return _json_err("engagement_type is required.", 400)
+
+        requires_target_company = engagement_type in {"bookkeeping", "compilation", "audit", "tax"}
+        if requires_target_company and not target_company_id:
+            return _json_err("target_company_id is required for this engagement type.", 400)
 
         with db_service._conn_cursor() as (conn, cur):
             engagement_id = db_service.create_engagement(
