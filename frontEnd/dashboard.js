@@ -7060,13 +7060,27 @@ window.loadCompanyProfile = loadCompanyProfile;
         </div>
 
         <div>
-          <label class="block text-[11px] text-slate-500 mb-1">Industry</label>
-          <input name="industry" class="w-full border rounded px-3 py-2 text-sm" required />
+          <label class="block text-[11px] text-slate-500 mb-1" for="csIndustry">Industry (Select COA Template)</label>
+          <select
+            id="csIndustry"
+            name="industry"
+            required
+            class="w-full border rounded px-3 py-2 text-sm bg-white"
+          >
+            <option value="" selected disabled>Select your industry</option>
+          </select>
         </div>
 
         <div>
-          <label class="block text-[11px] text-slate-500 mb-1">Sub-industry</label>
-          <input name="subIndustry" class="w-full border rounded px-3 py-2 text-sm" />
+          <label class="block text-[11px] text-slate-500 mb-1" for="csSubIndustry">Sub-industry</label>
+          <select
+            id="csSubIndustry"
+            name="subIndustry"
+            disabled
+            class="w-full border rounded px-3 py-2 text-sm bg-slate-100 disabled:opacity-60"
+          >
+            <option value="" selected disabled>Select sub-industry...</option>
+          </select>
         </div>
 
         <div>
@@ -7290,6 +7304,206 @@ window.loadCompanyProfile = loadCompanyProfile;
     `;
   }
 
+  const INDUSTRY_CATALOG = {
+    "Agriculture": [],
+
+    "Automotive Services": [
+      "Auto Repair Workshop",
+      "Auto Electrical",
+      "Tyre & Fitment",
+      "Panel Beating",
+      "Spray Painting"
+    ],
+
+    "Body Corporate": [],
+
+    "Call Center": [],
+
+    "Car Dealership": [
+      "New Vehicles",
+      "Used Vehicles",
+      "Motorcycle Dealership"
+    ],
+
+    "Construction": [
+      "Residential Building Contractor",
+      "Civil Engineering",
+      "Electrical & Mechanical",
+      "Plumbing & Drainage",
+      "Roadworks"
+    ],
+
+    "Engineering & Technical": [
+      "Mechanical Engineering",
+      "Electrical Engineering",
+      "Industrial Engineering",
+      "Technical Services"
+    ],
+
+    "Hospitality": [
+      "Hotel",
+      "Events & Catering",
+      "Guest House / Lodge"
+    ],
+
+    "IT & Technology": [
+      "Software Development",
+      "Managed IT Services",
+      "Networking & Infrastructure",
+      "Cybersecurity"
+    ],
+
+    "Logistics & Transport": [
+      "Freight / Logistics",
+      "Courier / Last Mile",
+      "Public Transport",
+      "Fleet Services"
+    ],
+
+    "Management Services": [],
+
+    "Manufacturing": [
+      "Light Manufacturing",
+      "Fabrication",
+      "Food Processing"
+    ],
+
+    "Mining": [
+      "Open-Pit Mining",
+      "Underground Mining",
+      "Quarrying & Aggregates",
+      "Coal Mining",
+      "Gold & PGM Mining"
+    ],
+
+    "NPO Education": [
+      "Primary Education",
+      "Higher Education"
+    ],
+
+    "Private School": [],
+
+    "NPO Healthcare": [
+      "Clinic",
+      "Hospital"
+    ],
+
+    "NPO IT": [],
+
+    "NPO Transport": [],
+
+    "Private Healthcare": [
+      "GP Clinic",
+      "Specialist Practice",
+      "Dentistry"
+    ],
+
+    "Professional Services": [
+      "Auditing & Accounting",
+      "Architecture",
+      "Legal Services",
+      "Engineering Consulting",
+      "HR & Recruitment",
+      "Business Consulting"
+    ],
+
+    "Property Management": [],
+
+    "Restaurant": [
+      "Fast Food",
+      "Casual Dining",
+      "Fine Dining"
+    ],
+
+    "Retail & Wholesale": [
+      "Wholesale",
+      "E-commerce Retail",
+      "Brick & Mortar Retail"
+    ],
+
+    "Security Services": [
+      "Guarding",
+      "Alarm Monitoring",
+      "Technical Security Systems"
+    ],
+
+    "Transport": [
+      "Courier / Last Mile",
+      "Freight / Logistics",
+      "Public Transport"
+    ],
+
+    "Clubs & Associations": [
+      "Sports Club",
+      "Social Club",
+      "Professional Association"
+    ],
+  };
+
+  function getSortedIndustries() {
+    return Object.keys(INDUSTRY_CATALOG).sort((a, b) => a.localeCompare(b));
+  }
+
+  function populateCorporateIndustrySelect(selectedIndustry = "") {
+    const industrySel = document.getElementById("csIndustry");
+    const subSel = document.getElementById("csSubIndustry");
+    if (!industrySel) return;
+
+    const industries = getSortedIndustries();
+
+    industrySel.innerHTML = `
+      <option value="" disabled ${selectedIndustry ? "" : "selected"}>Select your industry</option>
+      ${industries.map(ind => `
+        <option value="${esc(ind)}" ${selectedIndustry === ind ? "selected" : ""}>${esc(ind)}</option>
+      `).join("")}
+    `;
+
+    populateCorporateSubIndustrySelect(selectedIndustry, "");
+  }
+
+  function populateCorporateSubIndustrySelect(industry, selectedSubIndustry = "") {
+    const subSel = document.getElementById("csSubIndustry");
+    if (!subSel) return;
+
+    const subs = Array.isArray(INDUSTRY_CATALOG[industry]) ? INDUSTRY_CATALOG[industry] : [];
+
+    if (!industry) {
+      subSel.innerHTML = `<option value="" selected disabled>Select sub-industry...</option>`;
+      subSel.disabled = true;
+      subSel.classList.add("bg-slate-100");
+      return;
+    }
+
+    if (!subs.length) {
+      subSel.innerHTML = `<option value="" selected>No sub-industry required</option>`;
+      subSel.disabled = true;
+      subSel.classList.add("bg-slate-100");
+      return;
+    }
+
+    subSel.disabled = false;
+    subSel.classList.remove("bg-slate-100");
+
+    subSel.innerHTML = `
+      <option value="" disabled ${selectedSubIndustry ? "" : "selected"}>Select sub-industry...</option>
+      ${subs.map(sub => `
+        <option value="${esc(sub)}" ${selectedSubIndustry === sub ? "selected" : ""}>${esc(sub)}</option>
+      `).join("")}
+    `;
+  }
+
+  function bindCorporateIndustryCascade() {
+    const industrySel = document.getElementById("csIndustry");
+    const subSel = document.getElementById("csSubIndustry");
+    if (!industrySel || !subSel) return;
+
+    populateCorporateIndustrySelect(industrySel.value || "");
+
+    industrySel.addEventListener("change", () => {
+      populateCorporateSubIndustrySelect(industrySel.value, "");
+    });
+  }
+
   function getDefaultsForStructureType(type) {
     switch (type) {
       case STRUCTURE_TYPES.subsidiary:
@@ -7419,6 +7633,10 @@ window.loadCompanyProfile = loadCompanyProfile;
     });
 
     applyCorporateStructureFormDefaults();
+
+    if (form.dataset.formKind === "related-company") {
+      bindCorporateIndustryCascade();
+    }
   }
 
   function applyCorporateStructureFormDefaults() {
@@ -7468,6 +7686,10 @@ window.loadCompanyProfile = loadCompanyProfile;
         const n = Number(payload[key]);
         payload[key] = Number.isFinite(n) ? n : null;
       }
+    }
+
+    if (payload.subIndustry === "" || payload.subIndustry === "No sub-industry required") {
+      payload.subIndustry = null;
     }
 
     return payload;

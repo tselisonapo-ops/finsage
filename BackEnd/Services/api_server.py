@@ -1045,17 +1045,40 @@ def create_company_record_from_payload(
     if not ok:
         raise ValueError({"errors": errors})
 
-    industry_raw     = (data.get("industry") or "").strip()
-    sub_industry_raw = data.get("subIndustry") or None
+    industry = None
+    sub_industry = None
+    industry_slug = None
+    sub_industry_slug = None
+
+    industry_raw = (data.get("industry") or "").strip()
+    if not industry_raw:
+        raise ValueError("Industry is required.")
+
+    sub_industry_raw = (data.get("subIndustry") or "").strip() or None
+
+    rows_ind = get_industry_template(industry_raw)
+    if not rows_ind:
+        raise ValueError(f"Industry '{industry_raw}' not recognized. Please choose a valid industry.")
+
+    if sub_industry_raw:
+        rows_sub = get_industry_template(industry_raw, sub_industry_raw)
+        if not rows_sub:
+            raise ValueError(
+                f"Sub-industry '{sub_industry_raw}' is not valid for industry '{industry_raw}'."
+            )
+
     industry, sub_industry, industry_slug, sub_industry_slug = normalize_industry_pair(
         industry_raw, sub_industry_raw
     )
 
-    if not industry:
-        raise ValueError("Invalid data: 'industry' is required")
-
-    if not get_industry_template(industry):
-        raise ValueError(f"Industry '{industry_raw}' not recognized.")
+    ind_template = TEMPLATE_INDUSTRY_ALIASES.get(
+        (industry or "").strip().lower(),
+        (industry or "").strip()
+    )
+    sub_key = canonical_subindustry_key(ind_template, sub_industry)
+    if sub_key:
+        sub_industry = sub_key
+        sub_industry_slug = slugify(sub_industry)
 
     currency       = data.get("currency") or get_currency_for_country(country) or "USD"
     fin_year_start = data.get("finYearStart", "01/01")
@@ -1126,8 +1149,22 @@ def create_company_record_from_payload(
         entity_kind=entity_kind,
     )
 
-    if not company_id:
-        raise RuntimeError("Failed to create company")
+    try:
+        db_service.execute_sql(
+            """
+            UPDATE public.companies
+            SET industry_slug = %s,
+                sub_industry_slug = %s
+            WHERE id = %s
+            """,
+            (industry_slug, sub_industry_slug, company_id),
+        )
+    except Exception as e:
+        current_app.logger.warning(
+            "Industry slug update failed for company %s: %s",
+            company_id,
+            e,
+        )
 
     try:
         seed_company_coa_once(
