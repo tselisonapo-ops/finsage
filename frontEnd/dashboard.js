@@ -476,6 +476,19 @@ const ENDPOINTS = {
   companies: `${API_BASE}/api/companies`,
   company: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}`,
 
+  companyStructure: {
+    get: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
+
+    relatedCompanies: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
+
+    branches: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
+
+    segments: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
+  },
   // --- Management packs ---
   managementPacks: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/management_packs`,
@@ -5730,6 +5743,15 @@ async function switchScreen(name) {
 
     showCompanyView?.(view);
 
+    if (view === "structure") {
+      try {
+        bindCorporateStructureScreen?.();
+        await loadCorporateStructure?.(cid);
+      } catch (e) {
+        console.warn("[CorporateStructure] load failed:", e);
+      }
+    }
+
     // ✅ mgmt packs load + refresh button binding MUST be inside here
     if (view === "mgmt-packs") {
       try {
@@ -6968,6 +6990,761 @@ window.writeCompanyCreditPolicyToForm = writeCompanyCreditPolicyToForm;
 window.saveCompanyProfile = saveCompanyProfile;
 window.loadCompanyProfile = loadCompanyProfile;
 
+(function () {
+  const STRUCTURE_TYPES = {
+    subsidiary: "subsidiary",
+    joint_venture: "joint_venture",
+    associate: "associate",
+    branch_entity: "branch_entity",
+    branch_internal: "branch_internal",
+    segment: "segment",
+  };
+
+  function getStructureCompanyId() {
+    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || CURRENT_COMPANY_ID || null;
+  }
+
+  function esc(v) {
+    return String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function fmtPct(v) {
+    if (v == null || v === "") return "—";
+    const n = Number(v);
+    return Number.isFinite(n) ? `${n}%` : "—";
+  }
+
+  function emptyState(message) {
+    return `
+      <div class="rounded-lg border border-dashed bg-slate-50 px-3 py-4 text-sm text-slate-500">
+        ${esc(message)}
+      </div>
+    `;
+  }
+
+  function formSectionTitle(title, subtitle = "") {
+    return `
+      <div class="mb-3">
+        <h6 class="text-sm font-semibold text-slate-800">${esc(title)}</h6>
+        ${subtitle ? `<p class="text-xs text-slate-500 mt-1">${esc(subtitle)}</p>` : ""}
+      </div>
+    `;
+  }
+
+  function renderCompanyLikeFields({ type }) {
+    const defaults = getDefaultsForStructureType(type);
+
+    return `
+      <input type="hidden" name="relationship_type" value="${esc(defaults.relationship_type || "")}" />
+      <input type="hidden" name="entity_kind" value="${esc(defaults.entity_kind || "company")}" />
+
+      ${formSectionTitle(
+        defaults.title,
+        defaults.subtitle
+      )}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Name</label>
+          <input name="name" class="w-full border rounded px-3 py-2 text-sm" required />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Country</label>
+          <input name="country" class="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. ZA" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Industry</label>
+          <input name="industry" class="w-full border rounded px-3 py-2 text-sm" required />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Sub-industry</label>
+          <input name="subIndustry" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Currency</label>
+          <input name="currency" class="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. ZAR" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Financial year start</label>
+          <input name="finYearStart" class="w-full border rounded px-3 py-2 text-sm" placeholder="01/01" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Registration number</label>
+          <input name="companyRegNo" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Registration date</label>
+          <input name="companyRegDate" type="date" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">TIN</label>
+          <input name="tin" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">VAT</label>
+          <input name="vat" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Company email</label>
+          <input name="companyEmail" type="email" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Company phone</label>
+          <input name="companyPhone" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-[11px] text-slate-500 mb-1">Physical address</label>
+          <input name="physical_address" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-[11px] text-slate-500 mb-1">Postal address</label>
+          <input name="postal_address" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Ownership %</label>
+          <input
+            name="ownership_percent"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            class="w-full border rounded px-3 py-2 text-sm"
+            ${defaults.showOwnership ? "" : "disabled"}
+          />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Voting %</label>
+          <input
+            name="voting_percent"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            class="w-full border rounded px-3 py-2 text-sm"
+            ${defaults.showOwnership ? "" : "disabled"}
+          />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Control basis</label>
+          <select name="control_basis" class="w-full border rounded px-3 py-2 text-sm">
+            <option value="">Select</option>
+            <option value="control" ${defaults.control_basis === "control" ? "selected" : ""}>Control</option>
+            <option value="significant_influence" ${defaults.control_basis === "significant_influence" ? "selected" : ""}>Significant influence</option>
+            <option value="joint_control" ${defaults.control_basis === "joint_control" ? "selected" : ""}>Joint control</option>
+            <option value="direct_branch" ${defaults.control_basis === "direct_branch" ? "selected" : ""}>Direct branch</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Consolidation method</label>
+          <select name="consolidation_method" class="w-full border rounded px-3 py-2 text-sm">
+            <option value="">Select</option>
+            <option value="full" ${defaults.consolidation_method === "full" ? "selected" : ""}>Full</option>
+            <option value="equity" ${defaults.consolidation_method === "equity" ? "selected" : ""}>Equity</option>
+            <option value="proportionate" ${defaults.consolidation_method === "proportionate" ? "selected" : ""}>Proportionate</option>
+            <option value="none" ${defaults.consolidation_method === "none" ? "selected" : ""}>None</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Effective from</label>
+          <input name="effective_from" type="date" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-[11px] text-slate-500 mb-1">Notes</label>
+          <textarea name="notes" class="w-full border rounded px-3 py-2 text-sm min-h-[88px]"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" id="btnStructureCancel" class="border rounded px-3 py-2 text-sm bg-white hover:bg-slate-50">
+          Clear
+        </button>
+        <button type="submit" class="rounded px-3 py-2 text-sm bg-slate-900 text-white hover:bg-slate-800">
+          Save
+        </button>
+      </div>
+    `;
+  }
+
+  function renderInternalBranchFields() {
+    return `
+      ${formSectionTitle(
+        "Add Internal Branch",
+        "Use this for a branch that is not a separate legal entity."
+      )}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Branch name</label>
+          <input name="name" class="w-full border rounded px-3 py-2 text-sm" required />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Code</label>
+          <input name="code" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Country</label>
+          <input name="country" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Phone</label>
+          <input name="phone" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Email</label>
+          <input name="email" type="email" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Manager user ID</label>
+          <input name="manager_user_id" type="number" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-[11px] text-slate-500 mb-1">Address</label>
+          <input name="address" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+      </div>
+
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" id="btnStructureCancel" class="border rounded px-3 py-2 text-sm bg-white hover:bg-slate-50">
+          Clear
+        </button>
+        <button type="submit" class="rounded px-3 py-2 text-sm bg-slate-900 text-white hover:bg-slate-800">
+          Save
+        </button>
+      </div>
+    `;
+  }
+
+  function renderSegmentFields() {
+    return `
+      ${formSectionTitle(
+        "Add Segment",
+        "Use this for operating, geographical, product, customer, or other reporting segments."
+      )}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Segment name</label>
+          <input name="name" class="w-full border rounded px-3 py-2 text-sm" required />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Code</label>
+          <input name="code" class="w-full border rounded px-3 py-2 text-sm" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Segment type</label>
+          <select name="segment_type" class="w-full border rounded px-3 py-2 text-sm">
+            <option value="operating">Operating</option>
+            <option value="geographical">Geographical</option>
+            <option value="product">Product</option>
+            <option value="customer">Customer</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-[11px] text-slate-500 mb-1">Description</label>
+          <textarea name="description" class="w-full border rounded px-3 py-2 text-sm min-h-[88px]"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" id="btnStructureCancel" class="border rounded px-3 py-2 text-sm bg-white hover:bg-slate-50">
+          Clear
+        </button>
+        <button type="submit" class="rounded px-3 py-2 text-sm bg-slate-900 text-white hover:bg-slate-800">
+          Save
+        </button>
+      </div>
+    `;
+  }
+
+  function getDefaultsForStructureType(type) {
+    switch (type) {
+      case STRUCTURE_TYPES.subsidiary:
+        return {
+          title: "Add Subsidiary",
+          subtitle: "Create a related legal entity and link it as a subsidiary.",
+          relationship_type: "subsidiary",
+          entity_kind: "company",
+          control_basis: "control",
+          consolidation_method: "full",
+          showOwnership: true,
+        };
+
+      case STRUCTURE_TYPES.joint_venture:
+        return {
+          title: "Add Joint Venture",
+          subtitle: "Create a related legal entity and link it as a joint venture.",
+          relationship_type: "joint_venture",
+          entity_kind: "company",
+          control_basis: "joint_control",
+          consolidation_method: "equity",
+          showOwnership: true,
+        };
+
+      case STRUCTURE_TYPES.associate:
+        return {
+          title: "Add Associate",
+          subtitle: "Create a related legal entity and link it as an associate.",
+          relationship_type: "associate",
+          entity_kind: "company",
+          control_basis: "significant_influence",
+          consolidation_method: "equity",
+          showOwnership: true,
+        };
+
+      case STRUCTURE_TYPES.branch_entity:
+        return {
+          title: "Add Registered Branch",
+          subtitle: "Use this where the branch has its own legal or tax identity.",
+          relationship_type: "branch",
+          entity_kind: "branch_entity",
+          control_basis: "direct_branch",
+          consolidation_method: "none",
+          showOwnership: false,
+        };
+
+      default:
+        return {
+          title: "Add Entity",
+          subtitle: "",
+          relationship_type: "subsidiary",
+          entity_kind: "company",
+          control_basis: "",
+          consolidation_method: "",
+          showOwnership: true,
+        };
+    }
+  }
+
+  function renderCorporateStructureForm(type) {
+    const host = document.getElementById("corporateStructureFormHost");
+    if (!host) return;
+
+    if (
+      type === STRUCTURE_TYPES.subsidiary ||
+      type === STRUCTURE_TYPES.joint_venture ||
+      type === STRUCTURE_TYPES.associate ||
+      type === STRUCTURE_TYPES.branch_entity
+    ) {
+      host.innerHTML = `
+        <form id="corporateStructureDynamicForm" data-form-kind="related-company" class="space-y-0">
+          ${renderCompanyLikeFields({ type })}
+        </form>
+      `;
+      bindCorporateStructureDynamicForm();
+      return;
+    }
+
+    if (type === STRUCTURE_TYPES.branch_internal) {
+      host.innerHTML = `
+        <form id="corporateStructureDynamicForm" data-form-kind="internal-branch" class="space-y-0">
+          ${renderInternalBranchFields()}
+        </form>
+      `;
+      bindCorporateStructureDynamicForm();
+      return;
+    }
+
+    if (type === STRUCTURE_TYPES.segment) {
+      host.innerHTML = `
+        <form id="corporateStructureDynamicForm" data-form-kind="segment" class="space-y-0">
+          ${renderSegmentFields()}
+        </form>
+      `;
+      bindCorporateStructureDynamicForm();
+      return;
+    }
+
+    host.innerHTML = emptyState("Select a structure item type to continue.");
+  }
+
+  function bindCorporateStructureDynamicForm() {
+    const form = document.getElementById("corporateStructureDynamicForm");
+    if (!form) return;
+
+    const cancelBtn = document.getElementById("btnStructureCancel");
+    cancelBtn?.addEventListener("click", () => {
+      form.reset();
+      applyCorporateStructureFormDefaults();
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const kind = form.dataset.formKind || "";
+      if (kind === "related-company") {
+        await submitRelatedCompanyForm(form);
+        return;
+      }
+      if (kind === "internal-branch") {
+        await submitInternalBranchForm(form);
+        return;
+      }
+      if (kind === "segment") {
+        await submitSegmentForm(form);
+      }
+    });
+
+    applyCorporateStructureFormDefaults();
+  }
+
+  function applyCorporateStructureFormDefaults() {
+    const type = document.getElementById("relatedCompanyType")?.value || STRUCTURE_TYPES.subsidiary;
+    const form = document.getElementById("corporateStructureDynamicForm");
+    if (!form) return;
+
+    if (form.dataset.formKind !== "related-company") return;
+
+    const defaults = getDefaultsForStructureType(type);
+
+    const control = form.querySelector('[name="control_basis"]');
+    const method = form.querySelector('[name="consolidation_method"]');
+    const rel = form.querySelector('[name="relationship_type"]');
+    const entityKind = form.querySelector('[name="entity_kind"]');
+    const own = form.querySelector('[name="ownership_percent"]');
+    const vote = form.querySelector('[name="voting_percent"]');
+
+    if (control) control.value = defaults.control_basis || "";
+    if (method) method.value = defaults.consolidation_method || "";
+    if (rel) rel.value = defaults.relationship_type || "";
+    if (entityKind) entityKind.value = defaults.entity_kind || "company";
+
+    if (own) {
+      own.disabled = !defaults.showOwnership;
+      if (!defaults.showOwnership) own.value = "";
+    }
+    if (vote) {
+      vote.disabled = !defaults.showOwnership;
+      if (!defaults.showOwnership) vote.value = "";
+    }
+  }
+
+  function collectFormPayload(form) {
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
+
+    for (const [k, v] of Object.entries(payload)) {
+      if (typeof v === "string") payload[k] = v.trim();
+    }
+
+    const numericKeys = ["ownership_percent", "voting_percent", "manager_user_id"];
+    for (const key of numericKeys) {
+      if (!(key in payload)) continue;
+      if (payload[key] === "") payload[key] = null;
+      else {
+        const n = Number(payload[key]);
+        payload[key] = Number.isFinite(n) ? n : null;
+      }
+    }
+
+    return payload;
+  }
+
+  async function submitRelatedCompanyForm(form) {
+    const companyId = getStructureCompanyId();
+    if (!companyId) {
+      alert("No active company selected.");
+      return;
+    }
+
+    const payload = collectFormPayload(form);
+
+    if (!payload.name) {
+      alert("Name is required.");
+      return;
+    }
+    if (!payload.industry) {
+      alert("Industry is required.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.companyStructure.relatedCompanies(companyId),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      alert(res?.message || "Related company created.");
+      form.reset();
+      applyCorporateStructureFormDefaults();
+      await loadCorporateStructure(companyId);
+    } catch (e) {
+      console.error("[CorporateStructure] related company create failed:", e);
+      alert(e?.message || "Failed to create related company.");
+    }
+  }
+
+  async function submitInternalBranchForm(form) {
+    const companyId = getStructureCompanyId();
+    if (!companyId) {
+      alert("No active company selected.");
+      return;
+    }
+
+    const payload = collectFormPayload(form);
+    if (!payload.name) {
+      alert("Branch name is required.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.companyStructure.branches(companyId),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      alert(res?.message || "Internal branch created.");
+      form.reset();
+      await loadCorporateStructure(companyId);
+    } catch (e) {
+      console.error("[CorporateStructure] branch create failed:", e);
+      alert(e?.message || "Failed to create internal branch.");
+    }
+  }
+
+  async function submitSegmentForm(form) {
+    const companyId = getStructureCompanyId();
+    if (!companyId) {
+      alert("No active company selected.");
+      return;
+    }
+
+    const payload = collectFormPayload(form);
+    if (!payload.name) {
+      alert("Segment name is required.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.companyStructure.segments(companyId),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      alert(res?.message || "Segment created.");
+      form.reset();
+      await loadCorporateStructure(companyId);
+    } catch (e) {
+      console.error("[CorporateStructure] segment create failed:", e);
+      alert(e?.message || "Failed to create segment.");
+    }
+  }
+
+  function renderRelatedCompaniesList(items = []) {
+    const host = document.getElementById("relatedCompaniesList");
+    const count = document.getElementById("relatedEntitiesCount");
+    if (!host) return;
+
+    count && (count.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`);
+
+    if (!items.length) {
+      host.innerHTML = emptyState("No related legal entities registered yet.");
+      return;
+    }
+
+    host.innerHTML = items.map((r) => {
+      const relation = r.relationship_type || "entity";
+      const childName = r.child_company_name || r.name || `Company #${r.child_company_id || ""}`;
+      const code = r.system_company_code || "";
+      const country = r.country || "—";
+      const currency = r.currency || "—";
+      const entityKind = r.entity_kind || "company";
+
+      return `
+        <div class="rounded-lg border bg-white px-3 py-3">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-semibold text-slate-800">${esc(childName)}</span>
+                <span class="text-[10px] uppercase tracking-wide rounded bg-slate-100 text-slate-600 px-2 py-0.5">
+                  ${esc(relation.replaceAll("_", " "))}
+                </span>
+                <span class="text-[10px] uppercase tracking-wide rounded bg-slate-100 text-slate-600 px-2 py-0.5">
+                  ${esc(entityKind)}
+                </span>
+              </div>
+
+              <div class="mt-1 text-xs text-slate-500">
+                ${code ? `${esc(code)} · ` : ""}Country: ${esc(country)} · Currency: ${esc(currency)}
+              </div>
+
+              <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <div class="rounded bg-slate-50 px-2 py-1">
+                  <div class="text-slate-400">Ownership</div>
+                  <div class="text-slate-700 font-medium">${fmtPct(r.ownership_percent)}</div>
+                </div>
+                <div class="rounded bg-slate-50 px-2 py-1">
+                  <div class="text-slate-400">Voting</div>
+                  <div class="text-slate-700 font-medium">${fmtPct(r.voting_percent)}</div>
+                </div>
+                <div class="rounded bg-slate-50 px-2 py-1">
+                  <div class="text-slate-400">Control basis</div>
+                  <div class="text-slate-700 font-medium">${esc(r.control_basis || "—")}</div>
+                </div>
+                <div class="rounded bg-slate-50 px-2 py-1">
+                  <div class="text-slate-400">Method</div>
+                  <div class="text-slate-700 font-medium">${esc(r.consolidation_method || "—")}</div>
+                </div>
+              </div>
+
+              ${r.notes ? `<div class="mt-2 text-xs text-slate-500">${esc(r.notes)}</div>` : ""}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderBranchesList(items = []) {
+    const host = document.getElementById("companyBranchesList");
+    const count = document.getElementById("branchCount");
+    if (!host) return;
+
+    count && (count.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`);
+
+    if (!items.length) {
+      host.innerHTML = emptyState("No internal branches added.");
+      return;
+    }
+
+    host.innerHTML = items.map((b) => `
+      <div class="rounded-lg border bg-white px-3 py-3">
+        <div class="text-sm font-semibold text-slate-800">${esc(b.name)}</div>
+        <div class="mt-1 text-xs text-slate-500">
+          ${b.code ? `${esc(b.code)} · ` : ""}${esc(b.country || "—")}
+        </div>
+        <div class="mt-2 text-xs text-slate-600">
+          ${esc(b.address || "No address")}
+        </div>
+        <div class="mt-1 text-xs text-slate-500">
+          ${esc(b.email || "—")} ${b.phone ? `· ${esc(b.phone)}` : ""}
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderSegmentsList(items = []) {
+    const host = document.getElementById("companySegmentsList");
+    const count = document.getElementById("segmentCount");
+    if (!host) return;
+
+    count && (count.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`);
+
+    if (!items.length) {
+      host.innerHTML = emptyState("No segments added.");
+      return;
+    }
+
+    host.innerHTML = items.map((s) => `
+      <div class="rounded-lg border bg-white px-3 py-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-semibold text-slate-800">${esc(s.name)}</span>
+          <span class="text-[10px] uppercase tracking-wide rounded bg-slate-100 text-slate-600 px-2 py-0.5">
+            ${esc(s.segment_type || "other")}
+          </span>
+        </div>
+        <div class="mt-1 text-xs text-slate-500">
+          ${s.code ? `Code: ${esc(s.code)}` : "No code"}
+        </div>
+        ${s.description ? `<div class="mt-2 text-xs text-slate-600">${esc(s.description)}</div>` : ""}
+      </div>
+    `).join("");
+  }
+
+  async function loadCorporateStructure(companyId) {
+    const cid = companyId || getStructureCompanyId();
+    if (!cid) return;
+
+    try {
+      const data = await apiFetch(ENDPOINTS.companyStructure.get(cid), { method: "GET" });
+
+      renderRelatedCompaniesList(data?.relationships || []);
+      renderBranchesList(data?.branches || []);
+      renderSegmentsList(data?.segments || []);
+    } catch (e) {
+      console.error("[CorporateStructure] load failed:", e);
+
+      renderRelatedCompaniesList([]);
+      renderBranchesList([]);
+      renderSegmentsList([]);
+    }
+  }
+
+  function bindCorporateStructureScreen() {
+    const typeSel = document.getElementById("relatedCompanyType");
+    const refreshBtn = document.getElementById("btnRefreshCorporateStructure");
+    const resetBtn = document.getElementById("btnResetCorporateStructureForm");
+
+    if (typeSel && typeSel.dataset.bound !== "1") {
+      typeSel.dataset.bound = "1";
+      typeSel.addEventListener("change", () => {
+        renderCorporateStructureForm(typeSel.value);
+      });
+    }
+
+    if (refreshBtn && refreshBtn.dataset.bound !== "1") {
+      refreshBtn.dataset.bound = "1";
+      refreshBtn.addEventListener("click", async () => {
+        const cid = getStructureCompanyId();
+        await loadCorporateStructure(cid);
+      });
+    }
+
+    if (resetBtn && resetBtn.dataset.bound !== "1") {
+      resetBtn.dataset.bound = "1";
+      resetBtn.addEventListener("click", () => {
+        renderCorporateStructureForm(typeSel?.value || STRUCTURE_TYPES.subsidiary);
+      });
+    }
+
+    renderCorporateStructureForm(typeSel?.value || STRUCTURE_TYPES.subsidiary);
+  }
+
+  window.bindCorporateStructureScreen = bindCorporateStructureScreen;
+  window.loadCorporateStructure = loadCorporateStructure;
+})();
 
 ENDPOINTS.invoiceNextNumber = (companyId) =>
   `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/invoices/next_number`;

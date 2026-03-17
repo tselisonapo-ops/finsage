@@ -1023,6 +1023,163 @@ def _assign_vat_period_label(tx_date: date, cfg: dict) -> str:
             return p["label"]
     return tx_date.strftime("%b %Y")
 
+def create_company_record_from_payload(
+    *,
+    data: dict,
+    owner_user_id: int,
+    skip_plan_limit: bool = False,
+) -> dict:
+    country        = (data.get("country") or "").upper()
+    company_reg_no = data.get("companyRegNo")
+    tin            = data.get("tin")
+    vat            = data.get("vat")
+    company_email  = data.get("companyEmail")
+
+    ok, errors = validate_company_payload({
+        "country": country,
+        "companyRegNo": company_reg_no,
+        "tin": tin,
+        "vat": vat,
+        "companyEmail": company_email,
+    })
+    if not ok:
+        raise ValueError({"errors": errors})
+
+    industry_raw     = (data.get("industry") or "").strip()
+    sub_industry_raw = data.get("subIndustry") or None
+    industry, sub_industry, industry_slug, sub_industry_slug = normalize_industry_pair(
+        industry_raw, sub_industry_raw
+    )
+
+    if not industry:
+        raise ValueError("Invalid data: 'industry' is required")
+
+    if not get_industry_template(industry):
+        raise ValueError(f"Industry '{industry_raw}' not recognized.")
+
+    currency       = data.get("currency") or get_currency_for_country(country) or "USD"
+    fin_year_start = data.get("finYearStart", "01/01")
+    company_reg    = data.get("companyRegDate")
+
+    if company_reg:
+        try:
+            date.fromisoformat(company_reg)
+        except ValueError:
+            raise ValueError("Invalid 'companyRegDate'. Expected YYYY-MM-DD.")
+
+    reg_obj = data.get("registeredAddress")
+    post_obj = data.get("postalAddress")
+    postal_same = bool(data.get("postalSameAsReg") or False)
+
+    if postal_same and isinstance(reg_obj, dict) and not isinstance(post_obj, dict):
+        post_obj = reg_obj
+
+    physical_address = format_address(reg_obj) if isinstance(reg_obj, dict) else None
+    postal_address   = format_address(post_obj) if isinstance(post_obj, dict) else None
+
+    place_id = None
+    lat = None
+    lng = None
+    if isinstance(reg_obj, dict):
+        place_id = reg_obj.get("placeId") or None
+        lat = reg_obj.get("lat")
+        lng = reg_obj.get("lng")
+
+    company_phone = data.get("company_phone") or data.get("companyPhone") or data.get("phone") or None
+    logo_url      = data.get("logo_url") or data.get("logoUrl") or None
+
+    profile = get_industry_profile(industry, sub_industry)
+    inventory_mode = (data.get("inventory_mode") or profile.get("default_inventory_mode") or "none")
+    inventory_valuation = (data.get("inventory_valuation") or profile.get("default_valuation"))
+
+    company_name = (data.get("name") or data.get("companyName") or "").strip() or "Company"
+
+    entity_kind = (data.get("entity_kind") or "company").strip().lower()
+    if entity_kind not in {"company", "branch_entity"}:
+        entity_kind = "company"
+
+    company_id = db_service.insert_company(
+        name=company_name,
+        client_code=data.get("clientCode") or f"C{int(time.time())}",
+        industry=industry,
+        sub_industry=sub_industry,
+        currency=currency,
+        fin_year_start=fin_year_start,
+        company_reg_date=company_reg,
+        country=country,
+        company_reg_no=company_reg_no,
+        tin=tin,
+        vat=vat,
+        company_email=company_email,
+        owner_user_id=owner_user_id,
+        inventory_mode=inventory_mode,
+        inventory_valuation=inventory_valuation,
+        physical_address=physical_address,
+        postal_address=postal_address,
+        company_phone=company_phone,
+        logo_url=logo_url,
+        registered_address_json=reg_obj if isinstance(reg_obj, dict) else None,
+        postal_address_json=post_obj if isinstance(post_obj, dict) else None,
+        address_place_id=place_id,
+        address_lat=str(lat) if lat is not None else None,
+        address_lng=str(lng) if lng is not None else None,
+        entity_kind=entity_kind,
+    )
+
+    if not company_id:
+        raise RuntimeError("Failed to create company")
+
+    try:
+        seed_company_coa_once(
+            db_service,
+            company_id=company_id,
+            industry=industry_slug,
+            sub_industry=sub_industry_slug,
+            source="pool",
+        )
+    except Exception:
+        current_app.logger.exception("COA seed failed (non-fatal)")
+
+    try:
+        db_service.upsert_company_branding(company_id, {
+            "logo_url": logo_url,
+            "contact_phone": company_phone,
+            "contact_email": company_email,
+            "address": physical_address or postal_address,
+            "vat_no": vat,
+        })
+    except Exception as e:
+        current_app.logger.warning(f"Branding upsert failed for company {company_id}: {e}")
+
+    return {
+        "company_id": company_id,
+        "industry": industry,
+        "sub_industry": sub_industry,
+        "industry_slug": industry_slug,
+        "sub_industry_slug": sub_industry_slug,
+        "currency": currency,
+        "fin_year_start": fin_year_start,
+        "company_reg_date": company_reg,
+        "country": country,
+        "companyRegNo": company_reg_no,
+        "tin": tin,
+        "vat": vat,
+        "companyEmail": company_email,
+        "physical_address": physical_address,
+        "postal_address": postal_address,
+        "registered_address_json": reg_obj if isinstance(reg_obj, dict) else None,
+        "postal_address_json": post_obj if isinstance(post_obj, dict) else None,
+        "address_place_id": place_id,
+        "address_lat": str(lat) if lat is not None else None,
+        "address_lng": str(lng) if lng is not None else None,
+        "company_phone": company_phone,
+        "logo_url": logo_url,
+        "inventory_mode": inventory_mode,
+        "inventory_valuation": inventory_valuation,
+        "entity_kind": entity_kind,
+        "name": company_name,
+    }
+
 @app.route("/api/auth/signup", methods=["POST"])
 def api_auth_signup():
     data = request.get_json(silent=True) or {}
@@ -2358,10 +2515,8 @@ def create_company_for_user():
     if not current_user:
         return jsonify({"message": "Not authenticated"}), 401
 
-    # ✅ user id
     user_id = data.get("user_id") or current_user["id"]
 
-    # ✅ plan limit
     account_type = (data.get("account_type") or "enterprise").lower()
     count = db_service.db_count(
         "SELECT COUNT(*) FROM public.companies WHERE owner_user_id=%s",
@@ -2370,169 +2525,111 @@ def create_company_for_user():
     if account_type == "enterprise" and count >= 3:
         return jsonify({"message": "Enterprise plan allows up to 3 companies."}), 403
 
-    # ✅ validate payload (your existing validator)
-    country        = (data.get("country") or "").upper()
-    company_reg_no = data.get("companyRegNo")
-    tin            = data.get("tin")
-    vat            = data.get("vat")
-    company_email  = data.get("companyEmail")
-
-    ok, errors = validate_company_payload({
-        "country": country,
-        "companyRegNo": company_reg_no,
-        "tin": tin,
-        "vat": vat,
-        "companyEmail": company_email,
-    })
-    if not ok:
-        return jsonify({"errors": errors}), 400
-
-    # ✅ industry normalization + template validation
-    industry_raw     = (data.get("industry") or "").strip()
-    sub_industry_raw = data.get("subIndustry") or None
-    industry, sub_industry, industry_slug, sub_industry_slug = normalize_industry_pair(
-        industry_raw, sub_industry_raw
-    )
-
-    if not industry:
-        return jsonify({"message": "Invalid data: 'industry' is required"}), 400
-
-    if not get_industry_template(industry):
-        return jsonify({"message": f"Industry '{industry_raw}' not recognized."}), 400
-
-    # ✅ other company fields
-    currency       = data.get("currency") or get_currency_for_country(country) or "USD"
-    fin_year_start = data.get("finYearStart", "01/01")
-    company_reg    = data.get("companyRegDate")
-
-    if company_reg:
-        try:
-            date.fromisoformat(company_reg)
-        except ValueError:
-            return jsonify({"message": "Invalid 'companyRegDate'. Expected YYYY-MM-DD."}), 400
-
-    # ✅ JSONB addresses
-    reg_obj = data.get("registeredAddress")
-    post_obj = data.get("postalAddress")
-    postal_same = bool(data.get("postalSameAsReg") or False)
-
-    if postal_same and isinstance(reg_obj, dict) and not isinstance(post_obj, dict):
-        post_obj = reg_obj
-
-    physical_address = format_address(reg_obj) if isinstance(reg_obj, dict) else None
-    postal_address   = format_address(post_obj) if isinstance(post_obj, dict) else None
-
-    place_id = None
-    lat = None
-    lng = None
-    if isinstance(reg_obj, dict):
-        place_id = reg_obj.get("placeId") or None
-        lat = reg_obj.get("lat")
-        lng = reg_obj.get("lng")
-
-    company_phone = data.get("company_phone") or data.get("companyPhone") or data.get("phone") or None
-    logo_url      = data.get("logo_url") or data.get("logoUrl") or None
-
-    # ✅ apply industry profile defaults (THIS replaces company_payload usage)
-    profile = get_industry_profile(industry, sub_industry)
-    inventory_mode = (data.get("inventory_mode") or profile.get("default_inventory_mode") or "none")
-    inventory_valuation = (data.get("inventory_valuation") or profile.get("default_valuation"))
-
-    # ✅ SINGLE insert_company (no duplicates)
-    company_name = (data.get("name") or data.get("companyName") or "").strip() or "Company"
-
-    company_id = db_service.insert_company(
-        name=company_name,
-        client_code=data.get("clientCode") or f"C{int(time.time())}",
-        industry=industry,
-        sub_industry=sub_industry,
-        currency=currency,
-        fin_year_start=fin_year_start,
-        company_reg_date=company_reg,
-        country=country,
-        company_reg_no=company_reg_no,
-        tin=tin,
-        vat=vat,
-        company_email=company_email,
-        owner_user_id=user_id,
-
-        # ✅ profile-based defaults (only if your insert_company supports these)
-        inventory_mode=inventory_mode,
-        inventory_valuation=inventory_valuation,
-
-        # legacy strings
-        physical_address=physical_address,
-        postal_address=postal_address,
-        company_phone=company_phone,
-        logo_url=logo_url,
-
-        # JSONB + meta
-        registered_address_json=reg_obj if isinstance(reg_obj, dict) else None,
-        postal_address_json=post_obj if isinstance(post_obj, dict) else None,
-        address_place_id=place_id,
-        address_lat=str(lat) if lat is not None else None,
-        address_lng=str(lng) if lng is not None else None,
-    )
-
-    if not company_id:
-        return jsonify({"message": "Failed to create company"}), 500
-
-    # ✅ COA seed: single channel, idempotent
     try:
-        seed_company_coa_once(
-            db_service,
-            company_id=company_id,
-            industry=industry_slug,          # ✅ slug
-            sub_industry=sub_industry_slug,  # ✅ slug (or None)
-            source="pool",
+        result = create_company_record_from_payload(
+            data=data,
+            owner_user_id=user_id,
         )
-    except Exception:
-        current_app.logger.exception("COA seed failed (non-fatal)")
-
-    # ✅ branding
-    try:
-        db_service.upsert_company_branding(company_id, {
-            "logo_url": logo_url,
-            "contact_phone": company_phone,
-            "contact_email": company_email,
-            "address": physical_address or postal_address,
-            "vat_no": vat,
-        })
+    except ValueError as e:
+        msg = e.args[0]
+        if isinstance(msg, dict):
+            return jsonify(msg), 400
+        return jsonify({"message": str(msg)}), 400
     except Exception as e:
-        current_app.logger.warning(f"Branding upsert failed for company {company_id}: {e}")
+        current_app.logger.exception("create_company_for_user failed")
+        return jsonify({"message": str(e)}), 500
 
     return jsonify({
         "message": "Company created",
-        "company_id": company_id,
         "owner_user_id": user_id,
-        "industry": industry,
-        "sub_industry": sub_industry,
-        "currency": currency,
-        "fin_year_start": fin_year_start,
-        "company_reg_date": company_reg,
-        "country": country,
-        "companyRegNo": company_reg_no,
-        "tin": tin,
-        "vat": vat,
-        "companyEmail": company_email,
+        **result,
+    }), 201
 
-        # legacy fields
-        "physical_address": physical_address,
-        "postal_address": postal_address,
+@app.route("/api/companies/<int:parent_company_id>/related-companies", methods=["POST"])
+@require_auth
+def create_related_company(parent_company_id: int):
+    data = request.get_json(silent=True) or {}
+    current_user = getattr(g, "current_user", None)
+    if not current_user:
+        return jsonify({"message": "Not authenticated"}), 401
 
-        # JSONB fields
-        "registered_address_json": reg_obj if isinstance(reg_obj, dict) else None,
-        "postal_address_json": post_obj if isinstance(post_obj, dict) else None,
-        "address_place_id": place_id,
-        "address_lat": str(lat) if lat is not None else None,
-        "address_lng": str(lng) if lng is not None else None,
+    if current_user.get("company_id") != parent_company_id:
+        return jsonify({"message": "Not authorised for this company"}), 403
 
-        "company_phone": company_phone,
-        "logo_url": logo_url,
+    relationship_type = (data.get("relationship_type") or "").strip().lower()
+    if relationship_type not in {"subsidiary", "associate", "joint_venture", "branch"}:
+        return jsonify({"message": "Invalid relationship_type"}), 400
 
-        # helpful: echo profile defaults applied
-        "inventory_mode": inventory_mode,
-        "inventory_valuation": inventory_valuation,
+    ownership_percent = data.get("ownership_percent")
+    voting_percent = data.get("voting_percent")
+    effective_from = data.get("effective_from")
+    notes = data.get("notes")
+
+    if effective_from:
+        try:
+            date.fromisoformat(effective_from)
+        except ValueError:
+            return jsonify({"message": "Invalid 'effective_from'. Expected YYYY-MM-DD."}), 400
+
+    if relationship_type == "subsidiary":
+        data.setdefault("entity_kind", "company")
+        data.setdefault("consolidation_method", "full")
+        data.setdefault("control_basis", "control")
+    elif relationship_type == "associate":
+        data.setdefault("entity_kind", "company")
+        data.setdefault("consolidation_method", "equity")
+        data.setdefault("control_basis", "significant_influence")
+    elif relationship_type == "joint_venture":
+        data.setdefault("entity_kind", "company")
+        data.setdefault("consolidation_method", "equity")
+        data.setdefault("control_basis", "joint_control")
+    elif relationship_type == "branch":
+        data.setdefault("entity_kind", "branch_entity")
+        data.setdefault("consolidation_method", "none")
+        data.setdefault("control_basis", "direct_branch")
+
+    # ✅ access them AFTER defaults are applied
+    control_basis = data.get("control_basis")
+    consolidation_method = data.get("consolidation_method")
+
+    try:
+        company_result = create_company_record_from_payload(
+            data=data,
+            owner_user_id=current_user["id"],
+        )
+
+        db_service.create_company_relationship(
+            parent_company_id=parent_company_id,
+            child_company_id=company_result["company_id"],
+            relationship_type=relationship_type,
+            ownership_percent=ownership_percent,
+            voting_percent=voting_percent,
+            control_basis=control_basis,
+            consolidation_method=consolidation_method,
+            effective_from=effective_from,
+            notes=notes,
+        )
+
+    except ValueError as e:
+        msg = e.args[0]
+        if isinstance(msg, dict):
+            return jsonify(msg), 400
+        return jsonify({"message": str(msg)}), 400
+    except Exception as e:
+        current_app.logger.exception("create_related_company failed")
+        return jsonify({"message": str(e)}), 500
+
+    return jsonify({
+        "message": f"{relationship_type.replace('_', ' ').title()} created",
+        "parent_company_id": parent_company_id,
+        **company_result,
+        "relationship_type": relationship_type,
+        "ownership_percent": ownership_percent,
+        "voting_percent": voting_percent,
+        "control_basis": control_basis,
+        "consolidation_method": consolidation_method,
+        "effective_from": effective_from,
+        "notes": notes,
     }), 201
 
 @app.route("/api/auth/switch-company", methods=["POST", "OPTIONS"])

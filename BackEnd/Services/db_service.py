@@ -1583,6 +1583,191 @@ class DatabaseService:
             ON public.company_branding(contact_email);
 
         -- ==========================================
+        -- ENTITY KIND ON COMPANIES
+        -- ==========================================
+        ALTER TABLE public.companies
+        ADD COLUMN IF NOT EXISTS entity_kind TEXT NOT NULL DEFAULT 'company';
+
+        ALTER TABLE public.companies
+        DROP CONSTRAINT IF EXISTS chk_companies_entity_kind;
+
+        ALTER TABLE public.companies
+        ADD CONSTRAINT chk_companies_entity_kind
+        CHECK (entity_kind IN ('company', 'branch_entity'));
+
+        -- ==========================================
+        -- COMPANY RELATIONSHIPS
+        -- ==========================================
+        CREATE TABLE IF NOT EXISTS public.company_relationships (
+            id SERIAL PRIMARY KEY,
+
+            parent_company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            child_company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            relationship_type TEXT NOT NULL,
+            ownership_percent NUMERIC(5,2) NULL,
+            voting_percent NUMERIC(5,2) NULL,
+            control_basis TEXT NULL,
+            consolidation_method TEXT NULL,
+            effective_from DATE NULL,
+            effective_to DATE NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT chk_company_relationship_type
+                CHECK (relationship_type IN ('subsidiary', 'associate', 'joint_venture', 'branch')),
+
+            CONSTRAINT chk_company_relationship_control_basis
+                CHECK (
+                    control_basis IS NULL OR
+                    control_basis IN ('control', 'significant_influence', 'joint_control', 'direct_branch')
+                ),
+
+            CONSTRAINT chk_company_relationship_consolidation_method
+                CHECK (
+                    consolidation_method IS NULL OR
+                    consolidation_method IN ('full', 'equity', 'proportionate', 'none')
+                ),
+
+            CONSTRAINT chk_company_relationship_not_self
+                CHECK (parent_company_id <> child_company_id),
+
+            CONSTRAINT chk_company_relationship_ownership_percent
+                CHECK (
+                    ownership_percent IS NULL OR
+                    (ownership_percent >= 0 AND ownership_percent <= 100)
+                ),
+
+            CONSTRAINT chk_company_relationship_voting_percent
+                CHECK (
+                    voting_percent IS NULL OR
+                    (voting_percent >= 0 AND voting_percent <= 100)
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS company_relationships_parent_idx
+            ON public.company_relationships(parent_company_id);
+
+        CREATE INDEX IF NOT EXISTS company_relationships_child_idx
+            ON public.company_relationships(child_company_id);
+
+        CREATE INDEX IF NOT EXISTS company_relationships_type_idx
+            ON public.company_relationships(relationship_type);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_company_relationship_active
+            ON public.company_relationships(parent_company_id, child_company_id, relationship_type, COALESCE(effective_from, DATE '1900-01-01'));
+
+        -- ==========================================
+        -- INTERNAL BRANCHES
+        -- ==========================================
+        CREATE TABLE IF NOT EXISTS public.company_branches (
+            id SERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            name TEXT NOT NULL,
+            code TEXT NULL,
+            country TEXT NULL,
+            address TEXT NULL,
+            phone TEXT NULL,
+            email TEXT NULL,
+
+            manager_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_company_branch_name UNIQUE (company_id, name),
+            CONSTRAINT uq_company_branch_code UNIQUE (company_id, code)
+        );
+
+        CREATE INDEX IF NOT EXISTS company_branches_company_idx
+            ON public.company_branches(company_id);
+
+        CREATE INDEX IF NOT EXISTS company_branches_manager_idx
+            ON public.company_branches(manager_user_id);
+
+        -- ==========================================
+        -- COMPANY SEGMENTS
+        -- ==========================================
+        CREATE TABLE IF NOT EXISTS public.company_segments (
+            id SERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            name TEXT NOT NULL,
+            code TEXT NULL,
+            segment_type TEXT NOT NULL DEFAULT 'operating',
+            description TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT chk_company_segment_type
+                CHECK (segment_type IN ('operating', 'geographical', 'product', 'customer', 'other')),
+
+            CONSTRAINT uq_company_segment_name UNIQUE (company_id, name),
+            CONSTRAINT uq_company_segment_code UNIQUE (company_id, code)
+        );
+
+        CREATE INDEX IF NOT EXISTS company_segments_company_idx
+            ON public.company_segments(company_id);
+
+        CREATE INDEX IF NOT EXISTS company_segments_type_idx
+            ON public.company_segments(company_id, segment_type);
+            
+        -- Prevent duplicate company registration numbers for NEW inserts/changes
+        CREATE OR REPLACE FUNCTION public.enforce_unique_company_reg_no()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            v_reg TEXT;
+        BEGIN
+            v_reg := NULLIF(upper(btrim(NEW.company_reg_no)), '');
+
+            -- allow null / blank reg numbers
+            IF v_reg IS NULL THEN
+                RETURN NEW;
+            END IF;
+
+            -- only validate on INSERT or when reg number actually changes
+            IF TG_OP = 'INSERT'
+            OR v_reg IS DISTINCT FROM NULLIF(upper(btrim(OLD.company_reg_no)), '') THEN
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM public.companies c
+                    WHERE c.id <> COALESCE(NEW.id, -1)
+                    AND NULLIF(upper(btrim(c.company_reg_no)), '') = v_reg
+                ) THEN
+                    RAISE EXCEPTION 'A company with registration number % already exists.', NEW.company_reg_no
+                        USING ERRCODE = '23505';
+                END IF;
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$;
+
+        DROP TRIGGER IF EXISTS trg_enforce_unique_company_reg_no ON public.companies;
+
+        CREATE TRIGGER trg_enforce_unique_company_reg_no
+        BEFORE INSERT OR UPDATE OF company_reg_no
+        ON public.companies
+        FOR EACH ROW
+        EXECUTE FUNCTION public.enforce_unique_company_reg_no();
+
+        CREATE INDEX IF NOT EXISTS companies_company_reg_no_idx
+            ON public.companies (company_reg_no);
+
+        -- ==========================================
         -- COMPANY USERS (membership + per-company role)
         -- ==========================================
         CREATE TABLE IF NOT EXISTS public.company_users (
@@ -1970,6 +2155,48 @@ class DatabaseService:
         ON public.coa_pool(industry, sub_industry, is_general);
         """)
 
+    def create_company_relationship(
+        self,
+        *,
+        parent_company_id: int,
+        child_company_id: int,
+        relationship_type: str,
+        ownership_percent=None,
+        voting_percent=None,
+        control_basis=None,
+        consolidation_method=None,
+        effective_from=None,
+        notes=None,
+    ):
+        with self._conn_cursor() as (_conn, cur):
+            cur.execute("""
+                INSERT INTO public.company_relationships (
+                    parent_company_id,
+                    child_company_id,
+                    relationship_type,
+                    ownership_percent,
+                    voting_percent,
+                    control_basis,
+                    consolidation_method,
+                    effective_from,
+                    notes
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                parent_company_id,
+                child_company_id,
+                relationship_type,
+                ownership_percent,
+                voting_percent,
+                control_basis,
+                consolidation_method,
+                effective_from,
+                notes,
+            ))
+            row = cur.fetchone()
+            return row["id"] if row else None
+        
     def create_company_invite(
         self, *,
         company_id: int,
