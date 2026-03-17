@@ -1,6 +1,6 @@
 from io import BytesIO
 from decimal import Decimal, ROUND_HALF_UP
-
+import pdfkit  # or your existing HTML->PDF engine
 from flask import render_template
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -244,13 +244,47 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 # Public entry points
 # -------------------------------------------------
 
-def html_to_pdf(html: str) -> bytes:
-    raise RuntimeError("html_to_pdf is no longer used. Invoice PDFs are built with ReportLab.")
 
+
+def html_to_pdf(html: str) -> bytes:
+    options = {
+        "page-size": "A4",
+        "margin-top": "0",
+        "margin-right": "0",
+        "margin-bottom": "0",
+        "margin-left": "0",
+        "encoding": "UTF-8",
+        "print-media-type": "",
+        "enable-local-file-access": "",
+        "images": "",
+    }
+    return pdfkit.from_string(html, False, options=options)
 
 def generate_invoice_pdf(invoice, company=None) -> bytes:
-    return _build_document("Invoice", invoice or {}, company or {})
+    html = render_template(
+        "invoice_pdf.html",
+        invoice=invoice or {},
+        company=company or {},
+        pdf_url=""
+    )
+    return html_to_pdf(html)
 
 
 def generate_quote_pdf(quote, company=None) -> bytes:
-    return _build_document("Quote", quote or {}, company or {})
+    html = render_template(
+        "quote_pdf.html",
+        quote=quote or {},
+        company=company or {},
+        pdf_url=""
+    )
+    return html_to_pdf(html)
+
+
+def generate_receipt_pdf(receipt, company=None) -> bytes:
+    html = render_template(
+        "receipt_pdf.html",
+        receipt=receipt or {},
+        company=company or {},
+        pdf_url=""
+    )
+    return html_to_pdf(html)
