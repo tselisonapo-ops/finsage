@@ -6094,6 +6094,167 @@ function getActiveCompanyName() {
   return "";
 }
 
+async function fetchCompanySummaryForSwitcher(companyId) {
+  const cid = Number(companyId || 0);
+  if (!cid) return null;
+
+  try {
+    const company = await apiFetch(ENDPOINTS.company(cid), { method: "GET" });
+    if (!company) return null;
+
+    return {
+      id: Number(company.id || cid),
+      name: company.name || `Company ${cid}`,
+      system_company_code: company.system_company_code || "",
+      entity_kind: company.entity_kind || "company",
+    };
+  } catch (e) {
+    console.warn("[CompanySwitcher] failed to load company", cid, e);
+    return {
+      id: cid,
+      name: `Company ${cid}`,
+      system_company_code: "",
+      entity_kind: "company",
+    };
+  }
+}
+
+async function populateCompanySwitcher() {
+  const wrap = document.getElementById("companySwitcherWrap");
+  const select = document.getElementById("companySwitcher");
+  if (!wrap || !select) return;
+
+  const me = window.currentUser || {};
+  const allowedIds = Array.isArray(me.allowed_company_ids)
+    ? me.allowed_company_ids.map(Number).filter(Boolean)
+    : [];
+
+  if (!allowedIds.length) {
+    wrap.classList.add("hidden");
+    wrap.classList.remove("flex");
+    select.innerHTML = `<option value="">No companies</option>`;
+    return;
+  }
+
+  wrap.classList.remove("hidden");
+  wrap.classList.add("flex");
+
+  const currentId =
+    Number(getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || me.company_id || 0) || null;
+
+  const companies = [];
+  for (const cid of allowedIds) {
+    const row = await fetchCompanySummaryForSwitcher(cid);
+    if (row) companies.push(row);
+  }
+
+  companies.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+
+  select.innerHTML = companies.map((c) => {
+    const label = c.system_company_code
+      ? `${c.name} (${c.system_company_code})`
+      : c.name;
+
+    return `
+      <option value="${c.id}" ${Number(c.id) === Number(currentId) ? "selected" : ""}>
+        ${label}
+      </option>
+    `;
+  }).join("");
+}
+
+async function switchActiveCompany(companyId, { goTo = "dashboard" } = {}) {
+  const cid = Number(companyId || 0);
+  if (!cid) return;
+
+  const me = window.currentUser || {};
+  const allowedIds = Array.isArray(me.allowed_company_ids)
+    ? me.allowed_company_ids.map(Number)
+    : [];
+
+  if (!allowedIds.includes(cid)) {
+    alert("You do not have access to that company.");
+    return;
+  }
+
+  localStorage.setItem("company_id", String(cid));
+  window.CURRENT_COMPANY_ID = cid;
+  CURRENT_COMPANY_ID = cid;
+
+  if (typeof refreshCompanyStore === "function") {
+    refreshCompanyStore();
+  }
+
+  try {
+    const company = await loadCompanyProfile(cid);
+    if (company) {
+      window.CURRENT_COMPANY = company;
+      CURRENT_COMPANY = company;
+    }
+  } catch (e) {
+    console.warn("[CompanySwitcher] loadCompanyProfile failed:", e);
+  }
+
+  try {
+    await ensureCompanyDataLoaded?.();
+  } catch (e) {
+    console.warn("[CompanySwitcher] ensureCompanyDataLoaded failed:", e);
+  }
+
+  if (typeof setupNav === "function") {
+    await setupNav();
+  }
+
+  if (typeof populateCompanySwitcher === "function") {
+    await populateCompanySwitcher();
+  }
+
+  if (typeof updateHeaderCompanyBadge === "function") {
+    updateHeaderCompanyBadge();
+  }
+
+  await switchScreen(goTo);
+}
+
+function bindCompanySwitcher() {
+  const select = document.getElementById("companySwitcher");
+  if (!select || select.dataset.bound === "1") return;
+
+  select.dataset.bound = "1";
+  select.addEventListener("change", async (e) => {
+    const nextId = Number(e.target.value || 0);
+    if (!nextId) return;
+
+    const currentId = Number(getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || 0);
+    if (nextId === currentId) return;
+
+    try {
+      await switchActiveCompany(nextId, { goTo: "dashboard" });
+    } catch (err) {
+      console.error("[CompanySwitcher] switch failed:", err);
+      alert(err?.message || "Failed to switch company.");
+      await populateCompanySwitcher();
+    }
+  });
+}
+
+async function initHeaderCompanySwitcher() {
+  bindCompanySwitcher();
+  await populateCompanySwitcher();
+  updateHeaderCompanyBadge();
+}
+
+function updateHeaderCompanyBadge() {
+  const badge = document.getElementById("companyBadge");
+  if (!badge) return;
+
+  const company = window.CURRENT_COMPANY || CURRENT_COMPANY || {};
+  const name = company.name || window.currentUser?.company_name || "Your company";
+  const code = company.system_company_code || "";
+
+  badge.textContent = code ? `${name} · ${code}` : name;
+  badge.classList.remove("hidden");
+}
 
 function openFixedAssetsDrawer(ctx = {}) {
   console.log("[PPE] openFixedAssetsDrawer called", ctx);
@@ -50209,7 +50370,9 @@ async function bootstrapApp(currentUser) {
   // ✅ Render nav once we know a real company object
   if (typeof setupNav === "function") setupNav();
 
-
+  updateHeaderCompanyBadge?.();
+  await populateCompanySwitcher?.();
+  
   // Set CURRENT_COMPANY_ID from company object when possible
   CURRENT_COMPANY_ID =
     CURRENT_COMPANY?.id ||
@@ -50387,6 +50550,7 @@ async function bootstrapApp(currentUser) {
 
   window.currentUser = currentUser;
   localStorage.setItem("fs_user", JSON.stringify(currentUser || {}));
+  await initHeaderCompanySwitcher?.();
 
   if (typeof initDashboardModeSwitcher === "function") {
     initDashboardModeSwitcher("internal");

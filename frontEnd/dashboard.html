@@ -585,13 +585,22 @@
           <div class="flex items-center gap-3">
             <button id="mobileMenu" class="lg:hidden px-3 py-2 border rounded-lg"></button>
 
-            <!-- Company name (filled from JS after login) -->
+            <!-- Active company badge -->
             <span id="companyBadge" class="pill hidden md:inline">Your company</span>
+
+            <!-- Company switcher -->
+            <div id="companySwitcherWrap" class="hidden items-center gap-2">
+              <label for="companySwitcher" class="text-xs text-slate-500">Company</label>
+              <select id="companySwitcher" class="pill min-w-[220px]">
+                <option value="">Select company</option>
+              </select>
+            </div>
           </div>
 
           <div class="flex items-center gap-3">
-            <div id="userAvatar" class="h-8 w-8 rounded-full border border-[var(--fs-border)]
-                flex items-center justify-center text-xl text-[var(--fs-navy)]">
+            <div id="userAvatar"
+                class="h-8 w-8 rounded-full border border-[var(--fs-border)]
+                        flex items-center justify-center text-xl text-[var(--fs-navy)]">
               ??
             </div>
 

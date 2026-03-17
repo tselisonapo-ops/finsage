@@ -1477,7 +1477,10 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS vat_settings JSONB NULL,
             ADD COLUMN IF NOT EXISTS default_pnl_layout TEXT NULL,
             ADD COLUMN IF NOT EXISTS pnl_labels_json JSONB NULL;
-            
+
+        ALTER TABLE public.company_users
+            ADD COLUMN IF NOT EXISTS access_origin TEXT NOT NULL DEFAULT 'direct';
+
         ALTER TABLE public.companies
             ADD COLUMN IF NOT EXISTS credit_policy JSONB NULL;
 
@@ -3983,6 +3986,8 @@ class DatabaseService:
         industry_slug: Optional[str] = None,
         sub_industry_slug: Optional[str] = None,
         entity_kind: Optional[str] = None,
+        make_primary_membership: bool = True,
+        membership_kind: Optional[str] = None,
     ) -> int:
 
         try:
@@ -4002,6 +4007,10 @@ class DatabaseService:
         entity_kind = (entity_kind or "company").strip().lower()
         if entity_kind not in {"company", "branch_entity"}:
             entity_kind = "company"
+
+        membership_kind = (membership_kind or ("primary" if make_primary_membership else "secondary")).strip().lower()
+        if membership_kind not in {"primary", "secondary"}:
+            membership_kind = "secondary"
 
         profile = get_industry_profile(industry, sub_industry)
 
@@ -4073,7 +4082,7 @@ class DatabaseService:
 
             company_id = int(row["id"])
 
-            if owner_user_id:
+            if owner_user_id and make_primary_membership:
                 cur.execute(
                     """
                     UPDATE public.company_users
@@ -4103,8 +4112,8 @@ class DatabaseService:
                         %s,
                         'owner',
                         'core',
-                        'primary',
-                        TRUE,
+                        %s,
+                        %s,
                         TRUE,
                         NOW()
                     )
@@ -4112,12 +4121,17 @@ class DatabaseService:
                     SET
                         role = 'owner',
                         access_scope = 'core',
-                        membership_kind = 'primary',
-                        is_primary = TRUE,
+                        membership_kind = EXCLUDED.membership_kind,
+                        is_primary = EXCLUDED.is_primary,
                         is_active = TRUE,
                         joined_at = COALESCE(public.company_users.joined_at, NOW());
                     """,
-                    (company_id, int(owner_user_id)),
+                    (
+                        company_id,
+                        int(owner_user_id),
+                        membership_kind,
+                        bool(make_primary_membership),
+                    ),
                 )
 
             conn.commit()

@@ -1027,7 +1027,8 @@ def create_company_record_from_payload(
     *,
     data: dict,
     owner_user_id: int,
-    skip_plan_limit: bool = False,
+    make_primary_membership: bool = True,
+    membership_kind: Optional[str] = None,
 ) -> dict:
     country        = (data.get("country") or "").upper()
     company_reg_no = data.get("companyRegNo")
@@ -1147,6 +1148,8 @@ def create_company_record_from_payload(
         address_lat=str(lat) if lat is not None else None,
         address_lng=str(lng) if lng is not None else None,
         entity_kind=entity_kind,
+        make_primary_membership=make_primary_membership,
+        membership_kind=membership_kind,
     )
 
     try:
@@ -2629,10 +2632,14 @@ def create_related_company(parent_company_id: int):
     control_basis = data.get("control_basis")
     consolidation_method = data.get("consolidation_method")
 
+    auto_membership = relationship_type in {"subsidiary", "branch"}
+
     try:
         company_result = create_company_record_from_payload(
             data=data,
-            owner_user_id=current_user["id"],
+            owner_user_id=current_user["id"] if auto_membership else None,
+            make_primary_membership=False,
+            membership_kind="secondary",
         )
 
         db_service.create_company_relationship(
