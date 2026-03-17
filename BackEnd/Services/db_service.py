@@ -25271,11 +25271,8 @@ class DatabaseService:
             return True
 
         schema = f"company_{company_id}"
-       # self.ensure_company_schema(company_id)
 
-        # Map UI keys + API keys → DB columns
         column_map = {
-            # --- UI/readForm keys ---
             "external_code": "external_code",
             "name": "name",
             "email": "email",
@@ -25305,7 +25302,6 @@ class DatabaseService:
             "contacts": "contacts",
             "is_active": "is_active",
 
-            # --- API/backend-friendly keys ---
             "billing_address": "billing_address",
             "shipping_address": "shipping_address",
             "billing_country": "billing_country",
@@ -25321,6 +25317,9 @@ class DatabaseService:
             "on_hold": "on_hold",
         }
 
+        numeric_keys = {"wht", "wht_percent", "creditLimit", "credit_limit"}
+        int_keys = {"credit_profile_id", "created_by_user_id", "approved_by_user_id"}
+
         set_clauses: list[str] = []
         params: list[Any] = []
 
@@ -25328,15 +25327,19 @@ class DatabaseService:
             col = column_map.get(key)
             if not col:
                 continue
-            # ---- ID coercions ----
-            if key in ("credit_profile_id", "created_by_user_id", "approved_by_user_id") and value not in (None, ""):
+
+            # normalize blank strings globally
+            if isinstance(value, str):
+                value = value.strip()
+                if value == "":
+                    value = None
+
+            # integer coercions
+            if key in int_keys and value is not None:
                 value = int(value)
 
-            # ---- type coercions / normalisation ----
-            if key in ("wht", "wht_percent") and value not in (None, ""):
-                value = float(value)
-
-            if key in ("creditLimit", "credit_limit") and value not in (None, ""):
+            # numeric coercions
+            if key in numeric_keys and value is not None:
                 value = float(value)
 
             if key == "contacts":
@@ -25348,7 +25351,6 @@ class DatabaseService:
                 else:
                     value = bool(value)
 
-            # normalise hold flags if you sometimes send yes/no/true/false
             if key in ("onHold", "on_hold") and isinstance(value, str):
                 v = value.strip().lower()
                 if v in ("true", "1", "yes", "y"):
