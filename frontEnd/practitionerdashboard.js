@@ -873,10 +873,15 @@ function renderCompanyFilter(companies, me) {
 }
 
 function getSelectedPractitionerCustomerId() {
+  const selectedCustomer =
+    (typeof PR_SELECTED_CUSTOMER !== "undefined" && PR_SELECTED_CUSTOMER)
+      ? PR_SELECTED_CUSTOMER
+      : null;
+
   const raw =
     document.getElementById("clientOverviewCustomerSelect")?.value ||
-    PR_SELECTED_CUSTOMER?.id ||
-    PR_SELECTED_CUSTOMER?.customer_id ||
+    selectedCustomer?.id ||
+    selectedCustomer?.customer_id ||
     "";
 
   const id = Number(raw);
