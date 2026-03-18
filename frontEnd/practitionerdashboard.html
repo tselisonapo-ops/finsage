@@ -630,143 +630,170 @@ window.safeRedirect = function (url, mode = "href") {
 })();
 </script>
 
-<div class="content-shell">
-  <div id="prContextRail" class="pr-context-rail is-expanded">
-    <!-- collapsed summary bar -->
-    <div id="prContextRailSummary" class="pr-context-rail-summary">
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
-          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Context</span>
-          <span class="font-semibold text-slate-900" data-bind="summary.client_name">--</span>
-          <span>·</span>
-          <span data-bind="summary.role_name">--</span>
-          <span>·</span>
-          <span data-bind="summary.access_scope">--</span>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <button
-          id="prContextPinBtn"
-          type="button"
-          class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Pin open
-        </button>
-
-        <button
-          id="prContextToggleBtn"
-          type="button"
-          class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Collapse
-        </button>
+<div class="app-shell">
+  <aside class="sidebar p-4">
+    <div class="flex items-center gap-3 px-2 py-3">
+      <div class="h-11 w-11 rounded-2xl bg-teal-400/20 flex items-center justify-center text-lg font-bold text-teal-200">FS</div>
+      <div>
+        <div class="text-sm uppercase tracking-[0.18em] text-teal-100/70">FinSage</div>
+        <div class="text-lg font-semibold">Practitioner</div>
       </div>
     </div>
 
-    <!-- expandable full panel -->
-    <div id="prContextPanel" class="pr-context-panel">
-      <div class="card rounded-t-none p-4">
-        <div class="flex flex-col gap-4">
+    <div id="prSidebarNav" class="space-y-2"></div>
 
-          <div class="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
-            <div class="min-w-0 flex-1">
-              <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Active Client Context</div>
-              <div class="mt-1 text-sm leading-6 text-slate-700">
-                You are working in
-                <span class="font-bold text-slate-900" data-bind="summary.client_name">--</span>
-                as
-                <span class="font-semibold text-slate-800" data-bind="summary.role_name">--</span>
-                under
-                <span class="font-semibold text-slate-800" data-bind="summary.access_scope">--</span>.
-              </div>
-            </div>
+    <div class="mt-8 rounded-2xl border border-white/10 bg-slate-900/20 p-3">
+      <div class="text-xs uppercase tracking-[0.16em] text-slate-300/60">Engagement Context</div>
+      <div class="mt-3 text-sm font-semibold" data-bind="engagement.title">--</div>
+      <div class="text-sm text-slate-200/70" data-bind="engagement.client_name">--</div>
+      <div class="mt-3 space-y-2 text-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-200/70">Due date</span>
+          <span data-bind="engagement.due_date">--</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-200/70">Cycle</span>
+          <span data-bind="engagement.cycle">--</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-200/70">Mode</span>
+          <span data-bind="engagement.mode">--</span>
+        </div>
+      </div>
+    </div>
+  </aside>
 
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-end xl:shrink-0">
-              <div class="flex flex-col gap-3">
-                <div class="flex flex-wrap items-center gap-2">
-                  <label class="card flex items-center gap-2 px-2.5 py-2">
-                    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">View</span>
-                    <select
-                      class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[170px]"
-                      data-bind="filters.view"
-                    >
-                      <option value="assignment">Engagement Dashboard</option>
-                      <option value="internal">Internal Dashboard</option>
-                    </select>
-                  </label>
+  <div class="content-shell">
+    <div id="prContextRail" class="pr-context-rail is-expanded">
+      <div id="prContextRailSummary" class="pr-context-rail-summary">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Context</span>
+            <span class="font-semibold text-slate-900" data-bind="summary.client_name">--</span>
+            <span>·</span>
+            <span data-bind="summary.role_name">--</span>
+            <span>·</span>
+            <span data-bind="summary.access_scope">--</span>
+          </div>
+        </div>
 
-                  <label class="card flex items-center gap-2 px-2.5 py-2">
-                    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Client</span>
-                    <select
-                      class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[250px]"
-                      data-bind="filters.client_id"
-                    ></select>
-                  </label>
+        <div class="flex items-center gap-2">
+          <button
+            id="prContextPinBtn"
+            type="button"
+            class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Pin open
+          </button>
 
-                  <label class="card flex items-center gap-2 px-2.5 py-2">
-                    <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Access</span>
-                    <select
-                      class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[130px]"
-                      data-bind="filters.access_scope"
-                    >
-                      <option value="assignment">Engagement</option>
-                      <option value="core">Core / Internal</option>
-                    </select>
-                  </label>
-                </div>
+          <button
+            id="prContextToggleBtn"
+            type="button"
+            class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Collapse
+          </button>
+        </div>
+      </div>
 
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white"
-                    data-action="open-engagement"
-                  >
-                    Open Engagement
-                  </button>
-                  <button
-                    class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
-                    data-action="view-deliverables"
-                  >
-                    View Deliverables
-                  </button>
-                  <button
-                    class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
-                    data-action="open-action-center"
-                  >
-                    Action Center
-                  </button>
+      <div id="prContextPanel" class="pr-context-panel">
+        <div class="card rounded-t-none p-4">
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
+              <div class="min-w-0 flex-1">
+                <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Active Client Context</div>
+                <div class="mt-1 text-sm leading-6 text-slate-700">
+                  You are working in
+                  <span class="font-bold text-slate-900" data-bind="summary.client_name">--</span>
+                  as
+                  <span class="font-semibold text-slate-800" data-bind="summary.role_name">--</span>
+                  under
+                  <span class="font-semibold text-slate-800" data-bind="summary.access_scope">--</span>.
                 </div>
               </div>
 
-              <div class="w-full xl:w-[280px] shrink-0">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div class="text-xs uppercase tracking-[0.16em] text-slate-500">Active Profile</div>
+              <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-end xl:shrink-0">
+                <div class="flex flex-col gap-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <label class="card flex items-center gap-2 px-2.5 py-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">View</span>
+                      <select
+                        class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[170px]"
+                        data-bind="filters.view"
+                      >
+                        <option value="assignment">Engagement Dashboard</option>
+                        <option value="internal">Internal Dashboard</option>
+                      </select>
+                    </label>
 
-                  <div class="mt-3 flex items-center justify-between gap-2">
-                    <div>
-                      <div class="font-semibold text-slate-900" data-bind="profile.full_name">--</div>
-                      <div class="text-sm text-slate-600" data-bind="profile.title">--</div>
-                    </div>
-                    <span class="role-chip" data-bind="profile.role_chip">--</span>
+                    <label class="card flex items-center gap-2 px-2.5 py-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Client</span>
+                      <select
+                        class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[250px]"
+                        data-bind="filters.client_id"
+                      ></select>
+                    </label>
+
+                    <label class="card flex items-center gap-2 px-2.5 py-2">
+                      <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Access</span>
+                      <select
+                        class="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm outline-none min-w-[130px]"
+                        data-bind="filters.access_scope"
+                      >
+                        <option value="assignment">Engagement</option>
+                        <option value="core">Core / Internal</option>
+                      </select>
+                    </label>
                   </div>
 
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <span class="badge badge-slate">Firm: <span data-bind="profile.firm_name">--</span></span>
-                    <span class="badge badge-brand">Scope: <span data-bind="profile.access_scope">--</span></span>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white"
+                      data-action="open-engagement"
+                    >
+                      Open Engagement
+                    </button>
+                    <button
+                      class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+                      data-action="view-deliverables"
+                    >
+                      View Deliverables
+                    </button>
+                    <button
+                      class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+                      data-action="open-action-center"
+                    >
+                      Action Center
+                    </button>
+                  </div>
+                </div>
+
+                <div class="w-full xl:w-[280px] shrink-0">
+                  <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="text-xs uppercase tracking-[0.16em] text-slate-500">Active Profile</div>
+
+                    <div class="mt-3 flex items-center justify-between gap-2">
+                      <div>
+                        <div class="font-semibold text-slate-900" data-bind="profile.full_name">--</div>
+                        <div class="text-sm text-slate-600" data-bind="profile.title">--</div>
+                      </div>
+                      <span class="role-chip" data-bind="profile.role_chip">--</span>
+                    </div>
+
+                    <div class="mt-3 flex flex-wrap gap-2">
+                      <span class="badge badge-slate">Firm: <span data-bind="profile.firm_name">--</span></span>
+                      <span class="badge badge-brand">Scope: <span data-bind="profile.access_scope">--</span></span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-
         </div>
-      </div>
+      </div> {/* end prContextPanel */}
     </div>
-  </div>
 
-  <main class="px-6 py-6">
-    <!-- your screens remain here -->
-      <!-- DASHBOARD -->
+    <main class="px-6 py-6">
       <section id="screen-dashboard" class="screen active space-y-6">
         <section class="kpi-grid">
           <div class="card p-5">
@@ -794,7 +821,7 @@ window.safeRedirect = function (url, mode = "href") {
           </div>
         </section>
       </section>
-
+      
       <!-- ASSIGNMENTS -->
       <section id="screen-assignments" class="screen hidden space-y-6">
         <div class="card p-6">
