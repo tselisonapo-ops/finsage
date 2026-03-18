@@ -153,23 +153,6 @@ const ENDPOINTS = {
     deliverablesDeactivate: (companyId, deliverableId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-deliverables/${encodeURIComponent(deliverableId)}/deactivate`,
 
-    actionCenter: {
-      summary: (companyId, params = {}) =>
-        buildApiUrl(
-          `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/summary`,
-          params
-        ),
-
-      queue: (companyId, params = {}) =>
-        buildApiUrl(
-          `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/queue`,
-          params
-        ),
-
-      itemAction: (companyId, queueType, sourceId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/action`
-    },
-
     postingActivityList: (
       companyId,
       engagementId,
@@ -345,6 +328,23 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-signoff-steps/${encodeURIComponent(stepId)}/deactivate`
   },
 
+  actionCenter: {
+    summary: (companyId, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/summary`,
+        params
+      ),
+
+    queue: (companyId, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/queue`,
+        params
+      ),
+
+    itemAction: (companyId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/action`
+  },
+    
   clientOverview: {
     summary: (companyId, customerId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/summary?customer_id=${encodeURIComponent(customerId)}`,
