@@ -1178,6 +1178,8 @@ const PR_SCREEN_POLICY = {
   clients: { auth: "private", roles: ["owner", "admin", "manager", "senior", "accountant", "viewer", "bookkeeper", "audit_manager", "audit_partner", "client_service_manager"] },
   team: { auth: "private", roles: ["owner", "admin", "manager", "audit_manager", "audit_partner", "client_service_manager"] },
   analytics: { auth: "private", roles: ["owner", "admin", "manager", "audit_manager", "audit_partner", "engagement_partner", "client_service_manager"] },
+
+  "analytics-detail": { auth: "private", roles: ["owner", "admin", "manager", "audit_manager", "audit_partner", "engagement_partner", "client_service_manager"] },
   "action-center": { auth: "private", roles: ["owner", "admin", "manager", "senior", "accountant", "bookkeeper", "audit_staff", "senior_associate", "audit_manager", "audit_partner", "engagement_partner", "quality_control_reviewer", "fs_compiler", "reviewer", "client_service_manager"] },
 
   settings: { auth: "private", roles: ["owner", "admin"] },
