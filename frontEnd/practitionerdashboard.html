@@ -807,6 +807,57 @@
     min-height: 92px;
   }
 
+  #screen-action-center .action-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 2.2fr) 320px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  #screen-action-center .action-left-column,
+  #screen-action-center .action-right-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #screen-action-center .action-queue-and-types {
+    display: grid;
+    grid-template-columns: minmax(0, 1.9fr) 320px;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  #screen-action-center .action-work-by-type-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  #screen-action-center .action-work-type-stack {
+    display: grid;
+    grid-template-rows: repeat(4, minmax(82px, 1fr));
+    gap: 12px;
+    flex: 1;
+  }
+
+  #screen-action-center .action-work-type-stack .mini-stat {
+    min-height: 82px;
+  }
+
+  #screen-action-center .action-selected-panel {
+    min-height: 220px;
+  }
+
+  @media (max-width: 1400px) {
+    #screen-action-center .action-layout {
+      grid-template-columns: 1fr;
+    }
+
+    #screen-action-center .action-queue-and-types {
+      grid-template-columns: 1fr;
+    }
+  }
   @media (max-width: 640px) {
     #screen-action-center .action-type-grid {
       grid-template-columns: 1fr;
@@ -2394,8 +2445,8 @@ window.safeRedirect = function (url, mode = "href") {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">
-            <div class="xl:col-span-3 space-y-4">
+          <div class="action-layout">
+            <div class="action-left-column">
               <div class="action-filter-card">
                 <div class="action-filter-grid">
                   <select id="actionCenterClientFilter" class="input">
@@ -2446,43 +2497,69 @@ window.safeRedirect = function (url, mode = "href") {
                 </div>
               </div>
 
-              <div class="action-queue-card">
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <div class="panel-title text-base">Work Queue</div>
-                    <div class="panel-subtitle mt-1">
-                      Unified workflow items requiring attention
+              <div class="action-queue-and-types">
+                <div class="action-queue-card">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <div class="panel-title text-base">Work Queue</div>
+                      <div class="panel-subtitle mt-1">
+                        Unified workflow items requiring attention
+                      </div>
                     </div>
+                  </div>
+
+                  <div class="mt-4 overflow-x-auto">
+                    <table class="data-table w-full">
+                      <thead>
+                        <tr>
+                          <th>Type</th>
+                          <th>Item</th>
+                          <th>Client</th>
+                          <th>Engagement</th>
+                          <th>Status</th>
+                          <th>Priority</th>
+                          <th>Due date</th>
+                          <th>Assigned</th>
+                          <th>Next action</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="actionCenterRows">
+                        <tr>
+                          <td colspan="10" class="text-sm text-slate-500">No action items found.</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
-                <div class="mt-4 overflow-x-auto">
-                  <table class="data-table w-full">
-                    <thead>
-                      <tr>
-                        <th>Type</th>
-                        <th>Item</th>
-                        <th>Client</th>
-                        <th>Engagement</th>
-                        <th>Status</th>
-                        <th>Priority</th>
-                        <th>Due date</th>
-                        <th>Assigned</th>
-                        <th>Next action</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody id="actionCenterRows">
-                      <tr>
-                        <td colspan="10" class="text-sm text-slate-500">No action items found.</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div class="action-side-card action-work-by-type-card">
+                  <div class="panel-title text-base">Work by Type</div>
+                  <div class="panel-subtitle mt-1">Current queue composition</div>
+
+                  <div class="action-work-type-stack mt-4">
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Reporting</div>
+                      <div id="acTypeReporting" class="mini-stat-value">0</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Deliverables</div>
+                      <div id="acTypeDeliverables" class="mini-stat-value">0</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Posting</div>
+                      <div id="acTypePosting" class="mini-stat-value">0</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Close</div>
+                      <div id="acTypeClose" class="mini-stat-value">0</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="space-y-4">
+            <div class="action-right-column">
               <div class="action-side-card">
                 <div class="panel-title text-base">Urgent Breakdown</div>
                 <div class="panel-subtitle mt-1">Focus areas requiring attention</div>
@@ -2499,30 +2576,6 @@ window.safeRedirect = function (url, mode = "href") {
                   <div class="mini-stat">
                     <div class="mini-stat-label">Pending sign-offs</div>
                     <div id="acUrgentSignoffs" class="mini-stat-value">0</div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="action-side-card">
-                <div class="panel-title text-base">Work by Type</div>
-                <div class="panel-subtitle mt-1">Current queue composition</div>
-
-                <div class="action-type-grid mt-4">
-                  <div class="mini-stat">
-                    <div class="mini-stat-label">Reporting</div>
-                    <div id="acTypeReporting" class="mini-stat-value">0</div>
-                  </div>
-                  <div class="mini-stat">
-                    <div class="mini-stat-label">Deliverables</div>
-                    <div id="acTypeDeliverables" class="mini-stat-value">0</div>
-                  </div>
-                  <div class="mini-stat">
-                    <div class="mini-stat-label">Posting</div>
-                    <div id="acTypePosting" class="mini-stat-value">0</div>
-                  </div>
-                  <div class="mini-stat">
-                    <div class="mini-stat-label">Close</div>
-                    <div id="acTypeClose" class="mini-stat-value">0</div>
                   </div>
                 </div>
               </div>
