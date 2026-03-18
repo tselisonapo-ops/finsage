@@ -557,6 +557,9 @@ const ENDPOINTS = {
   let PR_CLIENT_OVERVIEW_EVENTS_BOUND = false;
   let PR_CLIENT_OVERVIEW_LOADING = false;
 
+  let PR_CONTEXT_RAIL_BOUND = false;
+  let PR_CONTEXT_RAIL_PINNED = false;
+
   const PR_NAV = {
     dashboard: "dashboard",
     assignments: "assignments",
@@ -870,6 +873,68 @@ function renderCompanyFilter(companies, me) {
     if (String(company.id) === String(me.company_id)) option.selected = true;
     select.appendChild(option);
   });
+}
+
+function bindPractitionerContextRail() {
+  if (PR_CONTEXT_RAIL_BOUND) return;
+  PR_CONTEXT_RAIL_BOUND = true;
+
+  const rail = document.getElementById("prContextRail");
+  const panel = document.getElementById("prContextPanel");
+  const toggleBtn = document.getElementById("prContextToggleBtn");
+  const pinBtn = document.getElementById("prContextPinBtn");
+
+  if (!rail || !panel || !toggleBtn || !pinBtn) return;
+
+  const applyState = () => {
+    rail.classList.toggle("is-expanded", PR_CONTEXT_RAIL_PINNED);
+    rail.classList.toggle("is-collapsed", !PR_CONTEXT_RAIL_PINNED);
+    toggleBtn.textContent = PR_CONTEXT_RAIL_PINNED ? "Collapse" : "Expand";
+    pinBtn.textContent = PR_CONTEXT_RAIL_PINNED ? "Unpin" : "Pin open";
+  };
+
+  toggleBtn.addEventListener("click", () => {
+    PR_CONTEXT_RAIL_PINNED = !PR_CONTEXT_RAIL_PINNED;
+    rail.classList.remove("is-hover-open");
+    applyState();
+  });
+
+  pinBtn.addEventListener("click", () => {
+    PR_CONTEXT_RAIL_PINNED = !PR_CONTEXT_RAIL_PINNED;
+    rail.classList.remove("is-hover-open");
+    applyState();
+  });
+
+  rail.addEventListener("mouseenter", () => {
+    if (PR_CONTEXT_RAIL_PINNED) return;
+    rail.classList.add("is-hover-open");
+  });
+
+  rail.addEventListener("mouseleave", () => {
+    if (PR_CONTEXT_RAIL_PINNED) return;
+    rail.classList.remove("is-hover-open");
+  });
+
+  applyState();
+}
+
+function syncPractitionerContextRailForScreen(screen) {
+  const rail = document.getElementById("prContextRail");
+  const toggleBtn = document.getElementById("prContextToggleBtn");
+  const pinBtn = document.getElementById("prContextPinBtn");
+
+  if (!rail || !toggleBtn || !pinBtn) return;
+
+  const shouldOpenByDefault = screen === PR_NAV.dashboard;
+
+  PR_CONTEXT_RAIL_PINNED = shouldOpenByDefault;
+
+  rail.classList.remove("is-hover-open");
+  rail.classList.toggle("is-expanded", PR_CONTEXT_RAIL_PINNED);
+  rail.classList.toggle("is-collapsed", !PR_CONTEXT_RAIL_PINNED);
+
+  toggleBtn.textContent = PR_CONTEXT_RAIL_PINNED ? "Collapse" : "Expand";
+  pinBtn.textContent = PR_CONTEXT_RAIL_PINNED ? "Unpin" : "Pin open";
 }
 
 function getSelectedPractitionerCustomerId() {
@@ -1257,11 +1322,11 @@ async function switchPractitionerScreen(name, me, opts = {}) {
     target.classList.add("active");
   }
 
-  setupPractitionerNav(me);
-  // update header title/subtitle
-  renderPractitionerScreenTitle(screen, me);
+  bindPractitionerContextRail();
+  syncPractitionerContextRailForScreen(screen);
 
-  // run per-screen binder
+  setupPractitionerNav(me);
+  renderPractitionerScreenTitle(screen, me);
   runPractitionerScreenBinder(screen, me);
 
   // update hash only when needed
