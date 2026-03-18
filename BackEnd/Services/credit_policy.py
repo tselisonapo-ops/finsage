@@ -367,6 +367,35 @@ def can_decide_approvals(user: dict, company_profile: dict, mode: str) -> bool:
 
     return is_company_owner(user, company_profile) or role in {"admin", "cfo"}
 
+def _can_view_engagements(user: dict) -> bool:
+    if not user:
+        return False
+
+    if is_assignment_execution_context(user):
+        return True
+
+    role = normalize_role(
+        user.get("assignment_role")
+        or user.get("user_role")
+        or user.get("role")
+        or user.get("system_role")
+        or ""
+    )
+
+    return role in {
+        "owner",
+        "admin",
+        "manager",
+        "senior",
+        "reviewer",
+        "audit_manager",
+        "client_service_manager",
+        "engagement_partner",
+        "quality_control_reviewer",
+        "accountant",
+        "bookkeeper",
+    }
+
 def can_decide_request(user: dict, company_profile: dict, mode: str, module: str, action: str) -> bool:
     module = str(module or "").strip().lower()
     action = str(action or "").strip().lower()

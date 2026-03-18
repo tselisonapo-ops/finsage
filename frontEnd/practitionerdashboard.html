@@ -655,9 +655,301 @@ window.safeRedirect = function (url, mode = "href") {
       <!-- CLIENTS -->
       <section id="screen-clients" class="screen hidden">
         <div class="card p-6">
-          <div class="panel-title">Clients</div>
-          <div class="panel-subtitle mt-1">Client list, service status, and relationship context</div>
-          <div class="mt-4 text-sm text-slate-600">Clients screen placeholder.</div>
+
+          <!-- HEADER -->
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div class="panel-title">Client Overview</div>
+              <div class="panel-subtitle mt-1">
+                Portfolio snapshot for the selected client across engagements, delivery, operations, close, and risk.
+              </div>
+            </div>
+          </div>
+
+          <!-- 🔥 CLIENT SELECTOR (ADD THIS HERE) -->
+          <div class="mt-4 flex flex-wrap items-center gap-3">
+            <label class="text-sm font-medium text-slate-700">Client</label>
+
+            <select
+              id="clientOverviewCustomerSelect"
+              class="input min-w-[280px]"
+            >
+              <option value="">Select client...</option>
+            </select>
+
+            <button id="clientOverviewRefreshBtn" class="btn btn-secondary">
+              Refresh
+            </button>
+          </div>
+
+          <!-- KPI CARDS -->
+          <div class="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
+          <div class="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div class="metric-card">
+              <div class="metric-label">Active Engagements</div>
+              <div id="clientOverviewActiveEngagements" class="metric-value">--</div>
+              <div class="metric-note">Currently open and active</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Open Items</div>
+              <div id="clientOverviewOpenItems" class="metric-value">--</div>
+              <div class="metric-note">Across reporting, deliverables, close, and sign-off</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Overdue</div>
+              <div id="clientOverviewOverdueItems" class="metric-value">--</div>
+              <div class="metric-note">Needs follow-up</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Assigned Team</div>
+              <div id="clientOverviewAssignedTeam" class="metric-value">--</div>
+              <div class="metric-note">Distinct active team members</div>
+            </div>
+          </div>
+
+          <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div class="card-subpanel">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="panel-title text-base">Engagement Portfolio</div>
+                  <div class="panel-subtitle mt-1">
+                    Active engagements and delivery scope for this client
+                  </div>
+                </div>
+                <button
+                  id="clientOverviewViewEngagementsBtn"
+                  class="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  View details
+                </button>
+              </div>
+
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Completed</div>
+                  <div id="clientOverviewCompletedEngagements" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">High Priority</div>
+                  <div id="clientOverviewPriorityEngagements" class="mini-stat-value">--</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-subpanel">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="panel-title text-base">Reporting & Deliverables</div>
+                  <div class="panel-subtitle mt-1">
+                    Reporting pack readiness and deliverable progress
+                  </div>
+                </div>
+                <button
+                  id="clientOverviewViewReportingBtn"
+                  class="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  View details
+                </button>
+              </div>
+
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Open Reporting</div>
+                  <div id="clientOverviewOpenReportingItems" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Outstanding Deliverables</div>
+                  <div id="clientOverviewOutstandingDeliverables" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Overdue Reporting</div>
+                  <div id="clientOverviewOverdueReportingItems" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">In Review</div>
+                  <div id="clientOverviewInReviewDeliverables" class="mini-stat-value">--</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-subpanel">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="panel-title text-base">Operational Work</div>
+                  <div class="panel-subtitle mt-1">
+                    Day-to-day posting activity across the client ledger scope
+                  </div>
+                </div>
+                <button
+                  id="clientOverviewViewOperationsBtn"
+                  class="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  View details
+                </button>
+              </div>
+
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Unposted</div>
+                  <div id="clientOverviewUnpostedItems" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Under Review</div>
+                  <div id="clientOverviewUnderReview" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Rejected / Returned</div>
+                  <div id="clientOverviewRejectedReturned" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Posted Today</div>
+                  <div id="clientOverviewPostedToday" class="mini-stat-value">--</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-subpanel">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="panel-title text-base">Close & Finalisation</div>
+                  <div class="panel-subtitle mt-1">
+                    Month-end, year-end, and sign-off readiness
+                  </div>
+                </div>
+                <button
+                  id="clientOverviewViewCloseBtn"
+                  class="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  View details
+                </button>
+              </div>
+
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Open Monthly Close</div>
+                  <div id="clientOverviewOpenMonthlyCloseTasks" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Open Year-End</div>
+                  <div id="clientOverviewOpenYearEndTasks" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Pending Sign-Offs</div>
+                  <div id="clientOverviewPendingSignoffs" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Awaiting Review</div>
+                  <div id="clientOverviewAwaitingReview" class="mini-stat-value">--</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-subpanel xl:col-span-2">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="panel-title text-base">Risk Alerts</div>
+                  <div class="panel-subtitle mt-1">
+                    Exceptions and overdue workflow signals for this client
+                  </div>
+                </div>
+                <button
+                  id="clientOverviewViewRiskBtn"
+                  class="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  View details
+                </button>
+              </div>
+
+              <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="mini-stat mini-stat-warn">
+                  <div class="mini-stat-label">Overdue Engagements</div>
+                  <div id="clientOverviewOverdueEngagements" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat mini-stat-danger">
+                  <div class="mini-stat-label">Blocked Items</div>
+                  <div id="clientOverviewBlockedItems" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Outstanding Deliverables</div>
+                  <div id="clientOverviewRiskOutstandingDeliverables" class="mini-stat-value">--</div>
+                </div>
+                <div class="mini-stat">
+                  <div class="mini-stat-label">Pending Sign-Offs</div>
+                  <div id="clientOverviewRiskPendingSignoffs" class="mini-stat-value">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 card-subpanel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="panel-title text-base">Engagement Portfolio</div>
+                <div class="panel-subtitle mt-1">
+                  Drill-down list for the selected client
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <input
+                  id="clientOverviewSearchInput"
+                  type="search"
+                  class="input"
+                  placeholder="Search engagement, code, or scope..."
+                />
+                <select id="clientOverviewStatusFilter" class="input">
+                  <option value="">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="on_hold">On hold</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="archived">Archived</option>
+                </select>
+                <select id="clientOverviewTypeFilter" class="input">
+                  <option value="">All types</option>
+                  <option value="bookkeeping">Bookkeeping</option>
+                  <option value="compilation">Compilation</option>
+                  <option value="audit">Audit</option>
+                  <option value="tax">Tax</option>
+                  <option value="advisory">Advisory</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="mt-4 overflow-x-auto">
+              <table class="data-table w-full">
+                <thead>
+                  <tr>
+                    <th>Engagement</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Due date</th>
+                    <th>Manager</th>
+                    <th>Partner</th>
+                    <th>Reporting</th>
+                    <th>Deliverables</th>
+                    <th>Close</th>
+                  </tr>
+                </thead>
+                <tbody id="clientOverviewEngagementRows">
+                  <tr>
+                    <td colspan="9" class="text-sm text-slate-500">Select a client to load engagement portfolio.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 

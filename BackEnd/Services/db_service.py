@@ -41579,6 +41579,619 @@ class DatabaseService:
         cur.execute(sql, (company_id, company_id, company_id, company_id))
         return cur.fetchall()
 
+    def get_client_overview_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH client_engagements AS (
+                SELECT e.*
+                FROM {schema}.engagements e
+                WHERE e.company_id = %s
+                AND e.customer_id = %s
+                AND e.is_active = TRUE
+            ),
+            team_counts AS (
+                SELECT COUNT(DISTINCT et.user_id) AS assigned_team_members
+                FROM {schema}.engagement_team et
+                JOIN client_engagements e
+                ON e.id = et.engagement_id
+                WHERE et.company_id = %s
+                AND et.is_active = TRUE
+            ),
+            open_items AS (
+                SELECT COUNT(*) AS cnt
+                FROM (
+                    SELECT ri.id
+                    FROM {schema}.engagement_reporting_items ri
+                    JOIN client_engagements e ON e.id = ri.engagement_id
+                    WHERE ri.company_id = %s
+                    AND ri.is_active = TRUE
+                    AND LOWER(ri.status) NOT IN ('completed', 'approved', 'waived')
+
+                    UNION ALL
+
+                    SELECT d.id
+                    FROM {schema}.engagement_deliverables d
+                    JOIN client_engagements e ON e.id = d.engagement_id
+                    WHERE d.company_id = %s
+                    AND d.is_active = TRUE
+                    AND LOWER(d.status) NOT IN ('completed', 'waived', 'received')
+
+                    UNION ALL
+
+                    SELECT mt.id
+                    FROM {schema}.engagement_monthly_close_tasks mt
+                    JOIN client_engagements e ON e.id = mt.engagement_id
+                    WHERE mt.company_id = %s
+                    AND mt.is_active = TRUE
+                    AND LOWER(mt.status) NOT IN ('completed', 'skipped')
+
+                    UNION ALL
+
+                    SELECT yt.id
+                    FROM {schema}.engagement_year_end_tasks yt
+                    JOIN client_engagements e ON e.id = yt.engagement_id
+                    WHERE yt.company_id = %s
+                    AND yt.is_active = TRUE
+                    AND LOWER(yt.status) NOT IN ('completed', 'waived')
+
+                    UNION ALL
+
+                    SELECT ss.id
+                    FROM {schema}.engagement_signoff_steps ss
+                    JOIN client_engagements e ON e.id = ss.engagement_id
+                    WHERE ss.company_id = %s
+                    AND ss.is_active = TRUE
+                    AND LOWER(ss.status) NOT IN ('completed', 'waived')
+                ) x
+            ),
+            overdue_items AS (
+                SELECT COUNT(*) AS cnt
+                FROM (
+                    SELECT ri.id
+                    FROM {schema}.engagement_reporting_items ri
+                    JOIN client_engagements e ON e.id = ri.engagement_id
+                    WHERE ri.company_id = %s
+                    AND ri.is_active = TRUE
+                    AND ri.due_date IS NOT NULL
+                    AND ri.due_date < CURRENT_DATE
+                    AND LOWER(ri.status) NOT IN ('completed', 'approved', 'waived')
+
+                    UNION ALL
+
+                    SELECT d.id
+                    FROM {schema}.engagement_deliverables d
+                    JOIN client_engagements e ON e.id = d.engagement_id
+                    WHERE d.company_id = %s
+                    AND d.is_active = TRUE
+                    AND d.due_date IS NOT NULL
+                    AND d.due_date < CURRENT_DATE
+                    AND LOWER(d.status) NOT IN ('completed', 'waived', 'received')
+
+                    UNION ALL
+
+                    SELECT mt.id
+                    FROM {schema}.engagement_monthly_close_tasks mt
+                    JOIN client_engagements e ON e.id = mt.engagement_id
+                    WHERE mt.company_id = %s
+                    AND mt.is_active = TRUE
+                    AND mt.due_date IS NOT NULL
+                    AND mt.due_date < CURRENT_DATE
+                    AND LOWER(mt.status) NOT IN ('completed', 'skipped')
+
+                    UNION ALL
+
+                    SELECT yt.id
+                    FROM {schema}.engagement_year_end_tasks yt
+                    JOIN client_engagements e ON e.id = yt.engagement_id
+                    WHERE yt.company_id = %s
+                    AND yt.is_active = TRUE
+                    AND yt.due_date IS NOT NULL
+                    AND yt.due_date < CURRENT_DATE
+                    AND LOWER(yt.status) NOT IN ('completed', 'waived')
+
+                    UNION ALL
+
+                    SELECT ss.id
+                    FROM {schema}.engagement_signoff_steps ss
+                    JOIN client_engagements e ON e.id = ss.engagement_id
+                    WHERE ss.company_id = %s
+                    AND ss.is_active = TRUE
+                    AND ss.due_date IS NOT NULL
+                    AND ss.due_date < CURRENT_DATE
+                    AND LOWER(ss.status) NOT IN ('completed', 'waived')
+                ) y
+            )
+            SELECT
+                c.id AS customer_id,
+                c.customer_name,
+                COUNT(DISTINCT e.id) AS active_engagements,
+                COUNT(DISTINCT CASE WHEN LOWER(e.status) = 'completed' THEN e.id END) AS completed_engagements,
+                COUNT(DISTINCT CASE WHEN LOWER(e.priority) IN ('high', 'urgent') THEN e.id END) AS priority_engagements,
+                COALESCE((SELECT cnt FROM open_items), 0) AS open_items,
+                COALESCE((SELECT cnt FROM overdue_items), 0) AS overdue_items,
+                COALESCE((SELECT assigned_team_members FROM team_counts), 0) AS assigned_team_members
+            FROM {schema}.customers c
+            LEFT JOIN client_engagements e
+            ON e.customer_id = c.id
+            WHERE c.id = %s
+            GROUP BY c.id, c.customer_name
+            LIMIT 1
+        """
+        cur.execute(
+            sql,
+            (
+                company_id, customer_id,
+                company_id,
+                company_id, company_id, company_id, company_id, company_id,
+                company_id, company_id, company_id, company_id, company_id,
+                customer_id,
+            ),
+        )
+        return cur.fetchone()
+
+    def list_client_overview_engagements(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+        status: str = "",
+        engagement_type: str = "",
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 200,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        where = ["e.company_id = %s", "e.customer_id = %s"]
+        params = [company_id, customer_id]
+
+        if status:
+            where.append("LOWER(e.status) = LOWER(%s)")
+            params.append(status)
+
+        if engagement_type:
+            where.append("LOWER(e.engagement_type) = LOWER(%s)")
+            params.append(engagement_type)
+
+        if active_only:
+            where.append("e.is_active = TRUE")
+
+        if q:
+            where.append("""
+                (
+                    e.engagement_name ILIKE %s
+                    OR COALESCE(e.engagement_code, '') ILIKE %s
+                    OR COALESCE(e.description, '') ILIKE %s
+                    OR COALESCE(e.scope_summary, '') ILIKE %s
+                )
+            """)
+            like = f"%{q.strip()}%"
+            params.extend([like, like, like, like])
+
+        sql = f"""
+            SELECT
+                e.*,
+                c.customer_name,
+
+                manager_u.first_name AS manager_first_name,
+                manager_u.last_name AS manager_last_name,
+                manager_u.email AS manager_email,
+
+                partner_u.first_name AS partner_first_name,
+                partner_u.last_name AS partner_last_name,
+                partner_u.email AS partner_email,
+
+                COALESCE(ri_counts.open_reporting_items, 0) AS open_reporting_items,
+                COALESCE(d_counts.open_deliverables, 0) AS open_deliverables,
+                COALESCE(task_counts.open_close_items, 0) AS open_close_items
+
+            FROM {schema}.engagements e
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+
+            LEFT JOIN public.users manager_u
+            ON manager_u.id = e.manager_user_id
+
+            LEFT JOIN public.users partner_u
+            ON partner_u.id = e.partner_user_id
+
+            LEFT JOIN (
+                SELECT
+                    engagement_id,
+                    COUNT(*) AS open_reporting_items
+                FROM {schema}.engagement_reporting_items
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND LOWER(status) NOT IN ('completed', 'approved', 'waived')
+                GROUP BY engagement_id
+            ) ri_counts
+            ON ri_counts.engagement_id = e.id
+
+            LEFT JOIN (
+                SELECT
+                    engagement_id,
+                    COUNT(*) AS open_deliverables
+                FROM {schema}.engagement_deliverables
+                WHERE company_id = %s
+                AND is_active = TRUE
+                AND LOWER(status) NOT IN ('completed', 'waived', 'received')
+                GROUP BY engagement_id
+            ) d_counts
+            ON d_counts.engagement_id = e.id
+
+            LEFT JOIN (
+                SELECT
+                    t.engagement_id,
+                    COUNT(*) AS open_close_items
+                FROM (
+                    SELECT engagement_id
+                    FROM {schema}.engagement_monthly_close_tasks
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                    AND LOWER(status) NOT IN ('completed', 'skipped')
+
+                    UNION ALL
+
+                    SELECT engagement_id
+                    FROM {schema}.engagement_year_end_tasks
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                    AND LOWER(status) NOT IN ('completed', 'waived')
+
+                    UNION ALL
+
+                    SELECT engagement_id
+                    FROM {schema}.engagement_signoff_steps
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                    AND LOWER(status) NOT IN ('completed', 'waived')
+                ) t
+                GROUP BY t.engagement_id
+            ) task_counts
+            ON task_counts.engagement_id = e.id
+
+            WHERE {" AND ".join(where)}
+            ORDER BY
+                e.due_date NULLS LAST,
+                e.updated_at DESC,
+                e.id DESC
+            LIMIT %s OFFSET %s
+        """
+        params.extend([company_id, company_id, company_id, company_id, company_id, limit, offset])
+        cur.execute(sql, tuple(params))
+        return cur.fetchall()
+
+    def get_client_reporting_deliverables_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH client_engagements AS (
+                SELECT id
+                FROM {schema}.engagements
+                WHERE company_id = %s
+                AND customer_id = %s
+                AND is_active = TRUE
+            )
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_reporting_items ri
+                    JOIN client_engagements e ON e.id = ri.engagement_id
+                    WHERE ri.company_id = %s
+                    AND ri.is_active = TRUE
+                    AND LOWER(ri.status) NOT IN ('completed', 'approved', 'waived')
+                ) AS open_reporting_items,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_reporting_items ri
+                    JOIN client_engagements e ON e.id = ri.engagement_id
+                    WHERE ri.company_id = %s
+                    AND ri.is_active = TRUE
+                    AND ri.due_date IS NOT NULL
+                    AND ri.due_date < CURRENT_DATE
+                    AND LOWER(ri.status) NOT IN ('completed', 'approved', 'waived')
+                ) AS overdue_reporting_items,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_deliverables d
+                    JOIN client_engagements e ON e.id = d.engagement_id
+                    WHERE d.company_id = %s
+                    AND d.is_active = TRUE
+                    AND LOWER(d.status) NOT IN ('completed', 'waived', 'received')
+                ) AS outstanding_deliverables,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_deliverables d
+                    JOIN client_engagements e ON e.id = d.engagement_id
+                    WHERE d.company_id = %s
+                    AND d.is_active = TRUE
+                    AND LOWER(d.status) = 'in_review'
+                ) AS in_review_deliverables
+        """
+        cur.execute(
+            sql,
+            (
+                company_id, customer_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
+    def get_client_operations_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH client_engagements AS (
+                SELECT id
+                FROM {schema}.engagements
+                WHERE company_id = %s
+                AND customer_id = %s
+                AND is_active = TRUE
+            )
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_posting_activity pa
+                    JOIN client_engagements e ON e.id = pa.engagement_id
+                    WHERE pa.company_id = %s
+                    AND pa.is_active = TRUE
+                    AND LOWER(pa.status) = 'draft'
+                ) AS unposted_items,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_posting_activity pa
+                    JOIN client_engagements e ON e.id = pa.engagement_id
+                    WHERE pa.company_id = %s
+                    AND pa.is_active = TRUE
+                    AND LOWER(pa.status) IN ('pending_review', 'in_review')
+                ) AS under_review,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_posting_activity pa
+                    JOIN client_engagements e ON e.id = pa.engagement_id
+                    WHERE pa.company_id = %s
+                    AND pa.is_active = TRUE
+                    AND LOWER(pa.status) IN ('returned', 'rejected')
+                ) AS rejected_or_returned,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_posting_activity pa
+                    JOIN client_engagements e ON e.id = pa.engagement_id
+                    WHERE pa.company_id = %s
+                    AND pa.is_active = TRUE
+                    AND LOWER(pa.status) = 'posted'
+                    AND pa.posting_date = CURRENT_DATE
+                ) AS posted_today
+        """
+        cur.execute(
+            sql,
+            (
+                company_id, customer_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
+    def get_client_close_finalisation_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH client_engagements AS (
+                SELECT id
+                FROM {schema}.engagements
+                WHERE company_id = %s
+                AND customer_id = %s
+                AND is_active = TRUE
+            )
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_monthly_close_tasks mt
+                    JOIN client_engagements e ON e.id = mt.engagement_id
+                    WHERE mt.company_id = %s
+                    AND mt.is_active = TRUE
+                    AND LOWER(mt.status) NOT IN ('completed', 'skipped')
+                ) AS open_monthly_close_tasks,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_year_end_tasks yt
+                    JOIN client_engagements e ON e.id = yt.engagement_id
+                    WHERE yt.company_id = %s
+                    AND yt.is_active = TRUE
+                    AND LOWER(yt.status) NOT IN ('completed', 'waived')
+                ) AS open_year_end_tasks,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_signoff_steps ss
+                    JOIN client_engagements e ON e.id = ss.engagement_id
+                    WHERE ss.company_id = %s
+                    AND ss.is_active = TRUE
+                    AND LOWER(ss.status) NOT IN ('completed', 'waived')
+                ) AS pending_signoffs,
+
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT mt.id
+                        FROM {schema}.engagement_monthly_close_tasks mt
+                        JOIN client_engagements e ON e.id = mt.engagement_id
+                        WHERE mt.company_id = %s
+                        AND mt.is_active = TRUE
+                        AND LOWER(mt.status) IN ('in_review')
+
+                        UNION ALL
+
+                        SELECT yt.id
+                        FROM {schema}.engagement_year_end_tasks yt
+                        JOIN client_engagements e ON e.id = yt.engagement_id
+                        WHERE yt.company_id = %s
+                        AND yt.is_active = TRUE
+                        AND LOWER(yt.status) IN ('in_review')
+
+                        UNION ALL
+
+                        SELECT ss.id
+                        FROM {schema}.engagement_signoff_steps ss
+                        JOIN client_engagements e ON e.id = ss.engagement_id
+                        WHERE ss.company_id = %s
+                        AND ss.is_active = TRUE
+                        AND LOWER(ss.status) IN ('in_progress')
+                    ) x
+                ) AS awaiting_review
+        """
+        cur.execute(
+            sql,
+            (
+                company_id, customer_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
+    def get_client_risk_alerts_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH client_engagements AS (
+                SELECT *
+                FROM {schema}.engagements
+                WHERE company_id = %s
+                AND customer_id = %s
+                AND is_active = TRUE
+            )
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM client_engagements e
+                    WHERE e.due_date IS NOT NULL
+                    AND e.due_date < CURRENT_DATE
+                    AND LOWER(e.status) NOT IN ('completed', 'cancelled', 'archived')
+                ) AS overdue_engagements,
+
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT ri.id
+                        FROM {schema}.engagement_reporting_items ri
+                        JOIN client_engagements e ON e.id = ri.engagement_id
+                        WHERE ri.company_id = %s
+                        AND ri.is_active = TRUE
+                        AND LOWER(ri.status) = 'blocked'
+
+                        UNION ALL
+
+                        SELECT mt.id
+                        FROM {schema}.engagement_monthly_close_tasks mt
+                        JOIN client_engagements e ON e.id = mt.engagement_id
+                        WHERE mt.company_id = %s
+                        AND mt.is_active = TRUE
+                        AND LOWER(mt.status) = 'blocked'
+
+                        UNION ALL
+
+                        SELECT yt.id
+                        FROM {schema}.engagement_year_end_tasks yt
+                        JOIN client_engagements e ON e.id = yt.engagement_id
+                        WHERE yt.company_id = %s
+                        AND yt.is_active = TRUE
+                        AND LOWER(yt.status) = 'blocked'
+
+                        UNION ALL
+
+                        SELECT ss.id
+                        FROM {schema}.engagement_signoff_steps ss
+                        JOIN client_engagements e ON e.id = ss.engagement_id
+                        WHERE ss.company_id = %s
+                        AND ss.is_active = TRUE
+                        AND LOWER(ss.status) = 'blocked'
+                    ) blocked
+                ) AS blocked_items,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_deliverables d
+                    JOIN client_engagements e ON e.id = d.engagement_id
+                    WHERE d.company_id = %s
+                    AND d.is_active = TRUE
+                    AND LOWER(d.status) NOT IN ('completed', 'waived', 'received')
+                ) AS outstanding_deliverables,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.engagement_signoff_steps ss
+                    JOIN client_engagements e ON e.id = ss.engagement_id
+                    WHERE ss.company_id = %s
+                    AND ss.is_active = TRUE
+                    AND LOWER(ss.status) NOT IN ('completed', 'waived')
+                ) AS pending_signoffs
+        """
+        cur.execute(
+            sql,
+            (
+                company_id, customer_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
+
     def insert_ticket(
         self,
         cur,

@@ -323,6 +323,45 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-signoff-steps/${encodeURIComponent(stepId)}/deactivate`
   },
 
+  clientOverview: {
+    summary: (companyId, customerId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/summary?customer_id=${encodeURIComponent(customerId)}`,
+
+    engagements: (
+      companyId,
+      customerId,
+      {
+        status = "",
+        type = "",
+        q = "",
+        limit = 200,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      params.set("customer_id", String(customerId));
+      if (status) params.set("status", status);
+      if (type) params.set("type", type);
+      if (q) params.set("q", q);
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/engagements?${qs}`;
+    },
+
+    reportingDeliverables: (companyId, customerId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/reporting-deliverables?customer_id=${encodeURIComponent(customerId)}`,
+
+    operations: (companyId, customerId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/operations?customer_id=${encodeURIComponent(customerId)}`,
+
+    closeFinalisation: (companyId, customerId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/close-finalisation?customer_id=${encodeURIComponent(customerId)}`,
+
+    riskAlerts: (companyId, customerId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/risk-alerts?customer_id=${encodeURIComponent(customerId)}`
+  },
+
   customers: {
     list: (companyId, { q = "", limit = 200, offset = 0 } = {}) => {
       const params = new URLSearchParams();
@@ -501,6 +540,17 @@ const ENDPOINTS = {
   let PR_ANALYTICS_DETAIL_EVENTS_BOUND = false;
   let PR_ANALYTICS_FORCE_RELOAD = false;
 
+  let PR_CLIENT_OVERVIEW_CACHE = {
+    summary: null,
+    engagements: [],
+    reportingDeliverables: null,
+    operations: null,
+    closeFinalisation: null,
+    riskAlerts: null
+  };
+
+  let PR_CLIENT_OVERVIEW_EVENTS_BOUND = false;
+  let PR_CLIENT_OVERVIEW_LOADING = false;
 
   const PR_NAV = {
     dashboard: "dashboard",
@@ -580,9 +630,9 @@ const ENDPOINTS = {
     return json;
   }
 
-  /* ======================================================
-   * Loaders
-   * ==================================================== */
+/* ======================================================
+* Loaders
+* ==================================================== */
 async function loadMe() {
   const me = await apiFetch(ENDPOINTS.auth.me, { method: "GET" });
 
@@ -815,6 +865,54 @@ function renderCompanyFilter(companies, me) {
     if (String(company.id) === String(me.company_id)) option.selected = true;
     select.appendChild(option);
   });
+}
+
+function getSelectedPractitionerCustomerId() {
+  const raw =
+    document.getElementById("clientOverviewCustomerSelect")?.value ||
+    PR_SELECTED_CUSTOMER?.id ||
+    PR_SELECTED_CUSTOMER?.customer_id ||
+    "";
+
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function safeNum(val, fallback = 0) {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function safeText(val, fallback = "--") {
+  const s = String(val ?? "").trim();
+  return s || fallback;
+}
+
+function fullName(firstName, lastName, fallback = "--") {
+  const name = `${firstName || ""} ${lastName || ""}`.trim();
+  return name || fallback;
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = String(value ?? "--");
+}
+
+function practitionerCompanyIdFromMe(me) {
+  return (
+    me?.company_id ||
+    me?.active_company_id ||
+    me?.company?.id ||
+    0
+  );
+}
+
+function debounce(fn, wait = 250) {
+  let t = null;
+  return (...args) => {
+    window.clearTimeout(t);
+    t = window.setTimeout(() => fn(...args), wait);
+  };
 }
 
 function getPractitionerRole(me) {
@@ -1379,6 +1477,17 @@ async function switchCompany(companyId) {
   if (updated.company_name) localStorage.setItem("companyName", updated.company_name);
 
   window.location.reload();
+}
+
+function resetClientOverviewCache() {
+  PR_CLIENT_OVERVIEW_CACHE = {
+    summary: null,
+    engagements: [],
+    reportingDeliverables: null,
+    operations: null,
+    closeFinalisation: null,
+    riskAlerts: null
+  };
 }
 
 function renderEmptyState(selector, colSpan, message) {
@@ -4672,11 +4781,322 @@ async function renderAnalyticsScreen(me, screen = PR_NAV.analytics) {
   }
 }
 
+async function fetchClientOverviewSummary(me, customerId) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.clientOverview.summary(companyId, customerId));
+  return res?.row || null;
+}
+
+async function fetchClientOverviewEngagements(
+  me,
+  customerId,
+  {
+    status = "",
+    type = "",
+    q = "",
+    limit = 200,
+    offset = 0
+  } = {}
+) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(
+    ENDPOINTS.clientOverview.engagements(companyId, customerId, {
+      status,
+      type,
+      q,
+      limit,
+      offset
+    })
+  );
+  return Array.isArray(res?.rows) ? res.rows : [];
+}
+
+async function fetchClientOverviewReportingDeliverables(me, customerId) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.clientOverview.reportingDeliverables(companyId, customerId));
+  return res?.row || null;
+}
+
+async function fetchClientOverviewOperations(me, customerId) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.clientOverview.operations(companyId, customerId));
+  return res?.row || null;
+}
+
+async function fetchClientOverviewCloseFinalisation(me, customerId) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.clientOverview.closeFinalisation(companyId, customerId));
+  return res?.row || null;
+}
+
+async function fetchClientOverviewRiskAlerts(me, customerId) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.clientOverview.riskAlerts(companyId, customerId));
+  return res?.row || null;
+}
+
+function renderClientOverviewSummary(summary) {
+  setText("clientOverviewActiveEngagements", safeNum(summary?.active_engagements, 0));
+  setText("clientOverviewOpenItems", safeNum(summary?.open_items, 0));
+  setText("clientOverviewOverdueItems", safeNum(summary?.overdue_items, 0));
+  setText("clientOverviewAssignedTeam", safeNum(summary?.assigned_team_members, 0));
+
+  setText("clientOverviewCompletedEngagements", safeNum(summary?.completed_engagements, 0));
+  setText("clientOverviewPriorityEngagements", safeNum(summary?.priority_engagements, 0));
+}
+
+function renderClientOverviewReportingDeliverables(row) {
+  setText("clientOverviewOpenReportingItems", safeNum(row?.open_reporting_items, 0));
+  setText("clientOverviewOutstandingDeliverables", safeNum(row?.outstanding_deliverables, 0));
+  setText("clientOverviewOverdueReportingItems", safeNum(row?.overdue_reporting_items, 0));
+  setText("clientOverviewInReviewDeliverables", safeNum(row?.in_review_deliverables, 0));
+}
+
+function renderClientOverviewOperations(row) {
+  setText("clientOverviewUnpostedItems", safeNum(row?.unposted_items, 0));
+  setText("clientOverviewUnderReview", safeNum(row?.under_review, 0));
+  setText("clientOverviewRejectedReturned", safeNum(row?.rejected_or_returned, 0));
+  setText("clientOverviewPostedToday", safeNum(row?.posted_today, 0));
+}
+
+function renderClientOverviewCloseFinalisation(row) {
+  setText("clientOverviewOpenMonthlyCloseTasks", safeNum(row?.open_monthly_close_tasks, 0));
+  setText("clientOverviewOpenYearEndTasks", safeNum(row?.open_year_end_tasks, 0));
+  setText("clientOverviewPendingSignoffs", safeNum(row?.pending_signoffs, 0));
+  setText("clientOverviewAwaitingReview", safeNum(row?.awaiting_review, 0));
+}
+
+function renderClientOverviewRiskAlerts(row) {
+  setText("clientOverviewOverdueEngagements", safeNum(row?.overdue_engagements, 0));
+  setText("clientOverviewBlockedItems", safeNum(row?.blocked_items, 0));
+  setText("clientOverviewRiskOutstandingDeliverables", safeNum(row?.outstanding_deliverables, 0));
+  setText("clientOverviewRiskPendingSignoffs", safeNum(row?.pending_signoffs, 0));
+}
+
+function renderClientOverviewEngagementRows(rows) {
+  const tbody = document.getElementById("clientOverviewEngagementRows");
+  if (!tbody) return;
+
+  if (!Array.isArray(rows) || !rows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" class="text-sm text-slate-500">No engagements found for this client.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => {
+    const engagementName = safeText(row.engagement_name);
+    const engagementCode = safeText(row.engagement_code, "");
+    const type = safeText(row.engagement_type);
+    const status = safeText(row.status);
+    const dueDate = safeText(row.due_date);
+    const manager = fullName(row.manager_first_name, row.manager_last_name);
+    const partner = fullName(row.partner_first_name, row.partner_last_name);
+    const openReporting = safeNum(row.open_reporting_items, 0);
+    const openDeliverables = safeNum(row.open_deliverables, 0);
+    const openClose = safeNum(row.open_close_items, 0);
+
+    return `
+      <tr data-engagement-id="${row.id}">
+        <td>
+          <div class="font-medium">${engagementName}</div>
+          <div class="text-xs text-slate-500">${engagementCode || "—"}</div>
+        </td>
+        <td>${type}</td>
+        <td>${status}</td>
+        <td>${dueDate}</td>
+        <td>${manager}</td>
+        <td>${partner}</td>
+        <td>${openReporting}</td>
+        <td>${openDeliverables}</td>
+        <td>${openClose}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function loadClientOverviewScreen(me, { force = false } = {}) {
+  if (PR_CLIENT_OVERVIEW_LOADING) return;
+
+  const customerId = getSelectedPractitionerCustomerId();
+  if (!customerId) {
+    renderClientOverviewSummary(null);
+    renderClientOverviewReportingDeliverables(null);
+    renderClientOverviewOperations(null);
+    renderClientOverviewCloseFinalisation(null);
+    renderClientOverviewRiskAlerts(null);
+    renderClientOverviewEngagementRows([]);
+    return;
+  }
+
+  if (!force && PR_CLIENT_OVERVIEW_CACHE.summary && Array.isArray(PR_CLIENT_OVERVIEW_CACHE.engagements)) {
+    renderClientOverviewSummary(PR_CLIENT_OVERVIEW_CACHE.summary);
+    renderClientOverviewReportingDeliverables(PR_CLIENT_OVERVIEW_CACHE.reportingDeliverables);
+    renderClientOverviewOperations(PR_CLIENT_OVERVIEW_CACHE.operations);
+    renderClientOverviewCloseFinalisation(PR_CLIENT_OVERVIEW_CACHE.closeFinalisation);
+    renderClientOverviewRiskAlerts(PR_CLIENT_OVERVIEW_CACHE.riskAlerts);
+    renderClientOverviewEngagementRows(PR_CLIENT_OVERVIEW_CACHE.engagements);
+    return;
+  }
+
+  PR_CLIENT_OVERVIEW_LOADING = true;
+
+  try {
+    const status = (document.getElementById("clientOverviewStatusFilter")?.value || "").trim();
+    const type = (document.getElementById("clientOverviewTypeFilter")?.value || "").trim();
+    const q = (document.getElementById("clientOverviewSearchInput")?.value || "").trim();
+
+    const [
+      summary,
+      engagements,
+      reportingDeliverables,
+      operations,
+      closeFinalisation,
+      riskAlerts
+    ] = await Promise.all([
+      fetchClientOverviewSummary(me, customerId),
+      fetchClientOverviewEngagements(me, customerId, { status, type, q }),
+      fetchClientOverviewReportingDeliverables(me, customerId),
+      fetchClientOverviewOperations(me, customerId),
+      fetchClientOverviewCloseFinalisation(me, customerId),
+      fetchClientOverviewRiskAlerts(me, customerId)
+    ]);
+
+    PR_CLIENT_OVERVIEW_CACHE = {
+      summary,
+      engagements,
+      reportingDeliverables,
+      operations,
+      closeFinalisation,
+      riskAlerts
+    };
+
+    renderClientOverviewSummary(summary);
+    renderClientOverviewReportingDeliverables(reportingDeliverables);
+    renderClientOverviewOperations(operations);
+    renderClientOverviewCloseFinalisation(closeFinalisation);
+    renderClientOverviewRiskAlerts(riskAlerts);
+    renderClientOverviewEngagementRows(engagements);
+  } catch (err) {
+    console.error("loadClientOverviewScreen failed:", err);
+    alert(err?.message || "Failed to load client overview.");
+  } finally {
+    PR_CLIENT_OVERVIEW_LOADING = false;
+  }
+}
+
+function populateClientOverviewCustomerSelect() {
+  const select = document.getElementById("clientOverviewCustomerSelect");
+  if (!select) return;
+
+  const currentValue = select.value;
+
+  select.innerHTML = `<option value="">Select client...</option>`;
+
+  const rows = Array.isArray(PR_CUSTOMERS_CACHE) ? PR_CUSTOMERS_CACHE : [];
+
+  rows.forEach((c) => {
+    const id = c.id || c.customer_id;
+    const name = c.customer_name || c.name || `Client ${id}`;
+
+    const opt = document.createElement("option");
+    opt.value = String(id);
+    opt.textContent = name;
+
+    select.appendChild(opt);
+  });
+
+  // restore previous selection if possible
+  if (currentValue && rows.some(c => String(c.id || c.customer_id) === currentValue)) {
+    select.value = currentValue;
+  } else if (!select.value && rows.length > 0) {
+    // auto-select first client
+    const first = rows[0];
+    select.value = String(first.id || first.customer_id);
+  }
+}
+
+function bindClientOverviewEvents(me) {
+  if (PR_CLIENT_OVERVIEW_EVENTS_BOUND) return;
+  PR_CLIENT_OVERVIEW_EVENTS_BOUND = true;
+
+  // 🔥 CLIENT CHANGE
+  document.getElementById("clientOverviewCustomerSelect")?.addEventListener("change", async () => {
+    resetClientOverviewCache();
+    await loadClientOverviewScreen(me, { force: true });
+  });
+
+  document.getElementById("clientOverviewRefreshBtn")?.addEventListener("click", async () => {
+    resetClientOverviewCache();
+    await loadClientOverviewScreen(me, { force: true });
+  });
+
+  document.getElementById("clientOverviewRefreshBtn")?.addEventListener("click", async () => {
+    PR_CLIENT_OVERVIEW_CACHE = {
+      summary: null,
+      engagements: [],
+      reportingDeliverables: null,
+      operations: null,
+      closeFinalisation: null,
+      riskAlerts: null
+    };
+    await loadClientOverviewScreen(me, { force: true });
+  });
+
+  document.getElementById("clientOverviewSearchInput")?.addEventListener("input", debounce(async () => {
+    await loadClientOverviewScreen(me, { force: true });
+  }, 300));
+
+  document.getElementById("clientOverviewStatusFilter")?.addEventListener("change", async () => {
+    await loadClientOverviewScreen(me, { force: true });
+  });
+
+  document.getElementById("clientOverviewTypeFilter")?.addEventListener("change", async () => {
+    await loadClientOverviewScreen(me, { force: true });
+  });
+
+  document.getElementById("clientOverviewViewEngagementsBtn")?.addEventListener("click", async () => {
+    await switchPractitionerScreen("assignments", me);
+  });
+
+  document.getElementById("clientOverviewViewReportingBtn")?.addEventListener("click", async () => {
+    await switchPractitionerScreen("reporting-overview", me);
+  });
+
+  document.getElementById("clientOverviewViewOperationsBtn")?.addEventListener("click", async () => {
+    await switchPractitionerScreen("day-to-day-postings", me);
+  });
+
+  document.getElementById("clientOverviewViewCloseBtn")?.addEventListener("click", async () => {
+    await switchPractitionerScreen("monthly-close-routines", me);
+  });
+
+  document.getElementById("clientOverviewViewRiskBtn")?.addEventListener("click", async () => {
+    await switchPractitionerScreen("action-center", me);
+  });
+}
+
+
 function renderSettingsScreen(me, screen) {
   console.log("Settings screen:", screen);
 }
 function renderDashboardHome(me) {}
-function renderClientsScreen(me) {}
+
+async function renderClientsScreen(me) {
+  // ensure customers are loaded (you may already do this elsewhere)
+  if (!Array.isArray(PR_CUSTOMERS_CACHE) || PR_CUSTOMERS_CACHE.length === 0) {
+    // if you have an existing loader, call it here
+    // await loadCustomers(me);
+  }
+
+  populateClientOverviewCustomerSelect();
+
+  bindClientOverviewEvents(me);
+
+  await loadClientOverviewScreen(me, { force: false });
+}
 
 /* ======================================================
  * Bootstrapping
