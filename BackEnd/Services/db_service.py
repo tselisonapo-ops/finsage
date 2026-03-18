@@ -42219,7 +42219,7 @@ class DatabaseService:
                     e.status AS engagement_status,
                     e.priority AS engagement_priority,
                     e.due_date AS engagement_due_date,
-                    c.customer_name,
+                    c.name AS customer_name,
                     u1.first_name AS manager_first_name,
                     u1.last_name AS manager_last_name,
                     u2.first_name AS partner_first_name,
@@ -42236,7 +42236,6 @@ class DatabaseService:
                 AND (%s IS NULL OR e.customer_id = %s)
                 AND (%s IS NULL OR e.id = %s)
             ),
-
             reporting_items AS (
                 SELECT
                     'reporting_item'::text AS queue_type,
