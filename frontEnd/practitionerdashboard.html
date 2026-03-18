@@ -2084,10 +2084,204 @@ window.safeRedirect = function (url, mode = "href") {
 
       <!-- ACTION CENTER -->
       <section id="screen-action-center" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Action Center</div>
-          <div class="panel-subtitle mt-1">Approvals, sign-offs, escalations, and routing</div>
-          <div class="mt-4 text-sm text-slate-600">Action Center placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div class="panel-title">Action Center</div>
+                <div class="panel-subtitle mt-1">
+                  Approvals, reviews, overdue items, blocked workflow, and sign-offs across active engagements.
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <button id="actionCenterMineBtn" class="btn btn-secondary btn-sm">My queue</button>
+                <button id="actionCenterRefreshBtn" class="btn btn-secondary btn-sm">Refresh</button>
+              </div>
+            </div>
+
+            <div class="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+              <div class="metric-card">
+                <div class="metric-label">Awaiting My Review</div>
+                <div id="acAwaitingMyReview" class="metric-value">0</div>
+                <div class="metric-note">Items requiring your review</div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-label">Pending Approval</div>
+                <div id="acPendingApproval" class="metric-value">0</div>
+                <div class="metric-note">Ready for sign-off or approval</div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-label">Overdue</div>
+                <div id="acOverdue" class="metric-value">0</div>
+                <div class="metric-note">Past due date</div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-label">Blocked</div>
+                <div id="acBlocked" class="metric-value">0</div>
+                <div class="metric-note">Workflow exceptions</div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-label">Due Today</div>
+                <div id="acDueToday" class="metric-value">0</div>
+                <div class="metric-note">Immediate attention</div>
+              </div>
+
+              <div class="metric-card">
+                <div class="metric-label">Pending Sign-Offs</div>
+                <div id="acPendingSignoffs" class="metric-value">0</div>
+                <div class="metric-note">Manager / partner / final sign-off</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">
+            <div class="xl:col-span-3 space-y-4">
+              <div class="card p-5">
+                <div class="flex flex-wrap items-center gap-3">
+                  <select id="actionCenterClientFilter" class="input min-w-[220px]">
+                    <option value="">All clients</option>
+                  </select>
+
+                  <select id="actionCenterEngagementFilter" class="input min-w-[220px]">
+                    <option value="">All engagements</option>
+                  </select>
+
+                  <select id="actionCenterTypeFilter" class="input min-w-[180px]">
+                    <option value="">All queue types</option>
+                    <option value="reporting_item">Reporting</option>
+                    <option value="deliverable">Deliverables</option>
+                    <option value="posting_activity">Posting</option>
+                    <option value="monthly_close">Monthly close</option>
+                    <option value="year_end">Year-end</option>
+                    <option value="signoff">Sign-off</option>
+                  </select>
+
+                  <select id="actionCenterStatusFilter" class="input min-w-[180px]">
+                    <option value="">All statuses</option>
+                  </select>
+
+                  <select id="actionCenterPriorityFilter" class="input min-w-[160px]">
+                    <option value="">All priorities</option>
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+
+                  <input
+                    id="actionCenterSearchInput"
+                    type="search"
+                    class="input flex-1 min-w-[220px]"
+                    placeholder="Search client, engagement, or item..."
+                  />
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <button class="btn btn-secondary btn-sm" data-ac-quick="all">All</button>
+                  <button class="btn btn-secondary btn-sm" data-ac-quick="mine">Mine</button>
+                  <button class="btn btn-secondary btn-sm" data-ac-quick="overdue">Overdue</button>
+                  <button class="btn btn-secondary btn-sm" data-ac-quick="blocked">Blocked</button>
+                  <button class="btn btn-secondary btn-sm" data-ac-quick="reviews">Reviews</button>
+                  <button class="btn btn-secondary btn-sm" data-ac-quick="signoffs">Sign-offs</button>
+                </div>
+              </div>
+
+              <div class="card p-5">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <div class="panel-title text-base">Work Queue</div>
+                    <div class="panel-subtitle mt-1">
+                      Unified workflow items requiring attention
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-4 overflow-x-auto">
+                  <table class="data-table w-full">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Item</th>
+                        <th>Client</th>
+                        <th>Engagement</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th>Due date</th>
+                        <th>Assigned</th>
+                        <th>Next action</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="actionCenterRows">
+                      <tr>
+                        <td colspan="10" class="text-sm text-slate-500">No action items found.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <div class="card p-5">
+                <div class="panel-title text-base">Urgent Breakdown</div>
+                <div class="panel-subtitle mt-1">Focus areas requiring attention</div>
+
+                <div class="mt-4 space-y-3">
+                  <div class="mini-stat mini-stat-warn">
+                    <div class="mini-stat-label">Reporting overdue</div>
+                    <div id="acUrgentReporting" class="mini-stat-value">0</div>
+                  </div>
+                  <div class="mini-stat mini-stat-danger">
+                    <div class="mini-stat-label">Blocked workflow</div>
+                    <div id="acUrgentBlocked" class="mini-stat-value">0</div>
+                  </div>
+                  <div class="mini-stat">
+                    <div class="mini-stat-label">Pending sign-offs</div>
+                    <div id="acUrgentSignoffs" class="mini-stat-value">0</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card p-5">
+                <div class="panel-title text-base">Work by Type</div>
+                <div class="panel-subtitle mt-1">Current queue composition</div>
+
+                <div class="mt-4 space-y-3">
+                  <div class="mini-stat">
+                    <div class="mini-stat-label">Reporting</div>
+                    <div id="acTypeReporting" class="mini-stat-value">0</div>
+                  </div>
+                  <div class="mini-stat">
+                    <div class="mini-stat-label">Deliverables</div>
+                    <div id="acTypeDeliverables" class="mini-stat-value">0</div>
+                  </div>
+                  <div class="mini-stat">
+                    <div class="mini-stat-label">Posting</div>
+                    <div id="acTypePosting" class="mini-stat-value">0</div>
+                  </div>
+                  <div class="mini-stat">
+                    <div class="mini-stat-label">Close</div>
+                    <div id="acTypeClose" class="mini-stat-value">0</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card p-5">
+                <div class="panel-title text-base">Selected Item</div>
+                <div class="panel-subtitle mt-1">Quick details and shortcuts</div>
+
+                <div id="actionCenterSelectedItem" class="mt-4 text-sm text-slate-500">
+                  Select a row to view details.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

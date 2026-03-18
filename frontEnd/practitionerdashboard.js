@@ -153,6 +153,23 @@ const ENDPOINTS = {
     deliverablesDeactivate: (companyId, deliverableId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-deliverables/${encodeURIComponent(deliverableId)}/deactivate`,
 
+    actionCenter: {
+      summary: (companyId, params = {}) =>
+        buildApiUrl(
+          `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/summary`,
+          params
+        ),
+
+      queue: (companyId, params = {}) =>
+        buildApiUrl(
+          `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/queue`,
+          params
+        ),
+
+      itemAction: (companyId, queueType, sourceId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/action`
+    },
+
     postingActivityList: (
       companyId,
       engagementId,
@@ -560,6 +577,18 @@ const ENDPOINTS = {
   let PR_CONTEXT_RAIL_BOUND = false;
   let PR_CONTEXT_RAIL_PINNED = false;
 
+  let PR_ACTION_CENTER_CACHE = {
+    summary: null,
+    rows: [],
+    selectedRow: null,
+    filtersKey: ""
+  };
+
+  let PR_ACTION_CENTER_EVENTS_BOUND = false;
+  let PR_ACTION_CENTER_LOADING = false;
+  let PR_ACTION_CENTER_MINE_ONLY = false;
+  let PR_ACTION_CENTER_ACTIVE_QUICK = "all";
+
   const PR_NAV = {
     dashboard: "dashboard",
     assignments: "assignments",
@@ -638,6 +667,16 @@ const ENDPOINTS = {
     return json;
   }
 
+function buildApiUrl(baseUrl, params = {}) {
+  const url = new URL(baseUrl, window.location.origin);
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    url.searchParams.set(key, String(value));
+  });
+
+  return url.toString();
+}
 /* ======================================================
 * Loaders
 * ==================================================== */
@@ -963,14 +1002,14 @@ function safeText(val, fallback = "--") {
   return s || fallback;
 }
 
-function fullName(firstName, lastName, fallback = "--") {
-  const name = `${firstName || ""} ${lastName || ""}`.trim();
-  return name || fallback;
-}
-
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = String(value ?? "--");
+}
+
+function fullName(firstName, lastName, fallback = "--") {
+  const name = `${firstName || ""} ${lastName || ""}`.trim();
+  return name || fallback;
 }
 
 function practitionerCompanyIdFromMe(me) {
@@ -1689,6 +1728,26 @@ function setActiveNav(navKey) {
   });
 }
 
+function getActionCenterFilters() {
+  return {
+    customer_id: (document.getElementById("actionCenterClientFilter")?.value || "").trim(),
+    engagement_id: (document.getElementById("actionCenterEngagementFilter")?.value || "").trim(),
+    queue_type: (document.getElementById("actionCenterTypeFilter")?.value || "").trim(),
+    status: (document.getElementById("actionCenterStatusFilter")?.value || "").trim(),
+    priority: (document.getElementById("actionCenterPriorityFilter")?.value || "").trim(),
+    q: (document.getElementById("actionCenterSearchInput")?.value || "").trim(),
+    mine: PR_ACTION_CENTER_MINE_ONLY ? "true" : ""
+  };
+}
+
+function resetActionCenterCache() {
+  PR_ACTION_CENTER_CACHE = {
+    summary: null,
+    rows: [],
+    selectedRow: null,
+    filtersKey: ""
+  };
+}
 
 function getAvailableDashboardModes(companies = [], role = "") {
   const canSwitch = canUseBothDashboards(role);
@@ -4476,7 +4535,24 @@ async function renderReportingOverviewScreen(me) {
   bindReportingItemModalEvents();
 
   if (!PR_ASSIGNMENTS_CACHE.length) {
-    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
+    try {
+      PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({});
+    } catch (_) {}
+  }
+
+  const ctx = PR_SCREEN_CONTEXT || {};
+  if (ctx.customerId) {
+    const customerSelect = document.getElementById("reportingCustomerSelect");
+    if (customerSelect) {
+      customerSelect.value = String(ctx.customerId);
+    }
+  }
+
+  if (ctx.filters?.status) {
+    const statusSelect = document.getElementById("reportingStatusFilter");
+    if (statusSelect) {
+      statusSelect.value = String(ctx.filters.status);
+    }
   }
 
   await refreshReportingOverviewScreen();
@@ -4888,6 +4964,38 @@ async function fetchClientOverviewEngagements(
   return Array.isArray(res?.rows) ? res.rows : [];
 }
 
+const PR_SCREEN_CONTEXT = {
+  customerId: null,
+  customerName: "",
+  engagementId: null,
+  sourceScreen: "",
+  focus: "",
+  filters: {}
+};
+
+function setPractitionerScreenContext({
+  customerId = null,
+  customerName = "",
+  engagementId = null,
+  sourceScreen = "",
+  focus = "",
+  filters = {}
+} = {}) {
+  PR_SCREEN_CONTEXT.customerId = customerId;
+  PR_SCREEN_CONTEXT.customerName = customerName;
+  PR_SCREEN_CONTEXT.engagementId = engagementId;
+  PR_SCREEN_CONTEXT.sourceScreen = sourceScreen;
+  PR_SCREEN_CONTEXT.focus = focus;
+  PR_SCREEN_CONTEXT.filters = filters || {};
+}
+
+function getSelectedClientOverviewContext() {
+  const select = document.getElementById("clientOverviewCustomerSelect");
+  const customerId = select?.value ? Number(select.value) : null;
+  const customerName = select?.selectedOptions?.[0]?.textContent?.trim() || "";
+  return { customerId, customerName };
+}
+
 async function fetchClientOverviewReportingDeliverables(me, customerId) {
   const companyId = practitionerCompanyIdFromMe(me);
   const res = await apiFetch(ENDPOINTS.clientOverview.reportingDeliverables(companyId, customerId));
@@ -4998,7 +5106,22 @@ async function loadClientOverviewScreen(me, { force = false } = {}) {
   if (PR_CLIENT_OVERVIEW_LOADING) return;
 
   const customerId = getSelectedPractitionerCustomerId();
+
+  const status = (document.getElementById("clientOverviewStatusFilter")?.value || "").trim();
+  const type = (document.getElementById("clientOverviewTypeFilter")?.value || "").trim();
+  const q = (document.getElementById("clientOverviewSearchInput")?.value || "").trim();
+
   if (!customerId) {
+    PR_CLIENT_OVERVIEW_CACHE = {
+      key: "",
+      summary: null,
+      engagements: [],
+      reportingDeliverables: null,
+      operations: null,
+      closeFinalisation: null,
+      riskAlerts: null
+    };
+
     renderClientOverviewSummary(null);
     renderClientOverviewReportingDeliverables(null);
     renderClientOverviewOperations(null);
@@ -5008,7 +5131,18 @@ async function loadClientOverviewScreen(me, { force = false } = {}) {
     return;
   }
 
-  if (!force && PR_CLIENT_OVERVIEW_CACHE.summary && Array.isArray(PR_CLIENT_OVERVIEW_CACHE.engagements)) {
+  const cacheKey = JSON.stringify({
+    customerId,
+    status,
+    type,
+    q
+  });
+
+  if (
+    !force &&
+    PR_CLIENT_OVERVIEW_CACHE?.key === cacheKey &&
+    PR_CLIENT_OVERVIEW_CACHE?.summary
+  ) {
     renderClientOverviewSummary(PR_CLIENT_OVERVIEW_CACHE.summary);
     renderClientOverviewReportingDeliverables(PR_CLIENT_OVERVIEW_CACHE.reportingDeliverables);
     renderClientOverviewOperations(PR_CLIENT_OVERVIEW_CACHE.operations);
@@ -5021,10 +5155,6 @@ async function loadClientOverviewScreen(me, { force = false } = {}) {
   PR_CLIENT_OVERVIEW_LOADING = true;
 
   try {
-    const status = (document.getElementById("clientOverviewStatusFilter")?.value || "").trim();
-    const type = (document.getElementById("clientOverviewTypeFilter")?.value || "").trim();
-    const q = (document.getElementById("clientOverviewSearchInput")?.value || "").trim();
-
     const [
       summary,
       engagements,
@@ -5042,6 +5172,7 @@ async function loadClientOverviewScreen(me, { force = false } = {}) {
     ]);
 
     PR_CLIENT_OVERVIEW_CACHE = {
+      key: cacheKey,
       summary,
       engagements,
       reportingDeliverables,
@@ -5106,11 +5237,6 @@ function bindClientOverviewEvents(me) {
   });
 
   document.getElementById("clientOverviewRefreshBtn")?.addEventListener("click", async () => {
-    resetClientOverviewCache();
-    await loadClientOverviewScreen(me, { force: true });
-  });
-
-  document.getElementById("clientOverviewRefreshBtn")?.addEventListener("click", async () => {
     PR_CLIENT_OVERVIEW_CACHE = {
       summary: null,
       engagements: [],
@@ -5131,24 +5257,592 @@ function bindClientOverviewEvents(me) {
   });
 
   document.getElementById("clientOverviewViewEngagementsBtn")?.addEventListener("click", async () => {
+    const { customerId, customerName } = getSelectedClientOverviewContext();
+    if (!customerId) return alert("Select a client first.");
+
+    setPractitionerScreenContext({
+      customerId,
+      customerName,
+      sourceScreen: PR_NAV.clients,
+      focus: "engagements",
+      filters: {}
+    });
+
     await switchPractitionerScreen(PR_NAV.assignments, me);
   });
 
   document.getElementById("clientOverviewViewReportingBtn")?.addEventListener("click", async () => {
+    const { customerId, customerName } = getSelectedClientOverviewContext();
+    if (!customerId) return alert("Select a client first.");
+
+    setPractitionerScreenContext({
+      customerId,
+      customerName,
+      sourceScreen: PR_NAV.clients,
+      focus: "reporting",
+      filters: { status: "open" }
+    });
+
     await switchPractitionerScreen(PR_NAV.reportingOverview, me);
   });
 
   document.getElementById("clientOverviewViewOperationsBtn")?.addEventListener("click", async () => {
+    const { customerId, customerName } = getSelectedClientOverviewContext();
+    if (!customerId) return alert("Select a client first.");
+
+    setPractitionerScreenContext({
+      customerId,
+      customerName,
+      sourceScreen: PR_NAV.clients,
+      focus: "operations",
+      filters: {}
+    });
+
     await switchPractitionerScreen(PR_NAV.dayToDayPostings, me);
   });
 
   document.getElementById("clientOverviewViewCloseBtn")?.addEventListener("click", async () => {
+    const { customerId, customerName } = getSelectedClientOverviewContext();
+    if (!customerId) return alert("Select a client first.");
+
+    setPractitionerScreenContext({
+      customerId,
+      customerName,
+      sourceScreen: PR_NAV.clients,
+      focus: "close",
+      filters: {}
+    });
+
     await switchPractitionerScreen(PR_NAV.monthlyCloseRoutines, me);
   });
 
   document.getElementById("clientOverviewViewRiskBtn")?.addEventListener("click", async () => {
+    const { customerId, customerName } = getSelectedClientOverviewContext();
+    if (!customerId) return alert("Select a client first.");
+
+    setPractitionerScreenContext({
+      customerId,
+      customerName,
+      sourceScreen: PR_NAV.clients,
+      focus: "risk",
+      filters: { onlyExceptions: true }
+    });
+
     await switchPractitionerScreen(PR_NAV.actionCenter, me);
   });
+}
+
+async function fetchActionCenterSummary(me, params = {}) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.actionCenter.summary(companyId, params));
+  return res?.row || null;
+}
+
+async function fetchActionCenterQueue(me, params = {}) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  const res = await apiFetch(ENDPOINTS.actionCenter.queue(companyId, params));
+  return Array.isArray(res?.rows) ? res.rows : [];
+}
+
+async function postActionCenterItemAction(me, queueType, sourceId, action) {
+  const companyId = practitionerCompanyIdFromMe(me);
+  return apiFetch(ENDPOINTS.actionCenter.itemAction(companyId, queueType, sourceId), {
+    method: "POST",
+    body: JSON.stringify({ action })
+  });
+}
+
+function renderActionCenterSummary(row) {
+  setText("acAwaitingMyReview", safeNum(row?.awaiting_my_review, 0));
+  setText("acPendingApproval", safeNum(row?.pending_approval, 0));
+  setText("acOverdue", safeNum(row?.overdue_items, 0));
+  setText("acBlocked", safeNum(row?.blocked_items, 0));
+  setText("acDueToday", safeNum(row?.due_today, 0));
+  setText("acPendingSignoffs", safeNum(row?.pending_signoffs, 0));
+}
+
+function renderActionCenterSideStats(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  const reportingOverdue = safeRows.filter(r => r.queue_type === "reporting_item" && r.is_overdue).length;
+  const blocked = safeRows.filter(r => r.is_blocked).length;
+  const signoffs = safeRows.filter(r => r.queue_type === "signoff" && ["not_started", "in_progress", "blocked"].includes(String(r.status || "").toLowerCase())).length;
+
+  const reporting = safeRows.filter(r => r.queue_type === "reporting_item").length;
+  const deliverables = safeRows.filter(r => r.queue_type === "deliverable").length;
+  const posting = safeRows.filter(r => r.queue_type === "posting_activity").length;
+  const close = safeRows.filter(r => ["monthly_close", "year_end", "signoff"].includes(r.queue_type)).length;
+
+  setText("acUrgentReporting", reportingOverdue);
+  setText("acUrgentBlocked", blocked);
+  setText("acUrgentSignoffs", signoffs);
+
+  setText("acTypeReporting", reporting);
+  setText("acTypeDeliverables", deliverables);
+  setText("acTypePosting", posting);
+  setText("acTypeClose", close);
+}
+
+function renderActionCenterSelectedItem(row) {
+  const box = document.getElementById("actionCenterSelectedItem");
+  if (!box) return;
+
+  if (!row) {
+    box.innerHTML = `<div class="text-sm text-slate-500">Select a row to view details.</div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="space-y-2">
+      <div class="font-medium text-slate-800">${safeText(row.item_name, "Untitled item")}</div>
+      <div class="text-xs text-slate-500">${safeText(row.queue_type)} · ${safeText(row.status)} · ${safeText(row.priority, "normal")}</div>
+      <div class="text-sm text-slate-600"><strong>Client:</strong> ${safeText(row.customer_name, "—")}</div>
+      <div class="text-sm text-slate-600"><strong>Engagement:</strong> ${safeText(row.engagement_name, "—")}</div>
+      <div class="text-sm text-slate-600"><strong>Due:</strong> ${safeText(row.due_date, "—")}</div>
+      <div class="text-sm text-slate-600"><strong>Assigned:</strong> ${safeText(row.assigned_user_name, "—")}</div>
+      <div class="text-sm text-slate-600"><strong>Reviewer:</strong> ${safeText(row.reviewer_user_name, "—")}</div>
+      <div class="pt-2">
+        <button
+          class="btn btn-secondary btn-sm"
+          type="button"
+          onclick="openActionCenterRowContext('${String(row.queue_type).replace(/'/g, "\\'")}', ${Number(row.source_id || 0)}, ${Number(row.engagement_id || 0)})"
+        >
+          Open related workflow
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderActionCenterRows(rows) {
+  const tbody = document.getElementById("actionCenterRows");
+  if (!tbody) return;
+
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  if (!safeRows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" class="text-sm text-slate-500">No action items found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = safeRows.map((row, idx) => {
+    const type = safeText(row.queue_type);
+    const itemName = safeText(row.item_name, "Untitled item");
+    const itemCode = safeText(row.item_code, "");
+    const clientName = safeText(row.customer_name, "—");
+    const engagementName = safeText(row.engagement_name, "—");
+    const status = safeText(row.status, "—");
+    const priority = safeText(row.priority, "normal");
+    const dueDate = safeText(row.due_date, "—");
+    const assigned = safeText(row.assigned_user_name, "—");
+    const nextAction = safeText(row.next_action, "Open");
+
+    const primaryAction = getActionCenterPrimaryAction(row);
+
+    return `
+      <tr
+        class="cursor-pointer"
+        data-ac-row-index="${idx}"
+        data-queue-type="${type}"
+        data-source-id="${Number(row.source_id || 0)}"
+      >
+        <td>${type}</td>
+        <td>
+          <div class="font-medium">${itemName}</div>
+          <div class="text-xs text-slate-500">${itemCode || "—"}</div>
+        </td>
+        <td>${clientName}</td>
+        <td>${engagementName}</td>
+        <td>${status}</td>
+        <td>${priority}</td>
+        <td>${dueDate}</td>
+        <td>${assigned}</td>
+        <td>${nextAction}</td>
+        <td>
+          <div class="flex flex-wrap gap-2">
+            ${
+              primaryAction
+                ? `<button
+                     class="btn btn-secondary btn-sm"
+                     type="button"
+                     data-ac-action="${primaryAction}"
+                     data-ac-row-index="${idx}"
+                   >${primaryAction}</button>`
+                : ""
+            }
+            <button
+              class="btn btn-secondary btn-sm"
+              type="button"
+              data-ac-open-row="${idx}"
+            >
+              Open
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function getActionCenterPrimaryAction(row) {
+  const type = String(row?.queue_type || "").toLowerCase();
+  const status = String(row?.status || "").toLowerCase();
+
+  if (type === "reporting_item") {
+    if (status === "ready" || status === "in_review") return "approve";
+    if (status === "blocked") return "review";
+    return "review";
+  }
+
+  if (type === "deliverable") {
+    if (status === "requested" || status === "outstanding") return "receive";
+    if (status === "received") return "review";
+    return "review";
+  }
+
+  if (type === "posting_activity") {
+    if (status === "pending_review" || status === "in_review") return "approve";
+    if (status === "approved") return "post";
+    return "review";
+  }
+
+  if (type === "monthly_close") {
+    if (status === "not_started") return "start";
+    if (status === "in_progress" || status === "in_review") return "complete";
+    return "review";
+  }
+
+  if (type === "year_end") {
+    if (status === "not_started") return "start";
+    if (status === "in_progress" || status === "in_review") return "complete";
+    return "review";
+  }
+
+  if (type === "signoff") {
+    if (status === "not_started") return "start";
+    if (status === "in_progress" || status === "blocked") return "complete";
+    return "complete";
+  }
+
+  return "";
+}
+
+async function loadActionCenterScreen(me, { force = false } = {}) {
+  if (PR_ACTION_CENTER_LOADING) return;
+
+  const filters = getActionCenterFilters();
+  const filtersKey = JSON.stringify(filters);
+
+  if (
+    !force &&
+    PR_ACTION_CENTER_CACHE?.filtersKey === filtersKey &&
+    PR_ACTION_CENTER_CACHE?.summary
+  ) {
+    renderActionCenterSummary(PR_ACTION_CENTER_CACHE.summary);
+    renderActionCenterRows(PR_ACTION_CENTER_CACHE.rows);
+    renderActionCenterSideStats(PR_ACTION_CENTER_CACHE.rows);
+    renderActionCenterSelectedItem(PR_ACTION_CENTER_CACHE.selectedRow);
+    return;
+  }
+
+  PR_ACTION_CENTER_LOADING = true;
+
+  try {
+    const [summary, rows] = await Promise.all([
+      fetchActionCenterSummary(me, filters),
+      fetchActionCenterQueue(me, { ...filters, limit: 200, offset: 0 })
+    ]);
+
+    PR_ACTION_CENTER_CACHE = {
+      summary,
+      rows,
+      selectedRow: Array.isArray(rows) && rows.length ? rows[0] : null,
+      filtersKey
+    };
+
+    renderActionCenterSummary(summary);
+    renderActionCenterRows(rows);
+    renderActionCenterSideStats(rows);
+    renderActionCenterSelectedItem(PR_ACTION_CENTER_CACHE.selectedRow);
+  } catch (err) {
+    console.error("loadActionCenterScreen failed:", err);
+    alert(err?.message || "Failed to load Action Center.");
+  } finally {
+    PR_ACTION_CENTER_LOADING = false;
+  }
+}
+
+function bindActionCenterEvents(me) {
+  if (PR_ACTION_CENTER_EVENTS_BOUND) return;
+  PR_ACTION_CENTER_EVENTS_BOUND = true;
+
+  document.getElementById("actionCenterRefreshBtn")?.addEventListener("click", async () => {
+    resetActionCenterCache();
+    await loadActionCenterScreen(me, { force: true });
+  });
+
+  document.getElementById("actionCenterMineBtn")?.addEventListener("click", async () => {
+    PR_ACTION_CENTER_MINE_ONLY = !PR_ACTION_CENTER_MINE_ONLY;
+    resetActionCenterCache();
+    await loadActionCenterScreen(me, { force: true });
+  });
+
+  [
+    "actionCenterClientFilter",
+    "actionCenterEngagementFilter",
+    "actionCenterTypeFilter",
+    "actionCenterStatusFilter",
+    "actionCenterPriorityFilter"
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", async () => {
+      resetActionCenterCache();
+      await loadActionCenterScreen(me, { force: true });
+    });
+  });
+
+  document.getElementById("actionCenterSearchInput")?.addEventListener("input", debounce(async () => {
+    resetActionCenterCache();
+    await loadActionCenterScreen(me, { force: true });
+  }, 250));
+
+  document.querySelectorAll("[data-ac-quick]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const quick = String(btn.getAttribute("data-ac-quick") || "all").trim().toLowerCase();
+      applyActionCenterQuickFilter(quick);
+      resetActionCenterCache();
+      await loadActionCenterScreen(me, { force: true });
+    });
+  });
+
+  document.getElementById("actionCenterRows")?.addEventListener("click", async (e) => {
+    const actionBtn = e.target.closest("[data-ac-action]");
+    const openBtn = e.target.closest("[data-ac-open-row]");
+    const rowEl = e.target.closest("tr[data-ac-row-index]");
+
+    if (actionBtn) {
+      e.stopPropagation();
+      const idx = Number(actionBtn.getAttribute("data-ac-row-index"));
+      const action = String(actionBtn.getAttribute("data-ac-action") || "").trim().toLowerCase();
+      const row = PR_ACTION_CENTER_CACHE.rows?.[idx];
+      if (!row || !action) return;
+
+      try {
+        await postActionCenterItemAction(me, row.queue_type, row.source_id, action);
+        resetActionCenterCache();
+        await loadActionCenterScreen(me, { force: true });
+      } catch (err) {
+        console.error("Action Center quick action failed:", err);
+        alert(err?.message || "Failed to apply action.");
+      }
+      return;
+    }
+
+    if (openBtn) {
+      e.stopPropagation();
+      const idx = Number(openBtn.getAttribute("data-ac-open-row"));
+      const row = PR_ACTION_CENTER_CACHE.rows?.[idx];
+      if (!row) return;
+      openActionCenterRow(row, me);
+      return;
+    }
+
+    if (rowEl) {
+      const idx = Number(rowEl.getAttribute("data-ac-row-index"));
+      const row = PR_ACTION_CENTER_CACHE.rows?.[idx] || null;
+      PR_ACTION_CENTER_CACHE.selectedRow = row;
+      renderActionCenterSelectedItem(row);
+    }
+  });
+}
+
+function applyActionCenterQuickFilter(quick) {
+  PR_ACTION_CENTER_ACTIVE_QUICK = quick || "all";
+
+  const typeEl = document.getElementById("actionCenterTypeFilter");
+  const statusEl = document.getElementById("actionCenterStatusFilter");
+
+  if (!typeEl || !statusEl) return;
+
+  if (quick === "all") {
+    PR_ACTION_CENTER_MINE_ONLY = false;
+    typeEl.value = "";
+    statusEl.value = "";
+    return;
+  }
+
+  if (quick === "mine") {
+    PR_ACTION_CENTER_MINE_ONLY = true;
+    return;
+  }
+
+  PR_ACTION_CENTER_MINE_ONLY = false;
+
+  if (quick === "overdue") {
+    statusEl.value = "";
+    return;
+  }
+
+  if (quick === "blocked") {
+    statusEl.value = "blocked";
+    return;
+  }
+
+  if (quick === "reviews") {
+    statusEl.value = "in_review";
+    return;
+  }
+
+  if (quick === "signoffs") {
+    typeEl.value = "signoff";
+    statusEl.value = "";
+    return;
+  }
+}
+
+function openActionCenterRow(row, me) {
+  if (!row) return;
+
+  const queueType = String(row.queue_type || "").toLowerCase();
+
+  setPractitionerScreenContext?.({
+    customerId: row.customer_id || null,
+    engagementId: row.engagement_id || null,
+    sourceScreen: PR_NAV.actionCenter,
+    focus: queueType,
+    filters: {
+      queueType,
+      sourceId: row.source_id || null
+    }
+  });
+
+  if (queueType === "reporting_item") {
+    switchPractitionerScreen(PR_NAV.reportingOverview, me);
+    return;
+  }
+
+  if (queueType === "deliverable") {
+    switchPractitionerScreen(PR_NAV.pendingDeliverables, me);
+    return;
+  }
+
+  if (queueType === "posting_activity") {
+    switchPractitionerScreen(PR_NAV.dayToDayPostings, me);
+    return;
+  }
+
+  if (queueType === "monthly_close") {
+    switchPractitionerScreen(PR_NAV.monthlyCloseRoutines, me);
+    return;
+  }
+
+  if (queueType === "year_end" || queueType === "signoff") {
+    switchPractitionerScreen(PR_NAV.yearEndReporting, me);
+    return;
+  }
+
+  switchPractitionerScreen(PR_NAV.assignments, me);
+}
+
+function openActionCenterRowContext(queueType, sourceId, engagementId) {
+  const row = (PR_ACTION_CENTER_CACHE.rows || []).find((r) =>
+    String(r.queue_type) === String(queueType) &&
+    Number(r.source_id) === Number(sourceId) &&
+    Number(r.engagement_id) === Number(engagementId)
+  );
+  if (!row) return;
+  openActionCenterRow(row, window.__PR_LAST_ME__);
+}
+
+function populateActionCenterClientFilter() {
+  const select = document.getElementById("actionCenterClientFilter");
+  if (!select) return;
+
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">All clients</option>`;
+
+  const rows = Array.isArray(PR_CUSTOMERS_CACHE) ? PR_CUSTOMERS_CACHE : [];
+  rows.forEach((c) => {
+    const id = c.id || c.customer_id;
+    const name = c.customer_name || c.name || `Client ${id}`;
+
+    const opt = document.createElement("option");
+    opt.value = String(id);
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+
+  if (currentValue) select.value = currentValue;
+}
+
+function populateActionCenterEngagementFilter() {
+  const select = document.getElementById("actionCenterEngagementFilter");
+  if (!select) return;
+
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">All engagements</option>`;
+
+  const rows = Array.isArray(PR_ASSIGNMENTS_CACHE) ? PR_ASSIGNMENTS_CACHE : [];
+  rows.forEach((r) => {
+    const id = r.id || r.engagement_id;
+    const name = r.engagement_name || r.assignment_name || `Engagement ${id}`;
+
+    const opt = document.createElement("option");
+    opt.value = String(id);
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+
+  if (currentValue) select.value = currentValue;
+}
+
+function populateActionCenterStatusFilter() {
+  const select = document.getElementById("actionCenterStatusFilter");
+  if (!select) return;
+
+  const currentValue = select.value;
+
+  const statuses = [
+    "",
+    "not_started",
+    "in_progress",
+    "ready",
+    "in_review",
+    "approved",
+    "completed",
+    "blocked",
+    "waived",
+    "returned",
+    "requested",
+    "outstanding",
+    "received",
+    "pending_review",
+    "posted",
+    "rejected",
+    "reversed",
+    "skipped"
+  ];
+
+  select.innerHTML = statuses.map((s) =>
+    `<option value="${s}">${s ? s.replace(/_/g, " ") : "All statuses"}</option>`
+  ).join("");
+
+  if (currentValue) select.value = currentValue;
+}
+
+async function renderActionCenterScreen(me) {
+  window.__PR_LAST_ME__ = me;
+
+  bindActionCenterEvents(me);
+
+  populateActionCenterClientFilter();
+  populateActionCenterEngagementFilter();
+  populateActionCenterStatusFilter();
+
+  await loadActionCenterScreen(me, { force: false });
 }
 
 

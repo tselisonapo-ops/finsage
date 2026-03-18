@@ -42191,6 +42191,703 @@ class DatabaseService:
         )
         return cur.fetchone()
 
+    def list_action_center_queue(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int = None,
+        engagement_id: int = None,
+        queue_type: str = None,
+        status: str = None,
+        priority: str = None,
+        mine_only: bool = False,
+        current_user_id: int = None,
+        q: str = None,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH engagement_scope AS (
+                SELECT
+                    e.id,
+                    e.customer_id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.status AS engagement_status,
+                    e.priority AS engagement_priority,
+                    e.due_date AS engagement_due_date,
+                    c.customer_name,
+                    u1.first_name AS manager_first_name,
+                    u1.last_name AS manager_last_name,
+                    u2.first_name AS partner_first_name,
+                    u2.last_name AS partner_last_name
+                FROM {schema}.engagements e
+                JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                LEFT JOIN public.users u1
+                ON u1.id = e.manager_user_id
+                LEFT JOIN public.users u2
+                ON u2.id = e.partner_user_id
+                WHERE e.company_id = %s
+                AND e.is_active = TRUE
+                AND (%s IS NULL OR e.customer_id = %s)
+                AND (%s IS NULL OR e.id = %s)
+            ),
+
+            reporting_items AS (
+                SELECT
+                    'reporting_item'::text AS queue_type,
+                    i.id AS source_id,
+                    i.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    i.item_name,
+                    i.item_code AS item_code,
+                    i.status,
+                    i.priority,
+                    i.due_date,
+                    i.owner_user_id AS assigned_user_id,
+                    CONCAT(COALESCE(ou.first_name, ''), CASE WHEN ou.last_name IS NOT NULL AND ou.last_name <> '' THEN ' ' || ou.last_name ELSE '' END) AS assigned_user_name,
+                    i.reviewer_user_id,
+                    CONCAT(COALESCE(ru.first_name, ''), CASE WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name ELSE '' END) AS reviewer_user_name,
+                    (
+                        i.due_date IS NOT NULL
+                        AND i.due_date < CURRENT_DATE
+                        AND i.status NOT IN ('approved', 'completed', 'waived')
+                    ) AS is_overdue,
+                    (i.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            i.owner_user_id = %s
+                            OR i.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    CASE
+                        WHEN i.status IN ('ready', 'in_review') THEN 'Review'
+                        WHEN i.status = 'blocked' THEN 'Resolve blocker'
+                        ELSE 'Open'
+                    END AS next_action,
+                    i.created_at,
+                    i.updated_at
+                FROM {schema}.engagement_reporting_items i
+                JOIN engagement_scope es ON es.id = i.engagement_id
+                LEFT JOIN public.users ou ON ou.id = i.owner_user_id
+                LEFT JOIN public.users ru ON ru.id = i.reviewer_user_id
+                WHERE i.company_id = %s
+                AND i.is_active = TRUE
+            ),
+
+            deliverables AS (
+                SELECT
+                    'deliverable'::text AS queue_type,
+                    d.id AS source_id,
+                    d.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    d.deliverable_name AS item_name,
+                    d.deliverable_code AS item_code,
+                    d.status,
+                    d.priority,
+                    d.due_date,
+                    d.assigned_user_id,
+                    CONCAT(COALESCE(au.first_name, ''), CASE WHEN au.last_name IS NOT NULL AND au.last_name <> '' THEN ' ' || au.last_name ELSE '' END) AS assigned_user_name,
+                    d.reviewer_user_id,
+                    CONCAT(COALESCE(ru.first_name, ''), CASE WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name ELSE '' END) AS reviewer_user_name,
+                    (
+                        d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('completed', 'waived')
+                    ) AS is_overdue,
+                    FALSE AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            d.assigned_user_id = %s
+                            OR d.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    CASE
+                        WHEN d.status IN ('requested', 'outstanding') THEN 'Follow up'
+                        WHEN d.status = 'in_review' THEN 'Review'
+                        ELSE 'Open'
+                    END AS next_action,
+                    d.created_at,
+                    d.updated_at
+                FROM {schema}.engagement_deliverables d
+                JOIN engagement_scope es ON es.id = d.engagement_id
+                LEFT JOIN public.users au ON au.id = d.assigned_user_id
+                LEFT JOIN public.users ru ON ru.id = d.reviewer_user_id
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+            ),
+
+            posting_items AS (
+                SELECT
+                    'posting_activity'::text AS queue_type,
+                    p.id AS source_id,
+                    p.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    p.description AS item_name,
+                    p.reference_no AS item_code,
+                    p.status,
+                    'normal'::text AS priority,
+                    p.posting_date AS due_date,
+                    p.prepared_by_user_id AS assigned_user_id,
+                    CONCAT(COALESCE(pu.first_name, ''), CASE WHEN pu.last_name IS NOT NULL AND pu.last_name <> '' THEN ' ' || pu.last_name ELSE '' END) AS assigned_user_name,
+                    p.reviewer_user_id,
+                    CONCAT(COALESCE(ru.first_name, ''), CASE WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name ELSE '' END) AS reviewer_user_name,
+                    (
+                        p.posting_date IS NOT NULL
+                        AND p.posting_date < CURRENT_DATE
+                        AND p.status NOT IN ('approved', 'posted', 'reversed')
+                    ) AS is_overdue,
+                    FALSE AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            p.prepared_by_user_id = %s
+                            OR p.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    CASE
+                        WHEN p.status IN ('pending_review', 'in_review') THEN 'Review'
+                        WHEN p.status IN ('returned', 'rejected') THEN 'Rework'
+                        ELSE 'Open'
+                    END AS next_action,
+                    p.created_at,
+                    p.updated_at
+                FROM {schema}.engagement_posting_activity p
+                JOIN engagement_scope es ON es.id = p.engagement_id
+                LEFT JOIN public.users pu ON pu.id = p.prepared_by_user_id
+                LEFT JOIN public.users ru ON ru.id = p.reviewer_user_id
+                WHERE p.company_id = %s
+                AND p.is_active = TRUE
+            ),
+
+            monthly_close_items AS (
+                SELECT
+                    'monthly_close'::text AS queue_type,
+                    m.id AS source_id,
+                    m.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    m.task_name AS item_name,
+                    m.task_code AS item_code,
+                    m.status,
+                    m.priority,
+                    m.due_date,
+                    m.owner_user_id AS assigned_user_id,
+                    CONCAT(COALESCE(ou.first_name, ''), CASE WHEN ou.last_name IS NOT NULL AND ou.last_name <> '' THEN ' ' || ou.last_name ELSE '' END) AS assigned_user_name,
+                    m.reviewer_user_id,
+                    CONCAT(COALESCE(ru.first_name, ''), CASE WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name ELSE '' END) AS reviewer_user_name,
+                    (
+                        m.due_date IS NOT NULL
+                        AND m.due_date < CURRENT_DATE
+                        AND m.status NOT IN ('completed', 'skipped')
+                    ) AS is_overdue,
+                    (m.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            m.owner_user_id = %s
+                            OR m.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    CASE
+                        WHEN m.status = 'in_review' THEN 'Review'
+                        WHEN m.status = 'blocked' THEN 'Resolve blocker'
+                        ELSE 'Open'
+                    END AS next_action,
+                    m.created_at,
+                    m.updated_at
+                FROM {schema}.engagement_monthly_close_tasks m
+                JOIN engagement_scope es ON es.id = m.engagement_id
+                LEFT JOIN public.users ou ON ou.id = m.owner_user_id
+                LEFT JOIN public.users ru ON ru.id = m.reviewer_user_id
+                WHERE m.company_id = %s
+                AND m.is_active = TRUE
+            ),
+
+            year_end_items AS (
+                SELECT
+                    'year_end'::text AS queue_type,
+                    y.id AS source_id,
+                    y.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    y.task_name AS item_name,
+                    y.task_code AS item_code,
+                    y.status,
+                    y.priority,
+                    y.due_date,
+                    y.owner_user_id AS assigned_user_id,
+                    CONCAT(COALESCE(ou.first_name, ''), CASE WHEN ou.last_name IS NOT NULL AND ou.last_name <> '' THEN ' ' || ou.last_name ELSE '' END) AS assigned_user_name,
+                    y.reviewer_user_id,
+                    CONCAT(COALESCE(ru.first_name, ''), CASE WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name ELSE '' END) AS reviewer_user_name,
+                    (
+                        y.due_date IS NOT NULL
+                        AND y.due_date < CURRENT_DATE
+                        AND y.status NOT IN ('completed', 'waived')
+                    ) AS is_overdue,
+                    (y.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            y.owner_user_id = %s
+                            OR y.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    CASE
+                        WHEN y.status = 'in_review' THEN 'Review'
+                        WHEN y.status = 'blocked' THEN 'Resolve blocker'
+                        ELSE 'Open'
+                    END AS next_action,
+                    y.created_at,
+                    y.updated_at
+                FROM {schema}.engagement_year_end_tasks y
+                JOIN engagement_scope es ON es.id = y.engagement_id
+                LEFT JOIN public.users ou ON ou.id = y.owner_user_id
+                LEFT JOIN public.users ru ON ru.id = y.reviewer_user_id
+                WHERE y.company_id = %s
+                AND y.is_active = TRUE
+            ),
+
+            signoff_items AS (
+                SELECT
+                    'signoff'::text AS queue_type,
+                    s.id AS source_id,
+                    s.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    s.step_name AS item_name,
+                    s.step_code AS item_code,
+                    s.status,
+                    'high'::text AS priority,
+                    s.due_date,
+                    s.assigned_user_id,
+                    CONCAT(COALESCE(au.first_name, ''), CASE WHEN au.last_name IS NOT NULL AND au.last_name <> '' THEN ' ' || au.last_name ELSE '' END) AS assigned_user_name,
+                    NULL::int AS reviewer_user_id,
+                    ''::text AS reviewer_user_name,
+                    (
+                        s.due_date IS NOT NULL
+                        AND s.due_date < CURRENT_DATE
+                        AND s.status NOT IN ('completed', 'waived')
+                    ) AS is_overdue,
+                    (s.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND s.assigned_user_id = %s
+                    ) AS is_mine,
+                    CASE
+                        WHEN s.status IN ('not_started', 'in_progress') THEN 'Sign off'
+                        WHEN s.status = 'blocked' THEN 'Resolve blocker'
+                        ELSE 'Open'
+                    END AS next_action,
+                    s.created_at,
+                    s.updated_at
+                FROM {schema}.engagement_signoff_steps s
+                JOIN engagement_scope es ON es.id = s.engagement_id
+                LEFT JOIN public.users au ON au.id = s.assigned_user_id
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+            ),
+
+            queue_union AS (
+                SELECT * FROM reporting_items
+                UNION ALL
+                SELECT * FROM deliverables
+                UNION ALL
+                SELECT * FROM posting_items
+                UNION ALL
+                SELECT * FROM monthly_close_items
+                UNION ALL
+                SELECT * FROM year_end_items
+                UNION ALL
+                SELECT * FROM signoff_items
+            )
+
+            SELECT *
+            FROM queue_union qx
+            WHERE (%s IS NULL OR qx.queue_type = %s)
+            AND (%s IS NULL OR qx.status = %s)
+            AND (%s IS NULL OR qx.priority = %s)
+            AND (%s = FALSE OR qx.is_mine = TRUE)
+            AND (
+                %s IS NULL
+                OR %s = ''
+                OR (
+                    COALESCE(qx.customer_name, '') ILIKE ('%%' || %s || '%%')
+                    OR COALESCE(qx.engagement_name, '') ILIKE ('%%' || %s || '%%')
+                    OR COALESCE(qx.engagement_code, '') ILIKE ('%%' || %s || '%%')
+                    OR COALESCE(qx.item_name, '') ILIKE ('%%' || %s || '%%')
+                    OR COALESCE(qx.item_code, '') ILIKE ('%%' || %s || '%%')
+                    OR COALESCE(qx.assigned_user_name, '') ILIKE ('%%' || %s || '%%')
+                    OR COALESCE(qx.reviewer_user_name, '') ILIKE ('%%' || %s || '%%')
+                )
+            )
+            ORDER BY
+                qx.is_overdue DESC,
+                qx.is_blocked DESC,
+                CASE qx.priority
+                    WHEN 'urgent' THEN 4
+                    WHEN 'high' THEN 3
+                    WHEN 'normal' THEN 2
+                    WHEN 'low' THEN 1
+                    ELSE 0
+                END DESC,
+                qx.due_date NULLS LAST,
+                qx.updated_at DESC
+            LIMIT %s
+            OFFSET %s
+        """
+
+        params = (
+            company_id, customer_id, customer_id, engagement_id, engagement_id,
+
+            current_user_id, current_user_id, current_user_id, company_id,
+            current_user_id, current_user_id, current_user_id, company_id,
+            current_user_id, current_user_id, current_user_id, company_id,
+            current_user_id, current_user_id, current_user_id, company_id,
+            current_user_id, current_user_id, current_user_id, company_id,
+            current_user_id, current_user_id, company_id,
+
+            queue_type, queue_type,
+            status, status,
+            priority, priority,
+            True if mine_only else False,
+            q, q,
+            q, q, q, q, q, q, q,
+            max(1, min(int(limit or 100), 500)),
+            max(0, int(offset or 0)),
+        )
+
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+        return rows
+
+    def get_action_center_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int = None,
+        engagement_id: int = None,
+        current_user_id: int = None,
+        mine_only: bool = False,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH engagement_scope AS (
+                SELECT
+                    e.id,
+                    e.customer_id
+                FROM {schema}.engagements e
+                WHERE e.company_id = %s
+                AND e.is_active = TRUE
+                AND (%s IS NULL OR e.customer_id = %s)
+                AND (%s IS NULL OR e.id = %s)
+            ),
+
+            reporting_items AS (
+                SELECT
+                    'reporting_item'::text AS queue_type,
+                    i.id,
+                    i.engagement_id,
+                    es.customer_id,
+                    i.item_name AS item_name,
+                    i.status,
+                    i.priority,
+                    i.due_date,
+                    i.owner_user_id AS assigned_user_id,
+                    i.reviewer_user_id,
+                    (
+                        i.due_date IS NOT NULL
+                        AND i.due_date < CURRENT_DATE
+                        AND i.status NOT IN ('approved', 'completed', 'waived')
+                    ) AS is_overdue,
+                    (i.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            i.owner_user_id = %s
+                            OR i.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    (
+                        i.status IN ('ready', 'in_review')
+                        AND %s IS NOT NULL
+                        AND i.reviewer_user_id = %s
+                    ) AS awaiting_my_review,
+                    FALSE AS pending_signoff
+                FROM {schema}.engagement_reporting_items i
+                JOIN engagement_scope es ON es.id = i.engagement_id
+                WHERE i.company_id = %s
+                AND i.is_active = TRUE
+            ),
+
+            deliverables AS (
+                SELECT
+                    'deliverable'::text AS queue_type,
+                    d.id,
+                    d.engagement_id,
+                    es.customer_id,
+                    d.deliverable_name AS item_name,
+                    d.status,
+                    d.priority,
+                    d.due_date,
+                    d.assigned_user_id,
+                    d.reviewer_user_id,
+                    (
+                        d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('completed', 'waived')
+                    ) AS is_overdue,
+                    FALSE AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            d.assigned_user_id = %s
+                            OR d.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    (
+                        d.status = 'in_review'
+                        AND %s IS NOT NULL
+                        AND d.reviewer_user_id = %s
+                    ) AS awaiting_my_review,
+                    FALSE AS pending_signoff
+                FROM {schema}.engagement_deliverables d
+                JOIN engagement_scope es ON es.id = d.engagement_id
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+            ),
+
+            posting_items AS (
+                SELECT
+                    'posting_activity'::text AS queue_type,
+                    p.id,
+                    p.engagement_id,
+                    es.customer_id,
+                    p.description AS item_name,
+                    p.status,
+                    'normal'::text AS priority,
+                    p.posting_date AS due_date,
+                    p.prepared_by_user_id AS assigned_user_id,
+                    p.reviewer_user_id,
+                    (
+                        p.posting_date IS NOT NULL
+                        AND p.posting_date < CURRENT_DATE
+                        AND p.status NOT IN ('approved', 'posted', 'reversed')
+                    ) AS is_overdue,
+                    FALSE AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            p.prepared_by_user_id = %s
+                            OR p.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    (
+                        p.status IN ('pending_review', 'in_review', 'approved')
+                        AND %s IS NOT NULL
+                        AND p.reviewer_user_id = %s
+                    ) AS awaiting_my_review,
+                    FALSE AS pending_signoff
+                FROM {schema}.engagement_posting_activity p
+                JOIN engagement_scope es ON es.id = p.engagement_id
+                WHERE p.company_id = %s
+                AND p.is_active = TRUE
+            ),
+
+            monthly_close_items AS (
+                SELECT
+                    'monthly_close'::text AS queue_type,
+                    m.id,
+                    m.engagement_id,
+                    es.customer_id,
+                    m.task_name AS item_name,
+                    m.status,
+                    m.priority,
+                    m.due_date,
+                    m.owner_user_id AS assigned_user_id,
+                    m.reviewer_user_id,
+                    (
+                        m.due_date IS NOT NULL
+                        AND m.due_date < CURRENT_DATE
+                        AND m.status NOT IN ('completed', 'skipped')
+                    ) AS is_overdue,
+                    (m.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            m.owner_user_id = %s
+                            OR m.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    (
+                        m.status = 'in_review'
+                        AND %s IS NOT NULL
+                        AND m.reviewer_user_id = %s
+                    ) AS awaiting_my_review,
+                    FALSE AS pending_signoff
+                FROM {schema}.engagement_monthly_close_tasks m
+                JOIN engagement_scope es ON es.id = m.engagement_id
+                WHERE m.company_id = %s
+                AND m.is_active = TRUE
+            ),
+
+            year_end_items AS (
+                SELECT
+                    'year_end'::text AS queue_type,
+                    y.id,
+                    y.engagement_id,
+                    es.customer_id,
+                    y.task_name AS item_name,
+                    y.status,
+                    y.priority,
+                    y.due_date,
+                    y.owner_user_id AS assigned_user_id,
+                    y.reviewer_user_id,
+                    (
+                        y.due_date IS NOT NULL
+                        AND y.due_date < CURRENT_DATE
+                        AND y.status NOT IN ('completed', 'waived')
+                    ) AS is_overdue,
+                    (y.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND (
+                            y.owner_user_id = %s
+                            OR y.reviewer_user_id = %s
+                        )
+                    ) AS is_mine,
+                    (
+                        y.status = 'in_review'
+                        AND %s IS NOT NULL
+                        AND y.reviewer_user_id = %s
+                    ) AS awaiting_my_review,
+                    FALSE AS pending_signoff
+                FROM {schema}.engagement_year_end_tasks y
+                JOIN engagement_scope es ON es.id = y.engagement_id
+                WHERE y.company_id = %s
+                AND y.is_active = TRUE
+            ),
+
+            signoff_items AS (
+                SELECT
+                    'signoff'::text AS queue_type,
+                    s.id,
+                    s.engagement_id,
+                    es.customer_id,
+                    s.step_name AS item_name,
+                    s.status,
+                    'high'::text AS priority,
+                    s.due_date,
+                    s.assigned_user_id,
+                    NULL::int AS reviewer_user_id,
+                    (
+                        s.due_date IS NOT NULL
+                        AND s.due_date < CURRENT_DATE
+                        AND s.status NOT IN ('completed', 'waived')
+                    ) AS is_overdue,
+                    (s.status = 'blocked') AS is_blocked,
+                    (
+                        %s IS NOT NULL
+                        AND s.assigned_user_id = %s
+                    ) AS is_mine,
+                    FALSE AS awaiting_my_review,
+                    (
+                        s.status IN ('not_started', 'in_progress', 'blocked')
+                    ) AS pending_signoff
+                FROM {schema}.engagement_signoff_steps s
+                JOIN engagement_scope es ON es.id = s.engagement_id
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+            ),
+
+            queue_union AS (
+                SELECT * FROM reporting_items
+                UNION ALL
+                SELECT * FROM deliverables
+                UNION ALL
+                SELECT * FROM posting_items
+                UNION ALL
+                SELECT * FROM monthly_close_items
+                UNION ALL
+                SELECT * FROM year_end_items
+                UNION ALL
+                SELECT * FROM signoff_items
+            ),
+
+            scoped_queue AS (
+                SELECT *
+                FROM queue_union q
+                WHERE (%s = FALSE OR q.is_mine = TRUE)
+            )
+
+            SELECT
+                COUNT(*) FILTER (WHERE awaiting_my_review = TRUE)::int AS awaiting_my_review,
+                COUNT(*) FILTER (
+                    WHERE queue_type = 'signoff'
+                    AND pending_signoff = TRUE
+                )::int AS pending_approval,
+                COUNT(*) FILTER (WHERE is_overdue = TRUE)::int AS overdue_items,
+                COUNT(*) FILTER (WHERE is_blocked = TRUE)::int AS blocked_items,
+                COUNT(*) FILTER (WHERE due_date = CURRENT_DATE)::int AS due_today,
+                COUNT(*) FILTER (WHERE pending_signoff = TRUE)::int AS pending_signoffs
+            FROM scoped_queue
+        """
+
+        params = (
+            company_id, customer_id, customer_id, engagement_id, engagement_id,
+
+            current_user_id, current_user_id, current_user_id, current_user_id, current_user_id, company_id,
+
+            current_user_id, current_user_id, current_user_id, current_user_id, current_user_id, company_id,
+
+            current_user_id, current_user_id, current_user_id, current_user_id, current_user_id, company_id,
+
+            current_user_id, current_user_id, current_user_id, current_user_id, current_user_id, company_id,
+
+            current_user_id, current_user_id, current_user_id, current_user_id, current_user_id, company_id,
+
+            current_user_id, current_user_id, company_id,
+
+            True if mine_only else False,
+        )
+
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if row:
+            return row
+
+        return {
+            "awaiting_my_review": 0,
+            "pending_approval": 0,
+            "overdue_items": 0,
+            "blocked_items": 0,
+            "due_today": 0,
+            "pending_signoffs": 0,
+        }
+
 
     def insert_ticket(
         self,
