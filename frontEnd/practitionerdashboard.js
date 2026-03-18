@@ -5334,8 +5334,24 @@ function bindClientOverviewEvents(me) {
 
 async function fetchActionCenterSummary(me, params = {}) {
   const companyId = practitionerCompanyIdFromMe(me);
+
+  if (!ENDPOINTS?.actionCenter?.summary) {
+    throw new Error("ENDPOINTS.actionCenter.summary is not configured");
+  }
+
   const res = await apiFetch(ENDPOINTS.actionCenter.summary(companyId, params));
   return res?.row || null;
+}
+
+async function fetchActionCenterQueue(me, params = {}) {
+  const companyId = practitionerCompanyIdFromMe(me);
+
+  if (!ENDPOINTS?.actionCenter?.queue) {
+    throw new Error("ENDPOINTS.actionCenter.queue is not configured");
+  }
+
+  const res = await apiFetch(ENDPOINTS.actionCenter.queue(companyId, params));
+  return Array.isArray(res?.rows) ? res.rows : [];
 }
 
 async function fetchActionCenterQueue(me, params = {}) {
