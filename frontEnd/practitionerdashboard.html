@@ -667,15 +667,13 @@ window.safeRedirect = function (url, mode = "href") {
           </div>
 
           <!-- 🔥 CLIENT SELECTOR (ADD THIS HERE) -->
-          <div class="mt-4 flex flex-wrap items-center gap-3">
-            <label class="text-sm font-medium text-slate-700">Client</label>
-
-            <select
-              id="clientOverviewCustomerSelect"
-              class="input min-w-[280px]"
-            >
-              <option value="">Select client...</option>
-            </select>
+          <div class="mt-4 flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[280px]">
+              <label class="text-sm font-medium text-slate-700 block mb-1">Client</label>
+              <select id="clientOverviewCustomerSelect" class="input w-full">
+                <option value="">Select client...</option>
+              </select>
+            </div>
 
             <button id="clientOverviewRefreshBtn" class="btn btn-secondary">
               Refresh
@@ -683,8 +681,6 @@ window.safeRedirect = function (url, mode = "href") {
           </div>
 
           <!-- KPI CARDS -->
-          <div class="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-
           <div class="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             <div class="metric-card">
               <div class="metric-label">Active Engagements</div>
