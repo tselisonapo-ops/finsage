@@ -7,9 +7,8 @@ from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.practitioner.practitioner_engagements import _json_ok, _json_err, _corsify
 from BackEnd.Services.routes.invoice_routes import (
     _deny_if_wrong_company,
-    _can_view_engagements,
 )
-
+from BackEnd.Services.credit_policy import _can_view_engagements
 client_overview_bp = Blueprint("client_overview_bp", __name__)
 
 
