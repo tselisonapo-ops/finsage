@@ -5055,10 +5055,6 @@ function bindClientOverviewEvents(me) {
     await loadClientOverviewScreen(me, { force: true });
   });
 
-  document.getElementById("clientOverviewSearchInput")?.addEventListener("input", debounce(async () => {
-    await loadClientOverviewScreen(me, { force: true });
-  }, 300));
-
   document.getElementById("clientOverviewStatusFilter")?.addEventListener("change", async () => {
     await loadClientOverviewScreen(me, { force: true });
   });
@@ -5068,23 +5064,23 @@ function bindClientOverviewEvents(me) {
   });
 
   document.getElementById("clientOverviewViewEngagementsBtn")?.addEventListener("click", async () => {
-    await switchPractitionerScreen("assignments", me);
+    await switchPractitionerScreen(PR_NAV.assignments, me);
   });
 
   document.getElementById("clientOverviewViewReportingBtn")?.addEventListener("click", async () => {
-    await switchPractitionerScreen("reporting-overview", me);
+    await switchPractitionerScreen(PR_NAV.reportingOverview, me);
   });
 
   document.getElementById("clientOverviewViewOperationsBtn")?.addEventListener("click", async () => {
-    await switchPractitionerScreen("day-to-day-postings", me);
+    await switchPractitionerScreen(PR_NAV.dayToDayPostings, me);
   });
 
   document.getElementById("clientOverviewViewCloseBtn")?.addEventListener("click", async () => {
-    await switchPractitionerScreen("monthly-close-routines", me);
+    await switchPractitionerScreen(PR_NAV.monthlyCloseRoutines, me);
   });
 
   document.getElementById("clientOverviewViewRiskBtn")?.addEventListener("click", async () => {
-    await switchPractitionerScreen("action-center", me);
+    await switchPractitionerScreen(PR_NAV.actionCenter, me);
   });
 }
 
