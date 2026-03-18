@@ -779,7 +779,7 @@
   }
 
   #screen-action-center .action-selected-panel {
-    min-height: 180px;
+    min-height: 260px;
     border: 1px dashed #d5e2ea;
     border-radius: 14px;
     background: #fcfeff;
@@ -797,6 +797,21 @@
     line-height: 1.4;
   }
 
+  #screen-action-center .action-type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  #screen-action-center .action-type-grid .mini-stat {
+    min-height: 92px;
+  }
+
+  @media (max-width: 640px) {
+    #screen-action-center .action-type-grid {
+      grid-template-columns: 1fr;
+    }
+  }
   @media (max-width: 1400px) {
     #screen-action-center .action-filter-grid {
       grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -2492,7 +2507,7 @@ window.safeRedirect = function (url, mode = "href") {
                 <div class="panel-title text-base">Work by Type</div>
                 <div class="panel-subtitle mt-1">Current queue composition</div>
 
-                <div class="mt-4 space-y-3">
+                <div class="action-type-grid mt-4">
                   <div class="mini-stat">
                     <div class="mini-stat-label">Reporting</div>
                     <div id="acTypeReporting" class="mini-stat-value">0</div>
