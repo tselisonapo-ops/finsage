@@ -3605,10 +3605,569 @@ window.safeRedirect = function (url, mode = "href") {
 
       <!-- REVIEW QUEUE -->
       <section id="screen-review-queue" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Review Queue</div>
-          <div class="panel-subtitle mt-1">Manager review queue for postings and deliverables</div>
-          <div class="mt-4 text-sm text-slate-600">Review Queue placeholder.</div>
+        <style>
+          #screen-review-queue .rq-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+          }
+
+          #screen-review-queue .rq-topbar,
+          #screen-review-queue .rq-card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+          }
+
+          #screen-review-queue .rq-topbar {
+            padding: 18px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+          }
+
+          #screen-review-queue .rq-topbar-right {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+          }
+
+          #screen-review-queue .rq-search,
+          #screen-review-queue .rq-select {
+            height: 40px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fff;
+            color: var(--text);
+            padding: 0 12px;
+            font-size: 13px;
+            outline: none;
+          }
+
+          #screen-review-queue .rq-search {
+            min-width: 260px;
+          }
+
+          #screen-review-queue .rq-btn,
+          #screen-review-queue .rq-btn-ghost,
+          #screen-review-queue .rq-btn-soft {
+            height: 40px;
+            border-radius: 12px;
+            padding: 0 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid transparent;
+          }
+
+          #screen-review-queue .rq-btn {
+            background: var(--brand);
+            color: #fff;
+          }
+
+          #screen-review-queue .rq-btn-ghost {
+            background: #fff;
+            color: var(--text);
+            border-color: var(--line);
+          }
+
+          #screen-review-queue .rq-btn-soft {
+            background: var(--brand-soft);
+            color: var(--brand-2);
+            border-color: #cfe9e5;
+          }
+
+          #screen-review-queue .rq-kpis {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          #screen-review-queue .rq-kpi {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 16px;
+          }
+
+          #screen-review-queue .rq-kpi-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            margin-bottom: 8px;
+          }
+
+          #screen-review-queue .rq-kpi-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--text);
+            line-height: 1;
+            margin-bottom: 6px;
+          }
+
+          #screen-review-queue .rq-kpi-note {
+            font-size: 12px;
+            color: var(--muted);
+          }
+
+          #screen-review-queue .rq-kpi.warn .rq-kpi-value { color: var(--warn); }
+          #screen-review-queue .rq-kpi.danger .rq-kpi-value { color: var(--danger); }
+          #screen-review-queue .rq-kpi.ok .rq-kpi-value { color: var(--ok); }
+
+          #screen-review-queue .rq-main {
+            display: grid;
+            grid-template-columns: minmax(0, 1.75fr) minmax(340px, .95fr);
+            gap: 16px;
+            align-items: start;
+          }
+
+          #screen-review-queue .rq-card {
+            padding: 18px;
+          }
+
+          #screen-review-queue .rq-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+          }
+
+          #screen-review-queue .rq-card-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text);
+          }
+
+          #screen-review-queue .rq-card-subtitle {
+            margin-top: 4px;
+            font-size: 13px;
+            color: var(--muted);
+          }
+
+          #screen-review-queue .rq-pills {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+          }
+
+          #screen-review-queue .rq-pill {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: var(--muted);
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          #screen-review-queue .rq-pill.active {
+            background: var(--brand-soft);
+            color: var(--brand-2);
+            border-color: #cfe9e5;
+          }
+
+          #screen-review-queue .rq-filter-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+
+          #screen-review-queue .rq-table-wrap {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            overflow: hidden;
+            background: #fff;
+          }
+
+          #screen-review-queue .rq-table-scroll {
+            overflow: auto;
+          }
+
+          #screen-review-queue .rq-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1080px;
+          }
+
+          #screen-review-queue .rq-table thead th {
+            background: var(--panel-2);
+            color: var(--muted);
+            text-align: left;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .03em;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+            white-space: nowrap;
+          }
+
+          #screen-review-queue .rq-table tbody td {
+            padding: 14px;
+            font-size: 13px;
+            color: var(--text);
+            border-bottom: 1px solid #edf3f6;
+            vertical-align: top;
+          }
+
+          #screen-review-queue .rq-table tbody tr:hover {
+            background: #fbfdfe;
+          }
+
+          #screen-review-queue .rq-table tbody tr.is-selected {
+            background: #effaf8;
+          }
+
+          #screen-review-queue .rq-item-title {
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 4px;
+          }
+
+          #screen-review-queue .rq-item-meta {
+            font-size: 12px;
+            color: var(--muted);
+          }
+
+          #screen-review-queue .rq-badge {
+            display: inline-flex;
+            align-items: center;
+            height: 26px;
+            padding: 0 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            border: 1px solid transparent;
+            white-space: nowrap;
+          }
+
+          #screen-review-queue .rq-badge.status-review {
+            background: #e8f4ff;
+            color: #0b5cab;
+            border-color: #cfe6ff;
+          }
+
+          #screen-review-queue .rq-badge.status-overdue {
+            background: var(--warn-soft);
+            color: var(--warn);
+            border-color: #fed7aa;
+          }
+
+          #screen-review-queue .rq-badge.status-blocked {
+            background: var(--danger-soft);
+            color: var(--danger);
+            border-color: #fecaca;
+          }
+
+          #screen-review-queue .rq-badge.status-ok {
+            background: #effcf3;
+            color: var(--ok);
+            border-color: #bbf7d0;
+          }
+
+          #screen-review-queue .rq-badge.priority-urgent {
+            background: #fef2f2;
+            color: #b91c1c;
+            border-color: #fecaca;
+          }
+
+          #screen-review-queue .rq-badge.priority-high {
+            background: #fff7ed;
+            color: #c2410c;
+            border-color: #fdba74;
+          }
+
+          #screen-review-queue .rq-badge.priority-normal {
+            background: #f8fafc;
+            color: #475569;
+            border-color: #e2e8f0;
+          }
+
+          #screen-review-queue .rq-badge.priority-low {
+            background: #f0fdf4;
+            color: #15803d;
+            border-color: #bbf7d0;
+          }
+
+          #screen-review-queue .rq-side-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+
+          #screen-review-queue .rq-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+          }
+
+          #screen-review-queue .rq-detail-box {
+            background: var(--panel-2);
+            border: 1px solid #e8eef3;
+            border-radius: 14px;
+            padding: 12px;
+          }
+
+          #screen-review-queue .rq-detail-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            letter-spacing: .03em;
+          }
+
+          #screen-review-queue .rq-detail-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.45;
+          }
+
+          #screen-review-queue .rq-detail-note {
+            margin-top: 14px;
+            background: #fbfdfe;
+            border: 1px dashed var(--line);
+            border-radius: 14px;
+            padding: 12px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+          }
+
+          #screen-review-queue .rq-quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+          }
+
+          #screen-review-queue .rq-empty {
+            padding: 32px 18px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+          }
+
+          #screen-review-queue .rq-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+          }
+
+          #screen-review-queue .rq-muted {
+            color: var(--muted);
+            font-size: 12px;
+          }
+
+          #screen-review-queue .rq-pagination {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+
+          @media (max-width: 1400px) {
+            #screen-review-queue .rq-kpis {
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            #screen-review-queue .rq-main {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 900px) {
+            #screen-review-queue .rq-kpis {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #screen-review-queue .rq-filter-row,
+            #screen-review-queue .rq-detail-grid,
+            #screen-review-queue .rq-quick-actions {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 640px) {
+            #screen-review-queue .rq-kpis {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+
+        <div class="rq-shell">
+          <div class="rq-topbar">
+            <div>
+              <div class="panel-title">Review Queue</div>
+              <div class="panel-subtitle mt-1">
+                Senior and manager review inbox for reporting items, deliverables, postings, close tasks, year-end work, and sign-offs.
+              </div>
+            </div>
+
+            <div class="rq-topbar-right">
+              <input id="rqSearchInput" class="rq-search" type="text" placeholder="Search item, client, engagement, code, assigned..." />
+              <button id="rqSearchBtn" class="rq-btn-ghost" type="button">Search</button>
+              <button id="rqRefreshBtn" class="rq-btn" type="button">Refresh</button>
+            </div>
+          </div>
+
+          <div class="rq-kpis">
+            <div class="rq-kpi">
+              <div class="rq-kpi-label">Awaiting review</div>
+              <div id="rqKpiAwaiting" class="rq-kpi-value">--</div>
+              <div class="rq-kpi-note">Items needing review attention</div>
+            </div>
+
+            <div class="rq-kpi warn">
+              <div class="rq-kpi-label">Overdue items</div>
+              <div id="rqKpiOverdue" class="rq-kpi-value">--</div>
+              <div class="rq-kpi-note">Past due and still open</div>
+            </div>
+
+            <div class="rq-kpi danger">
+              <div class="rq-kpi-label">Blocked items</div>
+              <div id="rqKpiBlocked" class="rq-kpi-value">--</div>
+              <div class="rq-kpi-note">Require escalation or unblock</div>
+            </div>
+
+            <div class="rq-kpi">
+              <div class="rq-kpi-label">Pending sign-offs</div>
+              <div id="rqKpiSignoff" class="rq-kpi-value">--</div>
+              <div class="rq-kpi-note">Approval steps still outstanding</div>
+            </div>
+
+            <div class="rq-kpi ok">
+              <div class="rq-kpi-label">My queue</div>
+              <div id="rqKpiMine" class="rq-kpi-value">--</div>
+              <div class="rq-kpi-note">Assigned or routed to me</div>
+            </div>
+          </div>
+
+          <div class="rq-main">
+            <div class="rq-card">
+              <div class="rq-card-head">
+                <div>
+                  <div class="rq-card-title">Queue items</div>
+                  <div class="rq-card-subtitle">Sorted by overdue state, blockers, priority, due date, and recent updates</div>
+                </div>
+              </div>
+
+              <div class="rq-pills">
+                <button type="button" class="rq-pill active" data-rq-quick="all">All</button>
+                <button type="button" class="rq-pill" data-rq-quick="review">Awaiting review</button>
+                <button type="button" class="rq-pill" data-rq-quick="blocked">Blocked</button>
+                <button type="button" class="rq-pill" data-rq-quick="overdue">Overdue</button>
+                <button type="button" class="rq-pill" data-rq-quick="signoff">Sign-off</button>
+                <button type="button" class="rq-pill" data-rq-quick="mine">Mine only</button>
+              </div>
+
+              <div class="rq-filter-row">
+                <select id="rqQueueTypeFilter" class="rq-select">
+                  <option value="">All queue types</option>
+                  <option value="reporting_item">Reporting items</option>
+                  <option value="deliverable">Deliverables</option>
+                  <option value="posting_activity">Posting activity</option>
+                  <option value="monthly_close">Monthly close</option>
+                  <option value="year_end">Year end</option>
+                  <option value="signoff">Signoff</option>
+                </select>
+
+                <select id="rqStatusFilter" class="rq-select">
+                  <option value="">All statuses</option>
+                  <option value="not_started">not_started</option>
+                  <option value="in_progress">in_progress</option>
+                  <option value="ready">ready</option>
+                  <option value="pending_review">pending_review</option>
+                  <option value="in_review">in_review</option>
+                  <option value="approved">approved</option>
+                  <option value="completed">completed</option>
+                  <option value="blocked">blocked</option>
+                  <option value="returned">returned</option>
+                  <option value="waived">waived</option>
+                  <option value="posted">posted</option>
+                  <option value="received">received</option>
+                </select>
+
+                <select id="rqPriorityFilter" class="rq-select">
+                  <option value="">All priorities</option>
+                  <option value="urgent">urgent</option>
+                  <option value="high">high</option>
+                  <option value="normal">normal</option>
+                  <option value="low">low</option>
+                </select>
+
+                <select id="rqLimitFilter" class="rq-select">
+                  <option value="25">25 rows</option>
+                  <option value="50">50 rows</option>
+                  <option value="100" selected>100 rows</option>
+                  <option value="200">200 rows</option>
+                </select>
+              </div>
+
+              <div class="rq-table-wrap">
+                <div class="rq-table-scroll">
+                  <table class="rq-table">
+                    <thead>
+                      <tr>
+                        <th>Priority</th>
+                        <th>Type</th>
+                        <th>Client / Engagement</th>
+                        <th>Item</th>
+                        <th>Assigned</th>
+                        <th>Reviewer</th>
+                        <th>Status</th>
+                        <th>Due</th>
+                        <th>Next action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rqTableBody">
+                      <tr>
+                        <td colspan="9" class="rq-empty">Loading review queue...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="rq-footer">
+                <div id="rqFooterText" class="rq-muted">Showing 0 items</div>
+                <div class="rq-pagination">
+                  <button id="rqPrevBtn" class="rq-btn-ghost" type="button">Previous</button>
+                  <button id="rqPageBtn" class="rq-btn-soft" type="button">Page 1</button>
+                  <button id="rqNextBtn" class="rq-btn-ghost" type="button">Next</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="rq-side-stack">
+              <div class="rq-card">
+                <div class="rq-card-head">
+                  <div>
+                    <div class="rq-card-title" style="font-size:18px;">Selected item</div>
+                    <div class="rq-card-subtitle">Detail, routing, and quick review actions</div>
+                  </div>
+                </div>
+
+                <div id="rqDetailPanel">
+                  <div class="rq-empty">Select a queue item to view details.</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

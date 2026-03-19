@@ -452,6 +452,44 @@ const ENDPOINTS = {
     }
   },
 
+  reviewQueue: {
+    summary: (companyId, engagementId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/summary`,
+
+    list: (companyId, engagementId, {
+      queue_type = "",
+      status = "",
+      priority = "",
+      mine_only = false,
+      q = "",
+      limit = 100,
+      offset = 0
+    } = {}) => {
+      const params = new URLSearchParams();
+      if (queue_type) params.set("queue_type", queue_type);
+      if (status) params.set("status", status);
+      if (priority) params.set("priority", priority);
+      if (mine_only) params.set("mine_only", "true");
+      if (q) params.set("q", q);
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/items${qs ? `?${qs}` : ""}`;
+    },
+
+    get: (companyId, engagementId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}`,
+
+    setStatus: (companyId, engagementId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/status`,
+
+    assign: (companyId, engagementId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/assign`,
+
+    deactivate: (companyId, engagementId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/deactivate`
+  },
+
   analytics: {
     overview: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/overview`,
@@ -655,6 +693,26 @@ const ENDPOINTS = {
   };
 
   let PR_PRACTITIONER_POSTING_EVENTS_BOUND = false;
+
+  let PR_REVIEW_QUEUE_CACHE = {
+    summary: null,
+    rows: [],
+    selectedRow: null,
+    detail: null,
+    filters: {
+      queue_type: "",
+      status: "",
+      priority: "",
+      mine_only: false,
+      q: "",
+      limit: 100,
+      offset: 0
+    }
+  };
+
+  let PR_REVIEW_QUEUE_EVENTS_BOUND = false;
+  let PR_REVIEW_QUEUE_LOADING = false;
+  let PR_REVIEW_QUEUE_ACTIVE_QUICK = "all";
 
   const PR_NAV = {
     dashboard: "dashboard",
@@ -2391,6 +2449,9 @@ function runPractitionerScreenBinder(screen, me) {
       break;
 
     case PR_NAV.reviewQueue:
+      renderReviewQueueScreen?.(me);
+      break;
+
     case PR_NAV.deliverables:
     case PR_NAV.partnerSignoff:
       renderEngagementScreen?.(me, screen);
@@ -6926,6 +6987,663 @@ async function renderPractitionerPostingModuleScreen(me, screen) {
   } finally {
     setPractitionerPostingLoading(config.prefix, false);
   }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatDateLite(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatQueueTypeLabel(queueType) {
+  switch (String(queueType || "").toLowerCase()) {
+    case "reporting_item": return "Reporting item";
+    case "deliverable": return "Deliverable";
+    case "posting_activity": return "Posting activity";
+    case "monthly_close": return "Monthly close";
+    case "year_end": return "Year end";
+    case "signoff": return "Signoff";
+    default: return queueType || "—";
+  }
+}
+
+function statusBadgeClass(status, isOverdue, isBlocked) {
+  if (isBlocked || status === "blocked") return "status-blocked";
+  if (isOverdue) return "status-overdue";
+
+  const reviewStates = new Set([
+    "ready",
+    "pending_review",
+    "in_review",
+    "in_progress",
+    "requested",
+    "outstanding",
+    "not_started"
+  ]);
+  if (reviewStates.has(String(status || "").toLowerCase())) return "status-review";
+  return "status-ok";
+}
+
+function priorityBadgeClass(priority) {
+  switch (String(priority || "").toLowerCase()) {
+    case "urgent": return "priority-urgent";
+    case "high": return "priority-high";
+    case "low": return "priority-low";
+    default: return "priority-normal";
+  }
+}
+
+function formatDueMeta(row) {
+  if (!row?.due_date) return "No due date";
+
+  const due = new Date(row.due_date);
+  if (Number.isNaN(due.getTime())) return "";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays < 0) return `${Math.abs(diffDays)} day${Math.abs(diffDays) === 1 ? "" : "s"} overdue`;
+  if (diffDays === 0) return "Due today";
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} remaining`;
+}
+
+function getReviewQueueStateKey() {
+  const f = PR_REVIEW_QUEUE_CACHE.filters || {};
+  return JSON.stringify({
+    engagementId: PR_SELECTED_ENGAGEMENT?.id || null,
+    queue_type: f.queue_type || "",
+    status: f.status || "",
+    priority: f.priority || "",
+    mine_only: !!f.mine_only,
+    q: f.q || "",
+    limit: Number(f.limit || 100),
+    offset: Number(f.offset || 0),
+    quick: PR_REVIEW_QUEUE_ACTIVE_QUICK || "all"
+  });
+}
+
+function getReviewQueueEngagementRequiredHtml() {
+  return `
+    <div class="rq-empty">
+      Select an engagement first to open the review queue.
+    </div>
+  `;
+}
+
+function getReviewQueueLoadingRowHtml() {
+  return `
+    <tr>
+      <td colspan="9" class="rq-empty">Loading review queue...</td>
+    </tr>
+  `;
+}
+
+function getReviewQueueEmptyRowHtml() {
+  return `
+    <tr>
+      <td colspan="9" class="rq-empty">No review queue items found for the current filters.</td>
+    </tr>
+  `;
+}
+
+function buildReviewQueueQueryFilters() {
+  const f = { ...(PR_REVIEW_QUEUE_CACHE.filters || {}) };
+
+  if (PR_REVIEW_QUEUE_ACTIVE_QUICK === "review") {
+    if (!f.status) f.status = "in_review";
+  } else if (PR_REVIEW_QUEUE_ACTIVE_QUICK === "blocked") {
+    f.status = "blocked";
+  } else if (PR_REVIEW_QUEUE_ACTIVE_QUICK === "signoff") {
+    f.queue_type = "signoff";
+  } else if (PR_REVIEW_QUEUE_ACTIVE_QUICK === "mine") {
+    f.mine_only = true;
+  }
+
+  return f;
+}
+
+async function fetchReviewQueueSummary(me) {
+  const companyId = me?.company_id;
+  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+
+  if (!companyId || !engagementId) {
+    PR_REVIEW_QUEUE_CACHE.summary = null;
+    return null;
+  }
+
+  const url = ENDPOINTS.reviewQueue.summary(companyId, engagementId);
+  const json = await apiFetch(url);
+  const row = json?.row || null;
+  PR_REVIEW_QUEUE_CACHE.summary = row;
+  return row;
+}
+
+async function fetchReviewQueueRows(me) {
+  const companyId = me?.company_id;
+  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+
+  if (!companyId || !engagementId) {
+    PR_REVIEW_QUEUE_CACHE.rows = [];
+    PR_REVIEW_QUEUE_CACHE.selectedRow = null;
+    PR_REVIEW_QUEUE_CACHE.detail = null;
+    return [];
+  }
+
+  const filters = buildReviewQueueQueryFilters();
+  const url = ENDPOINTS.reviewQueue.list(companyId, engagementId, filters);
+  const json = await apiFetch(url);
+  const rows = Array.isArray(json?.rows) ? json.rows : [];
+
+  PR_REVIEW_QUEUE_CACHE.rows = rows;
+
+  const selected = PR_REVIEW_QUEUE_CACHE.selectedRow;
+  if (selected) {
+    const nextSelected = rows.find(
+      (r) => String(r.queue_type) === String(selected.queue_type) && Number(r.source_id) === Number(selected.source_id)
+    );
+    PR_REVIEW_QUEUE_CACHE.selectedRow = nextSelected || rows[0] || null;
+  } else {
+    PR_REVIEW_QUEUE_CACHE.selectedRow = rows[0] || null;
+  }
+
+  return rows;
+}
+
+async function fetchReviewQueueDetail(me, row) {
+  const companyId = me?.company_id;
+  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+  if (!companyId || !engagementId || !row?.queue_type || !row?.source_id) {
+    PR_REVIEW_QUEUE_CACHE.detail = null;
+    return null;
+  }
+
+  const url = ENDPOINTS.reviewQueue.get(companyId, engagementId, row.queue_type, row.source_id);
+  const json = await apiFetch(url);
+  const detail = json?.row || null;
+  PR_REVIEW_QUEUE_CACHE.detail = detail;
+  return detail;
+}
+
+function renderReviewQueueSummary() {
+  const s = PR_REVIEW_QUEUE_CACHE.summary || {};
+
+  const awaitingEl = document.getElementById("rqKpiAwaiting");
+  const overdueEl = document.getElementById("rqKpiOverdue");
+  const blockedEl = document.getElementById("rqKpiBlocked");
+  const signoffEl = document.getElementById("rqKpiSignoff");
+  const mineEl = document.getElementById("rqKpiMine");
+
+  if (awaitingEl) awaitingEl.textContent = String(s.awaiting_review ?? 0);
+  if (overdueEl) overdueEl.textContent = String(s.overdue_items ?? 0);
+  if (blockedEl) blockedEl.textContent = String(s.blocked_items ?? 0);
+  if (signoffEl) signoffEl.textContent = String(s.pending_signoffs ?? 0);
+  if (mineEl) mineEl.textContent = String(s.my_queue ?? 0);
+}
+
+function renderReviewQueueRows() {
+  const tbody = document.getElementById("rqTableBody");
+  const footerText = document.getElementById("rqFooterText");
+  if (!tbody) return;
+
+  const rows = PR_REVIEW_QUEUE_CACHE.rows || [];
+  const selected = PR_REVIEW_QUEUE_CACHE.selectedRow;
+
+  if (!rows.length) {
+    tbody.innerHTML = getReviewQueueEmptyRowHtml();
+    if (footerText) footerText.textContent = "Showing 0 items";
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => {
+    const selectedClass =
+      selected &&
+      String(selected.queue_type) === String(row.queue_type) &&
+      Number(selected.source_id) === Number(row.source_id)
+        ? "is-selected"
+        : "";
+
+    const statusClass = statusBadgeClass(row.status, row.is_overdue, row.is_blocked);
+    const priorityClass = priorityBadgeClass(row.priority);
+
+    return `
+      <tr class="${selectedClass}" data-rq-row="1" data-queue-type="${escapeHtml(row.queue_type)}" data-source-id="${escapeHtml(row.source_id)}">
+        <td><span class="rq-badge ${priorityClass}">${escapeHtml(row.priority || "normal")}</span></td>
+        <td><div class="rq-item-title">${escapeHtml(formatQueueTypeLabel(row.queue_type))}</div></td>
+        <td>
+          <div class="rq-item-title">${escapeHtml(row.customer_name || "—")}</div>
+          <div class="rq-item-meta">${escapeHtml(row.engagement_name || "—")} · ${escapeHtml(row.engagement_code || "—")}</div>
+        </td>
+        <td>
+          <div class="rq-item-title">${escapeHtml(row.item_name || "—")}</div>
+          <div class="rq-item-meta">${escapeHtml(row.item_code || "No code")}</div>
+        </td>
+        <td>${escapeHtml(row.assigned_user_name || "—")}</td>
+        <td>${escapeHtml(row.reviewer_user_name || "—")}</td>
+        <td><span class="rq-badge ${statusClass}">${escapeHtml(row.status || "—")}</span></td>
+        <td>
+          <div class="rq-item-title">${escapeHtml(formatDateLite(row.due_date))}</div>
+          <div class="rq-item-meta">${escapeHtml(formatDueMeta(row))}</div>
+        </td>
+        <td><span class="rq-item-title">${escapeHtml(row.next_action || "Open")}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  const offset = Number(PR_REVIEW_QUEUE_CACHE.filters?.offset || 0);
+  const limit = Number(PR_REVIEW_QUEUE_CACHE.filters?.limit || 100);
+  const pageNo = Math.floor(offset / limit) + 1;
+
+  if (footerText) footerText.textContent = `Showing ${rows.length} item${rows.length === 1 ? "" : "s"}`;
+  const pageBtn = document.getElementById("rqPageBtn");
+  if (pageBtn) pageBtn.textContent = `Page ${pageNo}`;
+}
+
+function renderReviewQueueDetail() {
+  const panel = document.getElementById("rqDetailPanel");
+  if (!panel) return;
+
+  const row = PR_REVIEW_QUEUE_CACHE.detail || PR_REVIEW_QUEUE_CACHE.selectedRow;
+  if (!row) {
+    panel.innerHTML = `<div class="rq-empty">Select a queue item to view details.</div>`;
+    return;
+  }
+
+  const assigned = row.assigned_user_name || "—";
+  const reviewer = row.reviewer_user_name || "—";
+  const status = row.status || "—";
+  const priority = row.priority || "normal";
+  const dueDate = formatDateLite(row.due_date || row.posting_date);
+  const nextAction = row.next_action || "Open";
+  const note =
+    row.notes ||
+    row.description ||
+    "Open this source item to inspect full supporting details, notes, and workflow context.";
+
+  panel.innerHTML = `
+    <div class="rq-item-title" style="font-size:18px;">${escapeHtml(row.item_name || row.deliverable_name || row.step_name || row.description || "Selected item")}</div>
+    <div class="rq-item-meta">
+      ${escapeHtml(formatQueueTypeLabel(row.queue_type))} ·
+      ${escapeHtml(row.item_code || row.reference_no || row.step_code || "No code")} ·
+      ${escapeHtml(row.customer_name || "—")} ·
+      ${escapeHtml(row.engagement_name || "—")}
+    </div>
+
+    <div class="rq-detail-grid">
+      <div class="rq-detail-box">
+        <div class="rq-detail-label">Status</div>
+        <div class="rq-detail-value">${escapeHtml(status)}</div>
+      </div>
+
+      <div class="rq-detail-box">
+        <div class="rq-detail-label">Priority</div>
+        <div class="rq-detail-value">${escapeHtml(priority)}</div>
+      </div>
+
+      <div class="rq-detail-box">
+        <div class="rq-detail-label">Assigned</div>
+        <div class="rq-detail-value">${escapeHtml(assigned)}</div>
+      </div>
+
+      <div class="rq-detail-box">
+        <div class="rq-detail-label">Reviewer</div>
+        <div class="rq-detail-value">${escapeHtml(reviewer)}</div>
+      </div>
+
+      <div class="rq-detail-box">
+        <div class="rq-detail-label">Due date</div>
+        <div class="rq-detail-value">${escapeHtml(dueDate)}</div>
+      </div>
+
+      <div class="rq-detail-box">
+        <div class="rq-detail-label">Next action</div>
+        <div class="rq-detail-value">${escapeHtml(nextAction)}</div>
+      </div>
+    </div>
+
+    <div class="rq-detail-note">${escapeHtml(note)}</div>
+
+    <div class="rq-quick-actions">
+      <button type="button" class="rq-btn" id="rqApproveBtn">Approve</button>
+      <button type="button" class="rq-btn-ghost" id="rqReturnBtn">Return</button>
+      <button type="button" class="rq-btn-soft" id="rqOpenSourceBtn">Open source</button>
+      <button type="button" class="rq-btn-ghost" id="rqAssignBtn">Reassign</button>
+      <button type="button" class="rq-btn-ghost" id="rqInReviewBtn">Mark in review</button>
+      <button type="button" class="rq-btn-ghost" id="rqDeactivateBtn">Deactivate</button>
+    </div>
+  `;
+}
+
+function syncReviewQueueFiltersToUi() {
+  const f = PR_REVIEW_QUEUE_CACHE.filters || {};
+
+  const q = document.getElementById("rqSearchInput");
+  const qt = document.getElementById("rqQueueTypeFilter");
+  const st = document.getElementById("rqStatusFilter");
+  const pr = document.getElementById("rqPriorityFilter");
+  const lm = document.getElementById("rqLimitFilter");
+
+  if (q) q.value = f.q || "";
+  if (qt) qt.value = f.queue_type || "";
+  if (st) st.value = f.status || "";
+  if (pr) pr.value = f.priority || "";
+  if (lm) lm.value = String(f.limit || 100);
+
+  document.querySelectorAll("[data-rq-quick]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.rqQuick === PR_REVIEW_QUEUE_ACTIVE_QUICK);
+  });
+}
+
+async function openSelectedReviewQueueDetail(me) {
+  const row = PR_REVIEW_QUEUE_CACHE.selectedRow;
+  if (!row) {
+    PR_REVIEW_QUEUE_CACHE.detail = null;
+    renderReviewQueueDetail();
+    return;
+  }
+
+  try {
+    await fetchReviewQueueDetail(me, row);
+  } catch (err) {
+    console.error("Failed to load review queue detail", err);
+    PR_REVIEW_QUEUE_CACHE.detail = row;
+  }
+
+  renderReviewQueueDetail();
+}
+
+async function loadReviewQueueScreenData(me, { force = false } = {}) {
+  if (PR_REVIEW_QUEUE_LOADING) return;
+  PR_REVIEW_QUEUE_LOADING = true;
+
+  try {
+    const body = document.getElementById("rqTableBody");
+    if (body) body.innerHTML = getReviewQueueLoadingRowHtml();
+
+    const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+    if (!engagementId) {
+      const panel = document.getElementById("rqDetailPanel");
+      if (body) {
+        body.innerHTML = `
+          <tr><td colspan="9" class="rq-empty">Select an engagement first to view its review queue.</td></tr>
+        `;
+      }
+      if (panel) panel.innerHTML = getReviewQueueEngagementRequiredHtml();
+
+      PR_REVIEW_QUEUE_CACHE.summary = null;
+      PR_REVIEW_QUEUE_CACHE.rows = [];
+      PR_REVIEW_QUEUE_CACHE.selectedRow = null;
+      PR_REVIEW_QUEUE_CACHE.detail = null;
+      renderReviewQueueSummary();
+      return;
+    }
+
+    await Promise.all([
+      fetchReviewQueueSummary(me),
+      fetchReviewQueueRows(me)
+    ]);
+
+    renderReviewQueueSummary();
+    renderReviewQueueRows();
+    await openSelectedReviewQueueDetail(me);
+  } finally {
+    PR_REVIEW_QUEUE_LOADING = false;
+  }
+}
+
+function getReviewQueueSelectedRowByDom(target) {
+  const tr = target?.closest?.("[data-rq-row='1']");
+  if (!tr) return null;
+
+  const queueType = tr.dataset.queueType || "";
+  const sourceId = Number(tr.dataset.sourceId || 0);
+
+  return (PR_REVIEW_QUEUE_CACHE.rows || []).find(
+    (r) => String(r.queue_type) === String(queueType) && Number(r.source_id) === sourceId
+  ) || null;
+}
+
+async function handleReviewQueueStatusAction(me, nextStatus) {
+  const row = PR_REVIEW_QUEUE_CACHE.selectedRow;
+  if (!row || !nextStatus) return;
+
+  const companyId = me?.company_id;
+  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+  if (!companyId || !engagementId) return;
+
+  await apiFetch(
+    ENDPOINTS.reviewQueue.setStatus(companyId, engagementId, row.queue_type, row.source_id),
+    {
+      method: "POST",
+      body: JSON.stringify({ status: nextStatus })
+    }
+  );
+
+  await loadReviewQueueScreenData(me, { force: true });
+}
+
+function openReviewQueueSource(row) {
+  if (!row) return;
+
+  switch (String(row.queue_type || "").toLowerCase()) {
+    case "reporting_item":
+      window.location.hash = `screen=${encodeURIComponent(PR_NAV.reportingOverview)}&itemId=${encodeURIComponent(row.source_id)}`;
+      break;
+    case "deliverable":
+      window.location.hash = `screen=${encodeURIComponent(PR_NAV.pendingDeliverables)}&deliverableId=${encodeURIComponent(row.source_id)}`;
+      break;
+    case "posting_activity":
+      window.location.hash = `screen=${encodeURIComponent(PR_NAV.dayToDayPostings)}&activityId=${encodeURIComponent(row.source_id)}&module=${encodeURIComponent(row.module_name || "")}`;
+      break;
+    case "monthly_close":
+      window.location.hash = `screen=${encodeURIComponent(PR_NAV.monthlyCloseRoutines)}&taskId=${encodeURIComponent(row.source_id)}`;
+      break;
+    case "year_end":
+      window.location.hash = `screen=${encodeURIComponent(PR_NAV.yearEndReporting)}&taskId=${encodeURIComponent(row.source_id)}`;
+      break;
+    case "signoff":
+      window.location.hash = `screen=${encodeURIComponent(PR_NAV.partnerSignoff)}&stepId=${encodeURIComponent(row.source_id)}`;
+      break;
+    default:
+      break;
+  }
+}
+
+async function bindReviewQueueEvents(me) {
+  if (PR_REVIEW_QUEUE_EVENTS_BOUND) return;
+  PR_REVIEW_QUEUE_EVENTS_BOUND = true;
+
+  document.addEventListener("click", async (e) => {
+    const quickBtn = e.target.closest("[data-rq-quick]");
+    if (quickBtn) {
+      const quick = quickBtn.dataset.rqQuick || "all";
+      PR_REVIEW_QUEUE_ACTIVE_QUICK = quick;
+
+      if (quick === "all") {
+        PR_REVIEW_QUEUE_CACHE.filters.mine_only = false;
+      } else if (quick === "mine") {
+        PR_REVIEW_QUEUE_CACHE.filters.mine_only = true;
+      } else {
+        PR_REVIEW_QUEUE_CACHE.filters.mine_only = false;
+      }
+
+      if (quick !== "review") {
+        if (PR_REVIEW_QUEUE_CACHE.filters.status === "in_review") {
+          PR_REVIEW_QUEUE_CACHE.filters.status = "";
+        }
+      }
+
+      if (quick !== "blocked") {
+        if (PR_REVIEW_QUEUE_CACHE.filters.status === "blocked") {
+          PR_REVIEW_QUEUE_CACHE.filters.status = "";
+        }
+      }
+
+      if (quick !== "signoff") {
+        if (PR_REVIEW_QUEUE_CACHE.filters.queue_type === "signoff") {
+          PR_REVIEW_QUEUE_CACHE.filters.queue_type = "";
+        }
+      }
+
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      syncReviewQueueFiltersToUi();
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    const row = getReviewQueueSelectedRowByDom(e.target);
+    if (row) {
+      PR_REVIEW_QUEUE_CACHE.selectedRow = row;
+      PR_REVIEW_QUEUE_CACHE.detail = null;
+      renderReviewQueueRows();
+      await openSelectedReviewQueueDetail(me);
+      return;
+    }
+
+    if (e.target.id === "rqSearchBtn") {
+      const q = document.getElementById("rqSearchInput")?.value?.trim?.() || "";
+      PR_REVIEW_QUEUE_CACHE.filters.q = q;
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqRefreshBtn") {
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqPrevBtn") {
+      const limit = Number(PR_REVIEW_QUEUE_CACHE.filters.limit || 100);
+      const offset = Math.max(0, Number(PR_REVIEW_QUEUE_CACHE.filters.offset || 0) - limit);
+      PR_REVIEW_QUEUE_CACHE.filters.offset = offset;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqNextBtn") {
+      const limit = Number(PR_REVIEW_QUEUE_CACHE.filters.limit || 100);
+      const offset = Number(PR_REVIEW_QUEUE_CACHE.filters.offset || 0) + limit;
+      PR_REVIEW_QUEUE_CACHE.filters.offset = offset;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqApproveBtn") {
+      await handleReviewQueueStatusAction(me, "approved");
+      return;
+    }
+
+    if (e.target.id === "rqReturnBtn") {
+      await handleReviewQueueStatusAction(me, "returned");
+      return;
+    }
+
+    if (e.target.id === "rqInReviewBtn") {
+      await handleReviewQueueStatusAction(me, "in_review");
+      return;
+    }
+
+    if (e.target.id === "rqDeactivateBtn") {
+      const row = PR_REVIEW_QUEUE_CACHE.selectedRow;
+      if (!row) return;
+
+      const ok = window.confirm("Deactivate this queue item?");
+      if (!ok) return;
+
+      await apiFetch(
+        ENDPOINTS.reviewQueue.deactivate(me.company_id, PR_SELECTED_ENGAGEMENT.id, row.queue_type, row.source_id),
+        { method: "POST" }
+      );
+
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqOpenSourceBtn") {
+      openReviewQueueSource(PR_REVIEW_QUEUE_CACHE.selectedRow);
+      return;
+    }
+
+    if (e.target.id === "rqAssignBtn") {
+      const row = PR_REVIEW_QUEUE_CACHE.selectedRow;
+      if (!row) return;
+
+      const assigned_user_id = window.prompt("Enter new assigned user id");
+      if (!assigned_user_id) return;
+
+      await apiFetch(
+        ENDPOINTS.reviewQueue.assign(me.company_id, PR_SELECTED_ENGAGEMENT.id, row.queue_type, row.source_id),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            assigned_user_id: Number(assigned_user_id)
+          })
+        }
+      );
+
+      await loadReviewQueueScreenData(me, { force: true });
+    }
+  });
+
+  document.addEventListener("change", async (e) => {
+    if (e.target.id === "rqQueueTypeFilter") {
+      PR_REVIEW_QUEUE_CACHE.filters.queue_type = e.target.value || "";
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqStatusFilter") {
+      PR_REVIEW_QUEUE_CACHE.filters.status = e.target.value || "";
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqPriorityFilter") {
+      PR_REVIEW_QUEUE_CACHE.filters.priority = e.target.value || "";
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqLimitFilter") {
+      PR_REVIEW_QUEUE_CACHE.filters.limit = Number(e.target.value || 100);
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+  });
+
+  document.addEventListener("keydown", async (e) => {
+    if (e.target?.id === "rqSearchInput" && e.key === "Enter") {
+      PR_REVIEW_QUEUE_CACHE.filters.q = e.target.value.trim();
+      PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
+      await loadReviewQueueScreenData(me, { force: true });
+    }
+  });
+}
+
+async function renderReviewQueueScreen(me) {
+  const screen = document.getElementById("screen-review-queue");
+  if (!screen) return;
+
+  await bindReviewQueueEvents(me);
+  syncReviewQueueFiltersToUi();
+  await loadReviewQueueScreenData(me, { force: false });
 }
 
 function renderSettingsScreen(me, screen) {

@@ -43839,6 +43839,512 @@ class DatabaseService:
             "reviewer_users": reviewers,
         }
 
+def get_review_queue_summary(
+    self,
+    cur,
+    company_id: int,
+    *,
+    customer_id: int = None,
+    engagement_id: int = None,
+    current_user_id: int = None,
+):
+    schema = self.company_schema(company_id)
+
+    sql = f"""
+        WITH engagement_scope AS (
+            SELECT e.id
+            FROM {schema}.engagements e
+            WHERE e.company_id = %s
+              AND e.is_active = TRUE
+              AND (%s IS NULL OR e.customer_id = %s)
+              AND (%s IS NULL OR e.id = %s)
+        ),
+        queue_union AS (
+            SELECT
+                'reporting_item'::text AS queue_type,
+                i.id AS source_id,
+                i.engagement_id,
+                i.status,
+                i.priority,
+                i.due_date,
+                i.owner_user_id AS assigned_user_id,
+                i.reviewer_user_id,
+                (
+                    i.due_date IS NOT NULL
+                    AND i.due_date < CURRENT_DATE
+                    AND i.status NOT IN ('approved', 'completed', 'waived')
+                ) AS is_overdue,
+                (i.status = 'blocked') AS is_blocked,
+                (
+                    %s IS NOT NULL
+                    AND (
+                        i.owner_user_id = %s
+                        OR i.reviewer_user_id = %s
+                    )
+                ) AS is_mine
+            FROM {schema}.engagement_reporting_items i
+            JOIN engagement_scope es ON es.id = i.engagement_id
+            WHERE i.company_id = %s
+              AND i.is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                'deliverable'::text,
+                d.id,
+                d.engagement_id,
+                d.status,
+                d.priority,
+                d.due_date,
+                d.assigned_user_id,
+                d.reviewer_user_id,
+                (
+                    d.due_date IS NOT NULL
+                    AND d.due_date < CURRENT_DATE
+                    AND d.status NOT IN ('completed', 'waived', 'received')
+                ) AS is_overdue,
+                FALSE AS is_blocked,
+                (
+                    %s IS NOT NULL
+                    AND (
+                        d.assigned_user_id = %s
+                        OR d.reviewer_user_id = %s
+                    )
+                ) AS is_mine
+            FROM {schema}.engagement_deliverables d
+            JOIN engagement_scope es ON es.id = d.engagement_id
+            WHERE d.company_id = %s
+              AND d.is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                'posting_activity'::text,
+                p.id,
+                p.engagement_id,
+                p.status,
+                'normal'::text AS priority,
+                p.posting_date AS due_date,
+                p.prepared_by_user_id AS assigned_user_id,
+                p.reviewer_user_id,
+                (
+                    p.posting_date IS NOT NULL
+                    AND p.posting_date < CURRENT_DATE
+                    AND p.status NOT IN ('approved', 'posted', 'reversed')
+                ) AS is_overdue,
+                FALSE AS is_blocked,
+                (
+                    %s IS NOT NULL
+                    AND (
+                        p.prepared_by_user_id = %s
+                        OR p.reviewer_user_id = %s
+                    )
+                ) AS is_mine
+            FROM {schema}.engagement_posting_activity p
+            JOIN engagement_scope es ON es.id = p.engagement_id
+            WHERE p.company_id = %s
+              AND p.is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                'monthly_close'::text,
+                m.id,
+                m.engagement_id,
+                m.status,
+                m.priority,
+                m.due_date,
+                m.owner_user_id AS assigned_user_id,
+                m.reviewer_user_id,
+                (
+                    m.due_date IS NOT NULL
+                    AND m.due_date < CURRENT_DATE
+                    AND m.status NOT IN ('completed', 'skipped')
+                ) AS is_overdue,
+                (m.status = 'blocked') AS is_blocked,
+                (
+                    %s IS NOT NULL
+                    AND (
+                        m.owner_user_id = %s
+                        OR m.reviewer_user_id = %s
+                    )
+                ) AS is_mine
+            FROM {schema}.engagement_monthly_close_tasks m
+            JOIN engagement_scope es ON es.id = m.engagement_id
+            WHERE m.company_id = %s
+              AND m.is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                'year_end'::text,
+                y.id,
+                y.engagement_id,
+                y.status,
+                y.priority,
+                y.due_date,
+                y.owner_user_id AS assigned_user_id,
+                y.reviewer_user_id,
+                (
+                    y.due_date IS NOT NULL
+                    AND y.due_date < CURRENT_DATE
+                    AND y.status NOT IN ('completed', 'waived')
+                ) AS is_overdue,
+                (y.status = 'blocked') AS is_blocked,
+                (
+                    %s IS NOT NULL
+                    AND (
+                        y.owner_user_id = %s
+                        OR y.reviewer_user_id = %s
+                    )
+                ) AS is_mine
+            FROM {schema}.engagement_year_end_tasks y
+            JOIN engagement_scope es ON es.id = y.engagement_id
+            WHERE y.company_id = %s
+              AND y.is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                'signoff'::text,
+                s.id,
+                s.engagement_id,
+                s.status,
+                'high'::text AS priority,
+                s.due_date,
+                s.assigned_user_id,
+                NULL::int AS reviewer_user_id,
+                (
+                    s.due_date IS NOT NULL
+                    AND s.due_date < CURRENT_DATE
+                    AND s.status NOT IN ('completed', 'waived')
+                ) AS is_overdue,
+                (s.status = 'blocked') AS is_blocked,
+                (
+                    %s IS NOT NULL
+                    AND s.assigned_user_id = %s
+                ) AS is_mine
+            FROM {schema}.engagement_signoff_steps s
+            JOIN engagement_scope es ON es.id = s.engagement_id
+            WHERE s.company_id = %s
+              AND s.is_active = TRUE
+        )
+        SELECT
+            COUNT(*) AS total_items,
+            COUNT(*) FILTER (
+                WHERE status IN ('ready', 'in_review', 'pending_review', 'in_progress', 'not_started')
+            ) AS awaiting_review,
+            COUNT(*) FILTER (WHERE is_overdue = TRUE) AS overdue_items,
+            COUNT(*) FILTER (WHERE is_blocked = TRUE) AS blocked_items,
+            COUNT(*) FILTER (
+                WHERE queue_type = 'signoff'
+                  AND status NOT IN ('completed', 'waived')
+            ) AS pending_signoffs,
+            COUNT(*) FILTER (WHERE is_mine = TRUE) AS my_queue
+        FROM queue_union
+    """
+
+    params = (
+        company_id, customer_id, customer_id, engagement_id, engagement_id,
+
+        current_user_id, current_user_id, current_user_id, company_id,
+        current_user_id, current_user_id, current_user_id, company_id,
+        current_user_id, current_user_id, current_user_id, company_id,
+        current_user_id, current_user_id, current_user_id, company_id,
+        current_user_id, current_user_id, current_user_id, company_id,
+        current_user_id, current_user_id, company_id,
+    )
+
+    cur.execute(sql, params)
+    return cur.fetchone()
+
+def list_review_queue_items(
+    self,
+    cur,
+    company_id: int,
+    *,
+    customer_id: int = None,
+    engagement_id: int = None,
+    queue_type: str = None,
+    status: str = None,
+    priority: str = None,
+    mine_only: bool = False,
+    current_user_id: int = None,
+    q: str = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    return self.list_action_center_queue(
+        cur,
+        company_id,
+        customer_id=customer_id,
+        engagement_id=engagement_id,
+        queue_type=queue_type,
+        status=status,
+        priority=priority,
+        mine_only=mine_only,
+        current_user_id=current_user_id,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+
+def _review_queue_table_meta(self, queue_type: str):
+    qt = (queue_type or "").strip().lower()
+
+    mapping = {
+        "reporting_item": {
+            "table": "engagement_reporting_items",
+            "pk": "id",
+            "assigned_col": "owner_user_id",
+            "reviewer_col": "reviewer_user_id",
+            "status_col": "status",
+            "active_col": "is_active",
+            "updated_by_col": "updated_by_user_id",
+            "completed_col": "completed_at",
+        },
+        "deliverable": {
+            "table": "engagement_deliverables",
+            "pk": "id",
+            "assigned_col": "assigned_user_id",
+            "reviewer_col": "reviewer_user_id",
+            "status_col": "status",
+            "active_col": "is_active",
+            "updated_by_col": "updated_by_user_id",
+            "completed_col": None,
+        },
+        "posting_activity": {
+            "table": "engagement_posting_activity",
+            "pk": "id",
+            "assigned_col": "prepared_by_user_id",
+            "reviewer_col": "reviewer_user_id",
+            "status_col": "status",
+            "active_col": "is_active",
+            "updated_by_col": "updated_by_user_id",
+            "completed_col": None,
+        },
+        "monthly_close": {
+            "table": "engagement_monthly_close_tasks",
+            "pk": "id",
+            "assigned_col": "owner_user_id",
+            "reviewer_col": "reviewer_user_id",
+            "status_col": "status",
+            "active_col": "is_active",
+            "updated_by_col": "updated_by_user_id",
+            "completed_col": "completed_at",
+        },
+        "year_end": {
+            "table": "engagement_year_end_tasks",
+            "pk": "id",
+            "assigned_col": "owner_user_id",
+            "reviewer_col": "reviewer_user_id",
+            "status_col": "status",
+            "active_col": "is_active",
+            "updated_by_col": "updated_by_user_id",
+            "completed_col": "completed_at",
+        },
+        "signoff": {
+            "table": "engagement_signoff_steps",
+            "pk": "id",
+            "assigned_col": "assigned_user_id",
+            "reviewer_col": None,
+            "status_col": "status",
+            "active_col": "is_active",
+            "updated_by_col": "updated_by_user_id",
+            "completed_col": "completed_at",
+        },
+    }
+    return mapping.get(qt)
+
+def get_review_queue_item_detail(
+    self,
+    cur,
+    company_id: int,
+    *,
+    queue_type: str,
+    source_id: int,
+):
+    schema = self.company_schema(company_id)
+    meta = self._review_queue_table_meta(queue_type)
+    if not meta:
+        return None
+
+    table = meta["table"]
+
+    sql = f"""
+        SELECT
+            t.*,
+            e.customer_id,
+            e.engagement_name,
+            e.engagement_code,
+            e.engagement_type,
+            e.status AS engagement_status,
+            e.priority AS engagement_priority,
+            e.due_date AS engagement_due_date,
+            c.name AS customer_name,
+
+            CONCAT(COALESCE(au.first_name, ''), CASE
+                WHEN au.last_name IS NOT NULL AND au.last_name <> '' THEN ' ' || au.last_name
+                ELSE ''
+            END) AS assigned_user_name,
+
+            CONCAT(COALESCE(ru.first_name, ''), CASE
+                WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name
+                ELSE ''
+            END) AS reviewer_user_name
+        FROM {schema}.{table} t
+        JOIN {schema}.engagements e
+          ON e.id = t.engagement_id
+        JOIN {schema}.customers c
+          ON c.id = e.customer_id
+        LEFT JOIN public.users au
+          ON au.id = t.{meta["assigned_col"]}
+        {"LEFT JOIN public.users ru ON ru.id = t." + meta["reviewer_col"] if meta["reviewer_col"] else "LEFT JOIN public.users ru ON 1 = 0"}
+        WHERE t.company_id = %s
+          AND t.id = %s
+          AND COALESCE(t.is_active, TRUE) = TRUE
+    """
+
+    cur.execute(sql, (company_id, source_id))
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    row["queue_type"] = queue_type
+    return row
+
+def set_review_queue_item_status(
+    self,
+    cur,
+    company_id: int,
+    *,
+    queue_type: str,
+    source_id: int,
+    status: str,
+    updated_by_user_id: int,
+    completed_at=None,
+):
+    schema = self.company_schema(company_id)
+    meta = self._review_queue_table_meta(queue_type)
+    if not meta:
+        return None
+
+    allowed_statuses = {
+        "reporting_item": {"not_started", "in_progress", "ready", "in_review", "approved", "completed", "blocked", "waived", "returned"},
+        "deliverable": {"not_started", "requested", "outstanding", "received", "in_review", "completed", "waived"},
+        "posting_activity": {"draft", "pending_review", "in_review", "approved", "posted", "returned", "rejected", "reversed"},
+        "monthly_close": {"not_started", "in_progress", "in_review", "completed", "blocked", "skipped"},
+        "year_end": {"not_started", "in_progress", "in_review", "completed", "blocked", "waived"},
+        "signoff": {"not_started", "in_progress", "completed", "blocked", "waived"},
+    }
+
+    status = (status or "").strip().lower()
+    if status not in allowed_statuses.get(queue_type, set()):
+        raise ValueError(f"Invalid status '{status}' for queue type '{queue_type}'.")
+
+    set_completed_sql = ""
+    params = [status, updated_by_user_id]
+
+    if meta["completed_col"]:
+        if status in {"completed", "approved", "posted", "received"}:
+            set_completed_sql = f", {meta['completed_col']} = COALESCE(%s, NOW())"
+            params.append(completed_at)
+        elif queue_type != "signoff":
+            set_completed_sql = f", {meta['completed_col']} = NULL"
+
+    sql = f"""
+        UPDATE {schema}.{meta["table"]}
+        SET
+            {meta["status_col"]} = %s,
+            {meta["updated_by_col"]} = %s,
+            updated_at = NOW()
+            {set_completed_sql}
+        WHERE company_id = %s
+          AND {meta["pk"]} = %s
+          AND COALESCE({meta["active_col"]}, TRUE) = TRUE
+        RETURNING {meta["pk"]}
+    """
+
+    params.extend([company_id, source_id])
+    cur.execute(sql, tuple(params))
+    row = cur.fetchone()
+    return row[meta["pk"]] if row else None
+
+def assign_review_queue_item(
+    self,
+    cur,
+    company_id: int,
+    *,
+    queue_type: str,
+    source_id: int,
+    assigned_user_id: int = None,
+    reviewer_user_id: int = None,
+    updated_by_user_id: int,
+):
+    schema = self.company_schema(company_id)
+    meta = self._review_queue_table_meta(queue_type)
+    if not meta:
+        return None
+
+    sets = [f'{meta["updated_by_col"]} = %s', "updated_at = NOW()"]
+    params = [updated_by_user_id]
+
+    if assigned_user_id is not None and meta["assigned_col"]:
+        sets.append(f'{meta["assigned_col"]} = %s')
+        params.append(assigned_user_id)
+
+    if reviewer_user_id is not None and meta["reviewer_col"]:
+        sets.append(f'{meta["reviewer_col"]} = %s')
+        params.append(reviewer_user_id)
+
+    if len(sets) == 2:
+        raise ValueError("Nothing to update.")
+
+    sql = f"""
+        UPDATE {schema}.{meta["table"]}
+        SET {", ".join(sets)}
+        WHERE company_id = %s
+          AND {meta["pk"]} = %s
+          AND COALESCE({meta["active_col"]}, TRUE) = TRUE
+        RETURNING {meta["pk"]}
+    """
+
+    params.extend([company_id, source_id])
+    cur.execute(sql, tuple(params))
+    row = cur.fetchone()
+    return row[meta["pk"]] if row else None
+
+def deactivate_review_queue_item(
+    self,
+    cur,
+    company_id: int,
+    *,
+    queue_type: str,
+    source_id: int,
+    updated_by_user_id: int,
+):
+    schema = self.company_schema(company_id)
+    meta = self._review_queue_table_meta(queue_type)
+    if not meta:
+        return None
+
+    sql = f"""
+        UPDATE {schema}.{meta["table"]}
+        SET
+            {meta["active_col"]} = FALSE,
+            {meta["updated_by_col"]} = %s,
+            updated_at = NOW()
+        WHERE company_id = %s
+          AND {meta["pk"]} = %s
+          AND COALESCE({meta["active_col"]}, TRUE) = TRUE
+        RETURNING {meta["pk"]}
+    """
+
+    cur.execute(sql, (updated_by_user_id, company_id, source_id))
+    row = cur.fetchone()
+    return row[meta["pk"]] if row else None
+
+
     def insert_ticket(
         self,
         cur,
