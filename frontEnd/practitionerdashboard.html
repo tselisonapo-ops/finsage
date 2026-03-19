@@ -849,6 +849,91 @@
     min-height: 220px;
   }
 
+  /* === FinSage Card System === */
+
+  .card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+    transition: all 0.2s ease;
+  }
+
+  .card:hover {
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  .panel-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .panel-subtitle {
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+
+  /* KPI tiles */
+  .kpi-tile {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border-radius: 16px;
+    padding: 14px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .kpi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.05em;
+  }
+
+  .kpi-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  /* Table polish */
+  .table-modern th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+  }
+
+  .table-modern td {
+    color: #334155;
+  }
+
+  /* Filter block */
+  .filter-panel {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    color: white;
+    border-radius: 12px;
+  }
+
+  .btn-secondary {
+    background: #f1f5f9;
+    border-radius: 12px;
+  }
+
+  /* Soft badges */
+  .badge-soft {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
   @media (max-width: 1400px) {
     #screen-action-center .action-layout {
       grid-template-columns: 1fr;
@@ -2593,48 +2678,928 @@ window.safeRedirect = function (url, mode = "href") {
         </div>
       </section>
 
+      <!-- ========================================================= -->
+      <!-- POSTING MODULES : PRACTITIONER MONITORING SCREENS -->
+      <!-- read-only engagement-linked operational activity views -->
+      <!-- ========================================================= -->
+
       <!-- JOURNAL ENTRIES -->
       <section id="screen-journal-entries" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Journal Entries</div>
-          <div class="panel-subtitle mt-1">Manual postings and control-aware redirects</div>
-          <div class="mt-4 text-sm text-slate-600">Journal Entries placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">Journal Entries</div>
+                <div class="panel-subtitle mt-1">
+                  Engagement-linked journal activity and workflow status
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement: <strong class="ml-1" id="je-active-engagement-name">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Code: <strong class="ml-1" id="je-active-engagement-code">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity: <strong class="ml-1" id="je-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="je-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+                  Open Posting Workspace
+                </button>
+                <button id="je-refresh-btn" class="btn btn-primary" type="button">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="je-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="je-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="je-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="je-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="je-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div>
+                <label for="je-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label>
+                <select id="je-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Statuses</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="je-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label>
+                <select id="je-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Events</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="je-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label>
+                <select id="je-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Preparers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="je-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label>
+                <select id="je-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Reviewers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="je-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label>
+                <input id="je-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label for="je-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label>
+                <input id="je-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div>
+                <label for="je-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label>
+                <input
+                  id="je-filter-q"
+                  type="text"
+                  placeholder="Reference, description, source table, source id..."
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <input id="je-filter-mine-only" type="checkbox" />
+                  <span>Mine only</span>
+                </label>
+              </div>
+
+              <div class="flex items-end justify-end gap-2">
+                <button id="je-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button>
+                <button id="je-filter-apply-btn" class="btn btn-primary" type="button">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Journal Activity</div>
+                <div id="je-table-caption" class="text-xs text-slate-500">
+                  Read-only activity linked to the selected engagement.
+                </div>
+              </div>
+              <div class="text-xs text-slate-500">
+                Total Rows: <span id="je-total-rows">0</span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="je-table-body">
+                  <tr>
+                    <td colspan="10" class="py-10 text-center text-slate-500">
+                      No journal activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">
+                Showing <span id="je-page-from">0</span> - <span id="je-page-to">0</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="je-prev-page-btn" class="btn btn-secondary" type="button">Previous</button>
+                <div class="text-sm text-slate-600">Page <span id="je-current-page">1</span></div>
+                <button id="je-next-page-btn" class="btn btn-secondary" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="je-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No Journal Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">
+              There are no engagement-linked journal activity records for the current filters.
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- ACCOUNTS RECEIVABLE -->
       <section id="screen-accounts-receivable" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Accounts Receivable</div>
-          <div class="panel-subtitle mt-1">Receipts, aging, controls, and review routing</div>
-          <div class="mt-4 text-sm text-slate-600">Accounts Receivable placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">Accounts Receivable</div>
+                <div class="panel-subtitle mt-1">
+                  View receivable-related activity for the active engagement, including invoices, receipts, allocations, reversals, and review outcomes.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement: <strong class="ml-1" id="ar-active-engagement-name">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Code: <strong class="ml-1" id="ar-active-engagement-code">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity: <strong class="ml-1" id="ar-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="ar-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+                  Open Posting Workspace
+                </button>
+                <button id="ar-refresh-btn" class="btn btn-primary" type="button">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="ar-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="ar-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="ar-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="ar-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="ar-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div>
+                <label for="ar-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label>
+                <select id="ar-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Statuses</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ar-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label>
+                <select id="ar-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Events</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ar-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label>
+                <select id="ar-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Preparers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ar-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label>
+                <select id="ar-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Reviewers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ar-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label>
+                <input id="ar-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label for="ar-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label>
+                <input id="ar-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div>
+                <label for="ar-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label>
+                <input
+                  id="ar-filter-q"
+                  type="text"
+                  placeholder="Reference, description, source table, source id..."
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <input id="ar-filter-mine-only" type="checkbox" />
+                  <span>Mine only</span>
+                </label>
+              </div>
+
+              <div class="flex items-end justify-end gap-2">
+                <button id="ar-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button>
+                <button id="ar-filter-apply-btn" class="btn btn-primary" type="button">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Accounts Receivable Activity</div>
+                <div id="ar-table-caption" class="text-xs text-slate-500">
+                  Read-only activity linked to the selected engagement.
+                </div>
+              </div>
+              <div class="text-xs text-slate-500">
+                Total Rows: <span id="ar-total-rows">0</span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="ar-table-body">
+                  <tr>
+                    <td colspan="10" class="py-10 text-center text-slate-500">
+                      No receivable activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">
+                Showing <span id="ar-page-from">0</span> - <span id="ar-page-to">0</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="ar-prev-page-btn" class="btn btn-secondary" type="button">Previous</button>
+                <div class="text-sm text-slate-600">Page <span id="ar-current-page">1</span></div>
+                <button id="ar-next-page-btn" class="btn btn-secondary" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="ar-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No Receivable Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">
+              There are no engagement-linked receivable activity records for the current filters.
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- ACCOUNTS PAYABLE -->
       <section id="screen-accounts-payable" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Accounts Payable</div>
-          <div class="panel-subtitle mt-1">Bills, vendor workflows, and review stages</div>
-          <div class="mt-4 text-sm text-slate-600">Accounts Payable placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">Accounts Payable</div>
+                <div class="panel-subtitle mt-1">
+                  View payable-related activity for the active engagement, including bills, payments, approvals, returns, and posting status.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement: <strong class="ml-1" id="ap-active-engagement-name">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Code: <strong class="ml-1" id="ap-active-engagement-code">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity: <strong class="ml-1" id="ap-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="ap-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+                  Open Posting Workspace
+                </button>
+                <button id="ap-refresh-btn" class="btn btn-primary" type="button">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="ap-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="ap-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="ap-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="ap-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="ap-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div>
+                <label for="ap-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label>
+                <select id="ap-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Statuses</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ap-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label>
+                <select id="ap-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Events</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ap-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label>
+                <select id="ap-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Preparers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ap-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label>
+                <select id="ap-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Reviewers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ap-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label>
+                <input id="ap-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label for="ap-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label>
+                <input id="ap-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div>
+                <label for="ap-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label>
+                <input
+                  id="ap-filter-q"
+                  type="text"
+                  placeholder="Reference, description, source table, source id..."
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <input id="ap-filter-mine-only" type="checkbox" />
+                  <span>Mine only</span>
+                </label>
+              </div>
+
+              <div class="flex items-end justify-end gap-2">
+                <button id="ap-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button>
+                <button id="ap-filter-apply-btn" class="btn btn-primary" type="button">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Accounts Payable Activity</div>
+                <div id="ap-table-caption" class="text-xs text-slate-500">
+                  Read-only activity linked to the selected engagement.
+                </div>
+              </div>
+              <div class="text-xs text-slate-500">
+                Total Rows: <span id="ap-total-rows">0</span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="ap-table-body">
+                  <tr>
+                    <td colspan="10" class="py-10 text-center text-slate-500">
+                      No payable activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">
+                Showing <span id="ap-page-from">0</span> - <span id="ap-page-to">0</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="ap-prev-page-btn" class="btn btn-secondary" type="button">Previous</button>
+                <div class="text-sm text-slate-600">Page <span id="ap-current-page">1</span></div>
+                <button id="ap-next-page-btn" class="btn btn-secondary" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="ap-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No Payable Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">
+              There are no engagement-linked payable activity records for the current filters.
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- LEASES -->
       <section id="screen-leases" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Leases</div>
-          <div class="panel-subtitle mt-1">Monthly postings, modifications, terminations, and register views</div>
-          <div class="mt-4 text-sm text-slate-600">Leases placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">Leases</div>
+                <div class="panel-subtitle mt-1">
+                  View lease events and engagement-linked posting activity such as commencements, modifications, terminations, remeasurements, and monthly movements.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement: <strong class="ml-1" id="le-active-engagement-name">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Code: <strong class="ml-1" id="le-active-engagement-code">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity: <strong class="ml-1" id="le-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="le-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+                  Open Posting Workspace
+                </button>
+                <button id="le-refresh-btn" class="btn btn-primary" type="button">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="le-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="le-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="le-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="le-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="le-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div>
+                <label for="le-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label>
+                <select id="le-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Statuses</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="le-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label>
+                <select id="le-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Events</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="le-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label>
+                <select id="le-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Preparers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="le-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label>
+                <select id="le-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Reviewers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="le-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label>
+                <input id="le-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label for="le-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label>
+                <input id="le-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div>
+                <label for="le-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label>
+                <input
+                  id="le-filter-q"
+                  type="text"
+                  placeholder="Reference, description, source table, source id..."
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <input id="le-filter-mine-only" type="checkbox" />
+                  <span>Mine only</span>
+                </label>
+              </div>
+
+              <div class="flex items-end justify-end gap-2">
+                <button id="le-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button>
+                <button id="le-filter-apply-btn" class="btn btn-primary" type="button">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Lease Activity</div>
+                <div id="le-table-caption" class="text-xs text-slate-500">
+                  Read-only activity linked to the selected engagement.
+                </div>
+              </div>
+              <div class="text-xs text-slate-500">
+                Total Rows: <span id="le-total-rows">0</span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="le-table-body">
+                  <tr>
+                    <td colspan="10" class="py-10 text-center text-slate-500">
+                      No lease activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">
+                Showing <span id="le-page-from">0</span> - <span id="le-page-to">0</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="le-prev-page-btn" class="btn btn-secondary" type="button">Previous</button>
+                <div class="text-sm text-slate-600">Page <span id="le-current-page">1</span></div>
+                <button id="le-next-page-btn" class="btn btn-secondary" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="le-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No Lease Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">
+              There are no engagement-linked lease activity records for the current filters.
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- PPE -->
       <section id="screen-ppe" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">PPE</div>
-          <div class="panel-subtitle mt-1">Asset events, depreciation, transfers, revaluations, and disposals</div>
-          <div class="mt-4 text-sm text-slate-600">PPE placeholder.</div>
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">PPE</div>
+                <div class="panel-subtitle mt-1">
+                  View asset-related engagement activity including additions, depreciation, transfers, revaluations, impairments, and disposals.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement: <strong class="ml-1" id="ppe-active-engagement-name">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Code: <strong class="ml-1" id="ppe-active-engagement-code">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity: <strong class="ml-1" id="ppe-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="ppe-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+                  Open Posting Workspace
+                </button>
+                <button id="ppe-refresh-btn" class="btn btn-primary" type="button">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="ppe-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="ppe-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="ppe-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="ppe-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="ppe-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div>
+                <label for="ppe-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label>
+                <select id="ppe-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Statuses</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ppe-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label>
+                <select id="ppe-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Events</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ppe-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label>
+                <select id="ppe-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Preparers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ppe-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label>
+                <select id="ppe-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <option value="">All Reviewers</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="ppe-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label>
+                <input id="ppe-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label for="ppe-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label>
+                <input id="ppe-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div>
+                <label for="ppe-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label>
+                <input
+                  id="ppe-filter-q"
+                  type="text"
+                  placeholder="Reference, description, source table, source id..."
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div class="flex items-end">
+                <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <input id="ppe-filter-mine-only" type="checkbox" />
+                  <span>Mine only</span>
+                </label>
+              </div>
+
+              <div class="flex items-end justify-end gap-2">
+                <button id="ppe-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button>
+                <button id="ppe-filter-apply-btn" class="btn btn-primary" type="button">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div class="text-sm font-semibold text-slate-900">PPE Activity</div>
+                <div id="ppe-table-caption" class="text-xs text-slate-500">
+                  Read-only activity linked to the selected engagement.
+                </div>
+              </div>
+              <div class="text-xs text-slate-500">
+                Total Rows: <span id="ppe-total-rows">0</span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="ppe-table-body">
+                  <tr>
+                    <td colspan="10" class="py-10 text-center text-slate-500">
+                      No PPE activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">
+                Showing <span id="ppe-page-from">0</span> - <span id="ppe-page-to">0</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="ppe-prev-page-btn" class="btn btn-secondary" type="button">Previous</button>
+                <div class="text-sm text-slate-600">Page <span id="ppe-current-page">1</span></div>
+                <button id="ppe-next-page-btn" class="btn btn-secondary" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="ppe-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No PPE Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">
+              There are no engagement-linked asset activity records for the current filters.
+            </div>
+          </div>
         </div>
       </section>
 

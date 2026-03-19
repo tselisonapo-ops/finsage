@@ -344,7 +344,64 @@ const ENDPOINTS = {
     itemAction: (companyId, queueType, sourceId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/action-center/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/action`
   },
-    
+
+  practitionerPosting: {
+    summary: (companyId, engagementId, module_name, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/practitioner-dashboard/posting-modules/summary`,
+        {
+          engagement_id: engagementId,
+          module_name,
+          ...params
+        }
+      ),
+
+    activity: (
+      companyId,
+      engagementId,
+      module_name,
+      {
+        status = "",
+        event_type = "",
+        prepared_by_user_id = "",
+        reviewer_user_id = "",
+        date_from = "",
+        date_to = "",
+        mine_only = "",
+        q = "",
+        limit = 100,
+        offset = 0
+      } = {}
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/practitioner-dashboard/posting-modules/activity`,
+        {
+          engagement_id: engagementId,
+          module_name,
+          status,
+          event_type,
+          prepared_by_user_id,
+          reviewer_user_id,
+          date_from,
+          date_to,
+          mine_only,
+          q,
+          limit,
+          offset
+        }
+      ),
+
+    filterOptions: (companyId, engagementId, module_name, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/practitioner-dashboard/posting-modules/filter-options`,
+        {
+          engagement_id: engagementId,
+          module_name,
+          ...params
+        }
+      )
+  },
+
   clientOverview: {
     summary: (companyId, customerId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/client-overview/summary?customer_id=${encodeURIComponent(customerId)}`,
@@ -588,6 +645,24 @@ const ENDPOINTS = {
   let PR_ACTION_CENTER_LOADING = false;
   let PR_ACTION_CENTER_MINE_ONLY = false;
   let PR_ACTION_CENTER_ACTIVE_QUICK = "all";
+
+  const PR_POSTING_MODULES = {
+    [PR_NAV.journalEntries]: "journal_entries",
+    [PR_NAV.accountsReceivable]: "accounts_receivable",
+    [PR_NAV.accountsPayable]: "accounts_payable",
+    [PR_NAV.leases]: "leases",
+    [PR_NAV.ppe]: "ppe"
+  };
+
+  let PR_PRACTITIONER_POSTING_CACHE = {
+    journal_entries: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    accounts_receivable: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    accounts_payable: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    leases: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    ppe: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 }
+  };
+
+  let PR_PRACTITIONER_POSTING_EVENTS_BOUND = false;
 
   const PR_NAV = {
     dashboard: "dashboard",
@@ -2175,16 +2250,49 @@ function populateSubIndustryOptions(industry, selectedValue = "") {
 }
 
 function toggleEngagementWorkspaceSetup() {
-  const type = document.getElementById("engType")?.value || "";
   const block = document.getElementById("engWorkspaceSetupBlock");
-
   if (!block) return;
 
-  const needsWorkspace = WORKSPACE_REQUIRED_ENGAGEMENT_TYPES.has(type);
-  block.classList.toggle("hidden", !needsWorkspace);
+  const type = document.getElementById("engType")?.value || "";
+  const customer = getSelectedEngagementCustomer();
 
-  if (needsWorkspace) {
-    populateIndustryOptions();
+  const requiresWorkspace = engagementTypeRequiresWorkspace(type);
+  const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
+  const shouldShow = requiresWorkspace && !alreadyProvisioned;
+
+  block.classList.toggle("hidden", !shouldShow);
+
+  const countryEl = document.getElementById("engCountry");
+  const currencyEl = document.getElementById("engCurrency");
+  const industryEl = document.getElementById("engIndustry");
+  const subIndustryEl = document.getElementById("engSubIndustry");
+
+  if (shouldShow && customer) {
+    if (countryEl && !countryEl.value) {
+      countryEl.value = customer.country || customer.billing_country || "";
+    }
+    if (currencyEl && !currencyEl.value) {
+      currencyEl.value = customer.currency || "";
+    }
+    if (industryEl && !industryEl.value && customer.industry) {
+      industryEl.value = customer.industry;
+      populateSubIndustryOptions(customer.industry);
+    }
+    if (subIndustryEl && customer.sub_industry) {
+      subIndustryEl.value = customer.sub_industry;
+    }
+    return;
+  }
+
+  if (!shouldShow) {
+    if (countryEl) countryEl.value = "";
+    if (currencyEl) currencyEl.value = "";
+    if (industryEl) industryEl.value = "";
+    if (subIndustryEl) {
+      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
+      subIndustryEl.value = "";
+      subIndustryEl.disabled = true;
+    }
   }
 }
 
@@ -2287,6 +2395,9 @@ function runPractitionerScreenBinder(screen, me) {
     case PR_NAV.accountsPayable:
     case PR_NAV.leases:
     case PR_NAV.ppe:
+      renderPractitionerPostingModuleScreen?.(me, screen);
+      break;
+
     case PR_NAV.reviewQueue:
     case PR_NAV.deliverables:
     case PR_NAV.partnerSignoff:
@@ -2699,6 +2810,7 @@ function engagementModalEl() {
 
 function openEngagementModal() {
   engagementModalEl()?.classList.remove("hidden");
+  toggleEngagementWorkspaceSetup();
 }
 
 function closeEngagementModal() {
@@ -2742,7 +2854,7 @@ function resetEngagementModalForm() {
     "engPartnerUserId",
     "engDescription",
     "engScopeSummary",
-    "engFiscalYearEnd",
+    "engFinancialYearStart",
     "engTargetCompanyId",
     "engIndustry",
     "engSubIndustry",
@@ -2766,6 +2878,11 @@ function resetEngagementModalForm() {
     sub.disabled = true;
   }
 
+  const block = document.getElementById("engWorkspaceSetupBlock");
+  if (block) {
+    block.classList.add("hidden");
+  }
+
   setEngagementModalMsg("");
 }
 
@@ -2787,17 +2904,19 @@ function readEngagementModalPayload() {
   const targetCompanyId =
     _parseModalInt(document.getElementById("engTargetCompanyId")?.value) || null;
 
-  const country = document.getElementById("engCountry")?.value?.trim() || "";
-  const currency = document.getElementById("engCurrency")?.value?.trim() || "";
-  const industry = document.getElementById("engIndustry")?.value || "";
-  const subIndustry = document.getElementById("engSubIndustry")?.value || "";
+  const engagementType = document.getElementById("engType")?.value || "";
+  const customer = getSelectedEngagementCustomer();
 
-  return {
+  const requiresWorkspace = engagementTypeRequiresWorkspace(engagementType);
+  const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
+  const needsWorkspaceSetup = requiresWorkspace && !alreadyProvisioned;
+
+  const payload = {
     customer_id: customerId,
     target_company_id: targetCompanyId,
     engagement_code: document.getElementById("engCode")?.value?.trim() || "",
     engagement_name: document.getElementById("engName")?.value?.trim() || "",
-    engagement_type: document.getElementById("engType")?.value || "",
+    engagement_type: engagementType,
     status: document.getElementById("engStatus")?.value || "draft",
     governance_mode: document.getElementById("engGovernanceMode")?.value || "",
     reporting_cycle: document.getElementById("engReportingCycle")?.value || "",
@@ -2810,15 +2929,19 @@ function readEngagementModalPayload() {
     partner_user_id: _parseModalInt(document.getElementById("engPartnerUserId")?.value),
     description: document.getElementById("engDescription")?.value?.trim() || "",
     scope_summary: document.getElementById("engScopeSummary")?.value?.trim() || "",
-    financial_year_start: document.getElementById("engFinancialYearStart")?.value || null,
-
-    target_company: {
-      country,
-      currency,
-      industry,
-      subIndustry
-    }
+    financial_year_start: document.getElementById("engFinancialYearStart")?.value || null
   };
+
+  if (needsWorkspaceSetup) {
+    payload.target_company = {
+      country: document.getElementById("engCountry")?.value?.trim() || "",
+      currency: document.getElementById("engCurrency")?.value?.trim() || "",
+      industry: document.getElementById("engIndustry")?.value || "",
+      subIndustry: document.getElementById("engSubIndustry")?.value || ""
+    };
+  }
+
+  return payload;
 }
 
 function populateUserSelect(selectId, users, predicate, placeholder) {
@@ -2883,6 +3006,88 @@ async function bindEngagementAssigneeDropdowns() {
 function _parseModalInt(value) {
   const n = Number(value || 0);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function getSelectedEngagementCustomer() {
+  const customerId = Number(document.getElementById("engCustomerId")?.value || 0);
+  if (!customerId) return null;
+  return (PR_CUSTOMERS_CACHE || []).find(c => Number(c.id) === customerId) || null;
+}
+
+function engagementTypeRequiresWorkspace(type) {
+  const v = String(type || "").toLowerCase();
+  return [
+    "bookkeeping",
+    "monthly_bookkeeping",
+    "write_up",
+    "management_accounts",
+    "vat",
+    "payroll",
+    "tax",
+    "tax_compliance",
+    "annual_financial_statements",
+    "year_end_financials",
+    "compilation",
+    "review",
+    "audit",
+    "audit_support",
+    "internal_audit",
+    "independent_review",
+    "cleanup",
+    "migration",
+    "outsourced_finance"
+  ].includes(v);
+}
+
+function customerHasProvisionedWorkspace(customer) {
+  if (!customer) return false;
+
+  const workspaceStatus = String(customer.workspace_status || "").toLowerCase();
+  const companyMasterId = Number(customer.company_master_id || 0);
+
+  return !!companyMasterId || ["provisioned", "linked"].includes(workspaceStatus);
+}
+
+function updateEngagementWorkspaceSetupVisibility() {
+  const block = document.getElementById("engWorkspaceSetupBlock");
+  if (!block) return;
+
+  const engagementType = document.getElementById("engType")?.value || "";
+  const customer = getSelectedEngagementCustomer();
+
+  const requiresWorkspace = engagementTypeRequiresWorkspace(engagementType);
+  const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
+
+  const shouldShow = requiresWorkspace && !alreadyProvisioned;
+
+  block.classList.toggle("hidden", !shouldShow);
+
+  if (!shouldShow) {
+    const countryEl = document.getElementById("engCountry");
+    const currencyEl = document.getElementById("engCurrency");
+    const industryEl = document.getElementById("engIndustry");
+    const subIndustryEl = document.getElementById("engSubIndustry");
+
+    if (countryEl) countryEl.value = "";
+    if (currencyEl) currencyEl.value = "";
+    if (industryEl) industryEl.value = "";
+    if (subIndustryEl) {
+      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
+      subIndustryEl.value = "";
+      subIndustryEl.disabled = true;
+    }
+  } else if (customer) {
+    const countryEl = document.getElementById("engCountry");
+    const currencyEl = document.getElementById("engCurrency");
+
+    if (countryEl && !countryEl.value) {
+      countryEl.value = customer.country || customer.billing_country || "";
+    }
+
+    if (currencyEl && !currencyEl.value) {
+      currencyEl.value = customer.currency || "";
+    }
+  }
 }
 
 function validateEngagementPayload(payload) {
@@ -2992,17 +3197,23 @@ async function bindEngagementModalEvents() {
     toggleEngagementWorkspaceSetup();
   });
 
+  document.getElementById("engCustomerId")?.addEventListener("change", () => {
+    toggleEngagementWorkspaceSetup();
+  });
+
   document.getElementById("engIndustry")?.addEventListener("change", (e) => {
     populateSubIndustryOptions(e.target.value);
   });
+
   document.getElementById("engagementModalClose")?.addEventListener("click", closeEngagementModal);
   document.getElementById("engagementModalCancel")?.addEventListener("click", closeEngagementModal);
   document.getElementById("engagementModalBackdrop")?.addEventListener("click", closeEngagementModal);
   document.getElementById("engagementModalSave")?.addEventListener("click", handleCreateEngagementSubmit);
-  document.getElementById("engAddCustomerBtn")
-  ?.addEventListener("click", () => {
+
+  document.getElementById("engAddCustomerBtn")?.addEventListener("click", () => {
     window.open("dashboard.html#screen=customers", "_blank");
   });
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeEngagementModal();
   });
@@ -6121,6 +6332,609 @@ async function renderActionCenterScreen(me) {
   await loadActionCenterScreen(me, { force: false });
 }
 
+function getPractitionerPostingModuleName(screen) {
+  switch (screen) {
+    case PR_NAV.journalEntries:
+      return "journal_entries";
+    case PR_NAV.accountsReceivable:
+      return "accounts_receivable";
+    case PR_NAV.accountsPayable:
+      return "accounts_payable";
+    case PR_NAV.leases:
+      return "leases";
+    case PR_NAV.ppe:
+      return "ppe";
+    default:
+      return "";
+  }
+}
+
+function getPractitionerPostingScreenConfig(screen) {
+  const moduleName = getPractitionerPostingModuleName(screen);
+
+  switch (screen) {
+    case PR_NAV.journalEntries:
+      return {
+        prefix: "je",
+        moduleName,
+        title: "Journal Activity",
+        emptyText: "No journal activity available for the selected engagement."
+      };
+
+    case PR_NAV.accountsReceivable:
+      return {
+        prefix: "ar",
+        moduleName,
+        title: "Accounts Receivable Activity",
+        emptyText: "No receivable activity available for the selected engagement."
+      };
+
+    case PR_NAV.accountsPayable:
+      return {
+        prefix: "ap",
+        moduleName,
+        title: "Accounts Payable Activity",
+        emptyText: "No payable activity available for the selected engagement."
+      };
+
+    case PR_NAV.leases:
+      return {
+        prefix: "le",
+        moduleName,
+        title: "Lease Activity",
+        emptyText: "No lease activity available for the selected engagement."
+      };
+
+    case PR_NAV.ppe:
+      return {
+        prefix: "ppe",
+        moduleName,
+        title: "PPE Activity",
+        emptyText: "No PPE activity available for the selected engagement."
+      };
+
+    default:
+      return null;
+  }
+}
+
+function prEl(id) {
+  return document.getElementById(id);
+}
+
+function formatDateValue(v) {
+  if (!v) return "--";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString();
+  } catch (_) {
+    return String(v);
+  }
+}
+
+function formatMoneyValue(amount, currencyCode) {
+  const n = Number(amount || 0);
+
+  if (!currencyCode) {
+    return n.toFixed(2); // safe fallback without currency
+  }
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+      maximumFractionDigits: 2
+    }).format(n);
+  } catch (_) {
+    return `${currencyCode} ${n.toFixed(2)}`;
+  }
+}
+
+function resolveCurrencyCode({ engagement, customer, company } = {}) {
+  return (
+    engagement?.currency_code ||
+    engagement?.currencyCode ||
+    customer?.currency_code ||
+    customer?.currencyCode ||
+    company?.currency_code ||
+    company?.currencyCode ||
+    "ZAR" // last fallback only
+  );
+}
+
+function getActiveCurrency(me) {
+  return resolveCurrencyCode({
+    engagement: PR_SELECTED_ENGAGEMENT,
+    customer: PR_SELECTED_ENGAGEMENT, // if customer fields embedded
+    company: me
+  });
+}
+
+function statusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (["posted", "approved", "completed"].includes(s)) {
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
+  }
+  if (["pending_review", "in_review", "review"].includes(s)) {
+    return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+  }
+  if (["returned", "rejected", "blocked", "reversed"].includes(s)) {
+    return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
+  }
+  if (["draft", "not_started"].includes(s)) {
+    return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  }
+  return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+}
+
+function titleCaseToken(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function getSelectedPractitionerEngagementId() {
+  return PR_SELECTED_ENGAGEMENT?.id || PR_SELECTED_ENGAGEMENT?.engagement_id || null;
+}
+
+function getSelectedPractitionerEngagementName() {
+  return (
+    PR_SELECTED_ENGAGEMENT?.engagement_name ||
+    PR_SELECTED_ENGAGEMENT?.engagementName ||
+    "--"
+  );
+}
+
+function getSelectedPractitionerEngagementCode() {
+  return (
+    PR_SELECTED_ENGAGEMENT?.engagement_code ||
+    PR_SELECTED_ENGAGEMENT?.engagementCode ||
+    "--"
+  );
+}
+
+function getPractitionerPostingCache(moduleName) {
+  if (!moduleName) return null;
+  if (!PR_PRACTITIONER_POSTING_CACHE[moduleName]) {
+    PR_PRACTITIONER_POSTING_CACHE[moduleName] = {
+      summary: null,
+      rows: [],
+      filters: null,
+      total: 0,
+      limit: 25,
+      offset: 0
+    };
+  }
+  return PR_PRACTITIONER_POSTING_CACHE[moduleName];
+}
+
+function collectPractitionerPostingFilters(prefix, cache) {
+  return {
+    status: prEl(`${prefix}-filter-status`)?.value || "",
+    event_type: prEl(`${prefix}-filter-event-type`)?.value || "",
+    prepared_by_user_id: prEl(`${prefix}-filter-prepared-by`)?.value || "",
+    reviewer_user_id: prEl(`${prefix}-filter-reviewer`)?.value || "",
+    date_from: prEl(`${prefix}-filter-date-from`)?.value || "",
+    date_to: prEl(`${prefix}-filter-date-to`)?.value || "",
+    mine_only: prEl(`${prefix}-filter-mine-only`)?.checked ? "true" : "",
+    q: prEl(`${prefix}-filter-q`)?.value?.trim() || "",
+    limit: cache?.limit || 25,
+    offset: cache?.offset || 0
+  };
+}
+
+function resetPractitionerPostingFilters(prefix, cache) {
+  const ids = [
+    `${prefix}-filter-status`,
+    `${prefix}-filter-event-type`,
+    `${prefix}-filter-prepared-by`,
+    `${prefix}-filter-reviewer`,
+    `${prefix}-filter-date-from`,
+    `${prefix}-filter-date-to`,
+    `${prefix}-filter-q`
+  ];
+
+  ids.forEach((id) => {
+    const el = prEl(id);
+    if (el) el.value = "";
+  });
+
+  const mineOnly = prEl(`${prefix}-filter-mine-only`);
+  if (mineOnly) mineOnly.checked = false;
+
+  if (cache) {
+    cache.offset = 0;
+  }
+}
+
+function renderPractitionerPostingSummary(prefix, summary) {
+  const currency = summary?.currency_code || getActiveCurrency(me);
+  
+  prEl(`${prefix}-active-engagement-name`) && (prEl(`${prefix}-active-engagement-name`).textContent = safeText(summary?.engagement_name || getSelectedPractitionerEngagementName()));
+  prEl(`${prefix}-active-engagement-code`) && (prEl(`${prefix}-active-engagement-code`).textContent = safeText(summary?.engagement_code || getSelectedPractitionerEngagementCode()));
+  prEl(`${prefix}-last-activity-date`) && (prEl(`${prefix}-last-activity-date`).textContent = formatDateValue(summary?.last_activity_date));
+
+  prEl(`${prefix}-kpi-total-items`) && (prEl(`${prefix}-kpi-total-items`).textContent = safeText(summary?.total_items ?? 0, "0"));
+  prEl(`${prefix}-kpi-draft-count`) && (prEl(`${prefix}-kpi-draft-count`).textContent = safeText(summary?.draft_count ?? 0, "0"));
+  prEl(`${prefix}-kpi-review-count`) && (prEl(`${prefix}-kpi-review-count`).textContent = safeText(summary?.review_count ?? 0, "0"));
+  prEl(`${prefix}-kpi-posted-count`) && (prEl(`${prefix}-kpi-posted-count`).textContent = safeText(summary?.posted_count ?? 0, "0"));
+  prEl(`${prefix}-kpi-total-amount`) && (prEl(`${prefix}-kpi-total-amount`).textContent = formatMoneyValue(summary?.total_amount ?? 0, currency));
+}
+
+function renderPractitionerPostingFilterOptions(prefix, filters) {
+  const statusEl = prEl(`${prefix}-filter-status`);
+  const eventTypeEl = prEl(`${prefix}-filter-event-type`);
+  const preparedEl = prEl(`${prefix}-filter-prepared-by`);
+  const reviewerEl = prEl(`${prefix}-filter-reviewer`);
+
+  if (statusEl) {
+    const current = statusEl.value;
+    statusEl.innerHTML = `<option value="">All Statuses</option>${
+      (filters?.statuses || [])
+        .map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(titleCaseToken(v))}</option>`)
+        .join("")
+    }`;
+    statusEl.value = current || "";
+  }
+
+  if (eventTypeEl) {
+    const current = eventTypeEl.value;
+    eventTypeEl.innerHTML = `<option value="">All Events</option>${
+      (filters?.event_types || [])
+        .map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(titleCaseToken(v))}</option>`)
+        .join("")
+    }`;
+    eventTypeEl.value = current || "";
+  }
+
+  if (preparedEl) {
+    const current = preparedEl.value;
+    preparedEl.innerHTML = `<option value="">All Preparers</option>${
+      (filters?.prepared_by_users || [])
+        .map((u) => `<option value="${escapeHtml(u.user_id)}">${escapeHtml(u.user_name || `User ${u.user_id}`)}</option>`)
+        .join("")
+    }`;
+    preparedEl.value = current || "";
+  }
+
+  if (reviewerEl) {
+    const current = reviewerEl.value;
+    reviewerEl.innerHTML = `<option value="">All Reviewers</option>${
+      (filters?.reviewer_users || [])
+        .map((u) => `<option value="${escapeHtml(u.user_id)}">${escapeHtml(u.user_name || `User ${u.user_id}`)}</option>`)
+        .join("")
+    }`;
+    reviewerEl.value = current || "";
+  }
+}
+
+function renderPractitionerPostingRows(prefix, rows, total, cache, config) {
+  const tbody = prEl(`${prefix}-table-body`);
+  const totalRowsEl = prEl(`${prefix}-total-rows`);
+  const pageFromEl = prEl(`${prefix}-page-from`);
+  const pageToEl = prEl(`${prefix}-page-to`);
+  const currentPageEl = prEl(`${prefix}-current-page`);
+  const emptyStateEl = prEl(`${prefix}-empty-state`);
+
+  if (totalRowsEl) totalRowsEl.textContent = String(total || 0);
+
+  const limit = cache?.limit || 25;
+  const offset = cache?.offset || 0;
+  const pageFrom = total > 0 ? offset + 1 : 0;
+  const pageTo = Math.min(offset + (rows?.length || 0), total || 0);
+  const currentPage = Math.floor(offset / limit) + 1;
+  const currency = row?.currency_code || getActiveCurrency(me);
+
+  if (pageFromEl) pageFromEl.textContent = String(pageFrom);
+  if (pageToEl) pageToEl.textContent = String(pageTo);
+  if (currentPageEl) currentPageEl.textContent = String(currentPage);
+
+  if (!tbody) return;
+
+  if (!rows || !rows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" class="py-10 text-center text-slate-500">
+          ${escapeHtml(config?.emptyText || "No activity available for the selected engagement.")}
+        </td>
+      </tr>
+    `;
+    if (emptyStateEl) emptyStateEl.classList.remove("hidden");
+    return;
+  }
+
+  if (emptyStateEl) emptyStateEl.classList.add("hidden");
+
+  tbody.innerHTML = rows.map((row) => {
+    const sourceLabel = row?.source_table
+      ? `${row.source_table}${row?.source_id ? ` #${row.source_id}` : ""}`
+      : "--";
+
+    return `
+      <tr class="border-b border-slate-100 last:border-b-0">
+        <td class="py-3 pr-4 whitespace-nowrap">${escapeHtml(formatDateValue(row?.posting_date))}</td>
+        <td class="py-3 pr-4 whitespace-nowrap font-medium text-slate-800">${escapeHtml(row?.reference_no || "--")}</td>
+        <td class="py-3 pr-4 min-w-[260px]">${escapeHtml(row?.description || "--")}</td>
+        <td class="py-3 pr-4 whitespace-nowrap">${escapeHtml(titleCaseToken(row?.event_type || "--"))}</td>
+        <td class="py-3 pr-4 whitespace-nowrap">
+          <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBadgeClass(row?.status)}">
+            ${escapeHtml(titleCaseToken(row?.status || "--"))}
+          </span>
+        </td>
+        <td class="py-3 pr-4 whitespace-nowrap">
+          ${escapeHtml(formatMoneyValue(row?.amount || 0, currency))}
+        </td>
+        <td class="py-3 pr-4 whitespace-nowrap">${escapeHtml(row?.prepared_by_user_name || "--")}</td>
+        <td class="py-3 pr-4 whitespace-nowrap">${escapeHtml(row?.reviewer_user_name || "--")}</td>
+        <td class="py-3 pr-4 whitespace-nowrap text-slate-600">${escapeHtml(sourceLabel)}</td>
+        <td class="py-3 whitespace-nowrap">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            data-posting-row-id="${escapeHtml(row?.id)}"
+            data-posting-module="${escapeHtml(config?.moduleName || "")}"
+            data-posting-source-table="${escapeHtml(row?.source_table || "")}"
+            data-posting-source-id="${escapeHtml(row?.source_id || "")}"
+          >
+            View
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function setPractitionerPostingLoading(prefix, isLoading) {
+  const refreshBtn = prEl(`${prefix}-refresh-btn`);
+  const applyBtn = prEl(`${prefix}-filter-apply-btn`);
+  const prevBtn = prEl(`${prefix}-prev-page-btn`);
+  const nextBtn = prEl(`${prefix}-next-page-btn`);
+
+  [refreshBtn, applyBtn, prevBtn, nextBtn].forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = !!isLoading;
+  });
+}
+
+async function loadPractitionerPostingSummary(me, config) {
+  const companyId = me?.company_id || me?.companyId;
+  const engagementId = getSelectedPractitionerEngagementId();
+  if (!companyId || !engagementId || !config?.moduleName) return null;
+
+  const json = await apiFetch(
+    ENDPOINTS.practitionerPosting.summary(companyId, engagementId, config.moduleName)
+  );
+
+  const row = json?.row || null;
+  const cache = getPractitionerPostingCache(config.moduleName);
+  if (cache) cache.summary = row;
+  renderPractitionerPostingSummary(config.prefix, row || {});
+  return row;
+}
+
+async function loadPractitionerPostingFilterOptions(me, config) {
+  const companyId = me?.company_id || me?.companyId;
+  const engagementId = getSelectedPractitionerEngagementId();
+  if (!companyId || !engagementId || !config?.moduleName) return null;
+
+  const json = await apiFetch(
+    ENDPOINTS.practitionerPosting.filterOptions(companyId, engagementId, config.moduleName)
+  );
+
+  const row = json?.row || null;
+  const cache = getPractitionerPostingCache(config.moduleName);
+  if (cache) cache.filters = row;
+  renderPractitionerPostingFilterOptions(config.prefix, row || {});
+  return row;
+}
+
+async function loadPractitionerPostingActivity(me, config) {
+  const companyId = me?.company_id || me?.companyId;
+  const engagementId = getSelectedPractitionerEngagementId();
+  if (!companyId || !engagementId || !config?.moduleName) return null;
+
+  const cache = getPractitionerPostingCache(config.moduleName);
+  const filters = collectPractitionerPostingFilters(config.prefix, cache);
+
+  const json = await apiFetch(
+    ENDPOINTS.practitionerPosting.activity(
+      companyId,
+      engagementId,
+      config.moduleName,
+      filters
+    )
+  );
+
+  const rows = json?.rows || [];
+  const total = Number(json?.total || 0);
+
+  if (cache) {
+    cache.rows = rows;
+    cache.total = total;
+    cache.limit = Number(json?.limit || cache.limit || 25);
+    cache.offset = Number(json?.offset || cache.offset || 0);
+  }
+
+  renderPractitionerPostingRows(config.prefix, rows, total, cache, config);
+  return { rows, total };
+}
+
+function bindPractitionerPostingModuleEvents(me) {
+  if (PR_PRACTITIONER_POSTING_EVENTS_BOUND) return;
+  PR_PRACTITIONER_POSTING_EVENTS_BOUND = true;
+
+  [
+    PR_NAV.journalEntries,
+    PR_NAV.accountsReceivable,
+    PR_NAV.accountsPayable,
+    PR_NAV.leases,
+    PR_NAV.ppe
+  ].forEach((screen) => {
+    const config = getPractitionerPostingScreenConfig(screen);
+    if (!config) return;
+
+    const { prefix, moduleName } = config;
+    const cache = getPractitionerPostingCache(moduleName);
+
+    prEl(`${prefix}-refresh-btn`)?.addEventListener("click", async () => {
+      try {
+        setPractitionerPostingLoading(prefix, true);
+        await loadPractitionerPostingSummary(me, config);
+        await loadPractitionerPostingActivity(me, config);
+      } catch (err) {
+        alert(err.message || "Failed to refresh posting activity.");
+      } finally {
+        setPractitionerPostingLoading(prefix, false);
+      }
+    });
+
+    prEl(`${prefix}-filter-apply-btn`)?.addEventListener("click", async () => {
+      try {
+        if (cache) cache.offset = 0;
+        setPractitionerPostingLoading(prefix, true);
+        await loadPractitionerPostingActivity(me, config);
+      } catch (err) {
+        alert(err.message || "Failed to apply filters.");
+      } finally {
+        setPractitionerPostingLoading(prefix, false);
+      }
+    });
+
+    prEl(`${prefix}-filter-reset-btn`)?.addEventListener("click", async () => {
+      try {
+        resetPractitionerPostingFilters(prefix, cache);
+        setPractitionerPostingLoading(prefix, true);
+        await loadPractitionerPostingActivity(me, config);
+      } catch (err) {
+        alert(err.message || "Failed to reset filters.");
+      } finally {
+        setPractitionerPostingLoading(prefix, false);
+      }
+    });
+
+    prEl(`${prefix}-prev-page-btn`)?.addEventListener("click", async () => {
+      try {
+        if (cache) {
+          cache.offset = Math.max(0, (cache.offset || 0) - (cache.limit || 25));
+        }
+        setPractitionerPostingLoading(prefix, true);
+        await loadPractitionerPostingActivity(me, config);
+      } catch (err) {
+        alert(err.message || "Failed to load previous page.");
+      } finally {
+        setPractitionerPostingLoading(prefix, false);
+      }
+    });
+
+    prEl(`${prefix}-next-page-btn`)?.addEventListener("click", async () => {
+      try {
+        if (cache) {
+          const nextOffset = (cache.offset || 0) + (cache.limit || 25);
+          if (nextOffset >= (cache.total || 0)) return;
+          cache.offset = nextOffset;
+        }
+        setPractitionerPostingLoading(prefix, true);
+        await loadPractitionerPostingActivity(me, config);
+      } catch (err) {
+        alert(err.message || "Failed to load next page.");
+      } finally {
+        setPractitionerPostingLoading(prefix, false);
+      }
+    });
+
+    prEl(`${prefix}-filter-q`)?.addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      try {
+        if (cache) cache.offset = 0;
+        setPractitionerPostingLoading(prefix, true);
+        await loadPractitionerPostingActivity(me, config);
+      } catch (err) {
+        alert(err.message || "Failed to search posting activity.");
+      } finally {
+        setPractitionerPostingLoading(prefix, false);
+      }
+    });
+
+    prEl(`${prefix}-open-posting-workspace-btn`)?.addEventListener("click", () => {
+      alert("Posting workspace redirect will be wired once the source workflow route is finalised.");
+    });
+
+    prEl(`${prefix}-table-body`)?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-posting-row-id]");
+      if (!btn) return;
+
+      const rowId = btn.getAttribute("data-posting-row-id") || "";
+      const sourceTable = btn.getAttribute("data-posting-source-table") || "";
+      const sourceId = btn.getAttribute("data-posting-source-id") || "";
+
+      alert(
+        sourceTable && sourceId
+          ? `Posting activity ${rowId}\nSource: ${sourceTable} #${sourceId}`
+          : `Posting activity ${rowId}`
+      );
+    });
+  });
+}
+
+async function renderPractitionerPostingModuleScreen(me, screen) {
+  const config = getPractitionerPostingScreenConfig(screen);
+  if (!config) return;
+
+  const engagementId = getSelectedPractitionerEngagementId();
+  renderPractitionerPostingSummary(config.prefix, {
+    engagement_name: getSelectedPractitionerEngagementName(),
+    engagement_code: getSelectedPractitionerEngagementCode(),
+    total_items: 0,
+    draft_count: 0,
+    review_count: 0,
+    posted_count: 0,
+    total_amount: 0,
+    last_activity_date: null
+  });
+
+  bindPractitionerPostingModuleEvents(me);
+
+  if (!engagementId) {
+    const tbody = prEl(`${config.prefix}-table-body`);
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="10" class="py-10 text-center text-slate-500">
+            Select an engagement to view ${escapeHtml(config.title.toLowerCase())}.
+          </td>
+        </tr>
+      `;
+    }
+    prEl(`${config.prefix}-total-rows`) && (prEl(`${config.prefix}-total-rows`).textContent = "0");
+    prEl(`${config.prefix}-page-from`) && (prEl(`${config.prefix}-page-from`).textContent = "0");
+    prEl(`${config.prefix}-page-to`) && (prEl(`${config.prefix}-page-to`).textContent = "0");
+    return;
+  }
+
+  try {
+    setPractitionerPostingLoading(config.prefix, true);
+    await Promise.all([
+      loadPractitionerPostingSummary(me, config),
+      loadPractitionerPostingFilterOptions(me, config)
+    ]);
+    await loadPractitionerPostingActivity(me, config);
+  } catch (err) {
+    const tbody = prEl(`${config.prefix}-table-body`);
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="10" class="py-10 text-center text-rose-600">
+            ${escapeHtml(err.message || "Failed to load posting activity.")}
+          </td>
+        </tr>
+      `;
+    }
+  } finally {
+    setPractitionerPostingLoading(config.prefix, false);
+  }
+}
 
 function renderSettingsScreen(me, screen) {
   console.log("Settings screen:", screen);

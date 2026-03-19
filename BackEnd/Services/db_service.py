@@ -6507,213 +6507,6 @@ class DatabaseService:
             ON {schema}.engagement_deliverables(is_active);
 
         -- ==================================================
-        -- ENGAGEMENT DELIVERABLES
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.engagement_deliverables (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-            engagement_id INT NOT NULL,
-            deliverable_code TEXT NULL,
-            deliverable_name TEXT NOT NULL,
-            deliverable_type TEXT NULL, -- client_document, working_paper, fs_draft, confirmation, tax_support, other
-            requested_from TEXT NULL,
-            assigned_user_id INT NULL,
-            reviewer_user_id INT NULL,
-            due_date DATE NULL,
-            received_date DATE NULL,
-            status TEXT NOT NULL DEFAULT 'not_started', -- not_started, requested, outstanding, received, in_review, completed, waived
-            priority TEXT NOT NULL DEFAULT 'normal',
-            notes TEXT NULL,
-            document_count INT NOT NULL DEFAULT 0,
-            is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            created_by_user_id INT NULL,
-            updated_by_user_id INT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        ALTER TABLE {schema}.engagement_deliverables
-            ADD COLUMN IF NOT EXISTS company_id INT,
-            ADD COLUMN IF NOT EXISTS engagement_id INT,
-            ADD COLUMN IF NOT EXISTS deliverable_code TEXT NULL,
-            ADD COLUMN IF NOT EXISTS deliverable_name TEXT,
-            ADD COLUMN IF NOT EXISTS deliverable_type TEXT NULL,
-            ADD COLUMN IF NOT EXISTS requested_from TEXT NULL,
-            ADD COLUMN IF NOT EXISTS assigned_user_id INT NULL,
-            ADD COLUMN IF NOT EXISTS reviewer_user_id INT NULL,
-            ADD COLUMN IF NOT EXISTS due_date DATE NULL,
-            ADD COLUMN IF NOT EXISTS received_date DATE NULL,
-            ADD COLUMN IF NOT EXISTS status TEXT,
-            ADD COLUMN IF NOT EXISTS priority TEXT NULL,
-            ADD COLUMN IF NOT EXISTS notes TEXT NULL,
-            ADD COLUMN IF NOT EXISTS document_count INT,
-            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
-            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
-            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
-            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
-
-        UPDATE {schema}.engagement_deliverables SET company_id = {company_id} WHERE company_id IS NULL;
-        UPDATE {schema}.engagement_deliverables SET status = 'not_started' WHERE status IS NULL;
-        UPDATE {schema}.engagement_deliverables SET priority = 'normal' WHERE priority IS NULL;
-        UPDATE {schema}.engagement_deliverables SET document_count = 0 WHERE document_count IS NULL;
-        UPDATE {schema}.engagement_deliverables SET is_active = TRUE WHERE is_active IS NULL;
-        UPDATE {schema}.engagement_deliverables SET created_at = NOW() WHERE created_at IS NULL;
-        UPDATE {schema}.engagement_deliverables SET updated_at = NOW() WHERE updated_at IS NULL;
-
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN company_id SET DEFAULT {company_id};
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN status SET DEFAULT 'not_started';
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN priority SET DEFAULT 'normal';
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN document_count SET DEFAULT 0;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN is_active SET DEFAULT TRUE;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN created_at SET DEFAULT NOW();
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN updated_at SET DEFAULT NOW();
-
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN company_id SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN engagement_id SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN deliverable_name SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN status SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN priority SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN document_count SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN is_active SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN created_at SET NOT NULL;
-        ALTER TABLE {schema}.engagement_deliverables ALTER COLUMN updated_at SET NOT NULL;
-
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_engagement_fk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (engagement_id)
-                    REFERENCES %I.engagements(id)
-                    ON DELETE CASCADE',
-                    '{schema}', '{schema}_eng_deliverables_engagement_fk', '{schema}'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_assigned_fk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (assigned_user_id)
-                    REFERENCES public.users(id)
-                    ON DELETE SET NULL',
-                    '{schema}', '{schema}_eng_deliverables_assigned_fk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_reviewer_fk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (reviewer_user_id)
-                    REFERENCES public.users(id)
-                    ON DELETE SET NULL',
-                    '{schema}', '{schema}_eng_deliverables_reviewer_fk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_created_by_fk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (created_by_user_id)
-                    REFERENCES public.users(id)
-                    ON DELETE SET NULL',
-                    '{schema}', '{schema}_eng_deliverables_created_by_fk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_updated_by_fk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (updated_by_user_id)
-                    REFERENCES public.users(id)
-                    ON DELETE SET NULL',
-                    '{schema}', '{schema}_eng_deliverables_updated_by_fk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_status_chk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    CHECK (status IN (''not_started'', ''requested'', ''outstanding'', ''received'', ''in_review'', ''completed'', ''waived''))',
-                    '{schema}', '{schema}_eng_deliverables_status_chk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_priority_chk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    CHECK (priority IN (''low'', ''normal'', ''high'', ''urgent''))',
-                    '{schema}', '{schema}_eng_deliverables_priority_chk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_deliverables_doc_count_chk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_deliverables
-                    ADD CONSTRAINT %I
-                    CHECK (document_count >= 0)',
-                    '{schema}', '{schema}_eng_deliverables_doc_count_chk'
-                );
-            END IF;
-        END $$;
-
-        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_eng_deliverables_active_uq
-            ON {schema}.engagement_deliverables(company_id, engagement_id, LOWER(deliverable_name))
-            WHERE is_active = TRUE;
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_company_id_idx
-            ON {schema}.engagement_deliverables(company_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_engagement_id_idx
-            ON {schema}.engagement_deliverables(engagement_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_status_idx
-            ON {schema}.engagement_deliverables(status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_due_date_idx
-            ON {schema}.engagement_deliverables(due_date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_assigned_user_id_idx
-            ON {schema}.engagement_deliverables(assigned_user_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_reviewer_user_id_idx
-            ON {schema}.engagement_deliverables(reviewer_user_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_eng_deliverables_is_active_idx
-            ON {schema}.engagement_deliverables(is_active);
-
-        -- ==================================================
         -- ENGAGEMENT POSTING ACTIVITY
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.engagement_posting_activity (
@@ -43605,6 +43398,446 @@ class DatabaseService:
             "pending_signoffs": 0,
         }
 
+    def get_practitioner_posting_module_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        module_name: str,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH scoped_engagement AS (
+                SELECT
+                    e.id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.customer_id,
+                    e.status AS engagement_status,
+                    e.priority AS engagement_priority,
+                    e.due_date,
+                    c.name AS customer_name
+                FROM {schema}.engagements e
+                JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                WHERE e.company_id = %s
+                AND e.id = %s
+                AND e.is_active = TRUE
+            ),
+            scoped_activity AS (
+                SELECT pa.*
+                FROM {schema}.engagement_posting_activity pa
+                JOIN scoped_engagement se
+                ON se.id = pa.engagement_id
+                WHERE pa.company_id = %s
+                AND pa.engagement_id = %s
+                AND pa.is_active = TRUE
+                AND pa.module_name = %s
+            )
+            SELECT
+                se.id AS engagement_id,
+                se.engagement_name,
+                se.engagement_code,
+                se.customer_id,
+                se.customer_name,
+                se.engagement_status,
+                se.engagement_priority,
+                se.due_date,
+
+                COALESCE((SELECT COUNT(*) FROM scoped_activity), 0) AS total_items,
+                COALESCE((SELECT COUNT(*) FROM scoped_activity WHERE LOWER(status) = 'draft'), 0) AS draft_count,
+                COALESCE((SELECT COUNT(*) FROM scoped_activity WHERE LOWER(status) IN ('pending_review', 'in_review')), 0) AS review_count,
+                COALESCE((SELECT COUNT(*) FROM scoped_activity WHERE LOWER(status) = 'approved'), 0) AS approved_count,
+                COALESCE((SELECT COUNT(*) FROM scoped_activity WHERE LOWER(status) = 'posted'), 0) AS posted_count,
+                COALESCE((SELECT COUNT(*) FROM scoped_activity WHERE LOWER(status) IN ('returned', 'rejected')), 0) AS returned_or_rejected_count,
+                COALESCE((SELECT COUNT(*) FROM scoped_activity WHERE posting_date = CURRENT_DATE), 0) AS activity_today_count,
+                COALESCE((SELECT MAX(posting_date) FROM scoped_activity), NULL) AS last_activity_date,
+                COALESCE((SELECT SUM(COALESCE(amount, 0)) FROM scoped_activity), 0) AS total_amount,
+                COALESCE((SELECT SUM(COALESCE(amount, 0)) FROM scoped_activity WHERE LOWER(status) = 'posted'), 0) AS posted_amount,
+                %s AS module_name
+            FROM scoped_engagement se
+        """
+
+        cur.execute(
+            sql,
+            (
+                company_id,
+                engagement_id,
+                company_id,
+                engagement_id,
+                module_name,
+                module_name,
+            ),
+        )
+        return cur.fetchone()
+
+
+    def list_practitioner_posting_module_activity(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        module_name: str,
+        status: str = None,
+        event_type: str = None,
+        prepared_by_user_id: int = None,
+        reviewer_user_id: int = None,
+        date_from: str = None,
+        date_to: str = None,
+        mine_only: bool = False,
+        current_user_id: int = None,
+        q: str = None,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH engagement_scope AS (
+                SELECT
+                    e.id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.customer_id,
+                    c.name AS customer_name
+                FROM {schema}.engagements e
+                JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                WHERE e.company_id = %s
+                AND e.id = %s
+                AND e.is_active = TRUE
+            )
+            SELECT
+                pa.id,
+                pa.company_id,
+                pa.engagement_id,
+                es.engagement_name,
+                es.engagement_code,
+                es.customer_id,
+                es.customer_name,
+                pa.posting_date,
+                pa.module_name,
+                pa.event_type,
+                pa.reference_no,
+                pa.description,
+                pa.status,
+                pa.amount,
+                pa.currency_code,
+                pa.source_table,
+                pa.source_id,
+                pa.notes,
+                pa.prepared_by_user_id,
+                CONCAT(
+                    COALESCE(pu.first_name, ''),
+                    CASE
+                        WHEN pu.last_name IS NOT NULL AND pu.last_name <> '' THEN ' ' || pu.last_name
+                        ELSE ''
+                    END
+                ) AS prepared_by_user_name,
+                pa.reviewer_user_id,
+                CONCAT(
+                    COALESCE(ru.first_name, ''),
+                    CASE
+                        WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name
+                        ELSE ''
+                    END
+                ) AS reviewer_user_name,
+                (
+                    pa.posting_date IS NOT NULL
+                    AND pa.posting_date < CURRENT_DATE
+                    AND LOWER(pa.status) NOT IN ('approved', 'posted', 'reversed')
+                ) AS is_overdue,
+                (
+                    %s IS NOT NULL
+                    AND (
+                        pa.prepared_by_user_id = %s
+                        OR pa.reviewer_user_id = %s
+                    )
+                ) AS is_mine,
+                pa.created_at,
+                pa.updated_at
+            FROM {schema}.engagement_posting_activity pa
+            JOIN engagement_scope es
+            ON es.id = pa.engagement_id
+            LEFT JOIN public.users pu
+            ON pu.id = pa.prepared_by_user_id
+            LEFT JOIN public.users ru
+            ON ru.id = pa.reviewer_user_id
+            WHERE pa.company_id = %s
+            AND pa.engagement_id = %s
+            AND pa.is_active = TRUE
+            AND pa.module_name = %s
+            AND (%s IS NULL OR %s = '' OR LOWER(pa.status) = LOWER(%s))
+            AND (%s IS NULL OR %s = '' OR LOWER(pa.event_type) = LOWER(%s))
+            AND (%s IS NULL OR pa.prepared_by_user_id = %s)
+            AND (%s IS NULL OR pa.reviewer_user_id = %s)
+            AND (%s IS NULL OR pa.posting_date >= %s::date)
+            AND (%s IS NULL OR pa.posting_date <= %s::date)
+            AND (
+                    %s = FALSE
+                    OR (
+                        %s IS NOT NULL
+                        AND (
+                            pa.prepared_by_user_id = %s
+                            OR pa.reviewer_user_id = %s
+                        )
+                    )
+            )
+            AND (
+                    %s IS NULL
+                    OR %s = ''
+                    OR (
+                        COALESCE(pa.reference_no, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(pa.description, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(pa.source_table, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(CAST(pa.source_id AS TEXT), '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(CONCAT(
+                            COALESCE(pu.first_name, ''),
+                            CASE
+                                WHEN pu.last_name IS NOT NULL AND pu.last_name <> '' THEN ' ' || pu.last_name
+                                ELSE ''
+                            END
+                        ), '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(CONCAT(
+                            COALESCE(ru.first_name, ''),
+                            CASE
+                                WHEN ru.last_name IS NOT NULL AND ru.last_name <> '' THEN ' ' || ru.last_name
+                                ELSE ''
+                            END
+                        ), '') ILIKE ('%%' || %s || '%%')
+                    )
+            )
+            ORDER BY
+                pa.posting_date DESC NULLS LAST,
+                pa.updated_at DESC,
+                pa.id DESC
+            LIMIT %s
+            OFFSET %s
+        """
+
+        params = (
+            company_id,
+            engagement_id,
+
+            current_user_id,
+            current_user_id,
+            current_user_id,
+
+            company_id,
+            engagement_id,
+            module_name,
+
+            status, status, status,
+            event_type, event_type, event_type,
+            prepared_by_user_id, prepared_by_user_id,
+            reviewer_user_id, reviewer_user_id,
+            date_from, date_from,
+            date_to, date_to,
+
+            True if mine_only else False,
+            current_user_id,
+            current_user_id,
+            current_user_id,
+
+            q, q,
+            q, q, q, q, q, q,
+
+            max(1, min(int(limit or 100), 500)),
+            max(0, int(offset or 0)),
+        )
+
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+        return rows
+
+
+    def count_practitioner_posting_module_activity(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        module_name: str,
+        status: str = None,
+        event_type: str = None,
+        prepared_by_user_id: int = None,
+        reviewer_user_id: int = None,
+        date_from: str = None,
+        date_to: str = None,
+        mine_only: bool = False,
+        current_user_id: int = None,
+        q: str = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT COUNT(*) AS total_rows
+            FROM {schema}.engagement_posting_activity pa
+            WHERE pa.company_id = %s
+            AND pa.engagement_id = %s
+            AND pa.is_active = TRUE
+            AND pa.module_name = %s
+            AND (%s IS NULL OR %s = '' OR LOWER(pa.status) = LOWER(%s))
+            AND (%s IS NULL OR %s = '' OR LOWER(pa.event_type) = LOWER(%s))
+            AND (%s IS NULL OR pa.prepared_by_user_id = %s)
+            AND (%s IS NULL OR pa.reviewer_user_id = %s)
+            AND (%s IS NULL OR pa.posting_date >= %s::date)
+            AND (%s IS NULL OR pa.posting_date <= %s::date)
+            AND (
+                    %s = FALSE
+                    OR (
+                        %s IS NOT NULL
+                        AND (
+                            pa.prepared_by_user_id = %s
+                            OR pa.reviewer_user_id = %s
+                        )
+                    )
+            )
+            AND (
+                    %s IS NULL
+                    OR %s = ''
+                    OR (
+                        COALESCE(pa.reference_no, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(pa.description, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(pa.source_table, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(CAST(pa.source_id AS TEXT), '') ILIKE ('%%' || %s || '%%')
+                    )
+            )
+        """
+
+        cur.execute(
+            sql,
+            (
+                company_id,
+                engagement_id,
+                module_name,
+
+                status, status, status,
+                event_type, event_type, event_type,
+                prepared_by_user_id, prepared_by_user_id,
+                reviewer_user_id, reviewer_user_id,
+                date_from, date_from,
+                date_to, date_to,
+
+                True if mine_only else False,
+                current_user_id,
+                current_user_id,
+                current_user_id,
+
+                q, q,
+                q, q, q, q,
+            ),
+        )
+        row = cur.fetchone() or {}
+        return row
+
+
+    def list_practitioner_posting_module_filter_options(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        module_name: str,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH scoped_activity AS (
+                SELECT *
+                FROM {schema}.engagement_posting_activity
+                WHERE company_id = %s
+                AND engagement_id = %s
+                AND is_active = TRUE
+                AND module_name = %s
+            )
+            SELECT
+                ARRAY(
+                    SELECT DISTINCT LOWER(status)
+                    FROM scoped_activity
+                    WHERE status IS NOT NULL AND BTRIM(status) <> ''
+                    ORDER BY LOWER(status)
+                ) AS statuses,
+
+                ARRAY(
+                    SELECT DISTINCT LOWER(event_type)
+                    FROM scoped_activity
+                    WHERE event_type IS NOT NULL AND BTRIM(event_type) <> ''
+                    ORDER BY LOWER(event_type)
+                ) AS event_types
+        """
+
+        cur.execute(sql, (company_id, engagement_id, module_name))
+        base = cur.fetchone() or {}
+
+        users_sql = f"""
+            WITH scoped_activity AS (
+                SELECT *
+                FROM {schema}.engagement_posting_activity
+                WHERE company_id = %s
+                AND engagement_id = %s
+                AND is_active = TRUE
+                AND module_name = %s
+            )
+            SELECT
+                'prepared'::text AS role_type,
+                u.id AS user_id,
+                CONCAT(
+                    COALESCE(u.first_name, ''),
+                    CASE
+                        WHEN u.last_name IS NOT NULL AND u.last_name <> '' THEN ' ' || u.last_name
+                        ELSE ''
+                    END
+                ) AS user_name
+            FROM scoped_activity pa
+            JOIN public.users u
+            ON u.id = pa.prepared_by_user_id
+
+            UNION
+
+            SELECT
+                'reviewer'::text AS role_type,
+                u.id AS user_id,
+                CONCAT(
+                    COALESCE(u.first_name, ''),
+                    CASE
+                        WHEN u.last_name IS NOT NULL AND u.last_name <> '' THEN ' ' || u.last_name
+                        ELSE ''
+                    END
+                ) AS user_name
+            FROM scoped_activity pa
+            JOIN public.users u
+            ON u.id = pa.reviewer_user_id
+
+            ORDER BY role_type, user_name
+        """
+        cur.execute(users_sql, (company_id, engagement_id, module_name))
+        user_rows = cur.fetchall() or []
+
+        prepared_by = []
+        reviewers = []
+
+        for row in user_rows:
+            item = {
+                "user_id": row.get("user_id"),
+                "user_name": row.get("user_name") or "",
+            }
+            if row.get("role_type") == "prepared":
+                if item not in prepared_by:
+                    prepared_by.append(item)
+            elif row.get("role_type") == "reviewer":
+                if item not in reviewers:
+                    reviewers.append(item)
+
+        return {
+            "statuses": base.get("statuses") or [],
+            "event_types": base.get("event_types") or [],
+            "prepared_by_users": prepared_by,
+            "reviewer_users": reviewers,
+        }
 
     def insert_ticket(
         self,
