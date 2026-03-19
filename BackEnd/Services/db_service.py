@@ -1786,7 +1786,7 @@ class DatabaseService:
         BEFORE INSERT OR UPDATE OF company_reg_no
         ON public.companies
         FOR EACH ROW
-        EXECUTE FUNCTION public.enforce_unique_company_reg_no();
+        EXECUTE PROCEDURE public.enforce_unique_company_reg_no();
 
         CREATE INDEX IF NOT EXISTS companies_company_reg_no_idx
             ON public.companies (company_reg_no);
