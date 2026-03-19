@@ -4173,19 +4173,795 @@ window.safeRedirect = function (url, mode = "href") {
 
       <!-- DELIVERABLES -->
       <section id="screen-deliverables" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Deliverables</div>
-          <div class="panel-subtitle mt-1">Final reporting pack, documents, and outputs</div>
-          <div class="mt-4 text-sm text-slate-600">Deliverables placeholder.</div>
+        <style>
+          #screen-deliverables .dl-shell,
+          #screen-partner-signoff .ps-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+          }
+
+          #screen-deliverables .dl-topbar,
+          #screen-deliverables .dl-card,
+          #screen-partner-signoff .ps-topbar,
+          #screen-partner-signoff .ps-card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+          }
+
+          #screen-deliverables .dl-topbar,
+          #screen-partner-signoff .ps-topbar {
+            padding: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap;
+          }
+
+          #screen-deliverables .dl-topbar-actions,
+          #screen-partner-signoff .ps-topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+          }
+
+          #screen-deliverables .dl-search,
+          #screen-deliverables .dl-select,
+          #screen-partner-signoff .ps-search,
+          #screen-partner-signoff .ps-select {
+            height: 40px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fff;
+            color: var(--text);
+            padding: 0 12px;
+            font-size: 13px;
+            outline: none;
+          }
+
+          #screen-deliverables .dl-search,
+          #screen-partner-signoff .ps-search {
+            min-width: 260px;
+          }
+
+          #screen-deliverables .dl-btn,
+          #screen-deliverables .dl-btn-ghost,
+          #screen-deliverables .dl-btn-soft,
+          #screen-partner-signoff .ps-btn,
+          #screen-partner-signoff .ps-btn-ghost,
+          #screen-partner-signoff .ps-btn-soft {
+            height: 40px;
+            border-radius: 12px;
+            padding: 0 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid transparent;
+          }
+
+          #screen-deliverables .dl-btn,
+          #screen-partner-signoff .ps-btn {
+            background: var(--brand);
+            color: #fff;
+          }
+
+          #screen-deliverables .dl-btn-ghost,
+          #screen-partner-signoff .ps-btn-ghost {
+            background: #fff;
+            color: var(--text);
+            border-color: var(--line);
+          }
+
+          #screen-deliverables .dl-btn-soft,
+          #screen-partner-signoff .ps-btn-soft {
+            background: var(--brand-soft);
+            color: var(--brand-2);
+            border-color: #cfe9e5;
+          }
+
+          #screen-deliverables .dl-kpis,
+          #screen-partner-signoff .ps-kpis {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+          }
+
+          #screen-deliverables .dl-kpi,
+          #screen-partner-signoff .ps-kpi {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 16px;
+          }
+
+          #screen-deliverables .dl-kpi-label,
+          #screen-partner-signoff .ps-kpi-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            margin-bottom: 8px;
+          }
+
+          #screen-deliverables .dl-kpi-value,
+          #screen-partner-signoff .ps-kpi-value {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--text);
+            line-height: 1;
+            margin-bottom: 6px;
+          }
+
+          #screen-deliverables .dl-kpi-note,
+          #screen-partner-signoff .ps-kpi-note {
+            font-size: 12px;
+            color: var(--muted);
+          }
+
+          #screen-deliverables .dl-kpi.warn .dl-kpi-value,
+          #screen-partner-signoff .ps-kpi.warn .ps-kpi-value {
+            color: var(--warn);
+          }
+
+          #screen-deliverables .dl-kpi.danger .dl-kpi-value,
+          #screen-partner-signoff .ps-kpi.danger .ps-kpi-value {
+            color: var(--danger);
+          }
+
+          #screen-deliverables .dl-kpi.ok .dl-kpi-value,
+          #screen-partner-signoff .ps-kpi.ok .ps-kpi-value {
+            color: var(--ok);
+          }
+
+          #screen-deliverables .dl-main,
+          #screen-partner-signoff .ps-main {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) minmax(340px, 1fr);
+            gap: 16px;
+            align-items: start;
+          }
+
+          #screen-deliverables .dl-card,
+          #screen-partner-signoff .ps-card {
+            padding: 18px;
+          }
+
+          #screen-deliverables .dl-card-head,
+          #screen-partner-signoff .ps-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+          }
+
+          #screen-deliverables .dl-card-title,
+          #screen-partner-signoff .ps-card-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text);
+          }
+
+          #screen-deliverables .dl-card-subtitle,
+          #screen-partner-signoff .ps-card-subtitle {
+            margin-top: 4px;
+            font-size: 13px;
+            color: var(--muted);
+          }
+
+          #screen-deliverables .dl-pills,
+          #screen-partner-signoff .ps-pills {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+          }
+
+          #screen-deliverables .dl-pill,
+          #screen-partner-signoff .ps-pill {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: var(--muted);
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+
+          #screen-deliverables .dl-pill.active,
+          #screen-partner-signoff .ps-pill.active {
+            background: var(--brand-soft);
+            color: var(--brand-2);
+            border-color: #cfe9e5;
+          }
+
+          #screen-deliverables .dl-filter-row,
+          #screen-partner-signoff .ps-filter-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+
+          #screen-deliverables .dl-table-wrap,
+          #screen-partner-signoff .ps-table-wrap {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            overflow: hidden;
+            background: #fff;
+          }
+
+          #screen-deliverables .dl-table-scroll,
+          #screen-partner-signoff .ps-table-scroll {
+            overflow: auto;
+          }
+
+          #screen-deliverables .dl-table,
+          #screen-partner-signoff .ps-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1040px;
+          }
+
+          #screen-deliverables .dl-table thead th,
+          #screen-partner-signoff .ps-table thead th {
+            background: var(--panel-2);
+            color: var(--muted);
+            text-align: left;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .03em;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+            white-space: nowrap;
+          }
+
+          #screen-deliverables .dl-table tbody td,
+          #screen-partner-signoff .ps-table tbody td {
+            padding: 14px;
+            font-size: 13px;
+            color: var(--text);
+            border-bottom: 1px solid #edf3f6;
+            vertical-align: top;
+          }
+
+          #screen-deliverables .dl-table tbody tr:hover,
+          #screen-partner-signoff .ps-table tbody tr:hover {
+            background: #fbfdfe;
+          }
+
+          #screen-deliverables .dl-table tbody tr.is-selected,
+          #screen-partner-signoff .ps-table tbody tr.is-selected {
+            background: #effaf8;
+          }
+
+          #screen-deliverables .dl-item-title,
+          #screen-partner-signoff .ps-item-title {
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 4px;
+          }
+
+          #screen-deliverables .dl-item-meta,
+          #screen-partner-signoff .ps-item-meta {
+            font-size: 12px;
+            color: var(--muted);
+          }
+
+          #screen-deliverables .dl-badge,
+          #screen-partner-signoff .ps-badge {
+            display: inline-flex;
+            align-items: center;
+            height: 26px;
+            padding: 0 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            border: 1px solid transparent;
+            white-space: nowrap;
+          }
+
+          #screen-deliverables .dl-badge.status-review,
+          #screen-partner-signoff .ps-badge.status-review {
+            background: #e8f4ff;
+            color: #0b5cab;
+            border-color: #cfe6ff;
+          }
+
+          #screen-deliverables .dl-badge.status-overdue,
+          #screen-partner-signoff .ps-badge.status-overdue {
+            background: var(--warn-soft);
+            color: var(--warn);
+            border-color: #fed7aa;
+          }
+
+          #screen-deliverables .dl-badge.status-blocked,
+          #screen-partner-signoff .ps-badge.status-blocked {
+            background: var(--danger-soft);
+            color: var(--danger);
+            border-color: #fecaca;
+          }
+
+          #screen-deliverables .dl-badge.status-ok,
+          #screen-partner-signoff .ps-badge.status-ok {
+            background: #effcf3;
+            color: var(--ok);
+            border-color: #bbf7d0;
+          }
+
+          #screen-deliverables .dl-badge.priority-urgent,
+          #screen-partner-signoff .ps-badge.priority-urgent {
+            background: #fef2f2;
+            color: #b91c1c;
+            border-color: #fecaca;
+          }
+
+          #screen-deliverables .dl-badge.priority-high,
+          #screen-partner-signoff .ps-badge.priority-high {
+            background: #fff7ed;
+            color: #c2410c;
+            border-color: #fdba74;
+          }
+
+          #screen-deliverables .dl-badge.priority-normal,
+          #screen-partner-signoff .ps-badge.priority-normal {
+            background: #f8fafc;
+            color: #475569;
+            border-color: #e2e8f0;
+          }
+
+          #screen-deliverables .dl-badge.priority-low,
+          #screen-partner-signoff .ps-badge.priority-low {
+            background: #f0fdf4;
+            color: #15803d;
+            border-color: #bbf7d0;
+          }
+
+          #screen-deliverables .dl-side-stack,
+          #screen-partner-signoff .ps-side-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+
+          #screen-deliverables .dl-detail-grid,
+          #screen-partner-signoff .ps-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+          }
+
+          #screen-deliverables .dl-detail-box,
+          #screen-partner-signoff .ps-detail-box {
+            background: var(--panel-2);
+            border: 1px solid #e8eef3;
+            border-radius: 14px;
+            padding: 12px;
+          }
+
+          #screen-deliverables .dl-detail-label,
+          #screen-partner-signoff .ps-detail-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            letter-spacing: .03em;
+          }
+
+          #screen-deliverables .dl-detail-value,
+          #screen-partner-signoff .ps-detail-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.45;
+          }
+
+          #screen-deliverables .dl-detail-note,
+          #screen-partner-signoff .ps-detail-note {
+            margin-top: 14px;
+            background: #fbfdfe;
+            border: 1px dashed var(--line);
+            border-radius: 14px;
+            padding: 12px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+          }
+
+          #screen-deliverables .dl-quick-actions,
+          #screen-partner-signoff .ps-quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+          }
+
+          #screen-deliverables .dl-empty,
+          #screen-partner-signoff .ps-empty {
+            padding: 32px 18px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+          }
+
+          #screen-deliverables .dl-footer,
+          #screen-partner-signoff .ps-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+          }
+
+          #screen-deliverables .dl-muted,
+          #screen-partner-signoff .ps-muted {
+            color: var(--muted);
+            font-size: 12px;
+          }
+
+          #screen-deliverables .dl-pagination,
+          #screen-partner-signoff .ps-pagination {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+
+          #screen-review-queue .rq-timeline{
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+          }
+
+          #screen-review-queue .rq-timeline-item{
+            display:flex;
+            gap:10px;
+            align-items:flex-start;
+          }
+
+          #screen-review-queue .rq-dot{
+            width:10px;
+            height:10px;
+            border-radius:999px;
+            background:var(--brand);
+            margin-top:5px;
+            flex:0 0 auto;
+          }
+
+          #screen-review-queue .rq-timeline-text{
+            font-size:13px;
+            color:var(--text);
+            line-height:1.45;
+          }
+
+          #screen-review-queue .rq-timeline-text small{
+            display:block;
+            color:var(--muted);
+            margin-top:2px;
+          }
+          @media (max-width: 1400px) {
+            #screen-deliverables .dl-kpis,
+            #screen-partner-signoff .ps-kpis {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #screen-deliverables .dl-main,
+            #screen-partner-signoff .ps-main {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 900px) {
+            #screen-deliverables .dl-filter-row,
+            #screen-deliverables .dl-detail-grid,
+            #screen-deliverables .dl-quick-actions,
+            #screen-partner-signoff .ps-filter-row,
+            #screen-partner-signoff .ps-detail-grid,
+            #screen-partner-signoff .ps-quick-actions {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @media (max-width: 640px) {
+            #screen-deliverables .dl-kpis,
+            #screen-partner-signoff .ps-kpis {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+
+        <div class="dl-shell">
+          <div class="dl-topbar">
+            <div>
+              <div class="panel-title">Deliverables</div>
+              <div class="panel-subtitle mt-1">
+                Final reporting pack, requested documents, outputs, and review-ready deliverables for the selected engagement.
+              </div>
+            </div>
+
+            <div class="dl-topbar-actions">
+              <input id="dlSearchInput" class="dl-search" type="text" placeholder="Search deliverable, code, assigned, reviewer..." />
+              <button id="dlSearchBtn" class="dl-btn-ghost" type="button">Search</button>
+              <button id="dlNewBtn" class="dl-btn-soft" type="button">New deliverable</button>
+              <button id="dlEditBtn" class="dl-btn-ghost" type="button">Edit</button>
+              <button id="dlRefreshBtn" class="dl-btn" type="button">Refresh</button>
+            </div>
+          </div>
+
+          <div class="dl-kpis">
+            <div class="dl-kpi">
+              <div class="dl-kpi-label">Total active</div>
+              <div id="dlKpiTotal" class="dl-kpi-value">--</div>
+              <div class="dl-kpi-note">Active deliverables in this engagement</div>
+            </div>
+
+            <div class="dl-kpi warn">
+              <div class="dl-kpi-label">Outstanding</div>
+              <div id="dlKpiOutstanding" class="dl-kpi-value">--</div>
+              <div class="dl-kpi-note">Requested and still not received</div>
+            </div>
+
+            <div class="dl-kpi ok">
+              <div class="dl-kpi-label">Received</div>
+              <div id="dlKpiReceived" class="dl-kpi-value">--</div>
+              <div class="dl-kpi-note">Client items already received</div>
+            </div>
+
+            <div class="dl-kpi danger">
+              <div class="dl-kpi-label">Overdue</div>
+              <div id="dlKpiOverdue" class="dl-kpi-value">--</div>
+              <div class="dl-kpi-note">Past due and still open</div>
+            </div>
+          </div>
+
+          <div class="dl-main">
+            <div class="dl-card">
+              <div class="dl-card-head">
+                <div>
+                  <div class="dl-card-title">Deliverables register</div>
+                  <div class="dl-card-subtitle">Track requested documents, outputs, reviewer routing, due dates, and status changes</div>
+                </div>
+              </div>
+
+              <div class="dl-pills">
+                <button type="button" class="dl-pill active" data-dl-quick="all">All</button>
+                <button type="button" class="dl-pill" data-dl-quick="outstanding">Outstanding</button>
+                <button type="button" class="dl-pill" data-dl-quick="received">Received</button>
+                <button type="button" class="dl-pill" data-dl-quick="in_review">In review</button>
+              </div>
+
+              <div class="dl-filter-row">
+                <select id="dlStatusFilter" class="dl-select">
+                  <option value="">All statuses</option>
+                  <option value="not_started">not_started</option>
+                  <option value="requested">requested</option>
+                  <option value="outstanding">outstanding</option>
+                  <option value="received">received</option>
+                  <option value="in_review">in_review</option>
+                  <option value="completed">completed</option>
+                  <option value="waived">waived</option>
+                </select>
+
+                <select id="dlPriorityFilter" class="dl-select">
+                  <option value="">All priorities</option>
+                  <option value="urgent">urgent</option>
+                  <option value="high">high</option>
+                  <option value="normal">normal</option>
+                  <option value="low">low</option>
+                </select>
+
+                <select id="dlTypeFilter" class="dl-select">
+                  <option value="">All types</option>
+                  <option value="client_document">client_document</option>
+                  <option value="working_paper">working_paper</option>
+                  <option value="fs_draft">fs_draft</option>
+                  <option value="confirmation">confirmation</option>
+                  <option value="tax_support">tax_support</option>
+                  <option value="other">other</option>
+                </select>
+
+                <select id="dlLimitFilter" class="dl-select">
+                  <option value="25">25 rows</option>
+                  <option value="50">50 rows</option>
+                  <option value="100" selected>100 rows</option>
+                  <option value="200">200 rows</option>
+                </select>
+              </div>
+
+              <div class="dl-table-wrap">
+                <div class="dl-table-scroll">
+                  <table class="dl-table">
+                    <thead>
+                      <tr>
+                        <th>Priority</th>
+                        <th>Deliverable</th>
+                        <th>Type</th>
+                        <th>Assigned</th>
+                        <th>Reviewer</th>
+                        <th>Status</th>
+                        <th>Due / Received</th>
+                        <th>Documents</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dlTableBody">
+                      <tr>
+                        <td colspan="8" class="dl-empty">Loading deliverables...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="dl-footer">
+                <div id="dlFooterText" class="dl-muted">Showing 0 items</div>
+                <div class="dl-pagination">
+                  <button id="dlPrevBtn" class="dl-btn-ghost" type="button">Previous</button>
+                  <button id="dlPageBtn" class="dl-btn-soft" type="button">Page 1</button>
+                  <button id="dlNextBtn" class="dl-btn-ghost" type="button">Next</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="dl-side-stack">
+              <div class="dl-card">
+                <div class="dl-card-head">
+                  <div>
+                    <div class="dl-card-title" style="font-size:18px;">Selected deliverable</div>
+                    <div class="dl-card-subtitle">Status, routing, and action controls</div>
+                  </div>
+                </div>
+
+                <div id="dlDetailPanel">
+                  <div class="dl-empty">Select a deliverable to view details.</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- PARTNER SIGNOFF -->
       <section id="screen-partner-signoff" class="screen hidden">
-        <div class="card p-6">
-          <div class="panel-title">Partner Sign-Off</div>
-          <div class="panel-subtitle mt-1">Final approval and partner sign-off workflow</div>
-          <div class="mt-4 text-sm text-slate-600">Partner Sign-Off placeholder.</div>
+        <div class="ps-shell">
+          <div class="ps-topbar">
+            <div>
+              <div class="panel-title">Partner Sign-Off</div>
+              <div class="panel-subtitle mt-1">
+                Final approval workflow, partner review pipeline, and sign-off control steps for the selected engagement.
+              </div>
+            </div>
+
+            <div class="ps-topbar-actions">
+              <input id="psSearchInput" class="ps-search" type="text" placeholder="Search step, code, assigned, year end..." />
+              <button id="psSearchBtn" class="ps-btn-ghost" type="button">Search</button>
+              <button id="psNewBtn" class="ps-btn-soft" type="button">New step</button>
+              <button id="psRefreshBtn" class="ps-btn" type="button">Refresh</button>
+              <button id="psEditBtn" class="ps-btn-ghost" type="button">Edit</button>
+            </div>
+          </div>
+
+          <div class="ps-kpis">
+            <div class="ps-kpi">
+              <div class="ps-kpi-label">Total active</div>
+              <div id="psKpiTotal" class="ps-kpi-value">--</div>
+              <div class="ps-kpi-note">Active signoff steps</div>
+            </div>
+
+            <div class="ps-kpi warn">
+              <div class="ps-kpi-label">Pending</div>
+              <div id="psKpiPending" class="ps-kpi-value">--</div>
+              <div class="ps-kpi-note">Not started or in progress</div>
+            </div>
+
+            <div class="ps-kpi ok">
+              <div class="ps-kpi-label">Completed</div>
+              <div id="psKpiCompleted" class="ps-kpi-value">--</div>
+              <div class="ps-kpi-note">Already signed off</div>
+            </div>
+
+            <div class="ps-kpi danger">
+              <div class="ps-kpi-label">Blocked / overdue</div>
+              <div id="psKpiRisk" class="ps-kpi-value">--</div>
+              <div class="ps-kpi-note">Steps requiring escalation</div>
+            </div>
+          </div>
+
+          <div class="ps-main">
+            <div class="ps-card">
+              <div class="ps-card-head">
+                <div>
+                  <div class="ps-card-title">Sign-off steps</div>
+                  <div class="ps-card-subtitle">Manage assigned sign-off steps, due dates, completion status, and required approval gates</div>
+                </div>
+              </div>
+
+              <div class="ps-pills">
+                <button type="button" class="ps-pill active" data-ps-quick="all">All</button>
+                <button type="button" class="ps-pill" data-ps-quick="pending">Pending</button>
+                <button type="button" class="ps-pill" data-ps-quick="completed">Completed</button>
+                <button type="button" class="ps-pill" data-ps-quick="blocked">Blocked</button>
+              </div>
+
+              <div class="ps-filter-row">
+                <select id="psStatusFilter" class="ps-select">
+                  <option value="">All statuses</option>
+                  <option value="not_started">not_started</option>
+                  <option value="in_progress">in_progress</option>
+                  <option value="completed">completed</option>
+                  <option value="blocked">blocked</option>
+                  <option value="waived">waived</option>
+                </select>
+
+                <input id="psYearEndFilter" class="ps-search" type="date" style="min-width:0;" />
+
+                <select id="psAssignedFilter" class="ps-select">
+                  <option value="">All assigned users</option>
+                </select>
+
+                <select id="psLimitFilter" class="ps-select">
+                  <option value="25">25 rows</option>
+                  <option value="50">50 rows</option>
+                  <option value="100" selected>100 rows</option>
+                </select>
+              </div>
+
+              <div class="ps-table-wrap">
+                <div class="ps-table-scroll">
+                  <table class="ps-table">
+                    <thead>
+                      <tr>
+                        <th>Step</th>
+                        <th>Code</th>
+                        <th>Assigned</th>
+                        <th>Status</th>
+                        <th>Year end</th>
+                        <th>Due</th>
+                        <th>Required</th>
+                      </tr>
+                    </thead>
+                    <tbody id="psTableBody">
+                      <tr>
+                        <td colspan="7" class="ps-empty">Loading sign-off steps...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="ps-footer">
+                <div id="psFooterText" class="ps-muted">Showing 0 items</div>
+                <div class="ps-pagination">
+                  <button id="psPrevBtn" class="ps-btn-ghost" type="button">Previous</button>
+                  <button id="psPageBtn" class="ps-btn-soft" type="button">Page 1</button>
+                  <button id="psNextBtn" class="ps-btn-ghost" type="button">Next</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="ps-side-stack">
+              <div class="ps-card">
+                <div class="ps-card-head">
+                  <div>
+                    <div class="ps-card-title" style="font-size:18px;">Selected sign-off step</div>
+                    <div class="ps-card-subtitle">Approval context and completion controls</div>
+                  </div>
+                </div>
+
+                <div id="psDetailPanel">
+                  <div class="ps-empty">Select a sign-off step to view details.</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -5027,6 +5803,244 @@ window.safeRedirect = function (url, mode = "href") {
         <button id="signoffStepModalCancel" class="btn">Cancel</button>
         <button id="signoffStepModalSave" class="btn btn-primary">Save</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- DELIVERABLE MODAL -->
+<div id="dlModal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 p-4">
+  <div class="w-full max-w-3xl rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <div id="dlModalTitle" class="text-xl font-bold text-slate-900">New Deliverable</div>
+        <div class="text-sm text-slate-500">Create or update an engagement deliverable</div>
+      </div>
+      <button id="dlModalCloseBtn" type="button" class="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold">
+        Close
+      </button>
+    </div>
+
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <input type="hidden" id="dlFormId" />
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Deliverable name</div>
+        <input id="dlFormName" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Code</div>
+        <input id="dlFormCode" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Type</div>
+        <select id="dlFormType" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">Select type</option>
+          <option value="client_document">client_document</option>
+          <option value="working_paper">working_paper</option>
+          <option value="fs_draft">fs_draft</option>
+          <option value="confirmation">confirmation</option>
+          <option value="tax_support">tax_support</option>
+          <option value="other">other</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Requested from</div>
+        <input id="dlFormRequestedFrom" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Assigned user</div>
+        <select id="dlFormAssignedUser" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">Unassigned</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Reviewer</div>
+        <select id="dlFormReviewerUser" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">No reviewer</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Status</div>
+        <select id="dlFormStatus" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="not_started">not_started</option>
+          <option value="requested">requested</option>
+          <option value="outstanding">outstanding</option>
+          <option value="received">received</option>
+          <option value="in_review">in_review</option>
+          <option value="completed">completed</option>
+          <option value="waived">waived</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Priority</div>
+        <select id="dlFormPriority" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="normal">normal</option>
+          <option value="low">low</option>
+          <option value="high">high</option>
+          <option value="urgent">urgent</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Due date</div>
+        <input id="dlFormDueDate" type="date" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Received date</div>
+        <input id="dlFormReceivedDate" type="date" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block md:col-span-2">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Notes</div>
+        <textarea id="dlFormNotes" class="w-full min-h-[110px] rounded-xl border border-slate-300 px-3 py-3 text-sm"></textarea>
+      </label>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+      <button id="dlModalCancelBtn" type="button" class="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold">
+        Cancel
+      </button>
+      <button id="dlModalSaveBtn" type="button" class="h-10 px-5 rounded-xl bg-[var(--brand)] text-white font-semibold">
+        Save deliverable
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- SIGNOFF MODAL -->
+<div id="psModal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 p-4">
+  <div class="w-full max-w-3xl rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <div id="psModalTitle" class="text-xl font-bold text-slate-900">New Sign-Off Step</div>
+        <div class="text-sm text-slate-500">Create or update a sign-off workflow step</div>
+      </div>
+      <button id="psModalCloseBtn" type="button" class="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold">
+        Close
+      </button>
+    </div>
+
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <input type="hidden" id="psFormId" />
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Step name</div>
+        <input id="psFormName" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Step code</div>
+        <select id="psFormCode" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">Select code</option>
+          <option value="manager_review">manager_review</option>
+          <option value="partner_review">partner_review</option>
+          <option value="qc_review">qc_review</option>
+          <option value="final_signoff">final_signoff</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Reporting year end</div>
+        <input id="psFormYearEnd" type="date" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Assigned user</div>
+        <select id="psFormAssignedUser" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">Unassigned</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Status</div>
+        <select id="psFormStatus" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="not_started">not_started</option>
+          <option value="in_progress">in_progress</option>
+          <option value="completed">completed</option>
+          <option value="blocked">blocked</option>
+          <option value="waived">waived</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Due date</div>
+        <input id="psFormDueDate" type="date" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Sort order</div>
+        <input id="psFormSortOrder" type="number" min="0" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm" />
+      </label>
+
+      <label class="block flex items-center gap-3 pt-7">
+        <input id="psFormRequired" type="checkbox" class="h-4 w-4 rounded border-slate-300" checked />
+        <span class="text-sm font-semibold text-slate-700">Required step</span>
+      </label>
+
+      <label class="block md:col-span-2">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Notes</div>
+        <textarea id="psFormNotes" class="w-full min-h-[110px] rounded-xl border border-slate-300 px-3 py-3 text-sm"></textarea>
+      </label>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+      <button id="psModalCancelBtn" type="button" class="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold">
+        Cancel
+      </button>
+      <button id="psModalSaveBtn" type="button" class="h-10 px-5 rounded-xl bg-[var(--brand)] text-white font-semibold">
+        Save step
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- REVIEW QUEUE REASSIGN MODAL -->
+<div id="rqAssignModal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 p-4">
+  <div class="w-full max-w-2xl rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <div class="text-xl font-bold text-slate-900">Reassign Queue Item</div>
+        <div class="text-sm text-slate-500">Update assigned owner and reviewer for the selected item</div>
+      </div>
+      <button id="rqAssignModalCloseBtn" type="button" class="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold">
+        Close
+      </button>
+    </div>
+
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <input type="hidden" id="rqAssignQueueType" />
+      <input type="hidden" id="rqAssignSourceId" />
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Assigned user</div>
+        <select id="rqAssignAssignedUser" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">Unassigned</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <div class="text-sm font-semibold text-slate-700 mb-1">Reviewer</div>
+        <select id="rqAssignReviewerUser" class="w-full h-11 rounded-xl border border-slate-300 px-3 text-sm">
+          <option value="">No reviewer</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+      <button id="rqAssignModalCancelBtn" type="button" class="h-10 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold">
+        Cancel
+      </button>
+      <button id="rqAssignModalSaveBtn" type="button" class="h-10 px-5 rounded-xl bg-[var(--brand)] text-white font-semibold">
+        Save assignment
+      </button>
     </div>
   </div>
 </div>

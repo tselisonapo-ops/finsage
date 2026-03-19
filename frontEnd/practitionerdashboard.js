@@ -296,6 +296,7 @@ const ENDPOINTS = {
         reporting_year_end = "",
         status = "",
         assigned_user_id = "",
+        q = "",
         active_only = true,
         limit = 100,
         offset = 0
@@ -305,6 +306,7 @@ const ENDPOINTS = {
       if (reporting_year_end) params.set("reporting_year_end", reporting_year_end);
       if (status) params.set("status", status);
       if (assigned_user_id) params.set("assigned_user_id", String(assigned_user_id));
+      if (q) params.set("q", q);
       params.set("active_only", active_only ? "true" : "false");
       params.set("limit", String(limit));
       params.set("offset", String(offset));
@@ -713,6 +715,41 @@ const ENDPOINTS = {
   let PR_REVIEW_QUEUE_EVENTS_BOUND = false;
   let PR_REVIEW_QUEUE_LOADING = false;
   let PR_REVIEW_QUEUE_ACTIVE_QUICK = "all";
+
+  let PR_DELIVERABLES_VIEW_CACHE = {
+    rows: [],
+    selectedRow: null,
+    filters: {
+      status: "",
+      priority: "",
+      deliverable_type: "",
+      q: "",
+      active_only: true,
+      limit: 100,
+      offset: 0
+    }
+  };
+
+  let PR_DELIVERABLES_VIEW_LOADING = false;
+  let PR_DELIVERABLES_VIEW_EVENTS_BOUND = false;
+  let PR_DELIVERABLES_ACTIVE_QUICK = "all";
+
+  let PR_SIGNOFF_VIEW_CACHE = {
+    rows: [],
+    selectedRow: null,
+    filters: {
+      reporting_year_end: "",
+      status: "",
+      assigned_user_id: "",
+      active_only: true,
+      limit: 100,
+      offset: 0
+    }
+  };
+
+  let PR_SIGNOFF_VIEW_LOADING = false;
+  let PR_SIGNOFF_VIEW_EVENTS_BOUND = false;
+  let PR_SIGNOFF_ACTIVE_QUICK = "all";
 
   const PR_NAV = {
     dashboard: "dashboard",
@@ -2386,6 +2423,7 @@ function setupPractitionerNav(me) {
 }
 
 function runPractitionerScreenBinder(screen, me) {
+  window.__PR_ME__ = me;
   switch (screen) {
     case PR_NAV.dashboard:
       renderDashboardHome?.(me);
@@ -2453,8 +2491,11 @@ function runPractitionerScreenBinder(screen, me) {
       break;
 
     case PR_NAV.deliverables:
+      renderDeliverablesScreen?.(me);
+      break;
+
     case PR_NAV.partnerSignoff:
-      renderEngagementScreen?.(me, screen);
+      renderPartnerSignoffScreen?.(me);
       break;
 
     default:
@@ -2472,6 +2513,22 @@ function renderEngagementScreen(me, screen) {
 
   if (postBtn) postBtn.classList.toggle("hidden", !canPost);
   if (approveBtn) approveBtn.classList.toggle("hidden", !canApprove);
+}
+
+async function renderAssignmentsScreen(me) {
+  bindAssignmentsScreenEvents();
+  await ensureEngagementModalBound();
+
+  const cid = getActiveCompanyId();
+  if (cid && !PR_USERS_CACHE.length) {
+    try {
+      PR_USERS_CACHE = await loadEngagementAssignableUsers(cid);
+    } catch (err) {
+      console.warn("Failed to preload users cache", err);
+    }
+  }
+
+  refreshAssignmentsScreen();
 }
 
 function renderActionCenterScreen(me) {
@@ -3512,21 +3569,6 @@ async function renderTeamScreen(me) {
   }
 }
 
-async function renderAssignmentsScreen(me) {
-  bindAssignmentsScreenEvents();
-  await ensureEngagementModalBound();
-
-  const cid = getActiveCompanyId();
-  if (cid && !PR_USERS_CACHE.length) {
-    try {
-      PR_USERS_CACHE = await loadEngagementAssignableUsers(cid);
-    } catch (err) {
-      console.warn("Failed to preload users cache", err);
-    }
-  }
-
-  refreshAssignmentsScreen();
-}
 
 function getSelectedEngagementId() {
   const selected = Number(PR_SELECTED_ENGAGEMENT?.id || 0);
@@ -7270,7 +7312,40 @@ function renderReviewQueueDetail() {
   const note =
     row.notes ||
     row.description ||
-    "Open this source item to inspect full supporting details, notes, and workflow context.";
+    "Open this source item to inspect full supporting details, workflow notes, and supporting context.";
+
+  const timelineHtml = `
+    <div class="rq-card" style="padding:14px; margin-top:16px;">
+      <div class="rq-card-title" style="font-size:16px;">Activity trail</div>
+      <div class="rq-card-subtitle">Latest known workflow context</div>
+
+      <div class="rq-timeline" style="margin-top:12px;">
+        <div class="rq-timeline-item">
+          <div class="rq-dot"></div>
+          <div class="rq-timeline-text">
+            Status currently <strong>${escapeHtml(status)}</strong>
+            <small>Latest synced state</small>
+          </div>
+        </div>
+
+        <div class="rq-timeline-item">
+          <div class="rq-dot"></div>
+          <div class="rq-timeline-text">
+            Assigned to <strong>${escapeHtml(assigned)}</strong>
+            <small>Current owner</small>
+          </div>
+        </div>
+
+        <div class="rq-timeline-item">
+          <div class="rq-dot"></div>
+          <div class="rq-timeline-text">
+            Reviewer <strong>${escapeHtml(reviewer)}</strong>
+            <small>Current review routing</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 
   panel.innerHTML = `
     <div class="rq-item-title" style="font-size:18px;">${escapeHtml(row.item_name || row.deliverable_name || row.step_name || row.description || "Selected item")}</div>
@@ -7323,7 +7398,57 @@ function renderReviewQueueDetail() {
       <button type="button" class="rq-btn-ghost" id="rqInReviewBtn">Mark in review</button>
       <button type="button" class="rq-btn-ghost" id="rqDeactivateBtn">Deactivate</button>
     </div>
+
+    ${timelineHtml}
   `;
+}
+
+async function openReviewQueueAssignModal(me, row = null) {
+  const item = row || PR_REVIEW_QUEUE_CACHE.selectedRow;
+  if (!item) return;
+
+  await prEnsureUsersCache(me);
+
+  prFillUserSelect("rqAssignAssignedUser", PR_USERS_CACHE, {
+    includeBlank: true,
+    blankLabel: "Unassigned"
+  });
+
+  prFillUserSelect("rqAssignReviewerUser", PR_USERS_CACHE, {
+    includeBlank: true,
+    blankLabel: "No reviewer"
+  });
+
+  prMaybeSetValue("rqAssignQueueType", item.queue_type || "");
+  prMaybeSetValue("rqAssignSourceId", item.source_id || "");
+  prMaybeSetValue("rqAssignAssignedUser", item.assigned_user_id || "");
+  prMaybeSetValue("rqAssignReviewerUser", item.reviewer_user_id || "");
+
+  prSetModalOpen("rqAssignModal", true);
+}
+
+function closeReviewQueueAssignModal() {
+  prSetModalOpen("rqAssignModal", false);
+}
+
+async function saveReviewQueueAssignModal(me) {
+  const queueType = document.getElementById("rqAssignQueueType")?.value || "";
+  const sourceId = document.getElementById("rqAssignSourceId")?.value || "";
+  if (!queueType || !sourceId) return;
+
+  await apiFetch(
+    ENDPOINTS.reviewQueue.assign(me.company_id, queueType, sourceId),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        assigned_user_id: document.getElementById("rqAssignAssignedUser")?.value || "",
+        reviewer_user_id: document.getElementById("rqAssignReviewerUser")?.value || ""
+      })
+    }
+  );
+
+  closeReviewQueueAssignModal();
+  await loadReviewQueueScreenData(me, { force: true });
 }
 
 function syncReviewQueueFiltersToUi() {
@@ -7437,25 +7562,67 @@ async function handleReviewQueueStatusAction(me, nextStatus) {
 function openReviewQueueSource(row) {
   if (!row) return;
 
-  switch (String(row.queue_type || "").toLowerCase()) {
+  const queueType = String(row.queue_type || "").toLowerCase();
+
+  switch (queueType) {
     case "reporting_item":
-      window.location.hash = `screen=${encodeURIComponent(PR_NAV.reportingOverview)}&itemId=${encodeURIComponent(row.source_id)}`;
+      if (typeof switchPractitionerScreen === "function") {
+        switchPractitionerScreen(PR_NAV.reportingOverview, window.__PR_ME__ || null, { updateHash: true });
+      } else {
+        window.location.hash = `screen=${encodeURIComponent(PR_NAV.reportingOverview)}&itemId=${encodeURIComponent(row.source_id)}`;
+      }
       break;
+
     case "deliverable":
-      window.location.hash = `screen=${encodeURIComponent(PR_NAV.pendingDeliverables)}&deliverableId=${encodeURIComponent(row.source_id)}`;
+      if (typeof switchPractitionerScreen === "function") {
+        switchPractitionerScreen(PR_NAV.deliverables, window.__PR_ME__ || null, { updateHash: true });
+      } else {
+        window.location.hash = `screen=${encodeURIComponent(PR_NAV.deliverables)}&deliverableId=${encodeURIComponent(row.source_id)}`;
+      }
       break;
-    case "posting_activity":
-      window.location.hash = `screen=${encodeURIComponent(PR_NAV.dayToDayPostings)}&activityId=${encodeURIComponent(row.source_id)}&module=${encodeURIComponent(row.module_name || "")}`;
+
+    case "posting_activity": {
+      const mod = String(row.module_name || "").toLowerCase();
+      let screen = PR_NAV.dayToDayPostings;
+
+      if (mod === "journal_entries") screen = PR_NAV.journalEntries;
+      else if (mod === "accounts_receivable") screen = PR_NAV.accountsReceivable;
+      else if (mod === "accounts_payable") screen = PR_NAV.accountsPayable;
+      else if (mod === "leases") screen = PR_NAV.leases;
+      else if (mod === "ppe") screen = PR_NAV.ppe;
+
+      if (typeof switchPractitionerScreen === "function") {
+        switchPractitionerScreen(screen, window.__PR_ME__ || null, { updateHash: true });
+      } else {
+        window.location.hash = `screen=${encodeURIComponent(screen)}&activityId=${encodeURIComponent(row.source_id)}`;
+      }
       break;
+    }
+
     case "monthly_close":
-      window.location.hash = `screen=${encodeURIComponent(PR_NAV.monthlyCloseRoutines)}&taskId=${encodeURIComponent(row.source_id)}`;
+      if (typeof switchPractitionerScreen === "function") {
+        switchPractitionerScreen(PR_NAV.monthlyCloseRoutines, window.__PR_ME__ || null, { updateHash: true });
+      } else {
+        window.location.hash = `screen=${encodeURIComponent(PR_NAV.monthlyCloseRoutines)}&taskId=${encodeURIComponent(row.source_id)}`;
+      }
       break;
+
     case "year_end":
-      window.location.hash = `screen=${encodeURIComponent(PR_NAV.yearEndReporting)}&taskId=${encodeURIComponent(row.source_id)}`;
+      if (typeof switchPractitionerScreen === "function") {
+        switchPractitionerScreen(PR_NAV.yearEndReporting, window.__PR_ME__ || null, { updateHash: true });
+      } else {
+        window.location.hash = `screen=${encodeURIComponent(PR_NAV.yearEndReporting)}&taskId=${encodeURIComponent(row.source_id)}`;
+      }
       break;
+
     case "signoff":
-      window.location.hash = `screen=${encodeURIComponent(PR_NAV.partnerSignoff)}&stepId=${encodeURIComponent(row.source_id)}`;
+      if (typeof switchPractitionerScreen === "function") {
+        switchPractitionerScreen(PR_NAV.partnerSignoff, window.__PR_ME__ || null, { updateHash: true });
+      } else {
+        window.location.hash = `screen=${encodeURIComponent(PR_NAV.partnerSignoff)}&stepId=${encodeURIComponent(row.source_id)}`;
+      }
       break;
+
     default:
       break;
   }
@@ -7500,6 +7667,21 @@ async function bindReviewQueueEvents(me) {
       PR_REVIEW_QUEUE_CACHE.filters.offset = 0;
       syncReviewQueueFiltersToUi();
       await loadReviewQueueScreenData(me, { force: true });
+      return;
+    }
+
+    if (e.target.id === "rqAssignBtn") {
+      await openReviewQueueAssignModal(me, PR_REVIEW_QUEUE_CACHE.selectedRow);
+      return;
+    }
+
+    if (e.target.id === "rqAssignModalCloseBtn" || e.target.id === "rqAssignModalCancelBtn") {
+      closeReviewQueueAssignModal();
+      return;
+    }
+
+    if (e.target.id === "rqAssignModalSaveBtn") {
+      await saveReviewQueueAssignModal(me);
       return;
     }
 
@@ -7576,26 +7758,6 @@ async function bindReviewQueueEvents(me) {
       openReviewQueueSource(PR_REVIEW_QUEUE_CACHE.selectedRow);
       return;
     }
-
-    if (e.target.id === "rqAssignBtn") {
-      const row = PR_REVIEW_QUEUE_CACHE.selectedRow;
-      if (!row) return;
-
-      const assigned_user_id = window.prompt("Enter new assigned user id");
-      if (!assigned_user_id) return;
-
-      await apiFetch(
-        ENDPOINTS.reviewQueue.assign(me.company_id, PR_SELECTED_ENGAGEMENT.id, row.queue_type, row.source_id),
-        {
-          method: "POST",
-          body: JSON.stringify({
-            assigned_user_id: Number(assigned_user_id)
-          })
-        }
-      );
-
-      await loadReviewQueueScreenData(me, { force: true });
-    }
   });
 
   document.addEventListener("change", async (e) => {
@@ -7644,6 +7806,1028 @@ async function renderReviewQueueScreen(me) {
   await bindReviewQueueEvents(me);
   syncReviewQueueFiltersToUi();
   await loadReviewQueueScreenData(me, { force: false });
+}
+
+
+function prEsc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function prFmtDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function prStatusBadgeClass(status, isOverdue = false, isBlocked = false) {
+  const s = String(status || "").toLowerCase();
+  if (isBlocked || s === "blocked") return "status-blocked";
+  if (isOverdue) return "status-overdue";
+  if (["requested", "outstanding", "in_review", "not_started", "in_progress"].includes(s)) return "status-review";
+  return "status-ok";
+}
+
+function prPriorityBadgeClass(priority) {
+  switch (String(priority || "").toLowerCase()) {
+    case "urgent": return "priority-urgent";
+    case "high": return "priority-high";
+    case "low": return "priority-low";
+    default: return "priority-normal";
+  }
+}
+
+function prDueMeta(value, status) {
+  if (!value) return "No due date";
+
+  const due = new Date(value);
+  if (Number.isNaN(due.getTime())) return "";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  const diff = Math.round((due.getTime() - today.getTime()) / 86400000);
+  const closed = ["completed", "received", "waived"].includes(String(status || "").toLowerCase());
+
+  if (closed) return "Closed";
+  if (diff < 0) return `${Math.abs(diff)} day${Math.abs(diff) === 1 ? "" : "s"} overdue`;
+  if (diff === 0) return "Due today";
+  return `${diff} day${diff === 1 ? "" : "s"} remaining`;
+}
+
+function getSelectedEngagementOrAlert() {
+  if (!PR_SELECTED_ENGAGEMENT?.id) {
+    alert("Select an engagement first.");
+    return null;
+  }
+  return PR_SELECTED_ENGAGEMENT;
+}
+
+/* =========================
+   DELIVERABLES
+========================= */
+
+async function fetchDeliverablesRows(me) {
+  const engagement = getSelectedEngagementOrAlert();
+  if (!engagement) {
+    PR_DELIVERABLES_VIEW_CACHE.rows = [];
+    PR_DELIVERABLES_VIEW_CACHE.selectedRow = null;
+    return [];
+  }
+
+  const filters = { ...(PR_DELIVERABLES_VIEW_CACHE.filters || {}) };
+
+  if (PR_DELIVERABLES_ACTIVE_QUICK === "outstanding") {
+    filters.status = "outstanding";
+  } else if (PR_DELIVERABLES_ACTIVE_QUICK === "received") {
+    filters.status = "received";
+  } else if (PR_DELIVERABLES_ACTIVE_QUICK === "in_review") {
+    filters.status = "in_review";
+  }
+
+  const url = ENDPOINTS.engagementOps.deliverablesList(me.company_id, engagement.id, filters);
+  const json = await apiFetch(url);
+  const rows = Array.isArray(json?.rows) ? json.rows : [];
+
+  PR_DELIVERABLES_VIEW_CACHE.rows = rows;
+
+  const selected = PR_DELIVERABLES_VIEW_CACHE.selectedRow;
+  if (selected) {
+    PR_DELIVERABLES_VIEW_CACHE.selectedRow =
+      rows.find((r) => Number(r.id) === Number(selected.id)) || rows[0] || null;
+  } else {
+    PR_DELIVERABLES_VIEW_CACHE.selectedRow = rows[0] || null;
+  }
+
+  return rows;
+}
+
+function renderDeliverablesSummary() {
+  const rows = PR_DELIVERABLES_VIEW_CACHE.rows || [];
+  const total = rows.length;
+  const outstanding = rows.filter((r) => ["requested", "outstanding"].includes(String(r.status || "").toLowerCase())).length;
+  const received = rows.filter((r) => String(r.status || "").toLowerCase() === "received").length;
+  const overdue = rows.filter((r) => {
+    if (!r.due_date) return false;
+    const s = String(r.status || "").toLowerCase();
+    if (["completed", "received", "waived"].includes(s)) return false;
+    const d = new Date(r.due_date);
+    const t = new Date();
+    d.setHours(0, 0, 0, 0);
+    t.setHours(0, 0, 0, 0);
+    return d < t;
+  }).length;
+
+  const totalEl = document.getElementById("dlKpiTotal");
+  const outstandingEl = document.getElementById("dlKpiOutstanding");
+  const receivedEl = document.getElementById("dlKpiReceived");
+  const overdueEl = document.getElementById("dlKpiOverdue");
+
+  if (totalEl) totalEl.textContent = String(total);
+  if (outstandingEl) outstandingEl.textContent = String(outstanding);
+  if (receivedEl) receivedEl.textContent = String(received);
+  if (overdueEl) overdueEl.textContent = String(overdue);
+}
+
+function renderDeliverablesRows() {
+  const tbody = document.getElementById("dlTableBody");
+  const footer = document.getElementById("dlFooterText");
+  if (!tbody) return;
+
+  const rows = PR_DELIVERABLES_VIEW_CACHE.rows || [];
+  const selected = PR_DELIVERABLES_VIEW_CACHE.selectedRow;
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="dl-empty">No deliverables found for the current filters.</td></tr>`;
+    if (footer) footer.textContent = "Showing 0 items";
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => {
+    const isSelected = selected && Number(selected.id) === Number(row.id);
+    const isOverdue = (() => {
+      if (!row.due_date) return false;
+      const s = String(row.status || "").toLowerCase();
+      if (["completed", "received", "waived"].includes(s)) return false;
+      const d = new Date(row.due_date);
+      const t = new Date();
+      d.setHours(0, 0, 0, 0);
+      t.setHours(0, 0, 0, 0);
+      return d < t;
+    })();
+
+    return `
+      <tr class="${isSelected ? "is-selected" : ""}" data-dl-row="1" data-id="${prEsc(row.id)}">
+        <td><span class="dl-badge ${prPriorityBadgeClass(row.priority)}">${prEsc(row.priority || "normal")}</span></td>
+        <td>
+          <div class="dl-item-title">${prEsc(row.deliverable_name || "—")}</div>
+          <div class="dl-item-meta">${prEsc(row.deliverable_code || "No code")}</div>
+        </td>
+        <td>${prEsc(row.deliverable_type || "—")}</td>
+        <td>${prEsc(row.assigned_user_name || row.assigned_user_id || "—")}</td>
+        <td>${prEsc(row.reviewer_user_name || row.reviewer_user_id || "—")}</td>
+        <td><span class="dl-badge ${prStatusBadgeClass(row.status, isOverdue, false)}">${prEsc(row.status || "—")}</span></td>
+        <td>
+          <div class="dl-item-title">${prEsc(prFmtDate(row.due_date))}</div>
+          <div class="dl-item-meta">Received: ${prEsc(prFmtDate(row.received_date))}</div>
+        </td>
+        <td>${prEsc(row.document_count ?? 0)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const limit = Number(PR_DELIVERABLES_VIEW_CACHE.filters.limit || 100);
+  const offset = Number(PR_DELIVERABLES_VIEW_CACHE.filters.offset || 0);
+  const page = Math.floor(offset / limit) + 1;
+
+  if (footer) footer.textContent = `Showing ${rows.length} item${rows.length === 1 ? "" : "s"}`;
+  const pageBtn = document.getElementById("dlPageBtn");
+  if (pageBtn) pageBtn.textContent = `Page ${page}`;
+}
+
+function renderDeliverablesDetail() {
+  const panel = document.getElementById("dlDetailPanel");
+  if (!panel) return;
+
+  const row = PR_DELIVERABLES_VIEW_CACHE.selectedRow;
+  if (!row) {
+    panel.innerHTML = `<div class="dl-empty">Select a deliverable to view details.</div>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="dl-item-title" style="font-size:18px;">${prEsc(row.deliverable_name || "Deliverable")}</div>
+    <div class="dl-item-meta">${prEsc(row.deliverable_code || "No code")} · ${prEsc(row.deliverable_type || "—")}</div>
+
+    <div class="dl-detail-grid">
+      <div class="dl-detail-box">
+        <div class="dl-detail-label">Status</div>
+        <div class="dl-detail-value">${prEsc(row.status || "—")}</div>
+      </div>
+      <div class="dl-detail-box">
+        <div class="dl-detail-label">Priority</div>
+        <div class="dl-detail-value">${prEsc(row.priority || "normal")}</div>
+      </div>
+      <div class="dl-detail-box">
+        <div class="dl-detail-label">Assigned</div>
+        <div class="dl-detail-value">${prEsc(row.assigned_user_name || row.assigned_user_id || "—")}</div>
+      </div>
+      <div class="dl-detail-box">
+        <div class="dl-detail-label">Reviewer</div>
+        <div class="dl-detail-value">${prEsc(row.reviewer_user_name || row.reviewer_user_id || "—")}</div>
+      </div>
+      <div class="dl-detail-box">
+        <div class="dl-detail-label">Due date</div>
+        <div class="dl-detail-value">${prEsc(prFmtDate(row.due_date))}</div>
+      </div>
+      <div class="dl-detail-box">
+        <div class="dl-detail-label">Received date</div>
+        <div class="dl-detail-value">${prEsc(prFmtDate(row.received_date))}</div>
+      </div>
+    </div>
+
+    <div class="dl-detail-note">${prEsc(row.notes || "No notes recorded for this deliverable.")}</div>
+
+    <div class="dl-quick-actions">
+      <button id="dlEditBtn" class="dl-btn-ghost" type="button">Edit</button>
+      <button id="dlMarkRequestedBtn" class="dl-btn-ghost" type="button">Mark requested</button>
+      <button id="dlMarkOutstandingBtn" class="dl-btn-ghost" type="button">Mark outstanding</button>
+      <button id="dlMarkReceivedBtn" class="dl-btn-soft" type="button">Mark received</button>
+      <button id="dlMarkReviewBtn" class="dl-btn-ghost" type="button">Mark in review</button>
+      <button id="dlMarkCompleteBtn" class="dl-btn" type="button">Complete</button>
+      <button id="dlDeactivateBtn" class="dl-btn-ghost" type="button">Deactivate</button>
+    </div>
+  `;
+}
+
+function syncDeliverablesFiltersUi() {
+  const f = PR_DELIVERABLES_VIEW_CACHE.filters || {};
+  const statusEl = document.getElementById("dlStatusFilter");
+  const priorityEl = document.getElementById("dlPriorityFilter");
+  const typeEl = document.getElementById("dlTypeFilter");
+  const searchEl = document.getElementById("dlSearchInput");
+  const limitEl = document.getElementById("dlLimitFilter");
+
+  if (statusEl) statusEl.value = f.status || "";
+  if (priorityEl) priorityEl.value = f.priority || "";
+  if (typeEl) typeEl.value = f.deliverable_type || "";
+  if (searchEl) searchEl.value = f.q || "";
+  if (limitEl) limitEl.value = String(f.limit || 100);
+
+  document.querySelectorAll("[data-dl-quick]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.dlQuick === PR_DELIVERABLES_ACTIVE_QUICK);
+  });
+}
+
+async function loadDeliverablesScreen(me) {
+  if (PR_DELIVERABLES_VIEW_LOADING) return;
+  PR_DELIVERABLES_VIEW_LOADING = true;
+
+  try {
+    const tbody = document.getElementById("dlTableBody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="dl-empty">Loading deliverables...</td></tr>`;
+
+    const engagement = PR_SELECTED_ENGAGEMENT;
+    if (!engagement?.id) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="dl-empty">Select an engagement first to view deliverables.</td></tr>`;
+      const panel = document.getElementById("dlDetailPanel");
+      if (panel) panel.innerHTML = `<div class="dl-empty">Select an engagement first.</div>`;
+      PR_DELIVERABLES_VIEW_CACHE.rows = [];
+      PR_DELIVERABLES_VIEW_CACHE.selectedRow = null;
+      renderDeliverablesSummary();
+      return;
+    }
+
+    await fetchDeliverablesRows(me);
+    renderDeliverablesSummary();
+    renderDeliverablesRows();
+    renderDeliverablesDetail();
+  } finally {
+    PR_DELIVERABLES_VIEW_LOADING = false;
+  }
+}
+
+async function bindDeliverablesScreen(me) {
+  if (PR_DELIVERABLES_VIEW_EVENTS_BOUND) return;
+  PR_DELIVERABLES_VIEW_EVENTS_BOUND = true;
+
+  document.addEventListener("click", async (e) => {
+    const quickBtn = e.target.closest("[data-dl-quick]");
+    if (quickBtn) {
+      PR_DELIVERABLES_ACTIVE_QUICK = quickBtn.dataset.dlQuick || "all";
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      syncDeliverablesFiltersUi();
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlNewBtn") {
+      await openDeliverableModal(me, null);
+      return;
+    }
+
+    if (e.target.id === "dlEditBtn") {
+      const selected = PR_DELIVERABLES_VIEW_CACHE.selectedRow;
+      if (!selected) return;
+      await openDeliverableModal(me, selected);
+      return;
+    }
+
+    if (e.target.id === "dlModalCloseBtn" || e.target.id === "dlModalCancelBtn") {
+      closeDeliverableModal();
+      return;
+    }
+
+    if (e.target.id === "dlModalSaveBtn") {
+      await saveDeliverableModal(me);
+      return;
+    }
+
+    const rowEl = e.target.closest("[data-dl-row='1']");
+    if (rowEl) {
+      const id = Number(rowEl.dataset.id || 0);
+      PR_DELIVERABLES_VIEW_CACHE.selectedRow =
+        (PR_DELIVERABLES_VIEW_CACHE.rows || []).find((r) => Number(r.id) === id) || null;
+      renderDeliverablesRows();
+      renderDeliverablesDetail();
+      return;
+    }
+
+    if (e.target.id === "dlSearchBtn") {
+      PR_DELIVERABLES_VIEW_CACHE.filters.q = (document.getElementById("dlSearchInput")?.value || "").trim();
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlRefreshBtn") {
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlPrevBtn") {
+      const limit = Number(PR_DELIVERABLES_VIEW_CACHE.filters.limit || 100);
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = Math.max(0, Number(PR_DELIVERABLES_VIEW_CACHE.filters.offset || 0) - limit);
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlNextBtn") {
+      const limit = Number(PR_DELIVERABLES_VIEW_CACHE.filters.limit || 100);
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = Number(PR_DELIVERABLES_VIEW_CACHE.filters.offset || 0) + limit;
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    const selected = PR_DELIVERABLES_VIEW_CACHE.selectedRow;
+    if (!selected?.id) return;
+
+    async function setStatus(status, extra = {}) {
+      await apiFetch(
+        ENDPOINTS.engagementOps.deliverablesSetStatus(me.company_id, selected.id),
+        {
+          method: "POST",
+          body: JSON.stringify({ status, ...extra })
+        }
+      );
+      await loadDeliverablesScreen(me);
+    }
+
+    if (e.target.id === "dlMarkRequestedBtn") return setStatus("requested");
+    if (e.target.id === "dlMarkOutstandingBtn") return setStatus("outstanding");
+    if (e.target.id === "dlMarkReviewBtn") return setStatus("in_review");
+    if (e.target.id === "dlMarkCompleteBtn") return setStatus("completed");
+    if (e.target.id === "dlMarkReceivedBtn") return setStatus("received", {
+      received_date: new Date().toISOString().slice(0, 10)
+    });
+
+    if (e.target.id === "dlDeactivateBtn") {
+      const ok = window.confirm("Deactivate this deliverable?");
+      if (!ok) return;
+
+      await apiFetch(
+        ENDPOINTS.engagementOps.deliverablesDeactivate(me.company_id, selected.id),
+        { method: "POST" }
+      );
+      await loadDeliverablesScreen(me);
+    }
+  });
+
+  document.addEventListener("change", async (e) => {
+    if (e.target.id === "dlStatusFilter") {
+      PR_DELIVERABLES_VIEW_CACHE.filters.status = e.target.value || "";
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlPriorityFilter") {
+      PR_DELIVERABLES_VIEW_CACHE.filters.priority = e.target.value || "";
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlTypeFilter") {
+      PR_DELIVERABLES_VIEW_CACHE.filters.deliverable_type = e.target.value || "";
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      await loadDeliverablesScreen(me);
+      return;
+    }
+
+    if (e.target.id === "dlLimitFilter") {
+      PR_DELIVERABLES_VIEW_CACHE.filters.limit = Number(e.target.value || 100);
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      await loadDeliverablesScreen(me);
+    }
+  });
+
+  document.addEventListener("keydown", async (e) => {
+    if (e.target?.id === "dlSearchInput" && e.key === "Enter") {
+      PR_DELIVERABLES_VIEW_CACHE.filters.q = e.target.value.trim();
+      PR_DELIVERABLES_VIEW_CACHE.filters.offset = 0;
+      await loadDeliverablesScreen(me);
+    }
+  });
+}
+
+async function renderDeliverablesScreen(me) {
+  syncDeliverablesFiltersUi();
+  await bindDeliverablesScreen(me);
+  await loadDeliverablesScreen(me);
+}
+
+/* =========================
+   PARTNER SIGNOFF
+========================= */
+
+async function fetchSignoffRows(me) {
+  const engagement = getSelectedEngagementOrAlert();
+  if (!engagement) {
+    PR_SIGNOFF_VIEW_CACHE.rows = [];
+    PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
+    return [];
+  }
+
+  const filters = { ...(PR_SIGNOFF_VIEW_CACHE.filters || {}) };
+
+  if (PR_SIGNOFF_ACTIVE_QUICK === "pending") {
+    filters.status = "in_progress";
+  } else if (PR_SIGNOFF_ACTIVE_QUICK === "completed") {
+    filters.status = "completed";
+  } else if (PR_SIGNOFF_ACTIVE_QUICK === "blocked") {
+    filters.status = "blocked";
+  }
+
+  const url = ENDPOINTS.engagementOps.signoffStepsList(me.company_id, engagement.id, filters);
+  const json = await apiFetch(url);
+  const rows = Array.isArray(json?.rows) ? json.rows : [];
+
+  PR_SIGNOFF_VIEW_CACHE.rows = rows;
+
+  const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
+  if (selected) {
+    PR_SIGNOFF_VIEW_CACHE.selectedRow =
+      rows.find((r) => Number(r.id) === Number(selected.id)) || rows[0] || null;
+  } else {
+    PR_SIGNOFF_VIEW_CACHE.selectedRow = rows[0] || null;
+  }
+
+  return rows;
+}
+
+function renderSignoffSummary() {
+  const rows = PR_SIGNOFF_VIEW_CACHE.rows || [];
+  const total = rows.length;
+  const pending = rows.filter((r) => ["not_started", "in_progress"].includes(String(r.status || "").toLowerCase())).length;
+  const completed = rows.filter((r) => String(r.status || "").toLowerCase() === "completed").length;
+  const risk = rows.filter((r) => {
+    const s = String(r.status || "").toLowerCase();
+    if (s === "blocked") return true;
+    if (!r.due_date) return false;
+    if (["completed", "waived"].includes(s)) return false;
+    const d = new Date(r.due_date);
+    const t = new Date();
+    d.setHours(0, 0, 0, 0);
+    t.setHours(0, 0, 0, 0);
+    return d < t;
+  }).length;
+
+  const totalEl = document.getElementById("psKpiTotal");
+  const pendingEl = document.getElementById("psKpiPending");
+  const completedEl = document.getElementById("psKpiCompleted");
+  const riskEl = document.getElementById("psKpiRisk");
+
+  if (totalEl) totalEl.textContent = String(total);
+  if (pendingEl) pendingEl.textContent = String(pending);
+  if (completedEl) completedEl.textContent = String(completed);
+  if (riskEl) riskEl.textContent = String(risk);
+}
+
+function renderSignoffRows() {
+  const tbody = document.getElementById("psTableBody");
+  const footer = document.getElementById("psFooterText");
+  if (!tbody) return;
+
+  const rows = PR_SIGNOFF_VIEW_CACHE.rows || [];
+  const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">No sign-off steps found for the current filters.</td></tr>`;
+    if (footer) footer.textContent = "Showing 0 items";
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => {
+    const isSelected = selected && Number(selected.id) === Number(row.id);
+
+    const isOverdue = (() => {
+      if (!row.due_date) return false;
+      const s = String(row.status || "").toLowerCase();
+      if (["completed", "waived"].includes(s)) return false;
+      const d = new Date(row.due_date);
+      const t = new Date();
+      d.setHours(0, 0, 0, 0);
+      t.setHours(0, 0, 0, 0);
+      return d < t;
+    })();
+
+    return `
+      <tr class="${isSelected ? "is-selected" : ""}" data-ps-row="1" data-id="${prEsc(row.id)}">
+        <td>
+          <div class="ps-item-title">${prEsc(row.step_name || "—")}</div>
+        </td>
+        <td>${prEsc(row.step_code || "—")}</td>
+        <td>${prEsc(row.assigned_user_name || row.assigned_user_id || "—")}</td>
+        <td><span class="ps-badge ${prStatusBadgeClass(row.status, isOverdue, row.status === "blocked")}">${prEsc(row.status || "—")}</span></td>
+        <td>${prEsc(prFmtDate(row.reporting_year_end))}</td>
+        <td>${prEsc(prFmtDate(row.due_date))}</td>
+        <td>${row.is_required ? "Yes" : "No"}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
+  const offset = Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0);
+  const page = Math.floor(offset / limit) + 1;
+
+  if (footer) footer.textContent = `Showing ${rows.length} item${rows.length === 1 ? "" : "s"}`;
+  const pageBtn = document.getElementById("psPageBtn");
+  if (pageBtn) pageBtn.textContent = `Page ${page}`;
+}
+
+function renderSignoffDetail() {
+  const panel = document.getElementById("psDetailPanel");
+  if (!panel) return;
+
+  const row = PR_SIGNOFF_VIEW_CACHE.selectedRow;
+  if (!row) {
+    panel.innerHTML = `<div class="ps-empty">Select a sign-off step to view details.</div>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="ps-item-title" style="font-size:18px;">${prEsc(row.step_name || "Signoff step")}</div>
+    <div class="ps-item-meta">${prEsc(row.step_code || "No code")} · Reporting year end ${prEsc(prFmtDate(row.reporting_year_end))}</div>
+
+    <div class="ps-detail-grid">
+      <div class="ps-detail-box">
+        <div class="ps-detail-label">Status</div>
+        <div class="ps-detail-value">${prEsc(row.status || "—")}</div>
+      </div>
+      <div class="ps-detail-box">
+        <div class="ps-detail-label">Assigned</div>
+        <div class="ps-detail-value">${prEsc(row.assigned_user_name || row.assigned_user_id || "—")}</div>
+      </div>
+      <div class="ps-detail-box">
+        <div class="ps-detail-label">Due date</div>
+        <div class="ps-detail-value">${prEsc(prFmtDate(row.due_date))}</div>
+      </div>
+      <div class="ps-detail-box">
+        <div class="ps-detail-label">Completed at</div>
+        <div class="ps-detail-value">${prEsc(prFmtDate(row.completed_at))}</div>
+      </div>
+      <div class="ps-detail-box">
+        <div class="ps-detail-label">Required</div>
+        <div class="ps-detail-value">${row.is_required ? "Yes" : "No"}</div>
+      </div>
+      <div class="ps-detail-box">
+        <div class="ps-detail-label">Sort order</div>
+        <div class="ps-detail-value">${prEsc(row.sort_order ?? 0)}</div>
+      </div>
+    </div>
+
+    <div class="ps-detail-note">${prEsc(row.notes || "No notes recorded for this sign-off step.")}</div>
+
+    <div class="ps-quick-actions">
+      <button id="psEditBtn" class="ps-btn-ghost" type="button">Edit</button>
+      <button id="psMarkProgressBtn" class="ps-btn-ghost" type="button">In progress</button>
+      <button id="psMarkBlockedBtn" class="ps-btn-ghost" type="button">Blocked</button>
+      <button id="psMarkCompletedBtn" class="ps-btn" type="button">Complete</button>
+      <button id="psMarkWaivedBtn" class="ps-btn-soft" type="button">Waive</button>
+      <button id="psDeactivateBtn" class="ps-btn-ghost" type="button">Deactivate</button>
+    </div>
+  `;
+}
+
+function syncSignoffFiltersUi() {
+  const f = PR_SIGNOFF_VIEW_CACHE.filters || {};
+
+  const statusEl = document.getElementById("psStatusFilter");
+  const yearEl = document.getElementById("psYearEndFilter");
+  const assignedEl = document.getElementById("psAssignedFilter");
+  const searchEl = document.getElementById("psSearchInput");
+  const limitEl = document.getElementById("psLimitFilter");
+
+  if (statusEl) statusEl.value = f.status || "";
+  if (yearEl) yearEl.value = f.reporting_year_end || "";
+  if (assignedEl) assignedEl.value = f.assigned_user_id || "";
+  if (searchEl) searchEl.value = f.q || "";
+  if (limitEl) limitEl.value = String(f.limit || 100);
+
+  document.querySelectorAll("[data-ps-quick]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.psQuick === PR_SIGNOFF_ACTIVE_QUICK);
+  });
+}
+
+async function loadSignoffScreen(me) {
+  if (PR_SIGNOFF_VIEW_LOADING) return;
+  PR_SIGNOFF_VIEW_LOADING = true;
+
+  try {
+    const tbody = document.getElementById("psTableBody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Loading sign-off steps...</td></tr>`;
+
+    const engagement = PR_SELECTED_ENGAGEMENT;
+    if (!engagement?.id) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Select an engagement first to view sign-off steps.</td></tr>`;
+      const panel = document.getElementById("psDetailPanel");
+      if (panel) panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
+      PR_SIGNOFF_VIEW_CACHE.rows = [];
+      PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
+      renderSignoffSummary();
+      return;
+    }
+
+    await fetchSignoffRows(me);
+    renderSignoffSummary();
+    renderSignoffRows();
+    renderSignoffDetail();
+  } finally {
+    PR_SIGNOFF_VIEW_LOADING = false;
+  }
+}
+
+async function bindSignoffScreen(me) {
+  if (PR_SIGNOFF_VIEW_EVENTS_BOUND) return;
+  PR_SIGNOFF_VIEW_EVENTS_BOUND = true;
+
+  document.addEventListener("click", async (e) => {
+    const quickBtn = e.target.closest("[data-ps-quick]");
+    if (quickBtn) {
+      PR_SIGNOFF_ACTIVE_QUICK = quickBtn.dataset.psQuick || "all";
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      syncSignoffFiltersUi();
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psNewBtn") {
+      await openSignoffModal(me, null);
+      return;
+    }
+
+    if (e.target.id === "psEditBtn") {
+      const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
+      if (!selected) return;
+      await openSignoffModal(me, selected);
+      return;
+    }
+
+    if (e.target.id === "psModalCloseBtn" || e.target.id === "psModalCancelBtn") {
+      closeSignoffModal();
+      return;
+    }
+
+    if (e.target.id === "psModalSaveBtn") {
+      await saveSignoffModal(me);
+      return;
+    }
+
+    const rowEl = e.target.closest("[data-ps-row='1']");
+    if (rowEl) {
+      const id = Number(rowEl.dataset.id || 0);
+      PR_SIGNOFF_VIEW_CACHE.selectedRow =
+        (PR_SIGNOFF_VIEW_CACHE.rows || []).find((r) => Number(r.id) === id) || null;
+      renderSignoffRows();
+      renderSignoffDetail();
+      return;
+    }
+
+    if (e.target.id === "psSearchBtn") {
+      PR_SIGNOFF_VIEW_CACHE.filters.q = (document.getElementById("psSearchInput")?.value || "").trim();
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psRefreshBtn") {
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psPrevBtn") {
+      const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = Math.max(0, Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0) - limit);
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psNextBtn") {
+      const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0) + limit;
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
+    if (!selected?.id) return;
+
+    async function setStatus(status, extra = {}) {
+      await apiFetch(
+        ENDPOINTS.engagementOps.signoffStepsSetStatus(me.company_id, selected.id),
+        {
+          method: "POST",
+          body: JSON.stringify({ status, ...extra })
+        }
+      );
+      await loadSignoffScreen(me);
+    }
+
+    if (e.target.id === "psMarkProgressBtn") return setStatus("in_progress");
+    if (e.target.id === "psMarkBlockedBtn") return setStatus("blocked");
+    if (e.target.id === "psMarkWaivedBtn") return setStatus("waived");
+    if (e.target.id === "psMarkCompletedBtn") {
+      return setStatus("completed", {
+        completed_at: new Date().toISOString()
+      });
+    }
+
+    if (e.target.id === "psDeactivateBtn") {
+      const ok = window.confirm("Deactivate this sign-off step?");
+      if (!ok) return;
+
+      await apiFetch(
+        ENDPOINTS.engagementOps.signoffStepsDeactivate(me.company_id, selected.id),
+        { method: "POST" }
+      );
+      await loadSignoffScreen(me);
+    }
+  });
+
+  document.addEventListener("change", async (e) => {
+    if (e.target.id === "psStatusFilter") {
+      PR_SIGNOFF_VIEW_CACHE.filters.status = e.target.value || "";
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psYearEndFilter") {
+      PR_SIGNOFF_VIEW_CACHE.filters.reporting_year_end = e.target.value || "";
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psAssignedFilter") {
+      PR_SIGNOFF_VIEW_CACHE.filters.assigned_user_id = e.target.value || "";
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      await loadSignoffScreen(me);
+      return;
+    }
+
+    if (e.target.id === "psLimitFilter") {
+      PR_SIGNOFF_VIEW_CACHE.filters.limit = Number(e.target.value || 100);
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      await loadSignoffScreen(me);
+    }
+  });
+
+  document.addEventListener("keydown", async (e) => {
+    if (e.target?.id === "psSearchInput" && e.key === "Enter") {
+      PR_SIGNOFF_VIEW_CACHE.filters.q = e.target.value.trim();
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      await loadSignoffScreen(me);
+    }
+  });
+}
+
+async function renderPartnerSignoffScreen(me) {
+  syncSignoffFiltersUi();
+  await populateSignoffAssignedFilter(me);
+  await bindSignoffScreen(me);
+  await loadSignoffScreen(me);
+}
+
+function prSetModalOpen(modalId, open) {
+  const el = document.getElementById(modalId);
+  if (!el) return;
+  if (open) {
+    el.classList.remove("hidden");
+    el.classList.add("flex");
+  } else {
+    el.classList.add("hidden");
+    el.classList.remove("flex");
+  }
+}
+
+function prFillUserSelect(selectId, users, { includeBlank = true, blankLabel = "Select" } = {}) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+
+  const opts = [];
+  if (includeBlank) {
+    opts.push(`<option value="">${prEsc(blankLabel)}</option>`);
+  }
+
+  (users || []).forEach((u) => {
+    const id = u?.id ?? "";
+    const name = [u?.first_name || "", u?.last_name || ""].join(" ").trim() || u?.email || `User ${id}`;
+    opts.push(`<option value="${prEsc(id)}">${prEsc(name)}</option>`);
+  });
+
+  el.innerHTML = opts.join("");
+}
+
+async function prEnsureUsersCache(me) {
+  if (Array.isArray(PR_USERS_CACHE) && PR_USERS_CACHE.length) return PR_USERS_CACHE;
+
+  if (typeof ENDPOINTS?.users?.list === "function") {
+    const json = await apiFetch(ENDPOINTS.users.list(me.company_id));
+    PR_USERS_CACHE = Array.isArray(json?.rows) ? json.rows : [];
+    return PR_USERS_CACHE;
+  }
+
+  if (typeof ENDPOINTS?.settings?.usersList === "function") {
+    const json = await apiFetch(ENDPOINTS.settings.usersList(me.company_id));
+    PR_USERS_CACHE = Array.isArray(json?.rows) ? json.rows : [];
+    return PR_USERS_CACHE;
+  }
+
+  return PR_USERS_CACHE || [];
+}
+
+function prMaybeSetValue(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = value == null ? "" : String(value);
+}
+
+function prMaybeSetChecked(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.checked = !!value;
+}
+
+async function openDeliverableModal(me, row = null) {
+  await prEnsureUsersCache(me);
+
+  prFillUserSelect("dlFormAssignedUser", PR_USERS_CACHE, { includeBlank: true, blankLabel: "Unassigned" });
+  prFillUserSelect("dlFormReviewerUser", PR_USERS_CACHE, { includeBlank: true, blankLabel: "No reviewer" });
+
+  const isEdit = !!row?.id;
+  const titleEl = document.getElementById("dlModalTitle");
+  if (titleEl) titleEl.textContent = isEdit ? "Edit Deliverable" : "New Deliverable";
+
+  prMaybeSetValue("dlFormId", row?.id || "");
+  prMaybeSetValue("dlFormName", row?.deliverable_name || "");
+  prMaybeSetValue("dlFormCode", row?.deliverable_code || "");
+  prMaybeSetValue("dlFormType", row?.deliverable_type || "");
+  prMaybeSetValue("dlFormRequestedFrom", row?.requested_from || "");
+  prMaybeSetValue("dlFormAssignedUser", row?.assigned_user_id || "");
+  prMaybeSetValue("dlFormReviewerUser", row?.reviewer_user_id || "");
+  prMaybeSetValue("dlFormStatus", row?.status || "not_started");
+  prMaybeSetValue("dlFormPriority", row?.priority || "normal");
+  prMaybeSetValue("dlFormDueDate", row?.due_date || "");
+  prMaybeSetValue("dlFormReceivedDate", row?.received_date || "");
+  prMaybeSetValue("dlFormNotes", row?.notes || "");
+
+  prSetModalOpen("dlModal", true);
+}
+
+function closeDeliverableModal() {
+  prSetModalOpen("dlModal", false);
+}
+
+async function saveDeliverableModal(me) {
+  const engagement = getSelectedEngagementOrAlert();
+  if (!engagement) return;
+
+  const id = document.getElementById("dlFormId")?.value?.trim() || "";
+  const body = {
+    deliverable_name: document.getElementById("dlFormName")?.value?.trim() || "",
+    deliverable_code: document.getElementById("dlFormCode")?.value?.trim() || "",
+    deliverable_type: document.getElementById("dlFormType")?.value || "",
+    requested_from: document.getElementById("dlFormRequestedFrom")?.value?.trim() || "",
+    assigned_user_id: document.getElementById("dlFormAssignedUser")?.value || "",
+    reviewer_user_id: document.getElementById("dlFormReviewerUser")?.value || "",
+    status: document.getElementById("dlFormStatus")?.value || "not_started",
+    priority: document.getElementById("dlFormPriority")?.value || "normal",
+    due_date: document.getElementById("dlFormDueDate")?.value || "",
+    received_date: document.getElementById("dlFormReceivedDate")?.value || "",
+    notes: document.getElementById("dlFormNotes")?.value?.trim() || ""
+  };
+
+  if (!body.deliverable_name) {
+    alert("Deliverable name is required.");
+    return;
+  }
+
+  if (id) {
+    await apiFetch(
+      ENDPOINTS.engagementOps.deliverablesUpdate(me.company_id, id),
+      { method: "PATCH", body: JSON.stringify(body) }
+    );
+  } else {
+    await apiFetch(
+      ENDPOINTS.engagementOps.deliverablesCreate(me.company_id, engagement.id),
+      { method: "POST", body: JSON.stringify(body) }
+    );
+  }
+
+  closeDeliverableModal();
+  await loadDeliverablesScreen(me);
+}
+
+async function openSignoffModal(me, row = null) {
+  await prEnsureUsersCache(me);
+
+  prFillUserSelect("psFormAssignedUser", PR_USERS_CACHE, { includeBlank: true, blankLabel: "Unassigned" });
+
+  const isEdit = !!row?.id;
+  const titleEl = document.getElementById("psModalTitle");
+  if (titleEl) titleEl.textContent = isEdit ? "Edit Sign-Off Step" : "New Sign-Off Step";
+
+  prMaybeSetValue("psFormId", row?.id || "");
+  prMaybeSetValue("psFormName", row?.step_name || "");
+  prMaybeSetValue("psFormCode", row?.step_code || "");
+  prMaybeSetValue("psFormYearEnd", row?.reporting_year_end || "");
+  prMaybeSetValue("psFormAssignedUser", row?.assigned_user_id || "");
+  prMaybeSetValue("psFormStatus", row?.status || "not_started");
+  prMaybeSetValue("psFormDueDate", row?.due_date || "");
+  prMaybeSetValue("psFormSortOrder", row?.sort_order ?? 0);
+  prMaybeSetChecked("psFormRequired", row?.is_required !== false);
+  prMaybeSetValue("psFormNotes", row?.notes || "");
+
+  prSetModalOpen("psModal", true);
+}
+
+function closeSignoffModal() {
+  prSetModalOpen("psModal", false);
+}
+
+async function saveSignoffModal(me) {
+  const engagement = getSelectedEngagementOrAlert();
+  if (!engagement) return;
+
+  const id = document.getElementById("psFormId")?.value?.trim() || "";
+  const body = {
+    step_name: document.getElementById("psFormName")?.value?.trim() || "",
+    step_code: document.getElementById("psFormCode")?.value || "",
+    reporting_year_end: document.getElementById("psFormYearEnd")?.value || "",
+    assigned_user_id: document.getElementById("psFormAssignedUser")?.value || "",
+    status: document.getElementById("psFormStatus")?.value || "not_started",
+    due_date: document.getElementById("psFormDueDate")?.value || "",
+    sort_order: Number(document.getElementById("psFormSortOrder")?.value || 0),
+    is_required: !!document.getElementById("psFormRequired")?.checked,
+    notes: document.getElementById("psFormNotes")?.value?.trim() || ""
+  };
+
+  if (!body.step_name) {
+    alert("Step name is required.");
+    return;
+  }
+  if (!body.step_code) {
+    alert("Step code is required.");
+    return;
+  }
+  if (!body.reporting_year_end) {
+    alert("Reporting year end is required.");
+    return;
+  }
+
+  if (id) {
+    await apiFetch(
+      ENDPOINTS.engagementOps.signoffStepsUpdate(me.company_id, id),
+      { method: "PATCH", body: JSON.stringify(body) }
+    );
+  } else {
+    await apiFetch(
+      ENDPOINTS.engagementOps.signoffStepsCreate(me.company_id, engagement.id),
+      { method: "POST", body: JSON.stringify(body) }
+    );
+  }
+
+  closeSignoffModal();
+  await loadSignoffScreen(me);
+}
+
+async function populateSignoffAssignedFilter(me) {
+  await prEnsureUsersCache(me);
+  prFillUserSelect("psAssignedFilter", PR_USERS_CACHE, {
+    includeBlank: true,
+    blankLabel: "All assigned users"
+  });
+
+  const current = PR_SIGNOFF_VIEW_CACHE.filters?.assigned_user_id || "";
+  prMaybeSetValue("psAssignedFilter", current);
 }
 
 function renderSettingsScreen(me, screen) {
