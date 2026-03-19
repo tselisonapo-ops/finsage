@@ -1,4 +1,5 @@
 from flask import current_app
+from datetime import date, timedelta
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth, make_response, _corsify
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
@@ -234,6 +235,16 @@ def ensure_customer_workspace(
 
     return linked_company_id, "provisioned", "auto_provision"
 
+
+
+def derive_fiscal_year_end_from_start(start_iso: str) -> str:
+    start_dt = date.fromisoformat(start_iso)
+    try:
+        next_start = start_dt.replace(year=start_dt.year + 1)
+    except ValueError:
+        next_start = start_dt.replace(year=start_dt.year + 1, day=28)
+    return (next_start - timedelta(days=1)).isoformat()
+
 @engagements_bp.route("/api/companies/<int:cid>/engagements", methods=["POST", "OPTIONS"])
 @require_auth
 def create_engagement_route(cid: int):
@@ -266,8 +277,23 @@ def create_engagement_route(cid: int):
         if not engagement_type:
             return _json_err("engagement_type is required.", 400)
 
-        with db_service._conn_cursor() as (conn, cur):
-            policy = db_service.get_engagement_service_policy(cur, company_id, engagement_type)
+        # Normalize engagement-level fiscal year end.
+        # Keep it optional for now.
+        financial_year_start = (body.get("financial_year_start") or "").strip() or None
+        if financial_year_start:
+            try:
+                financial_year_start = date.fromisoformat(financial_year_start).isoformat()
+            except ValueError:
+                return _json_err("Invalid financial_year_start. Expected YYYY-MM-DD.", 400)
+
+        fiscal_year_end = (
+            derive_fiscal_year_end_from_start(financial_year_start)
+            if financial_year_start else None
+        )
+
+        # Phase 1: read policy + customer/workspace state
+        with db_service._conn_cursor() as (_conn1, cur1):
+            policy = db_service.get_engagement_service_policy(cur1, company_id, engagement_type)
             if not policy or not policy.get("is_active"):
                 return _json_err("Invalid or inactive engagement_type.", 400)
 
@@ -288,7 +314,7 @@ def create_engagement_route(cid: int):
                     workspace_source = "manual_select"
                     target_company_source = "manual_select"
                 else:
-                    customer = db_service.get_customer_workspace_link(cur, company_id, customer_id)
+                    customer = db_service.get_customer_workspace_link(cur1, company_id, customer_id)
                     if not customer:
                         return _json_err("Customer not found.", 404)
 
@@ -298,29 +324,35 @@ def create_engagement_route(cid: int):
                         workspace_status = "linked"
                         workspace_source = "customer_link"
                         target_company_source = "customer_link"
-                    elif allows_auto_provision:
-                        try:
-                            target_company_id, workspace_status, workspace_source = ensure_customer_workspace(
-                                cur=cur,
-                                company_id=company_id,
-                                customer_id=customer_id,
-                                current_user_id=current_user_id,
-                                onboarding_data=body.get("target_company") or {},
-                            )
-                            target_company_source = workspace_source
-                        except ValueError as ve:
-                            msg = ve.args[0]
-                            if isinstance(msg, dict):
-                                return _json_err(msg, 400)
-                            return _json_err(str(msg), 400)
-                    else:
-                        return _json_err(
-                            "This engagement type requires a linked company workspace.",
-                            400
-                        )
 
+        # Phase 2: provision workspace if still needed and missing
+        if requires_workspace and not target_company_id:
+            if not allows_auto_provision:
+                return _json_err(
+                    "This engagement type requires a linked company workspace.",
+                    400,
+                )
+
+            try:
+                with db_service._conn_cursor() as (_conn2, cur2):
+                    target_company_id, workspace_status, workspace_source = ensure_customer_workspace(
+                        cur=cur2,
+                        company_id=company_id,
+                        customer_id=customer_id,
+                        current_user_id=current_user_id,
+                        onboarding_data=body.get("target_company") or {},
+                    )
+                target_company_source = workspace_source
+            except ValueError as ve:
+                msg = ve.args[0]
+                if isinstance(msg, dict):
+                    return _json_err(msg, 400)
+                return _json_err(str(msg), 400)
+
+        # Phase 3: create engagement with a fresh cursor
+        with db_service._conn_cursor() as (conn3, cur3):
             engagement_id = db_service.create_engagement(
-                cur,
+                cur3,
                 company_id,
                 customer_id=customer_id,
                 target_company_id=target_company_id,
@@ -337,7 +369,7 @@ def create_engagement_route(cid: int):
                 partner_user_id=_parse_int(body.get("partner_user_id")),
                 description=(body.get("description") or "").strip() or None,
                 scope_summary=(body.get("scope_summary") or "").strip() or None,
-                fiscal_year_end=body.get("fiscal_year_end"),
+                fiscal_year_end=fiscal_year_end,
                 priority=priority,
                 workflow_stage=workflow_stage,
                 created_by_user_id=current_user_id,
@@ -347,14 +379,15 @@ def create_engagement_route(cid: int):
                 target_company_source=target_company_source,
             )
 
-            row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
+            row = db_service.get_engagement(cur3, company_id, engagement_id=engagement_id)
+            conn3.commit()
 
         return _json_ok({"row": row}, 201)
 
     except Exception as e:
-        current_app.logger.exception("create_engagement_route failed")
+        current_app.logger.exception("create_engagement_route failed; body=%r", body)
         return _json_err(str(e), 500)
-
+    
 @engagements_bp.route("/api/companies/<int:cid>/engagements", methods=["GET", "OPTIONS"])
 @require_auth
 def list_engagements_route(cid: int):

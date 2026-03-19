@@ -2810,7 +2810,7 @@ function readEngagementModalPayload() {
     partner_user_id: _parseModalInt(document.getElementById("engPartnerUserId")?.value),
     description: document.getElementById("engDescription")?.value?.trim() || "",
     scope_summary: document.getElementById("engScopeSummary")?.value?.trim() || "",
-    fiscal_year_end: document.getElementById("engFiscalYearEnd")?.value || null,
+    financial_year_start: document.getElementById("engFinancialYearStart")?.value || null,
 
     target_company: {
       country,
