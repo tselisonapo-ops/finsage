@@ -16257,7 +16257,6 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur):
             try:
-                # single-tenant DDL lock for the whole transaction
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
                 print(f"RUNNING MIGRATION {schema}:bootstrap v37")
@@ -16274,6 +16273,13 @@ class DatabaseService:
                     cur=cur,
                     migration_key=f"{schema}:ap",
                     migration_version=7,
+                )
+
+                print(f"RUNNING SAFE TENANT SYNC {schema}")
+                self.sync_existing_company_schema(
+                    cur=cur,
+                    schema=schema,
+                    company_id=int(company_id),
                 )
 
                 conn.commit()
@@ -16294,6 +16300,333 @@ class DatabaseService:
         # self.ensure_mandatory_company_accounts(company_id)
         self.apply_basic_cashflow_tags(company_id)
 
+    def sync_existing_company_schema(self, *, cur, schema: str, company_id: int) -> None:
+        ddl_sync = f"""
+        -- =========================
+        -- SAFE SYNC: CUSTOMERS
+        -- =========================
+        ALTER TABLE {schema}.customers
+            ADD COLUMN IF NOT EXISTS company_master_id INT NULL,
+            ADD COLUMN IF NOT EXISTS workspace_status TEXT NOT NULL DEFAULT 'not_provisioned',
+            ADD COLUMN IF NOT EXISTS workspace_created_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS workspace_created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS legal_name TEXT NULL,
+            ADD COLUMN IF NOT EXISTS industry TEXT NULL,
+            ADD COLUMN IF NOT EXISTS sub_industry TEXT NULL,
+            ADD COLUMN IF NOT EXISTS currency TEXT NULL,
+            ADD COLUMN IF NOT EXISTS fin_year_start TEXT NULL,
+            ADD COLUMN IF NOT EXISTS company_reg_date DATE NULL,
+            ADD COLUMN IF NOT EXISTS registered_address_json JSONB NULL,
+            ADD COLUMN IF NOT EXISTS postal_address_json JSONB NULL,
+            ADD COLUMN IF NOT EXISTS company_phone TEXT NULL,
+            ADD COLUMN IF NOT EXISTS logo_url TEXT NULL;
+
+        ALTER TABLE {schema}.customers
+        DROP CONSTRAINT IF EXISTS {schema}_customers_workspace_status_chk;
+
+        ALTER TABLE {schema}.customers
+        ADD CONSTRAINT {schema}_customers_workspace_status_chk
+        CHECK (
+            workspace_status IN (
+                'not_provisioned',
+                'pending_setup',
+                'provisioned',
+                'failed',
+                'archived'
+            )
+        );
+
+        UPDATE {schema}.customers
+        SET workspace_status = 'not_provisioned'
+        WHERE workspace_status IS NULL OR BTRIM(workspace_status) = '';
+        
+
+        CREATE INDEX IF NOT EXISTS {schema}_customers_company_master_id_idx
+            ON {schema}.customers(company_master_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_customers_workspace_status_idx
+            ON {schema}.customers(workspace_status);
+
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_customers_company_master_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customers
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (company_master_id)
+                    REFERENCES public.companies(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_customers_company_master_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_customers_workspace_created_by_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customers
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (workspace_created_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_customers_workspace_created_by_fk'
+                );
+            END IF;
+        END $$;
+
+        -- =========================
+        -- SAFE SYNC: CUSTOMER COMPANY LINKS
+        -- =========================
+        CREATE TABLE IF NOT EXISTS {schema}.customer_company_links (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {int(company_id)},
+            customer_id INT NOT NULL,
+            linked_company_id INT NOT NULL,
+            link_type TEXT NOT NULL DEFAULT 'workspace',
+            is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            linked_by_user_id INT NULL,
+            notes TEXT NULL
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_cust_company_links_customer_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_company_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (linked_company_id)
+                    REFERENCES public.companies(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_cust_company_links_company_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_user_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (linked_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_cust_company_links_user_fk'
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_cust_company_links_customer_idx
+            ON {schema}.customer_company_links(customer_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_cust_company_links_company_idx
+            ON {schema}.customer_company_links(linked_company_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_cust_company_links_primary_uq
+            ON {schema}.customer_company_links(customer_id, linked_company_id, link_type)
+            WHERE is_active = TRUE;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_type_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    CHECK (link_type IN (''workspace'', ''reporting'', ''tax'', ''legacy''))',
+                    '{schema}', '{schema}_cust_company_links_type_chk'
+                );
+            END IF;
+        END $$;
+        -- =========================
+        -- SAFE SYNC: ENGAGEMENTS
+        -- =========================
+        ALTER TABLE {schema}.engagements
+            ADD COLUMN IF NOT EXISTS requires_workspace BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS workspace_status TEXT NOT NULL DEFAULT 'not_required',
+            ADD COLUMN IF NOT EXISTS workspace_source TEXT NULL,
+            ADD COLUMN IF NOT EXISTS target_company_source TEXT NULL;
+
+        UPDATE {schema}.engagements
+        SET requires_workspace = FALSE
+        WHERE requires_workspace IS NULL;
+
+        UPDATE {schema}.engagements
+        SET workspace_status = CASE
+            WHEN target_company_id IS NOT NULL THEN 'linked'
+            ELSE 'not_required'
+        END
+        WHERE workspace_status IS NULL OR BTRIM(workspace_status) = '';
+
+        ALTER TABLE {schema}.engagements
+        DROP CONSTRAINT IF EXISTS {schema}_engagements_workspace_status_chk;
+
+        ALTER TABLE {schema}.engagements
+        ADD CONSTRAINT {schema}_engagements_workspace_status_chk
+        CHECK (
+            workspace_status IN (
+                'not_required',
+                'pending',
+                'linked',
+                'provisioned',
+                'failed'
+            )
+        );
+
+        ALTER TABLE {schema}.engagements
+        DROP CONSTRAINT IF EXISTS {schema}_engagements_workspace_source_chk;
+
+        ALTER TABLE {schema}.engagements
+        ADD CONSTRAINT {schema}_engagements_workspace_source_chk
+        CHECK (
+            workspace_source IS NULL OR
+            workspace_source IN (
+                'customer_link',
+                'manual_select',
+                'auto_provision',
+                'manual_provision'
+            )
+        );
+
+        ALTER TABLE {schema}.engagements
+        DROP CONSTRAINT IF EXISTS {schema}_engagements_target_company_chk;
+
+        ALTER TABLE {schema}.engagements
+        ADD CONSTRAINT {schema}_engagements_target_company_chk
+        CHECK (
+            requires_workspace = FALSE
+            OR target_company_id IS NOT NULL
+        );
+
+
+        -- =========================
+        -- SAFE SYNC: ENGAGEMENT SERVICE POLICIES
+        -- =========================
+        CREATE TABLE IF NOT EXISTS {schema}.engagement_service_policies (
+            engagement_type TEXT PRIMARY KEY,
+            requires_workspace BOOLEAN NOT NULL DEFAULT FALSE,
+            allows_auto_provision BOOLEAN NOT NULL DEFAULT TRUE,
+            default_status TEXT NOT NULL DEFAULT 'draft',
+            default_workflow_stage TEXT NOT NULL DEFAULT 'planning',
+            default_priority TEXT NOT NULL DEFAULT 'normal',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE
+        );
+
+        INSERT INTO {schema}.engagement_service_policies
+        (
+            engagement_type,
+            requires_workspace,
+            allows_auto_provision,
+            default_status,
+            default_workflow_stage,
+            default_priority,
+            is_active
+        )
+        VALUES
+            ('bookkeeping', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('monthly_bookkeeping', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('write_up', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('management_accounts', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('vat', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('payroll', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('tax', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('tax_compliance', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('annual_financial_statements', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('year_end_financials', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('compilation', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('review', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+            ('audit', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('audit_support', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('internal_audit', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('independent_review', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('advisory', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+            ('consulting', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+            ('secretarial', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+            ('compliance', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+            ('cleanup', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('migration', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+            ('training', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+            ('outsourced_finance', TRUE, TRUE, 'draft', 'planning', 'high', TRUE)
+        ON CONFLICT (engagement_type) DO UPDATE
+        SET
+            requires_workspace = EXCLUDED.requires_workspace,
+            allows_auto_provision = EXCLUDED.allows_auto_provision,
+            default_status = EXCLUDED.default_status,
+            default_workflow_stage = EXCLUDED.default_workflow_stage,
+            default_priority = EXCLUDED.default_priority,
+            is_active = EXCLUDED.is_active;
+        """
+        self.execute_ddl(ddl_sync, cur=cur, migration_key=None, migration_version=None)
+
+    def sync_all_existing_company_schemas(self) -> None:
+        with self._conn_cursor() as (_conn, cur):
+            cur.execute("""
+                SELECT schema_name
+                FROM information_schema.schemata
+                WHERE schema_name LIKE 'company_%'
+                ORDER BY schema_name
+            """)
+            rows = cur.fetchall() or []
+
+        for row in rows:
+            schema = row["schema_name"] if isinstance(row, dict) else row[0]
+            try:
+                company_id = int(schema.split("_", 1)[1])
+            except Exception:
+                continue
+
+            try:
+                with self._conn_cursor() as (conn, cur):
+                    cur.execute("SELECT pg_advisory_xact_lock(%s);", (company_id,))
+                    print(f"RUNNING SAFE TENANT SYNC {schema}")
+                    self.sync_existing_company_schema(
+                        cur=cur,
+                        schema=schema,
+                        company_id=company_id,
+                    )
+                    conn.commit()
+            except Exception as e:
+                print(f"[SAFE-TENANT-SYNC][WARN] {schema} failed: {e}")
 
     def execute_ddl(
         self,
