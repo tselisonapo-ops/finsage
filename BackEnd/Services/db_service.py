@@ -1478,8 +1478,6 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS default_pnl_layout TEXT NULL,
             ADD COLUMN IF NOT EXISTS pnl_labels_json JSONB NULL;
 
-        ALTER TABLE public.company_users
-            ADD COLUMN IF NOT EXISTS access_origin TEXT NOT NULL DEFAULT 'direct';
 
         ALTER TABLE public.companies
             ADD COLUMN IF NOT EXISTS credit_policy JSONB NULL;
@@ -1566,6 +1564,29 @@ class DatabaseService:
 
         ALTER TABLE public.companies
             ALTER COLUMN system_company_code SET NOT NULL;
+
+        ALTER TABLE public.companies
+            ADD COLUMN IF NOT EXISTS created_via TEXT NULL,
+            ADD COLUMN IF NOT EXISTS source_customer_company_id INT NULL,
+            ADD COLUMN IF NOT EXISTS provisioning_context TEXT NULL;
+            
+        ALTER TABLE public.companies
+        DROP CONSTRAINT IF EXISTS chk_companies_created_via;
+
+        ALTER TABLE public.companies
+        ADD CONSTRAINT chk_companies_created_via
+        CHECK (
+            created_via IS NULL OR
+            created_via IN (
+                'self_signup',
+                'firm_client_provisioning',
+                'related_company',
+                'admin',
+                'migration',
+                'import'
+            )
+        );
+
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_companies_system_company_code
             ON public.companies(system_company_code);
@@ -1802,6 +1823,9 @@ class DatabaseService:
 
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS is_primary BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE public.company_users
+            ADD COLUMN IF NOT EXISTS access_origin TEXT NOT NULL DEFAULT 'direct';
 
         UPDATE public.company_users
         SET access_scope = 'core'
@@ -3988,6 +4012,9 @@ class DatabaseService:
         entity_kind: Optional[str] = None,
         make_primary_membership: bool = True,
         membership_kind: Optional[str] = None,
+        created_via: Optional[str] = None,
+        source_customer_company_id: Optional[int] = None,
+        provisioning_context: Optional[str] = None,
     ) -> int:
 
         try:
@@ -4031,6 +4058,12 @@ class DatabaseService:
         reg_json = Json(registered_address_json) if registered_address_json is not None else None
         post_json = Json(postal_address_json) if postal_address_json is not None else None
 
+        created_via = (created_via or "").strip().lower() or None
+        if created_via not in {None, "self_signup", "firm_client_provisioning", "related_company", "admin", "migration", "import"}:
+            created_via = None
+
+        provisioning_context = (provisioning_context or "").strip() or None
+
         with self._conn_cursor() as (conn, cur):
             cur.execute(
                 """
@@ -4045,7 +4078,8 @@ class DatabaseService:
                     physical_address, postal_address, company_phone, logo_url,
                     registered_address_json, postal_address_json,
                     address_place_id, address_lat, address_lng,
-                    entity_kind
+                    entity_kind,
+                    created_via, source_customer_company_id, provisioning_context
                 )
                 VALUES
                 (
@@ -4058,7 +4092,8 @@ class DatabaseService:
                     %s, %s, %s, %s,
                     %s, %s,
                     %s, %s, %s,
-                    %s
+                    %s,
+                    %s, %s, %s
                 )
                 RETURNING id;
                 """,
@@ -4072,7 +4107,7 @@ class DatabaseService:
                     physical_address, postal_address, company_phone, logo_url,
                     reg_json, post_json,
                     address_place_id, address_lat, address_lng,
-                    entity_kind,
+                    entity_kind, created_via, source_customer_company_id, provisioning_context,
                 ),
             )
 
@@ -5323,14 +5358,42 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS pending_reason TEXT NULL,
             ADD COLUMN IF NOT EXISTS credit_profile_id INT NULL;
 
-            ALTER TABLE {schema}.customers
-            ADD COLUMN IF NOT EXISTS company_master_id INT NULL;
+        ALTER TABLE {schema}.customers
+            ADD COLUMN IF NOT EXISTS company_master_id INT NULL,
+            ADD COLUMN IF NOT EXISTS workspace_status TEXT NOT NULL DEFAULT 'not_provisioned',
+            ADD COLUMN IF NOT EXISTS workspace_created_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS workspace_created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS legal_name TEXT NULL,
+            ADD COLUMN IF NOT EXISTS industry TEXT NULL,
+            ADD COLUMN IF NOT EXISTS sub_industry TEXT NULL,
+            ADD COLUMN IF NOT EXISTS currency TEXT NULL,
+            ADD COLUMN IF NOT EXISTS fin_year_start TEXT NULL,
+            ADD COLUMN IF NOT EXISTS company_reg_date DATE NULL,
+            ADD COLUMN IF NOT EXISTS registered_address_json JSONB NULL,
+            ADD COLUMN IF NOT EXISTS postal_address_json JSONB NULL,
+            ADD COLUMN IF NOT EXISTS company_phone TEXT NULL,
+            ADD COLUMN IF NOT EXISTS logo_url TEXT NULL;
 
-            ALTER TABLE {schema}.customers
-            ADD CONSTRAINT {schema}_customers_company_master_fk
-            FOREIGN KEY (company_master_id)
-            REFERENCES public.companies(id)
-            ON DELETE SET NULL;
+        ALTER TABLE {schema}.customers
+        DROP CONSTRAINT IF EXISTS {schema}_customers_workspace_status_chk;
+
+        ALTER TABLE {schema}.customers
+        ADD CONSTRAINT {schema}_customers_workspace_status_chk
+        CHECK (
+            workspace_status IN (
+                'not_provisioned',
+                'pending_setup',
+                'provisioned',
+                'failed',
+                'archived'
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_customers_company_master_id_idx
+            ON {schema}.customers(company_master_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_customers_workspace_status_idx
+            ON {schema}.customers(workspace_status);
 
         -- ==================================================
         -- CUSTOMERS: user FKs
@@ -5367,6 +5430,132 @@ class DatabaseService:
             );
         END IF;
         END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_customers_company_master_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (company_master_id)
+                     REFERENCES public.companies(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_customers_company_master_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_customers_workspace_created_by_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (workspace_created_by_user_id)
+                     REFERENCES public.users(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_customers_workspace_created_by_fk'
+                );
+            END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.customer_company_links (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            customer_id INT NOT NULL,
+            linked_company_id INT NOT NULL,
+            link_type TEXT NOT NULL DEFAULT 'workspace',
+            is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            linked_by_user_id INT NULL,
+            notes TEXT NULL
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_cust_company_links_customer_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_company_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (linked_company_id)
+                    REFERENCES public.companies(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_cust_company_links_company_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_user_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (linked_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_cust_company_links_user_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_cust_company_links_type_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.customer_company_links
+                    ADD CONSTRAINT %I
+                    CHECK (link_type IN (''workspace'', ''reporting'', ''tax'', ''legacy''))',
+                    '{schema}', '{schema}_cust_company_links_type_chk'
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_cust_company_links_customer_idx
+            ON {schema}.customer_company_links(customer_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_cust_company_links_company_idx
+            ON {schema}.customer_company_links(linked_company_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_cust_company_links_primary_uq
+            ON {schema}.customer_company_links(customer_id, linked_company_id, link_type)
+            WHERE is_active = TRUE;
+
 
         -- ==================================================
         -- VENDORS: user FK
@@ -5473,6 +5662,42 @@ class DatabaseService:
         ALTER TABLE {schema}.engagements ALTER COLUMN created_at SET NOT NULL;
         ALTER TABLE {schema}.engagements ALTER COLUMN updated_at SET NOT NULL;
 
+        ALTER TABLE {schema}.engagements
+            ADD COLUMN IF NOT EXISTS requires_workspace BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS workspace_status TEXT NOT NULL DEFAULT 'not_required',
+            ADD COLUMN IF NOT EXISTS workspace_source TEXT NULL,
+            ADD COLUMN IF NOT EXISTS target_company_source TEXT NULL;
+
+        ALTER TABLE {schema}.engagements
+        DROP CONSTRAINT IF EXISTS {schema}_engagements_workspace_status_chk;
+
+        ALTER TABLE {schema}.engagements
+        ADD CONSTRAINT {schema}_engagements_workspace_status_chk
+        CHECK (
+            workspace_status IN (
+                'not_required',
+                'pending',
+                'linked',
+                'provisioned',
+                'failed'
+            )
+        );
+
+        ALTER TABLE {schema}.engagements
+        DROP CONSTRAINT IF EXISTS {schema}_engagements_workspace_source_chk;
+
+        ALTER TABLE {schema}.engagements
+        ADD CONSTRAINT {schema}_engagements_workspace_source_chk
+        CHECK (
+            workspace_source IS NULL OR
+            workspace_source IN (
+                'customer_link',
+                'manual_select',
+                'auto_provision',
+                'manual_provision'
+            )
+        );
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -5578,15 +5803,18 @@ class DatabaseService:
                 );
             END IF;
 
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c
+            -- engagement types are now governed by {schema}.engagement_service_policies
+            -- so remove the old hardcoded CHECK if it exists
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_engagements_type_chk' AND n.nspname = '{schema}'
+                WHERE c.conname = '{schema}_engagements_type_chk'
+                  AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.engagements
-                    ADD CONSTRAINT %I
-                    CHECK (engagement_type IN (''bookkeeping'', ''compilation'', ''audit'', ''tax'', ''advisory''))',
+                     DROP CONSTRAINT IF EXISTS %I',
                     '{schema}', '{schema}_engagements_type_chk'
                 );
             END IF;
@@ -5626,7 +5854,7 @@ class DatabaseService:
                     'ALTER TABLE %I.engagements
                     ADD CONSTRAINT %I
                     CHECK (
-                        engagement_type NOT IN (''bookkeeping'', ''compilation'', ''audit'', ''tax'')
+                        requires_workspace = FALSE
                         OR target_company_id IS NOT NULL
                     )',
                     '{schema}', '{schema}_engagements_target_company_chk'
@@ -5667,7 +5895,17 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_engagements_target_company_id_idx
             ON {schema}.engagements(target_company_id);
-            
+
+        CREATE TABLE IF NOT EXISTS {schema}.engagement_service_policies (
+            engagement_type TEXT PRIMARY KEY,
+            requires_workspace BOOLEAN NOT NULL DEFAULT FALSE,
+            allows_auto_provision BOOLEAN NOT NULL DEFAULT TRUE,
+            default_status TEXT NOT NULL DEFAULT 'draft',
+            default_workflow_stage TEXT NOT NULL DEFAULT 'planning',
+            default_priority TEXT NOT NULL DEFAULT 'normal',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE
+        );     
+
         -- ==================================================
         -- ENGAGEMENT TEAM
         -- ==================================================
@@ -38354,6 +38592,125 @@ class DatabaseService:
             "valuations": [dict(x) for x in (cur.fetchall() or [])]
         }
 
+    def create_customer_company_link(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+        linked_company_id: int,
+        linked_by_user_id: int = None,
+        link_type: str = "workspace",
+        notes: str = None,
+    ):
+        schema = self.company_schema(company_id)
+        sql = f"""
+            INSERT INTO {schema}.customer_company_links (
+                company_id,
+                customer_id,
+                linked_company_id,
+                link_type,
+                is_primary,
+                is_active,
+                linked_by_user_id,
+                notes
+            )
+            VALUES (%s, %s, %s, %s, TRUE, TRUE, %s, %s)
+            ON CONFLICT DO NOTHING
+        """
+        cur.execute(sql, (
+            company_id,
+            customer_id,
+            linked_company_id,
+            link_type,
+            linked_by_user_id,
+            notes,
+        ))
+
+    def update_customer_workspace_link(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int,
+        linked_company_id: int,
+        workspace_status: str = "provisioned",
+        workspace_created_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+        sql = f"""
+            UPDATE {schema}.customers
+            SET
+                company_master_id = %s,
+                workspace_status = %s,
+                workspace_created_at = COALESCE(workspace_created_at, NOW()),
+                workspace_created_by_user_id = COALESCE(%s, workspace_created_by_user_id),
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+        """
+        cur.execute(sql, (
+            linked_company_id,
+            workspace_status,
+            workspace_created_by_user_id,
+            company_id,
+            customer_id,
+        ))
+
+    def get_customer_workspace_link(self, cur, company_id: int, customer_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+        sql = f"""
+            SELECT
+                id,
+                company_id,
+                name,
+                legal_name,
+                email,
+                phone,
+                country,
+                industry,
+                sub_industry,
+                currency,
+                fin_year_start,
+                company_reg_date,
+                registration_no,
+                vat_number,
+                tax_number,
+                company_master_id,
+                workspace_status,
+                registered_address_json,
+                postal_address_json,
+                company_phone,
+                logo_url
+            FROM {schema}.customers
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1
+        """
+        cur.execute(sql, (company_id, customer_id))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def get_engagement_service_policy(self, cur, company_id: int, engagement_type: str) -> dict | None:
+        schema = self.company_schema(company_id)
+        sql = f"""
+            SELECT
+                engagement_type,
+                requires_workspace,
+                allows_auto_provision,
+                default_status,
+                default_workflow_stage,
+                default_priority,
+                is_active
+            FROM {schema}.engagement_service_policies
+            WHERE LOWER(engagement_type) = LOWER(%s)
+            LIMIT 1
+        """
+        cur.execute(sql, (engagement_type,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
     def create_engagement(
         self,
         cur,
@@ -38378,6 +38735,10 @@ class DatabaseService:
         priority: str = "normal",
         workflow_stage: str = "planning",
         created_by_user_id: int = None,
+        requires_workspace: bool = False,
+        workspace_status: str = "not_required",
+        workspace_source: str = None,
+        target_company_source: str = None,
     ):
         schema = self.company_schema(company_id)
 
@@ -38403,7 +38764,11 @@ class DatabaseService:
             scope_summary,
             fiscal_year_end,
             priority,
-            workflow_stage
+            workflow_stage,
+            requires_workspace,
+            workspace_status,
+            workspace_source,
+            target_company_source
         )
         VALUES (
             %s,
@@ -38424,6 +38789,10 @@ class DatabaseService:
             %s,
             NULLIF(BTRIM(%s), ''),
             NULLIF(BTRIM(%s), ''),
+            %s,
+            %s,
+            %s,
+            %s,
             %s,
             %s,
             %s
@@ -38452,6 +38821,10 @@ class DatabaseService:
             fiscal_year_end,
             priority or "normal",
             workflow_stage or "planning",
+            bool(requires_workspace),
+            workspace_status or ("linked" if target_company_id else "not_required"),
+            workspace_source,
+            target_company_source,
         ))
         row = cur.fetchone()
         engagement_id = row["id"] if isinstance(row, dict) else row[0]

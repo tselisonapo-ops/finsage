@@ -1991,6 +1991,203 @@ function renderPractitionerNavMenu(menu, targetEl, me, level = 0) {
   return wrap;
 }
 
+const INDUSTRY_CATALOG = {
+  "Agriculture": [],
+
+  "Automotive Services": [
+    "Auto Repair Workshop",
+    "Auto Electrical",
+    "Tyre & Fitment",
+    "Panel Beating",
+    "Spray Painting"
+  ],
+
+  "Body Corporate": [],
+
+  "Call Center": [],
+
+  "Car Dealership": [
+    "New Vehicles",
+    "Used Vehicles",
+    "Motorcycle Dealership"
+  ],
+
+  "Construction": [
+    "Residential Building Contractor",
+    "Civil Engineering",
+    "Electrical & Mechanical",
+    "Plumbing & Drainage",
+    "Roadworks"
+  ],
+
+  "Engineering & Technical": [
+    "Mechanical Engineering",
+    "Electrical Engineering",
+    "Industrial Engineering",
+    "Technical Services"
+  ],
+
+  "Hospitality": [
+    "Hotel",
+    "Events & Catering",
+    "Guest House / Lodge"
+  ],
+
+  "IT & Technology": [
+    "Software Development",
+    "Managed IT Services",
+    "Networking & Infrastructure",
+    "Cybersecurity"
+  ],
+
+  "Logistics & Transport": [
+    "Freight / Logistics",
+    "Courier / Last Mile",
+    "Public Transport",
+    "Fleet Services"
+  ],
+
+  "Management Services": [],
+
+  "Manufacturing": [
+    "Light Manufacturing",
+    "Fabrication",
+    "Food Processing"
+  ],
+
+  "Mining": [
+    "Open-Pit Mining",
+    "Underground Mining",
+    "Quarrying & Aggregates",
+    "Coal Mining",
+    "Gold & PGM Mining"
+  ],
+
+  "NPO Education": [
+    "Primary Education",
+    "Higher Education"
+  ],
+
+  "Private School": [],
+
+  "NPO Healthcare": [
+    "Clinic",
+    "Hospital"
+  ],
+
+  "NPO IT": [],
+
+  "NPO Transport": [],
+
+  "Private Healthcare": [
+    "GP Clinic",
+    "Specialist Practice",
+    "Dentistry"
+  ],
+
+  "Professional Services": [
+    "Auditing & Accounting",
+    "Architecture",
+    "Legal Services",
+    "Engineering Consulting",
+    "HR & Recruitment",
+    "Business Consulting"
+  ],
+
+  "Property Management": [],
+
+  "Restaurant": [
+    "Fast Food",
+    "Casual Dining",
+    "Fine Dining"
+  ],
+
+  "Retail & Wholesale": [
+    "Wholesale",
+    "E-commerce Retail",
+    "Brick & Mortar Retail"
+  ],
+
+  "Security Services": [
+    "Guarding",
+    "Alarm Monitoring",
+    "Technical Security Systems"
+  ],
+
+  "Transport": [
+    "Courier / Last Mile",
+    "Freight / Logistics",
+    "Public Transport"
+  ],
+  "Clubs & Associations": [
+    "Sports Club",
+    "Social Club",
+    "Professional Association"
+  ],
+};
+
+const WORKSPACE_REQUIRED_ENGAGEMENT_TYPES = new Set([
+  "bookkeeping",
+  "monthly_bookkeeping",
+  "write_up",
+  "management_accounts",
+  "vat",
+  "payroll",
+  "tax",
+  "tax_compliance",
+  "annual_financial_statements",
+  "year_end_financials",
+  "compilation",
+  "review",
+  "audit",
+  "audit_support",
+  "internal_audit",
+  "independent_review",
+  "cleanup",
+  "migration",
+  "outsourced_finance"
+]);
+
+function populateIndustryOptions() {
+  const industryEl = document.getElementById("engIndustry");
+  if (!industryEl) return;
+
+  const current = industryEl.value || "";
+  const keys = Object.keys(INDUSTRY_CATALOG).sort();
+
+  industryEl.innerHTML = '<option value="">Select industry</option>' +
+    keys.map(name => `<option value="${name}">${name}</option>`).join("");
+
+  industryEl.value = current;
+}
+
+function populateSubIndustryOptions(industry, selectedValue = "") {
+  const subEl = document.getElementById("engSubIndustry");
+  if (!subEl) return;
+
+  const items = Array.isArray(INDUSTRY_CATALOG[industry]) ? INDUSTRY_CATALOG[industry] : [];
+
+  subEl.innerHTML = '<option value="">Select sub-industry</option>' +
+    items.map(name => `<option value="${name}">${name}</option>`).join("");
+
+  subEl.disabled = items.length === 0;
+  subEl.value = items.includes(selectedValue) ? selectedValue : "";
+}
+
+function toggleEngagementWorkspaceSetup() {
+  const type = document.getElementById("engType")?.value || "";
+  const block = document.getElementById("engWorkspaceSetupBlock");
+
+  if (!block) return;
+
+  const needsWorkspace = WORKSPACE_REQUIRED_ENGAGEMENT_TYPES.has(type);
+  block.classList.toggle("hidden", !needsWorkspace);
+
+  if (needsWorkspace) {
+    populateIndustryOptions();
+  }
+}
+
 function bindPractitionerNav(me) {
   const host = document.getElementById("prSidebarNav");
   if (!host || PR_NAV_EVENTS_BOUND) return;
@@ -2545,7 +2742,10 @@ function resetEngagementModalForm() {
     "engPartnerUserId",
     "engDescription",
     "engScopeSummary",
-    "engFiscalYearEnd"
+    "engFiscalYearEnd",
+    "engTargetCompanyId",
+    "engIndustry",
+    "engSubIndustry"
   ];
 
   ids.forEach((id) => {
@@ -2557,6 +2757,12 @@ function resetEngagementModalForm() {
     else if (id === "engWorkflowStage") el.value = "planning";
     else el.value = "";
   });
+
+  const sub = document.getElementById("engSubIndustry");
+  if (sub) {
+    sub.innerHTML = '<option value="">Select sub-industry</option>';
+    sub.disabled = true;
+  }
 
   setEngagementModalMsg("");
 }
@@ -2576,7 +2782,11 @@ async function createEngagementApi(payload) {
 
 function readEngagementModalPayload() {
   const customerId = Number(document.getElementById("engCustomerId")?.value || 0);
-  const targetCompanyId = _parseModalInt(document.getElementById("engTargetCompanyId")?.value) || customerId || null;
+  const targetCompanyId =
+    _parseModalInt(document.getElementById("engTargetCompanyId")?.value) || null;
+
+  const industry = document.getElementById("engIndustry")?.value || "";
+  const subIndustry = document.getElementById("engSubIndustry")?.value || "";
 
   return {
     customer_id: customerId,
@@ -2596,7 +2806,12 @@ function readEngagementModalPayload() {
     partner_user_id: _parseModalInt(document.getElementById("engPartnerUserId")?.value),
     description: document.getElementById("engDescription")?.value?.trim() || "",
     scope_summary: document.getElementById("engScopeSummary")?.value?.trim() || "",
-    fiscal_year_end: document.getElementById("engFiscalYearEnd")?.value || null
+    fiscal_year_end: document.getElementById("engFiscalYearEnd")?.value || null,
+
+    target_company: {
+      industry,
+      subIndustry
+    }
   };
 }
 
@@ -2734,6 +2949,14 @@ async function bindEngagementModalEvents() {
       console.error(err);
       alert(err.message || "Failed to open engagement form.");
     }
+  });
+
+  document.getElementById("engType")?.addEventListener("change", () => {
+    toggleEngagementWorkspaceSetup();
+  });
+
+  document.getElementById("engIndustry")?.addEventListener("change", (e) => {
+    populateSubIndustryOptions(e.target.value);
   });
   document.getElementById("engagementModalClose")?.addEventListener("click", closeEngagementModal);
   document.getElementById("engagementModalCancel")?.addEventListener("click", closeEngagementModal);

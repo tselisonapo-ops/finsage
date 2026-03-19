@@ -3,6 +3,7 @@ from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth, make_response, _corsify
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
 from flask import Blueprint, request, jsonify, make_response
+from BackEnd.Services.utils.registration_utils import create_company_record_from_payload
 
 engagements_bp = Blueprint("engagements", __name__)
 
@@ -85,6 +86,101 @@ def _parse_bool(value, default=None):
         return False
     return default
 
+def ensure_customer_workspace(
+    *,
+    cur,
+    company_id: int,
+    customer_id: int,
+    current_user_id: int,
+    onboarding_data: dict | None = None,
+) -> tuple[int, str, str]:
+    onboarding_data = onboarding_data or {}
+
+    customer = db_service.get_customer_workspace_link(cur, company_id, customer_id)
+    if not customer:
+        raise ValueError("Customer not found.")
+
+    existing_company_id = customer.get("company_master_id")
+    if existing_company_id:
+        return int(existing_company_id), "linked", "customer_link"
+
+    company_payload = {
+        "name": (
+            onboarding_data.get("name")
+            or customer.get("legal_name")
+            or customer.get("name")
+            or "Company"
+        ),
+        "companyName": (
+            onboarding_data.get("companyName")
+            or onboarding_data.get("name")
+            or customer.get("legal_name")
+            or customer.get("name")
+            or "Company"
+        ),
+        "country": onboarding_data.get("country") or customer.get("country") or "",
+        "industry": onboarding_data.get("industry") or customer.get("industry") or "",
+        "subIndustry": onboarding_data.get("subIndustry") or customer.get("sub_industry"),
+        "currency": onboarding_data.get("currency") or customer.get("currency"),
+        "finYearStart": onboarding_data.get("finYearStart") or customer.get("fin_year_start") or "01/01",
+        "companyRegDate": onboarding_data.get("companyRegDate") or customer.get("company_reg_date"),
+        "companyRegNo": onboarding_data.get("companyRegNo") or customer.get("registration_no"),
+        "vat": onboarding_data.get("vat") or customer.get("vat_number"),
+        "tin": onboarding_data.get("tin") or customer.get("tax_number"),
+        "companyEmail": onboarding_data.get("companyEmail") or customer.get("email"),
+        "companyPhone": onboarding_data.get("companyPhone") or customer.get("company_phone") or customer.get("phone"),
+        "registeredAddress": onboarding_data.get("registeredAddress") or customer.get("registered_address_json"),
+        "postalAddress": onboarding_data.get("postalAddress") or customer.get("postal_address_json"),
+        "logoUrl": onboarding_data.get("logoUrl") or customer.get("logo_url"),
+        "entity_kind": "company",
+        "created_via": "firm_client_provisioning",
+        "source_customer_company_id": company_id,
+        "provisioning_context": "engagement_auto_provision",
+    }
+
+    missing = []
+    if not (company_payload.get("companyName") or "").strip():
+        missing.append("companyName")
+    if not (company_payload.get("country") or "").strip():
+        missing.append("country")
+    if not (company_payload.get("industry") or "").strip():
+        missing.append("industry")
+
+    if missing:
+        raise ValueError({
+            "message": "Customer workspace setup is incomplete.",
+            "missing_fields": missing,
+        })
+
+    result = create_company_record_from_payload(
+        data=company_payload,
+        owner_user_id=current_user_id,
+        make_primary_membership=False,
+        membership_kind="secondary",
+    )
+
+    linked_company_id = int(result["company_id"])
+
+    db_service.update_customer_workspace_link(
+        cur,
+        company_id,
+        customer_id=customer_id,
+        linked_company_id=linked_company_id,
+        workspace_status="provisioned",
+        workspace_created_by_user_id=current_user_id,
+    )
+
+    db_service.create_customer_company_link(
+        cur,
+        company_id,
+        customer_id=customer_id,
+        linked_company_id=linked_company_id,
+        linked_by_user_id=current_user_id,
+        link_type="workspace",
+        notes="Auto-provisioned during engagement creation",
+    )
+
+    return linked_company_id, "provisioned", "auto_provision"
 
 @engagements_bp.route("/api/companies/<int:cid>/engagements", methods=["POST", "OPTIONS"])
 @require_auth
@@ -109,6 +205,7 @@ def create_engagement_route(cid: int):
         target_company_id = _parse_int(body.get("target_company_id"))
         engagement_name = (body.get("engagement_name") or "").strip()
         engagement_type = (body.get("engagement_type") or "").strip().lower()
+        current_user_id = _parse_int(payload.get("id"))
 
         if not customer_id:
             return _json_err("customer_id is required.", 400)
@@ -117,11 +214,59 @@ def create_engagement_route(cid: int):
         if not engagement_type:
             return _json_err("engagement_type is required.", 400)
 
-        requires_target_company = engagement_type in {"bookkeeping", "compilation", "audit", "tax"}
-        if requires_target_company and not target_company_id:
-            return _json_err("target_company_id is required for this engagement type.", 400)
-
         with db_service._conn_cursor() as (conn, cur):
+            policy = db_service.get_engagement_service_policy(cur, company_id, engagement_type)
+            if not policy or not policy.get("is_active"):
+                return _json_err("Invalid or inactive engagement_type.", 400)
+
+            requires_workspace = bool(policy.get("requires_workspace"))
+            allows_auto_provision = bool(policy.get("allows_auto_provision"))
+
+            status = (body.get("status") or policy.get("default_status") or "draft").strip().lower()
+            workflow_stage = (body.get("workflow_stage") or policy.get("default_workflow_stage") or "planning").strip().lower()
+            priority = (body.get("priority") or policy.get("default_priority") or "normal").strip().lower()
+
+            workspace_status = "not_required"
+            workspace_source = None
+            target_company_source = None
+
+            if requires_workspace:
+                if target_company_id:
+                    workspace_status = "linked"
+                    workspace_source = "manual_select"
+                    target_company_source = "manual_select"
+                else:
+                    customer = db_service.get_customer_workspace_link(cur, company_id, customer_id)
+                    if not customer:
+                        return _json_err("Customer not found.", 404)
+
+                    linked_company_id = customer.get("company_master_id")
+                    if linked_company_id:
+                        target_company_id = int(linked_company_id)
+                        workspace_status = "linked"
+                        workspace_source = "customer_link"
+                        target_company_source = "customer_link"
+                    elif allows_auto_provision:
+                        try:
+                            target_company_id, workspace_status, workspace_source = ensure_customer_workspace(
+                                cur=cur,
+                                company_id=company_id,
+                                customer_id=customer_id,
+                                current_user_id=current_user_id,
+                                onboarding_data=body.get("target_company") or {},
+                            )
+                            target_company_source = workspace_source
+                        except ValueError as ve:
+                            msg = ve.args[0]
+                            if isinstance(msg, dict):
+                                return _json_err(msg, 400)
+                            return _json_err(str(msg), 400)
+                    else:
+                        return _json_err(
+                            "This engagement type requires a linked company workspace.",
+                            400
+                        )
+
             engagement_id = db_service.create_engagement(
                 cur,
                 company_id,
@@ -130,7 +275,7 @@ def create_engagement_route(cid: int):
                 engagement_name=engagement_name,
                 engagement_type=engagement_type,
                 engagement_code=(body.get("engagement_code") or "").strip() or None,
-                status=(body.get("status") or "draft").strip().lower(),
+                status=status,
                 governance_mode=(body.get("governance_mode") or "").strip().lower() or None,
                 reporting_cycle=(body.get("reporting_cycle") or "").strip().lower() or None,
                 due_date=body.get("due_date"),
@@ -141,9 +286,13 @@ def create_engagement_route(cid: int):
                 description=(body.get("description") or "").strip() or None,
                 scope_summary=(body.get("scope_summary") or "").strip() or None,
                 fiscal_year_end=body.get("fiscal_year_end"),
-                priority=(body.get("priority") or "normal").strip().lower(),
-                workflow_stage=(body.get("workflow_stage") or "planning").strip().lower(),
-                created_by_user_id=_parse_int(payload.get("id")),
+                priority=priority,
+                workflow_stage=workflow_stage,
+                created_by_user_id=current_user_id,
+                requires_workspace=requires_workspace,
+                workspace_status=workspace_status,
+                workspace_source=workspace_source,
+                target_company_source=target_company_source,
             )
 
             row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
