@@ -6540,7 +6540,7 @@ function resetPractitionerPostingFilters(prefix, cache) {
   }
 }
 
-function renderPractitionerPostingSummary(prefix, summary) {
+function renderPractitionerPostingSummary(prefix, summary, me) {
   const currency = summary?.currency_code || getActiveCurrency(me);
 
   prEl(`${prefix}-active-engagement-name`) && (prEl(`${prefix}-active-engagement-name`).textContent = safeText(summary?.engagement_name || getSelectedPractitionerEngagementName()));
@@ -6701,7 +6701,7 @@ async function loadPractitionerPostingSummary(me, config) {
   const row = json?.row || null;
   const cache = getPractitionerPostingCache(config.moduleName);
   if (cache) cache.summary = row;
-  renderPractitionerPostingSummary(config.prefix, row || {});
+  renderPractitionerPostingSummary(config.prefix, row || {}, me);
   return row;
 }
 
@@ -6875,16 +6875,16 @@ async function renderPractitionerPostingModuleScreen(me, screen) {
   if (!config) return;
 
   const engagementId = getSelectedPractitionerEngagementId();
-  renderPractitionerPostingSummary(config.prefix, {
-    engagement_name: getSelectedPractitionerEngagementName(),
-    engagement_code: getSelectedPractitionerEngagementCode(),
-    total_items: 0,
-    draft_count: 0,
-    review_count: 0,
-    posted_count: 0,
-    total_amount: 0,
-    last_activity_date: null
-  });
+    renderPractitionerPostingSummary(config.prefix, {
+      engagement_name: getSelectedPractitionerEngagementName(),
+      engagement_code: getSelectedPractitionerEngagementCode(),
+      total_items: 0,
+      draft_count: 0,
+      review_count: 0,
+      posted_count: 0,
+      total_amount: 0,
+      last_activity_date: null
+    }, me);
 
   bindPractitionerPostingModuleEvents(me);
 
