@@ -646,14 +646,6 @@ const ENDPOINTS = {
   let PR_ACTION_CENTER_MINE_ONLY = false;
   let PR_ACTION_CENTER_ACTIVE_QUICK = "all";
 
-  const PR_POSTING_MODULES = {
-    [PR_NAV.journalEntries]: "journal_entries",
-    [PR_NAV.accountsReceivable]: "accounts_receivable",
-    [PR_NAV.accountsPayable]: "accounts_payable",
-    [PR_NAV.leases]: "leases",
-    [PR_NAV.ppe]: "ppe"
-  };
-
   let PR_PRACTITIONER_POSTING_CACHE = {
     journal_entries: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
     accounts_receivable: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
@@ -6550,7 +6542,7 @@ function resetPractitionerPostingFilters(prefix, cache) {
 
 function renderPractitionerPostingSummary(prefix, summary) {
   const currency = summary?.currency_code || getActiveCurrency(me);
-  
+
   prEl(`${prefix}-active-engagement-name`) && (prEl(`${prefix}-active-engagement-name`).textContent = safeText(summary?.engagement_name || getSelectedPractitionerEngagementName()));
   prEl(`${prefix}-active-engagement-code`) && (prEl(`${prefix}-active-engagement-code`).textContent = safeText(summary?.engagement_code || getSelectedPractitionerEngagementCode()));
   prEl(`${prefix}-last-activity-date`) && (prEl(`${prefix}-last-activity-date`).textContent = formatDateValue(summary?.last_activity_date));
