@@ -1880,10 +1880,22 @@ class DatabaseService:
             access_level = EXCLUDED.access_level,
             is_active = EXCLUDED.is_active;
 
-        -- Ensure company owner is a member
+        -- Clear orphaned company owners
+        UPDATE public.companies c
+        SET owner_user_id = NULL
+        WHERE c.owner_user_id IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM public.users u
+            WHERE u.id = c.owner_user_id
+        );
+
+        -- Ensure company owner is a member (only where owner user still exists)
         INSERT INTO public.company_users (company_id, user_id, role, is_active, joined_at)
         SELECT c.id, c.owner_user_id, 'owner', TRUE, NOW()
         FROM public.companies c
+        JOIN public.users u
+        ON u.id = c.owner_user_id
         WHERE c.owner_user_id IS NOT NULL
         ON CONFLICT (company_id, user_id) DO UPDATE
         SET role = 'owner', is_active = TRUE;
