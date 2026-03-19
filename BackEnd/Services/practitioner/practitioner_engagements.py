@@ -124,19 +124,61 @@ def ensure_customer_workspace(
             or customer.get("billing_country")
             or ""
         ),
-        "industry": onboarding_data.get("industry") or customer.get("industry") or "",
-        "subIndustry": onboarding_data.get("subIndustry") or customer.get("sub_industry"),
-        "currency": onboarding_data.get("currency") or customer.get("currency"),
-        "finYearStart": onboarding_data.get("finYearStart") or customer.get("fin_year_start") or "01/01",
-        "companyRegDate": onboarding_data.get("companyRegDate") or customer.get("company_reg_date"),
-        "companyRegNo": onboarding_data.get("companyRegNo") or customer.get("registration_no"),
-        "vat": onboarding_data.get("vat") or customer.get("vat_number"),
-        "tin": onboarding_data.get("tin") or customer.get("tax_number"),
-        "companyEmail": onboarding_data.get("companyEmail") or customer.get("email"),
-        "companyPhone": onboarding_data.get("companyPhone") or customer.get("company_phone") or customer.get("phone"),
-        "registeredAddress": onboarding_data.get("registeredAddress") or customer.get("registered_address_json"),
-        "postalAddress": onboarding_data.get("postalAddress") or customer.get("postal_address_json"),
-        "logoUrl": onboarding_data.get("logoUrl") or customer.get("logo_url"),
+        "industry": (
+            onboarding_data.get("industry")
+            or customer.get("industry")
+            or ""
+        ),
+        "subIndustry": (
+            onboarding_data.get("subIndustry")
+            or customer.get("sub_industry")
+        ),
+        "currency": (
+            onboarding_data.get("currency")
+            or customer.get("currency")
+        ),
+        "finYearStart": (
+            onboarding_data.get("finYearStart")
+            or customer.get("fin_year_start")
+            or "01/01"
+        ),
+        "companyRegDate": (
+            onboarding_data.get("companyRegDate")
+            or customer.get("company_reg_date")
+        ),
+        "companyRegNo": (
+            onboarding_data.get("companyRegNo")
+            or customer.get("registration_no")
+        ),
+        "vat": (
+            onboarding_data.get("vat")
+            or customer.get("vat_number")
+        ),
+        "tin": (
+            onboarding_data.get("tin")
+            or customer.get("tax_number")
+        ),
+        "companyEmail": (
+            onboarding_data.get("companyEmail")
+            or customer.get("email")
+        ),
+        "companyPhone": (
+            onboarding_data.get("companyPhone")
+            or customer.get("company_phone")
+            or customer.get("phone")
+        ),
+        "registeredAddress": (
+            onboarding_data.get("registeredAddress")
+            or customer.get("registered_address_json")
+        ),
+        "postalAddress": (
+            onboarding_data.get("postalAddress")
+            or customer.get("postal_address_json")
+        ),
+        "logoUrl": (
+            onboarding_data.get("logoUrl")
+            or customer.get("logo_url")
+        ),
         "entity_kind": "company",
         "created_via": "firm_client_provisioning",
         "source_customer_company_id": company_id,
@@ -157,6 +199,7 @@ def ensure_customer_workspace(
             "missing_fields": missing,
         })
 
+    # Heavy provisioning uses its own DB lifecycle internally.
     result = create_company_record_from_payload(
         data=company_payload,
         owner_user_id=current_user_id,
@@ -166,24 +209,28 @@ def ensure_customer_workspace(
 
     linked_company_id = int(result["company_id"])
 
-    db_service.update_customer_workspace_link(
-        cur,
-        company_id,
-        customer_id=customer_id,
-        linked_company_id=linked_company_id,
-        workspace_status="provisioned",
-        workspace_created_by_user_id=current_user_id,
-    )
+    # IMPORTANT: do not reuse the old outer cursor after provisioning.
+    with db_service._conn_cursor() as (conn2, cur2):
+        db_service.update_customer_workspace_link(
+            cur2,
+            company_id,
+            customer_id=customer_id,
+            linked_company_id=linked_company_id,
+            workspace_status="provisioned",
+            workspace_created_by_user_id=current_user_id,
+        )
 
-    db_service.create_customer_company_link(
-        cur,
-        company_id,
-        customer_id=customer_id,
-        linked_company_id=linked_company_id,
-        linked_by_user_id=current_user_id,
-        link_type="workspace",
-        notes="Auto-provisioned during engagement creation",
-    )
+        db_service.create_customer_company_link(
+            cur2,
+            company_id,
+            customer_id=customer_id,
+            linked_company_id=linked_company_id,
+            linked_by_user_id=current_user_id,
+            link_type="workspace",
+            notes="Auto-provisioned during engagement creation",
+        )
+
+        conn2.commit()
 
     return linked_company_id, "provisioned", "auto_provision"
 
