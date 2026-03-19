@@ -42129,7 +42129,7 @@ class DatabaseService:
                 e.id,
                 e.engagement_code,
                 e.engagement_name,
-                c.customer_name,
+                c.name,
                 e.engagement_type,
                 e.status,
                 e.priority,
@@ -42244,7 +42244,7 @@ class DatabaseService:
             SELECT
                 e.id AS engagement_id,
                 e.engagement_name,
-                c.customer_name,
+                c.name,
                 e.status AS engagement_status,
                 e.priority,
                 e.due_date,
@@ -42428,7 +42428,7 @@ class DatabaseService:
             )
             SELECT
                 c.id AS customer_id,
-                c.customer_name,
+                c.name,
                 COUNT(DISTINCT e.id) AS active_engagements,
                 COUNT(DISTINCT CASE WHEN LOWER(e.status) = 'completed' THEN e.id END) AS completed_engagements,
                 COUNT(DISTINCT CASE WHEN LOWER(e.priority) IN ('high', 'urgent') THEN e.id END) AS priority_engagements,
@@ -42439,7 +42439,7 @@ class DatabaseService:
             LEFT JOIN client_engagements e
             ON e.customer_id = c.id
             WHERE c.id = %s
-            GROUP BY c.id, c.customer_name
+            GROUP BY c.id, c.name
             LIMIT 1
         """
         cur.execute(
@@ -42498,7 +42498,7 @@ class DatabaseService:
         sql = f"""
             SELECT
                 e.*,
-                c.customer_name,
+                c.name,
 
                 manager_u.first_name AS manager_first_name,
                 manager_u.last_name AS manager_last_name,
