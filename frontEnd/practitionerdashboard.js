@@ -2884,8 +2884,38 @@ function validateEngagementPayload(payload) {
   if (!payload.engagement_name) return "Engagement name is required.";
   if (!payload.engagement_type) return "Engagement type is required.";
 
-  if (["bookkeeping", "compilation", "audit", "tax"].includes(String(payload.engagement_type || "").toLowerCase())) {
-    if (!payload.target_company_id) return "Target company is required for this engagement type.";
+  const type = String(payload.engagement_type || "").toLowerCase();
+
+  const requiresWorkspace = [
+    "bookkeeping",
+    "monthly_bookkeeping",
+    "write_up",
+    "management_accounts",
+    "vat",
+    "payroll",
+    "tax",
+    "tax_compliance",
+    "annual_financial_statements",
+    "year_end_financials",
+    "compilation",
+    "review",
+    "audit",
+    "audit_support",
+    "internal_audit",
+    "independent_review",
+    "cleanup",
+    "migration",
+    "outsourced_finance"
+  ].includes(type);
+
+  if (requiresWorkspace) {
+    const hasExistingTarget = !!payload.target_company_id;
+    const hasIndustryForProvision =
+      !!String(payload?.target_company?.industry || "").trim();
+
+    if (!hasExistingTarget && !hasIndustryForProvision) {
+      return "Industry is required to create a workspace for this engagement.";
+    }
   }
 
   return "";
