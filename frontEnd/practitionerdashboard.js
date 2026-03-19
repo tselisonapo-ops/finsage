@@ -2745,7 +2745,9 @@ function resetEngagementModalForm() {
     "engFiscalYearEnd",
     "engTargetCompanyId",
     "engIndustry",
-    "engSubIndustry"
+    "engSubIndustry",
+    "engCountry",
+    "engCurrency",
   ];
 
   ids.forEach((id) => {
@@ -2785,6 +2787,8 @@ function readEngagementModalPayload() {
   const targetCompanyId =
     _parseModalInt(document.getElementById("engTargetCompanyId")?.value) || null;
 
+  const country = document.getElementById("engCountry")?.value?.trim() || "";
+  const currency = document.getElementById("engCurrency")?.value?.trim() || "";
   const industry = document.getElementById("engIndustry")?.value || "";
   const subIndustry = document.getElementById("engSubIndustry")?.value || "";
 
@@ -2809,6 +2813,8 @@ function readEngagementModalPayload() {
     fiscal_year_end: document.getElementById("engFiscalYearEnd")?.value || null,
 
     target_company: {
+      country,
+      currency,
       industry,
       subIndustry
     }
@@ -2910,11 +2916,12 @@ function validateEngagementPayload(payload) {
 
   if (requiresWorkspace) {
     const hasExistingTarget = !!payload.target_company_id;
-    const hasIndustryForProvision =
-      !!String(payload?.target_company?.industry || "").trim();
+    const country = String(payload?.target_company?.country || "").trim();
+    const industry = String(payload?.target_company?.industry || "").trim();
 
-    if (!hasExistingTarget && !hasIndustryForProvision) {
-      return "Industry is required to create a workspace for this engagement.";
+    if (!hasExistingTarget) {
+      if (!country) return "Country is required to create a workspace for this engagement.";
+      if (!industry) return "Industry is required to create a workspace for this engagement.";
     }
   }
 

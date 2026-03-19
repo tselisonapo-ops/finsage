@@ -118,7 +118,12 @@ def ensure_customer_workspace(
             or customer.get("name")
             or "Company"
         ),
-        "country": onboarding_data.get("country") or customer.get("country") or "",
+        "country": (
+            onboarding_data.get("country")
+            or customer.get("country")
+            or customer.get("billing_country")
+            or ""
+        ),
         "industry": onboarding_data.get("industry") or customer.get("industry") or "",
         "subIndustry": onboarding_data.get("subIndustry") or customer.get("sub_industry"),
         "currency": onboarding_data.get("currency") or customer.get("currency"),

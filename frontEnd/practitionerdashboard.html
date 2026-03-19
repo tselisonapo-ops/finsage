@@ -2795,10 +2795,30 @@ window.safeRedirect = function (url, mode = "href") {
         <div id="engWorkspaceSetupBlock" class="md:col-span-2 hidden rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div class="font-semibold text-slate-900">Workspace Setup</div>
           <div class="mt-1 text-sm text-slate-500">
-            This engagement type requires an accounting workspace. Select the client industry so the correct chart of accounts can be seeded.
+            This engagement type requires an accounting workspace. Complete the missing client setup fields so the correct chart of accounts can be seeded.
           </div>
 
           <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Country *</label>
+              <input
+                id="engCountry"
+                type="text"
+                class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none"
+                placeholder="e.g. South Africa"
+              />
+            </div>
+
+            <div>
+              <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Currency</label>
+              <input
+                id="engCurrency"
+                type="text"
+                class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none"
+                placeholder="e.g. ZAR"
+              />
+            </div>
+
             <div>
               <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Industry *</label>
               <select id="engIndustry" class="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none">
