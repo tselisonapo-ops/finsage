@@ -19709,7 +19709,6 @@ async function fetchLessors() {
   // Quick add
   // ===============================
 function openQuickModal() {
-  grabEls();
   bindLessorsScreen();
 
   if (!els.qModal) {
@@ -20151,6 +20150,11 @@ function bindLessorsScreen() {
   }
 }
 })();
+
+window.bindLessorsScreen = function () {
+  bindLessorsScreen();
+  refreshLessors();
+};
 
 (function () {
   function $(id) { return document.getElementById(id); }
