@@ -580,33 +580,45 @@
     <!-- Main -->
     <main class="main flex-1">
       <!-- Header -->
-      <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-[var(--fs-border)]">
-        <div class="max-w-[1300px] mx-auto px-4 py-3 flex flex-wrap gap-3 items-center justify-between">
-          <div class="flex items-center gap-3">
+      <header class="sticky top-0 z-20 bg-white border-b border-[var(--fs-border)]">
+        <div class="max-w-[1300px] mx-auto px-4 py-2 flex items-center justify-between gap-3">
+
+          <!-- LEFT -->
+          <div class="flex items-center gap-3 flex-nowrap">
             <button id="mobileMenu" class="lg:hidden px-3 py-2 border rounded-lg"></button>
 
-            <!-- Active company badge -->
-            <span id="companyBadge" class="pill hidden md:inline">Your company</span>
+            <span id="companyBadge" class="pill whitespace-nowrap hidden md:inline">
+              Your company
+            </span>
 
-            <!-- Company switcher -->
-            <div id="companySwitcherWrap" class="hidden items-center gap-2">
+            <div id="companySwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
               <label for="companySwitcher" class="text-xs text-slate-500">Company</label>
-              <select id="companySwitcher" class="pill min-w-[220px]">
+              <select id="companySwitcher" class="pill min-w-[180px]">
                 <option value="">Select company</option>
               </select>
             </div>
           </div>
 
-          <div class="flex items-center gap-3">
+          <!-- RIGHT -->
+          <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
+
+            <!-- ✅ RETURN BUTTON -->
+            <button
+              id="returnToPractitionerBtn"
+              class="hidden whitespace-nowrap px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              ← Back to Workspace
+            </button>
+
             <div id="userAvatar"
-                class="h-8 w-8 rounded-full border border-[var(--fs-border)]
-                        flex items-center justify-center text-xl text-[var(--fs-navy)]">
-              ??
+              class="h-8 w-8 rounded-full border border-[var(--fs-border)]
+                    flex items-center justify-center text-sm text-[var(--fs-navy)]">
+              T
             </div>
 
-            <span id="roleBadge" class="pill hidden md:inline"></span>
+            <span id="roleBadge" class="pill whitespace-nowrap hidden md:inline"></span>
 
-            <div id="dashboardModeSwitcherWrap" class="hidden items-center gap-2">
+            <div id="dashboardModeSwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
               <label for="dashboardModeSwitcher" class="text-xs text-slate-500">Dashboard</label>
               <select id="dashboardModeSwitcher" class="pill">
                 <option value="internal">Internal Dashboard</option>
@@ -614,10 +626,10 @@
               </select>
             </div>
 
-            <button id="signinBtn" class="btn">Sign In</button>
-            <button id="logoutBtn" class="btn hidden">Sign Out</button>
+            <button id="signinBtn" class="btn whitespace-nowrap">Sign In</button>
+            <button id="logoutBtn" class="btn hidden whitespace-nowrap">Sign Out</button>
 
-            <div id="userMenu" class="hidden flex-col text-xs text-right leading-tight">
+            <div id="userMenu" class="hidden flex-col text-xs text-right leading-tight whitespace-nowrap">
               <button id="accountSettingsBtn" class="text-[var(--fs-navy)] hover:underline">
                 Account settings
               </button>
@@ -626,7 +638,7 @@
               </button>
             </div>
 
-            <select id="dateRange" class="pill hidden">
+            <select id="dateRange" class="pill hidden whitespace-nowrap">
               <option value="3m">Last 3 months</option>
               <option value="6m" selected>Last 6 months</option>
               <option value="12m">Last 12 months</option>
@@ -634,9 +646,10 @@
             </select>
 
             <button id="refreshBtn"
-                    class="px-3 py-2 rounded-lg bg-[var(--fs-navy)] text-white shadow-sage hidden">
+              class="px-3 py-2 rounded-lg bg-[var(--fs-navy)] text-white hidden whitespace-nowrap">
               Refresh
             </button>
+
           </div>
         </div>
       </header>

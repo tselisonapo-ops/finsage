@@ -39628,6 +39628,36 @@ class DatabaseService:
         row = cur.fetchone()
         return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
+    def set_engagement_status(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        status: str,
+        updated_by_user_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            UPDATE {schema}.engagements
+            SET
+                status = %s,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *
+        """
+        cur.execute(sql, (
+            status,
+            updated_by_user_id,
+            company_id,
+            engagement_id,
+        ))
+        row = cur.fetchone()
+        return dict(row) if row and not isinstance(row, dict) else row
+
     def get_engagement(
         self,
         cur,

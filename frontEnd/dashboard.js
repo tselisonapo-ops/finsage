@@ -5090,6 +5090,65 @@ function getStoredUser() {
   }
 }
 
+function restorePostingContext() {
+  try {
+    const raw = localStorage.getItem("fs_posting_context");
+    if (!raw) return null;
+
+    const ctx = JSON.parse(raw);
+    if (!ctx?.companyId) return null;
+
+    console.log("Restoring posting context:", ctx);
+
+    window.__PR_CONTEXT__ = {
+      ...(window.__PR_CONTEXT__ || {}),
+      ...ctx
+    };
+
+    window.__COMPANY_ID__ = Number(ctx.companyId) || null;
+    window.__PR_ACTIVE_COMPANY_ID__ = Number(ctx.companyId) || null;
+    window.__PR_ACTIVE_CUSTOMER_ID__ = Number(ctx.customerId) || null;
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ = Number(ctx.engagementId) || null;
+
+    return ctx;
+  } catch (err) {
+    console.warn("Failed to restore posting context", err);
+    return null;
+  }
+}
+
+function bindReturnToPractitionerWorkspace() {
+  const btn = document.getElementById("returnToPractitionerBtn");
+  if (!btn) return;
+
+  let ctx = null;
+  try {
+    ctx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
+  } catch (_) {
+    ctx = null;
+  }
+
+  if (!ctx?.engagementId) {
+    btn.classList.add("hidden");
+    return;
+  }
+
+  btn.classList.remove("hidden");
+
+  btn.onclick = () => {
+    const returnCtx = {
+      companyId: Number(ctx.companyId) || null,
+      customerId: Number(ctx.customerId) || null,
+      engagementId: Number(ctx.engagementId) || null,
+      engagement: ctx.engagement || null,
+      returnScreen: "assignments"
+    };
+
+    localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+    window.location.href = ctx.returnTo || "practitionerdashboard.html#screen=assignments";
+  };
+}
+
 function shouldShowDashboardSwitcher(me) {
   const userType = String(me?.user_type || "").toLowerCase();
   const canEnterprise = !!me?.dashboards?.enterprise;
@@ -9201,6 +9260,9 @@ function selectCoaAccount(acc) {
 // Somewhere globally (top of file), make sure we have a default:
 window.CURRENT_PERIOD_KEY = window.CURRENT_PERIOD_KEY || "this_month";
 async function loadDashboard() {
+  restorePostingContext();
+  bindReturnToPractitionerWorkspace();
+
   console.log("loadDashboard(): rendering dashboard widgets…");
   console.log("[loadDashboard] pnlMini exists?", !!document.getElementById("pnlMini"));
   console.log("[loadDashboard] renderPnLMini type:", typeof window.renderPnLMini);
@@ -9218,7 +9280,6 @@ async function loadDashboard() {
     }
   }
 
-  // ✅ ADD THIS BLOCK HERE (runs once on load)
   const custQuotesPane = document.getElementById("arCustomerQuotesPane");
   if (custQuotesPane && custQuotesPane.dataset.stopprop !== "1") {
     custQuotesPane.dataset.stopprop = "1";
@@ -9237,9 +9298,6 @@ async function loadDashboard() {
     custQuoteList.addEventListener("click", (e) => e.stopPropagation());
   }
 
-  // ─────────────────────────────
-  // PERIOD FILTER WIRING
-  // ─────────────────────────────
   const periodSel = document.getElementById("fsPeriodFilter");
   if (periodSel) {
     periodSel.value = CURRENT_PERIOD_KEY;
@@ -9254,34 +9312,15 @@ async function loadDashboard() {
     });
   }
 
-  // ─────────────────────────────
-  // TOP ROW – KPIs & Month-end
-  // ─────────────────────────────
   await safeWidget("Main KPIs", window.renderDashboardKPIs);
   await safeWidget("Month-end close", window.renderMonthEndClose);
-
-  // ─────────────────────────────
-  // WORKING CAPITAL / AR / AP
-  // ─────────────────────────────
   await safeWidget("AR aging snapshot", window.renderARAgingSnapshot);
-  await safeWidget("AP aging snapshot", window.renderAPAgingSnapshot); // ✅ safe even if undefined
-
-  // ─────────────────────────────
-  // FIXED ASSETS / INVENTORY
-  // ─────────────────────────────
+  await safeWidget("AP aging snapshot", window.renderAPAgingSnapshot);
   await safeWidget("Fixed assets snapshot", window.renderFixedAssetsSnapshot);
   await safeWidget("Inventory snapshot", window.renderInventorySnapshot);
-
-  // ─────────────────────────────
-  // TAX / COMPLIANCE / HEALTH
-  // ─────────────────────────────
   await safeWidget("Tax compliance card", window.renderTaxComplianceCard);
   await safeWidget("Setup checklist card", window.renderSetupChecklistCard);
   await safeWidget("Health compliance card", window.renderHealthComplianceCard);
-
-  // ─────────────────────────────
-  // MINI STATEMENTS (initial render)
-  // ─────────────────────────────
   await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
   await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
   await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);

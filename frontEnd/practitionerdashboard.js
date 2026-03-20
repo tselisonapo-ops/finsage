@@ -3120,6 +3120,129 @@ async function loadEngagementTeamData(engagementId, activeOnly = true) {
   return Array.isArray(out?.rows) ? out.rows : [];
 }
 
+function getEngagementRowActions(row) {
+  const me = window.currentUser || {};
+  const myUserId = Number(me?.id || me?.user_id || 0);
+  const myRole = String(me?.role || "").toLowerCase();
+  const engagementType = String(row.engagement_type || "").toLowerCase();
+  const workflowStage = String(row.workflow_stage || "").toLowerCase();
+  const status = String(row.status || "").toLowerCase();
+
+  const managerId = Number(row.manager_user_id || 0);
+  const partnerId = Number(row.partner_user_id || 0);
+  const assigneeId = Number(row.assigned_user_id || row.preparer_user_id || 0);
+
+  const isManager = myUserId && managerId && myUserId === managerId;
+  const isPartner = myUserId && partnerId && myUserId === partnerId;
+  const isDirectAssignee = myUserId && assigneeId && myUserId === assigneeId;
+
+  const canManage = isManager || isPartner || ["owner", "admin", "partner"].includes(myRole);
+  const canWork = isDirectAssignee || canManage;
+
+  const supportsPosting = ["bookkeeping", "writeup", "posting", "monthly_processing"].includes(engagementType);
+  const supportsWorkingPapers = ["audit", "review", "compilation", "tax", "advisory", "bookkeeping"].includes(engagementType);
+  const supportsDeliverables = true;
+  const supportsReporting = ["compilation", "audit", "review", "bookkeeping"].includes(engagementType);
+
+  const closed = ["completed", "cancelled", "archived"].includes(status);
+
+  return [
+    {
+      key: "posting",
+      label: "Start Posting",
+      enabled: supportsPosting && canWork && !closed,
+      reason: !supportsPosting
+        ? "Not a posting engagement"
+        : !canWork
+        ? "Not assigned to posting on this engagement"
+        : closed
+        ? "Engagement is closed"
+        : ""
+    },
+    {
+      key: "working_papers",
+      label: "Open Working Papers",
+      enabled: supportsWorkingPapers && canWork,
+      reason: !supportsWorkingPapers
+        ? "Working papers not applicable"
+        : !canWork
+        ? "Not assigned to this engagement"
+        : ""
+    },
+    {
+      key: "deliverables",
+      label: "Open Deliverables",
+      enabled: supportsDeliverables && canWork,
+      reason: !canWork ? "Not assigned to this engagement" : ""
+    },
+    {
+      key: "reporting",
+      label: "Open Reporting",
+      enabled: supportsReporting && canWork,
+      reason: !supportsReporting
+        ? "Reporting not applicable"
+        : !canWork
+        ? "Not assigned to this engagement"
+        : ""
+    },
+    {
+      key: "audit_trail",
+      label: "View Audit Trail",
+      enabled: canManage,
+      reason: !canManage ? "Manager or partner access required" : ""
+    }
+  ];
+}
+
+function renderEngagementActionsMenu(row) {
+  const actions = getEngagementRowActions(row);
+  const statusOptions = ["draft", "pending", "active", "on_hold", "completed", "cancelled", "archived"];
+
+  return `
+    <button
+      class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+      data-eng-action="open"
+      data-engagement-id="${row.id}"
+    >
+      Open
+    </button>
+
+    <div class="my-2 border-t"></div>
+    <div class="mb-2 px-2 text-[11px] text-slate-400">Set status</div>
+
+    ${statusOptions.map((s) => `
+      <button
+        class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
+          s === row.status
+            ? "bg-slate-100 text-slate-700 font-semibold"
+            : "text-slate-600 hover:bg-slate-50"
+        }"
+        data-eng-action="set_status"
+        data-status="${s}"
+        data-engagement-id="${row.id}"
+      >
+        ${esc(s.replaceAll("_", " "))}
+      </button>
+    `).join("")}
+
+    <div class="my-2 border-t"></div>
+
+    ${actions.map((a) => `
+      <button
+        class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
+          a.enabled
+            ? "text-slate-700 hover:bg-slate-50"
+            : "cursor-not-allowed bg-slate-50 text-slate-400"
+        }"
+        ${a.enabled ? `data-eng-action="${a.key}" data-engagement-id="${row.id}"` : "disabled"}
+        title="${esc(a.reason || "")}"
+      >
+        <span>${esc(a.label)}</span>
+      </button>
+    `).join("")}
+  `;
+}
+
 function renderAssignmentsTable(rows) {
   const tbody = document.getElementById("assignmentsTableBody");
   if (!tbody) return;
@@ -3152,18 +3275,43 @@ function renderAssignmentsTable(rows) {
         </td>
         <td>${esc(row.customer_name || "--")}</td>
         <td class="capitalize">${esc(row.engagement_type || "--")}</td>
-        <td><span class="badge ${statusClass}">${esc(row.status || "--")}</span></td>
+        <td>
+        <td>
+          <div class="flex items-center gap-2">
+            <span class="badge ${statusClass}">
+              ${esc(row.status || "--")}
+            </span>
+
+            <button
+              class="text-[10px] px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+              data-eng-status-quick="${esc(row.id)}"
+            >
+              Change
+            </button>
+          </div>
+        </td>
         <td>${esc(row.reporting_cycle || "--")}</td>
         <td>${fmtDate(row.due_date)}</td>
         <td>${esc(managerLabel)}</td>
         <td>${esc(partnerLabel)}</td>
         <td>
-          <button
-            class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-            data-assignment-open="${esc(row.id)}"
-          >
-            Open
-          </button>
+          <div class="flex items-center justify-end">
+            <div class="relative inline-block text-left">
+              <button
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                data-eng-actions-toggle="${esc(row.id)}"
+              >
+                Actions
+              </button>
+
+              <div
+                class="hidden absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"
+                data-eng-actions-menu="${esc(row.id)}"
+              >
+                ${renderEngagementActionsMenu(row)}
+              </div>
+            </div>
+          </div>
         </td>
       </tr>
     `;
@@ -3250,6 +3398,13 @@ async function refreshAssignmentsScreen() {
   }
 }
 
+
+function closeAllEngagementActionMenus() {
+  document.querySelectorAll("[data-eng-actions-menu]").forEach((menu) => {
+    menu.classList.add("hidden");
+  });
+}
+
 function bindAssignmentsScreenEvents(me) {
   document.getElementById("assignmentsRefreshBtn")?.addEventListener("click", refreshAssignmentsScreen);
 
@@ -3260,17 +3415,55 @@ function bindAssignmentsScreenEvents(me) {
   document.getElementById("assignmentsStatusFilter")?.addEventListener("change", refreshAssignmentsScreen);
   document.getElementById("assignmentsTypeFilter")?.addEventListener("change", refreshAssignmentsScreen);
 
-  document.getElementById("assignmentsTableBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-assignment-open]");
-    if (!btn) return;
+  document.addEventListener("click", (e) => {
+    const toggle = e.target.closest("[data-eng-actions-toggle]");
+    const quickStatus = e.target.closest("[data-eng-status-quick]");
 
-    const engagementId = Number(btn.getAttribute("data-assignment-open") || 0);
-    if (!engagementId) return;
+    if (toggle || quickStatus) {
+      e.stopPropagation();
+
+      const engagementId = String(
+        toggle?.getAttribute("data-eng-actions-toggle") ||
+        quickStatus?.getAttribute("data-eng-status-quick") ||
+        ""
+      );
+      if (!engagementId) return;
+
+      const menu = document.querySelector(
+        `[data-eng-actions-menu="${CSS.escape(engagementId)}"]`
+      );
+      if (!menu) return;
+
+      const wasHidden = menu.classList.contains("hidden");
+      closeAllEngagementActionMenus();
+
+      if (wasHidden) {
+        menu.classList.remove("hidden");
+      }
+      return;
+    }
+
+    if (!e.target.closest("[data-eng-actions-menu]")) {
+      closeAllEngagementActionMenus();
+    }
+  });
+
+  document.getElementById("assignmentsTableBody")?.addEventListener("click", async (e) => {
+    const actionBtn = e.target.closest("[data-eng-action]");
+    if (!actionBtn) return;
+
+    const action = String(actionBtn.dataset.engAction || "");
+    const engagementId = Number(actionBtn.dataset.engagementId || 0);
+    if (!engagementId || !action) return;
+
+    closeAllEngagementActionMenus();
 
     try {
       window.setPractitionerActiveEngagementId?.(engagementId);
 
       const row = await loadEngagementDetail(engagementId);
+      if (!row) return;
+
       PR_SELECTED_ENGAGEMENT = row;
 
       window.__PR_CONTEXT__ = {
@@ -3279,14 +3472,63 @@ function bindAssignmentsScreenEvents(me) {
         engagement: row
       };
 
-      renderAssignmentDetail(row);
+      if (action === "open") {
+        renderAssignmentDetail(row);
 
-      const teamFilter = document.getElementById("teamEngagementFilter");
-      if (teamFilter) teamFilter.value = String(engagementId);
+        const teamFilter = document.getElementById("teamEngagementFilter");
+        if (teamFilter) teamFilter.value = String(engagementId);
+        return;
+      }
 
-      await switchPractitionerScreen(PR_NAV.workingPapers, me);
+      if (action === "set_status") {
+        const status = String(actionBtn.dataset.status || "").trim().toLowerCase();
+        if (!status) return;
+
+        await apiFetch(
+          ENDPOINTS.engagements.setStatus(getActiveCompanyId(), engagementId),
+          {
+            method: "POST",
+            body: JSON.stringify({ status })
+          }
+        );
+
+        if (
+          PR_SELECTED_ENGAGEMENT &&
+          String(PR_SELECTED_ENGAGEMENT.id) === String(engagementId)
+        ) {
+          PR_SELECTED_ENGAGEMENT.status = status;
+        }
+
+        await refreshAssignmentsScreen();
+        return;
+      }
+
+      if (action === "posting") {
+        await openPostingForEngagement(row, me);
+        return;
+      }
+
+      if (action === "working_papers") {
+        await switchPractitionerScreen(PR_NAV.workingPapers, me);
+        return;
+      }
+
+      if (action === "deliverables") {
+        await switchPractitionerScreen(PR_NAV.deliverables, me);
+        return;
+      }
+
+      if (action === "reporting") {
+        await switchPractitionerScreen(PR_NAV.reportingOverview, me);
+        return;
+      }
+
+      if (action === "audit_trail") {
+        await switchPractitionerScreen(PR_NAV.auditTrail, me);
+        return;
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Engagement action failed:", err);
     }
   });
 }
@@ -9447,6 +9689,76 @@ window.getPractitionerActiveEngagementId = function () {
   );
 };
 
+async function openPostingForEngagement(row, me) {
+  const companyId = Number(row.target_company_id || row.company_id || 0);
+  const customerId = Number(row.customer_id || 0);
+  const engagementId = Number(row.id || 0);
+
+  if (!companyId) {
+    console.warn("No company for posting");
+    return;
+  }
+
+  const ctx = {
+    companyId,
+    customerId: customerId || null,
+    engagementId: engagementId || null,
+    engagement: row || null,
+    launchMode: "posting",
+    returnTo: "practitionerdashboard.html#screen=assignments"
+  };
+
+  window.__PR_ACTIVE_COMPANY_ID__ = companyId;
+  window.__PR_ACTIVE_CUSTOMER_ID__ = customerId || null;
+  window.setPractitionerActiveEngagementId?.(engagementId);
+
+  window.__PR_CONTEXT__ = {
+    ...(window.__PR_CONTEXT__ || {}),
+    ...ctx
+  };
+
+  console.log("Launching posting with context:", window.__PR_CONTEXT__);
+
+  localStorage.setItem("fs_posting_context", JSON.stringify(ctx));
+
+  window.location.href = "dashboard.html";
+}
+
+function restorePractitionerReturnContext() {
+  try {
+    const raw = localStorage.getItem("fs_pr_return_context");
+    if (!raw) return null;
+
+    const ctx = JSON.parse(raw);
+    localStorage.removeItem("fs_pr_return_context");
+
+    if (ctx?.companyId) {
+      window.__PR_ACTIVE_COMPANY_ID__ = Number(ctx.companyId) || null;
+    }
+
+    if (ctx?.customerId) {
+      window.__PR_ACTIVE_CUSTOMER_ID__ = Number(ctx.customerId) || null;
+    }
+
+    if (ctx?.engagementId) {
+      window.setPractitionerActiveEngagementId?.(Number(ctx.engagementId) || null);
+    }
+
+    window.__PR_CONTEXT__ = {
+      ...(window.__PR_CONTEXT__ || {}),
+      companyId: Number(ctx?.companyId) || null,
+      customerId: Number(ctx?.customerId) || null,
+      engagementId: Number(ctx?.engagementId) || null,
+      engagement: ctx?.engagement || null
+    };
+
+    return ctx;
+  } catch (err) {
+    console.warn("Failed to restore practitioner return context", err);
+    return null;
+  }
+}
+
 function wpEsc(v) {
   return String(v == null ? "" : v)
     .replace(/&/g, "&amp;")
@@ -12508,9 +12820,7 @@ async function bootstrapPractitionerApp(me) {
 
   setupPractitionerNav(me);
 
-  if (!window.getPractitionerActiveEngagementId?.()) {
-    window.setPractitionerActiveEngagementId(1);
-  }
+  restorePractitionerReturnContext();
 
   const firstScreen = resolvePractitionerScreenName(getHashScreen() || PR_NAV.dashboard);
   switchPractitionerScreen(firstScreen, me, { updateHash: false });

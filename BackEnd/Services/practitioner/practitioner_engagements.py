@@ -580,7 +580,10 @@ def update_engagement_route(cid: int, engagement_id: int):
         return _json_err(str(e), 500)
 
 
-@engagements_bp.route("/api/companies/<int:cid>/engagements/<int:engagement_id>/status", methods=["POST", "OPTIONS"])
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagements/<int:engagement_id>/status",
+    methods=["POST", "PATCH", "OPTIONS"],
+)
 @require_auth
 def set_engagement_status_route(cid: int, engagement_id: int):
     if request.method == "OPTIONS":
@@ -599,6 +602,18 @@ def set_engagement_status_route(cid: int, engagement_id: int):
         if not status:
             return _json_err("status is required.", 400)
 
+        allowed_statuses = {
+            "draft",
+            "pending",
+            "active",
+            "on_hold",
+            "completed",
+            "cancelled",
+            "archived",
+        }
+        if status not in allowed_statuses:
+            return _json_err(f"Invalid status '{status}'.", 400)
+
         closing_statuses = {"completed", "archived", "cancelled"}
         if status in closing_statuses and not _can_close_engagements(payload):
             return _json_err("You do not have permission to set this status.", 403)
@@ -606,22 +621,30 @@ def set_engagement_status_route(cid: int, engagement_id: int):
         if status not in closing_statuses and not _can_manage_engagements(payload):
             return _json_err("You do not have permission to update engagement status.", 403)
 
+        updated_by_user_id = _parse_int(
+            payload.get("id") or payload.get("user_id") or payload.get("sub")
+        )
+        if not updated_by_user_id:
+            return _json_err("Missing authenticated user id.", 401)
+
         with db_service._conn_cursor() as (conn, cur):
-            before_row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
+            before_row = db_service.get_engagement(
+                cur,
+                company_id,
+                engagement_id=engagement_id,
+            )
             if not before_row:
                 return _json_err("Engagement not found.", 404)
 
-            out_id = db_service.set_engagement_status(
+            row = db_service.set_engagement_status(
                 cur,
                 company_id,
                 engagement_id=engagement_id,
                 status=status,
                 updated_by_user_id=_parse_int(payload.get("id")),
             )
-            if not out_id:
+            if not row:
                 return _json_err("Engagement not found.", 404)
-
-            row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
 
             _engagement_audit(
                 cur=cur,
@@ -630,18 +653,22 @@ def set_engagement_status_route(cid: int, engagement_id: int):
                 action="set_engagement_status",
                 entity_type="engagement",
                 entity_id=engagement_id,
-                entity_ref=(row.get("engagement_name") or before_row.get("engagement_name") or f"ENG-{engagement_id}"),
+                entity_ref=(
+                    row.get("engagement_name")
+                    or before_row.get("engagement_name")
+                    or f"ENG-{engagement_id}"
+                ),
                 before_json=before_row,
                 after_json=row,
                 message=f"Changed engagement {engagement_id} status to {status}",
             )
+
         return _json_ok({"row": row})
 
     except Exception as e:
         current_app.logger.exception("set_engagement_status_route failed")
         return _json_err(str(e), 500)
-
-
+    
 @engagements_bp.route("/api/companies/<int:cid>/engagements/<int:engagement_id>/team", methods=["POST", "OPTIONS"])
 @require_auth
 def add_engagement_team_member_route(cid: int, engagement_id: int):
