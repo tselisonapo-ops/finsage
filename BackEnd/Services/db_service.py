@@ -1015,13 +1015,18 @@ class DatabaseService:
                     else:
                         cur.execute("SET LOCAL lock_timeout = '5s';")
                         cur.execute("SET LOCAL statement_timeout = '60s';")
+
                     yield conn, cur
+
+                conn.commit()   # ✅ commit on success
+
             except Exception:
                 try:
                     conn.rollback()
                 except Exception:
                     pass
                 raise
+
         finally:
             if conn is not None:
                 try:
@@ -1034,7 +1039,6 @@ class DatabaseService:
                         self.pool.putconn(conn)
                 except Exception:
                     pass
-
 
     def execute_sql(
         self,
