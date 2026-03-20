@@ -495,3 +495,24 @@ def build_permissions(*, role: str, access_scope: str) -> dict:
         base["can_manage_banking"] = False
 
     return base
+
+def resolve_default_dashboard(*, user_type: str, role: str, access_scope: str) -> str | None:
+    norm_role = normalize_role(role)
+    scope = (access_scope or "core").strip().lower()
+    dashboards = get_dashboard_access(norm_role, scope)
+
+    # no dashboard at all
+    if not dashboards["enterprise"] and not dashboards["practitioner"]:
+        return None
+
+    # dual roles keep both, but choose enterprise as default for core/internal
+    if dashboards["enterprise"] and dashboards["practitioner"]:
+        return "enterprise" if scope == "core" else "practitioner"
+
+    if dashboards["enterprise"]:
+        return "enterprise"
+
+    if dashboards["practitioner"]:
+        return "practitioner"
+
+    return None

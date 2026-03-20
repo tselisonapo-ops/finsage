@@ -492,6 +492,62 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/review-queue/items/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/deactivate`
   },
 
+  workingPapers: {
+    list: (
+      companyId,
+      {
+        customer_id = "",
+        engagement_id = "",
+        paper_section = "",
+        paper_type = "",
+        status = "",
+        priority = "",
+        mine_only = false,
+        q = "",
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_id) params.set("engagement_id", String(engagement_id));
+      if (paper_section) params.set("paper_section", paper_section);
+      if (paper_type) params.set("paper_type", paper_type);
+      if (status) params.set("status", status);
+      if (priority) params.set("priority", priority);
+      if (mine_only) params.set("mine_only", "true");
+      if (q) params.set("q", q);
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers${qs ? `?${qs}` : ""}`;
+    },
+
+    summary: (companyId, { customer_id = "", engagement_id = "" } = {}) => {
+      const params = new URLSearchParams();
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (engagement_id) params.set("engagement_id", String(engagement_id));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers/summary${qs ? `?${qs}` : ""}`;
+    },
+
+    create: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers`,
+
+    get: (companyId, workingPaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers/${encodeURIComponent(workingPaperId)}`,
+
+    update: (companyId, workingPaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers/${encodeURIComponent(workingPaperId)}`,
+
+    setStatus: (companyId, workingPaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers/${encodeURIComponent(workingPaperId)}/status`,
+
+    deactivate: (companyId, workingPaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers/${encodeURIComponent(workingPaperId)}/deactivate`
+  },
+
   analytics: {
     overview: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/overview`,
@@ -751,35 +807,49 @@ const ENDPOINTS = {
   let PR_SIGNOFF_VIEW_EVENTS_BOUND = false;
   let PR_SIGNOFF_ACTIVE_QUICK = "all";
 
-  const PR_NAV = {
-    dashboard: "dashboard",
-    assignments: "assignments",
-    clients: "clients",
-    team: "team",
-    analytics: "analytics",
-    actionCenter: "action-center",
-    settings: "settings",
+const PR_NAV = {
+  dashboard: "dashboard",
+  assignments: "assignments",
+  clients: "clients",
+  team: "team",
+  analytics: "analytics",
+  actionCenter: "action-center",
+  settings: "settings",
 
-    settingsOverview: "settings-overview",
-    users: "users",
-    rolesPermissions: "roles-permissions",
-    firmPreferences: "firm-preferences",
+  settingsOverview: "settings-overview",
+  users: "users",
+  rolesPermissions: "roles-permissions",
+  firmPreferences: "firm-preferences",
 
-    reportingOverview: "reporting-overview",
-    pendingDeliverables: "pending-deliverables",
-    journalEntries: "journal-entries",
-    accountsReceivable: "accounts-receivable",
-    accountsPayable: "accounts-payable",
-    leases: "leases",
-    ppe: "ppe",
-    dayToDayPostings: "day-to-day-postings",
-    monthlyCloseRoutines: "monthly-close-routines",
-    yearEndReporting: "year-end-reporting",
-    reviewQueue: "review-queue",
-    deliverables: "deliverables",
-    partnerSignoff: "partner-signoff",
-    analyticsDetail: "analytics-detail",
-  };
+  reportingOverview: "reporting-overview",
+  pendingDeliverables: "pending-deliverables",
+  deliverablesRegister: "deliverables-register",
+  workingPapers: "working-papers",
+  reviewQueue: "review-queue",
+
+  journalEntries: "journal-entries",
+  accountsReceivable: "accounts-receivable",
+  accountsPayable: "accounts-payable",
+  leases: "leases",
+  ppe: "ppe",
+  dayToDayPostings: "day-to-day-postings",
+  monthlyCloseRoutines: "monthly-close-routines",
+  yearEndReporting: "year-end-reporting",
+
+  teamCapacity: "team-capacity",
+  portfolioReview: "portfolio-review",
+  escalations: "escalations",
+  approvalCenter: "approval-center",
+  resourcePlanning: "resource-planning",
+
+  partnerSignoff: "partner-signoff",
+  finalDeliverablesReview: "final-deliverables-review",
+  engagementAcceptance: "engagement-acceptance",
+  riskIndependence: "risk-independence",
+  overrideLog: "override-log",
+
+  analyticsDetail: "analytics-detail",
+};
 
   /* ======================================================
    * Helpers
@@ -1258,8 +1328,32 @@ const PR_NAV_MENU = [
       {
         name: "Pending Deliverables",
         screen: PR_NAV.pendingDeliverables,
-        desc: "Financial statements, trial balance, notes",
+        desc: "Outstanding deliverables and missing engagement inputs",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.pendingDeliverables)
+      },
+      {
+        name: "Deliverables Register",
+        screen: PR_NAV.deliverablesRegister,
+        desc: "Full lifecycle register for all engagement deliverables",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.deliverablesRegister)
+      },
+      {
+        name: "Working Papers",
+        screen: PR_NAV.workingPapers,
+        desc: "Schedules, reconciliations, memos, and reviewer-ready workpapers",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.workingPapers)
+      },
+      {
+        name: "Review Queue",
+        screen: PR_NAV.reviewQueue,
+        desc: "Review inbox for items awaiting reviewer or manager action",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.reviewQueue)
+      },
+      {
+        name: "Engagement Team",
+        screen: PR_NAV.team,
+        desc: "Team assigned to this engagement, roles, and allocation",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.team)
       },
       {
         name: "Day-to-Day Postings",
@@ -1373,29 +1467,70 @@ const PR_NAV_MENU = [
     isParent: true,
     children: [
       {
-        name: "Review Queue",
-        screen: PR_NAV.reviewQueue,
-        desc: "Review postings and reporting outputs",
-        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.reviewQueue)
+        name: "Team Capacity",
+        screen: PR_NAV.teamCapacity,
+        desc: "Cross-engagement staffing, allocation load, and reviewer capacity",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.teamCapacity)
+      },
+      {
+        name: "Portfolio Review",
+        screen: PR_NAV.portfolioReview,
+        desc: "Portfolio-wide engagement health, deadlines, and risk indicators",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.portfolioReview)
+      },
+      {
+        name: "Escalations",
+        screen: PR_NAV.escalations,
+        desc: "Blocked work, overdue items, and manager-level intervention queue",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.escalations)
+      },
+      {
+        name: "Approval Center",
+        screen: PR_NAV.approvalCenter,
+        desc: "Manager approvals, review decisions, and rework routing",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.approvalCenter)
+      },
+      {
+        name: "Resource Planning",
+        screen: PR_NAV.resourcePlanning,
+        desc: "Upcoming workload planning, staffing gaps, and scheduling pressure",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.resourcePlanning)
       }
     ]
   },
-
   {
     name: "Partner Tools",
     isParent: true,
     children: [
       {
-        name: "Deliverables",
-        screen: PR_NAV.deliverables,
-        desc: "Financial statements and opinions",
-        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.deliverables)
-      },
-      {
         name: "Partner Sign-Off",
         screen: PR_NAV.partnerSignoff,
-        desc: "Final deliverables and approvals",
+        desc: "Final approval workflow, sign-off steps, and completion control",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.partnerSignoff)
+      },
+      {
+        name: "Final Deliverables Review",
+        screen: PR_NAV.finalDeliverablesReview,
+        desc: "Final pack review before sign-off and client release",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.finalDeliverablesReview)
+      },
+      {
+        name: "Engagement Acceptance",
+        screen: PR_NAV.engagementAcceptance,
+        desc: "Client acceptance, continuation decisions, and approval notes",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.engagementAcceptance)
+      },
+      {
+        name: "Risk & Independence",
+        screen: PR_NAV.riskIndependence,
+        desc: "Ethics, independence, and engagement risk oversight",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.riskIndependence)
+      },
+      {
+        name: "Override Log",
+        screen: PR_NAV.overrideLog,
+        desc: "Partner overrides, exceptions, disputes, and final resolutions",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.overrideLog)
       }
     ]
   },
@@ -1457,6 +1592,8 @@ const PR_SCREEN_POLICY = {
   "reporting-overview": { auth: "private", roles: ["owner", "admin", "audit_staff", "senior_associate", "audit_manager", "audit_partner", "engagement_partner", "quality_control_reviewer", "fs_compiler", "reviewer", "client_service_manager"] },
   "pending-deliverables": { auth: "private", roles: ["owner", "admin", "audit_staff", "senior_associate", "audit_manager", "audit_partner", "engagement_partner", "quality_control_reviewer", "fs_compiler", "reviewer", "client_service_manager"] },
 
+  "working-papers": { auth: "private", roles: ["owner", "admin", "manager", "senior", "accountant", "bookkeeper", "audit_staff", "senior_associate", "audit_manager", "audit_partner", "engagement_partner", "quality_control_reviewer", "fs_compiler", "reviewer", "client_service_manager"] },
+
   "journal-entries": { auth: "private", roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
   "accounts-receivable": { auth: "private", roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
   "accounts-payable": { auth: "private", roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
@@ -1472,13 +1609,59 @@ const PR_SCREEN_POLICY = {
   "partner-signoff": { auth: "private", roles: ["owner", "admin", "audit_partner", "engagement_partner", "quality_control_reviewer"] }
 };
 
+PR_SCREEN_POLICY["team-capacity"] = {
+  auth: "private",
+  roles: ["owner", "admin", "manager", "audit_manager", "client_service_manager"]
+};
+
+PR_SCREEN_POLICY["portfolio-review"] = {
+  auth: "private",
+  roles: ["owner", "admin", "manager", "audit_manager", "audit_partner", "engagement_partner", "client_service_manager"]
+};
+
+PR_SCREEN_POLICY["escalations"] = {
+  auth: "private",
+  roles: ["owner", "admin", "manager", "audit_manager", "client_service_manager", "reviewer"]
+};
+
+PR_SCREEN_POLICY["approval-center"] = {
+  auth: "private",
+  roles: ["owner", "admin", "manager", "audit_manager", "client_service_manager", "reviewer"]
+};
+
+PR_SCREEN_POLICY["resource-planning"] = {
+  auth: "private",
+  roles: ["owner", "admin", "manager", "audit_manager", "client_service_manager"]
+};
+
+PR_SCREEN_POLICY["final-deliverables-review"] = {
+  auth: "private",
+  roles: ["owner", "admin", "audit_partner", "engagement_partner", "quality_control_reviewer"]
+};
+
+PR_SCREEN_POLICY["engagement-acceptance"] = {
+  auth: "private",
+  roles: ["owner", "admin", "audit_partner", "engagement_partner", "client_service_manager"]
+};
+
+PR_SCREEN_POLICY["risk-independence"] = {
+  auth: "private",
+  roles: ["owner", "admin", "audit_partner", "engagement_partner", "quality_control_reviewer"]
+};
+
+PR_SCREEN_POLICY["override-log"] = {
+  auth: "private",
+  roles: ["owner", "admin", "audit_partner", "engagement_partner", "quality_control_reviewer"]
+};
+
 function resolvePractitionerScreenName(name) {
   const n = String(name || "").trim().toLowerCase();
 
   const alias = {
     settings: "settings-overview",
     "partner-signoff": "partner-signoff",
-    "review-queue": "review-queue"
+    "review-queue": "review-queue",
+    "working-papers": "working-papers"
   };
 
   return alias[n] || n || PR_NAV.dashboard;
@@ -1554,6 +1737,7 @@ function renderPractitionerScreenTitle(screen, me) {
     "firm-preferences": "Firm Preferences",
     "reporting-overview": "Reporting Overview",
     "pending-deliverables": "Pending Deliverables",
+    "working-papers": "Working Papers",
     "journal-entries": "Journal Entries",
     "accounts-receivable": "Accounts Receivable",
     "accounts-payable": "Accounts Payable",
@@ -1564,7 +1748,16 @@ function renderPractitionerScreenTitle(screen, me) {
     "year-end-reporting": "Year-End Reporting",
     "review-queue": "Review Queue",
     deliverables: "Deliverables",
-    "partner-signoff": "Partner Sign-Off"
+    "partner-signoff": "Partner Sign-Off",
+    "team-capacity": "Team Capacity",
+    "portfolio-review": "Portfolio Review",
+    escalations: "Escalations",
+    "approval-center": "Approval Center",
+    "resource-planning": "Resource Planning",
+    "final-deliverables-review": "Final Deliverables Review",
+    "engagement-acceptance": "Engagement Acceptance",
+    "risk-independence": "Risk & Independence",
+    "override-log": "Override Log"
   };
 
   bindText("header.workspace_label", "Practitioner Workspace");
@@ -1583,6 +1776,7 @@ function renderPractitionerScreenTitle(screen, me) {
     "firm-preferences": "Manage practice-level defaults and workspace settings.",
     "reporting-overview": "Review engagement summary, deadlines, and reporting readiness.",
     "pending-deliverables": "Track outstanding deliverables and reporting outputs.",
+    "working-papers": "Prepare, review, and manage structured workpapers, schedules, memos, and reconciliations.",
     "journal-entries": "Manage journal posting workflow and review routing.",
     "accounts-receivable": "Manage receivables posting and review workflow.",
     "accounts-payable": "Manage payables posting and vendor workflow.",
@@ -1593,7 +1787,16 @@ function renderPractitionerScreenTitle(screen, me) {
     "year-end-reporting": "Manage annual reporting and finalization workflow.",
     "review-queue": "Review work awaiting manager review.",
     deliverables: "Review final deliverables and reporting pack.",
-    "partner-signoff": "Manage partner sign-off and final approval workflow."
+    "partner-signoff": "Manage partner sign-off and final approval workflow.",
+    "team-capacity": "Cross-engagement staffing, allocation load, reviewer pressure, and capacity visibility.",
+    "portfolio-review": "Portfolio-wide engagement health, due dates, blockers, and manager risk signals.",
+    escalations: "Blocked work, overdue deliverables, unresolved issues, and intervention-required items.",
+    "approval-center": "Manager-level approvals, review decisions, returns, and release controls.",
+    "resource-planning": "Forward-looking staffing, workload balancing, and scheduling risk management.",
+    "final-deliverables-review": "Final reporting pack review before sign-off and release.",
+    "engagement-acceptance": "Acceptance, continuation, and approval decisions for client engagements.",
+    "risk-independence": "Ethics, independence, and engagement risk oversight controls.",
+    "override-log": "Partner overrides, exceptions, disputes, and final documented resolutions."
   };
 
   bindText("header.dashboard_subtitle", subtitles[screen] || "Practitioner workflow screen.");
@@ -1873,6 +2076,32 @@ function permissionBadge(role) {
   }
 
   return "Read only";
+}
+
+async function canOpenPartnerSignoff() {
+  const snapshot = await loadEngagementWorkflowSnapshot();
+  return !!snapshot?.readiness?.isReadyForPartnerSignoff;
+}
+
+async function openPartnerSignoffWithGate(me) {
+  const snapshot = await loadEngagementWorkflowSnapshot();
+  const readiness = snapshot?.readiness;
+
+  if (!readiness) {
+    alert("Unable to evaluate sign-off readiness.");
+    return;
+  }
+
+  if (!readiness.isReadyForPartnerSignoff) {
+    const msg = (readiness.blockers || [])
+      .map((b) => `• ${b.label}: ${b.count}`)
+      .join("\n");
+
+    alert(`This engagement is not ready for partner sign-off.\n\nBlocking items:\n${msg}`);
+    return;
+  }
+
+  await switchPractitionerScreen(PR_NAV.partnerSignoff, me);
 }
 
 function setPageTitle(companyName, dashboardName = "Practitioner Dashboard") {
@@ -2466,6 +2695,10 @@ function runPractitionerScreenBinder(screen, me) {
       renderPendingDeliverablesScreen?.(me);
       break;
 
+    case PR_NAV.workingPapers:
+      renderWorkingPapersScreen?.(me);
+      break;
+
     case PR_NAV.dayToDayPostings:
       renderDayToDayPostingsScreen?.(me);
       break;
@@ -2492,6 +2725,50 @@ function runPractitionerScreenBinder(screen, me) {
 
     case PR_NAV.deliverables:
       renderDeliverablesScreen?.(me);
+      break;
+
+    case PR_NAV.partnerSignoff:
+      renderPartnerSignoffScreen?.(me);
+      break;
+
+    case PR_NAV.teamCapacity:
+      renderTeamCapacityScreen?.(me);
+      break;
+
+    case PR_NAV.portfolioReview:
+      renderPortfolioReviewScreen?.(me);
+      break;
+
+    case PR_NAV.escalations:
+      renderEscalationsScreen?.(me);
+      break;
+
+    case PR_NAV.approvalCenter:
+      renderApprovalCenterScreen?.(me);
+      break;
+
+    case PR_NAV.resourcePlanning:
+      renderResourcePlanningScreen?.(me);
+      break;
+
+    case PR_NAV.finalDeliverablesReview:
+      renderFinalDeliverablesReviewScreen?.(me);
+      break;
+
+    case PR_NAV.engagementAcceptance:
+      renderEngagementAcceptanceScreen?.(me);
+      break;
+
+    case PR_NAV.riskIndependence:
+      renderRiskIndependenceScreen?.(me);
+      break;
+
+    case PR_NAV.overrideLog:
+      renderOverrideLogScreen?.(me);
+      break;
+
+    case PR_NAV.deliverablesRegister:
+      renderDeliverablesRegisterScreen?.(me);
       break;
 
     case PR_NAV.partnerSignoff:
@@ -7760,6 +8037,26 @@ async function bindReviewQueueEvents(me) {
     }
   });
 
+  document.querySelectorAll("[data-rq-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.getAttribute("data-rq-action");
+      const id = btn.getAttribute("data-rq-id");
+      const type = btn.getAttribute("data-rq-type");
+
+      const row = (window.__PR_REVIEW_QUEUE_STATE__?.rows || []).find(
+        (r) => String(r.source_id) === String(id) && String(r.queue_type) === String(type)
+      );
+      if (!row) return;
+
+      try {
+        await resolveReviewQueueAction(row, action);
+        await renderReviewQueueScreen?.(window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to process review action.");
+      }
+    });
+  });
+
   document.addEventListener("change", async (e) => {
     if (e.target.id === "rqQueueTypeFilter") {
       PR_REVIEW_QUEUE_CACHE.filters.queue_type = e.target.value || "";
@@ -8106,6 +8403,23 @@ async function bindDeliverablesScreen(me) {
       await loadDeliverablesScreen(me);
       return;
     }
+
+    document.querySelectorAll("[data-deliv-create-wp]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-deliv-create-wp");
+        const row = (window.__PR_DELIVERABLES_STATE__?.rows || []).find((r) => String(r.id) === String(id));
+        if (!row) return;
+
+        try {
+          const wp = await createWorkingPaperFromDeliverable(row);
+          alert(`Working paper created: ${wp.paper_name || wp.id}`);
+          await renderDeliverablesRegisterScreen?.(window.__PR_ME__);
+        } catch (err) {
+          alert(err?.message || "Failed to create working paper.");
+        }
+      });
+    });
 
     if (e.target.id === "dlNewBtn") {
       await openDeliverableModal(me, null);
@@ -8607,6 +8921,10 @@ async function bindSignoffScreen(me) {
       await loadSignoffScreen(me);
     }
   });
+
+  document.getElementById("openPartnerSignoffBtn")?.addEventListener("click", async () => {
+    await openPartnerSignoffWithGate(window.__PR_ME__);
+  });
 }
 
 async function renderPartnerSignoffScreen(me) {
@@ -8828,6 +9146,1867 @@ async function populateSignoffAssignedFilter(me) {
 
   const current = PR_SIGNOFF_VIEW_CACHE.filters?.assigned_user_id || "";
   prMaybeSetValue("psAssignedFilter", current);
+}
+
+window.__PR_WORKING_PAPERS_STATE__ = {
+  rows: [],
+  selectedId: null,
+  summary: null,
+  filters: {
+    quick: "all",
+    paper_section: "",
+    paper_type: "",
+    status: "",
+    priority: "",
+    q: "",
+    mine_only: false,
+    limit: 100,
+    offset: 0
+  },
+  modal: {
+    mode: "create",
+    id: null,
+    open: false
+  }
+};
+
+function getPractitionerActiveCompanyId() {
+  return (
+    window.__PR_CONTEXT__?.companyId ||
+    window.__PR_ACTIVE_COMPANY_ID__ ||
+    window.__COMPANY_ID__ ||
+    getCurrentCompanyId?.() ||
+    null
+  );
+}
+
+function getPractitionerActiveCustomerId() {
+  return (
+    window.__PR_CONTEXT__?.customerId ||
+    window.__PR_ACTIVE_CUSTOMER_ID__ ||
+    null
+  );
+}
+
+function getPractitionerActiveEngagementId() {
+  return (
+    window.__PR_CONTEXT__?.engagementId ||
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
+    null
+  );
+}
+
+function wpEsc(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function wpSafeText(v, fallback = "—") {
+  const s = String(v == null ? "" : v).trim();
+  return s || fallback;
+}
+
+function wpFormatDate(v) {
+  if (!v) return "—";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch (_) {
+    return String(v);
+  }
+}
+
+function wpPrettyLabel(v) {
+  return String(v || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function wpStatusBadgeClass(status) {
+  return `status-${String(status || "").replace(/\s+/g, "-")}`;
+}
+
+function wpPriorityBadgeClass(priority) {
+  return `priority-${String(priority || "").replace(/\s+/g, "-")}`;
+}
+
+function wpGetSelectedRow() {
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  return (state.rows || []).find((r) => String(r.id) === String(state.selectedId)) || null;
+}
+
+function wpSetQuickFilter(quick) {
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  state.filters.quick = quick || "all";
+  state.filters.mine_only = false;
+  state.filters.status = "";
+
+  if (quick === "mine") {
+    state.filters.mine_only = true;
+  } else if (quick === "prepared") {
+    state.filters.status = "prepared";
+  } else if (quick === "review") {
+    state.filters.status = "in_review";
+  } else if (quick === "blocked") {
+    state.filters.status = "blocked";
+  }
+
+  state.filters.offset = 0;
+}
+
+function wpToDateTimeLocal(v) {
+  if (!v) return "";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch (_) {
+    return "";
+  }
+}
+
+function wpFromDateTimeLocal(v) {
+  return v ? v : null;
+}
+
+function wpParseInt(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function wpLoadSummary() {
+  const companyId = getPractitionerActiveCompanyId();
+  if (!companyId) return null;
+
+  const customerId = getPractitionerActiveCustomerId();
+  const engagementId = getPractitionerActiveEngagementId();
+
+  const json = await apiFetch(
+    API_ROUTES.workingPapers.summary(companyId, {
+      customer_id: customerId || "",
+      engagement_id: engagementId || ""
+    })
+  );
+
+  return json?.row || json?.data || null;
+}
+
+async function wpLoadRows() {
+  const companyId = getPractitionerActiveCompanyId();
+  if (!companyId) return [];
+
+  const customerId = getPractitionerActiveCustomerId();
+  const engagementId = getPractitionerActiveEngagementId();
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  const f = state.filters || {};
+
+  const json = await apiFetch(
+    API_ROUTES.workingPapers.list(companyId, {
+      customer_id: customerId || "",
+      engagement_id: engagementId || "",
+      paper_section: f.paper_section || "",
+      paper_type: f.paper_type || "",
+      status: f.status || "",
+      priority: f.priority || "",
+      mine_only: !!f.mine_only,
+      q: f.q || "",
+      limit: f.limit || 100,
+      offset: f.offset || 0
+    })
+  );
+
+  return json?.rows || json?.data?.rows || [];
+}
+
+async function wpFetchOne(workingPaperId) {
+  const companyId = getPractitionerActiveCompanyId();
+  if (!companyId || !workingPaperId) return null;
+  const json = await apiFetch(API_ROUTES.workingPapers.get(companyId, workingPaperId));
+  return json?.row || null;
+}
+
+function wpBuildToolbarHtml() {
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  const f = state.filters || {};
+
+  return `
+    <div class="wp-card wp-toolbar">
+      <div class="wp-toolbar-copy">
+        <div class="wp-toolbar-title">Working Papers</div>
+        <div class="wp-toolbar-subtitle">
+          Prepare, review, and manage structured workpapers, schedules, reconciliations, memos, and linked support.
+        </div>
+      </div>
+
+      <div class="wp-toolbar-actions">
+        <input id="wpSearchInput" class="wp-search" type="text" placeholder="Search paper, code, client, engagement, section..." value="${wpEsc(f.q || "")}" />
+        <button class="wp-btn" id="wpSearchBtn">Search</button>
+        <button class="wp-btn" id="wpRefreshBtn">Refresh</button>
+        <button class="wp-btn wp-btn-primary" id="wpCreateBtn">New Working Paper</button>
+      </div>
+    </div>
+  `;
+}
+
+function wpBuildKpisHtml(summary) {
+  const totalItems = Number(summary?.total_items || 0);
+  const readyOrInReview = Number(summary?.ready_or_in_review || 0);
+  const overdueItems = Number(summary?.overdue_items || 0);
+  const blockedItems = Number(summary?.blocked_items || 0);
+  const myItems = Number(summary?.my_items || 0);
+
+  return `
+    <div class="wp-kpis">
+      <div class="wp-card wp-kpi">
+        <div class="wp-kpi-label">Total papers</div>
+        <div class="wp-kpi-value">${totalItems}</div>
+        <div class="wp-kpi-note">All active workpapers in scope</div>
+      </div>
+      <div class="wp-card wp-kpi">
+        <div class="wp-kpi-label">Prepared / in review</div>
+        <div class="wp-kpi-value">${readyOrInReview}</div>
+        <div class="wp-kpi-note">Ready for reviewer attention</div>
+      </div>
+      <div class="wp-card wp-kpi">
+        <div class="wp-kpi-label">Overdue</div>
+        <div class="wp-kpi-value">${overdueItems}</div>
+        <div class="wp-kpi-note">Past due and still open</div>
+      </div>
+      <div class="wp-card wp-kpi">
+        <div class="wp-kpi-label">Blocked</div>
+        <div class="wp-kpi-value">${blockedItems}</div>
+        <div class="wp-kpi-note">Require escalation or support</div>
+      </div>
+      <div class="wp-card wp-kpi">
+        <div class="wp-kpi-label">My papers</div>
+        <div class="wp-kpi-value">${myItems}</div>
+        <div class="wp-kpi-note">Assigned or routed to me</div>
+      </div>
+    </div>
+  `;
+}
+
+function wpBuildRegisterHtml() {
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  const rows = Array.isArray(state.rows) ? state.rows : [];
+  const f = state.filters || {};
+
+  let displayRows = rows.slice();
+  if (f.quick === "overdue") {
+    displayRows = displayRows.filter((r) => !!r.is_overdue);
+  }
+
+  const rowHtml = displayRows.length
+    ? displayRows.map((row) => {
+        const isSelected = String(state.selectedId) === String(row.id);
+        return `
+          <tr class="${isSelected ? "is-selected" : ""}" data-wp-row-id="${wpEsc(row.id)}">
+            <td><span class="wp-badge ${wpPriorityBadgeClass(row.priority)}">${wpEsc(wpPrettyLabel(row.priority || "normal"))}</span></td>
+            <td>${wpEsc(wpPrettyLabel(row.paper_section || ""))}</td>
+            <td>${wpEsc(wpPrettyLabel(row.paper_type || ""))}</td>
+            <td>
+              <div class="wp-item-title">${wpEsc(row.paper_name || "—")}</div>
+              <div class="wp-item-meta">${wpEsc(row.paper_code || "No code")}</div>
+            </td>
+            <td>
+              <div class="wp-item-title">${wpEsc(row.customer_name || "—")}</div>
+              <div class="wp-item-meta">${wpEsc(row.engagement_name || "—")} • ${wpEsc(row.engagement_code || "—")}</div>
+            </td>
+            <td>${wpEsc(row.preparer_user_name || "—")}</td>
+            <td>${wpEsc(row.reviewer_user_name || "—")}</td>
+            <td><span class="wp-badge ${wpStatusBadgeClass(row.status)}">${wpEsc(wpPrettyLabel(row.status || ""))}</span></td>
+            <td>${wpEsc(wpFormatDate(row.due_date))}</td>
+            <td>
+              <div class="wp-row-actions">
+                <button class="wp-mini-btn" data-wp-open="${wpEsc(row.id)}">Open</button>
+                <button class="wp-mini-btn" data-wp-edit="${wpEsc(row.id)}">Edit</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("")
+    : `
+      <tr>
+        <td colspan="10">
+          <div class="wp-empty">No working papers found for the current filters.</div>
+        </td>
+      </tr>
+    `;
+
+  const pageNo = Math.floor((Number(f.offset || 0) / Number(f.limit || 100)) + 1);
+
+  return `
+    <div class="wp-card wp-panel">
+      <div class="wp-panel-title">Working papers register</div>
+      <div class="wp-panel-subtitle">Search, filter, open, edit, and route workpapers for the active engagement.</div>
+
+      <div class="wp-chip-row">
+        <button class="wp-chip ${f.quick === "all" ? "active" : ""}" data-wp-quick="all">All</button>
+        <button class="wp-chip ${f.quick === "prepared" ? "active" : ""}" data-wp-quick="prepared">Prepared</button>
+        <button class="wp-chip ${f.quick === "review" ? "active" : ""}" data-wp-quick="review">In review</button>
+        <button class="wp-chip ${f.quick === "blocked" ? "active" : ""}" data-wp-quick="blocked">Blocked</button>
+        <button class="wp-chip ${f.quick === "overdue" ? "active" : ""}" data-wp-quick="overdue">Overdue</button>
+        <button class="wp-chip ${f.quick === "mine" ? "active" : ""}" data-wp-quick="mine">Mine only</button>
+      </div>
+
+      <div class="wp-filters">
+        <select id="wpSectionFilter">
+          <option value="">All sections</option>
+          <option value="planning" ${f.paper_section === "planning" ? "selected" : ""}>Planning</option>
+          <option value="cash" ${f.paper_section === "cash" ? "selected" : ""}>Cash</option>
+          <option value="receivables" ${f.paper_section === "receivables" ? "selected" : ""}>Receivables</option>
+          <option value="payables" ${f.paper_section === "payables" ? "selected" : ""}>Payables</option>
+          <option value="revenue" ${f.paper_section === "revenue" ? "selected" : ""}>Revenue</option>
+          <option value="expenses" ${f.paper_section === "expenses" ? "selected" : ""}>Expenses</option>
+          <option value="payroll" ${f.paper_section === "payroll" ? "selected" : ""}>Payroll</option>
+          <option value="tax" ${f.paper_section === "tax" ? "selected" : ""}>Tax</option>
+          <option value="ppe" ${f.paper_section === "ppe" ? "selected" : ""}>PPE</option>
+          <option value="equity" ${f.paper_section === "equity" ? "selected" : ""}>Equity</option>
+          <option value="fs" ${f.paper_section === "fs" ? "selected" : ""}>FS</option>
+          <option value="completion" ${f.paper_section === "completion" ? "selected" : ""}>Completion</option>
+          <option value="other" ${f.paper_section === "other" ? "selected" : ""}>Other</option>
+        </select>
+
+        <select id="wpTypeFilter">
+          <option value="">All paper types</option>
+          <option value="working_paper" ${f.paper_type === "working_paper" ? "selected" : ""}>Working paper</option>
+          <option value="lead_schedule" ${f.paper_type === "lead_schedule" ? "selected" : ""}>Lead schedule</option>
+          <option value="reconciliation" ${f.paper_type === "reconciliation" ? "selected" : ""}>Reconciliation</option>
+          <option value="checklist" ${f.paper_type === "checklist" ? "selected" : ""}>Checklist</option>
+          <option value="memo" ${f.paper_type === "memo" ? "selected" : ""}>Memo</option>
+          <option value="analysis" ${f.paper_type === "analysis" ? "selected" : ""}>Analysis</option>
+          <option value="support" ${f.paper_type === "support" ? "selected" : ""}>Support</option>
+        </select>
+
+        <select id="wpStatusFilter">
+          <option value="">All statuses</option>
+          <option value="not_started" ${f.status === "not_started" ? "selected" : ""}>Not started</option>
+          <option value="in_progress" ${f.status === "in_progress" ? "selected" : ""}>In progress</option>
+          <option value="prepared" ${f.status === "prepared" ? "selected" : ""}>Prepared</option>
+          <option value="in_review" ${f.status === "in_review" ? "selected" : ""}>In review</option>
+          <option value="reviewed" ${f.status === "reviewed" ? "selected" : ""}>Reviewed</option>
+          <option value="cleared" ${f.status === "cleared" ? "selected" : ""}>Cleared</option>
+          <option value="blocked" ${f.status === "blocked" ? "selected" : ""}>Blocked</option>
+          <option value="returned" ${f.status === "returned" ? "selected" : ""}>Returned</option>
+          <option value="archived" ${f.status === "archived" ? "selected" : ""}>Archived</option>
+        </select>
+
+        <select id="wpPriorityFilter">
+          <option value="">All priorities</option>
+          <option value="urgent" ${f.priority === "urgent" ? "selected" : ""}>Urgent</option>
+          <option value="high" ${f.priority === "high" ? "selected" : ""}>High</option>
+          <option value="normal" ${f.priority === "normal" ? "selected" : ""}>Normal</option>
+          <option value="low" ${f.priority === "low" ? "selected" : ""}>Low</option>
+        </select>
+
+        <select id="wpLimitFilter">
+          <option value="25" ${String(f.limit) === "25" ? "selected" : ""}>25 rows</option>
+          <option value="50" ${String(f.limit) === "50" ? "selected" : ""}>50 rows</option>
+          <option value="100" ${String(f.limit) === "100" ? "selected" : ""}>100 rows</option>
+          <option value="200" ${String(f.limit) === "200" ? "selected" : ""}>200 rows</option>
+        </select>
+      </div>
+
+      <div class="wp-table-wrap">
+        <table class="wp-table">
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Section</th>
+              <th>Type</th>
+              <th>Paper</th>
+              <th>Client / Engagement</th>
+              <th>Preparer</th>
+              <th>Reviewer</th>
+              <th>Status</th>
+              <th>Due</th>
+              <th>Next</th>
+            </tr>
+          </thead>
+          <tbody>${rowHtml}</tbody>
+        </table>
+      </div>
+
+      <div class="wp-footer">
+        <div class="wp-footer-note">Showing ${displayRows.length} item(s)</div>
+        <div class="wp-pagination">
+          <button class="wp-btn" id="wpPrevPageBtn">Previous</button>
+          <span class="wp-page-pill">Page ${pageNo}</span>
+          <button class="wp-btn" id="wpNextPageBtn">Next</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function wpBuildDetailHtml() {
+  const row = wpGetSelectedRow();
+
+  if (!row) {
+    return `
+      <div class="wp-card wp-panel">
+        <div class="wp-panel-title">Selected working paper</div>
+        <div class="wp-panel-subtitle">Detail, routing, notes, and workflow actions</div>
+        <div class="wp-detail-empty">Select a working paper from the register to view its details.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="wp-card wp-panel">
+      <div class="wp-panel-title">Selected working paper</div>
+      <div class="wp-panel-subtitle">Detail, routing, notes, linked records, and quick workflow actions</div>
+
+      <div class="wp-detail-block">
+        <div class="wp-detail-head">
+          <div>
+            <div class="wp-detail-title">${wpEsc(row.paper_name || "—")}</div>
+            <div class="wp-detail-subtitle">
+              ${wpEsc(row.paper_code || "No code")} • ${wpEsc(wpPrettyLabel(row.paper_section || ""))} • ${wpEsc(wpPrettyLabel(row.paper_type || ""))}
+            </div>
+          </div>
+
+          <div class="wp-detail-actions">
+            <button class="wp-btn" data-wp-status-action="prepared">Mark prepared</button>
+            <button class="wp-btn" data-wp-status-action="in_review">Send to review</button>
+            <button class="wp-btn" data-wp-status-action="cleared">Clear</button>
+            <button class="wp-btn" id="wpEditSelectedBtn">Edit</button>
+            <button class="wp-btn wp-btn-danger" id="wpDeactivateSelectedBtn">Deactivate</button>
+          </div>
+        </div>
+
+        <div class="wp-detail-grid">
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Status</div>
+            <div class="wp-detail-value"><span class="wp-badge ${wpStatusBadgeClass(row.status)}">${wpEsc(wpPrettyLabel(row.status || ""))}</span></div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Priority</div>
+            <div class="wp-detail-value"><span class="wp-badge ${wpPriorityBadgeClass(row.priority)}">${wpEsc(wpPrettyLabel(row.priority || ""))}</span></div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Client</div>
+            <div class="wp-detail-value">${wpEsc(row.customer_name || "—")}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Engagement</div>
+            <div class="wp-detail-value">${wpEsc(row.engagement_name || "—")} • ${wpEsc(row.engagement_code || "—")}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Preparer</div>
+            <div class="wp-detail-value">${wpEsc(row.preparer_user_name || "—")}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Reviewer</div>
+            <div class="wp-detail-value">${wpEsc(row.reviewer_user_name || "—")}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Due date</div>
+            <div class="wp-detail-value">${wpEsc(wpFormatDate(row.due_date))}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Version</div>
+            <div class="wp-detail-value">${wpEsc(row.version_no || "1")}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Documents</div>
+            <div class="wp-detail-value">${wpEsc(row.document_count || 0)}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Prepared at</div>
+            <div class="wp-detail-value">${wpEsc(wpFormatDate(row.prepared_at))}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Reviewed at</div>
+            <div class="wp-detail-value">${wpEsc(wpFormatDate(row.reviewed_at))}</div>
+          </div>
+          <div class="wp-detail-field">
+            <div class="wp-detail-label">Cleared at</div>
+            <div class="wp-detail-value">${wpEsc(wpFormatDate(row.cleared_at))}</div>
+          </div>
+        </div>
+
+        <div class="wp-note-stack">
+          <div class="wp-note-card">
+            <div class="wp-note-title">Working notes</div>
+            <div class="wp-note-body">${wpEsc(wpSafeText(row.notes, "No working notes captured yet."))}</div>
+          </div>
+
+          <div class="wp-note-card">
+            <div class="wp-note-title">Review notes</div>
+            <div class="wp-note-body">${wpEsc(wpSafeText(row.review_notes, "No review notes captured yet."))}</div>
+          </div>
+
+          <div class="wp-note-card">
+            <div class="wp-note-title">Linked records</div>
+            <div class="wp-note-body">Reporting item ID: ${wpEsc(row.linked_reporting_item_id || "—")}\nDeliverable ID: ${wpEsc(row.linked_deliverable_id || "—")}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function wpRenderShell() {
+  const mount = document.getElementById("workingPapersMount");
+  if (!mount) return;
+
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+
+  mount.innerHTML = `
+    ${wpBuildToolbarHtml()}
+    ${wpBuildKpisHtml(state.summary)}
+    <div class="wp-main">
+      ${wpBuildRegisterHtml()}
+      ${wpBuildDetailHtml()}
+    </div>
+  `;
+
+  wpBindEvents();
+}
+
+function wpBindEvents() {
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+
+  document.getElementById("wpSearchBtn")?.addEventListener("click", async () => {
+    state.filters.q = document.getElementById("wpSearchInput")?.value?.trim() || "";
+    state.filters.offset = 0;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpSearchInput")?.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      state.filters.q = e.currentTarget.value.trim() || "";
+      state.filters.offset = 0;
+      await renderWorkingPapersScreen(window.__PR_ME__);
+    }
+  });
+
+  document.getElementById("wpRefreshBtn")?.addEventListener("click", async () => {
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpCreateBtn")?.addEventListener("click", async () => {
+    wpOpenModal("create");
+  });
+
+  document.getElementById("wpSectionFilter")?.addEventListener("change", async (e) => {
+    state.filters.paper_section = e.target.value || "";
+    state.filters.offset = 0;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpTypeFilter")?.addEventListener("change", async (e) => {
+    state.filters.paper_type = e.target.value || "";
+    state.filters.offset = 0;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpStatusFilter")?.addEventListener("change", async (e) => {
+    state.filters.status = e.target.value || "";
+    state.filters.offset = 0;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpPriorityFilter")?.addEventListener("change", async (e) => {
+    state.filters.priority = e.target.value || "";
+    state.filters.offset = 0;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpLimitFilter")?.addEventListener("change", async (e) => {
+    state.filters.limit = Number(e.target.value || 100) || 100;
+    state.filters.offset = 0;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.querySelectorAll("[data-wp-quick]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      wpSetQuickFilter(btn.getAttribute("data-wp-quick"));
+      await renderWorkingPapersScreen(window.__PR_ME__);
+    });
+  });
+
+  document.querySelectorAll("[data-wp-row-id]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.selectedId = el.getAttribute("data-wp-row-id");
+      wpRenderShell();
+    });
+  });
+
+  document.querySelectorAll("[data-wp-open]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.selectedId = btn.getAttribute("data-wp-open");
+      wpRenderShell();
+    });
+  });
+
+  document.querySelectorAll("[data-wp-edit]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute("data-wp-edit");
+      if (!id) return;
+      state.selectedId = id;
+      await wpOpenModal("edit", id);
+    });
+  });
+
+  document.querySelectorAll("[data-wp-status-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const nextStatus = btn.getAttribute("data-wp-status-action");
+      const row = wpGetSelectedRow();
+      if (!row?.id || !nextStatus) return;
+      await wpSetStatus(row.id, nextStatus);
+    });
+  });
+
+  document.getElementById("wpEditSelectedBtn")?.addEventListener("click", async () => {
+    const row = wpGetSelectedRow();
+    if (!row?.id) return;
+    await wpOpenModal("edit", row.id);
+  });
+
+  document.getElementById("wpDeactivateSelectedBtn")?.addEventListener("click", async () => {
+    const row = wpGetSelectedRow();
+    if (!row?.id) return;
+    await wpDeactivate(row.id);
+  });
+
+  document.getElementById("wpPrevPageBtn")?.addEventListener("click", async () => {
+    state.filters.offset = Math.max(0, Number(state.filters.offset || 0) - Number(state.filters.limit || 100));
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpNextPageBtn")?.addEventListener("click", async () => {
+    state.filters.offset = Number(state.filters.offset || 0) + Number(state.filters.limit || 100);
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("wpModalCloseBtn")?.addEventListener("click", wpCloseModal);
+  document.getElementById("wpModalCancelBtn")?.addEventListener("click", wpCloseModal);
+  document.getElementById("wpModalSaveBtn")?.addEventListener("click", wpSaveModal);
+
+  document.querySelectorAll("[data-wp-mark-prepared]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-wp-mark-prepared");
+      try {
+        await markWorkingPaperPrepared(id);
+        await renderWorkingPapersScreen(window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to mark prepared.");
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-wp-send-review]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-wp-send-review");
+      try {
+        await sendWorkingPaperToReview(id);
+        await renderWorkingPapersScreen(window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to send to review.");
+      }
+    });
+  });
+
+  document.getElementById("wpModalBackdrop")?.addEventListener("click", (e) => {
+    if (e.target?.id === "wpModalBackdrop") wpCloseModal();
+  });
+}
+
+function wpOpenModal(mode = "create", workingPaperId = null) {
+  const backdrop = document.getElementById("wpModalBackdrop");
+  const title = document.getElementById("wpModalTitle");
+  const subtitle = document.getElementById("wpModalSubtitle");
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+
+  state.modal.mode = mode;
+  state.modal.id = workingPaperId || null;
+  state.modal.open = true;
+
+  if (title) title.textContent = mode === "edit" ? "Edit Working Paper" : "New Working Paper";
+  if (subtitle) subtitle.textContent = mode === "edit"
+    ? "Update the selected working paper."
+    : "Create a structured working paper for the selected engagement.";
+
+  wpResetModalForm();
+
+  if (mode === "edit" && workingPaperId) {
+    wpPopulateModalFromSelected();
+  }
+
+  backdrop?.classList.add("active");
+}
+
+function wpCloseModal() {
+  const backdrop = document.getElementById("wpModalBackdrop");
+  backdrop?.classList.remove("active");
+
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  state.modal.open = false;
+  state.modal.id = null;
+}
+
+function wpResetModalForm() {
+  const form = document.getElementById("wpForm");
+  if (!form) return;
+  form.reset();
+
+  document.getElementById("wpFormStatus").value = "not_started";
+  document.getElementById("wpFormPriority").value = "normal";
+  document.getElementById("wpFormPaperType").value = "working_paper";
+  document.getElementById("wpFormVersionNo").value = "1";
+  document.getElementById("wpFormDocumentCount").value = "0";
+}
+
+function wpPopulateModalFromSelected() {
+  const row = wpGetSelectedRow();
+  if (!row) return;
+
+  const set = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value == null ? "" : String(value);
+  };
+
+  set("wpFormPaperCode", row.paper_code);
+  set("wpFormPaperName", row.paper_name);
+  set("wpFormPaperSection", row.paper_section);
+  set("wpFormPaperType", row.paper_type);
+  set("wpFormStatus", row.status);
+  set("wpFormPriority", row.priority);
+  set("wpFormPreparerUserId", row.preparer_user_id);
+  set("wpFormReviewerUserId", row.reviewer_user_id);
+  set("wpFormDueDate", row.due_date ? String(row.due_date).slice(0, 10) : "");
+  set("wpFormVersionNo", row.version_no || 1);
+  set("wpFormDocumentCount", row.document_count || 0);
+  set("wpFormPreparedAt", wpToDateTimeLocal(row.prepared_at));
+  set("wpFormReviewedAt", wpToDateTimeLocal(row.reviewed_at));
+  set("wpFormClearedAt", wpToDateTimeLocal(row.cleared_at));
+  set("wpFormLinkedReportingItemId", row.linked_reporting_item_id);
+  set("wpFormLinkedDeliverableId", row.linked_deliverable_id);
+  set("wpFormNotes", row.notes);
+  set("wpFormReviewNotes", row.review_notes);
+}
+
+function wpCollectModalPayload() {
+  const engagementId = getPractitionerActiveEngagementId();
+  const payload = {
+    engagement_id: Number(engagementId),
+    paper_code: document.getElementById("wpFormPaperCode")?.value?.trim() || null,
+    paper_name: document.getElementById("wpFormPaperName")?.value?.trim() || null,
+    paper_section: document.getElementById("wpFormPaperSection")?.value || null,
+    paper_type: document.getElementById("wpFormPaperType")?.value || "working_paper",
+    status: document.getElementById("wpFormStatus")?.value || "not_started",
+    priority: document.getElementById("wpFormPriority")?.value || "normal",
+    preparer_user_id: wpParseInt(document.getElementById("wpFormPreparerUserId")?.value),
+    reviewer_user_id: wpParseInt(document.getElementById("wpFormReviewerUserId")?.value),
+    due_date: document.getElementById("wpFormDueDate")?.value || null,
+    version_no: wpParseInt(document.getElementById("wpFormVersionNo")?.value) || 1,
+    document_count: wpParseInt(document.getElementById("wpFormDocumentCount")?.value) || 0,
+    prepared_at: wpFromDateTimeLocal(document.getElementById("wpFormPreparedAt")?.value),
+    reviewed_at: wpFromDateTimeLocal(document.getElementById("wpFormReviewedAt")?.value),
+    cleared_at: wpFromDateTimeLocal(document.getElementById("wpFormClearedAt")?.value),
+    linked_reporting_item_id: wpParseInt(document.getElementById("wpFormLinkedReportingItemId")?.value),
+    linked_deliverable_id: wpParseInt(document.getElementById("wpFormLinkedDeliverableId")?.value),
+    notes: document.getElementById("wpFormNotes")?.value?.trim() || null,
+    review_notes: document.getElementById("wpFormReviewNotes")?.value?.trim() || null
+  };
+
+  return payload;
+}
+
+async function wpSaveModal() {
+  try {
+    const companyId = getPractitionerActiveCompanyId();
+    const engagementId = getPractitionerActiveEngagementId();
+    const state = window.__PR_WORKING_PAPERS_STATE__;
+
+    if (!companyId) {
+      alert("No active company in context.");
+      return;
+    }
+
+    if (!engagementId) {
+      alert("Select an engagement first.");
+      return;
+    }
+
+    const payload = wpCollectModalPayload();
+
+    if (!payload.paper_name) {
+      alert("Paper name is required.");
+      return;
+    }
+
+    if (!payload.paper_section) {
+      alert("Paper section is required.");
+      return;
+    }
+
+    let json;
+    if (state.modal.mode === "edit" && state.modal.id) {
+      json = await apiFetch(API_ROUTES.workingPapers.update(companyId, state.modal.id), {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
+    } else {
+      json = await apiFetch(API_ROUTES.workingPapers.create(companyId), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+    }
+
+    const row = json?.row || null;
+    if (row?.id) {
+      state.selectedId = row.id;
+    }
+
+    wpCloseModal();
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  } catch (err) {
+    alert(err?.message || "Failed to save working paper.");
+  }
+}
+
+async function wpSetStatus(workingPaperId, status) {
+  try {
+    const companyId = getPractitionerActiveCompanyId();
+    if (!companyId) {
+      alert("No active company in context.");
+      return;
+    }
+
+    await apiFetch(API_ROUTES.workingPapers.setStatus(companyId, workingPaperId), {
+      method: "POST",
+      body: JSON.stringify({ status })
+    });
+
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  } catch (err) {
+    alert(err?.message || "Failed to update working paper status.");
+  }
+}
+
+async function wpDeactivate(workingPaperId) {
+  try {
+    const companyId = getPractitionerActiveCompanyId();
+    if (!companyId) {
+      alert("No active company in context.");
+      return;
+    }
+
+    const ok = window.confirm("Deactivate this working paper?");
+    if (!ok) return;
+
+    await apiFetch(API_ROUTES.workingPapers.deactivate(companyId, workingPaperId), {
+      method: "POST"
+    });
+
+    window.__PR_WORKING_PAPERS_STATE__.selectedId = null;
+    await renderWorkingPapersScreen(window.__PR_ME__);
+  } catch (err) {
+    alert(err?.message || "Failed to deactivate working paper.");
+  }
+}
+
+async function renderWorkingPapersScreen(me) {
+  const mount = document.getElementById("workingPapersMount");
+  if (!mount) return;
+
+  const engagementId = getPractitionerActiveEngagementId();
+  if (!engagementId) {
+    mount.innerHTML = `
+      <div class="wp-card wp-toolbar">
+        <div class="wp-toolbar-copy">
+          <div class="wp-toolbar-title">Working Papers</div>
+          <div class="wp-toolbar-subtitle">Select an engagement first to manage working papers for that engagement.</div>
+        </div>
+      </div>
+      <div class="wp-card wp-panel">
+        <div class="wp-empty">Select an engagement first to open the working papers workspace.</div>
+      </div>
+    `;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="wp-card wp-panel">
+      <div class="wp-empty">Loading working papers...</div>
+    </div>
+  `;
+
+  try {
+    const state = window.__PR_WORKING_PAPERS_STATE__;
+    const [summary, rows] = await Promise.all([wpLoadSummary(), wpLoadRows()]);
+
+    state.summary = summary;
+    state.rows = Array.isArray(rows) ? rows : [];
+
+    let displayRows = state.rows.slice();
+    if (state.filters.quick === "overdue") {
+      displayRows = displayRows.filter((r) => !!r.is_overdue);
+    }
+
+    if (!state.selectedId && displayRows.length) {
+      state.selectedId = displayRows[0].id;
+    } else if (state.selectedId && !displayRows.find((r) => String(r.id) === String(state.selectedId))) {
+      state.selectedId = displayRows[0]?.id || null;
+    }
+
+    wpRenderShell();
+  } catch (err) {
+    mount.innerHTML = `
+      <div class="wp-card wp-panel">
+        <div class="wp-empty">${wpEsc(err?.message || "Failed to load working papers.")}</div>
+      </div>
+    `;
+  }
+}
+
+function renderTeamCapacityScreen(me) {
+  renderManagerStubScreen(PR_NAV.teamCapacity, {
+    title: "Team Capacity",
+    subtitle: "Cross-engagement staffing, allocation load, and reviewer capacity visibility.",
+    items: [
+      { label: "Allocation by user", desc: "Show total assigned workload per team member across active engagements." },
+      { label: "Reviewer pressure", desc: "Highlight reviewers carrying too many in-review items or overdue approvals." },
+      { label: "Available capacity", desc: "Identify staff with room for new assignments or urgent reallocation." },
+      { label: "Overload alerts", desc: "Flag users exceeding target allocation or too many concurrent deadlines." }
+    ]
+  });
+}
+
+function renderPortfolioReviewScreen(me) {
+  renderManagerStubScreen(PR_NAV.portfolioReview, {
+    title: "Portfolio Review",
+    subtitle: "Portfolio-wide engagement health, due dates, blockers, and risk indicators.",
+    items: [
+      { label: "Engagement health", desc: "Summarize active engagements by overdue, blocked, or at-risk status." },
+      { label: "Due-date pressure", desc: "Show work due this week, this month, and items already overdue." },
+      { label: "Readiness tracking", desc: "Monitor progress across deliverables, working papers, review, and sign-off." },
+      { label: "Client risk view", desc: "Surface clients requiring escalation, management focus, or partner attention." }
+    ]
+  });
+}
+
+function renderEscalationsScreen(me) {
+  renderManagerStubScreen(PR_NAV.escalations, {
+    title: "Escalations",
+    subtitle: "Blocked work, overdue items, and intervention-required workflow issues.",
+    items: [
+      { label: "Blocked items", desc: "List blocked workpapers, review items, close tasks, and sign-off steps." },
+      { label: "Missing ownership", desc: "Highlight records without preparer, reviewer, or manager coverage." },
+      { label: "Overdue exceptions", desc: "Show items past due that still require action or resolution." },
+      { label: "Escalation routing", desc: "Track who must intervene and whether action has been taken." }
+    ]
+  });
+}
+
+function renderApprovalCenterScreen(me) {
+  renderManagerStubScreen(PR_NAV.approvalCenter, {
+    title: "Approval Center",
+    subtitle: "Manager approvals, review decisions, rework routing, and release controls.",
+    items: [
+      { label: "Pending approvals", desc: "Centralize records awaiting manager review or release decisions." },
+      { label: "Return for rework", desc: "Allow structured rework routing with comments and deadlines." },
+      { label: "Approval audit trail", desc: "Track who approved, returned, or escalated each item." },
+      { label: "Release controls", desc: "Control movement from review completion into partner or final stages." }
+    ]
+  });
+}
+
+function renderResourcePlanningScreen(me) {
+  renderManagerStubScreen(PR_NAV.resourcePlanning, {
+    title: "Resource Planning",
+    subtitle: "Forward-looking staffing, scheduling pressure, and workload balancing.",
+    items: [
+      { label: "Upcoming peaks", desc: "Preview month-end, year-end, and reporting-cycle pressure across the firm." },
+      { label: "Coverage gaps", desc: "Identify engagements with missing managers, reviewers, or specialist roles." },
+      { label: "Reallocation planning", desc: "Support reassignment of staff before deadlines become at risk." },
+      { label: "Scheduling view", desc: "Show who is free, who is overloaded, and where conflicts will arise." }
+    ]
+  });
+}
+
+function renderFinalDeliverablesReviewScreen(me) {
+  renderPartnerStubScreen(PR_NAV.finalDeliverablesReview, {
+    title: "Final Deliverables Review",
+    subtitle: "Final reporting pack review before sign-off and release.",
+    items: [
+      { label: "Final pack completeness", desc: "Review the financial statements pack, notes, and required outputs together." },
+      { label: "Readiness confirmation", desc: "Confirm all required deliverables are complete before sign-off." },
+      { label: "Partner comments", desc: "Capture final review notes and release conditions." },
+      { label: "Pre-sign-off controls", desc: "Prevent sign-off where required pack elements are still missing." }
+    ]
+  });
+}
+
+function renderEngagementAcceptanceScreen(me) {
+  renderPartnerStubScreen(PR_NAV.engagementAcceptance, {
+    title: "Engagement Acceptance",
+    subtitle: "Acceptance, continuation, and approval decisions for client engagements.",
+    items: [
+      { label: "Acceptance decisions", desc: "Approve or decline new engagements before onboarding or execution." },
+      { label: "Continuation review", desc: "Review whether an existing client should be continued into a new cycle." },
+      { label: "Risk factors", desc: "Capture client risk, service complexity, and concern indicators." },
+      { label: "Partner approval evidence", desc: "Store who approved, when, and under what conditions." }
+    ]
+  });
+}
+
+function renderRiskIndependenceScreen(me) {
+  renderPartnerStubScreen(PR_NAV.riskIndependence, {
+    title: "Risk & Independence",
+    subtitle: "Ethics, independence, and engagement risk oversight controls.",
+    items: [
+      { label: "Independence checks", desc: "Track independence confirmations and unresolved conflicts." },
+      { label: "Engagement risk rating", desc: "Store and review high-risk engagements requiring special oversight." },
+      { label: "QC / ethics flags", desc: "Surface matters needing partner or quality control intervention." },
+      { label: "Approval conditions", desc: "Record conditions that must be satisfied before work proceeds." }
+    ]
+  });
+}
+
+function renderOverrideLogScreen(me) {
+  renderPartnerStubScreen(PR_NAV.overrideLog, {
+    title: "Override Log",
+    subtitle: "Partner overrides, exceptions, disputes, and final documented resolutions.",
+    items: [
+      { label: "Override register", desc: "Track final partner decisions that differ from normal workflow outcomes." },
+      { label: "Exception documentation", desc: "Record why exceptions were accepted and by whom." },
+      { label: "Dispute resolution", desc: "Log resolved disagreements between preparers, reviewers, and approvers." },
+      { label: "Audit trail", desc: "Keep a durable record of sensitive approval decisions and their rationale." }
+    ]
+  });
+}
+
+function renderManagerStubScreen(screen, config = {}) {
+  const root = document.getElementById(`screen-${screen}`);
+  if (!root) return;
+
+  const title = config.title || "Management Screen";
+  const subtitle = config.subtitle || "Management workspace.";
+  const bullets = Array.isArray(config.items) ? config.items : [];
+
+  root.innerHTML = `
+    <div class="card p-6">
+      <div class="panel-title">${title}</div>
+      <div class="panel-subtitle mt-1">${subtitle}</div>
+
+      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <div class="text-sm font-semibold text-slate-800">Intended purpose</div>
+        <div class="mt-3 grid gap-3">
+          ${bullets.map((item) => `
+            <div class="rounded-xl border border-slate-200 bg-white p-3">
+              <div class="text-sm font-semibold text-slate-800">${item.label || "Feature"}</div>
+              <div class="mt-1 text-sm text-slate-600">${item.desc || ""}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPartnerStubScreen(screen, config = {}) {
+  const root = document.getElementById(`screen-${screen}`);
+  if (!root) return;
+
+  const title = config.title || "Partner Screen";
+  const subtitle = config.subtitle || "Partner oversight workspace.";
+  const bullets = Array.isArray(config.items) ? config.items : [];
+
+  root.innerHTML = `
+    <div class="card p-6">
+      <div class="panel-title">${title}</div>
+      <div class="panel-subtitle mt-1">${subtitle}</div>
+
+      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <div class="text-sm font-semibold text-slate-800">Planned controls</div>
+        <div class="mt-3 grid gap-3">
+          ${bullets.map((item) => `
+            <div class="rounded-xl border border-slate-200 bg-white p-3">
+              <div class="text-sm font-semibold text-slate-800">${item.label || "Control"}</div>
+              <div class="mt-1 text-sm text-slate-600">${item.desc || ""}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadEngagementWorkflowSnapshot() {
+  const companyId =
+    window.__PR_CONTEXT__?.companyId ||
+    window.__PR_ACTIVE_COMPANY_ID__ ||
+    window.__COMPANY_ID__ ||
+    getCurrentCompanyId?.() ||
+    null;
+
+  const customerId =
+    window.__PR_CONTEXT__?.customerId ||
+    window.__PR_ACTIVE_CUSTOMER_ID__ ||
+    null;
+
+  const engagementId =
+    window.__PR_CONTEXT__?.engagementId ||
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
+    null;
+
+  if (!companyId || !engagementId) {
+    return {
+      companyId: null,
+      customerId: null,
+      engagementId: null,
+      deliverables: [],
+      workingPapers: [],
+      reviewQueue: [],
+      signoffSteps: [],
+      readiness: null
+    };
+  }
+
+  const [deliverablesJson, workingPapersJson, reviewQueueJson, signoffJson] = await Promise.all([
+    apiFetch(
+      ENDPOINTS.engagementOps.deliverablesList(companyId, engagementId, {
+        limit: 500,
+        offset: 0,
+        active_only: true
+      })
+    ),
+    apiFetch(
+      ENDPOINTS.workingPapers.list(companyId, {
+        customer_id: customerId || "",
+        engagement_id: engagementId,
+        limit: 500,
+        offset: 0
+      })
+    ),
+    apiFetch(
+      ENDPOINTS.reviewQueue.list(companyId, engagementId, {
+        limit: 500,
+        offset: 0
+      })
+    ),
+    apiFetch(
+      ENDPOINTS.engagementOps.signoffStepsList(companyId, engagementId, {
+        limit: 500,
+        offset: 0,
+        active_only: true
+      })
+    )
+  ]);
+
+  const deliverables = deliverablesJson?.rows || [];
+  const workingPapers = workingPapersJson?.rows || [];
+  const reviewQueue = reviewQueueJson?.rows || [];
+  const signoffSteps = signoffJson?.rows || [];
+
+  return {
+    companyId,
+    customerId,
+    engagementId,
+    deliverables,
+    workingPapers,
+    reviewQueue,
+    signoffSteps,
+    readiness: evaluateEngagementWorkflowReadiness({
+      deliverables,
+      workingPapers,
+      reviewQueue,
+      signoffSteps
+    })
+  };
+}
+
+function evaluateEngagementWorkflowReadiness({
+  deliverables = [],
+  workingPapers = [],
+  reviewQueue = [],
+  signoffSteps = []
+} = {}) {
+  const norm = (v) => String(v || "").trim().toLowerCase();
+
+  const deliverablesOutstanding = deliverables.filter((d) =>
+    !["received", "completed", "waived"].includes(norm(d.status))
+  );
+
+  const deliverablesOverdue = deliverables.filter((d) => {
+    if (!d?.due_date) return false;
+    const due = new Date(d.due_date);
+    if (Number.isNaN(due.getTime())) return false;
+    return due < new Date() && !["received", "completed", "waived"].includes(norm(d.status));
+  });
+
+  const workingPapersBlocked = workingPapers.filter((w) =>
+    norm(w.status) === "blocked"
+  );
+
+  const workingPapersPendingReview = workingPapers.filter((w) =>
+    ["prepared", "in_review", "returned"].includes(norm(w.status))
+  );
+
+  const unresolvedReviewItems = reviewQueue.filter((q) =>
+    !["approved", "completed", "waived", "cleared", "posted", "reviewed"].includes(norm(q.status))
+  );
+
+  const blockedReviewItems = reviewQueue.filter((q) =>
+    norm(q.status) === "blocked" || !!q.is_blocked
+  );
+
+  const pendingSignoffSteps = signoffSteps.filter((s) =>
+    !["completed", "waived"].includes(norm(s.status))
+  );
+
+  const blockers = [];
+
+  if (deliverablesOutstanding.length) {
+    blockers.push({
+      code: "OUTSTANDING_DELIVERABLES",
+      label: "Outstanding deliverables",
+      count: deliverablesOutstanding.length
+    });
+  }
+
+  if (deliverablesOverdue.length) {
+    blockers.push({
+      code: "OVERDUE_DELIVERABLES",
+      label: "Overdue deliverables",
+      count: deliverablesOverdue.length
+    });
+  }
+
+  if (workingPapersBlocked.length) {
+    blockers.push({
+      code: "BLOCKED_WORKING_PAPERS",
+      label: "Blocked working papers",
+      count: workingPapersBlocked.length
+    });
+  }
+
+  if (workingPapersPendingReview.length) {
+    blockers.push({
+      code: "PENDING_WP_REVIEW",
+      label: "Working papers pending review",
+      count: workingPapersPendingReview.length
+    });
+  }
+
+  if (blockedReviewItems.length) {
+    blockers.push({
+      code: "BLOCKED_REVIEW_ITEMS",
+      label: "Blocked review items",
+      count: blockedReviewItems.length
+    });
+  }
+
+  return {
+    isReadyForPartnerSignoff: blockers.length === 0,
+    blockers,
+    counts: {
+      deliverablesTotal: deliverables.length,
+      outstandingDeliverables: deliverablesOutstanding.length,
+      overdueDeliverables: deliverablesOverdue.length,
+      workingPapersTotal: workingPapers.length,
+      blockedWorkingPapers: workingPapersBlocked.length,
+      pendingWorkingPaperReview: workingPapersPendingReview.length,
+      reviewQueueTotal: reviewQueue.length,
+      unresolvedReviewItems: unresolvedReviewItems.length,
+      blockedReviewItems: blockedReviewItems.length,
+      signoffStepsTotal: signoffSteps.length,
+      pendingSignoffSteps: pendingSignoffSteps.length
+    }
+  };
+}
+
+async function createWorkingPaperFromDeliverable(deliverableRow) {
+  const companyId =
+    window.__PR_CONTEXT__?.companyId ||
+    window.__PR_ACTIVE_COMPANY_ID__ ||
+    window.__COMPANY_ID__ ||
+    getCurrentCompanyId?.() ||
+    null;
+
+  const engagementId =
+    window.__PR_CONTEXT__?.engagementId ||
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
+    null;
+
+  if (!companyId || !engagementId || !deliverableRow?.id) {
+    throw new Error("Missing deliverable or engagement context.");
+  }
+
+  const payload = {
+    engagement_id: Number(engagementId),
+    paper_name: `${deliverableRow.deliverable_name || "Deliverable"} Workpaper`,
+    paper_section: guessWorkingPaperSectionFromDeliverable(deliverableRow),
+    paper_type: "working_paper",
+    status: "not_started",
+    priority: String(deliverableRow.priority || "normal").toLowerCase(),
+    linked_deliverable_id: Number(deliverableRow.id),
+    notes: `Created from deliverable: ${deliverableRow.deliverable_name || "N/A"}`
+  };
+
+  const json = await apiFetch(ENDPOINTS.workingPapers.create(companyId), {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+  const row = json?.row || null;
+  if (!row?.id) {
+    throw new Error("Working paper was not created.");
+  }
+
+  return row;
+}
+
+function guessWorkingPaperSectionFromDeliverable(deliverableRow) {
+  const name = String(deliverableRow?.deliverable_name || "").toLowerCase();
+  const type = String(deliverableRow?.deliverable_type || "").toLowerCase();
+
+  if (name.includes("bank") || name.includes("cash")) return "cash";
+  if (name.includes("receivable")) return "receivables";
+  if (name.includes("payable")) return "payables";
+  if (name.includes("tax")) return "tax";
+  if (name.includes("ppe") || name.includes("asset")) return "ppe";
+  if (name.includes("payroll")) return "payroll";
+  if (name.includes("revenue") || name.includes("sales")) return "revenue";
+  if (name.includes("expense")) return "expenses";
+  if (name.includes("fs") || name.includes("financial statements")) return "fs";
+  if (type.includes("working_paper")) return "other";
+  return "other";
+}
+
+async function sendWorkingPaperToReview(workingPaperId) {
+  const companyId = getPractitionerActiveCompanyId();
+  if (!companyId || !workingPaperId) {
+    throw new Error("Missing working paper context.");
+  }
+
+  await apiFetch(API_ROUTES.workingPapers.setStatus(companyId, workingPaperId), {
+    method: "POST",
+    body: JSON.stringify({
+      status: "in_review"
+    })
+  });
+
+  return true;
+}
+
+async function markWorkingPaperPrepared(workingPaperId) {
+  const companyId =
+    window.__PR_CONTEXT__?.companyId ||
+    window.__PR_ACTIVE_COMPANY_ID__ ||
+    window.__COMPANY_ID__ ||
+    getCurrentCompanyId?.() ||
+    null;
+
+  if (!companyId || !workingPaperId) {
+    throw new Error("Missing working paper context.");
+  }
+
+  await apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, workingPaperId), {
+    method: "POST",
+    body: JSON.stringify({
+      status: "prepared",
+      prepared_at: new Date().toISOString()
+    })
+  });
+
+  return true;
+}
+
+async function sendWorkingPaperToReview(workingPaperId) {
+  const companyId =
+    window.__PR_CONTEXT__?.companyId ||
+    window.__PR_ACTIVE_COMPANY_ID__ ||
+    window.__COMPANY_ID__ ||
+    getCurrentCompanyId?.() ||
+    null;
+
+  if (!companyId || !workingPaperId) {
+    throw new Error("Missing working paper context.");
+  }
+
+  await apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, workingPaperId), {
+    method: "POST",
+    body: JSON.stringify({
+      status: "in_review"
+    })
+  });
+
+  return true;
+}
+
+async function resolveReviewQueueAction(row, action) {
+  const companyId =
+    window.__PR_CONTEXT__?.companyId ||
+    window.__PR_ACTIVE_COMPANY_ID__ ||
+    window.__COMPANY_ID__ ||
+    getCurrentCompanyId?.() ||
+    null;
+
+  const engagementId =
+    window.__PR_CONTEXT__?.engagementId ||
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
+    null;
+
+  if (!companyId || !engagementId || !row?.queue_type || !row?.source_id) {
+    throw new Error("Missing review queue item context.");
+  }
+
+  const queueType = String(row.queue_type || "").toLowerCase();
+  const sourceId = row.source_id;
+
+  if (queueType === "deliverable") {
+    if (action === "approve") {
+      return apiFetch(ENDPOINTS.engagementOps.deliverablesSetStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({ status: "completed" })
+      });
+    }
+
+    if (action === "return") {
+      return apiFetch(ENDPOINTS.engagementOps.deliverablesSetStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({ status: "outstanding" })
+      });
+    }
+
+    if (action === "block") {
+      return apiFetch(ENDPOINTS.engagementOps.deliverablesSetStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({ status: "outstanding" })
+      });
+    }
+  }
+
+  if (queueType === "working_paper") {
+    if (action === "approve") {
+      return apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({
+          status: "reviewed",
+          reviewed_at: new Date().toISOString()
+        })
+      });
+    }
+
+    if (action === "clear") {
+      return apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({
+          status: "cleared",
+          cleared_at: new Date().toISOString()
+        })
+      });
+    }
+
+    if (action === "return") {
+      return apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({ status: "returned" })
+      });
+    }
+
+    if (action === "block") {
+      return apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({ status: "blocked" })
+      });
+    }
+  }
+
+  if (queueType === "signoff") {
+    if (action === "complete") {
+      return apiFetch(ENDPOINTS.engagementOps.signoffStepsSetStatus(companyId, sourceId), {
+        method: "POST",
+        body: JSON.stringify({
+          status: "completed",
+          completed_at: new Date().toISOString()
+        })
+      });
+    }
+  }
+
+  throw new Error(`Unsupported action '${action}' for queue type '${queueType}'.`);
+}
+
+function renderEngagementReadinessCard(readiness) {
+  if (!readiness) {
+    return `
+      <div class="card p-5">
+        <div class="panel-title">Engagement Readiness</div>
+        <div class="panel-subtitle mt-1">Unable to evaluate readiness.</div>
+      </div>
+    `;
+  }
+
+  const blockers = readiness.blockers || [];
+  const isReady = !!readiness.isReadyForPartnerSignoff;
+
+  return `
+    <div class="card p-5">
+      <div class="panel-title">Engagement Readiness</div>
+      <div class="panel-subtitle mt-1">
+        ${isReady
+          ? "All workflow gates passed. Ready for partner sign-off."
+          : "Sign-off is blocked until workflow issues are resolved."}
+      </div>
+
+      <div class="mt-4">
+        <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${
+          isReady
+            ? "bg-green-50 text-green-700 border border-green-200"
+            : "bg-amber-50 text-amber-700 border border-amber-200"
+        }">
+          ${isReady ? "Ready for Sign-Off" : "Not Ready"}
+        </span>
+      </div>
+
+      <div class="mt-4 grid gap-2">
+        ${
+          blockers.length
+            ? blockers.map((b) => `
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <span class="font-semibold">${b.label}</span>
+                <span class="ml-2 text-slate-500">${b.count}</span>
+              </div>
+            `).join("")
+            : `
+              <div class="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                No blocking issues detected.
+              </div>
+            `
+        }
+      </div>
+    </div>
+  `;
+}
+
+async function openWorkingPapersForLinkedDeliverable(deliverableId, me) {
+  window.__PR_WORKING_PAPERS_STATE__ = window.__PR_WORKING_PAPERS_STATE__ || {};
+  window.__PR_WORKING_PAPERS_STATE__.filters = window.__PR_WORKING_PAPERS_STATE__.filters || {};
+  window.__PR_WORKING_PAPERS_STATE__.filters.q = String(deliverableId || "");
+  window.__PR_WORKING_PAPERS_STATE__.filters.offset = 0;
+  await switchPractitionerScreen(PR_NAV.workingPapers, me);
+}
+
+async function openDeliverablesForWorkingPaper(workingPaperRow, me) {
+  const linkedId = workingPaperRow?.linked_deliverable_id;
+  await switchPractitionerScreen(PR_NAV.deliverablesRegister, me);
+
+  if (linkedId && window.__PR_DELIVERABLES_STATE__) {
+    window.__PR_DELIVERABLES_STATE__.selectedId = linkedId;
+  }
+}
+
+async function renderWorkflowReadinessInto(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  try {
+    const snapshot = await loadEngagementWorkflowSnapshot();
+    el.innerHTML = renderEngagementReadinessCard(snapshot?.readiness);
+  } catch (err) {
+    el.innerHTML = `
+      <div class="card p-5">
+        <div class="panel-title">Engagement Readiness</div>
+        <div class="panel-subtitle mt-1">${String(err?.message || "Failed to load readiness.")}</div>
+      </div>
+    `;
+  }
+}
+
+async function refreshEngagementWorkflowScreens(me) {
+  const currentScreen =
+    resolvePractitionerScreenName(
+      String(window.location.hash || "").replace(/^#screen=/, "").replace(/^#/, "")
+    ) || PR_NAV.dashboard;
+
+  switch (currentScreen) {
+    case PR_NAV.workingPapers:
+      await renderWorkingPapersScreen?.(me);
+      break;
+    case PR_NAV.reviewQueue:
+      await renderReviewQueueScreen?.(me);
+      break;
+    case PR_NAV.deliverablesRegister:
+      await renderDeliverablesRegisterScreen?.(me);
+      break;
+    case PR_NAV.partnerSignoff:
+      await renderPartnerSignoffScreen?.(me);
+      break;
+    default:
+      break;
+  }
+}
+
+async function renderDeliverablesRegisterScreen(me) {
+  const container = document.getElementById("pr-main-content");
+  if (!container) return;
+
+  container.innerHTML = `<div class="p-6">Loading deliverables...</div>`;
+
+  try {
+    const snapshot = await loadEngagementWorkflowSnapshot();
+    const rows = snapshot.deliverables || [];
+
+    window.__PR_DELIVERABLES_STATE__ = { rows };
+
+    container.innerHTML = `
+      <div class="p-6 space-y-6">
+        ${renderEngagementReadinessCard(snapshot.readiness)}
+
+        <div class="card p-5">
+          <div class="panel-title">Deliverables Register</div>
+
+          <div class="mt-4 grid gap-3">
+            ${
+              rows.length
+                ? rows.map((d) => `
+                  <div class="border rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                      <div class="font-semibold">${d.deliverable_name || "Unnamed"}</div>
+                      <div class="text-sm text-slate-500">
+                        Status: ${d.status || "N/A"} • Priority: ${d.priority || "normal"}
+                      </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                      <button
+                        class="px-3 py-1 text-xs bg-blue-50 border rounded"
+                        data-deliv-create-wp="${d.id}"
+                      >
+                        Create WP
+                      </button>
+                    </div>
+                  </div>
+                `).join("")
+                : `<div class="text-slate-500 text-sm">No deliverables found.</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 🔗 bind buttons
+    document.querySelectorAll("[data-deliv-create-wp]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-deliv-create-wp");
+        const row = rows.find(r => String(r.id) === String(id));
+        if (!row) return;
+
+        try {
+          const wp = await createWorkingPaperFromDeliverable(row);
+          alert(`Working paper created`);
+          await renderWorkingPapersScreen(me);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+
+  } catch (err) {
+    container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
+  }
+}
+
+async function renderWorkingPapersScreen(me) {
+  const container = document.getElementById("pr-main-content");
+  if (!container) return;
+
+  container.innerHTML = `<div class="p-6">Loading working papers...</div>`;
+
+  try {
+    const snapshot = await loadEngagementWorkflowSnapshot();
+    const rows = snapshot.workingPapers || [];
+
+    window.__PR_WORKING_PAPERS_STATE__ = { rows };
+
+    container.innerHTML = `
+      <div class="p-6 space-y-6">
+        ${renderEngagementReadinessCard(snapshot.readiness)}
+
+        <div class="card p-5">
+          <div class="panel-title">Working Papers</div>
+
+          <div class="mt-4 grid gap-3">
+            ${
+              rows.length
+                ? rows.map((w) => `
+                  <div class="border rounded-xl p-4 flex justify-between">
+                    <div>
+                      <div class="font-semibold">${w.paper_name || "Workpaper"}</div>
+                      <div class="text-sm text-slate-500">
+                        Status: ${w.status || "N/A"}
+                      </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                      <button data-wp-mark-prepared="${w.id}" class="px-2 py-1 text-xs border rounded">
+                        Prepare
+                      </button>
+                      <button data-wp-send-review="${w.id}" class="px-2 py-1 text-xs border rounded bg-amber-50">
+                        Send to Review
+                      </button>
+                    </div>
+                  </div>
+                `).join("")
+                : `<div class="text-sm text-slate-500">No working papers.</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+
+    // bindings
+    document.querySelectorAll("[data-wp-mark-prepared]").forEach(btn => {
+      btn.onclick = async () => {
+        await markWorkingPaperPrepared(btn.dataset.wpMarkPrepared);
+        renderWorkingPapersScreen(me);
+      };
+    });
+
+    document.querySelectorAll("[data-wp-send-review]").forEach(btn => {
+      btn.onclick = async () => {
+        await sendWorkingPaperToReview(btn.dataset.wpSendReview);
+        renderWorkingPapersScreen(me);
+      };
+    });
+
+  } catch (err) {
+    container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
+  }
+}
+
+async function renderReviewQueueScreen(me) {
+  const container = document.getElementById("pr-main-content");
+  if (!container) return;
+
+  container.innerHTML = `<div class="p-6">Loading review queue...</div>`;
+
+  try {
+    const snapshot = await loadEngagementWorkflowSnapshot();
+    const rows = snapshot.reviewQueue || [];
+
+    window.__PR_REVIEW_QUEUE_STATE__ = { rows };
+
+    container.innerHTML = `
+      <div class="p-6 space-y-6">
+        ${renderEngagementReadinessCard(snapshot.readiness)}
+
+        <div class="card p-5">
+          <div class="panel-title">Review Queue</div>
+
+          <div class="mt-4 grid gap-3">
+            ${
+              rows.length
+                ? rows.map((r) => `
+                  <div class="border rounded-xl p-4 flex justify-between">
+                    <div>
+                      <div class="font-semibold">${r.queue_type}</div>
+                      <div class="text-sm text-slate-500">Status: ${r.status}</div>
+                    </div>
+
+                    <div class="flex gap-2">
+                      <button data-rq-action="approve" data-rq-id="${r.source_id}" data-rq-type="${r.queue_type}" class="px-2 py-1 text-xs border rounded bg-green-50">Approve</button>
+                      <button data-rq-action="return" data-rq-id="${r.source_id}" data-rq-type="${r.queue_type}" class="px-2 py-1 text-xs border rounded bg-red-50">Return</button>
+                      <button data-rq-action="block" data-rq-id="${r.source_id}" data-rq-type="${r.queue_type}" class="px-2 py-1 text-xs border rounded">Block</button>
+                    </div>
+                  </div>
+                `).join("")
+                : `<div class="text-sm text-slate-500">No review items.</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.querySelectorAll("[data-rq-action]").forEach(btn => {
+      btn.onclick = async () => {
+        const action = btn.dataset.rqAction;
+        const id = btn.dataset.rqId;
+        const type = btn.dataset.rqType;
+
+        const row = rows.find(r =>
+          String(r.source_id) === String(id) &&
+          String(r.queue_type) === String(type)
+        );
+        if (!row) return;
+
+        await resolveReviewQueueAction(row, action);
+        renderReviewQueueScreen(me);
+      };
+    });
+
+  } catch (err) {
+    container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
+  }
+}
+
+async function renderPartnerSignoffScreen(me) {
+  const container = document.getElementById("pr-main-content");
+  if (!container) return;
+
+  container.innerHTML = `<div class="p-6">Loading sign-off...</div>`;
+
+  try {
+    const snapshot = await loadEngagementWorkflowSnapshot();
+    const readiness = snapshot.readiness;
+
+    const isReady = readiness?.isReadyForPartnerSignoff;
+
+    container.innerHTML = `
+      <div class="p-6 space-y-6">
+
+        ${renderEngagementReadinessCard(readiness)}
+
+        <div class="card p-5">
+          <div class="panel-title">Partner Sign-Off</div>
+
+          ${
+            !isReady
+              ? `
+              <div class="mt-4 text-amber-600 text-sm">
+                Cannot sign off. Resolve blockers first.
+              </div>
+              `
+              : `
+              <div class="mt-4">
+                <button id="finalSignoffBtn" class="px-4 py-2 bg-green-600 text-white rounded">
+                  Final Sign-Off
+                </button>
+              </div>
+              `
+          }
+        </div>
+      </div>
+    `;
+
+    if (isReady) {
+      document.getElementById("finalSignoffBtn").onclick = () => {
+        alert("✅ Engagement Signed Off");
+      };
+    }
+
+  } catch (err) {
+    container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
+  }
 }
 
 function renderSettingsScreen(me, screen) {

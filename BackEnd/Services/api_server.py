@@ -59,7 +59,7 @@ ALLOWED_POS_EXTS = {".csv", ".xlsx", ".xls", ".pdf", ".png", ".jpg", ".jpeg", ".
 # ────────────────────────────────────────────────────────────────
 # BackEnd imports that rely on env vars
 # ────────────────────────────────────────────────────────────────
-from BackEnd.Services.company_context import get_company_context, get_dashboard_access, build_permissions
+from BackEnd.Services.company_context import get_company_context, get_dashboard_access, build_permissions, resolve_default_dashboard
 from BackEnd.Services.dashboard import validate_role_for_scope
 from BackEnd.Services.credit_policy import (
     normalize_policy, 
@@ -175,6 +175,9 @@ from BackEnd.Services.practitioner.client_overview_bp import client_overview_bp
 from BackEnd.Services.practitioner.action_center import action_center_bp
 from BackEnd.Services.practitioner.posting_module import practitioner_dashboard_bp
 from BackEnd.Services.practitioner.review_queue import review_queue_bp
+from BackEnd.Services.practitioner.engagement_working_papers_routes import engagement_working_papers_bp
+
+
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -299,6 +302,7 @@ app.register_blueprint(client_overview_bp)
 app.register_blueprint(action_center_bp)
 app.register_blueprint(practitioner_dashboard_bp)
 app.register_blueprint(review_queue_bp)
+app.register_blueprint(engagement_working_papers_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
@@ -1567,6 +1571,12 @@ def api_auth_signin():
         user_role = normalize_role(base_role)
         access_scope = "core"
 
+    dashboards = get_dashboard_access(user_role, access_scope)
+    default_dashboard = resolve_default_dashboard(
+        user_type=user_type,
+        role=user_role,
+        access_scope=access_scope,
+    )
     # owner fallback: include owned companies too
     owned_rows = db_service.fetch_all(
         """
@@ -1624,23 +1634,25 @@ def api_auth_signin():
                 "Error loading company for user %s: %s", user["id"], e
             )
 
-    return jsonify({
-        "message": "signin OK",
-        "token": token,
-        "user": {
-            "id": user["id"],
-            "email": user["email"],
-            "role": user_role,
-            "user_type": user_type,
-            "access_scope": access_scope,
-            "is_confirmed": bool(user.get("is_confirmed")),
-            "company_id": company_id,
-            "company_name": company_name,
-            "industry": industry,
-            "sub_industry": sub_industry,
-            "allowed_company_ids": allowed_company_ids,
-        },
-    }), 200
+        return jsonify({
+            "message": "signin OK",
+            "token": token,
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "role": user_role,
+                "user_type": user_type,
+                "access_scope": access_scope,
+                "is_confirmed": bool(user.get("is_confirmed")),
+                "company_id": company_id,
+                "company_name": company_name,
+                "industry": industry,
+                "sub_industry": sub_industry,
+                "allowed_company_ids": allowed_company_ids,
+                "dashboards": dashboards,
+                "default_dashboard": default_dashboard,
+            },
+        }), 200
 
 @app.route("/api/auth/me", methods=["GET", "OPTIONS"])
 @require_auth
@@ -1733,6 +1745,7 @@ def api_auth_me():
             role = normalized_role
             access_scope = (mem.get("access_scope") or "core").strip().lower()
 
+
             app.logger.warning(
                 "AUTH_ME user_id=%s company_id=%s raw_role=%r normalized_role=%r access_scope=%r",
                 user_id,
@@ -1764,6 +1777,11 @@ def api_auth_me():
 
     dashboards = get_dashboard_access(role, access_scope)
     permissions = build_permissions(role=role, access_scope=access_scope)
+    default_dashboard = resolve_default_dashboard(
+        user_type=user.get("user_type") or payload.get("user_type"),
+        role=role,
+        access_scope=access_scope,
+    )
 
     out = {
         "id": int(user["id"]),
@@ -1784,6 +1802,7 @@ def api_auth_me():
         "token_allowed_company_ids": payload.get("allowed_company_ids"),
         "dashboards": dashboards,
         "permissions": permissions,
+        "default_dashboard": default_dashboard,
     }
 
     print(">>> AUTH_ME RESPONSE =", out)

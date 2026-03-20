@@ -156,17 +156,27 @@
   }
 
   function pickDashboardTarget(user) {
-    const userType = String(user.user_type || "").trim().toLowerCase();
+    const scope = String(user?.access_scope || "").trim().toLowerCase();
     const canPractitioner = !!user?.dashboards?.practitioner;
     const canEnterprise = !!user?.dashboards?.enterprise;
+    const defaultDashboard = String(user?.default_dashboard || "").trim().toLowerCase();
 
-    if (userType === "practitioner" && canPractitioner) {
+    if (defaultDashboard === "enterprise" && canEnterprise) {
+      return "dashboard.html";
+    }
+
+    if (defaultDashboard === "practitioner" && canPractitioner) {
       return "practitionerdashboard.html";
     }
 
-    if (canEnterprise) {
-      return "dashboard.html";
+    if (canEnterprise && canPractitioner) {
+      return scope === "assignment"
+        ? "practitionerdashboard.html"
+        : "dashboard.html";
     }
+
+    if (canEnterprise) return "dashboard.html";
+    if (canPractitioner) return "practitionerdashboard.html";
 
     return "dashboard.html";
   }

@@ -7305,6 +7305,474 @@ class DatabaseService:
             ON {schema}.engagement_signoff_steps(is_active);
 
         -- ==================================================
+        -- ENGAGEMENT WORKING PAPERS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.engagement_working_papers (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            engagement_id INT NOT NULL,
+
+            paper_code TEXT NULL,
+            paper_name TEXT NOT NULL,
+            paper_section TEXT NOT NULL, -- planning, cash, receivables, payables, revenue, expenses, payroll, tax, ppe, equity, fs, completion, other
+            paper_type TEXT NOT NULL DEFAULT 'working_paper', -- working_paper, lead_schedule, reconciliation, checklist, memo, analysis, support
+
+            status TEXT NOT NULL DEFAULT 'not_started', -- not_started, in_progress, prepared, in_review, reviewed, cleared, blocked, returned, archived
+            priority TEXT NOT NULL DEFAULT 'normal',
+
+            preparer_user_id INT NULL,
+            reviewer_user_id INT NULL,
+
+            due_date DATE NULL,
+            prepared_at TIMESTAMPTZ NULL,
+            reviewed_at TIMESTAMPTZ NULL,
+            cleared_at TIMESTAMPTZ NULL,
+
+            version_no INT NOT NULL DEFAULT 1,
+            document_count INT NOT NULL DEFAULT 0,
+
+            linked_reporting_item_id INT NULL,
+            linked_deliverable_id INT NULL,
+
+            notes TEXT NULL,
+            review_notes TEXT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS engagement_id INT,
+
+            ADD COLUMN IF NOT EXISTS paper_code TEXT NULL,
+            ADD COLUMN IF NOT EXISTS paper_name TEXT,
+            ADD COLUMN IF NOT EXISTS paper_section TEXT,
+            ADD COLUMN IF NOT EXISTS paper_type TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS priority TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS preparer_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS reviewer_user_id INT NULL,
+
+            ADD COLUMN IF NOT EXISTS due_date DATE NULL,
+            ADD COLUMN IF NOT EXISTS prepared_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS cleared_at TIMESTAMPTZ NULL,
+
+            ADD COLUMN IF NOT EXISTS version_no INT,
+            ADD COLUMN IF NOT EXISTS document_count INT,
+
+            ADD COLUMN IF NOT EXISTS linked_reporting_item_id INT NULL,
+            ADD COLUMN IF NOT EXISTS linked_deliverable_id INT NULL,
+
+            ADD COLUMN IF NOT EXISTS notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS review_notes TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
+            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.engagement_working_papers
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        UPDATE {schema}.engagement_working_papers
+        SET paper_type = 'working_paper'
+        WHERE paper_type IS NULL OR BTRIM(paper_type) = '';
+
+        UPDATE {schema}.engagement_working_papers
+        SET status = 'not_started'
+        WHERE status IS NULL OR BTRIM(status) = '';
+
+        UPDATE {schema}.engagement_working_papers
+        SET priority = 'normal'
+        WHERE priority IS NULL OR BTRIM(priority) = '';
+
+        UPDATE {schema}.engagement_working_papers
+        SET version_no = 1
+        WHERE version_no IS NULL OR version_no < 1;
+
+        UPDATE {schema}.engagement_working_papers
+        SET document_count = 0
+        WHERE document_count IS NULL OR document_count < 0;
+
+        UPDATE {schema}.engagement_working_papers
+        SET is_active = TRUE
+        WHERE is_active IS NULL;
+
+        UPDATE {schema}.engagement_working_papers
+        SET created_at = NOW()
+        WHERE created_at IS NULL;
+
+        UPDATE {schema}.engagement_working_papers
+        SET updated_at = NOW()
+        WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN paper_type SET DEFAULT 'working_paper';
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN status SET DEFAULT 'not_started';
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN priority SET DEFAULT 'normal';
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN version_no SET DEFAULT 1;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN document_count SET DEFAULT 0;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN is_active SET DEFAULT TRUE;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN created_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN engagement_id SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN paper_name SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN paper_section SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN paper_type SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN status SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN priority SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN version_no SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN document_count SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN is_active SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN created_at SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_working_papers
+            ALTER COLUMN updated_at SET NOT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_engagement_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (engagement_id)
+                     REFERENCES %I.engagements(id)
+                     ON DELETE CASCADE',
+                    '{schema}', '{schema}_eng_wp_engagement_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_preparer_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (preparer_user_id)
+                     REFERENCES public.users(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_wp_preparer_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_reviewer_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (reviewer_user_id)
+                     REFERENCES public.users(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_wp_reviewer_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_created_by_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (created_by_user_id)
+                     REFERENCES public.users(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_wp_created_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_updated_by_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (updated_by_user_id)
+                     REFERENCES public.users(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_wp_updated_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_reporting_item_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (linked_reporting_item_id)
+                     REFERENCES %I.engagement_reporting_items(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_wp_reporting_item_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_deliverable_fk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (linked_deliverable_id)
+                     REFERENCES %I.engagement_deliverables(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_wp_deliverable_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_section_chk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     CHECK (
+                        paper_section IN (
+                            ''planning'',
+                            ''cash'',
+                            ''receivables'',
+                            ''payables'',
+                            ''revenue'',
+                            ''expenses'',
+                            ''payroll'',
+                            ''tax'',
+                            ''ppe'',
+                            ''equity'',
+                            ''fs'',
+                            ''completion'',
+                            ''other''
+                        )
+                     )',
+                    '{schema}', '{schema}_eng_wp_section_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_type_chk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     CHECK (
+                        paper_type IN (
+                            ''working_paper'',
+                            ''lead_schedule'',
+                            ''reconciliation'',
+                            ''checklist'',
+                            ''memo'',
+                            ''analysis'',
+                            ''support''
+                        )
+                     )',
+                    '{schema}', '{schema}_eng_wp_type_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_status_chk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     CHECK (
+                        status IN (
+                            ''not_started'',
+                            ''in_progress'',
+                            ''prepared'',
+                            ''in_review'',
+                            ''reviewed'',
+                            ''cleared'',
+                            ''blocked'',
+                            ''returned'',
+                            ''archived''
+                        )
+                     )',
+                    '{schema}', '{schema}_eng_wp_status_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_priority_chk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     CHECK (priority IN (''low'', ''normal'', ''high'', ''urgent''))',
+                    '{schema}', '{schema}_eng_wp_priority_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_version_chk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     CHECK (version_no >= 1)',
+                    '{schema}', '{schema}_eng_wp_version_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_wp_doc_count_chk'
+                  AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_working_papers
+                     ADD CONSTRAINT %I
+                     CHECK (document_count >= 0)',
+                    '{schema}', '{schema}_eng_wp_doc_count_chk'
+                );
+            END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_eng_wp_company_code_uq
+            ON {schema}.engagement_working_papers(company_id, LOWER(paper_code))
+            WHERE paper_code IS NOT NULL AND BTRIM(paper_code) <> '';
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_eng_wp_active_name_uq
+            ON {schema}.engagement_working_papers(company_id, engagement_id, LOWER(paper_name))
+            WHERE is_active = TRUE;
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_company_id_idx
+            ON {schema}.engagement_working_papers(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_engagement_id_idx
+            ON {schema}.engagement_working_papers(engagement_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_section_idx
+            ON {schema}.engagement_working_papers(paper_section);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_type_idx
+            ON {schema}.engagement_working_papers(paper_type);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_status_idx
+            ON {schema}.engagement_working_papers(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_priority_idx
+            ON {schema}.engagement_working_papers(priority);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_due_date_idx
+            ON {schema}.engagement_working_papers(due_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_preparer_idx
+            ON {schema}.engagement_working_papers(preparer_user_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_reviewer_idx
+            ON {schema}.engagement_working_papers(reviewer_user_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_reporting_item_idx
+            ON {schema}.engagement_working_papers(linked_reporting_item_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_deliverable_idx
+            ON {schema}.engagement_working_papers(linked_deliverable_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_wp_is_active_idx
+            ON {schema}.engagement_working_papers(is_active);
+
+        -- ==================================================
         -- NOTES
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.notes (
@@ -44344,7 +44812,529 @@ class DatabaseService:
         row = cur.fetchone()
         return row[meta["pk"]] if row else None
 
+    def get_engagement_working_paper(
+        self,
+        cur,
+        company_id: int,
+        *,
+        working_paper_id: int,
+    ):
+        schema = self.company_schema(company_id)
 
+        sql = f"""
+            SELECT
+                wp.*,
+                e.engagement_name,
+                e.engagement_code,
+                e.customer_id,
+                c.name AS customer_name,
+
+                CONCAT(
+                    COALESCE(pu.first_name, ''),
+                    CASE
+                        WHEN pu.last_name IS NOT NULL AND pu.last_name <> ''
+                        THEN ' ' || pu.last_name
+                        ELSE ''
+                    END
+                ) AS preparer_user_name,
+
+                CONCAT(
+                    COALESCE(ru.first_name, ''),
+                    CASE
+                        WHEN ru.last_name IS NOT NULL AND ru.last_name <> ''
+                        THEN ' ' || ru.last_name
+                        ELSE ''
+                    END
+                ) AS reviewer_user_name,
+
+                ri.item_name AS linked_reporting_item_name,
+                d.deliverable_name AS linked_deliverable_name
+
+            FROM {schema}.engagement_working_papers wp
+            JOIN {schema}.engagements e
+              ON e.id = wp.engagement_id
+            JOIN {schema}.customers c
+              ON c.id = e.customer_id
+            LEFT JOIN public.users pu
+              ON pu.id = wp.preparer_user_id
+            LEFT JOIN public.users ru
+              ON ru.id = wp.reviewer_user_id
+            LEFT JOIN {schema}.engagement_reporting_items ri
+              ON ri.id = wp.linked_reporting_item_id
+            LEFT JOIN {schema}.engagement_deliverables d
+              ON d.id = wp.linked_deliverable_id
+            WHERE wp.company_id = %s
+              AND wp.id = %s
+            LIMIT 1
+        """
+        cur.execute(sql, (company_id, working_paper_id))
+        return cur.fetchone()
+
+    def list_engagement_working_papers(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int = None,
+        engagement_id: int = None,
+        paper_section: str = None,
+        paper_type: str = None,
+        status: str = None,
+        priority: str = None,
+        mine_only: bool = False,
+        current_user_id: int = None,
+        q: str = None,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                wp.id,
+                wp.company_id,
+                wp.engagement_id,
+                wp.paper_code,
+                wp.paper_name,
+                wp.paper_section,
+                wp.paper_type,
+                wp.status,
+                wp.priority,
+                wp.preparer_user_id,
+                wp.reviewer_user_id,
+                wp.due_date,
+                wp.prepared_at,
+                wp.reviewed_at,
+                wp.cleared_at,
+                wp.version_no,
+                wp.document_count,
+                wp.linked_reporting_item_id,
+                wp.linked_deliverable_id,
+                wp.notes,
+                wp.review_notes,
+                wp.is_active,
+                wp.created_at,
+                wp.updated_at,
+
+                e.engagement_name,
+                e.engagement_code,
+                e.customer_id,
+                c.name AS customer_name,
+
+                CONCAT(
+                    COALESCE(pu.first_name, ''),
+                    CASE
+                        WHEN pu.last_name IS NOT NULL AND pu.last_name <> ''
+                        THEN ' ' || pu.last_name
+                        ELSE ''
+                    END
+                ) AS preparer_user_name,
+
+                CONCAT(
+                    COALESCE(ru.first_name, ''),
+                    CASE
+                        WHEN ru.last_name IS NOT NULL AND ru.last_name <> ''
+                        THEN ' ' || ru.last_name
+                        ELSE ''
+                    END
+                ) AS reviewer_user_name,
+
+                (
+                    wp.due_date IS NOT NULL
+                    AND wp.due_date < CURRENT_DATE
+                    AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                ) AS is_overdue,
+
+                (wp.status = 'blocked') AS is_blocked,
+
+                (
+                    %s IS NOT NULL
+                    AND (
+                        wp.preparer_user_id = %s
+                        OR wp.reviewer_user_id = %s
+                    )
+                ) AS is_mine
+
+            FROM {schema}.engagement_working_papers wp
+            JOIN {schema}.engagements e
+              ON e.id = wp.engagement_id
+            JOIN {schema}.customers c
+              ON c.id = e.customer_id
+            LEFT JOIN public.users pu
+              ON pu.id = wp.preparer_user_id
+            LEFT JOIN public.users ru
+              ON ru.id = wp.reviewer_user_id
+            WHERE wp.company_id = %s
+              AND wp.is_active = TRUE
+              AND e.is_active = TRUE
+              AND (%s IS NULL OR e.customer_id = %s)
+              AND (%s IS NULL OR wp.engagement_id = %s)
+              AND (%s IS NULL OR wp.paper_section = %s)
+              AND (%s IS NULL OR wp.paper_type = %s)
+              AND (%s IS NULL OR wp.status = %s)
+              AND (%s IS NULL OR wp.priority = %s)
+              AND (%s = FALSE OR (
+                    (%s IS NOT NULL AND wp.preparer_user_id = %s)
+                    OR (%s IS NOT NULL AND wp.reviewer_user_id = %s)
+              ))
+              AND (
+                    %s IS NULL
+                    OR %s = ''
+                    OR (
+                        COALESCE(c.name, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(e.engagement_name, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(e.engagement_code, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(wp.paper_name, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(wp.paper_code, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(wp.paper_section, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(wp.paper_type, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(pu.first_name, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(pu.last_name, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(ru.first_name, '') ILIKE ('%%' || %s || '%%')
+                        OR COALESCE(ru.last_name, '') ILIKE ('%%' || %s || '%%')
+                    )
+              )
+            ORDER BY
+                is_overdue DESC,
+                is_blocked DESC,
+                CASE wp.priority
+                    WHEN 'urgent' THEN 4
+                    WHEN 'high' THEN 3
+                    WHEN 'normal' THEN 2
+                    WHEN 'low' THEN 1
+                    ELSE 0
+                END DESC,
+                wp.due_date NULLS LAST,
+                wp.updated_at DESC
+            LIMIT %s
+            OFFSET %s
+        """
+
+        params = (
+            current_user_id, current_user_id, current_user_id,
+            company_id,
+            customer_id, customer_id,
+            engagement_id, engagement_id,
+            paper_section, paper_section,
+            paper_type, paper_type,
+            status, status,
+            priority, priority,
+            True if mine_only else False,
+            current_user_id, current_user_id,
+            current_user_id, current_user_id,
+            q, q,
+            q, q, q, q, q, q, q, q, q, q,
+            max(1, min(int(limit or 100), 500)),
+            max(0, int(offset or 0)),
+        )
+
+        cur.execute(sql, params)
+        return cur.fetchall() or []
+
+    def create_engagement_working_paper(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        created_by_user_id: int = None,
+        paper_code: str = None,
+        paper_name: str,
+        paper_section: str,
+        paper_type: str = "working_paper",
+        status: str = "not_started",
+        priority: str = "normal",
+        preparer_user_id: int = None,
+        reviewer_user_id: int = None,
+        due_date=None,
+        prepared_at=None,
+        reviewed_at=None,
+        cleared_at=None,
+        version_no: int = 1,
+        document_count: int = 0,
+        linked_reporting_item_id: int = None,
+        linked_deliverable_id: int = None,
+        notes: str = None,
+        review_notes: str = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            INSERT INTO {schema}.engagement_working_papers (
+                company_id,
+                engagement_id,
+                paper_code,
+                paper_name,
+                paper_section,
+                paper_type,
+                status,
+                priority,
+                preparer_user_id,
+                reviewer_user_id,
+                due_date,
+                prepared_at,
+                reviewed_at,
+                cleared_at,
+                version_no,
+                document_count,
+                linked_reporting_item_id,
+                linked_deliverable_id,
+                notes,
+                review_notes,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s
+            )
+            RETURNING id
+        """
+        cur.execute(
+            sql,
+            (
+                company_id,
+                engagement_id,
+                paper_code,
+                paper_name,
+                paper_section,
+                paper_type or "working_paper",
+                status or "not_started",
+                priority or "normal",
+                preparer_user_id,
+                reviewer_user_id,
+                due_date,
+                prepared_at,
+                reviewed_at,
+                cleared_at,
+                max(1, int(version_no or 1)),
+                max(0, int(document_count or 0)),
+                linked_reporting_item_id,
+                linked_deliverable_id,
+                notes,
+                review_notes,
+                created_by_user_id,
+                created_by_user_id,
+            ),
+        )
+        row = cur.fetchone()
+        return int(row["id"] if isinstance(row, dict) else row[0])
+
+    def update_engagement_working_paper(
+        self,
+        cur,
+        company_id: int,
+        *,
+        working_paper_id: int,
+        updated_by_user_id: int = None,
+        paper_code: str = None,
+        paper_name: str = None,
+        paper_section: str = None,
+        paper_type: str = None,
+        status: str = None,
+        priority: str = None,
+        preparer_user_id: int = None,
+        reviewer_user_id: int = None,
+        due_date=None,
+        prepared_at=None,
+        reviewed_at=None,
+        cleared_at=None,
+        version_no: int = None,
+        document_count: int = None,
+        linked_reporting_item_id: int = None,
+        linked_deliverable_id: int = None,
+        notes: str = None,
+        review_notes: str = None,
+        is_active: bool = None,
+    ) -> int | None:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            UPDATE {schema}.engagement_working_papers
+            SET
+                paper_code = COALESCE(%s, paper_code),
+                paper_name = COALESCE(%s, paper_name),
+                paper_section = COALESCE(%s, paper_section),
+                paper_type = COALESCE(%s, paper_type),
+                status = COALESCE(%s, status),
+                priority = COALESCE(%s, priority),
+                preparer_user_id = COALESCE(%s, preparer_user_id),
+                reviewer_user_id = COALESCE(%s, reviewer_user_id),
+                due_date = COALESCE(%s, due_date),
+                prepared_at = COALESCE(%s, prepared_at),
+                reviewed_at = COALESCE(%s, reviewed_at),
+                cleared_at = COALESCE(%s, cleared_at),
+                version_no = COALESCE(%s, version_no),
+                document_count = COALESCE(%s, document_count),
+                linked_reporting_item_id = COALESCE(%s, linked_reporting_item_id),
+                linked_deliverable_id = COALESCE(%s, linked_deliverable_id),
+                notes = COALESCE(%s, notes),
+                review_notes = COALESCE(%s, review_notes),
+                is_active = COALESCE(%s, is_active),
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+              AND id = %s
+            RETURNING id
+        """
+        cur.execute(
+            sql,
+            (
+                paper_code,
+                paper_name,
+                paper_section,
+                paper_type,
+                status,
+                priority,
+                preparer_user_id,
+                reviewer_user_id,
+                due_date,
+                prepared_at,
+                reviewed_at,
+                cleared_at,
+                max(1, int(version_no)) if version_no is not None else None,
+                max(0, int(document_count)) if document_count is not None else None,
+                linked_reporting_item_id,
+                linked_deliverable_id,
+                notes,
+                review_notes,
+                is_active,
+                updated_by_user_id,
+                company_id,
+                working_paper_id,
+            ),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return int(row["id"] if isinstance(row, dict) else row[0])
+
+    def set_engagement_working_paper_status(
+        self,
+        cur,
+        company_id: int,
+        *,
+        working_paper_id: int,
+        status: str,
+        updated_by_user_id: int = None,
+        prepared_at=None,
+        reviewed_at=None,
+        cleared_at=None,
+    ) -> int | None:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            UPDATE {schema}.engagement_working_papers
+            SET
+                status = %s,
+                prepared_at = COALESCE(%s, prepared_at),
+                reviewed_at = COALESCE(%s, reviewed_at),
+                cleared_at = COALESCE(%s, cleared_at),
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+              AND id = %s
+            RETURNING id
+        """
+        cur.execute(
+            sql,
+            (
+                status,
+                prepared_at,
+                reviewed_at,
+                cleared_at,
+                updated_by_user_id,
+                company_id,
+                working_paper_id,
+            ),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return int(row["id"] if isinstance(row, dict) else row[0])
+
+    def deactivate_engagement_working_paper(
+        self,
+        cur,
+        company_id: int,
+        *,
+        working_paper_id: int,
+        updated_by_user_id: int = None,
+    ) -> int | None:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            UPDATE {schema}.engagement_working_papers
+            SET
+                is_active = FALSE,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+              AND id = %s
+              AND is_active = TRUE
+            RETURNING id
+        """
+        cur.execute(sql, (updated_by_user_id, company_id, working_paper_id))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return int(row["id"] if isinstance(row, dict) else row[0])
+
+    def get_engagement_working_papers_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int = None,
+        engagement_id: int = None,
+        current_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH scoped AS (
+                SELECT wp.*
+                FROM {schema}.engagement_working_papers wp
+                JOIN {schema}.engagements e
+                  ON e.id = wp.engagement_id
+                WHERE wp.company_id = %s
+                  AND wp.is_active = TRUE
+                  AND e.is_active = TRUE
+                  AND (%s IS NULL OR e.customer_id = %s)
+                  AND (%s IS NULL OR wp.engagement_id = %s)
+            )
+            SELECT
+                COUNT(*) AS total_items,
+                COUNT(*) FILTER (WHERE status IN ('prepared', 'in_review')) AS ready_or_in_review,
+                COUNT(*) FILTER (
+                    WHERE due_date IS NOT NULL
+                      AND due_date < CURRENT_DATE
+                      AND status NOT IN ('reviewed', 'cleared', 'archived')
+                ) AS overdue_items,
+                COUNT(*) FILTER (WHERE status = 'blocked') AS blocked_items,
+                COUNT(*) FILTER (
+                    WHERE %s IS NOT NULL
+                      AND (
+                        preparer_user_id = %s
+                        OR reviewer_user_id = %s
+                      )
+                ) AS my_items
+            FROM scoped
+        """
+        cur.execute(
+            sql,
+            (
+                company_id,
+                customer_id, customer_id,
+                engagement_id, engagement_id,
+                current_user_id, current_user_id, current_user_id,
+            ),
+        )
+        return cur.fetchone()
+
+ 
     def insert_ticket(
         self,
         cur,
