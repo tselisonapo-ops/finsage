@@ -20764,7 +20764,18 @@ class DatabaseService:
 
         return [ln for ln in lines if (ln.get("debit") or 0) != 0 or (ln.get("credit") or 0) != 0]
 
-
+    def delete_lease(self, company_id: int, lease_id: int) -> None:
+        schema = self.company_schema(company_id)
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"DELETE FROM {schema}.lease_schedule WHERE lease_id = %s",
+                (int(lease_id),),
+            )
+            cur.execute(
+                f"DELETE FROM {schema}.leases WHERE id = %s",
+                (int(lease_id),),
+            )
+            
     def get_lease_posting_accounts(self, company_id: int, cur=None) -> dict:
         self.ensure_company_account_settings(company_id)
         self.ensure_company_lease_defaults(company_id)

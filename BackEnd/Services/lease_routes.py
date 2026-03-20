@@ -468,24 +468,22 @@ def create_lease(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
+    lease_id = None
+    journal_id = None
 
-    # ✅ company access guard (same pattern as other endpoints)
     deny = _deny_if_wrong_company(payload, int(company_id))
     if deny:
         return deny
 
-    # ✅ consistent user id (JWT sub fallback)
     user_id = payload.get("user_id") or payload.get("sub")
     user_id = int(user_id) if user_id is not None else None
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    # ✅ verify access using your existing context helper
     user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
-    # optional: keep these for downstream helpers that rely on g.*
     g.current_user = user
     g.company_id = int(company_id)
     g.user_id = user_id
@@ -504,14 +502,10 @@ def create_lease(company_id: int):
         if not lessor_id:
             return jsonify({"error": "lessor_id is required"}), 400
 
-        # validate exists (prevents FK errors + nicer message)
         lessor = db_service.get_lessor(int(company_id), lessor_id)
         if not lessor:
             return jsonify({"error": "Invalid lessor_id"}), 400
 
-        # -----------------------------
-        # Parse + build schedule
-        # -----------------------------
         payload2 = _parse_lease_payload(raw_data)
         lease_input = _to_lease_input(int(company_id), payload2)
         result: LeaseScheduleResult = build_lease_schedule(lease_input)
@@ -528,15 +522,11 @@ def create_lease(company_id: int):
         )
 
         opening_lines = opening_journal.get("journal_lines") or []
-
         if not opening_lines:
             return jsonify({
                 "error": "Cannot build opening lease journal - missing lease accounts in payload."
             }), 400
 
-        # -----------------------------
-        # Persist lease + journal
-        # -----------------------------
         lease_id = db_service.insert_lease(int(company_id), result, lessor_id=lessor_id)
 
         if mode == "existing" and go_live is not None:
@@ -556,7 +546,6 @@ def create_lease(company_id: int):
             "net_amount": base_amount,
             "vat_amount": 0.0,
         }
-
         journal_id = db_service.insert_journal(int(company_id), journal_entry)
 
         for idx, line in enumerate(opening_lines, start=1):
@@ -584,9 +573,7 @@ def create_lease(company_id: int):
                     line["account_code"],
                     journal_entry["description"],
                 )
-        # -----------------------------
-        # Build response JSON
-        # -----------------------------
+
         base_json = schedule_to_json(result)
         base_json["lease_id"] = int(lease_id)
         base_json["journal_id"] = int(journal_id)
@@ -600,7 +587,6 @@ def create_lease(company_id: int):
             base_json["opening_lease_liability_non_current"] = round(float(non_current), 2)
             base_json["transition_date"] = go_live.isoformat()
 
-        # ✅ audit (best-effort)
         try:
             db_service.audit_log(
                 int(company_id),
@@ -627,11 +613,22 @@ def create_lease(company_id: int):
         return jsonify(base_json), 201
 
     except ValueError as ve:
+        if lease_id:
+            try:
+                db_service.delete_lease(int(company_id), int(lease_id))
+            except Exception:
+                current_app.logger.exception("cleanup delete_lease failed lease_id=%s", lease_id)
         return jsonify({"error": str(ve)}), 400
+
     except Exception as e:
+        if lease_id:
+            try:
+                db_service.delete_lease(int(company_id), int(lease_id))
+            except Exception:
+                current_app.logger.exception("cleanup delete_lease failed lease_id=%s", lease_id)
         current_app.logger.exception("create_lease error")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
-
+    
 @bp.route("/api/companies/<int:company_id>/leases", methods=["GET", "OPTIONS"])
 @require_auth
 def list_leases(company_id: int):
