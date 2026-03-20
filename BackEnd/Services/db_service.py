@@ -20469,147 +20469,147 @@ class DatabaseService:
     # --------------------------
     # LEASE PERSISTENCE (IFRS 16)
     # ---------------------------
-def insert_lease(
-    self,
-    company_id: int,
-    result: "LeaseScheduleResult",
-    *,
-    lessor_id: int,
-) -> int:
-    """
-    Persist lease master + schedule into company_{id}.leases and company_{id}.lease_schedule.
-    Returns lease_id.
-    """
-    schema = f"company_{company_id}"
-    lease = result.lease_input
+    def insert_lease(
+        self,
+        company_id: int,
+        result: "LeaseScheduleResult",
+        *,
+        lessor_id: int,
+    ) -> int:
+        """
+        Persist lease master + schedule into company_{id}.leases and company_{id}.lease_schedule.
+        Returns lease_id.
+        """
+        schema = f"company_{company_id}"
+        lease = result.lease_input
 
-    with self._conn_cursor() as (conn, cur):
-        # Insert master lease row
-        cur.execute(
-            f"""
-            INSERT INTO {schema}.leases (
-                company_id,
-                lessor_id,
-                lease_name,
-                role,
-                start_date,
-                end_date,
-                payment_amount,
-                payment_frequency,
-                payment_timing,
-                annual_rate,
-                initial_direct_costs,
-                residual_value,
-                vat_rate,
-                opening_lease_liability,
-                opening_rou_asset
-            )
-            VALUES (
-                %(company_id)s,
-                %(lessor_id)s,
-                %(lease_name)s,
-                %(role)s,
-                %(start_date)s,
-                %(end_date)s,
-                %(payment_amount)s,
-                %(payment_frequency)s,
-                %(payment_timing)s,
-                %(annual_rate)s,
-                %(initial_direct_costs)s,
-                %(residual_value)s,
-                %(vat_rate)s,
-                %(opening_lease_liability)s,
-                %(opening_rou_asset)s
-            )
-            RETURNING id;
-            """,
-            {
-                "company_id": int(company_id),
-                "lessor_id": int(lessor_id),
-                "lease_name": lease.lease_name,
-                "role": lease.role,
-                "start_date": lease.start_date,
-                "end_date": lease.end_date,
-                "payment_amount": lease.payment_amount,
-                "payment_frequency": lease.payment_frequency,
-                "payment_timing": lease.payment_timing,
-                "annual_rate": lease.annual_rate,
-                "initial_direct_costs": lease.initial_direct_costs,
-                "residual_value": lease.residual_value,
-                "vat_rate": lease.vat_rate,
-                "opening_lease_liability": result.opening_lease_liability,
-                "opening_rou_asset": result.opening_rou_asset,
-            },
-        )
-
-        lease_id_row = cur.fetchone()
-        lease_id = lease_id_row["id"] if isinstance(lease_id_row, dict) else lease_id_row[0]
-
-        version_no = 1
-        for p in result.periods:
+        with self._conn_cursor() as (conn, cur):
+            # Insert master lease row
             cur.execute(
                 f"""
-                INSERT INTO {schema}.lease_schedule (
-                    lease_id,
+                INSERT INTO {schema}.leases (
                     company_id,
-                    version_no,
-                    is_active,
-                    modification_id,
-                    period_no,
-                    period_start,
-                    period_end,
-                    opening_liability,
-                    interest,
-                    payment,
-                    principal,
-                    closing_liability,
-                    depreciation,
-                    vat_portion,
-                    net_payment,
-                    payment_timing
+                    lessor_id,
+                    lease_name,
+                    role,
+                    start_date,
+                    end_date,
+                    payment_amount,
+                    payment_frequency,
+                    payment_timing,
+                    annual_rate,
+                    initial_direct_costs,
+                    residual_value,
+                    vat_rate,
+                    opening_lease_liability,
+                    opening_rou_asset
                 )
                 VALUES (
-                    %(lease_id)s,
                     %(company_id)s,
-                    %(version_no)s,
-                    %(is_active)s,
-                    %(modification_id)s,
-                    %(period_no)s,
-                    %(period_start)s,
-                    %(period_end)s,
-                    %(opening_liability)s,
-                    %(interest)s,
-                    %(payment)s,
-                    %(principal)s,
-                    %(closing_liability)s,
-                    %(depreciation)s,
-                    %(vat_portion)s,
-                    %(net_payment)s,
-                    %(payment_timing)s
+                    %(lessor_id)s,
+                    %(lease_name)s,
+                    %(role)s,
+                    %(start_date)s,
+                    %(end_date)s,
+                    %(payment_amount)s,
+                    %(payment_frequency)s,
+                    %(payment_timing)s,
+                    %(annual_rate)s,
+                    %(initial_direct_costs)s,
+                    %(residual_value)s,
+                    %(vat_rate)s,
+                    %(opening_lease_liability)s,
+                    %(opening_rou_asset)s
                 )
+                RETURNING id;
                 """,
                 {
-                    "lease_id": int(lease_id),
                     "company_id": int(company_id),
-                    "version_no": int(version_no),
-                    "is_active": True,
-                    "modification_id": None,
-                    "period_no": p.period_no,
-                    "period_start": p.period_start,
-                    "period_end": p.period_end,
-                    "opening_liability": p.opening_liability,
-                    "interest": p.interest,
-                    "payment": p.payment,
-                    "principal": p.principal,
-                    "closing_liability": p.closing_liability,
-                    "depreciation": p.depreciation,
-                    "vat_portion": p.vat_portion,
-                    "net_payment": p.net_payment,
+                    "lessor_id": int(lessor_id),
+                    "lease_name": lease.lease_name,
+                    "role": lease.role,
+                    "start_date": lease.start_date,
+                    "end_date": lease.end_date,
+                    "payment_amount": lease.payment_amount,
+                    "payment_frequency": lease.payment_frequency,
                     "payment_timing": lease.payment_timing,
+                    "annual_rate": lease.annual_rate,
+                    "initial_direct_costs": lease.initial_direct_costs,
+                    "residual_value": lease.residual_value,
+                    "vat_rate": lease.vat_rate,
+                    "opening_lease_liability": result.opening_lease_liability,
+                    "opening_rou_asset": result.opening_rou_asset,
                 },
             )
 
-        return lease_id
+            lease_id_row = cur.fetchone()
+            lease_id = lease_id_row["id"] if isinstance(lease_id_row, dict) else lease_id_row[0]
+
+            version_no = 1
+            for p in result.periods:
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.lease_schedule (
+                        lease_id,
+                        company_id,
+                        version_no,
+                        is_active,
+                        modification_id,
+                        period_no,
+                        period_start,
+                        period_end,
+                        opening_liability,
+                        interest,
+                        payment,
+                        principal,
+                        closing_liability,
+                        depreciation,
+                        vat_portion,
+                        net_payment,
+                        payment_timing
+                    )
+                    VALUES (
+                        %(lease_id)s,
+                        %(company_id)s,
+                        %(version_no)s,
+                        %(is_active)s,
+                        %(modification_id)s,
+                        %(period_no)s,
+                        %(period_start)s,
+                        %(period_end)s,
+                        %(opening_liability)s,
+                        %(interest)s,
+                        %(payment)s,
+                        %(principal)s,
+                        %(closing_liability)s,
+                        %(depreciation)s,
+                        %(vat_portion)s,
+                        %(net_payment)s,
+                        %(payment_timing)s
+                    )
+                    """,
+                    {
+                        "lease_id": int(lease_id),
+                        "company_id": int(company_id),
+                        "version_no": int(version_no),
+                        "is_active": True,
+                        "modification_id": None,
+                        "period_no": p.period_no,
+                        "period_start": p.period_start,
+                        "period_end": p.period_end,
+                        "opening_liability": p.opening_liability,
+                        "interest": p.interest,
+                        "payment": p.payment,
+                        "principal": p.principal,
+                        "closing_liability": p.closing_liability,
+                        "depreciation": p.depreciation,
+                        "vat_portion": p.vat_portion,
+                        "net_payment": p.net_payment,
+                        "payment_timing": lease.payment_timing,
+                    },
+                )
+
+            return lease_id
 
 
     def list_lease_schedule_for_month(self, company_id: int, as_of: date, cur=None):
