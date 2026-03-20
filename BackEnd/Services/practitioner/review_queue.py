@@ -2,6 +2,7 @@ from flask import Blueprint, request, current_app, make_response
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.practitioner.practitioner_engagements import _corsify, _json_ok, _json_err
 from BackEnd.Services.db_service import db_service
+from BackEnd.Services.assets.ppe_reporting import _audit_safe
 
 review_queue_bp = Blueprint("review_queue", __name__)
 
@@ -57,6 +58,43 @@ def _can_manage_review_queue(payload: dict) -> bool:
         "reviewer",
     }
 
+def _review_queue_audit(
+    *,
+    cur,
+    company_id: int,
+    payload: dict,
+    action: str,
+    entity_id,
+    entity_ref: str | None = None,
+    before_json: dict | None = None,
+    after_json: dict | None = None,
+    message: str | None = None,
+):
+    _audit_safe(
+        company_id=company_id,
+        payload=payload,
+        module="review_queue",
+        action=action,
+        entity_type="review_queue_item",
+        entity_id=str(entity_id),
+        entity_ref=entity_ref,
+        before_json=before_json,
+        after_json=after_json,
+        message=message,
+        cur=cur,
+    )
+
+def _queue_item_ref(row: dict | None, queue_type: str, source_id: int) -> str:
+    row = row or {}
+    return (
+        row.get("item_name")
+        or row.get("deliverable_name")
+        or row.get("task_name")
+        or row.get("step_name")
+        or row.get("description")
+        or row.get("reference_no")
+        or f"{queue_type}:{source_id}"
+    )
 
 def _validate_queue_type(queue_type: str):
     qt = (queue_type or "").strip().lower()
@@ -223,6 +261,15 @@ def review_queue_item_status_route(cid: int, queue_type: str, source_id: int):
             return _json_err("status is required.", 400)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_review_queue_item_detail(
+                cur,
+                company_id,
+                queue_type=queue_type,
+                source_id=source_id,
+            )
+            if not before_row:
+                return _json_err("Review queue item not found.", 404)
+
             updated_id = db_service.set_review_queue_item_status(
                 cur,
                 company_id,
@@ -240,6 +287,22 @@ def review_queue_item_status_route(cid: int, queue_type: str, source_id: int):
                 company_id,
                 queue_type=queue_type,
                 source_id=source_id,
+            ) or {
+                **before_row,
+                "status": status,
+                "completed_at": completed_at,
+            }
+
+            _review_queue_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="set_review_queue_item_status",
+                entity_id=f"{queue_type}:{source_id}",
+                entity_ref=_queue_item_ref(row, queue_type, source_id),
+                before_json=before_row,
+                after_json=row,
+                message=f"Changed review queue item {queue_type}:{source_id} status to {status}",
             )
 
         return _json_ok({"row": row})
@@ -247,7 +310,6 @@ def review_queue_item_status_route(cid: int, queue_type: str, source_id: int):
     except Exception as e:
         current_app.logger.exception("review_queue_item_status_route failed")
         return _json_err(str(e), 500)
-
 
 @review_queue_bp.route(
     "/api/companies/<int:cid>/review-queue/items/<string:queue_type>/<int:source_id>/assign",
@@ -276,6 +338,15 @@ def review_queue_item_assign_route(cid: int, queue_type: str, source_id: int):
         body = request.get_json(silent=True) or {}
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_review_queue_item_detail(
+                cur,
+                company_id,
+                queue_type=queue_type,
+                source_id=source_id,
+            )
+            if not before_row:
+                return _json_err("Review queue item not found.", 404)
+
             updated_id = db_service.assign_review_queue_item(
                 cur,
                 company_id,
@@ -293,6 +364,22 @@ def review_queue_item_assign_route(cid: int, queue_type: str, source_id: int):
                 company_id,
                 queue_type=queue_type,
                 source_id=source_id,
+            ) or {
+                **before_row,
+                "assigned_user_id": _parse_int(body.get("assigned_user_id")),
+                "reviewer_user_id": _parse_int(body.get("reviewer_user_id")),
+            }
+
+            _review_queue_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="assign_review_queue_item",
+                entity_id=f"{queue_type}:{source_id}",
+                entity_ref=_queue_item_ref(row, queue_type, source_id),
+                before_json=before_row,
+                after_json=row,
+                message=f"Assigned review queue item {queue_type}:{source_id}",
             )
 
         return _json_ok({"row": row})
@@ -300,7 +387,6 @@ def review_queue_item_assign_route(cid: int, queue_type: str, source_id: int):
     except Exception as e:
         current_app.logger.exception("review_queue_item_assign_route failed")
         return _json_err(str(e), 500)
-
 
 @review_queue_bp.route(
     "/api/companies/<int:cid>/review-queue/items/<string:queue_type>/<int:source_id>/deactivate",
@@ -327,6 +413,15 @@ def review_queue_item_deactivate_route(cid: int, queue_type: str, source_id: int
             return _json_err("Invalid queue_type.", 400)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_review_queue_item_detail(
+                cur,
+                company_id,
+                queue_type=queue_type,
+                source_id=source_id,
+            )
+            if not before_row:
+                return _json_err("Review queue item not found.", 404)
+
             updated_id = db_service.deactivate_review_queue_item(
                 cur,
                 company_id,
@@ -342,6 +437,21 @@ def review_queue_item_deactivate_route(cid: int, queue_type: str, source_id: int
                 company_id,
                 queue_type=queue_type,
                 source_id=source_id,
+            ) or {
+                **before_row,
+                "is_active": False,
+            }
+
+            _review_queue_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="deactivate_review_queue_item",
+                entity_id=f"{queue_type}:{source_id}",
+                entity_ref=_queue_item_ref(row, queue_type, source_id),
+                before_json=before_row,
+                after_json=row,
+                message=f"Deactivated review queue item {queue_type}:{source_id}",
             )
 
         return _json_ok({"row": row})

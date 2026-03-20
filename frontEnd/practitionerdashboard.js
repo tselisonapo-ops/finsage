@@ -28,6 +28,37 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/users`
   },
 
+  audit: {
+    // GET /api/companies/<cid>/audit?limit=&offset=&module=&severity=&entity_type=&entity_id=&actor_user_id=&from=&to=
+    list: (
+      companyId,
+      {
+        limit = 100,
+        offset = 0,
+        module = "",
+        severity = "",
+        entity_type = "",
+        entity_id = "",
+        actor_user_id = "",
+        from = "",
+        to = "",
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      params.append("limit", String(limit ?? 100));
+      params.append("offset", String(offset ?? 0));
+      if (module) params.append("module", String(module));
+      if (severity) params.append("severity", String(severity));
+      if (entity_type) params.append("entity_type", String(entity_type));
+      if (entity_id) params.append("entity_id", String(entity_id));
+      if (actor_user_id) params.append("actor_user_id", String(actor_user_id));
+      if (from) params.append("from", String(from));
+      if (to) params.append("to", String(to));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/audit${qs ? `?${qs}` : ""}`;
+    },
+  },
+
   engagements: {
     list: (companyId, { status = "", engagement_type = "", customer_id = "", q = "", limit = 100, offset = 0 } = {}) => {
       const params = new URLSearchParams();
@@ -847,6 +878,8 @@ const PR_NAV = {
   engagementAcceptance: "engagement-acceptance",
   riskIndependence: "risk-independence",
   overrideLog: "override-log",
+  engagementAuditTrail: "engagement-audit-trail",
+  practiceAuditTrail: "practice-audit-trail",
 
   analyticsDetail: "analytics-detail",
 };
@@ -1070,15 +1103,6 @@ function getUserLabelById(userId) {
   function bindSelect(path, value) {
     const el = document.querySelector(`[data-bind="${path}"]`);
     if (el) el.value = value ?? "";
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
-      .replace(/'/g, "&#39;");
   }
 
 function formatDateShort(value) {
@@ -1350,6 +1374,12 @@ const PR_NAV_MENU = [
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.reviewQueue)
       },
       {
+        name: "Engagement Audit Trail",
+        screen: PR_NAV.engagementAuditTrail,
+        desc: "Audit history for engagement workflow actions, status changes, and assignments",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.engagementAuditTrail)
+      },
+      {
         name: "Engagement Team",
         screen: PR_NAV.team,
         desc: "Team assigned to this engagement, roles, and allocation",
@@ -1489,6 +1519,12 @@ const PR_NAV_MENU = [
         screen: PR_NAV.approvalCenter,
         desc: "Manager approvals, review decisions, and rework routing",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.approvalCenter)
+      },
+      {
+        name: "Practice Audit Trail",
+        screen: PR_NAV.practiceAuditTrail,
+        desc: "Cross-engagement audit history, workflow overrides, and control actions",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.practiceAuditTrail)
       },
       {
         name: "Resource Planning",
@@ -1654,6 +1690,75 @@ PR_SCREEN_POLICY["override-log"] = {
   roles: ["owner", "admin", "audit_partner", "engagement_partner", "quality_control_reviewer"]
 };
 
+PR_SCREEN_POLICY["deliverables-register"] = {
+  auth: "private",
+  roles: [
+    "owner",
+    "admin",
+    "manager",
+    "senior",
+    "accountant",
+    "bookkeeper",
+    "audit_staff",
+    "senior_associate",
+    "audit_manager",
+    "audit_partner",
+    "engagement_partner",
+    "quality_control_reviewer",
+    "fs_compiler",
+    "reviewer",
+    "client_service_manager"
+  ]
+};
+
+PR_SCREEN_POLICY["working-papers"] = {
+  auth: "private",
+  roles: [
+    "owner",
+    "admin",
+    "manager",
+    "senior",
+    "accountant",
+    "bookkeeper",
+    "audit_staff",
+    "senior_associate",
+    "audit_manager",
+    "audit_partner",
+    "engagement_partner",
+    "quality_control_reviewer",
+    "fs_compiler",
+    "reviewer",
+    "client_service_manager"
+  ]
+};
+
+PR_SCREEN_POLICY["engagement-audit-trail"] = {
+  auth: "private",
+  roles: [
+    "owner",
+    "admin",
+    "manager",
+    "audit_manager",
+    "reviewer",
+    "engagement_partner",
+    "quality_control_reviewer",
+    "client_service_manager"
+  ]
+};
+
+PR_SCREEN_POLICY["practice-audit-trail"] = {
+  auth: "private",
+  roles: [
+    "owner",
+    "admin",
+    "manager",
+    "audit_manager",
+    "audit_partner",
+    "engagement_partner",
+    "quality_control_reviewer"
+  ]
+};
+
 function resolvePractitionerScreenName(name) {
   const n = String(name || "").trim().toLowerCase();
 
@@ -1661,7 +1766,10 @@ function resolvePractitionerScreenName(name) {
     settings: "settings-overview",
     "partner-signoff": "partner-signoff",
     "review-queue": "review-queue",
-    "working-papers": "working-papers"
+    "working-papers": "working-papers",
+    "deliverables-register": "deliverables-register",
+    "engagement-audit-trail": "engagement-audit-trail",
+    "practice-audit-trail": "practice-audit-trail"
   };
 
   return alias[n] || n || PR_NAV.dashboard;
@@ -1728,7 +1836,7 @@ function renderPractitionerScreenTitle(screen, me) {
     dashboard: "Assignment Dashboard",
     assignments: "Assignments",
     clients: "Clients",
-    team: "Team",
+    team: "Engagement Team",
     analytics: "Analytics",
     "action-center": "Action Center",
     "settings-overview": "Settings Overview",
@@ -1737,6 +1845,7 @@ function renderPractitionerScreenTitle(screen, me) {
     "firm-preferences": "Firm Preferences",
     "reporting-overview": "Reporting Overview",
     "pending-deliverables": "Pending Deliverables",
+    "deliverables-register": "Deliverables Register",
     "working-papers": "Working Papers",
     "journal-entries": "Journal Entries",
     "accounts-receivable": "Accounts Receivable",
@@ -1747,17 +1856,18 @@ function renderPractitionerScreenTitle(screen, me) {
     "monthly-close-routines": "Monthly Close Routines",
     "year-end-reporting": "Year-End Reporting",
     "review-queue": "Review Queue",
-    deliverables: "Deliverables",
-    "partner-signoff": "Partner Sign-Off",
     "team-capacity": "Team Capacity",
     "portfolio-review": "Portfolio Review",
     escalations: "Escalations",
     "approval-center": "Approval Center",
     "resource-planning": "Resource Planning",
+    "partner-signoff": "Partner Sign-Off",
     "final-deliverables-review": "Final Deliverables Review",
     "engagement-acceptance": "Engagement Acceptance",
     "risk-independence": "Risk & Independence",
-    "override-log": "Override Log"
+    "override-log": "Override Log",
+    "engagement-audit-trail": "Engagement Audit Trail",
+    "practice-audit-trail": "Practice Audit Trail"
   };
 
   bindText("header.workspace_label", "Practitioner Workspace");
@@ -1767,7 +1877,7 @@ function renderPractitionerScreenTitle(screen, me) {
     dashboard: "Client-service dashboard for bookkeeping, reporting engagements, approvals, and non-posting firm workflows.",
     assignments: "Track all active assignments, due dates, and role ownership.",
     clients: "View clients, service health, and engagement context.",
-    team: "Monitor team allocation, utilization, and collaboration.",
+    team: "Team assigned to this engagement, roles, and allocation.",
     analytics: "View portfolio trends, delivery health, and risk signals.",
     "action-center": "Manage approvals, escalations, and workflow actions.",
     "settings-overview": "Configure the practitioner workspace and administration tools.",
@@ -1775,8 +1885,9 @@ function renderPractitionerScreenTitle(screen, me) {
     "roles-permissions": "Control role rights for posting, review, and sign-off.",
     "firm-preferences": "Manage practice-level defaults and workspace settings.",
     "reporting-overview": "Review engagement summary, deadlines, and reporting readiness.",
-    "pending-deliverables": "Track outstanding deliverables and reporting outputs.",
-    "working-papers": "Prepare, review, and manage structured workpapers, schedules, memos, and reconciliations.",
+    "pending-deliverables": "Track outstanding deliverables and missing engagement inputs.",
+    "deliverables-register": "Full lifecycle register for all engagement deliverables.",
+    "working-papers": "Prepare, review, and manage structured workpapers, schedules, reconciliations, and supporting records.",
     "journal-entries": "Manage journal posting workflow and review routing.",
     "accounts-receivable": "Manage receivables posting and review workflow.",
     "accounts-payable": "Manage payables posting and vendor workflow.",
@@ -1785,18 +1896,19 @@ function renderPractitionerScreenTitle(screen, me) {
     "day-to-day-postings": "Monitor recurring posting activity for the engagement.",
     "monthly-close-routines": "Review monthly close routines and completion status.",
     "year-end-reporting": "Manage annual reporting and finalization workflow.",
-    "review-queue": "Review work awaiting manager review.",
-    deliverables: "Review final deliverables and reporting pack.",
-    "partner-signoff": "Manage partner sign-off and final approval workflow.",
-    "team-capacity": "Cross-engagement staffing, allocation load, reviewer pressure, and capacity visibility.",
+    "review-queue": "Review work awaiting reviewer or manager action.",
+    "team-capacity": "Cross-engagement staffing, allocation load, and reviewer capacity visibility.",
     "portfolio-review": "Portfolio-wide engagement health, due dates, blockers, and manager risk signals.",
-    escalations: "Blocked work, overdue deliverables, unresolved issues, and intervention-required items.",
-    "approval-center": "Manager-level approvals, review decisions, returns, and release controls.",
-    "resource-planning": "Forward-looking staffing, workload balancing, and scheduling risk management.",
+    escalations: "Blocked work, overdue items, and intervention-required workflow issues.",
+    "approval-center": "Manager approvals, review decisions, rework routing, and release controls.",
+    "resource-planning": "Forward-looking staffing, scheduling pressure, and workload balancing.",
+    "partner-signoff": "Final approval workflow, sign-off steps, and completion control.",
     "final-deliverables-review": "Final reporting pack review before sign-off and release.",
     "engagement-acceptance": "Acceptance, continuation, and approval decisions for client engagements.",
     "risk-independence": "Ethics, independence, and engagement risk oversight controls.",
-    "override-log": "Partner overrides, exceptions, disputes, and final documented resolutions."
+    "override-log": "Partner overrides, exceptions, disputes, and final documented resolutions.",
+    "engagement-audit-trail": "Audit history for engagement deliverables, workpapers, review actions, and sign-off decisions.",
+    "practice-audit-trail": "Cross-engagement audit history, approvals, overrides, and workflow changes."
   };
 
   bindText("header.dashboard_subtitle", subtitles[screen] || "Practitioner workflow screen.");
@@ -2653,6 +2765,7 @@ function setupPractitionerNav(me) {
 
 function runPractitionerScreenBinder(screen, me) {
   window.__PR_ME__ = me;
+
   switch (screen) {
     case PR_NAV.dashboard:
       renderDashboardHome?.(me);
@@ -2660,6 +2773,11 @@ function runPractitionerScreenBinder(screen, me) {
 
     case PR_NAV.assignments:
       renderAssignmentsScreen?.(me);
+      break;
+
+    
+    case PR_NAV.deliverablesRegister:
+      renderDeliverablesScreen(me);
       break;
 
     case PR_NAV.clients:
@@ -2695,6 +2813,10 @@ function runPractitionerScreenBinder(screen, me) {
       renderPendingDeliverablesScreen?.(me);
       break;
 
+    case PR_NAV.deliverablesRegister:
+      renderDeliverablesRegisterScreen?.(me);
+      break;
+
     case PR_NAV.workingPapers:
       renderWorkingPapersScreen?.(me);
       break;
@@ -2723,14 +2845,6 @@ function runPractitionerScreenBinder(screen, me) {
       renderReviewQueueScreen?.(me);
       break;
 
-    case PR_NAV.deliverables:
-      renderDeliverablesScreen?.(me);
-      break;
-
-    case PR_NAV.partnerSignoff:
-      renderPartnerSignoffScreen?.(me);
-      break;
-
     case PR_NAV.teamCapacity:
       renderTeamCapacityScreen?.(me);
       break;
@@ -2751,6 +2865,10 @@ function runPractitionerScreenBinder(screen, me) {
       renderResourcePlanningScreen?.(me);
       break;
 
+    case PR_NAV.partnerSignoff:
+      renderPartnerSignoffScreen?.(me);
+      break;
+
     case PR_NAV.finalDeliverablesReview:
       renderFinalDeliverablesReviewScreen?.(me);
       break;
@@ -2767,34 +2885,31 @@ function runPractitionerScreenBinder(screen, me) {
       renderOverrideLogScreen?.(me);
       break;
 
-    case PR_NAV.deliverablesRegister:
-      renderDeliverablesRegisterScreen?.(me);
-      break;
-
-    case PR_NAV.partnerSignoff:
-      renderPartnerSignoffScreen?.(me);
-      break;
-
     case PR_NAV.engagementAuditTrail:
-      renderEngagementAuditTrailScreen?.(me);
+      window.renderEngagementAuditTrailScreen?.(me);
       break;
 
     case PR_NAV.practiceAuditTrail:
-      renderPracticeAuditTrailScreen?.(me);
+      window.renderPracticeAuditTrailScreen?.(me);
       break;
 
     default:
       renderDashboardHome?.(me);
       break;
   }
+    // ✅ APPLY ROLE UI AFTER RENDER
+    renderEngagementScreen(me, screen);
 }
 
 function renderEngagementScreen(me, screen) {
+  const activeScreen = document.querySelector(".screen:not(.hidden)");
+  if (!activeScreen) return;
+
   const canPost = canPostInEngagement(me.role);
   const canApprove = canApproveOnly(me.role);
 
-  const postBtn = document.querySelector('[data-action="post-entry"]');
-  const approveBtn = document.querySelector('[data-action="approve-entry"]');
+  const postBtn = activeScreen.querySelector('[data-action="post-entry"]');
+  const approveBtn = activeScreen.querySelector('[data-action="approve-entry"]');
 
   if (postBtn) postBtn.classList.toggle("hidden", !canPost);
   if (approveBtn) approveBtn.classList.toggle("hidden", !canApprove);
@@ -5407,6 +5522,7 @@ async function renderReportingOverviewScreen(me) {
   }
 
   await refreshReportingOverviewScreen();
+  await renderWorkflowReadinessInto("reportingReadinessSlot");
 }
 
 
@@ -8412,22 +8528,23 @@ async function bindDeliverablesScreen(me) {
       return;
     }
 
-    document.querySelectorAll("[data-deliv-create-wp]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const id = btn.getAttribute("data-deliv-create-wp");
-        const row = (window.__PR_DELIVERABLES_STATE__?.rows || []).find((r) => String(r.id) === String(id));
-        if (!row) return;
+    const createWpBtn = e.target.closest("[data-deliv-create-wp]");
+    if (createWpBtn) {
+      e.stopPropagation();
+      const id = createWpBtn.getAttribute("data-deliv-create-wp");
+      const row = (window.__PR_DELIVERABLES_STATE__?.rows || []).find((r) => String(r.id) === String(id));
+      if (!row) return;
 
-        try {
-          const wp = await createWorkingPaperFromDeliverable(row);
-          alert(`Working paper created: ${wp.paper_name || wp.id}`);
-          await renderDeliverablesRegisterScreen?.(window.__PR_ME__);
-        } catch (err) {
-          alert(err?.message || "Failed to create working paper.");
-        }
-      });
-    });
+      try {
+        const wp = await createWorkingPaperFromDeliverable(row);
+        alert(`Working paper created: ${wp.paper_name || wp.id}`);
+        await renderDeliverablesRegisterScreen?.(window.__PR_ME__);
+        await refreshEngagementWorkflowScreens?.(window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to create working paper.");
+      }
+      return;
+    }
 
     if (e.target.id === "dlNewBtn") {
       await openDeliverableModal(me, null);
@@ -8499,6 +8616,7 @@ async function bindDeliverablesScreen(me) {
         }
       );
       await loadDeliverablesScreen(me);
+      await refreshEngagementWorkflowScreens(me);
     }
 
     if (e.target.id === "dlMarkRequestedBtn") return setStatus("requested");
@@ -8518,6 +8636,7 @@ async function bindDeliverablesScreen(me) {
         { method: "POST" }
       );
       await loadDeliverablesScreen(me);
+      await refreshEngagementWorkflowScreens(me);
     }
   });
 
@@ -11017,76 +11136,680 @@ async function renderPartnerSignoffScreen(me) {
   }
 }
 
-function renderEngagementAuditTrailScreen(me) {
-  const root = document.getElementById("screen-engagement-audit-trail");
+window.renderDeliverablesRegisterScreen ||= function (me) {
+  const root = document.getElementById("screen-deliverables-register");
   if (!root) return;
-
   root.innerHTML = `
     <div class="card p-6">
-      <div class="panel-title">Engagement Audit Trail</div>
-      <div class="panel-subtitle mt-1">
-        Audit history for engagement deliverables, working papers, review actions, and sign-off decisions.
-      </div>
+      <div class="panel-title">Deliverables Register</div>
+      <div class="panel-subtitle mt-1">Full lifecycle register for all engagement deliverables.</div>
+      <div class="mt-4 text-sm text-slate-600">Deliverables register screen is ready to be wired.</div>
+    </div>
+  `;
+};
 
-      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-        <div class="text-sm font-semibold text-slate-800">Planned events</div>
-        <div class="mt-3 grid gap-3">
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Deliverable lifecycle</div>
-            <div class="mt-1 text-sm text-slate-600">Create, update, status changes, deactivation, and receipt history.</div>
+window.renderWorkingPapersScreen ||= function (me) {
+  const root = document.getElementById("screen-working-papers");
+  if (!root) return;
+  root.innerHTML = `
+    <div class="card p-6">
+      <div class="panel-title">Working Papers</div>
+      <div class="panel-subtitle mt-1">Prepare, review, and manage structured workpapers.</div>
+      <div class="mt-4 text-sm text-slate-600">Working papers screen is ready to be wired.</div>
+    </div>
+  `;
+};
+
+window.renderEngagementAuditTrailScreen ||= function renderEngagementAuditTrailScreen(me) {
+  renderAuditTrailWorkspace({
+    rootId: "screen-engagement-audit-trail",
+    title: "Engagement Audit Trail",
+    subtitle: "Audit history for engagement workflow actions, status changes, assignments, and engagement-level updates.",
+    defaultFilters: {
+      module: "engagements",
+      entity_type: "",
+    },
+    scope: "engagement",
+  });
+};
+
+window.renderPracticeAuditTrailScreen ||= function renderPracticeAuditTrailScreen(me) {
+  renderAuditTrailWorkspace({
+    rootId: "screen-practice-audit-trail",
+    title: "Practice Audit Trail",
+    subtitle: "Cross-engagement audit history, workflow overrides, review actions, and practice-level control activity.",
+    defaultFilters: {
+      module: "",
+      entity_type: "",
+    },
+    scope: "practice",
+  });
+};
+
+function renderAuditTrailWorkspace({
+  rootId,
+  title,
+  subtitle,
+  defaultFilters = {},
+  scope = "practice",
+}) {
+  const root = document.getElementById(rootId);
+  if (!root) return;
+
+  const companyId = window.getActiveCompanyId?.();
+  const currentEngagementId = window.getActiveEngagementId?.() || "";
+  const currentUserId = window.getCurrentUser?.()?.id || "";
+  const apiFetch = window.apiFetch;
+  const ENDPOINTS = window.endpoints || window.ENDPOINTS;
+
+  if (!companyId || !apiFetch || !ENDPOINTS?.audit?.list) {
+    root.innerHTML = `
+      <div class="audit-screen-shell">
+        <div class="audit-card">
+          <div class="audit-title">${escapeHtml(title)}</div>
+          <div class="audit-subtitle">${escapeHtml(subtitle)}</div>
+          <div class="audit-empty">Audit route or company context is not available.</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  root.innerHTML = `
+    <style>
+      .audit-screen-shell {
+        padding: 20px;
+      }
+      .audit-card {
+        background: #ffffff;
+        border: 1px solid #d7e4ea;
+        border-radius: 24px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        padding: 20px;
+      }
+      .audit-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+      .audit-title {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #123040;
+      }
+      .audit-subtitle {
+        margin-top: 6px;
+        color: #5c7481;
+        font-size: 0.95rem;
+      }
+      .audit-toolbar {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .audit-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .audit-field label {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #4b6472;
+      }
+      .audit-input,
+      .audit-select {
+        min-height: 40px;
+        border: 1px solid #d7e4ea;
+        border-radius: 12px;
+        background: #fff;
+        padding: 0 12px;
+        color: #123040;
+        outline: none;
+      }
+      .audit-input:focus,
+      .audit-select:focus {
+        border-color: #0f766e;
+        box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+      }
+      .audit-actions {
+        display: flex;
+        gap: 10px;
+        align-items: end;
+      }
+      .audit-btn {
+        min-height: 40px;
+        border: 1px solid #d7e4ea;
+        background: #fff;
+        color: #123040;
+        border-radius: 12px;
+        padding: 0 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .audit-btn-primary {
+        background: #0f766e;
+        border-color: #0f766e;
+        color: #fff;
+      }
+      .audit-btn:hover {
+        filter: brightness(0.98);
+      }
+      .audit-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin: 8px 0 14px;
+        color: #5c7481;
+        font-size: 0.88rem;
+      }
+      .audit-table-wrap {
+        overflow: auto;
+        border: 1px solid #e2ebf0;
+        border-radius: 16px;
+      }
+      .audit-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1150px;
+      }
+      .audit-table th,
+      .audit-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #edf3f6;
+        vertical-align: top;
+        text-align: left;
+        font-size: 0.9rem;
+      }
+      .audit-table th {
+        background: #f8fbfd;
+        color: #48616f;
+        font-weight: 700;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .audit-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        background: #e7f6f4;
+        color: #0f766e;
+      }
+      .audit-pill-muted {
+        background: #eef4f7;
+        color: #58707d;
+      }
+      .audit-code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.8rem;
+        color: #123040;
+        background: #f8fbfd;
+        border: 1px solid #e2ebf0;
+        border-radius: 10px;
+        padding: 2px 8px;
+        display: inline-block;
+      }
+      .audit-row-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .audit-link-btn {
+        border: 0;
+        background: transparent;
+        color: #0f766e;
+        cursor: pointer;
+        font-weight: 600;
+        padding: 0;
+      }
+      .audit-empty,
+      .audit-loading {
+        padding: 24px;
+        text-align: center;
+        color: #5c7481;
+      }
+      .audit-pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 14px;
+      }
+      .audit-drawer {
+        margin-top: 16px;
+        border: 1px solid #d7e4ea;
+        border-radius: 18px;
+        background: #fbfdfe;
+        overflow: hidden;
+      }
+      .audit-drawer-head {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e6eef2;
+        font-weight: 700;
+        color: #123040;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .audit-drawer-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+      }
+      .audit-json-panel {
+        padding: 14px 16px;
+        border-right: 1px solid #e6eef2;
+      }
+      .audit-json-panel:last-child {
+        border-right: 0;
+      }
+      .audit-json-title {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #48616f;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .audit-json-pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.82rem;
+        line-height: 1.45;
+        color: #123040;
+        background: #fff;
+        border: 1px solid #e2ebf0;
+        border-radius: 14px;
+        padding: 12px;
+        max-height: 340px;
+        overflow: auto;
+      }
+      @media (max-width: 1200px) {
+        .audit-toolbar {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 760px) {
+        .audit-toolbar {
+          grid-template-columns: 1fr;
+        }
+        .audit-drawer-grid {
+          grid-template-columns: 1fr;
+        }
+        .audit-json-panel {
+          border-right: 0;
+          border-bottom: 1px solid #e6eef2;
+        }
+        .audit-json-panel:last-child {
+          border-bottom: 0;
+        }
+      }
+    </style>
+
+    <div class="audit-screen-shell">
+      <div class="audit-card">
+        <div class="audit-header">
+          <div>
+            <div class="audit-title">${escapeHtml(title)}</div>
+            <div class="audit-subtitle">${escapeHtml(subtitle)}</div>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Working paper workflow</div>
-            <div class="mt-1 text-sm text-slate-600">Creation, edits, send-to-review, approval, return, block, and clear actions.</div>
+        </div>
+
+        <div class="audit-toolbar">
+          <div class="audit-field">
+            <label>Module</label>
+            <select class="audit-select" data-role="module">
+              <option value="">All modules</option>
+              <option value="engagements">Engagements</option>
+              <option value="review_queue">Review Queue</option>
+              <option value="action_center">Action Center</option>
+              <option value="ppe">PPE</option>
+              <option value="leases">Leases</option>
+              <option value="journals">Journals</option>
+            </select>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Review decisions</div>
-            <div class="mt-1 text-sm text-slate-600">Reviewer and manager decisions across queue items and final work products.</div>
+
+          <div class="audit-field">
+            <label>Severity</label>
+            <select class="audit-select" data-role="severity">
+              <option value="">All severity</option>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="error">Error</option>
+            </select>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Sign-off events</div>
-            <div class="mt-1 text-sm text-slate-600">Completion, blocking, waivers, and override actions by partner or QC roles.</div>
+
+          <div class="audit-field">
+            <label>Entity Type</label>
+            <input class="audit-input" data-role="entity_type" placeholder="engagement, engagement_working_paper..." />
+          </div>
+
+          <div class="audit-field">
+            <label>Entity ID</label>
+            <input class="audit-input" data-role="entity_id" placeholder="e.g. 42 or signoff:42" />
+          </div>
+
+          <div class="audit-field">
+            <label>Actor User ID</label>
+            <input class="audit-input" data-role="actor_user_id" placeholder="User ID" />
+          </div>
+
+          <div class="audit-field">
+            <label>Date from</label>
+            <input type="date" class="audit-input" data-role="from" />
+          </div>
+
+          <div class="audit-field">
+            <label>Date to</label>
+            <input type="date" class="audit-input" data-role="to" />
+          </div>
+
+          <div class="audit-field">
+            <label>Search note/ref</label>
+            <input class="audit-input" data-role="search_text" placeholder="Client, note, reference..." />
+          </div>
+
+          <div class="audit-field">
+            <label>Scope</label>
+            <select class="audit-select" data-role="scope">
+              <option value="practice">Practice-wide</option>
+              <option value="engagement">Current engagement</option>
+              <option value="mine">My actions</option>
+            </select>
+          </div>
+
+          <div class="audit-actions">
+            <button class="audit-btn audit-btn-primary" data-role="apply">Apply</button>
+            <button class="audit-btn" data-role="reset">Reset</button>
+          </div>
+        </div>
+
+        <div class="audit-meta">
+          <div data-role="summary">Ready</div>
+          <div data-role="page-info"></div>
+        </div>
+
+        <div class="audit-table-wrap">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Module</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Actor</th>
+                <th>Message</th>
+                <th>Severity</th>
+                <th>Inspect</th>
+              </tr>
+            </thead>
+            <tbody data-role="rows">
+              <tr><td colspan="8" class="audit-loading">Loading audit trail...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="audit-pagination">
+          <div>
+            <button class="audit-btn" data-role="prev">Previous</button>
+            <button class="audit-btn" data-role="next">Next</button>
+          </div>
+          <div class="audit-meta" style="margin:0;">
+            <span data-role="offset-label"></span>
+          </div>
+        </div>
+
+        <div class="audit-drawer hidden" data-role="drawer">
+          <div class="audit-drawer-head">
+            <span data-role="drawer-title">Audit Entry</span>
+            <button class="audit-btn" data-role="close-drawer">Close</button>
+          </div>
+          <div class="audit-drawer-grid">
+            <div class="audit-json-panel">
+              <div class="audit-json-title">Before</div>
+              <pre class="audit-json-pre" data-role="before-json">{}</pre>
+            </div>
+            <div class="audit-json-panel">
+              <div class="audit-json-title">After</div>
+              <pre class="audit-json-pre" data-role="after-json">{}</pre>
+            </div>
           </div>
         </div>
       </div>
     </div>
   `;
+
+  const els = {
+    module: root.querySelector('[data-role="module"]'),
+    severity: root.querySelector('[data-role="severity"]'),
+    entityType: root.querySelector('[data-role="entity_type"]'),
+    entityId: root.querySelector('[data-role="entity_id"]'),
+    actorUserId: root.querySelector('[data-role="actor_user_id"]'),
+    from: root.querySelector('[data-role="from"]'),
+    to: root.querySelector('[data-role="to"]'),
+    searchText: root.querySelector('[data-role="search_text"]'),
+    scope: root.querySelector('[data-role="scope"]'),
+    apply: root.querySelector('[data-role="apply"]'),
+    reset: root.querySelector('[data-role="reset"]'),
+    rows: root.querySelector('[data-role="rows"]'),
+    summary: root.querySelector('[data-role="summary"]'),
+    pageInfo: root.querySelector('[data-role="page-info"]'),
+    prev: root.querySelector('[data-role="prev"]'),
+    next: root.querySelector('[data-role="next"]'),
+    offsetLabel: root.querySelector('[data-role="offset-label"]'),
+    drawer: root.querySelector('[data-role="drawer"]'),
+    drawerTitle: root.querySelector('[data-role="drawer-title"]'),
+    beforeJson: root.querySelector('[data-role="before-json"]'),
+    afterJson: root.querySelector('[data-role="after-json"]'),
+    closeDrawer: root.querySelector('[data-role="close-drawer"]'),
+  };
+
+  const state = {
+    limit: 25,
+    offset: 0,
+    rows: [],
+    selected: null,
+  };
+
+  els.module.value = defaultFilters.module || "";
+  els.entityType.value = defaultFilters.entity_type || "";
+  els.scope.value = scope === "engagement" ? "engagement" : "practice";
+
+  async function loadAuditRows() {
+    els.rows.innerHTML = `<tr><td colspan="8" class="audit-loading">Loading audit trail...</td></tr>`;
+
+    const scopeValue = els.scope.value || "practice";
+    const moduleValue = (els.module.value || "").trim();
+    const severityValue = (els.severity.value || "").trim();
+    const entityTypeValue = (els.entityType.value || "").trim();
+    const entityIdValue = (els.entityId.value || "").trim();
+    const actorUserIdValue = (els.actorUserId.value || "").trim();
+    const fromValue = (els.from.value || "").trim();
+    const toValue = (els.to.value || "").trim();
+    const searchTextValue = (els.searchText.value || "").trim();
+
+    const query = {
+      limit: state.limit,
+      offset: state.offset,
+      module: moduleValue,
+      severity: severityValue,
+      entity_type: entityTypeValue,
+      entity_id: entityIdValue,
+      actor_user_id: actorUserIdValue,
+      from: fromValue,
+      to: toValue,
+    };
+
+    if (scopeValue === "mine" && currentUserId) {
+      query.actor_user_id = String(currentUserId);
+    }
+
+    if (scopeValue === "engagement" && currentEngagementId) {
+      if (!query.module) query.module = "engagements";
+    }
+
+    try {
+      const url = ENDPOINTS.audit.list(companyId, query);
+      const res = await apiFetch(url);
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to load audit trail.");
+      }
+
+      let rows = Array.isArray(data.rows) ? data.rows : Array.isArray(data.data) ? data.data : [];
+      if (searchTextValue) {
+        const needle = searchTextValue.toLowerCase();
+        rows = rows.filter((r) => {
+          const msg = String(r.message || "").toLowerCase();
+          const ref = String(r.entity_ref || "").toLowerCase();
+          const action = String(r.action || "").toLowerCase();
+          return msg.includes(needle) || ref.includes(needle) || action.includes(needle);
+        });
+      }
+
+      if (scopeValue === "engagement" && currentEngagementId) {
+        rows = rows.filter((r) => {
+          const before = JSON.stringify(r.before_json || {});
+          const after = JSON.stringify(r.after_json || {});
+          const idText = String(currentEngagementId);
+          return (
+            String(r.entity_id || "") === idText ||
+            String(r.entity_ref || "").includes(idText) ||
+            before.includes(idText) ||
+            after.includes(idText)
+          );
+        });
+      }
+
+      state.rows = rows;
+      renderRows();
+    } catch (err) {
+      els.rows.innerHTML = `<tr><td colspan="8" class="audit-empty">${escapeHtml(err.message || "Failed to load audit trail.")}</td></tr>`;
+      els.summary.textContent = "Could not load audit trail.";
+      els.pageInfo.textContent = "";
+      els.offsetLabel.textContent = "";
+    }
+  }
+
+  function renderRows() {
+    const rows = state.rows || [];
+
+    if (!rows.length) {
+      els.rows.innerHTML = `<tr><td colspan="8" class="audit-empty">No audit entries found for the selected filters.</td></tr>`;
+      els.summary.textContent = "0 audit entries";
+      els.pageInfo.textContent = "";
+      els.offsetLabel.textContent = `Offset ${state.offset}`;
+      return;
+    }
+
+    els.rows.innerHTML = rows.map((row, idx) => {
+      const displayEntity = [
+        row.entity_type ? `<div><span class="audit-pill audit-pill-muted">${escapeHtml(row.entity_type)}</span></div>` : "",
+        row.entity_id ? `<div class="mt-1"><span class="audit-code">${escapeHtml(String(row.entity_id))}</span></div>` : "",
+        row.entity_ref ? `<div class="mt-1" style="color:#48616f;">${escapeHtml(String(row.entity_ref))}</div>` : "",
+      ].join("");
+
+      return `
+        <tr>
+          <td>${escapeHtml(formatAuditDate(row.created_at || row.createdAt || row.timestamp))}</td>
+          <td>${row.module ? `<span class="audit-pill">${escapeHtml(String(row.module))}</span>` : "-"}</td>
+          <td><strong>${escapeHtml(String(row.action || "-"))}</strong></td>
+          <td>${displayEntity || "-"}</td>
+          <td>${escapeHtml(String(row.actor_user_id || row.actorUserId || "-"))}</td>
+          <td>${escapeHtml(String(row.message || "-"))}</td>
+          <td>${row.severity ? `<span class="audit-pill audit-pill-muted">${escapeHtml(String(row.severity))}</span>` : "-"}</td>
+          <td>
+            <div class="audit-row-actions">
+              <button class="audit-link-btn" data-inspect-index="${idx}">View</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    els.summary.textContent = `${rows.length} audit entr${rows.length === 1 ? "y" : "ies"} loaded`;
+    els.pageInfo.textContent = `Showing ${state.offset + 1} - ${state.offset + rows.length}`;
+    els.offsetLabel.textContent = `Offset ${state.offset}`;
+    
+    els.rows.querySelectorAll("[data-inspect-index]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-inspect-index"));
+        openDrawer(state.rows[idx]);
+      });
+    });
+  }
+
+  function openDrawer(row) {
+    if (!row) return;
+    els.drawer.classList.remove("hidden");
+    els.drawerTitle.textContent = `${row.action || "Audit Entry"} • ${row.entity_ref || row.entity_id || ""}`.trim();
+    els.beforeJson.textContent = safePrettyJson(row.before_json || {});
+    els.afterJson.textContent = safePrettyJson(row.after_json || {});
+  }
+
+  function resetFilters() {
+    state.offset = 0;
+    els.module.value = defaultFilters.module || "";
+    els.severity.value = "";
+    els.entityType.value = defaultFilters.entity_type || "";
+    els.entityId.value = "";
+    els.actorUserId.value = "";
+    els.from.value = "";
+    els.to.value = "";
+    els.searchText.value = "";
+    els.scope.value = scope === "engagement" ? "engagement" : "practice";
+    els.drawer.classList.add("hidden");
+    loadAuditRows();
+  }
+
+  els.apply.addEventListener("click", () => {
+    state.offset = 0;
+    loadAuditRows();
+  });
+
+  els.reset.addEventListener("click", resetFilters);
+
+  els.prev.addEventListener("click", () => {
+    state.offset = Math.max(0, state.offset - state.limit);
+    loadAuditRows();
+  });
+
+  els.next.addEventListener("click", () => {
+    if ((state.rows || []).length < state.limit) return;
+    state.offset += state.limit;
+    loadAuditRows();
+  });
+
+  els.closeDrawer.addEventListener("click", () => {
+    els.drawer.classList.add("hidden");
+  });
+
+  loadAuditRows();
 }
 
-function renderPracticeAuditTrailScreen(me) {
-  const root = document.getElementById("screen-practice-audit-trail");
-  if (!root) return;
+function formatAuditDate(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString();
+}
 
-  root.innerHTML = `
-    <div class="card p-6">
-      <div class="panel-title">Practice Audit Trail</div>
-      <div class="panel-subtitle mt-1">
-        Cross-engagement oversight of workflow changes, approvals, overrides, and exception handling.
-      </div>
-
-      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-        <div class="text-sm font-semibold text-slate-800">Planned controls</div>
-        <div class="mt-3 grid gap-3">
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Cross-engagement history</div>
-            <div class="mt-1 text-sm text-slate-600">Search and filter workflow activity across clients, engagements, and modules.</div>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Partner overrides</div>
-            <div class="mt-1 text-sm text-slate-600">Track override approvals, readiness exceptions, and rationale.</div>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Manager interventions</div>
-            <div class="mt-1 text-sm text-slate-600">See blocked items, reassignments, returns, and escalated approvals.</div>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <div class="text-sm font-semibold text-slate-800">Audit evidence</div>
-            <div class="mt-1 text-sm text-slate-600">Support internal control evidence and accountability for end-product review workflow.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
+function safePrettyJson(value) {
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return String(value ?? "{}");
+  }
 }
 
 function renderSettingsScreen(me, screen) {

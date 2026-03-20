@@ -1,10 +1,11 @@
-from flask import current_app
+
 from datetime import date, timedelta
 from BackEnd.Services.db_service import db_service
-from BackEnd.Services.auth_middleware import require_auth, make_response, _corsify
+from BackEnd.Services.auth_middleware import require_auth, _corsify
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
-from flask import Blueprint, request, jsonify, make_response
+from flask import Blueprint, request, jsonify, make_response, current_app
 from BackEnd.Services.utils.registration_utils import create_company_record_from_payload
+from BackEnd.Services.assets.ppe_reporting import _audit_safe
 
 engagements_bp = Blueprint("engagements", __name__)
 
@@ -86,6 +87,33 @@ def _parse_bool(value, default=None):
     if s in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+def _engagement_audit(
+    *,
+    cur,
+    company_id: int,
+    payload: dict,
+    action: str,
+    entity_type: str,
+    entity_id,
+    entity_ref: str | None = None,
+    before_json: dict | None = None,
+    after_json: dict | None = None,
+    message: str | None = None,
+):
+    _audit_safe(
+        company_id=company_id,
+        payload=payload,
+        module="engagements",
+        action=action,
+        entity_type=entity_type,
+        entity_id=str(entity_id),
+        entity_ref=entity_ref,
+        before_json=before_json,
+        after_json=after_json,
+        message=message,
+        cur=cur,
+    )
 
 def ensure_customer_workspace(
     *,
@@ -380,6 +408,20 @@ def create_engagement_route(cid: int):
             )
 
             row = db_service.get_engagement(cur3, company_id, engagement_id=engagement_id)
+
+            _engagement_audit(
+                cur=cur3,
+                company_id=company_id,
+                payload=payload,
+                action="create_engagement",
+                entity_type="engagement",
+                entity_id=engagement_id,
+                entity_ref=(row.get("engagement_name") or engagement_name or f"ENG-{engagement_id}"),
+                before_json={"request": body},
+                after_json=row,
+                message=f"Created engagement {engagement_id}",
+            )
+
             conn3.commit()
 
         return _json_ok({"row": row}, 201)
@@ -476,6 +518,10 @@ def update_engagement_route(cid: int, engagement_id: int):
         body = request.get_json(silent=True) or {}
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
+            if not before_row:
+                return _json_err("Engagement not found.", 404)
+
             out_id = db_service.update_engagement(
                 cur,
                 company_id,
@@ -515,7 +561,19 @@ def update_engagement_route(cid: int, engagement_id: int):
 
             row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
 
-        return _json_ok({"row": row})
+            _engagement_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="update_engagement",
+                entity_type="engagement",
+                entity_id=engagement_id,
+                entity_ref=(row.get("engagement_name") or before_row.get("engagement_name") or f"ENG-{engagement_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Updated engagement {engagement_id}",
+            )
+            return _json_ok({"row": row})
 
     except Exception as e:
         current_app.logger.exception("update_engagement_route failed")
@@ -549,6 +607,10 @@ def set_engagement_status_route(cid: int, engagement_id: int):
             return _json_err("You do not have permission to update engagement status.", 403)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
+            if not before_row:
+                return _json_err("Engagement not found.", 404)
+
             out_id = db_service.set_engagement_status(
                 cur,
                 company_id,
@@ -561,6 +623,18 @@ def set_engagement_status_route(cid: int, engagement_id: int):
 
             row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
 
+            _engagement_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="set_engagement_status",
+                entity_type="engagement",
+                entity_id=engagement_id,
+                entity_ref=(row.get("engagement_name") or before_row.get("engagement_name") or f"ENG-{engagement_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Changed engagement {engagement_id} status to {status}",
+            )
         return _json_ok({"row": row})
 
     except Exception as e:
@@ -613,6 +687,24 @@ def add_engagement_team_member_route(cid: int, engagement_id: int):
             )
 
             team = db_service.list_engagement_team(cur, company_id, engagement_id=engagement_id, active_only=False)
+            created_row = next((r for r in team if int(r.get("id") or 0) == int(team_id)), None)
+
+            _engagement_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="add_engagement_team_member",
+                entity_type="engagement_team_member",
+                entity_id=team_id,
+                entity_ref=(
+                    (created_row or {}).get("role_on_engagement")
+                    or role_on_engagement
+                    or f"ENG-TEAM-{team_id}"
+                ),
+                before_json={"request": body},
+                after_json=created_row or {"id": team_id, "engagement_id": engagement_id, "user_id": user_id},
+                message=f"Added team member {user_id} to engagement {engagement_id}",
+            )
 
         return _json_ok({"id": team_id, "rows": team}, 201)
 
@@ -673,9 +765,12 @@ def deactivate_engagement_team_member_route(cid: int, engagement_team_id: int):
         if not _can_manage_engagements(payload):
             return _json_err("You do not have permission to manage engagement team.", 403)
 
-        svc = _get_reporting_service()
-
         with db_service._conn_cursor() as (conn, cur):
+            before_rows = db_service.list_engagement_team(cur, company_id, engagement_id=None, active_only=False)
+            before_row = next((r for r in before_rows if int(r.get("id") or 0) == int(engagement_team_id)), None)
+            if not before_row:
+                return _json_err("Engagement team record not found.", 404)
+
             out_id = db_service.deactivate_engagement_team_member(
                 cur,
                 company_id,
@@ -684,6 +779,33 @@ def deactivate_engagement_team_member_route(cid: int, engagement_team_id: int):
             if not out_id:
                 return _json_err("Engagement team record not found.", 404)
 
+            after_rows = db_service.list_engagement_team(
+                cur,
+                company_id,
+                engagement_id=int(before_row.get("engagement_id")),
+                active_only=False,
+            )
+            after_row = next((r for r in after_rows if int(r.get("id") or 0) == int(engagement_team_id)), None) or {
+                **before_row,
+                "is_active": False,
+            }
+
+            _engagement_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="deactivate_engagement_team_member",
+                entity_type="engagement_team_member",
+                entity_id=engagement_team_id,
+                entity_ref=(
+                    after_row.get("role_on_engagement")
+                    or before_row.get("role_on_engagement")
+                    or f"ENG-TEAM-{engagement_team_id}"
+                ),
+                before_json=before_row,
+                after_json=after_row,
+                message=f"Deactivated engagement team member {engagement_team_id}",
+            )
         return _json_ok({"id": out_id})
 
     except Exception as e:

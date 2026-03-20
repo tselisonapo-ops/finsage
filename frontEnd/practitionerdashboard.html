@@ -976,6 +976,661 @@
       max-height: 700px;
     }
   }
+
+  #screen-working-papers .wp-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #screen-working-papers .wp-card {
+    background: #fff;
+    border: 1px solid #d7e4ea;
+    border-radius: 22px;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
+  }
+
+  #screen-working-papers .wp-toolbar {
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  #screen-working-papers .wp-toolbar-copy {
+    min-width: 280px;
+  }
+
+  #screen-working-papers .wp-toolbar-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #123040;
+    margin: 0;
+  }
+
+  #screen-working-papers .wp-toolbar-subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #66808d;
+  }
+
+  #screen-working-papers .wp-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  #screen-working-papers .wp-search {
+    width: 280px;
+    max-width: 100%;
+    height: 40px;
+    border: 1px solid #d7e4ea;
+    border-radius: 12px;
+    padding: 0 12px;
+    font-size: 13px;
+    background: #fff;
+    color: #123040;
+    outline: none;
+  }
+
+  #screen-working-papers .wp-btn {
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid #d7e4ea;
+    background: #fff;
+    color: #123040;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  #screen-working-papers .wp-btn:hover {
+    background: #f8fbfd;
+  }
+
+  #screen-working-papers .wp-btn-primary {
+    background: #0f766e;
+    color: #fff;
+    border-color: #0f766e;
+  }
+
+  #screen-working-papers .wp-btn-primary:hover {
+    background: #0b5f59;
+    border-color: #0b5f59;
+  }
+
+  #screen-working-papers .wp-btn-danger {
+    background: #fff;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+
+  #screen-working-papers .wp-btn-danger:hover {
+    background: #fef2f2;
+  }
+
+  #screen-working-papers .wp-kpis {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  #screen-working-papers .wp-kpi {
+    padding: 16px;
+  }
+
+  #screen-working-papers .wp-kpi-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6a8390;
+    margin-bottom: 8px;
+  }
+
+  #screen-working-papers .wp-kpi-value {
+    font-size: 18px;
+    font-weight: 900;
+    color: #123040;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  #screen-working-papers .wp-kpi-note {
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  #screen-working-papers .wp-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.85fr) minmax(360px, 0.95fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  #screen-working-papers .wp-panel {
+    padding: 16px;
+  }
+
+  #screen-working-papers .wp-panel-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #123040;
+    margin: 0;
+  }
+
+  #screen-working-papers .wp-panel-subtitle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  #screen-working-papers .wp-chip-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  #screen-working-papers .wp-chip {
+    border: 1px solid #d7e4ea;
+    background: #fff;
+    color: #54707d;
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  #screen-working-papers .wp-chip.active {
+    background: #e7f6f4;
+    color: #0f766e;
+    border-color: #b7e2dc;
+  }
+
+  #screen-working-papers .wp-filters {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  #screen-working-papers .wp-filters select {
+    width: 100%;
+    height: 40px;
+    border: 1px solid #d7e4ea;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0 12px;
+    font-size: 13px;
+    color: #123040;
+    outline: none;
+  }
+
+  #screen-working-papers .wp-table-wrap {
+    margin-top: 14px;
+    border: 1px solid #d7e4ea;
+    border-radius: 14px;
+    overflow: auto;
+    background: #fff;
+  }
+
+  #screen-working-papers .wp-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1120px;
+  }
+
+  #screen-working-papers .wp-table th {
+    background: #f7fbfc;
+    color: #587280;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid #d7e4ea;
+    white-space: nowrap;
+  }
+
+  #screen-working-papers .wp-table td {
+    padding: 12px;
+    border-bottom: 1px solid #eef4f6;
+    vertical-align: top;
+    font-size: 13px;
+    color: #123040;
+  }
+
+  #screen-working-papers .wp-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  #screen-working-papers .wp-table tbody tr {
+    cursor: pointer;
+  }
+
+  #screen-working-papers .wp-table tbody tr:hover {
+    background: #f9fcfd;
+  }
+
+  #screen-working-papers .wp-table tbody tr.is-selected {
+    background: #f4fbfa;
+  }
+
+  #screen-working-papers .wp-item-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #123040;
+    margin-bottom: 3px;
+  }
+
+  #screen-working-papers .wp-item-meta {
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  #screen-working-papers .wp-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  #screen-working-papers .wp-badge.status-not_started,
+  #screen-working-papers .wp-badge.status-not-started {
+    background: #f4f8fb;
+    color: #5c7481;
+    border-color: #d7e4ea;
+  }
+
+  #screen-working-papers .wp-badge.status-in_progress,
+  #screen-working-papers .wp-badge.status-in-progress {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+  }
+
+  #screen-working-papers .wp-badge.status-prepared {
+    background: #eefcf3;
+    color: #166534;
+    border-color: #bbf7d0;
+  }
+
+  #screen-working-papers .wp-badge.status-in_review,
+  #screen-working-papers .wp-badge.status-in-review {
+    background: #e7f6f4;
+    color: #0f766e;
+    border-color: #b7e2dc;
+  }
+
+  #screen-working-papers .wp-badge.status-reviewed,
+  #screen-working-papers .wp-badge.status-cleared {
+    background: #ecfdf5;
+    color: #15803d;
+    border-color: #bbf7d0;
+  }
+
+  #screen-working-papers .wp-badge.status-blocked {
+    background: #fff7ed;
+    color: #b45309;
+    border-color: #fed7aa;
+  }
+
+  #screen-working-papers .wp-badge.status-returned {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+
+  #screen-working-papers .wp-badge.status-archived {
+    background: #f8fafc;
+    color: #64748b;
+    border-color: #e2e8f0;
+  }
+
+  #screen-working-papers .wp-badge.priority-urgent {
+    background: #fff7ed;
+    color: #b45309;
+    border-color: #fed7aa;
+  }
+
+  #screen-working-papers .wp-badge.priority-high {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+
+  #screen-working-papers .wp-badge.priority-normal {
+    background: #f4f8fb;
+    color: #5c7481;
+    border-color: #d7e4ea;
+  }
+
+  #screen-working-papers .wp-badge.priority-low {
+    background: #f8fafc;
+    color: #64748b;
+    border-color: #e2e8f0;
+  }
+
+  #screen-working-papers .wp-row-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  #screen-working-papers .wp-mini-btn {
+    height: 30px;
+    border-radius: 10px;
+    border: 1px solid #d7e4ea;
+    background: #fff;
+    color: #123040;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  #screen-working-papers .wp-footer {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  #screen-working-papers .wp-footer-note {
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  #screen-working-papers .wp-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #screen-working-papers .wp-page-pill {
+    min-width: 64px;
+    height: 32px;
+    border-radius: 11px;
+    border: 1px solid #cfe1df;
+    background: #e7f6f4;
+    color: #0b5f59;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  #screen-working-papers .wp-empty {
+    padding: 28px 16px;
+    text-align: center;
+    color: #6a8390;
+    font-size: 13px;
+  }
+
+  #screen-working-papers .wp-detail-empty {
+    min-height: 370px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6a8390;
+    font-size: 13px;
+    text-align: center;
+    padding: 20px;
+  }
+
+  #screen-working-papers .wp-detail-block {
+    border: 1px solid #d7e4ea;
+    border-radius: 16px;
+    padding: 14px;
+    background: #fbfdfe;
+    margin-top: 12px;
+  }
+
+  #screen-working-papers .wp-detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  #screen-working-papers .wp-detail-title {
+    font-size: 18px;
+    font-weight: 900;
+    color: #123040;
+    margin: 0;
+  }
+
+  #screen-working-papers .wp-detail-subtitle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  #screen-working-papers .wp-detail-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  #screen-working-papers .wp-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  #screen-working-papers .wp-detail-field {
+    border: 1px solid #d7e4ea;
+    border-radius: 14px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  #screen-working-papers .wp-detail-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #6a8390;
+    margin-bottom: 6px;
+  }
+
+  #screen-working-papers .wp-detail-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #123040;
+    word-break: break-word;
+  }
+
+  #screen-working-papers .wp-note-stack {
+    margin-top: 12px;
+    display: grid;
+    gap: 10px;
+  }
+
+  #screen-working-papers .wp-note-card {
+    border: 1px solid #d7e4ea;
+    border-radius: 14px;
+    background: #fff;
+    padding: 14px;
+  }
+
+  #screen-working-papers .wp-note-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #123040;
+    margin-bottom: 8px;
+  }
+
+  #screen-working-papers .wp-note-body {
+    font-size: 13px;
+    line-height: 1.55;
+    color: #4f6773;
+    white-space: pre-wrap;
+  }
+
+  #screen-working-papers .wp-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 5000;
+    padding: 20px;
+  }
+
+  #screen-working-papers .wp-modal-backdrop.active {
+    display: flex;
+  }
+
+  #screen-working-papers .wp-modal {
+    width: min(960px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    background: #fff;
+    border-radius: 22px;
+    border: 1px solid #d7e4ea;
+    box-shadow: 0 24px 50px rgba(15, 23, 42, 0.22);
+  }
+
+  #screen-working-papers .wp-modal-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid #d7e4ea;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  #screen-working-papers .wp-modal-title {
+    font-size: 16px;
+    font-weight: 900;
+    color: #123040;
+    margin: 0;
+  }
+
+  #screen-working-papers .wp-modal-subtitle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  #screen-working-papers .wp-modal-body {
+    padding: 18px 20px;
+    display: grid;
+    gap: 14px;
+  }
+
+  #screen-working-papers .wp-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  #screen-working-papers .wp-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  #screen-working-papers .wp-form-field.span-2 {
+    grid-column: span 2;
+  }
+
+  #screen-working-papers .wp-form-label {
+    font-size: 12px;
+    font-weight: 800;
+    color: #45606d;
+  }
+
+  #screen-working-papers .wp-form-input,
+  #screen-working-papers .wp-form-select,
+  #screen-working-papers .wp-form-textarea {
+    width: 100%;
+    border: 1px solid #d7e4ea;
+    border-radius: 12px;
+    background: #fff;
+    color: #123040;
+    font-size: 13px;
+    outline: none;
+    padding: 10px 12px;
+  }
+
+  #screen-working-papers .wp-form-input,
+  #screen-working-papers .wp-form-select {
+    height: 40px;
+  }
+
+  #screen-working-papers .wp-form-textarea {
+    min-height: 110px;
+    resize: vertical;
+  }
+
+  #screen-working-papers .wp-modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #d7e4ea;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 1300px) {
+    #screen-working-papers .wp-kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #screen-working-papers .wp-main {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 900px) {
+    #screen-working-papers .wp-kpis,
+    #screen-working-papers .wp-filters,
+    #screen-working-papers .wp-form-grid,
+    #screen-working-papers .wp-detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    #screen-working-papers .wp-form-field.span-2 {
+      grid-column: span 1;
+    }
+  }
+
+  @media (max-width: 640px) {
+    #screen-working-papers .wp-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    #screen-working-papers .wp-toolbar-actions {
+      width: 100%;
+    }
+
+    #screen-working-papers .wp-search {
+      width: 100%;
+    }
+  }
+
   </style>
 </head>
 <body>
@@ -4965,665 +5620,9 @@ window.safeRedirect = function (url, mode = "href") {
         </div>
       </section>
 
-        <!-- WORKING PAPERS -->
-        <section id="screen-working-papers" class="screen hidden">
-          <style>
-            #screen-working-papers .wp-shell {
-              display: flex;
-              flex-direction: column;
-              gap: 16px;
-            }
-
-            #screen-working-papers .wp-card {
-              background: #fff;
-              border: 1px solid #d7e4ea;
-              border-radius: 22px;
-              box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
-            }
-
-            #screen-working-papers .wp-toolbar {
-              padding: 16px 18px;
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 16px;
-              flex-wrap: wrap;
-            }
-
-            #screen-working-papers .wp-toolbar-copy {
-              min-width: 280px;
-            }
-
-            #screen-working-papers .wp-toolbar-title {
-              font-size: 15px;
-              font-weight: 800;
-              color: #123040;
-              margin: 0;
-            }
-
-            #screen-working-papers .wp-toolbar-subtitle {
-              margin-top: 4px;
-              font-size: 13px;
-              color: #66808d;
-            }
-
-            #screen-working-papers .wp-toolbar-actions {
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              flex-wrap: wrap;
-            }
-
-            #screen-working-papers .wp-search {
-              width: 280px;
-              max-width: 100%;
-              height: 40px;
-              border: 1px solid #d7e4ea;
-              border-radius: 12px;
-              padding: 0 12px;
-              font-size: 13px;
-              background: #fff;
-              color: #123040;
-              outline: none;
-            }
-
-            #screen-working-papers .wp-btn {
-              height: 40px;
-              border-radius: 12px;
-              border: 1px solid #d7e4ea;
-              background: #fff;
-              color: #123040;
-              padding: 0 14px;
-              font-size: 13px;
-              font-weight: 700;
-              cursor: pointer;
-            }
-
-            #screen-working-papers .wp-btn:hover {
-              background: #f8fbfd;
-            }
-
-            #screen-working-papers .wp-btn-primary {
-              background: #0f766e;
-              color: #fff;
-              border-color: #0f766e;
-            }
-
-            #screen-working-papers .wp-btn-primary:hover {
-              background: #0b5f59;
-              border-color: #0b5f59;
-            }
-
-            #screen-working-papers .wp-btn-danger {
-              background: #fff;
-              color: #b91c1c;
-              border-color: #fecaca;
-            }
-
-            #screen-working-papers .wp-btn-danger:hover {
-              background: #fef2f2;
-            }
-
-            #screen-working-papers .wp-kpis {
-              display: grid;
-              grid-template-columns: repeat(5, minmax(0, 1fr));
-              gap: 12px;
-            }
-
-            #screen-working-papers .wp-kpi {
-              padding: 16px;
-            }
-
-            #screen-working-papers .wp-kpi-label {
-              font-size: 11px;
-              font-weight: 800;
-              letter-spacing: 0.06em;
-              text-transform: uppercase;
-              color: #6a8390;
-              margin-bottom: 8px;
-            }
-
-            #screen-working-papers .wp-kpi-value {
-              font-size: 18px;
-              font-weight: 900;
-              color: #123040;
-              line-height: 1;
-              margin-bottom: 8px;
-            }
-
-            #screen-working-papers .wp-kpi-note {
-              font-size: 12px;
-              color: #6a8390;
-            }
-
-            #screen-working-papers .wp-main {
-              display: grid;
-              grid-template-columns: minmax(0, 1.85fr) minmax(360px, 0.95fr);
-              gap: 16px;
-              align-items: start;
-            }
-
-            #screen-working-papers .wp-panel {
-              padding: 16px;
-            }
-
-            #screen-working-papers .wp-panel-title {
-              font-size: 15px;
-              font-weight: 800;
-              color: #123040;
-              margin: 0;
-            }
-
-            #screen-working-papers .wp-panel-subtitle {
-              margin-top: 4px;
-              font-size: 12px;
-              color: #6a8390;
-            }
-
-            #screen-working-papers .wp-chip-row {
-              display: flex;
-              gap: 8px;
-              flex-wrap: wrap;
-              margin-top: 14px;
-            }
-
-            #screen-working-papers .wp-chip {
-              border: 1px solid #d7e4ea;
-              background: #fff;
-              color: #54707d;
-              border-radius: 999px;
-              padding: 7px 12px;
-              font-size: 12px;
-              font-weight: 700;
-              cursor: pointer;
-            }
-
-            #screen-working-papers .wp-chip.active {
-              background: #e7f6f4;
-              color: #0f766e;
-              border-color: #b7e2dc;
-            }
-
-            #screen-working-papers .wp-filters {
-              display: grid;
-              grid-template-columns: repeat(5, minmax(0, 1fr));
-              gap: 10px;
-              margin-top: 14px;
-            }
-
-            #screen-working-papers .wp-filters select {
-              width: 100%;
-              height: 40px;
-              border: 1px solid #d7e4ea;
-              border-radius: 12px;
-              background: #fff;
-              padding: 0 12px;
-              font-size: 13px;
-              color: #123040;
-              outline: none;
-            }
-
-            #screen-working-papers .wp-table-wrap {
-              margin-top: 14px;
-              border: 1px solid #d7e4ea;
-              border-radius: 14px;
-              overflow: auto;
-              background: #fff;
-            }
-
-            #screen-working-papers .wp-table {
-              width: 100%;
-              border-collapse: collapse;
-              min-width: 1120px;
-            }
-
-            #screen-working-papers .wp-table th {
-              background: #f7fbfc;
-              color: #587280;
-              font-size: 11px;
-              font-weight: 800;
-              letter-spacing: 0.04em;
-              text-transform: uppercase;
-              text-align: left;
-              padding: 12px;
-              border-bottom: 1px solid #d7e4ea;
-              white-space: nowrap;
-            }
-
-            #screen-working-papers .wp-table td {
-              padding: 12px;
-              border-bottom: 1px solid #eef4f6;
-              vertical-align: top;
-              font-size: 13px;
-              color: #123040;
-            }
-
-            #screen-working-papers .wp-table tr:last-child td {
-              border-bottom: none;
-            }
-
-            #screen-working-papers .wp-table tbody tr {
-              cursor: pointer;
-            }
-
-            #screen-working-papers .wp-table tbody tr:hover {
-              background: #f9fcfd;
-            }
-
-            #screen-working-papers .wp-table tbody tr.is-selected {
-              background: #f4fbfa;
-            }
-
-            #screen-working-papers .wp-item-title {
-              font-size: 13px;
-              font-weight: 800;
-              color: #123040;
-              margin-bottom: 3px;
-            }
-
-            #screen-working-papers .wp-item-meta {
-              font-size: 12px;
-              color: #6a8390;
-            }
-
-            #screen-working-papers .wp-badge {
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              min-height: 24px;
-              padding: 0 10px;
-              border-radius: 999px;
-              font-size: 11px;
-              font-weight: 800;
-              white-space: nowrap;
-              border: 1px solid transparent;
-            }
-
-            #screen-working-papers .wp-badge.status-not_started,
-            #screen-working-papers .wp-badge.status-not-started {
-              background: #f4f8fb;
-              color: #5c7481;
-              border-color: #d7e4ea;
-            }
-
-            #screen-working-papers .wp-badge.status-in_progress,
-            #screen-working-papers .wp-badge.status-in-progress {
-              background: #eff6ff;
-              color: #1d4ed8;
-              border-color: #bfdbfe;
-            }
-
-            #screen-working-papers .wp-badge.status-prepared {
-              background: #eefcf3;
-              color: #166534;
-              border-color: #bbf7d0;
-            }
-
-            #screen-working-papers .wp-badge.status-in_review,
-            #screen-working-papers .wp-badge.status-in-review {
-              background: #e7f6f4;
-              color: #0f766e;
-              border-color: #b7e2dc;
-            }
-
-            #screen-working-papers .wp-badge.status-reviewed,
-            #screen-working-papers .wp-badge.status-cleared {
-              background: #ecfdf5;
-              color: #15803d;
-              border-color: #bbf7d0;
-            }
-
-            #screen-working-papers .wp-badge.status-blocked {
-              background: #fff7ed;
-              color: #b45309;
-              border-color: #fed7aa;
-            }
-
-            #screen-working-papers .wp-badge.status-returned {
-              background: #fef2f2;
-              color: #b91c1c;
-              border-color: #fecaca;
-            }
-
-            #screen-working-papers .wp-badge.status-archived {
-              background: #f8fafc;
-              color: #64748b;
-              border-color: #e2e8f0;
-            }
-
-            #screen-working-papers .wp-badge.priority-urgent {
-              background: #fff7ed;
-              color: #b45309;
-              border-color: #fed7aa;
-            }
-
-            #screen-working-papers .wp-badge.priority-high {
-              background: #fef2f2;
-              color: #b91c1c;
-              border-color: #fecaca;
-            }
-
-            #screen-working-papers .wp-badge.priority-normal {
-              background: #f4f8fb;
-              color: #5c7481;
-              border-color: #d7e4ea;
-            }
-
-            #screen-working-papers .wp-badge.priority-low {
-              background: #f8fafc;
-              color: #64748b;
-              border-color: #e2e8f0;
-            }
-
-            #screen-working-papers .wp-row-actions {
-              display: flex;
-              gap: 8px;
-              flex-wrap: wrap;
-            }
-
-            #screen-working-papers .wp-mini-btn {
-              height: 30px;
-              border-radius: 10px;
-              border: 1px solid #d7e4ea;
-              background: #fff;
-              color: #123040;
-              padding: 0 10px;
-              font-size: 12px;
-              font-weight: 700;
-              cursor: pointer;
-            }
-
-            #screen-working-papers .wp-footer {
-              margin-top: 14px;
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              gap: 12px;
-              flex-wrap: wrap;
-            }
-
-            #screen-working-papers .wp-footer-note {
-              font-size: 12px;
-              color: #6a8390;
-            }
-
-            #screen-working-papers .wp-pagination {
-              display: flex;
-              align-items: center;
-              gap: 8px;
-            }
-
-            #screen-working-papers .wp-page-pill {
-              min-width: 64px;
-              height: 32px;
-              border-radius: 11px;
-              border: 1px solid #cfe1df;
-              background: #e7f6f4;
-              color: #0b5f59;
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 12px;
-              font-weight: 800;
-            }
-
-            #screen-working-papers .wp-empty {
-              padding: 28px 16px;
-              text-align: center;
-              color: #6a8390;
-              font-size: 13px;
-            }
-
-            #screen-working-papers .wp-detail-empty {
-              min-height: 370px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: #6a8390;
-              font-size: 13px;
-              text-align: center;
-              padding: 20px;
-            }
-
-            #screen-working-papers .wp-detail-block {
-              border: 1px solid #d7e4ea;
-              border-radius: 16px;
-              padding: 14px;
-              background: #fbfdfe;
-              margin-top: 12px;
-            }
-
-            #screen-working-papers .wp-detail-head {
-              display: flex;
-              align-items: flex-start;
-              justify-content: space-between;
-              gap: 12px;
-              flex-wrap: wrap;
-            }
-
-            #screen-working-papers .wp-detail-title {
-              font-size: 18px;
-              font-weight: 900;
-              color: #123040;
-              margin: 0;
-            }
-
-            #screen-working-papers .wp-detail-subtitle {
-              margin-top: 4px;
-              font-size: 12px;
-              color: #6a8390;
-            }
-
-            #screen-working-papers .wp-detail-actions {
-              display: flex;
-              gap: 8px;
-              flex-wrap: wrap;
-            }
-
-            #screen-working-papers .wp-detail-grid {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 10px;
-              margin-top: 12px;
-            }
-
-            #screen-working-papers .wp-detail-field {
-              border: 1px solid #d7e4ea;
-              border-radius: 14px;
-              background: #fff;
-              padding: 12px;
-            }
-
-            #screen-working-papers .wp-detail-label {
-              font-size: 11px;
-              font-weight: 800;
-              letter-spacing: 0.05em;
-              text-transform: uppercase;
-              color: #6a8390;
-              margin-bottom: 6px;
-            }
-
-            #screen-working-papers .wp-detail-value {
-              font-size: 13px;
-              font-weight: 700;
-              color: #123040;
-              word-break: break-word;
-            }
-
-            #screen-working-papers .wp-note-stack {
-              margin-top: 12px;
-              display: grid;
-              gap: 10px;
-            }
-
-            #screen-working-papers .wp-note-card {
-              border: 1px solid #d7e4ea;
-              border-radius: 14px;
-              background: #fff;
-              padding: 14px;
-            }
-
-            #screen-working-papers .wp-note-title {
-              font-size: 12px;
-              font-weight: 800;
-              color: #123040;
-              margin-bottom: 8px;
-            }
-
-            #screen-working-papers .wp-note-body {
-              font-size: 13px;
-              line-height: 1.55;
-              color: #4f6773;
-              white-space: pre-wrap;
-            }
-
-            #screen-working-papers .wp-modal-backdrop {
-              position: fixed;
-              inset: 0;
-              background: rgba(15, 23, 42, 0.45);
-              display: none;
-              align-items: center;
-              justify-content: center;
-              z-index: 5000;
-              padding: 20px;
-            }
-
-            #screen-working-papers .wp-modal-backdrop.active {
-              display: flex;
-            }
-
-            #screen-working-papers .wp-modal {
-              width: min(960px, 100%);
-              max-height: calc(100vh - 40px);
-              overflow: auto;
-              background: #fff;
-              border-radius: 22px;
-              border: 1px solid #d7e4ea;
-              box-shadow: 0 24px 50px rgba(15, 23, 42, 0.22);
-            }
-
-            #screen-working-papers .wp-modal-header {
-              padding: 18px 20px;
-              border-bottom: 1px solid #d7e4ea;
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              gap: 12px;
-            }
-
-            #screen-working-papers .wp-modal-title {
-              font-size: 16px;
-              font-weight: 900;
-              color: #123040;
-              margin: 0;
-            }
-
-            #screen-working-papers .wp-modal-subtitle {
-              margin-top: 4px;
-              font-size: 12px;
-              color: #6a8390;
-            }
-
-            #screen-working-papers .wp-modal-body {
-              padding: 18px 20px;
-              display: grid;
-              gap: 14px;
-            }
-
-            #screen-working-papers .wp-form-grid {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 12px;
-            }
-
-            #screen-working-papers .wp-form-field {
-              display: flex;
-              flex-direction: column;
-              gap: 6px;
-            }
-
-            #screen-working-papers .wp-form-field.span-2 {
-              grid-column: span 2;
-            }
-
-            #screen-working-papers .wp-form-label {
-              font-size: 12px;
-              font-weight: 800;
-              color: #45606d;
-            }
-
-            #screen-working-papers .wp-form-input,
-            #screen-working-papers .wp-form-select,
-            #screen-working-papers .wp-form-textarea {
-              width: 100%;
-              border: 1px solid #d7e4ea;
-              border-radius: 12px;
-              background: #fff;
-              color: #123040;
-              font-size: 13px;
-              outline: none;
-              padding: 10px 12px;
-            }
-
-            #screen-working-papers .wp-form-input,
-            #screen-working-papers .wp-form-select {
-              height: 40px;
-            }
-
-            #screen-working-papers .wp-form-textarea {
-              min-height: 110px;
-              resize: vertical;
-            }
-
-            #screen-working-papers .wp-modal-footer {
-              padding: 16px 20px;
-              border-top: 1px solid #d7e4ea;
-              display: flex;
-              justify-content: flex-end;
-              gap: 10px;
-              flex-wrap: wrap;
-            }
-
-            @media (max-width: 1300px) {
-              #screen-working-papers .wp-kpis {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-              }
-
-              #screen-working-papers .wp-main {
-                grid-template-columns: 1fr;
-              }
-            }
-
-            @media (max-width: 900px) {
-              #screen-working-papers .wp-kpis,
-              #screen-working-papers .wp-filters,
-              #screen-working-papers .wp-form-grid,
-              #screen-working-papers .wp-detail-grid {
-                grid-template-columns: 1fr;
-              }
-
-              #screen-working-papers .wp-form-field.span-2 {
-                grid-column: span 1;
-              }
-            }
-
-            @media (max-width: 640px) {
-              #screen-working-papers .wp-toolbar {
-                flex-direction: column;
-                align-items: stretch;
-              }
-
-              #screen-working-papers .wp-toolbar-actions {
-                width: 100%;
-              }
-
-              #screen-working-papers .wp-search {
-                width: 100%;
-              }
-            }
-          </style>
-
-          <div id="workingPapersMount" class="wp-shell"></div>
+      <!-- WORKING PAPERS -->
+      <section id="screen-working-papers" class="screen hidden">
+        <div id="workingPapersMount" class="wp-shell"></div>
 
           <div id="wpModalBackdrop" class="wp-modal-backdrop">
             <div class="wp-modal" role="dialog" aria-modal="true" aria-labelledby="wpModalTitle">

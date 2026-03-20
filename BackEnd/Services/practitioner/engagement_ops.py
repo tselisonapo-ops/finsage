@@ -4,6 +4,7 @@ from BackEnd.Services.auth_middleware import require_auth, _corsify
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.practitioner.practitioner_engagements import _can_manage_engagements, _parse_int, _json_ok, _json_err
+from BackEnd.Services.assets.ppe_reporting import _audit_safe
 
 engagement_ops_bp = Blueprint("engagement_ops_bp", __name__)
 
@@ -38,6 +39,36 @@ def _parse_offset(value, default=0):
         n = default
     return max(0, n)
 
+def _eng_audit(
+    *,
+    cur,
+    company_id: int,
+    payload: dict,
+    action: str,
+    entity_type: str,
+    entity_id,
+    entity_ref: str | None = None,
+    amount: float = 0.0,
+    currency: str | None = None,
+    before_json: dict | None = None,
+    after_json: dict | None = None,
+    message: str | None = None,
+):
+    _audit_safe(
+        company_id=company_id,
+        payload=payload,
+        module="engagements",
+        action=action,
+        entity_type=entity_type,
+        entity_id=str(entity_id),
+        entity_ref=entity_ref,
+        amount=amount,
+        currency=currency,
+        before_json=before_json,
+        after_json=after_json,
+        message=message,
+        cur=cur,
+    )
 
 # =========================================================
 # REPORTING ITEMS
@@ -114,6 +145,19 @@ def engagement_reporting_items_collection_route(cid: int, engagement_id: int):
                 reporting_item_id=item_id,
             )
 
+            _eng_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="create_reporting_item",
+                entity_type="engagement_reporting_item",
+                entity_id=item_id,
+                entity_ref=(row.get("item_name") or item_name or f"REPORTING-ITEM-{item_id}"),
+                before_json={"request": body},
+                after_json=row,
+                message=f"Created reporting item {item_id}",
+            )
+
         return _json_ok({"row": row}, 201)
 
     except Exception as e:
@@ -156,6 +200,14 @@ def engagement_reporting_item_detail_route(cid: int, item_id: int):
 
         body = request.get_json(silent=True) or {}
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement_reporting_item(
+                cur,
+                company_id,
+                reporting_item_id=item_id,
+            )
+            if not before_row:
+                return _json_err("Reporting item not found.", 404)
+
             updated_id = db_service.update_engagement_reporting_item(
                 cur,
                 company_id,
@@ -187,6 +239,19 @@ def engagement_reporting_item_detail_route(cid: int, item_id: int):
                 reporting_item_id=item_id,
             )
 
+            _eng_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="update_reporting_item",
+                entity_type="engagement_reporting_item",
+                entity_id=item_id,
+                entity_ref=(row.get("item_name") or before_row.get("item_name") or f"REPORTING-ITEM-{item_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Updated reporting item {item_id}",
+            )
+
         return _json_ok({"row": row})
 
     except Exception as e:
@@ -216,6 +281,10 @@ def set_engagement_reporting_item_status_route(cid: int, item_id: int):
             return _json_err("status is required.", 400)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement_reporting_item(cur, company_id, reporting_item_id=item_id)
+            if not before_row:
+                return _json_err("Reporting item not found.", 404)
+
             updated_id = db_service.set_engagement_reporting_item_status(
                 cur,
                 company_id,
@@ -229,6 +298,18 @@ def set_engagement_reporting_item_status_route(cid: int, item_id: int):
 
             row = db_service.get_engagement_reporting_item(cur, company_id, reporting_item_id=item_id)
 
+            _eng_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="set_reporting_item_status",
+                entity_type="engagement_reporting_item",
+                entity_id=item_id,
+                entity_ref=(row.get("item_name") or before_row.get("item_name") or f"REPORTING-ITEM-{item_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Changed reporting item {item_id} status to {status}",
+            )
         return _json_ok({"row": row})
 
     except Exception as e:
@@ -253,6 +334,10 @@ def deactivate_engagement_reporting_item_route(cid: int, item_id: int):
             return _json_err("You do not have permission to deactivate reporting items.", 403)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement_reporting_item(cur, company_id, reporting_item_id=item_id)
+            if not before_row:
+                return _json_err("Reporting item not found.", 404)
+
             updated_id = db_service.deactivate_engagement_reporting_item(
                 cur,
                 company_id,
@@ -264,6 +349,18 @@ def deactivate_engagement_reporting_item_route(cid: int, item_id: int):
 
             row = db_service.get_engagement_reporting_item(cur, company_id, reporting_item_id=item_id)
 
+            _eng_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="deactivate_reporting_item",
+                entity_type="engagement_reporting_item",
+                entity_id=item_id,
+                entity_ref=(row.get("item_name") or before_row.get("item_name") or f"REPORTING-ITEM-{item_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Deactivated reporting item {item_id}",
+            )
         return _json_ok({"row": row})
 
     except Exception as e:

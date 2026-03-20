@@ -4,6 +4,8 @@ from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth, _corsify
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.practitioner.practitioner_engagements import _json_err, _json_ok
+from BackEnd.Services.assets.ppe_reporting import _audit_safe
+
 
 action_center_bp = Blueprint("action_center", __name__)
 
@@ -100,7 +102,44 @@ def _validate_queue_type(queue_type: str | None):
         return f"Unsupported queue_type '{queue_type}'."
     return None
 
+def _action_center_audit(
+    *,
+    cur,
+    company_id: int,
+    payload: dict,
+    action: str,
+    entity_id,
+    entity_ref: str | None = None,
+    before_json: dict | None = None,
+    after_json: dict | None = None,
+    message: str | None = None,
+):
+    _audit_safe(
+        company_id=company_id,
+        payload=payload,
+        module="action_center",
+        action=action,
+        entity_type="action_center_item",
+        entity_id=str(entity_id),
+        entity_ref=entity_ref,
+        before_json=before_json,
+        after_json=after_json,
+        message=message,
+        cur=cur,
+    )
 
+def _action_center_item_ref(row: dict | None, queue_type: str, source_id: int) -> str:
+    row = row or {}
+    return (
+        row.get("item_name")
+        or row.get("deliverable_name")
+        or row.get("task_name")
+        or row.get("step_name")
+        or row.get("description")
+        or row.get("reference_no")
+        or f"{queue_type}:{source_id}"
+    )
+  
 def _dispatch_action(cur, company_id: int, queue_type: str, source_id: int, action: str, user_id: int):
     queue_type = (queue_type or "").strip().lower()
     action = (action or "").strip().lower()
@@ -220,6 +259,7 @@ def _dispatch_action(cur, company_id: int, queue_type: str, source_id: int, acti
 
     raise ValueError("Unsupported queue_type.")
     
+
 @action_center_bp.route("/api/companies/<int:cid>/action-center/summary", methods=["GET", "OPTIONS"])
 @require_auth
 def get_action_center_summary_route(cid: int):
@@ -343,6 +383,15 @@ def action_center_item_action_route(cid: int, queue_type: str, source_id: int):
             return _json_err("Invalid user context.", 401)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_review_queue_item_detail(
+                cur,
+                company_id,
+                queue_type=queue_type,
+                source_id=source_id,
+            )
+            if not before_row:
+                return _json_err("Action target not found.", 404)
+
             out_id = _dispatch_action(
                 cur,
                 company_id=company_id,
@@ -355,11 +404,34 @@ def action_center_item_action_route(cid: int, queue_type: str, source_id: int):
             if not out_id:
                 return _json_err("Action target not found.", 404)
 
+            after_row = db_service.get_review_queue_item_detail(
+                cur,
+                company_id,
+                queue_type=queue_type,
+                source_id=source_id,
+            ) or {
+                **before_row,
+                "last_action": action,
+            }
+
+            _action_center_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action=f"action_center_{action}",
+                entity_id=f"{queue_type}:{source_id}",
+                entity_ref=_action_center_item_ref(after_row, queue_type, source_id),
+                before_json=before_row,
+                after_json=after_row,
+                message=f"Applied action '{action}' to {queue_type}:{source_id}",
+            )
+
         return _json_ok({
             "queue_type": queue_type,
             "source_id": source_id,
             "action": action,
             "updated": True,
+            "row": after_row,
         })
 
     except ValueError as e:

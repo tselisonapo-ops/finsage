@@ -3,7 +3,7 @@ from BackEnd.Services.auth_middleware import require_auth, _corsify
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.practitioner.practitioner_engagements import _can_manage_engagements
-
+from BackEnd.Services.assets.ppe_reporting import _audit_safe
 
 engagement_working_papers_bp = Blueprint("engagement_working_papers", __name__)
 
@@ -38,6 +38,32 @@ def _parse_bool(v, default=None):
     if s in ("0", "false", "no", "n", "off"):
         return False
     return default
+
+def _wp_audit(
+    *,
+    cur,
+    company_id: int,
+    payload: dict,
+    action: str,
+    entity_id,
+    entity_ref: str | None = None,
+    before_json: dict | None = None,
+    after_json: dict | None = None,
+    message: str | None = None,
+):
+    _audit_safe(
+        company_id=company_id,
+        payload=payload,
+        module="engagements",
+        action=action,
+        entity_type="engagement_working_paper",
+        entity_id=str(entity_id),
+        entity_ref=entity_ref,
+        before_json=before_json,
+        after_json=after_json,
+        message=message,
+        cur=cur,
+    )
 
 @engagement_working_papers_bp.route(
     "/api/companies/<int:cid>/engagement-working-papers",
@@ -134,6 +160,18 @@ def engagement_working_papers_route(cid: int):
                 working_paper_id=new_id,
             )
 
+            _wp_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="create_working_paper",
+                entity_id=new_id,
+                entity_ref=(row.get("paper_name") or paper_name or f"WORKING-PAPER-{new_id}"),
+                before_json={"request": body},
+                after_json=row,
+                message=f"Created working paper {new_id}",
+            )
+
         return _json_ok({"row": row}, 201)
 
     except Exception as e:
@@ -174,6 +212,14 @@ def engagement_working_paper_detail_route(cid: int, working_paper_id: int):
         body = request.get_json(silent=True) or {}
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement_working_paper(
+                cur,
+                company_id,
+                working_paper_id=working_paper_id,
+            )
+            if not before_row:
+                return _json_err("Working paper not found.", 404)
+
             updated_id = db_service.update_engagement_working_paper(
                 cur,
                 company_id,
@@ -208,6 +254,18 @@ def engagement_working_paper_detail_route(cid: int, working_paper_id: int):
                 working_paper_id=working_paper_id,
             )
 
+            _wp_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="update_working_paper",
+                entity_id=working_paper_id,
+                entity_ref=(row.get("paper_name") or before_row.get("paper_name") or f"WORKING-PAPER-{working_paper_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Updated working paper {working_paper_id}",
+            )
+
         return _json_ok({"row": row})
 
     except Exception as e:
@@ -240,6 +298,14 @@ def set_engagement_working_paper_status_route(cid: int, working_paper_id: int):
             return _json_err("status is required.", 400)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement_working_paper(
+                cur,
+                company_id,
+                working_paper_id=working_paper_id,
+            )
+            if not before_row:
+                return _json_err("Working paper not found.", 404)
+
             updated_id = db_service.set_engagement_working_paper_status(
                 cur,
                 company_id,
@@ -259,8 +325,20 @@ def set_engagement_working_paper_status_route(cid: int, working_paper_id: int):
                 working_paper_id=working_paper_id,
             )
 
-        return _json_ok({"row": row})
+            _wp_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="set_working_paper_status",
+                entity_id=working_paper_id,
+                entity_ref=(row.get("paper_name") or before_row.get("paper_name") or f"WORKING-PAPER-{working_paper_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Changed working paper {working_paper_id} status to {status}",
+            )
 
+        return _json_ok({"row": row})
+    
     except Exception as e:
         current_app.logger.exception("set_engagement_working_paper_status_route failed")
         return _json_err(str(e), 500)
@@ -286,6 +364,14 @@ def deactivate_engagement_working_paper_route(cid: int, working_paper_id: int):
             return _json_err("You do not have permission to deactivate working papers.", 403)
 
         with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement_working_paper(
+                cur,
+                company_id,
+                working_paper_id=working_paper_id,
+            )
+            if not before_row:
+                return _json_err("Working paper not found.", 404)
+
             updated_id = db_service.deactivate_engagement_working_paper(
                 cur,
                 company_id,
@@ -299,6 +385,25 @@ def deactivate_engagement_working_paper_route(cid: int, working_paper_id: int):
                 cur,
                 company_id,
                 working_paper_id=working_paper_id,
+            ) or {
+                **before_row,
+                "is_active": False,
+            }
+
+            _wp_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="deactivate_working_paper",
+                entity_id=working_paper_id,
+                entity_ref=(
+                    row.get("paper_name")
+                    or before_row.get("paper_name")
+                    or f"WORKING-PAPER-{working_paper_id}"
+                ),
+                before_json=before_row,
+                after_json=row,
+                message=f"Deactivated working paper {working_paper_id}",
             )
 
         return _json_ok({"row": row})

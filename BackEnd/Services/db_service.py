@@ -20771,9 +20771,9 @@ class DatabaseService:
 
         row = self.fetch_one("""
             SELECT
-                roa_code,
+                COALESCE(NULLIF(lease_rou_asset_code, ''), NULLIF(roa_code, '')) AS roa_code,
                 lease_liability_current_code,
-                lease_liability_noncurrent_code,
+                lease_liability_non_current_code,
                 lease_interest_expense_code,
                 lease_amortization_code,
                 lease_accumulated_depreciation_code,
@@ -20786,15 +20786,11 @@ class DatabaseService:
         return {
             "roa": (row.get("roa_code") or "").strip() or None,
             "liability_current": (row.get("lease_liability_current_code") or "").strip() or None,
-            "liability_noncurrent": (
-                (row.get("lease_liability_noncurrent_code") or "").strip()
-                or (row.get("lease_liability_non_current_code") or "").strip()
-                or None
-            ),
+            "liability_noncurrent": (row.get("lease_liability_non_current_code") or "").strip() or None,
             "interest_exp": (row.get("lease_interest_expense_code") or "").strip() or None,
             "depr_exp": (row.get("lease_amortization_code") or "").strip() or None,
             "accum_depr": (row.get("lease_accumulated_depreciation_code") or "").strip() or None,
-            "vat_input": (row.get("vat_input_code") or "").strip() or None,  # ✅ add
+            "vat_input": (row.get("vat_input_code") or "").strip() or None,
         }
 
     def ensure_company_lease_defaults(self, company_id: int) -> None:
@@ -20805,7 +20801,7 @@ class DatabaseService:
         SET
         roa_code = COALESCE(NULLIF(roa_code,''), %s),
         lease_liability_current_code = COALESCE(NULLIF(lease_liability_current_code,''), %s),
-        lease_liability_noncurrent_code = COALESCE(NULLIF(lease_liability_noncurrent_code,''), %s),
+        lease_liability_non_current_code = COALESCE(NULLIF(lease_liability_non_current_code,''), %s),
         lease_interest_expense_code = COALESCE(NULLIF(lease_interest_expense_code,''), %s),
         lease_amortization_code = COALESCE(NULLIF(lease_amortization_code,''), %s),
         lease_accumulated_depreciation_code = COALESCE(NULLIF(lease_accumulated_depreciation_code,''), %s),
@@ -22491,7 +22487,7 @@ class DatabaseService:
             SELECT
                 roa_code,
                 lease_liability_current_code,
-                lease_liability_noncurrent_code,
+                lease_liability_non_current_code,
                 lease_accumulated_depreciation_code
             FROM public.company_account_settings
             WHERE company_id=%s
@@ -42455,6 +42451,30 @@ class DatabaseService:
         cur.execute(sql, (company_id,))
         return cur.fetchone()
 
+    def list_client_service_trends_rows(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                c.id AS customer_id,
+                c.customer_name,
+                COUNT(e.id) AS engagement_count,
+                COUNT(DISTINCT e.engagement_type) AS service_line_count,
+                MIN(e.due_date) AS next_due_date,
+                COUNT(*) FILTER (
+                    WHERE e.status IN ('active', 'pending', 'draft')
+                ) AS open_engagements
+            FROM {schema}.customers c
+            LEFT JOIN {schema}.engagements e
+            ON e.customer_id = c.id
+            AND e.company_id = %s
+            AND e.is_active = TRUE
+            WHERE c.company_id = %s
+            GROUP BY c.id, c.customer_name
+            ORDER BY engagement_count DESC, c.customer_name ASC
+        """
+        cur.execute(sql, (company_id, company_id))
+        return cur.fetchall()
 
     def get_risk_alerts_summary(self, cur, company_id: int):
         schema = self.company_schema(company_id)
