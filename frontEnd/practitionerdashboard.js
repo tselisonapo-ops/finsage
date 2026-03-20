@@ -11119,7 +11119,7 @@ async function renderDeliverablesRegisterScreen(me) {
   }
 }
 
-async function renderWorkingPapersScreen(me) {
+async function renderEngagementWorkingPapersSnapshot(me) {
   const container = document.getElementById("pr-main-content");
   if (!container) return;
 
@@ -11128,8 +11128,6 @@ async function renderWorkingPapersScreen(me) {
   try {
     const snapshot = await loadEngagementWorkflowSnapshot();
     const rows = snapshot.workingPapers || [];
-
-    window.__PR_WORKING_PAPERS_STATE__ = { rows };
 
     container.innerHTML = `
       <div class="p-6 space-y-6">
@@ -11167,18 +11165,17 @@ async function renderWorkingPapersScreen(me) {
       </div>
     `;
 
-    // bindings
     document.querySelectorAll("[data-wp-mark-prepared]").forEach(btn => {
       btn.onclick = async () => {
         await markWorkingPaperPrepared(btn.dataset.wpMarkPrepared);
-        renderWorkingPapersScreen(me);
+        renderEngagementWorkingPapersSnapshot(me);
       };
     });
 
     document.querySelectorAll("[data-wp-send-review]").forEach(btn => {
       btn.onclick = async () => {
         await sendWorkingPaperToReview(btn.dataset.wpSendReview);
-        renderWorkingPapersScreen(me);
+        renderEngagementWorkingPapersSnapshot(me);
       };
     });
 
@@ -11742,18 +11739,6 @@ function drBindEvents() {
     alert("Wire this button to your add-deliverable modal.");
   });
 }
-
-window.renderWorkingPapersScreen ||= function (me) {
-  const root = document.getElementById("screen-working-papers");
-  if (!root) return;
-  root.innerHTML = `
-    <div class="card p-6">
-      <div class="panel-title">Working Papers</div>
-      <div class="panel-subtitle mt-1">Prepare, review, and manage structured workpapers.</div>
-      <div class="mt-4 text-sm text-slate-600">Working papers screen is ready to be wired.</div>
-    </div>
-  `;
-};
 
 window.renderEngagementAuditTrailScreen ||= function renderEngagementAuditTrailScreen(me) {
   renderAuditTrailWorkspace({
