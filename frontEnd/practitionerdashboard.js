@@ -12458,6 +12458,12 @@ async function bootstrapPractitionerApp(me) {
 
   setupPractitionerNav(me);
 
+  // load first engagement context before first screen render
+  const engagements = await loadEngagementsForActiveCompany?.();
+  if (!window.getPractitionerActiveEngagementId?.() && engagements?.length) {
+    window.setPractitionerActiveEngagementId(engagements[0].id);
+  }
+
   const firstScreen = resolvePractitionerScreenName(getHashScreen() || PR_NAV.dashboard);
   switchPractitionerScreen(firstScreen, me, { updateHash: false });
 
