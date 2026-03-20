@@ -10285,7 +10285,12 @@ async function wpDeactivate(workingPaperId) {
 }
 
 async function renderWorkingPapersScreen(me) {
+  console.log("renderWorkingPapersScreen called");
+  console.log("active engagement in render:", getPractitionerActiveEngagementId?.());
+  
   const mount = document.getElementById("workingPapersMount");
+  console.log("workingPapersMount:", mount);
+
   if (!mount) {
     console.warn("workingPapersMount not found");
     return;
