@@ -19709,7 +19709,7 @@ async function fetchLessors() {
   // Quick add
   // ===============================
 function openQuickModal() {
-  bindLessorsScreen();
+  doBindLessorsScreen();
 
   if (!els.qModal) {
     console.warn("lessorQuickModal not found");
@@ -20080,11 +20080,11 @@ async function saveLessor() {
   // ===============================
   // Bind once
   // ===============================
-function bindLessorsScreen() {
+function doBindLessorsScreen() {
   // always refresh refs
   grabEls();
 
-  console.log("[bindLessorsScreen]", {
+  console.log("[doBindLessorsScreen]", {
     screen: els.screen,
     btnQuickAdd: els.btnQuickAdd,
     qModal: els.qModal,
@@ -20093,7 +20093,6 @@ function bindLessorsScreen() {
     qClose: els.qClose,
   });
 
-  // one-time static bindings
   if (!bound) {
     els.search?.addEventListener("input", () => renderLessorsTable());
 
@@ -20115,7 +20114,6 @@ function bindLessorsScreen() {
     bound = true;
   }
 
-  // recoverable bindings for dynamic elements
   if (els.btnQuickAdd && !els.btnQuickAdd.dataset.bound) {
     els.btnQuickAdd.addEventListener("click", () => {
       console.log("[lessors] Add Lessor clicked");
@@ -20152,7 +20150,7 @@ function bindLessorsScreen() {
 })();
 
 window.bindLessorsScreen = function () {
-  bindLessorsScreen();
+  doBindLessorsScreen();
   refreshLessors();
 };
 
