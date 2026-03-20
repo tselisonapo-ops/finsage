@@ -838,6 +838,26 @@ const ENDPOINTS = {
   let PR_SIGNOFF_VIEW_EVENTS_BOUND = false;
   let PR_SIGNOFF_ACTIVE_QUICK = "all";
 
+  window.__PR_DELIVERABLES_REGISTER_STATE__ = window.__PR_DELIVERABLES_REGISTER_STATE__ || {
+    summary: {
+      total: 0,
+      open: 0,
+      inReview: 0,
+      overdue: 0,
+      completed: 0
+    },
+    rows: [],
+    selectedId: null,
+    filters: {
+      q: "",
+      status: "",
+      priority: "",
+      deliverable_type: "",
+      limit: 100,
+      offset: 0
+    }
+  };
+
 const PR_NAV = {
   dashboard: "dashboard",
   assignments: "assignments",
@@ -1275,6 +1295,95 @@ function practitionerCompanyIdFromMe(me) {
     me?.company?.id ||
     0
   );
+}
+
+function drEsc(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function drPretty(v) {
+  return String(v || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function drDate(v) {
+  if (!v) return "—";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch (_) {
+    return String(v);
+  }
+}
+
+function drStatusClass(status) {
+  return `status-${String(status || "").replace(/\s+/g, "-")}`;
+}
+
+function drPriorityClass(priority) {
+  return `priority-${String(priority || "").replace(/\s+/g, "-")}`;
+}
+
+function drGetSelectedRow() {
+  const state = window.__PR_DELIVERABLES_REGISTER_STATE__;
+  return (state.rows || []).find((r) => String(r.id) === String(state.selectedId)) || null;
+}
+
+async function drLoadRows() {
+  const companyId = getPractitionerActiveCompanyId?.();
+  const engagementId = getPractitionerActiveEngagementId?.();
+  if (!companyId || !engagementId) return [];
+
+  const state = window.__PR_DELIVERABLES_REGISTER_STATE__;
+  const f = state.filters || {};
+
+  const json = await apiFetch(
+    ENDPOINTS.engagementOps.deliverablesList(companyId, engagementId, {
+      status: f.status || "",
+      priority: f.priority || "",
+      deliverable_type: f.deliverable_type || "",
+      q: f.q || "",
+      active_only: true,
+      limit: f.limit || 100,
+      offset: f.offset || 0
+    }),
+    { method: "GET" }
+  );
+
+  return json?.rows || json?.data?.rows || [];
+}
+
+function drBuildSummary(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const today = new Date();
+
+  const total = safeRows.length;
+  const open = safeRows.filter((r) => !["completed", "cleared", "submitted", "delivered"].includes(String(r.status || "").toLowerCase())).length;
+  const inReview = safeRows.filter((r) => String(r.status || "").toLowerCase() === "in_review").length;
+  const completed = safeRows.filter((r) =>
+    ["completed", "cleared", "submitted", "delivered"].includes(String(r.status || "").toLowerCase())
+  ).length;
+
+  const overdue = safeRows.filter((r) => {
+    if (!r.due_date) return false;
+    const d = new Date(r.due_date);
+    if (Number.isNaN(d.getTime())) return false;
+    const s = String(r.status || "").toLowerCase();
+    const closed = ["completed", "cleared", "submitted", "delivered"].includes(s);
+    return !closed && d < today;
+  }).length;
+
+  return { total, open, inReview, overdue, completed };
 }
 
 function debounce(fn, wait = 250) {
@@ -1819,7 +1928,7 @@ async function switchPractitionerScreen(name, me, opts = {}) {
 
   setupPractitionerNav(me);
   renderPractitionerScreenTitle(screen, me);
-  runPractitionerScreenBinder(screen, me);
+  await runPractitionerScreenBinder(screen, me);
 
   // update hash only when needed
   if (updateHash) {
@@ -2763,38 +2872,33 @@ function setupPractitionerNav(me) {
   bindPractitionerNav(me);
 }
 
-function runPractitionerScreenBinder(screen, me) {
+async function runPractitionerScreenBinder(screen, me) {
   window.__PR_ME__ = me;
 
   switch (screen) {
     case PR_NAV.dashboard:
-      renderDashboardHome?.(me);
+      await renderDashboardHome?.(me);
       break;
 
     case PR_NAV.assignments:
-      renderAssignmentsScreen?.(me);
-      break;
-
-    
-    case PR_NAV.deliverablesRegister:
-      renderDeliverablesScreen(me);
+      await renderAssignmentsScreen?.(me);
       break;
 
     case PR_NAV.clients:
-      renderClientsScreen?.(me);
+      await renderClientsScreen?.(me);
       break;
 
     case PR_NAV.team:
-      renderTeamScreen?.(me);
+      await renderTeamScreen?.(me);
       break;
 
     case PR_NAV.analytics:
     case PR_NAV.analyticsDetail:
-      renderAnalyticsScreen?.(me, screen);
+      await renderAnalyticsScreen?.(me, screen);
       break;
 
     case PR_NAV.actionCenter:
-      renderActionCenterScreen?.(me);
+      await renderActionCenterScreen?.(me);
       break;
 
     case PR_NAV.settings:
@@ -2802,35 +2906,35 @@ function runPractitionerScreenBinder(screen, me) {
     case PR_NAV.users:
     case PR_NAV.rolesPermissions:
     case PR_NAV.firmPreferences:
-      renderSettingsScreen?.(me, screen);
+      await renderSettingsScreen?.(me, screen);
       break;
 
     case PR_NAV.reportingOverview:
-      renderReportingOverviewScreen?.(me);
+      await renderReportingOverviewScreen?.(me);
       break;
 
     case PR_NAV.pendingDeliverables:
-      renderPendingDeliverablesScreen?.(me);
+      await renderPendingDeliverablesScreen?.(me);
       break;
 
     case PR_NAV.deliverablesRegister:
-      renderDeliverablesRegisterScreen?.(me);
+      await renderDeliverablesRegisterScreen?.(me);
       break;
 
     case PR_NAV.workingPapers:
-      renderWorkingPapersScreen?.(me);
+      await renderWorkingPapersScreen?.(me);
       break;
 
     case PR_NAV.dayToDayPostings:
-      renderDayToDayPostingsScreen?.(me);
+      await renderDayToDayPostingsScreen?.(me);
       break;
 
     case PR_NAV.monthlyCloseRoutines:
-      renderMonthlyCloseRoutinesScreen?.(me);
+      await renderMonthlyCloseRoutinesScreen?.(me);
       break;
 
     case PR_NAV.yearEndReporting:
-      renderYearEndReportingScreen?.(me);
+      await renderYearEndReportingScreen?.(me);
       break;
 
     case PR_NAV.journalEntries:
@@ -2838,67 +2942,67 @@ function runPractitionerScreenBinder(screen, me) {
     case PR_NAV.accountsPayable:
     case PR_NAV.leases:
     case PR_NAV.ppe:
-      renderPractitionerPostingModuleScreen?.(me, screen);
+      await renderPractitionerPostingModuleScreen?.(me, screen);
       break;
 
     case PR_NAV.reviewQueue:
-      renderReviewQueueScreen?.(me);
+      await renderReviewQueueScreen?.(me);
       break;
 
     case PR_NAV.teamCapacity:
-      renderTeamCapacityScreen?.(me);
+      await renderTeamCapacityScreen?.(me);
       break;
 
     case PR_NAV.portfolioReview:
-      renderPortfolioReviewScreen?.(me);
+      await renderPortfolioReviewScreen?.(me);
       break;
 
     case PR_NAV.escalations:
-      renderEscalationsScreen?.(me);
+      await renderEscalationsScreen?.(me);
       break;
 
     case PR_NAV.approvalCenter:
-      renderApprovalCenterScreen?.(me);
+      await renderApprovalCenterScreen?.(me);
       break;
 
     case PR_NAV.resourcePlanning:
-      renderResourcePlanningScreen?.(me);
+      await renderResourcePlanningScreen?.(me);
       break;
 
     case PR_NAV.partnerSignoff:
-      renderPartnerSignoffScreen?.(me);
+      await renderPartnerSignoffScreen?.(me);
       break;
 
     case PR_NAV.finalDeliverablesReview:
-      renderFinalDeliverablesReviewScreen?.(me);
+      await renderFinalDeliverablesReviewScreen?.(me);
       break;
 
     case PR_NAV.engagementAcceptance:
-      renderEngagementAcceptanceScreen?.(me);
+      await renderEngagementAcceptanceScreen?.(me);
       break;
 
     case PR_NAV.riskIndependence:
-      renderRiskIndependenceScreen?.(me);
+      await renderRiskIndependenceScreen?.(me);
       break;
 
     case PR_NAV.overrideLog:
-      renderOverrideLogScreen?.(me);
+      await renderOverrideLogScreen?.(me);
       break;
 
     case PR_NAV.engagementAuditTrail:
-      window.renderEngagementAuditTrailScreen?.(me);
+      await window.renderEngagementAuditTrailScreen?.(me);
       break;
 
     case PR_NAV.practiceAuditTrail:
-      window.renderPracticeAuditTrailScreen?.(me);
+      await window.renderPracticeAuditTrailScreen?.(me);
       break;
 
     default:
-      renderDashboardHome?.(me);
+      await renderDashboardHome?.(me);
       break;
   }
-    // ✅ APPLY ROLE UI AFTER RENDER
-    renderEngagementScreen(me, screen);
+
+  renderEngagementScreen(me, screen);
 }
 
 function renderEngagementScreen(me, screen) {
@@ -9419,7 +9523,7 @@ async function wpLoadSummary() {
   const engagementId = getPractitionerActiveEngagementId();
 
   const json = await apiFetch(
-    API_ROUTES.workingPapers.summary(companyId, {
+    ENDPOINTS.workingPapers.summary(companyId, {
       customer_id: customerId || "",
       engagement_id: engagementId || ""
     })
@@ -9438,7 +9542,7 @@ async function wpLoadRows() {
   const f = state.filters || {};
 
   const json = await apiFetch(
-    API_ROUTES.workingPapers.list(companyId, {
+    ENDPOINTS.workingPapers.list(companyId, {
       customer_id: customerId || "",
       engagement_id: engagementId || "",
       paper_section: f.paper_section || "",
@@ -9458,7 +9562,9 @@ async function wpLoadRows() {
 async function wpFetchOne(workingPaperId) {
   const companyId = getPractitionerActiveCompanyId();
   if (!companyId || !workingPaperId) return null;
-  const json = await apiFetch(API_ROUTES.workingPapers.get(companyId, workingPaperId));
+  const json = await apiFetch(
+    ENDPOINTS.workingPapers.get(companyId, workingPaperId)
+  );
   return json?.row || null;
 }
 
@@ -9709,6 +9815,12 @@ function wpBuildDetailHtml() {
             <button class="wp-btn" data-wp-status-action="cleared">Clear</button>
             <button class="wp-btn" id="wpEditSelectedBtn">Edit</button>
             <button class="wp-btn wp-btn-danger" id="wpDeactivateSelectedBtn">Deactivate</button>
+            <button
+              class="px-3 py-1 text-xs bg-slate-50 border rounded"
+              data-wp-open-deliverable="${wp.id}"
+            >
+              Open Deliverable
+            </button>
           </div>
         </div>
 
@@ -9899,6 +10011,21 @@ function wpBindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-wp-open-deliverable]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+
+      const id = btn.getAttribute("data-wp-open-deliverable");
+      const row = window.__PR_WORKING_PAPERS_STATE__?.rows?.find(
+        r => String(r.id) === String(id)
+      );
+
+      if (!row) return;
+
+      await openDeliverablesForWorkingPaper(row, window.__PR_ME__);
+    });
+  });
+
   document.getElementById("wpEditSelectedBtn")?.addEventListener("click", async () => {
     const row = wpGetSelectedRow();
     if (!row?.id) return;
@@ -10085,12 +10212,12 @@ async function wpSaveModal() {
 
     let json;
     if (state.modal.mode === "edit" && state.modal.id) {
-      json = await apiFetch(API_ROUTES.workingPapers.update(companyId, state.modal.id), {
+      json = await apiFetch(ENDPOINTS.workingPapers.update(companyId, state.modal.id), {
         method: "PATCH",
         body: JSON.stringify(payload)
       });
     } else {
-      json = await apiFetch(API_ROUTES.workingPapers.create(companyId), {
+      json = await apiFetch(ENDPOINTS.workingPapers.create(companyId), {
         method: "POST",
         body: JSON.stringify(payload)
       });
@@ -10116,7 +10243,7 @@ async function wpSetStatus(workingPaperId, status) {
       return;
     }
 
-    await apiFetch(API_ROUTES.workingPapers.setStatus(companyId, workingPaperId), {
+    await apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, workingPaperId), {
       method: "POST",
       body: JSON.stringify({ status })
     });
@@ -10138,7 +10265,7 @@ async function wpDeactivate(workingPaperId) {
     const ok = window.confirm("Deactivate this working paper?");
     if (!ok) return;
 
-    await apiFetch(API_ROUTES.workingPapers.deactivate(companyId, workingPaperId), {
+    await apiFetch(ENDPOINTS.workingPapers.deactivate(companyId, workingPaperId), {
       method: "POST"
     });
 
@@ -10151,9 +10278,34 @@ async function wpDeactivate(workingPaperId) {
 
 async function renderWorkingPapersScreen(me) {
   const mount = document.getElementById("workingPapersMount");
-  if (!mount) return;
+  if (!mount) {
+    console.warn("workingPapersMount not found");
+    return;
+  }
 
-  const engagementId = getPractitionerActiveEngagementId();
+  window.__PR_WORKING_PAPERS_STATE__ = window.__PR_WORKING_PAPERS_STATE__ || {
+    summary: {},
+    rows: [],
+    selectedId: null,
+    filters: {
+      quick: "all",
+      q: "",
+      paper_section: "",
+      paper_type: "",
+      status: "",
+      priority: "",
+      mine_only: false,
+      limit: 100,
+      offset: 0
+    },
+    modal: {
+      open: false,
+      mode: "create",
+      id: null
+    }
+  };
+
+  const engagementId = getPractitionerActiveEngagementId?.();
   if (!engagementId) {
     mount.innerHTML = `
       <div class="wp-card wp-toolbar">
@@ -10179,7 +10331,7 @@ async function renderWorkingPapersScreen(me) {
     const state = window.__PR_WORKING_PAPERS_STATE__;
     const [summary, rows] = await Promise.all([wpLoadSummary(), wpLoadRows()]);
 
-    state.summary = summary;
+    state.summary = summary || {};
     state.rows = Array.isArray(rows) ? rows : [];
 
     let displayRows = state.rows.slice();
@@ -10189,12 +10341,16 @@ async function renderWorkingPapersScreen(me) {
 
     if (!state.selectedId && displayRows.length) {
       state.selectedId = displayRows[0].id;
-    } else if (state.selectedId && !displayRows.find((r) => String(r.id) === String(state.selectedId))) {
+    } else if (
+      state.selectedId &&
+      !displayRows.find((r) => String(r.id) === String(state.selectedId))
+    ) {
       state.selectedId = displayRows[0]?.id || null;
     }
 
     wpRenderShell();
   } catch (err) {
+    console.error("renderWorkingPapersScreen failed:", err);
     mount.innerHTML = `
       <div class="wp-card wp-panel">
         <div class="wp-empty">${wpEsc(err?.message || "Failed to load working papers.")}</div>
@@ -10828,17 +10984,27 @@ function renderEngagementReadinessCard(readiness) {
 async function openWorkingPapersForLinkedDeliverable(deliverableId, me) {
   window.__PR_WORKING_PAPERS_STATE__ = window.__PR_WORKING_PAPERS_STATE__ || {};
   window.__PR_WORKING_PAPERS_STATE__.filters = window.__PR_WORKING_PAPERS_STATE__.filters || {};
+
   window.__PR_WORKING_PAPERS_STATE__.filters.q = String(deliverableId || "");
   window.__PR_WORKING_PAPERS_STATE__.filters.offset = 0;
+
   await switchPractitionerScreen(PR_NAV.workingPapers, me);
 }
 
 async function openDeliverablesForWorkingPaper(workingPaperRow, me) {
   const linkedId = workingPaperRow?.linked_deliverable_id;
+
   await switchPractitionerScreen(PR_NAV.deliverablesRegister, me);
 
-  if (linkedId && window.__PR_DELIVERABLES_STATE__) {
-    window.__PR_DELIVERABLES_STATE__.selectedId = linkedId;
+  if (linkedId && window.__PR_DELIVERABLES_REGISTER_STATE__) {
+    window.__PR_DELIVERABLES_REGISTER_STATE__.selectedId = linkedId;
+
+    // force re-render after screen loads
+    setTimeout(() => {
+      if (window.renderDeliverablesRegisterScreen) {
+        window.renderDeliverablesRegisterScreen(me);
+      }
+    }, 50);
   }
 }
 
@@ -10941,7 +11107,7 @@ async function renderDeliverablesRegisterScreen(me) {
         try {
           const wp = await createWorkingPaperFromDeliverable(row);
           alert(`Working paper created`);
-          await renderWorkingPapersScreen(me);
+          await switchPractitionerScreen(PR_NAV.workingPapers, me);
         } catch (err) {
           alert(err.message);
         }
@@ -11136,17 +11302,446 @@ async function renderPartnerSignoffScreen(me) {
   }
 }
 
-window.renderDeliverablesRegisterScreen ||= function (me) {
-  const root = document.getElementById("screen-deliverables-register");
-  if (!root) return;
-  root.innerHTML = `
+function drBuildToolbarHtml() {
+  const f = window.__PR_DELIVERABLES_REGISTER_STATE__.filters || {};
+
+  return `
     <div class="card p-6">
-      <div class="panel-title">Deliverables Register</div>
-      <div class="panel-subtitle mt-1">Full lifecycle register for all engagement deliverables.</div>
-      <div class="mt-4 text-sm text-slate-600">Deliverables register screen is ready to be wired.</div>
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div class="panel-title">Deliverables Register</div>
+          <div class="panel-subtitle mt-1">
+            Full lifecycle register for all engagement deliverables, assignments, due dates, review status, and linked working paper actions.
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <input
+            id="drSearchInput"
+            type="text"
+            value="${drEsc(f.q || "")}"
+            placeholder="Search deliverables..."
+            class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
+          <button id="drSearchBtn" class="badge badge-slate">Search</button>
+          <button id="drRefreshBtn" class="badge badge-slate">Refresh</button>
+          <button id="drAddBtn" class="badge badge-brand">Add Deliverable</button>
+        </div>
+      </div>
     </div>
   `;
-};
+}
+
+function drBuildKpisHtml(summary) {
+  return `
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div class="card p-4">
+        <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Total Deliverables</div>
+        <div class="mt-2 metric-number">${summary.total || 0}</div>
+        <div class="mt-1 text-sm text-slate-600">All active deliverables in scope</div>
+      </div>
+
+      <div class="card p-4">
+        <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Open</div>
+        <div class="mt-2 metric-number">${summary.open || 0}</div>
+        <div class="mt-1 text-sm text-slate-600">Still in progress or awaiting action</div>
+      </div>
+
+      <div class="card p-4">
+        <div class="text-xs uppercase tracking-[0.08em] text-slate-500">In Review</div>
+        <div class="mt-2 metric-number">${summary.inReview || 0}</div>
+        <div class="mt-1 text-sm text-slate-600">Prepared and under review</div>
+      </div>
+
+      <div class="card p-4">
+        <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Overdue</div>
+        <div class="mt-2 metric-number">${summary.overdue || 0}</div>
+        <div class="mt-1 text-sm text-slate-600">Past due and not yet closed</div>
+      </div>
+
+      <div class="card p-4">
+        <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Completed</div>
+        <div class="mt-2 metric-number">${summary.completed || 0}</div>
+        <div class="mt-1 text-sm text-slate-600">Closed or submitted items</div>
+      </div>
+    </div>
+  `;
+}
+
+function drBuildRegisterHtml() {
+  const state = window.__PR_DELIVERABLES_REGISTER_STATE__;
+  const rows = Array.isArray(state.rows) ? state.rows : [];
+  const f = state.filters || {};
+
+  const rowHtml = rows.length
+    ? rows.map((row) => {
+        const isSelected = String(state.selectedId) === String(row.id);
+
+        return `
+          <tr class="${isSelected ? "is-selected" : ""}" data-dr-row-id="${drEsc(row.id)}">
+            <td>
+              <div class="font-semibold">${drEsc(row.deliverable_name || "Unnamed Deliverable")}</div>
+              <div class="text-xs text-slate-500">${drEsc(row.deliverable_code || "No code")}</div>
+            </td>
+            <td>${drEsc(drPretty(row.deliverable_type || "general"))}</td>
+            <td>${drEsc(row.assigned_user_name || "—")}</td>
+            <td>${drEsc(row.reviewer_user_name || "—")}</td>
+            <td>${drEsc(drDate(row.due_date))}</td>
+            <td><span class="wp-badge ${drStatusClass(row.status)}">${drEsc(drPretty(row.status || "not_started"))}</span></td>
+            <td><span class="wp-badge ${drPriorityClass(row.priority)}">${drEsc(drPretty(row.priority || "normal"))}</span></td>
+            <td>
+              <div class="flex gap-2 flex-wrap">
+                <button
+                  class="px-3 py-1 text-xs bg-blue-50 border rounded"
+                  data-dr-open="${drEsc(row.id)}"
+                >
+                  Details
+                </button>
+
+                <button
+                  class="px-3 py-1 text-xs bg-indigo-50 border rounded"
+                  data-dr-open-wps="${drEsc(row.id)}"
+                >
+                  Working Papers
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("")
+    : `
+      <tr>
+        <td colspan="8">
+          <div class="py-8 text-center text-sm text-slate-500">No deliverables found for the current engagement and filters.</div>
+        </td>
+      </tr>
+    `;
+
+  return `
+    <div class="card p-6">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div class="panel-title">Register</div>
+          <div class="panel-subtitle mt-1">Track ownership, due dates, status progression, and working paper creation.</div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <select id="drTypeFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="">All types</option>
+            <option value="report" ${f.deliverable_type === "report" ? "selected" : ""}>Report</option>
+            <option value="schedule" ${f.deliverable_type === "schedule" ? "selected" : ""}>Schedule</option>
+            <option value="fs" ${f.deliverable_type === "fs" ? "selected" : ""}>FS</option>
+            <option value="tax" ${f.deliverable_type === "tax" ? "selected" : ""}>Tax</option>
+            <option value="support" ${f.deliverable_type === "support" ? "selected" : ""}>Support</option>
+          </select>
+
+          <select id="drStatusFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="">All statuses</option>
+            <option value="not_started" ${f.status === "not_started" ? "selected" : ""}>Not started</option>
+            <option value="in_progress" ${f.status === "in_progress" ? "selected" : ""}>In progress</option>
+            <option value="prepared" ${f.status === "prepared" ? "selected" : ""}>Prepared</option>
+            <option value="in_review" ${f.status === "in_review" ? "selected" : ""}>In review</option>
+            <option value="completed" ${f.status === "completed" ? "selected" : ""}>Completed</option>
+            <option value="blocked" ${f.status === "blocked" ? "selected" : ""}>Blocked</option>
+          </select>
+
+          <select id="drPriorityFilter" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="">All priorities</option>
+            <option value="urgent" ${f.priority === "urgent" ? "selected" : ""}>Urgent</option>
+            <option value="high" ${f.priority === "high" ? "selected" : ""}>High</option>
+            <option value="normal" ${f.priority === "normal" ? "selected" : ""}>Normal</option>
+            <option value="low" ${f.priority === "low" ? "selected" : ""}>Low</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt-4 overflow-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Deliverable</th>
+              <th>Type</th>
+              <th>Assigned To</th>
+              <th>Reviewer</th>
+              <th>Due Date</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${rowHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function drBuildDetailHtml() {
+  const row = drGetSelectedRow();
+
+  if (!row) {
+    return `
+      <div class="card p-6">
+        <div class="panel-title">Selected Deliverable</div>
+        <div class="panel-subtitle mt-1">Select a deliverable from the register to view details.</div>
+        <div class="mt-6 text-sm text-slate-500">No deliverable selected.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card p-6">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div class="panel-title">${drEsc(row.deliverable_name || "Unnamed Deliverable")}</div>
+          <div class="panel-subtitle mt-1">
+            ${drEsc(row.deliverable_code || "No code")} • ${drEsc(drPretty(row.deliverable_type || "general"))}
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <button class="badge badge-slate" data-dr-mark-status="prepared">Mark prepared</button>
+          <button class="badge badge-slate" data-dr-mark-status="in_review">Send to review</button>
+          <button class="badge badge-brand" data-dr-create-wp-selected="${drEsc(row.id)}">Create WP</button>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Status</div>
+          <div class="mt-2"><span class="wp-badge ${drStatusClass(row.status)}">${drEsc(drPretty(row.status || "not_started"))}</span></div>
+        </div>
+
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Priority</div>
+          <div class="mt-2"><span class="wp-badge ${drPriorityClass(row.priority)}">${drEsc(drPretty(row.priority || "normal"))}</span></div>
+        </div>
+
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Due Date</div>
+          <div class="mt-2 text-sm text-slate-700">${drEsc(drDate(row.due_date))}</div>
+        </div>
+
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Assigned To</div>
+          <div class="mt-2 text-sm text-slate-700">${drEsc(row.assigned_user_name || "—")}</div>
+        </div>
+
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Reviewer</div>
+          <div class="mt-2 text-sm text-slate-700">${drEsc(row.reviewer_user_name || "—")}</div>
+        </div>
+
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Requested From</div>
+          <div class="mt-2 text-sm text-slate-700">${drEsc(row.requested_from_name || row.requested_from || "—")}</div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Description</div>
+          <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">${drEsc(row.description || "No description captured.")}</div>
+        </div>
+
+        <div class="card-soft p-4">
+          <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Notes</div>
+          <div class="mt-2 text-sm text-slate-700 whitespace-pre-wrap">${drEsc(row.notes || "No notes captured.")}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function drRenderShell() {
+  const mount = document.getElementById("deliverablesRegisterMount");
+  if (!mount) return;
+
+  const state = window.__PR_DELIVERABLES_REGISTER_STATE__;
+
+  mount.innerHTML = `
+    ${drBuildToolbarHtml()}
+    ${drBuildKpisHtml(state.summary)}
+    <div class="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-6">
+      <div>${drBuildRegisterHtml()}</div>
+      <div>${drBuildDetailHtml()}</div>
+    </div>
+  `;
+
+  drBindEvents();
+}
+
+async function renderDeliverablesRegisterScreen(me) {
+  const mount = document.getElementById("deliverablesRegisterMount");
+  if (!mount) return;
+
+  const engagementId = getPractitionerActiveEngagementId?.();
+  if (!engagementId) {
+    mount.innerHTML = `
+      <div class="card p-6">
+        <div class="panel-title">Deliverables Register</div>
+        <div class="panel-subtitle mt-1">Select an engagement first to open the deliverables register.</div>
+      </div>
+    `;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="card p-6">
+      <div class="text-sm text-slate-500">Loading deliverables register...</div>
+    </div>
+  `;
+
+  try {
+    const state = window.__PR_DELIVERABLES_REGISTER_STATE__;
+    const rows = await drLoadRows();
+
+    state.rows = Array.isArray(rows) ? rows : [];
+    state.summary = drBuildSummary(state.rows);
+
+    if (!state.selectedId && state.rows.length) {
+      state.selectedId = state.rows[0].id;
+    } else if (state.selectedId && !state.rows.find((r) => String(r.id) === String(state.selectedId))) {
+      state.selectedId = state.rows[0]?.id || null;
+    }
+
+    drRenderShell();
+  } catch (err) {
+    mount.innerHTML = `
+      <div class="card p-6">
+        <div class="text-sm text-red-600">${drEsc(err?.message || "Failed to load deliverables register.")}</div>
+      </div>
+    `;
+  }
+}
+
+function drBindEvents() {
+  const state = window.__PR_DELIVERABLES_REGISTER_STATE__;
+
+  document.getElementById("drSearchBtn")?.addEventListener("click", async () => {
+    state.filters.q = document.getElementById("drSearchInput")?.value?.trim() || "";
+    state.filters.offset = 0;
+    await renderDeliverablesRegisterScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("drSearchInput")?.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      state.filters.q = e.currentTarget.value.trim() || "";
+      state.filters.offset = 0;
+      await renderDeliverablesRegisterScreen(window.__PR_ME__);
+    }
+  });
+
+  document.getElementById("drRefreshBtn")?.addEventListener("click", async () => {
+    await renderDeliverablesRegisterScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("drTypeFilter")?.addEventListener("change", async (e) => {
+    state.filters.deliverable_type = e.target.value || "";
+    state.filters.offset = 0;
+    await renderDeliverablesRegisterScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("drStatusFilter")?.addEventListener("change", async (e) => {
+    state.filters.status = e.target.value || "";
+    state.filters.offset = 0;
+    await renderDeliverablesRegisterScreen(window.__PR_ME__);
+  });
+
+  document.getElementById("drPriorityFilter")?.addEventListener("change", async (e) => {
+    state.filters.priority = e.target.value || "";
+    state.filters.offset = 0;
+    await renderDeliverablesRegisterScreen(window.__PR_ME__);
+  });
+
+  document.querySelectorAll("[data-dr-row-id]").forEach((el) => {
+    el.addEventListener("click", () => {
+      state.selectedId = el.getAttribute("data-dr-row-id");
+      drRenderShell();
+    });
+  });
+
+  document.querySelectorAll("[data-dr-open]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.selectedId = btn.getAttribute("data-dr-open");
+      drRenderShell();
+    });
+  });
+
+  document.querySelectorAll("[data-dr-open-wps]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation(); // 🔥 prevents row click conflict
+
+      const id = btn.getAttribute("data-dr-open-wps");
+      await openWorkingPapersForLinkedDeliverable(id, window.__PR_ME__);
+    });
+  });
+
+  document.querySelectorAll("[data-dr-create-wp]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute("data-dr-create-wp");
+      const row = state.rows.find((r) => String(r.id) === String(id));
+      if (!row) return;
+
+      try {
+        await createWorkingPaperFromDeliverable(row);
+        alert("Working paper created.");
+        await switchPractitionerScreen(PR_NAV.workingPapers, window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to create working paper.");
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-dr-create-wp-selected]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-dr-create-wp-selected");
+      const row = state.rows.find((r) => String(r.id) === String(id));
+      if (!row) return;
+
+      try {
+        await createWorkingPaperFromDeliverable(row);
+        alert("Working paper created.");
+        await switchPractitionerScreen(PR_NAV.workingPapers, window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to create working paper.");
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-dr-mark-status]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const nextStatus = btn.getAttribute("data-dr-mark-status");
+      const row = drGetSelectedRow();
+      if (!row?.id || !nextStatus) return;
+
+      try {
+        const companyId = getPractitionerActiveCompanyId?.();
+        const engagementId = getPractitionerActiveEngagementId?.();
+        if (!companyId || !engagementId) return;
+
+        await apiFetch(
+          ENDPOINTS.engagementOps.deliverablesSetStatus(companyId, row.id),
+          {
+            method: "POST",
+            body: JSON.stringify({ status: nextStatus })
+          }
+        );
+
+        await renderDeliverablesRegisterScreen(window.__PR_ME__);
+      } catch (err) {
+        alert(err?.message || "Failed to update deliverable status.");
+      }
+    });
+  });
+
+  document.getElementById("drAddBtn")?.addEventListener("click", () => {
+    alert("Wire this button to your add-deliverable modal.");
+  });
+}
 
 window.renderWorkingPapersScreen ||= function (me) {
   const root = document.getElementById("screen-working-papers");

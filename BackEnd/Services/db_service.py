@@ -20544,7 +20544,7 @@ class DatabaseService:
                         closing_liability, depreciation, vat_portion, net_payment,
                         payment_timing
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
                     (
                         lease_id, company_id,
