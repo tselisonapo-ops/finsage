@@ -20147,12 +20147,14 @@ function doBindLessorsScreen() {
     els.qModal.dataset.bound = "1";
   }
 }
-})();
 
 window.bindLessorsScreen = function () {
   doBindLessorsScreen();
   refreshLessors();
 };
+})();
+
+
 
 (function () {
   function $(id) { return document.getElementById(id); }
