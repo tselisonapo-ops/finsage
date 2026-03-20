@@ -9417,7 +9417,8 @@ function getPractitionerActiveCompanyId() {
     window.__PR_CONTEXT__?.companyId ||
     window.__PR_ACTIVE_COMPANY_ID__ ||
     window.__COMPANY_ID__ ||
-    getCurrentCompanyId?.() ||
+    window.getCurrentCompanyId?.() ||
+    window.getActiveCompanyId?.() ||
     null
   );
 }
@@ -10004,9 +10005,28 @@ function wpBindEvents() {
   });
 
   document.querySelectorAll("[data-wp-open]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+    btn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      state.selectedId = btn.getAttribute("data-wp-open");
+
+      const id = Number(btn.getAttribute("data-wp-open"));
+      if (!id) return;
+
+      if (state.selectedRow?.id === id) {
+        state.selectedId = id;
+        wpRenderShell();
+        return;
+      }
+
+      state.selectedId = id;
+
+      try {
+        const row = await wpFetchOne(id);
+        state.selectedRow = row;
+      } catch (err) {
+        console.error("Failed to fetch working paper:", err);
+        state.selectedRow = null;
+      }
+
       wpRenderShell();
     });
   });
@@ -10297,8 +10317,8 @@ async function wpDeactivate(workingPaperId) {
 
 async function renderWorkingPapersScreen(me) {
   console.log("renderWorkingPapersScreen called");
-  console.log("active engagement in render:", getPractitionerActiveEngagementId?.());
-  
+  console.log("active engagement in render:", window.getPractitionerActiveEngagementId?.());
+
   const mount = document.getElementById("workingPapersMount");
   console.log("workingPapersMount:", mount);
 
@@ -10311,6 +10331,7 @@ async function renderWorkingPapersScreen(me) {
     summary: {},
     rows: [],
     selectedId: null,
+    selectedRow: null,
     filters: {
       quick: "all",
       q: "",
@@ -10329,7 +10350,12 @@ async function renderWorkingPapersScreen(me) {
     }
   };
 
-  const engagementId = getPractitionerActiveEngagementId?.();
+  const state = window.__PR_WORKING_PAPERS_STATE__;
+  if (typeof state.selectedRow === "undefined") {
+    state.selectedRow = null;
+  }
+
+  const engagementId = window.getPractitionerActiveEngagementId?.();
   if (!engagementId) {
     mount.innerHTML = `
       <div class="wp-card wp-toolbar">
@@ -10352,8 +10378,10 @@ async function renderWorkingPapersScreen(me) {
   `;
 
   try {
-    const state = window.__PR_WORKING_PAPERS_STATE__;
-    const [summary, rows] = await Promise.all([wpLoadSummary(), wpLoadRows()]);
+    const [summary, rows] = await Promise.all([
+      wpLoadSummary(),
+      wpLoadRows()
+    ]);
 
     state.summary = summary || {};
     state.rows = Array.isArray(rows) ? rows : [];
@@ -10370,6 +10398,17 @@ async function renderWorkingPapersScreen(me) {
       !displayRows.find((r) => String(r.id) === String(state.selectedId))
     ) {
       state.selectedId = displayRows[0]?.id || null;
+    }
+
+    if (state.selectedId) {
+      try {
+        state.selectedRow = await wpFetchOne(Number(state.selectedId));
+      } catch (detailErr) {
+        console.error("Failed to fetch initial working paper:", detailErr);
+        state.selectedRow = null;
+      }
+    } else {
+      state.selectedRow = null;
     }
 
     wpRenderShell();
