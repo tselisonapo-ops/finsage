@@ -19556,6 +19556,7 @@ function showLeaseMsg(el, msg, type="error") {
 
     // safer direct lookup for launcher
     els.btnQuickAdd = document.getElementById("btnLessorQuickAdd");
+    els.qModal = document.getElementById("lessorQuickModal");
 
     // Modals/drawers are global overlays → keep document.getElementById for those
     els.qClose = document.getElementById("lessorQuickClose");
