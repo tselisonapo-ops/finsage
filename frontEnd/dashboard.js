@@ -19548,12 +19548,14 @@ function showLeaseMsg(el, msg, type="error") {
   const els = {};
   function grabEls() {
     els.screen = document.getElementById("screen-lessors");
-    const root = els.screen;                 // ✅ scope everything to this root
+    const root = els.screen || document;
 
     els.msg = byId(root, "lessorsMsg");
     els.search = byId(root, "lessorSearch");
     els.tbody = byId(root, "lessorsTbody");
-    els.btnQuickAdd = byId(root, "btnLessorQuickAdd");
+
+    // safer direct lookup for launcher
+    els.btnQuickAdd = document.getElementById("btnLessorQuickAdd");
 
     // Modals/drawers are global overlays → keep document.getElementById for those
     els.qModal = document.getElementById("lessorQuickModal");
@@ -20080,23 +20082,26 @@ async function saveLessor() {
   // Bind once
   // ===============================
 function bindLessorsScreen() {
-  // 🔁 ALWAYS refresh elements
+  // always refresh refs
   grabEls();
 
-  // 🔒 Bind once for static screen elements
+  console.log("[bindLessorsScreen]", {
+    screen: els.screen,
+    btnQuickAdd: els.btnQuickAdd,
+    qModal: els.qModal,
+    qSave: els.qSave,
+    qCancel: els.qCancel,
+    qClose: els.qClose,
+  });
+
+  // one-time static bindings
   if (!bound) {
-    // Search
     els.search?.addEventListener("input", () => renderLessorsTable());
 
-    // Quick add trigger
-    els.btnQuickAdd?.addEventListener("click", openQuickModal);
-
-    // Drawer
     els.dClose?.addEventListener("click", closeDrawer);
     els.dSave?.addEventListener("click", saveLessor);
     els.dDelete?.addEventListener("click", deleteLessor);
 
-    // Contacts
     els.cAdd?.addEventListener("click", openContactModalForAdd);
     els.cClose?.addEventListener("click", closeContactModal);
     els.cCancel?.addEventListener("click", closeContactModal);
@@ -20105,14 +20110,20 @@ function bindLessorsScreen() {
       if (e.target === els.cModal) closeContactModal();
     });
 
-    // Expose globally
     window.refreshLessors = refreshLessors;
     window.openLessorDrawer = openLessorDrawer;
 
     bound = true;
   }
 
-  // 🧠 MODAL CONTROLS (safe dynamic binding)
+  // recoverable bindings for dynamic elements
+  if (els.btnQuickAdd && !els.btnQuickAdd.dataset.bound) {
+    els.btnQuickAdd.addEventListener("click", () => {
+      console.log("[lessors] Add Lessor clicked");
+      openQuickModal();
+    });
+    els.btnQuickAdd.dataset.bound = "1";
+  }
 
   if (els.qClose && !els.qClose.dataset.bound) {
     els.qClose.addEventListener("click", closeQuickModal);
@@ -20125,7 +20136,10 @@ function bindLessorsScreen() {
   }
 
   if (els.qSave && !els.qSave.dataset.bound) {
-    els.qSave.addEventListener("click", submitQuickAdd);
+    els.qSave.addEventListener("click", () => {
+      console.log("[lessors] Quick Save clicked");
+      submitQuickAdd();
+    });
     els.qSave.dataset.bound = "1";
   }
 
