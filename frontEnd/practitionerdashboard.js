@@ -2775,6 +2775,14 @@ function runPractitionerScreenBinder(screen, me) {
       renderPartnerSignoffScreen?.(me);
       break;
 
+    case PR_NAV.engagementAuditTrail:
+      renderEngagementAuditTrailScreen?.(me);
+      break;
+
+    case PR_NAV.practiceAuditTrail:
+      renderPracticeAuditTrailScreen?.(me);
+      break;
+
     default:
       renderDashboardHome?.(me);
       break;
@@ -11007,6 +11015,78 @@ async function renderPartnerSignoffScreen(me) {
   } catch (err) {
     container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
   }
+}
+
+function renderEngagementAuditTrailScreen(me) {
+  const root = document.getElementById("screen-engagement-audit-trail");
+  if (!root) return;
+
+  root.innerHTML = `
+    <div class="card p-6">
+      <div class="panel-title">Engagement Audit Trail</div>
+      <div class="panel-subtitle mt-1">
+        Audit history for engagement deliverables, working papers, review actions, and sign-off decisions.
+      </div>
+
+      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <div class="text-sm font-semibold text-slate-800">Planned events</div>
+        <div class="mt-3 grid gap-3">
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Deliverable lifecycle</div>
+            <div class="mt-1 text-sm text-slate-600">Create, update, status changes, deactivation, and receipt history.</div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Working paper workflow</div>
+            <div class="mt-1 text-sm text-slate-600">Creation, edits, send-to-review, approval, return, block, and clear actions.</div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Review decisions</div>
+            <div class="mt-1 text-sm text-slate-600">Reviewer and manager decisions across queue items and final work products.</div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Sign-off events</div>
+            <div class="mt-1 text-sm text-slate-600">Completion, blocking, waivers, and override actions by partner or QC roles.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPracticeAuditTrailScreen(me) {
+  const root = document.getElementById("screen-practice-audit-trail");
+  if (!root) return;
+
+  root.innerHTML = `
+    <div class="card p-6">
+      <div class="panel-title">Practice Audit Trail</div>
+      <div class="panel-subtitle mt-1">
+        Cross-engagement oversight of workflow changes, approvals, overrides, and exception handling.
+      </div>
+
+      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <div class="text-sm font-semibold text-slate-800">Planned controls</div>
+        <div class="mt-3 grid gap-3">
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Cross-engagement history</div>
+            <div class="mt-1 text-sm text-slate-600">Search and filter workflow activity across clients, engagements, and modules.</div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Partner overrides</div>
+            <div class="mt-1 text-sm text-slate-600">Track override approvals, readiness exceptions, and rationale.</div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Manager interventions</div>
+            <div class="mt-1 text-sm text-slate-600">See blocked items, reassignments, returns, and escalated approvals.</div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-3">
+            <div class="text-sm font-semibold text-slate-800">Audit evidence</div>
+            <div class="mt-1 text-sm text-slate-600">Support internal control evidence and accountability for end-product review workflow.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderSettingsScreen(me, screen) {

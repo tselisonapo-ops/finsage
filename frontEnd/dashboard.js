@@ -19707,17 +19707,30 @@ async function fetchLessors() {
   // Quick add
   // ===============================
   function openQuickModal() {
-    if (!els.qModal) return;
-    showMsg(els.qMsg, "");
-    els.qName.value = "";
-    els.qReg.value = "";
-    els.qVat.value = "";
-    els.qEmail.value = "";
-    els.qPhone.value = "";
-    els.qAddress.value = "";
-    els.qRelated.checked = false;
+    // 🔁 always refresh element references
+    grabEls();
+
+    if (!els.qModal) {
+      console.warn("lessorQuickModal not found");
+      return;
+    }
+
+    showLeaseMsg(els.qMsg, "");
+
+    // 🛡️ safe resets (no crashes)
+    if (els.qName) els.qName.value = "";
+    if (els.qReg) els.qReg.value = "";
+    if (els.qVat) els.qVat.value = "";
+    if (els.qEmail) els.qEmail.value = "";
+    if (els.qPhone) els.qPhone.value = "";
+    if (els.qAddress) els.qAddress.value = "";
+    if (els.qRelated) els.qRelated.checked = false;
+
     els.qModal.classList.remove("hidden");
-    setTimeout(() => els.qName?.focus(), 0);
+
+    setTimeout(() => {
+      if (els.qName) els.qName.focus();
+    }, 0);
   }
 
   function closeQuickModal() {
