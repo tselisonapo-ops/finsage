@@ -488,8 +488,11 @@ def create_lease(company_id: int):
     g.company_id = int(company_id)
     g.user_id = user_id
 
+    step = "start"
     try:
         raw_data = request.get_json(silent=True) or {}
+        step = "parsed_json"
+
         if not isinstance(raw_data, dict):
             return jsonify({"error": "JSON body must be an object"}), 400
 
@@ -502,14 +505,17 @@ def create_lease(company_id: int):
         if not lessor_id:
             return jsonify({"error": "lessor_id is required"}), 400
 
+        step = "validated_lessor_id"
         lessor = db_service.get_lessor(int(company_id), lessor_id)
         if not lessor:
             return jsonify({"error": "Invalid lessor_id"}), 400
 
+        step = "loaded_lessor"
         payload2 = _parse_lease_payload(raw_data)
         lease_input = _to_lease_input(int(company_id), payload2)
         result: LeaseScheduleResult = build_lease_schedule(lease_input)
 
+        step = "built_schedule"
         mode = (payload2.get("wizard_mode") or "inception").strip().lower()
         go_live = payload2.get("go_live_date")
 
@@ -527,8 +533,11 @@ def create_lease(company_id: int):
                 "error": "Cannot build opening lease journal - missing lease accounts in payload."
             }), 400
 
+        step = "before_insert_lease"
         lease_id = db_service.insert_lease(int(company_id), result, lessor_id=lessor_id)
 
+
+        step = "after_insert_lease"
         if mode == "existing" and go_live is not None:
             carrying_liab = float(liability_at_date(result, go_live))
             base_amount = round(carrying_liab, 2)
@@ -546,9 +555,13 @@ def create_lease(company_id: int):
             "net_amount": base_amount,
             "vat_amount": 0.0,
         }
+
+        step = "before_insert_journal"
         journal_id = db_service.insert_journal(int(company_id), journal_entry)
 
+        step = "after_insert_journal"
         for idx, line in enumerate(opening_lines, start=1):
+            step = f"before_insert_journal_line_{idx}"
             db_service.insert_journal_line(
                 company_id=int(company_id),
                 journal_id=int(journal_id),
@@ -563,16 +576,22 @@ def create_lease(company_id: int):
                 source_id=int(lease_id),
             )
 
+            step = f"before_insert_ledger_{idx}"
             db_service.insert_ledger(int(company_id), journal_id, journal_date, line)
+
+            step = f"before_update_trial_balance_{idx}"
             db_service.update_trial_balance(int(company_id), line)
 
             if db_service.requires_notes(line["account_code"]):
+                step = f"before_insert_note_{idx}"
                 db_service.insert_note(
                     int(company_id),
                     journal_id,
                     line["account_code"],
                     journal_entry["description"],
                 )
+
+        step = "success"
 
         base_json = schedule_to_json(result)
         base_json["lease_id"] = int(lease_id)
@@ -613,21 +632,10 @@ def create_lease(company_id: int):
         return jsonify(base_json), 201
 
     except ValueError as ve:
-        current_app.logger.exception("create_lease validation error lease_id=%s journal_id=%s", lease_id, journal_id)
-        return jsonify({
-            "error": str(ve),
-            "lease_id": lease_id,
-            "journal_id": journal_id,
-        }), 400
+        return jsonify({"error": str(ve), "step": step, "lease_id": lease_id, "journal_id": journal_id}), 400
 
     except Exception as e:
-        current_app.logger.exception("create_lease error lease_id=%s journal_id=%s", lease_id, journal_id)
-        return jsonify({
-            "error": "Internal server error",
-            "details": str(e),
-            "lease_id": lease_id,
-            "journal_id": journal_id,
-        }), 500
+        return jsonify({"error": "Internal server error", "details": str(e), "step": step, "lease_id": lease_id, "journal_id": journal_id}), 500
 
 @bp.route("/api/companies/<int:company_id>/leases", methods=["GET", "OPTIONS"])
 @require_auth
