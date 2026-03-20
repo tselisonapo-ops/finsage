@@ -19706,36 +19706,36 @@ async function fetchLessors() {
   // ===============================
   // Quick add
   // ===============================
-  function openQuickModal() {
-    // 🔁 always refresh element references
-    grabEls();
+function openQuickModal() {
+  grabEls();
+  bindLessorsScreen();
 
-    if (!els.qModal) {
-      console.warn("lessorQuickModal not found");
-      return;
-    }
-
-    showLeaseMsg(els.qMsg, "");
-
-    // 🛡️ safe resets (no crashes)
-    if (els.qName) els.qName.value = "";
-    if (els.qReg) els.qReg.value = "";
-    if (els.qVat) els.qVat.value = "";
-    if (els.qEmail) els.qEmail.value = "";
-    if (els.qPhone) els.qPhone.value = "";
-    if (els.qAddress) els.qAddress.value = "";
-    if (els.qRelated) els.qRelated.checked = false;
-
-    els.qModal.classList.remove("hidden");
-
-    setTimeout(() => {
-      if (els.qName) els.qName.focus();
-    }, 0);
+  if (!els.qModal) {
+    console.warn("lessorQuickModal not found");
+    return;
   }
 
-  function closeQuickModal() {
-    els.qModal?.classList.add("hidden");
+  showLeaseMsg(els.qMsg, "");
+
+  if (els.qName) els.qName.value = "";
+  if (els.qReg) els.qReg.value = "";
+  if (els.qVat) els.qVat.value = "";
+  if (els.qEmail) els.qEmail.value = "";
+  if (els.qPhone) els.qPhone.value = "";
+  if (els.qAddress) els.qAddress.value = "";
+  if (els.qRelated) els.qRelated.checked = false;
+
+  els.qModal.classList.remove("hidden");
+  setTimeout(() => els.qName?.focus(), 0);
+}
+
+function closeQuickModal() {
+  grabEls();
+  if (els.qModal) {
+    els.qModal.classList.add("hidden");
   }
+  showLeaseMsg(els.qMsg, "");
+}
 
   async function submitQuickAdd() {
     const cid = cidOrThrow();
@@ -20079,32 +20079,25 @@ async function saveLessor() {
   // ===============================
   // Bind once
   // ===============================
-  function bindLessorsScreen() {
-    if (bound) return;
-    bound = true;
+function bindLessorsScreen() {
+  // 🔁 ALWAYS refresh elements
+  grabEls();
 
-    grabEls();
-
+  // 🔒 Bind once for static screen elements
+  if (!bound) {
     // Search
     els.search?.addEventListener("input", () => renderLessorsTable());
 
-    // Quick add
+    // Quick add trigger
     els.btnQuickAdd?.addEventListener("click", openQuickModal);
-    els.qClose?.addEventListener("click", closeQuickModal);
-    els.qCancel?.addEventListener("click", closeQuickModal);
-    els.qSave?.addEventListener("click", submitQuickAdd);
-    els.qModal?.addEventListener("click", (e) => {
-      if (e.target === els.qModal) closeQuickModal();
-    });
 
-    // Drawer controls
+    // Drawer
     els.dClose?.addEventListener("click", closeDrawer);
     els.dSave?.addEventListener("click", saveLessor);
     els.dDelete?.addEventListener("click", deleteLessor);
 
     // Contacts
     els.cAdd?.addEventListener("click", openContactModalForAdd);
-
     els.cClose?.addEventListener("click", closeContactModal);
     els.cCancel?.addEventListener("click", closeContactModal);
     els.cSave?.addEventListener("click", saveContact);
@@ -20112,16 +20105,37 @@ async function saveLessor() {
       if (e.target === els.cModal) closeContactModal();
     });
 
-    // Expose refresh for route switch
+    // Expose globally
     window.refreshLessors = refreshLessors;
     window.openLessorDrawer = openLessorDrawer;
+
+    bound = true;
   }
 
-  // Call this when your router switches to "lessors"
-  window.bindLessorsScreen = function () {
-    bindLessorsScreen();
-    refreshLessors();
-  };
+  // 🧠 MODAL CONTROLS (safe dynamic binding)
+
+  if (els.qClose && !els.qClose.dataset.bound) {
+    els.qClose.addEventListener("click", closeQuickModal);
+    els.qClose.dataset.bound = "1";
+  }
+
+  if (els.qCancel && !els.qCancel.dataset.bound) {
+    els.qCancel.addEventListener("click", closeQuickModal);
+    els.qCancel.dataset.bound = "1";
+  }
+
+  if (els.qSave && !els.qSave.dataset.bound) {
+    els.qSave.addEventListener("click", submitQuickAdd);
+    els.qSave.dataset.bound = "1";
+  }
+
+  if (els.qModal && !els.qModal.dataset.bound) {
+    els.qModal.addEventListener("click", (e) => {
+      if (e.target === els.qModal) closeQuickModal();
+    });
+    els.qModal.dataset.bound = "1";
+  }
+}
 })();
 
 (function () {
