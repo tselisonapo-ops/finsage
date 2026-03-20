@@ -858,11 +858,6 @@ const ENDPOINTS = {
     }
   };
 
-  window.__PR_CONTEXT__ = {
-    ...(window.__PR_CONTEXT__ || {}),
-    engagementId
-  };
-
 const PR_NAV = {
   dashboard: "dashboard",
   assignments: "assignments",
@@ -9423,6 +9418,14 @@ function getPractitionerActiveCustomerId() {
     null
   );
 }
+
+window.setPractitionerActiveEngagementId = function (engagementId) {
+  window.__PR_ACTIVE_ENGAGEMENT_ID__ = engagementId;
+  window.__PR_CONTEXT__ = {
+    ...(window.__PR_CONTEXT__ || {}),
+    engagementId: engagementId
+  };
+};
 
 window.getPractitionerActiveEngagementId = function () {
   return (
