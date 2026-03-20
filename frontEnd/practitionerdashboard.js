@@ -3120,31 +3120,35 @@ async function loadEngagementTeamData(engagementId, activeOnly = true) {
   return Array.isArray(out?.rows) ? out.rows : [];
 }
 
+function closeAllEngagementActionMenus() {
+  document.querySelectorAll("[data-eng-actions-menu]").forEach((menu) => {
+    menu.classList.add("hidden");
+  });
+}
+
 function getEngagementRowActions(row) {
-  const me = window.currentUser || {};
-  const myUserId = Number(me?.id || me?.user_id || 0);
+  const me = window.currentUser || window.__ME__ || {};
+  const myUserId = Number(me?.id || me?.user_id || me?.sub || 0);
   const myRole = String(me?.role || "").toLowerCase();
   const engagementType = String(row.engagement_type || "").toLowerCase();
-  const workflowStage = String(row.workflow_stage || "").toLowerCase();
   const status = String(row.status || "").toLowerCase();
 
   const managerId = Number(row.manager_user_id || 0);
   const partnerId = Number(row.partner_user_id || 0);
-  const assigneeId = Number(row.assigned_user_id || row.preparer_user_id || 0);
+  const preparerId = Number(row.preparer_user_id || row.assigned_user_id || 0);
 
-  const isManager = myUserId && managerId && myUserId === managerId;
-  const isPartner = myUserId && partnerId && myUserId === partnerId;
-  const isDirectAssignee = myUserId && assigneeId && myUserId === assigneeId;
+  const isManager = !!myUserId && !!managerId && myUserId === managerId;
+  const isPartner = !!myUserId && !!partnerId && myUserId === partnerId;
+  const isPreparer = !!myUserId && !!preparerId && myUserId === preparerId;
 
   const canManage = isManager || isPartner || ["owner", "admin", "partner"].includes(myRole);
-  const canWork = isDirectAssignee || canManage;
-
-  const supportsPosting = ["bookkeeping", "writeup", "posting", "monthly_processing"].includes(engagementType);
-  const supportsWorkingPapers = ["audit", "review", "compilation", "tax", "advisory", "bookkeeping"].includes(engagementType);
-  const supportsDeliverables = true;
-  const supportsReporting = ["compilation", "audit", "review", "bookkeeping"].includes(engagementType);
+  const canWork = isPreparer || canManage;
 
   const closed = ["completed", "cancelled", "archived"].includes(status);
+
+  const supportsPosting = ["bookkeeping", "posting", "writeup", "monthly_processing"].includes(engagementType);
+  const supportsWorkingPapers = ["audit", "review", "compilation", "tax", "advisory", "bookkeeping"].includes(engagementType);
+  const supportsReporting = ["compilation", "audit", "review", "bookkeeping"].includes(engagementType);
 
   return [
     {
@@ -3154,7 +3158,7 @@ function getEngagementRowActions(row) {
       reason: !supportsPosting
         ? "Not a posting engagement"
         : !canWork
-        ? "Not assigned to posting on this engagement"
+        ? "Not assigned to this engagement"
         : closed
         ? "Engagement is closed"
         : ""
@@ -3172,7 +3176,7 @@ function getEngagementRowActions(row) {
     {
       key: "deliverables",
       label: "Open Deliverables",
-      enabled: supportsDeliverables && canWork,
+      enabled: canWork,
       reason: !canWork ? "Not assigned to this engagement" : ""
     },
     {
@@ -3194,57 +3198,6 @@ function getEngagementRowActions(row) {
   ];
 }
 
-function renderEngagementActionsMenu(row) {
-  const actions = getEngagementRowActions(row);
-  const statusOptions = ["draft", "pending", "active", "on_hold", "completed", "cancelled", "archived"];
-
-  return `
-    <button
-      type="button"
-      class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-      data-eng-action="open"
-      data-engagement-id="${row.id}"
-    >
-      Open
-    </button>
-
-    <div class="my-2 border-t"></div>
-    <div class="mb-2 px-2 text-[11px] text-slate-400">Set status</div>
-
-    ${statusOptions.map((s) => `
-      <button
-        type="button"
-        class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
-          s === row.status
-            ? "bg-slate-100 font-semibold text-slate-700"
-            : "text-slate-600 hover:bg-slate-50"
-        }"
-        data-eng-action="set_status"
-        data-status="${s}"
-        data-engagement-id="${row.id}"
-      >
-        ${esc(s.replaceAll("_", " "))}
-      </button>
-    `).join("")}
-
-    <div class="my-2 border-t"></div>
-
-    ${actions.map((a) => `
-      <button
-        type="button"
-        class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
-          a.enabled
-            ? "text-slate-700 hover:bg-slate-50"
-            : "cursor-not-allowed bg-slate-50 text-slate-400"
-        }"
-        ${a.enabled ? `data-eng-action="${a.key}" data-engagement-id="${row.id}"` : "disabled"}
-        title="${esc(a.reason || "")}"
-      >
-        <span>${esc(a.label)}</span>
-      </button>
-    `).join("")}
-  `;
-}
 
 function renderAssignmentsTable(rows) {
   const tbody = document.getElementById("assignmentsTableBody");
@@ -3317,6 +3270,59 @@ function renderAssignmentsTable(rows) {
       </tr>
     `;
   }).join("");
+}
+
+function renderEngagementActionsMenu(row) {
+ 
+  const actions = getEngagementRowActions(row);
+  const statusOptions = ["draft", "pending", "active", "on_hold", "completed", "cancelled", "archived"];
+
+  return `
+    <button
+      type="button"
+      class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+      data-eng-action="open"
+      data-engagement-id="${esc(row.id)}"
+    >
+      Open
+    </button>
+
+    <div class="my-2 border-t border-slate-200"></div>
+    <div class="mb-2 px-2 text-[11px] uppercase tracking-wide text-slate-400">Set status</div>
+
+    ${statusOptions.map((s) => `
+      <button
+        type="button"
+        class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
+          s === row.status
+            ? "bg-slate-100 font-semibold text-slate-700"
+            : "text-slate-600 hover:bg-slate-50"
+        }"
+        data-eng-action="set_status"
+        data-status="${s}"
+        data-engagement-id="${esc(row.id)}"
+      >
+        ${esc(s.replaceAll("_", " "))}
+      </button>
+    `).join("")}
+
+    <div class="my-2 border-t border-slate-200"></div>
+
+    ${actions.map((a) => `
+      <button
+        type="button"
+        class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
+          a.enabled
+            ? "text-slate-700 hover:bg-slate-50"
+            : "cursor-not-allowed bg-slate-50 text-slate-400"
+        }"
+        ${a.enabled ? `data-eng-action="${a.key}" data-engagement-id="${esc(row.id)}"` : "disabled"}
+        title="${esc(a.reason || "")}"
+      >
+        <span>${esc(a.label)}</span>
+      </button>
+    `).join("")}
+  `;
 }
 
 function renderAssignmentDetail(row) {
@@ -3399,13 +3405,6 @@ async function refreshAssignmentsScreen() {
   }
 }
 
-
-function closeAllEngagementActionMenus() {
-  document.querySelectorAll("[data-eng-actions-menu]").forEach((menu) => {
-    menu.classList.add("hidden");
-  });
-}
-
 function bindAssignmentsScreenEvents(me) {
   if (PR_ASSIGNMENTS_EVENTS_BOUND) return;
   PR_ASSIGNMENTS_EVENTS_BOUND = true;
@@ -3439,9 +3438,7 @@ function bindAssignmentsScreenEvents(me) {
       const wasHidden = menu.classList.contains("hidden");
       closeAllEngagementActionMenus();
 
-      if (wasHidden) {
-        menu.classList.remove("hidden");
-      }
+      if (wasHidden) menu.classList.remove("hidden");
       return;
     }
 
@@ -3461,92 +3458,90 @@ function bindAssignmentsScreenEvents(me) {
       const wasHidden = menu.classList.contains("hidden");
       closeAllEngagementActionMenus();
 
-      if (wasHidden) {
-        menu.classList.remove("hidden");
-      }
+      if (wasHidden) menu.classList.remove("hidden");
       return;
     }
 
     const actionBtn = e.target.closest("[data-eng-action]");
-    if (actionBtn) {
-      e.preventDefault();
-      e.stopPropagation();
+    if (!actionBtn) return;
 
-      const action = String(actionBtn.dataset.engAction || "");
-      const engagementId = Number(actionBtn.dataset.engagementId || 0);
-      if (!engagementId || !action) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-      closeAllEngagementActionMenus();
+    const action = String(actionBtn.dataset.engAction || "");
+    const engagementId = Number(actionBtn.dataset.engagementId || 0);
+    if (!engagementId || !action) return;
 
-      try {
-        window.setPractitionerActiveEngagementId?.(engagementId);
+    closeAllEngagementActionMenus();
 
-        const row = await loadEngagementDetail(engagementId);
-        if (!row) return;
+    try {
+      window.setPractitionerActiveEngagementId?.(engagementId);
 
-        PR_SELECTED_ENGAGEMENT = row;
+      const row = await loadEngagementDetail(engagementId);
+      if (!row) return;
 
-        window.__PR_CONTEXT__ = {
-          ...(window.__PR_CONTEXT__ || {}),
-          engagementId,
-          engagement: row
-        };
+      PR_SELECTED_ENGAGEMENT = row;
 
-        if (action === "open") {
-          renderAssignmentDetail(row);
+      window.__PR_CONTEXT__ = {
+        ...(window.__PR_CONTEXT__ || {}),
+        engagementId,
+        engagement: row
+      };
 
-          const teamFilter = document.getElementById("teamEngagementFilter");
-          if (teamFilter) teamFilter.value = String(engagementId);
-          return;
-        }
+      if (action === "open") {
+        renderAssignmentDetail(row);
 
-        if (action === "set_status") {
-          const status = String(actionBtn.dataset.status || "").trim().toLowerCase();
-          if (!status) return;
-
-          await apiFetch(
-            ENDPOINTS.engagements.setStatus(getActiveCompanyId(), engagementId),
-            {
-              method: "POST",
-              body: JSON.stringify({ status })
-            }
-          );
-
-          if (PR_SELECTED_ENGAGEMENT && String(PR_SELECTED_ENGAGEMENT.id) === String(engagementId)) {
-            PR_SELECTED_ENGAGEMENT.status = status;
-          }
-
-          await refreshAssignmentsScreen();
-          return;
-        }
-
-        if (action === "posting") {
-          await openPostingForEngagement(row, me);
-          return;
-        }
-
-        if (action === "working_papers") {
-          await switchPractitionerScreen(PR_NAV.workingPapers, me);
-          return;
-        }
-
-        if (action === "deliverables") {
-          await switchPractitionerScreen(PR_NAV.deliverables, me);
-          return;
-        }
-
-        if (action === "reporting") {
-          await switchPractitionerScreen(PR_NAV.reportingOverview, me);
-          return;
-        }
-
-        if (action === "audit_trail") {
-          await switchPractitionerScreen(PR_NAV.auditTrail, me);
-          return;
-        }
-      } catch (err) {
-        console.error("Engagement action failed:", err);
+        const teamFilter = document.getElementById("teamEngagementFilter");
+        if (teamFilter) teamFilter.value = String(engagementId);
+        return;
       }
+
+      if (action === "set_status") {
+        const status = String(actionBtn.dataset.status || "").trim().toLowerCase();
+        if (!status) return;
+
+        await apiFetch(
+          ENDPOINTS.engagements.setStatus(getActiveCompanyId(), engagementId),
+          {
+            method: "POST",
+            body: JSON.stringify({ status })
+          }
+        );
+
+        if (PR_SELECTED_ENGAGEMENT && String(PR_SELECTED_ENGAGEMENT.id) === String(engagementId)) {
+          PR_SELECTED_ENGAGEMENT.status = status;
+        }
+
+        await refreshAssignmentsScreen();
+        return;
+      }
+
+      if (action === "posting") {
+        await openPostingForEngagement(row, me);
+        return;
+      }
+
+      if (action === "working_papers") {
+        await switchPractitionerScreen(PR_NAV.workingPapers, me);
+        return;
+      }
+
+      if (action === "deliverables") {
+        await switchPractitionerScreen(PR_NAV.deliverables, me);
+        return;
+      }
+
+      if (action === "reporting") {
+        await switchPractitionerScreen(PR_NAV.reportingOverview, me);
+        return;
+      }
+
+      if (action === "audit_trail") {
+        await switchPractitionerScreen(PR_NAV.auditTrail, me);
+        return;
+      }
+    } catch (err) {
+      console.error("Engagement action failed:", err);
     }
   });
 
@@ -3556,6 +3551,7 @@ function bindAssignmentsScreenEvents(me) {
     }
   });
 }
+
 function populateTeamEngagementFilter(rows) {
   const select = document.getElementById("teamEngagementFilter");
   if (!select) return;
