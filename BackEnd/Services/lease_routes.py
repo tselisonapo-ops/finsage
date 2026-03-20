@@ -556,22 +556,24 @@ def create_lease(company_id: int):
             "net_amount": base_amount,
             "vat_amount": 0.0,
         }
+
         journal_id = db_service.insert_journal(int(company_id), journal_entry)
 
-        for line in opening_lines:
-            for idx, line in enumerate(opening_lines, start=1):
-                # 1) INSERT JOURNAL_LINES (this is what your journal screen uses)
-                db_service.insert_journal_line(
-                    company_id=int(company_id),
-                    journal_id=int(journal_id),
-                    line_no=idx,
-                    account_code=line["account_code"],
-                    description=line.get("description") or journal_entry["description"],
-                    debit=float(line.get("debit") or 0.0),
-                    credit=float(line.get("credit") or 0.0),
-                    source="leases",
-                    source_id=int(lease_id),
-                )
+        for idx, line in enumerate(opening_lines, start=1):
+            db_service.insert_journal_line(
+                company_id=int(company_id),
+                journal_id=int(journal_id),
+                line_no=idx,
+                line={
+                    "account_code": line["account_code"],
+                    "description": line.get("description") or journal_entry["description"],
+                    "debit": float(line.get("debit") or 0.0),
+                    "credit": float(line.get("credit") or 0.0),
+                },
+                source="leases",
+                source_id=int(lease_id),
+            )
+
             db_service.insert_ledger(int(company_id), journal_id, journal_date, line)
             db_service.update_trial_balance(int(company_id), line)
 
@@ -582,7 +584,6 @@ def create_lease(company_id: int):
                     line["account_code"],
                     journal_entry["description"],
                 )
-
         # -----------------------------
         # Build response JSON
         # -----------------------------
