@@ -858,6 +858,11 @@ const ENDPOINTS = {
     }
   };
 
+  window.__PR_CONTEXT__ = {
+    ...(window.__PR_CONTEXT__ || {}),
+    engagementId
+  };
+
 const PR_NAV = {
   dashboard: "dashboard",
   assignments: "assignments",
@@ -9419,13 +9424,13 @@ function getPractitionerActiveCustomerId() {
   );
 }
 
-function getPractitionerActiveEngagementId() {
+window.getPractitionerActiveEngagementId = function () {
   return (
     window.__PR_CONTEXT__?.engagementId ||
     window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
     null
   );
-}
+};
 
 function wpEsc(v) {
   return String(v == null ? "" : v)
