@@ -613,22 +613,22 @@ def create_lease(company_id: int):
         return jsonify(base_json), 201
 
     except ValueError as ve:
-        if lease_id:
-            try:
-                db_service.delete_lease(int(company_id), int(lease_id))
-            except Exception:
-                current_app.logger.exception("cleanup delete_lease failed lease_id=%s", lease_id)
-        return jsonify({"error": str(ve)}), 400
+        current_app.logger.exception("create_lease validation error lease_id=%s journal_id=%s", lease_id, journal_id)
+        return jsonify({
+            "error": str(ve),
+            "lease_id": lease_id,
+            "journal_id": journal_id,
+        }), 400
 
     except Exception as e:
-        if lease_id:
-            try:
-                db_service.delete_lease(int(company_id), int(lease_id))
-            except Exception:
-                current_app.logger.exception("cleanup delete_lease failed lease_id=%s", lease_id)
-        current_app.logger.exception("create_lease error")
-        return jsonify({"error": "Internal server error", "details": str(e)}), 500
-    
+        current_app.logger.exception("create_lease error lease_id=%s journal_id=%s", lease_id, journal_id)
+        return jsonify({
+            "error": "Internal server error",
+            "details": str(e),
+            "lease_id": lease_id,
+            "journal_id": journal_id,
+        }), 500
+
 @bp.route("/api/companies/<int:company_id>/leases", methods=["GET", "OPTIONS"])
 @require_auth
 def list_leases(company_id: int):
