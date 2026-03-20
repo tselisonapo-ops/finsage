@@ -19558,18 +19558,17 @@ function showLeaseMsg(el, msg, type="error") {
     els.btnQuickAdd = document.getElementById("btnLessorQuickAdd");
 
     // Modals/drawers are global overlays → keep document.getElementById for those
-    els.qModal = document.getElementById("lessorQuickModal");
     els.qClose = document.getElementById("lessorQuickClose");
-    els.qCancel = $("lessorQuickCancel");
-    els.qSave = $("lessorQuickSave");
-    els.qMsg = $("lessorQuickMsg");
-    els.qName = $("lessorQ_name");
-    els.qReg = $("lessorQ_reg");
-    els.qVat = $("lessorQ_vat");
-    els.qEmail = $("lessorQ_email");
-    els.qPhone = $("lessorQ_phone");
-    els.qAddress = $("lessorQ_address");
-    els.qRelated = $("lessorQ_related");
+    els.qCancel = document.getElementById("lessorQuickCancel");
+    els.qSave = document.getElementById("lessorQuickSave");
+    els.qMsg = document.getElementById("lessorQuickMsg");
+    els.qName = document.getElementById("lessorQ_name");
+    els.qReg = document.getElementById("lessorQ_reg");
+    els.qVat = document.getElementById("lessorQ_vat");
+    els.qEmail = document.getElementById("lessorQ_email");
+    els.qPhone = document.getElementById("lessorQ_phone");
+    els.qAddress = document.getElementById("lessorQ_address");
+    els.qRelated = document.getElementById("lessorQ_related");
 
     // Detail drawer
     els.dDrawer = $("lessorDetailDrawer");
@@ -19739,6 +19738,7 @@ function closeQuickModal() {
 }
 
   async function submitQuickAdd() {
+    console.log("[lessors] submitQuickAdd fired");
     const cid = cidOrThrow();
     showMsg(els.qMsg, "");
 
@@ -20128,7 +20128,10 @@ function doBindLessorsScreen() {
   }
 
   if (els.qCancel && !els.qCancel.dataset.bound) {
-    els.qCancel.addEventListener("click", closeQuickModal);
+    els.qCancel.addEventListener("click", () => {
+      console.log("[lessors] Quick Cancel clicked");
+      closeQuickModal();
+    });
     els.qCancel.dataset.bound = "1";
   }
 
