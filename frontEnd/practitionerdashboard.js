@@ -3250,7 +3250,7 @@ async function refreshAssignmentsScreen() {
   }
 }
 
-function bindAssignmentsScreenEvents() {
+function bindAssignmentsScreenEvents(me) {
   document.getElementById("assignmentsRefreshBtn")?.addEventListener("click", refreshAssignmentsScreen);
 
   document.getElementById("assignmentsSearch")?.addEventListener("keydown", (e) => {
@@ -3268,12 +3268,23 @@ function bindAssignmentsScreenEvents() {
     if (!engagementId) return;
 
     try {
+      window.setPractitionerActiveEngagementId?.(engagementId);
+
       const row = await loadEngagementDetail(engagementId);
       PR_SELECTED_ENGAGEMENT = row;
+
+      window.__PR_CONTEXT__ = {
+        ...(window.__PR_CONTEXT__ || {}),
+        engagementId,
+        engagement: row
+      };
+
       renderAssignmentDetail(row);
 
       const teamFilter = document.getElementById("teamEngagementFilter");
       if (teamFilter) teamFilter.value = String(engagementId);
+
+      await switchPractitionerScreen(PR_NAV.workingPapers, me);
     } catch (err) {
       console.error(err);
     }
