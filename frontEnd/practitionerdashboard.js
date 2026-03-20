@@ -3200,6 +3200,7 @@ function renderEngagementActionsMenu(row) {
 
   return `
     <button
+      type="button"
       class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
       data-eng-action="open"
       data-engagement-id="${row.id}"
@@ -3212,9 +3213,10 @@ function renderEngagementActionsMenu(row) {
 
     ${statusOptions.map((s) => `
       <button
+        type="button"
         class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
           s === row.status
-            ? "bg-slate-100 text-slate-700 font-semibold"
+            ? "bg-slate-100 font-semibold text-slate-700"
             : "text-slate-600 hover:bg-slate-50"
         }"
         data-eng-action="set_status"
@@ -3229,6 +3231,7 @@ function renderEngagementActionsMenu(row) {
 
     ${actions.map((a) => `
       <button
+        type="button"
         class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${
           a.enabled
             ? "text-slate-700 hover:bg-slate-50"
@@ -3276,14 +3279,13 @@ function renderAssignmentsTable(rows) {
         <td>${esc(row.customer_name || "--")}</td>
         <td class="capitalize">${esc(row.engagement_type || "--")}</td>
         <td>
-        <td>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 whitespace-nowrap">
             <span class="badge ${statusClass}">
               ${esc(row.status || "--")}
             </span>
-
             <button
-              class="text-[10px] px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+              type="button"
+              class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50"
               data-eng-status-quick="${esc(row.id)}"
             >
               Change
@@ -3294,22 +3296,21 @@ function renderAssignmentsTable(rows) {
         <td>${fmtDate(row.due_date)}</td>
         <td>${esc(managerLabel)}</td>
         <td>${esc(partnerLabel)}</td>
-        <td>
-          <div class="flex items-center justify-end">
-            <div class="relative inline-block text-left">
-              <button
-                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-                data-eng-actions-toggle="${esc(row.id)}"
-              >
-                Actions
-              </button>
+        <td class="text-right">
+          <div class="relative inline-block text-left">
+            <button
+              type="button"
+              class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              data-eng-actions-toggle="${esc(row.id)}"
+            >
+              Actions
+            </button>
 
-              <div
-                class="hidden absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"
-                data-eng-actions-menu="${esc(row.id)}"
-              >
-                ${renderEngagementActionsMenu(row)}
-              </div>
+            <div
+              class="hidden absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"
+              data-eng-actions-menu="${esc(row.id)}"
+            >
+              ${renderEngagementActionsMenu(row)}
             </div>
           </div>
         </td>
@@ -3406,6 +3407,9 @@ function closeAllEngagementActionMenus() {
 }
 
 function bindAssignmentsScreenEvents(me) {
+  if (PR_ASSIGNMENTS_EVENTS_BOUND) return;
+  PR_ASSIGNMENTS_EVENTS_BOUND = true;
+
   document.getElementById("assignmentsRefreshBtn")?.addEventListener("click", refreshAssignmentsScreen);
 
   document.getElementById("assignmentsSearch")?.addEventListener("keydown", (e) => {
@@ -3415,18 +3419,16 @@ function bindAssignmentsScreenEvents(me) {
   document.getElementById("assignmentsStatusFilter")?.addEventListener("change", refreshAssignmentsScreen);
   document.getElementById("assignmentsTypeFilter")?.addEventListener("change", refreshAssignmentsScreen);
 
-  document.addEventListener("click", (e) => {
-    const toggle = e.target.closest("[data-eng-actions-toggle]");
-    const quickStatus = e.target.closest("[data-eng-status-quick]");
+  const tbody = document.getElementById("assignmentsTableBody");
+  if (!tbody) return;
 
-    if (toggle || quickStatus) {
+  tbody.addEventListener("click", async (e) => {
+    const toggleBtn = e.target.closest("[data-eng-actions-toggle]");
+    if (toggleBtn) {
+      e.preventDefault();
       e.stopPropagation();
 
-      const engagementId = String(
-        toggle?.getAttribute("data-eng-actions-toggle") ||
-        quickStatus?.getAttribute("data-eng-status-quick") ||
-        ""
-      );
+      const engagementId = String(toggleBtn.dataset.engActionsToggle || "");
       if (!engagementId) return;
 
       const menu = document.querySelector(
@@ -3443,96 +3445,117 @@ function bindAssignmentsScreenEvents(me) {
       return;
     }
 
-    if (!e.target.closest("[data-eng-actions-menu]")) {
+    const quickStatusBtn = e.target.closest("[data-eng-status-quick]");
+    if (quickStatusBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const engagementId = String(quickStatusBtn.dataset.engStatusQuick || "");
+      if (!engagementId) return;
+
+      const menu = document.querySelector(
+        `[data-eng-actions-menu="${CSS.escape(engagementId)}"]`
+      );
+      if (!menu) return;
+
+      const wasHidden = menu.classList.contains("hidden");
+      closeAllEngagementActionMenus();
+
+      if (wasHidden) {
+        menu.classList.remove("hidden");
+      }
+      return;
+    }
+
+    const actionBtn = e.target.closest("[data-eng-action]");
+    if (actionBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const action = String(actionBtn.dataset.engAction || "");
+      const engagementId = Number(actionBtn.dataset.engagementId || 0);
+      if (!engagementId || !action) return;
+
+      closeAllEngagementActionMenus();
+
+      try {
+        window.setPractitionerActiveEngagementId?.(engagementId);
+
+        const row = await loadEngagementDetail(engagementId);
+        if (!row) return;
+
+        PR_SELECTED_ENGAGEMENT = row;
+
+        window.__PR_CONTEXT__ = {
+          ...(window.__PR_CONTEXT__ || {}),
+          engagementId,
+          engagement: row
+        };
+
+        if (action === "open") {
+          renderAssignmentDetail(row);
+
+          const teamFilter = document.getElementById("teamEngagementFilter");
+          if (teamFilter) teamFilter.value = String(engagementId);
+          return;
+        }
+
+        if (action === "set_status") {
+          const status = String(actionBtn.dataset.status || "").trim().toLowerCase();
+          if (!status) return;
+
+          await apiFetch(
+            ENDPOINTS.engagements.setStatus(getActiveCompanyId(), engagementId),
+            {
+              method: "POST",
+              body: JSON.stringify({ status })
+            }
+          );
+
+          if (PR_SELECTED_ENGAGEMENT && String(PR_SELECTED_ENGAGEMENT.id) === String(engagementId)) {
+            PR_SELECTED_ENGAGEMENT.status = status;
+          }
+
+          await refreshAssignmentsScreen();
+          return;
+        }
+
+        if (action === "posting") {
+          await openPostingForEngagement(row, me);
+          return;
+        }
+
+        if (action === "working_papers") {
+          await switchPractitionerScreen(PR_NAV.workingPapers, me);
+          return;
+        }
+
+        if (action === "deliverables") {
+          await switchPractitionerScreen(PR_NAV.deliverables, me);
+          return;
+        }
+
+        if (action === "reporting") {
+          await switchPractitionerScreen(PR_NAV.reportingOverview, me);
+          return;
+        }
+
+        if (action === "audit_trail") {
+          await switchPractitionerScreen(PR_NAV.auditTrail, me);
+          return;
+        }
+      } catch (err) {
+        console.error("Engagement action failed:", err);
+      }
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-eng-actions-menu]") && !e.target.closest("[data-eng-actions-toggle]")) {
       closeAllEngagementActionMenus();
     }
   });
-
-  document.getElementById("assignmentsTableBody")?.addEventListener("click", async (e) => {
-    const actionBtn = e.target.closest("[data-eng-action]");
-    if (!actionBtn) return;
-
-    const action = String(actionBtn.dataset.engAction || "");
-    const engagementId = Number(actionBtn.dataset.engagementId || 0);
-    if (!engagementId || !action) return;
-
-    closeAllEngagementActionMenus();
-
-    try {
-      window.setPractitionerActiveEngagementId?.(engagementId);
-
-      const row = await loadEngagementDetail(engagementId);
-      if (!row) return;
-
-      PR_SELECTED_ENGAGEMENT = row;
-
-      window.__PR_CONTEXT__ = {
-        ...(window.__PR_CONTEXT__ || {}),
-        engagementId,
-        engagement: row
-      };
-
-      if (action === "open") {
-        renderAssignmentDetail(row);
-
-        const teamFilter = document.getElementById("teamEngagementFilter");
-        if (teamFilter) teamFilter.value = String(engagementId);
-        return;
-      }
-
-      if (action === "set_status") {
-        const status = String(actionBtn.dataset.status || "").trim().toLowerCase();
-        if (!status) return;
-
-        await apiFetch(
-          ENDPOINTS.engagements.setStatus(getActiveCompanyId(), engagementId),
-          {
-            method: "POST",
-            body: JSON.stringify({ status })
-          }
-        );
-
-        if (
-          PR_SELECTED_ENGAGEMENT &&
-          String(PR_SELECTED_ENGAGEMENT.id) === String(engagementId)
-        ) {
-          PR_SELECTED_ENGAGEMENT.status = status;
-        }
-
-        await refreshAssignmentsScreen();
-        return;
-      }
-
-      if (action === "posting") {
-        await openPostingForEngagement(row, me);
-        return;
-      }
-
-      if (action === "working_papers") {
-        await switchPractitionerScreen(PR_NAV.workingPapers, me);
-        return;
-      }
-
-      if (action === "deliverables") {
-        await switchPractitionerScreen(PR_NAV.deliverables, me);
-        return;
-      }
-
-      if (action === "reporting") {
-        await switchPractitionerScreen(PR_NAV.reportingOverview, me);
-        return;
-      }
-
-      if (action === "audit_trail") {
-        await switchPractitionerScreen(PR_NAV.auditTrail, me);
-        return;
-      }
-    } catch (err) {
-      console.error("Engagement action failed:", err);
-    }
-  });
 }
-
 function populateTeamEngagementFilter(rows) {
   const select = document.getElementById("teamEngagementFilter");
   if (!select) return;
