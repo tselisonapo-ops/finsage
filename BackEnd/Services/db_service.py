@@ -5210,6 +5210,7 @@ class DatabaseService:
                      ''debit_note'',
                      ''inventory'',
                      ''asset'',
+                     ''asset_acquisition'',
                      ''asset_depreciation'',
                      ''asset_revaluation'',
                      ''asset_impairment'',
