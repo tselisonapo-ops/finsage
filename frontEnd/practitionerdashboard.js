@@ -9838,11 +9838,15 @@ function getPractitionerActiveCustomerId() {
 }
 
 window.setPractitionerActiveEngagementId = function (engagementId) {
-  window.__PR_ACTIVE_ENGAGEMENT_ID__ = engagementId;
+  const num = Number(engagementId) || null;
+
+  window.__PR_ACTIVE_ENGAGEMENT_ID__ = num;
   window.__PR_CONTEXT__ = {
     ...(window.__PR_CONTEXT__ || {}),
-    engagementId: engagementId
+    engagementId: num
   };
+
+  console.log("Active engagement set:", num);
 };
 
 window.getPractitionerActiveEngagementId = function () {
