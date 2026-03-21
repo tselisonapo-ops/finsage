@@ -3515,10 +3515,43 @@ function bindAssignmentsScreenEvents(me) {
         return;
       }
 
-      if (action === "posting") {
-        await openPostingForEngagement(row, me);
+    if (action === "posting") {
+      const targetCompanyId =
+        Number(row.target_company_id || 0) ||
+        Number(row.provisioned_company_id || 0) ||
+        0;
+
+      if (!targetCompanyId) {
+        console.warn("Posting blocked: no target company found for engagement", row);
+        alert("This engagement does not yet have a provisioned target company for posting.");
         return;
       }
+
+      window.__PR_POSTING_CONTEXT__ = {
+        engagementId: Number(row.id || 0),
+        engagementCode: row.engagement_code || "",
+        engagementName: row.engagement_name || "",
+        customerId: Number(row.customer_id || 0),
+        customerName: row.customer_name || "",
+        sourceCompanyId: Number(row.company_id || 0),
+        targetCompanyId,
+        workspaceStatus: row.workspace_status || "",
+        workspaceSource: row.workspace_source || "",
+        targetCompanySource: row.target_company_source || ""
+      };
+
+      window.__PR_CONTEXT__ = {
+        ...(window.__PR_CONTEXT__ || {}),
+        engagementId: Number(row.id || 0),
+        engagement: row,
+        customerName: row.customer_name || "",
+        postingCompanyId: targetCompanyId,
+        targetCompanyId
+      };
+
+      await openPostingForEngagement(row, me, targetCompanyId);
+      return;
+    }
 
       if (action === "working_papers") {
         await switchPractitionerScreen(PR_NAV.workingPapers, me);
@@ -9675,26 +9708,40 @@ window.getPractitionerActiveEngagementId = function () {
 };
 
 async function openPostingForEngagement(row, me) {
-  const companyId = Number(row.target_company_id || row.company_id || 0);
-  const customerId = Number(row.customer_id || 0);
-  const engagementId = Number(row.id || 0);
+  const targetCompanyId = Number(row?.target_company_id || 0);
+  const sourceCompanyId = Number(row?.company_id || 0);
+  const companyId = targetCompanyId || sourceCompanyId || 0;
+
+  const customerId = Number(row?.customer_id || 0) || null;
+  const engagementId = Number(row?.id || 0) || null;
 
   if (!companyId) {
-    console.warn("No company for posting");
+    console.warn("No company for posting", row);
     return;
   }
 
   const ctx = {
-    companyId,
-    customerId: customerId || null,
-    engagementId: engagementId || null,
+    companyId,                    // target posting company
+    targetCompanyId: companyId,   // explicit alias for posting screens
+    sourceCompanyId: sourceCompanyId || null,
+    customerId,
+    customerName: row?.customer_name || "",
+    engagementId,
+    engagementCode: row?.engagement_code || "",
+    engagementName: row?.engagement_name || "",
+    engagementType: row?.engagement_type || "",
+    workspaceStatus: row?.workspace_status || "",
+    workspaceSource: row?.workspace_source || "",
+    targetCompanySource: row?.target_company_source || "",
     engagement: row || null,
     launchMode: "posting",
     returnTo: "practitionerdashboard.html#screen=assignments"
   };
 
   window.__PR_ACTIVE_COMPANY_ID__ = companyId;
-  window.__PR_ACTIVE_CUSTOMER_ID__ = customerId || null;
+  window.__PR_ACTIVE_CUSTOMER_ID__ = customerId;
+  window.__PR_POSTING_CONTEXT__ = ctx;
+
   window.setPractitionerActiveEngagementId?.(engagementId);
 
   window.__PR_CONTEXT__ = {
@@ -9702,7 +9749,7 @@ async function openPostingForEngagement(row, me) {
     ...ctx
   };
 
-  console.log("Launching posting with context:", window.__PR_CONTEXT__);
+  console.log("Launching posting with context:", ctx);
 
   localStorage.setItem("fs_posting_context", JSON.stringify(ctx));
 

@@ -5117,6 +5117,37 @@ function restorePostingContext() {
   }
 }
 
+function updatePostingCompanyBadge() {
+  const badge = document.getElementById("companyBadge");
+  if (!badge) return;
+
+  let ctx = {};
+  try {
+    ctx = JSON.parse(localStorage.getItem("fs_posting_context") || "{}");
+  } catch (_) {}
+
+  ctx = {
+    ...ctx,
+    ...(window.__PR_POSTING_CONTEXT__ || {})
+  };
+
+  const customerName = ctx.customerName || ctx.engagement?.customer_name || "";
+  const engagementName = ctx.engagementName || ctx.engagement?.engagement_name || "";
+  const engagementCode = ctx.engagementCode || ctx.engagement?.engagement_code || "";
+  const companyId = Number(ctx.targetCompanyId || ctx.companyId || 0);
+
+  if (!companyId) {
+    badge.textContent = "Your company";
+    return;
+  }
+
+  badge.textContent = `
+    ${customerName || "Client"} · ${engagementName || "Engagement"} (${engagementCode || "--"})
+  `.trim();
+
+  badge.classList.remove("hidden");
+}
+
 function bindReturnToPractitionerWorkspace() {
   const btn = document.getElementById("returnToPractitionerBtn");
   if (!btn) return;
@@ -5205,6 +5236,44 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       window.location.href = "practitionerdashboard.html";
     }
   };
+}
+
+function renderPostingDashboardContextBanner(mount, me) {
+  const storedCtx = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("fs_posting_context") || "{}");
+    } catch {
+      return {};
+    }
+  })();
+
+  const ctx = {
+    ...storedCtx,
+    ...(window.__PR_POSTING_CONTEXT__ || {})
+  };
+
+  window.__PR_POSTING_CONTEXT__ = ctx;
+
+  const activeCompanyId =
+    Number(ctx.targetCompanyId || ctx.companyId || 0) ||
+    Number(window.getActiveCompanyId?.() || 0);
+
+  const customerName = ctx.customerName || ctx.engagement?.customer_name || "--";
+  const engagementName = ctx.engagementName || ctx.engagement?.engagement_name || "--";
+  const engagementCode = ctx.engagementCode || ctx.engagement?.engagement_code || "--";
+
+  mount.innerHTML = `
+    <div class="card p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="panel-title">Day-to-Day Postings</div>
+          <div class="panel-subtitle mt-1">
+            Client: ${esc(customerName)} · Engagement: ${esc(engagementName)} (${esc(engagementCode)}) · Target Company: ${esc(String(activeCompanyId))}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function guardScreenAccess(name) {
@@ -9260,7 +9329,19 @@ function selectCoaAccount(acc) {
 // Somewhere globally (top of file), make sure we have a default:
 window.CURRENT_PERIOD_KEY = window.CURRENT_PERIOD_KEY || "this_month";
 async function loadDashboard() {
-  restorePostingContext();
+  const postingCtx = restorePostingContext();
+
+  const me =
+    window.currentUser ||
+    JSON.parse(localStorage.getItem("fs_user") || "null") ||
+    {};
+
+  const companyBadge = document.getElementById("companyBadge");
+  if (companyBadge) {
+    renderPostingDashboardContextBanner(companyBadge, me);
+  }
+
+  updatePostingCompanyBadge();
   bindReturnToPractitionerWorkspace();
 
   console.log("loadDashboard(): rendering dashboard widgets…");
