@@ -4111,39 +4111,6 @@ async function ensureEngagementModalBound() {
   await bindEngagementModalEvents();
 }
 
-function bindAssignmentsScreenEvents() {
-  if (PR_ASSIGNMENTS_EVENTS_BOUND) return;
-  PR_ASSIGNMENTS_EVENTS_BOUND = true;
-
-  document.getElementById("assignmentsRefreshBtn")?.addEventListener("click", refreshAssignmentsScreen);
-
-  document.getElementById("assignmentsSearch")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") refreshAssignmentsScreen();
-  });
-
-  document.getElementById("assignmentsStatusFilter")?.addEventListener("change", refreshAssignmentsScreen);
-  document.getElementById("assignmentsTypeFilter")?.addEventListener("change", refreshAssignmentsScreen);
-
-  document.getElementById("assignmentsTableBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-assignment-open]");
-    if (!btn) return;
-
-    const engagementId = Number(btn.getAttribute("data-assignment-open") || 0);
-    if (!engagementId) return;
-
-    try {
-      const row = await loadEngagementDetail(engagementId);
-      PR_SELECTED_ENGAGEMENT = row;
-      renderAssignmentDetail(row);
-
-      const teamFilter = document.getElementById("teamEngagementFilter");
-      if (teamFilter) teamFilter.value = String(engagementId);
-    } catch (err) {
-      console.error(err);
-    }
-  });
-}
-
 function bindTeamScreenEvents() {
   if (PR_TEAM_EVENTS_BOUND) return;
   PR_TEAM_EVENTS_BOUND = true;
