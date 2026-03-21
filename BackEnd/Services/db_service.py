@@ -10019,7 +10019,7 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS acquisition_ref TEXT NULL; -- invoice/PO/receipt ref
 
         ALTER TABLE {schema}.assets
-            ADD COLUMN IF NOT EXISTS uop_usage_mode text NOT NULL DEFAULT 'DELTA',
+            ADD COLUMN IF NOT EXISTS uop_usage_mode text NULL,
             ADD COLUMN IF NOT EXISTS uop_opening_reading numeric(18,4);
 
         ALTER TABLE {schema}.assets
@@ -10029,17 +10029,31 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS accum_impairment_account_code TEXT NULL;
 
         -- optional safety: only allow the two modes
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'assets_uop_usage_mode_chk'
-            ) THEN
-                ALTER TABLE {schema}.assets
-                ADD CONSTRAINT assets_uop_usage_mode_chk
-                CHECK (uop_usage_mode IN ('DELTA','READING'));
-            END IF;
-        END $$;
+        -- ==================================================
+        -- UOP usage mode rules (corrected)
+        -- ==================================================
+
+        -- 1. Allow NULL but restrict values when present
+        ALTER TABLE {schema}.assets
+        DROP CONSTRAINT IF EXISTS assets_uop_usage_mode_chk;
+
+        ALTER TABLE {schema}.assets
+        ADD CONSTRAINT assets_uop_usage_mode_chk
+        CHECK (
+            uop_usage_mode IS NULL
+            OR uop_usage_mode IN ('DELTA','READING')
+        );
+
+        -- 2. Only require it when depreciation_method = UOP
+        ALTER TABLE {schema}.assets
+        DROP CONSTRAINT IF EXISTS assets_uop_usage_required_chk;
+
+        ALTER TABLE {schema}.assets
+        ADD CONSTRAINT assets_uop_usage_required_chk
+        CHECK (
+            depreciation_method <> 'UOP'
+            OR uop_usage_mode IS NOT NULL
+        );
 
         -- ==================================================
         -- ASSETS: Opening balances (migration / bring-forward)
