@@ -444,12 +444,18 @@ def list_engagements_route(cid: int):
         if deny:
             return deny
 
+        user_id = _parse_int(payload.get("user_id") or payload.get("sub"))
+        if not user_id:
+            return _json_err("Missing user id in token", 401)
+
         status = (request.args.get("status") or "").strip()
         engagement_type = (request.args.get("engagement_type") or "").strip()
         customer_id = _parse_int(request.args.get("customer_id"))
         q = (request.args.get("q") or "").strip()
         limit = _parse_int(request.args.get("limit"), 100)
         offset = _parse_int(request.args.get("offset"), 0)
+
+        assignments_only = str(request.args.get("assignments_only") or "").strip().lower() in ("1", "true", "yes")
 
         with db_service._conn_cursor() as (conn, cur):
             rows = db_service.list_engagements(
@@ -461,6 +467,8 @@ def list_engagements_route(cid: int):
                 q=q,
                 limit=limit,
                 offset=offset,
+                assigned_user_id=user_id if assignments_only else None,
+                assignments_only=assignments_only,
             )
 
         return _json_ok({"rows": rows})
@@ -468,7 +476,6 @@ def list_engagements_route(cid: int):
     except Exception as e:
         current_app.logger.exception("list_engagements_route failed")
         return _json_err(str(e), 500)
-
 
 @engagements_bp.route("/api/companies/<int:cid>/engagements/<int:engagement_id>", methods=["GET", "OPTIONS"])
 @require_auth

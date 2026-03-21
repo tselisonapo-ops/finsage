@@ -2219,8 +2219,67 @@ function humanizeScope(scope) {
   return scope || "--";
 }
 
+const POSTING_ENGAGEMENT_TYPES = new Set([
+  "bookkeeping",
+  "monthly_bookkeeping",
+  "write_up",
+  "management_accounts",
+  "vat",
+  "payroll",
+  "tax",
+  "tax_compliance",
+  "cleanup",
+  "migration",
+  "outsourced_finance"
+]);
+
+const WORKING_PAPERS_ENGAGEMENT_TYPES = new Set([
+  "audit",
+  "audit_support",
+  "internal_audit",
+  "review",
+  "independent_review",
+  "compilation",
+  "annual_financial_statements",
+  "year_end_financials",
+  "tax",
+  "bookkeeping"
+]);
+
+const REPORTING_ENGAGEMENT_TYPES = new Set([
+  "bookkeeping",
+  "management_accounts",
+  "compilation",
+  "annual_financial_statements",
+  "year_end_financials",
+  "review",
+  "audit"
+]);
+
+function normalizeRoleKey(v) {
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function getCurrentPractitionerUserId() {
+  const me = window.currentUser || window.__ME__ || {};
+  return Number(me?.id || me?.user_id || me?.sub || 0);
+}
+
+function getCurrentPractitionerRole() {
+  const me = window.currentUser || window.__ME__ || {};
+  return normalizeRoleKey(me?.role || me?.user_role || "");
+}
+
+function getCurrentBusinessRole() {
+  const me = window.currentUser || window.__ME__ || {};
+  return normalizeRoleKey(me?.business_role || me?.invited_role || "");
+}
+
 function humanizeRole(role) {
-  const r = String(role || "").toLowerCase();
+  const r = normalizeRoleKey(role);
 
   const map = {
     owner: "Owner",
@@ -2232,6 +2291,8 @@ function humanizeRole(role) {
     clerk: "Accounts Clerk",
     viewer: "Viewer",
     bookkeeper: "Bookkeeper",
+    accounting_trainee: "Accounting Trainee",
+    audit_trainee: "Audit Trainee",
     audit_staff: "Audit Staff",
     senior_associate: "Senior Associate",
     audit_manager: "Audit Manager",
@@ -2239,8 +2300,14 @@ function humanizeRole(role) {
     engagement_partner: "Engagement Partner",
     quality_control_reviewer: "Quality Control Reviewer",
     fs_compiler: "Financial Statement Compiler",
+    financial_statements_compiler: "Financial Statement Compiler",
+    fs_preparer: "FS Preparer",
+    tax_preparer: "Tax Preparer",
     reviewer: "Reviewer",
+    tax_reviewer: "Tax Reviewer",
     client_service_manager: "Client Service Manager",
+    preparer: "Preparer",
+    partner: "Partner"
   };
 
   return map[r] || role || "--";
@@ -3126,41 +3193,121 @@ function closeAllEngagementActionMenus() {
   });
 }
 
-function getEngagementRowActions(row) {
-  const me = window.currentUser || window.__ME__ || {};
-  const myUserId = Number(me?.id || me?.user_id || me?.sub || 0);
-  const myRole = String(me?.role || "").toLowerCase();
-  const engagementType = String(row.engagement_type || "").toLowerCase();
-  const status = String(row.status || "").toLowerCase();
+function resolveMyEngagementAccess(row) {
+  const myUserId = getCurrentPractitionerUserId();
+  const myRole = getCurrentPractitionerRole();
+  const myBusinessRole = getCurrentBusinessRole();
 
   const managerId = Number(row.manager_user_id || 0);
   const partnerId = Number(row.partner_user_id || 0);
   const preparerId = Number(row.preparer_user_id || row.assigned_user_id || 0);
 
+  const teamMembers = Array.isArray(row.team_members)
+    ? row.team_members
+    : Array.isArray(row.engagement_team)
+    ? row.engagement_team
+    : [];
+
+  const myTeamRow = teamMembers.find((x) => Number(x.user_id || 0) === myUserId) || null;
+  const myEngagementRole = normalizeRoleKey(
+    myTeamRow?.role_on_engagement ||
+    row.my_role_on_engagement ||
+    ""
+  );
+
   const isManager = !!myUserId && !!managerId && myUserId === managerId;
   const isPartner = !!myUserId && !!partnerId && myUserId === partnerId;
-  const isPreparer = !!myUserId && !!preparerId && myUserId === preparerId;
+  const isLegacyPreparer = !!myUserId && !!preparerId && myUserId === preparerId;
 
-  const canManage = isManager || isPartner || ["owner", "admin", "partner"].includes(myRole);
-  const canWork = isPreparer || canManage;
+  const isPreparer =
+    myEngagementRole === "preparer" ||
+    myEngagementRole === "bookkeeper" ||
+    myEngagementRole === "fs_preparer" ||
+    myEngagementRole === "fs_compiler" ||
+    isLegacyPreparer;
 
+  const isReviewer =
+    myEngagementRole === "reviewer" ||
+    myEngagementRole === "tax_reviewer" ||
+    myEngagementRole === "quality_control_reviewer";
+
+  const isManagerLike =
+    isManager ||
+    isPartner ||
+    ["owner", "admin", "partner", "audit_partner", "engagement_partner", "audit_manager", "manager"].includes(myRole);
+
+  const isOpsWorker =
+    isPreparer ||
+    ["bookkeeper", "fs_preparer", "fs_compiler", "accountant", "senior_associate", "audit_staff", "tax_preparer"].includes(myBusinessRole) ||
+    ["accountant", "senior", "audit_staff"].includes(myRole);
+
+  return {
+    myUserId,
+    myRole,
+    myBusinessRole,
+    myEngagementRole,
+    isManager,
+    isPartner,
+    isPreparer,
+    isReviewer,
+    isManagerLike,
+    isOpsWorker
+  };
+}
+
+function getEngagementRowActions(row) {
+  const me = window.currentUser || window.__ME__ || {};
+  const myUserId = Number(me?.id || me?.user_id || me?.sub || 0);
+  const myRole = normalizeRoleKey(me?.role || me?.user_role || "");
+  const perms = me?.permissions || {};
+
+  const engagementType = normalizeRoleKey(row.engagement_type || "");
+  const status = normalizeRoleKey(row.status || "");
   const closed = ["completed", "cancelled", "archived"].includes(status);
 
-  const supportsPosting = ["bookkeeping", "posting", "writeup", "monthly_processing"].includes(engagementType);
-  const supportsWorkingPapers = ["audit", "review", "compilation", "tax", "advisory", "bookkeeping"].includes(engagementType);
-  const supportsReporting = ["compilation", "audit", "review", "bookkeeping"].includes(engagementType);
+  const managerId = Number(row.manager_user_id || 0);
+  const partnerId = Number(row.partner_user_id || 0);
+  const preparerId = Number(row.preparer_user_id || row.assigned_user_id || 0);
+
+  const myEngagementRole = normalizeRoleKey(
+    row.my_role_on_engagement ||
+    row.role_on_engagement ||
+    ""
+  );
+
+  const isManager = !!myUserId && !!managerId && myUserId === managerId;
+  const isPartner = !!myUserId && !!partnerId && myUserId === partnerId;
+  const isLegacyPreparer = !!myUserId && !!preparerId && myUserId === preparerId;
+
+  const isPreparer = ["preparer", "bookkeeper", "fs_compiler", "fs_preparer"].includes(myEngagementRole)
+    || isLegacyPreparer;
+
+  const canManage = isManager || isPartner || [
+    "owner",
+    "admin",
+    "audit_partner",
+    "engagement_partner",
+    "audit_manager",
+    "manager"
+  ].includes(myRole);
+
+  const canWork = isPreparer || !!perms.can_prepare_financials || !!perms.can_post_journals || canManage;
+
+  const supportsPosting = POSTING_ENGAGEMENT_TYPES.has(engagementType);
+  const supportsWorkingPapers = WORKING_PAPERS_ENGAGEMENT_TYPES.has(engagementType);
+  const supportsReporting = REPORTING_ENGAGEMENT_TYPES.has(engagementType);
 
   return [
     {
       key: "posting",
       label: "Start Posting",
-      enabled: supportsPosting && canWork && !closed,
+      enabled: supportsPosting && !closed && (isPreparer || !!perms.can_post_journals || canManage),
       reason: !supportsPosting
         ? "Not a posting engagement"
-        : !canWork
-        ? "Not assigned to this engagement"
         : closed
         ? "Engagement is closed"
+        : !(isPreparer || !!perms.can_post_journals || canManage)
+        ? "Posting access required"
         : ""
     },
     {
@@ -3197,7 +3344,6 @@ function getEngagementRowActions(row) {
     }
   ];
 }
-
 
 function renderAssignmentsTable(rows) {
   const tbody = document.getElementById("assignmentsTableBody");

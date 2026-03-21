@@ -39707,23 +39707,25 @@ class DatabaseService:
         q: str = "",
         limit: int = 100,
         offset: int = 0,
+        assigned_user_id: int = None,
+        assignments_only: bool = False,
     ):
         schema = self.company_schema(company_id)
 
         where = ["e.company_id = %s"]
-        params = [company_id]
+        where_params = [company_id]
 
         if status:
             where.append("LOWER(e.status) = LOWER(%s)")
-            params.append(status)
+            where_params.append(status)
 
         if engagement_type:
             where.append("LOWER(e.engagement_type) = LOWER(%s)")
-            params.append(engagement_type)
+            where_params.append(engagement_type)
 
         if customer_id:
             where.append("e.customer_id = %s")
-            params.append(customer_id)
+            where_params.append(customer_id)
 
         if q:
             where.append("""
@@ -39734,14 +39736,46 @@ class DatabaseService:
                 )
             """)
             like = f"%{q}%"
-            params.extend([like, like, like])
+            where_params.extend([like, like, like])
 
-        params.extend([limit, offset])
+        select_my_role = "NULL::text AS my_role_on_engagement"
+        select_params = []
+
+        if assigned_user_id:
+            select_my_role = f"""
+                (
+                    SELECT et.role_on_engagement
+                    FROM {schema}.engagement_team et
+                    WHERE et.engagement_id = e.id
+                    AND et.user_id = %s
+                    AND COALESCE(et.is_active, TRUE) = TRUE
+                    ORDER BY et.id DESC
+                    LIMIT 1
+                ) AS my_role_on_engagement
+            """
+            select_params.append(assigned_user_id)
+
+        if assignments_only and assigned_user_id:
+            where.append(f"""
+                (
+                    e.manager_user_id = %s
+                    OR e.partner_user_id = %s
+                    OR EXISTS (
+                        SELECT 1
+                        FROM {schema}.engagement_team et
+                        WHERE et.engagement_id = e.id
+                        AND et.user_id = %s
+                        AND COALESCE(et.is_active, TRUE) = TRUE
+                    )
+                )
+            """)
+            where_params.extend([assigned_user_id, assigned_user_id, assigned_user_id])
 
         sql = f"""
             SELECT
                 e.*,
-                c.name AS customer_name
+                c.name AS customer_name,
+                {select_my_role}
             FROM {schema}.engagements e
             JOIN {schema}.customers c
             ON c.id = e.customer_id
@@ -39752,9 +39786,11 @@ class DatabaseService:
                 e.id DESC
             LIMIT %s OFFSET %s
         """
+
+        params = [*select_params, *where_params, limit, offset]
+
         cur.execute(sql, tuple(params))
         return cur.fetchall()
-
 
     def add_engagement_team_member(
         self,
