@@ -3250,8 +3250,7 @@ function renderAssignmentsTable(rows) {
         <td>${esc(managerLabel)}</td>
         <td>${esc(partnerLabel)}</td>
         <td class="text-right overflow-visible">
-          <div class="relative inline-block text-left overflow-visible">
-            <button
+          <div class="relative inline-block text-left overflow-visible">            <button
               type="button"
               class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               data-eng-actions-toggle="${esc(row.id)}"

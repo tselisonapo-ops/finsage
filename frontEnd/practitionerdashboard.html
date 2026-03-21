@@ -1914,26 +1914,28 @@ window.safeRedirect = function (url, mode = "href") {
           <div id="assignmentsMsg" class="mt-4 text-sm text-slate-500"></div>
 
           <div class="mt-4 overflow-x-auto overflow-y-visible">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Engagement</th>
-                  <th>Client</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Cycle</th>
-                  <th>Due Date</th>
-                  <th>Manager</th>
-                  <th>Partner</th>
-                  <th class="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="assignmentsTableBody">
-                <tr>
-                  <td colspan="9" class="text-center text-slate-500">Loading assignments...</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="min-h-[320px]">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Engagement</th>
+                    <th>Client</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Cycle</th>
+                    <th>Due Date</th>
+                    <th>Manager</th>
+                    <th>Partner</th>
+                    <th class="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="assignmentsTableBody">
+                  <tr>
+                    <td colspan="9" class="text-center text-slate-500">Loading assignments...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
