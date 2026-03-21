@@ -3249,8 +3249,8 @@ function renderAssignmentsTable(rows) {
         <td>${fmtDate(row.due_date)}</td>
         <td>${esc(managerLabel)}</td>
         <td>${esc(partnerLabel)}</td>
-        <td class="text-right">
-          <div class="relative inline-block text-left">
+        <td class="text-right overflow-visible">
+          <div class="relative inline-block text-left overflow-visible">
             <button
               type="button"
               class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -3260,7 +3260,7 @@ function renderAssignmentsTable(rows) {
             </button>
 
             <div
-              class="hidden absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"
+              class="hidden absolute right-0 top-full z-[100] mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"
               data-eng-actions-menu="${esc(row.id)}"
             >
               ${renderEngagementActionsMenu(row)}
