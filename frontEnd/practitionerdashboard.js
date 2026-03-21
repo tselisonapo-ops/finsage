@@ -1911,6 +1911,39 @@ async function switchPractitionerScreen(name, me, opts = {}) {
 
   screen = access.resolved;
 
+  // restore engagement context before rendering engagement-dependent screens
+  if (
+    screen === PR_NAV.workingPapers ||
+    screen === PR_NAV.deliverables ||
+    screen === PR_NAV.reportingOverview ||
+    screen === PR_NAV.auditTrail ||
+    screen === PR_NAV.reviewQueue
+  ) {
+    let engagementId = window.getPractitionerActiveEngagementId?.();
+
+    if (!engagementId && PR_SELECTED_ENGAGEMENT?.id) {
+      engagementId = Number(PR_SELECTED_ENGAGEMENT.id) || null;
+      if (engagementId) {
+        window.setPractitionerActiveEngagementId?.(engagementId);
+      }
+    }
+
+    if (!engagementId) {
+      const storedId = Number(sessionStorage.getItem("fs_pr_active_engagement_id") || 0);
+      if (storedId) {
+        engagementId = storedId;
+        window.setPractitionerActiveEngagementId?.(storedId);
+      }
+    }
+
+    if (engagementId) {
+      window.__PR_CONTEXT__ = {
+        ...(window.__PR_CONTEXT__ || {}),
+        engagementId: Number(engagementId)
+      };
+    }
+  }
+
   // show only the target screen
   document.querySelectorAll(".screen").forEach((el) => {
     el.classList.remove("active");
@@ -9846,15 +9879,25 @@ window.setPractitionerActiveEngagementId = function (engagementId) {
     engagementId: num
   };
 
+  if (num) {
+    sessionStorage.setItem("fs_pr_active_engagement_id", String(num));
+  } else {
+    sessionStorage.removeItem("fs_pr_active_engagement_id");
+  }
+
   console.log("Active engagement set:", num);
 };
 
 window.getPractitionerActiveEngagementId = function () {
-  return (
+  const fromContext =
     window.__PR_CONTEXT__?.engagementId ||
     window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
-    null
-  );
+    null;
+
+  if (fromContext) return Number(fromContext);
+
+  const fromStorage = Number(sessionStorage.getItem("fs_pr_active_engagement_id") || 0);
+  return fromStorage || null;
 };
 
 async function openPostingForEngagement(row, me) {
@@ -10849,7 +10892,12 @@ async function renderWorkingPapersScreen(me) {
     state.selectedRow = null;
   }
 
-  const engagementId = window.getPractitionerActiveEngagementId?.();
+  let engagementId = window.getPractitionerActiveEngagementId?.();
+
+  if (!engagementId && PR_SELECTED_ENGAGEMENT?.id) {
+    engagementId = Number(PR_SELECTED_ENGAGEMENT.id);
+    window.setPractitionerActiveEngagementId?.(engagementId);
+  }
   if (!engagementId) {
     mount.innerHTML = `
       <div class="wp-card wp-toolbar">
@@ -13001,6 +13049,14 @@ async function bootstrapPractitionerApp(me) {
   console.log("NAV ROLE NORMALIZED:", getUserNormalizedRole(me));
 
   setupPractitionerNav(me);
+
+  const persistedEngagementId = window.getPractitionerActiveEngagementId?.();
+  if (persistedEngagementId) {
+    window.__PR_CONTEXT__ = {
+      ...(window.__PR_CONTEXT__ || {}),
+      engagementId: persistedEngagementId
+    };
+  }
 
   restorePractitionerReturnContext();
 
