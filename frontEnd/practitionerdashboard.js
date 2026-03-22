@@ -3725,10 +3725,43 @@ async function bindAssignmentsScreenEvents(me) {
         return;
       }
 
-      if (action === "posting") {
-        await openPostingForEngagement(row, me);
+    if (action === "posting") {
+      const targetCompanyId =
+        Number(row.target_company_id || 0) ||
+        Number(row.provisioned_company_id || 0) ||
+        0;
+
+      if (!targetCompanyId) {
+        console.warn("Posting blocked: no target company found for engagement", row);
+        alert("This engagement does not yet have a provisioned target company for posting.");
         return;
       }
+
+      window.__PR_POSTING_CONTEXT__ = {
+        engagementId: Number(row.id || 0),
+        engagementCode: row.engagement_code || "",
+        engagementName: row.engagement_name || "",
+        customerId: Number(row.customer_id || 0),
+        customerName: row.customer_name || "",
+        sourceCompanyId: Number(row.company_id || 0),
+        targetCompanyId,
+        workspaceStatus: row.workspace_status || "",
+        workspaceSource: row.workspace_source || "",
+        targetCompanySource: row.target_company_source || ""
+      };
+
+      window.__PR_CONTEXT__ = {
+        ...(window.__PR_CONTEXT__ || {}),
+        engagementId: Number(row.id || 0),
+        engagement: row,
+        customerName: row.customer_name || "",
+        postingCompanyId: targetCompanyId,
+        targetCompanyId
+      };
+
+      await openPostingForEngagement(row, me, targetCompanyId);
+      return;
+    }
 
     } catch (err) {
       console.error("Engagement action failed:", err);
