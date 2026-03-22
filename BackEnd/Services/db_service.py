@@ -45177,6 +45177,8 @@ class DatabaseService:
             OFFSET %s
         """
 
+        q_params = (q, q, q, q, q, q, q, q, q, q, q, q, q)
+
         params = (
             current_user_id, current_user_id, current_user_id,
             company_id,
@@ -45189,8 +45191,7 @@ class DatabaseService:
             True if mine_only else False,
             current_user_id, current_user_id,
             current_user_id, current_user_id,
-            q, q,
-            q, q, q, q, q, q, q, q, q, q,
+            *q_params,
             max(1, min(int(limit or 100), 500)),
             max(0, int(offset or 0)),
         )
