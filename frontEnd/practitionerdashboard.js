@@ -1911,40 +1911,37 @@ async function switchPractitionerScreen(name, me, opts = {}) {
 
   screen = access.resolved;
 
-  // restore engagement context before rendering engagement-dependent screens
-  if (
-    screen === PR_NAV.workingPapers ||
-    screen === PR_NAV.deliverables ||
-    screen === PR_NAV.reportingOverview ||
-    screen === PR_NAV.auditTrail ||
-    screen === PR_NAV.reviewQueue
-  ) {
+  const needsEngagementContext = new Set([
+    PR_NAV.reportingOverview,
+    PR_NAV.pendingDeliverables,
+    PR_NAV.deliverablesRegister,
+    PR_NAV.workingPapers,
+    PR_NAV.reviewQueue,
+    PR_NAV.engagementAuditTrail,
+    PR_NAV.team
+  ]);
+
+  if (needsEngagementContext.has(screen)) {
     let engagementId = window.getPractitionerActiveEngagementId?.();
 
-    if (!engagementId && PR_SELECTED_ENGAGEMENT?.id) {
-      engagementId = Number(PR_SELECTED_ENGAGEMENT.id) || null;
-      if (engagementId) {
-        window.setPractitionerActiveEngagementId?.(engagementId);
-      }
+    if (!engagementId) {
+      const restored = window.restorePractitionerActiveEngagement?.();
+      engagementId = Number(restored?.engagementId || 0) || null;
     }
 
-    if (!engagementId) {
-      const storedId = Number(sessionStorage.getItem("fs_pr_active_engagement_id") || 0);
-      if (storedId) {
-        engagementId = storedId;
-        window.setPractitionerActiveEngagementId?.(storedId);
-      }
+    if (!engagementId && PR_SELECTED_ENGAGEMENT?.id) {
+      window.setPractitionerActiveEngagement?.(PR_SELECTED_ENGAGEMENT);
+      engagementId = Number(PR_SELECTED_ENGAGEMENT.id) || null;
     }
 
     if (engagementId) {
       window.__PR_CONTEXT__ = {
         ...(window.__PR_CONTEXT__ || {}),
-        engagementId: Number(engagementId)
+        engagementId
       };
     }
   }
 
-  // show only the target screen
   document.querySelectorAll(".screen").forEach((el) => {
     el.classList.remove("active");
     el.classList.add("hidden");
@@ -1963,7 +1960,6 @@ async function switchPractitionerScreen(name, me, opts = {}) {
   renderPractitionerScreenTitle(screen, me);
   await runPractitionerScreenBinder(screen, me);
 
-  // update hash only when needed
   if (updateHash) {
     const nextHash = `screen=${encodeURIComponent(screen)}`;
     const currentHash = String(window.location.hash || "").replace(/^#/, "");
@@ -1972,7 +1968,6 @@ async function switchPractitionerScreen(name, me, opts = {}) {
     }
   }
 }
-
 function renderPractitionerScreenTitle(screen, me) {
   const titles = {
     dashboard: "Assignment Dashboard",
@@ -3403,7 +3398,10 @@ function renderAssignmentsTable(rows) {
       : getUserLabelById(row.partner_user_id);
 
     return `
-      <tr>
+      <tr
+        class="cursor-pointer hover:bg-slate-50"
+        data-engagement-row="${esc(row.id)}"
+      >
         <td>
           <div class="font-semibold text-slate-900">${esc(row.engagement_name || "--")}</div>
           <div class="text-xs text-slate-500">${esc(row.engagement_code || "--")}</div>
@@ -3429,7 +3427,8 @@ function renderAssignmentsTable(rows) {
         <td>${esc(managerLabel)}</td>
         <td>${esc(partnerLabel)}</td>
         <td class="text-right overflow-visible">
-          <div class="relative inline-block text-left overflow-visible">            <button
+          <div class="relative inline-block text-left overflow-visible">
+            <button
               type="button"
               class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               data-eng-actions-toggle="${esc(row.id)}"
@@ -3583,7 +3582,7 @@ async function refreshAssignmentsScreen() {
   }
 }
 
-function bindAssignmentsScreenEvents(me) {
+async function bindAssignmentsScreenEvents(me) {
   if (PR_ASSIGNMENTS_EVENTS_BOUND) return;
   PR_ASSIGNMENTS_EVENTS_BOUND = true;
 
@@ -3600,6 +3599,46 @@ function bindAssignmentsScreenEvents(me) {
   if (!tbody) return;
 
   tbody.addEventListener("click", async (e) => {
+
+    // ✅ ROW CLICK (FIXED POSITION)
+    const rowEl = e.target.closest("[data-engagement-row]");
+    if (
+      rowEl &&
+      !e.target.closest("[data-eng-actions-toggle]") &&
+      !e.target.closest("[data-eng-actions-menu]") &&
+      !e.target.closest("[data-eng-status-quick]") &&
+      !e.target.closest("[data-eng-action]") &&
+      !e.target.closest("button") &&
+      !e.target.closest("a") &&
+      !e.target.closest("input") &&
+      !e.target.closest("select")
+    ) {
+      const engagementId = Number(rowEl.dataset.engagementRow || 0);
+      if (!engagementId) return;
+
+      try {
+        const row = await loadEngagementDetail(engagementId);
+        if (!row) return;
+
+        // ✅ SET FULL CONTEXT
+        window.setPractitionerActiveEngagement?.(row);
+
+        PR_SELECTED_ENGAGEMENT = row;
+
+        renderAssignmentDetail(row);
+
+        const teamFilter = document.getElementById("teamEngagementFilter");
+        if (teamFilter) teamFilter.value = String(engagementId);
+
+      } catch (err) {
+        console.error("Failed to select engagement row:", err);
+      }
+
+      return;
+    }
+
+    // 🔽 EXISTING LOGIC (UNCHANGED)
+
     const toggleBtn = e.target.closest("[data-eng-actions-toggle]");
     if (toggleBtn) {
       e.preventDefault();
@@ -3653,84 +3692,18 @@ function bindAssignmentsScreenEvents(me) {
     closeAllEngagementActionMenus();
 
     try {
-      window.setPractitionerActiveEngagementId?.(engagementId);
-
       const row = await loadEngagementDetail(engagementId);
       if (!row) return;
 
-      PR_SELECTED_ENGAGEMENT = row;
+      // ✅ FIXED CONTEXT (already correct in your version)
+      window.setPractitionerActiveEngagement?.(row);
 
-      window.__PR_CONTEXT__ = {
-        ...(window.__PR_CONTEXT__ || {}),
-        engagementId,
-        engagement: row
-      };
+      PR_SELECTED_ENGAGEMENT = row;
 
       if (action === "open") {
         renderAssignmentDetail(row);
-
-        const teamFilter = document.getElementById("teamEngagementFilter");
-        if (teamFilter) teamFilter.value = String(engagementId);
         return;
       }
-
-      if (action === "set_status") {
-        const status = String(actionBtn.dataset.status || "").trim().toLowerCase();
-        if (!status) return;
-
-        await apiFetch(
-          ENDPOINTS.engagements.setStatus(getActiveCompanyId(), engagementId),
-          {
-            method: "POST",
-            body: JSON.stringify({ status })
-          }
-        );
-
-        if (PR_SELECTED_ENGAGEMENT && String(PR_SELECTED_ENGAGEMENT.id) === String(engagementId)) {
-          PR_SELECTED_ENGAGEMENT.status = status;
-        }
-
-        await refreshAssignmentsScreen();
-        return;
-      }
-
-    if (action === "posting") {
-      const targetCompanyId =
-        Number(row.target_company_id || 0) ||
-        Number(row.provisioned_company_id || 0) ||
-        0;
-
-      if (!targetCompanyId) {
-        console.warn("Posting blocked: no target company found for engagement", row);
-        alert("This engagement does not yet have a provisioned target company for posting.");
-        return;
-      }
-
-      window.__PR_POSTING_CONTEXT__ = {
-        engagementId: Number(row.id || 0),
-        engagementCode: row.engagement_code || "",
-        engagementName: row.engagement_name || "",
-        customerId: Number(row.customer_id || 0),
-        customerName: row.customer_name || "",
-        sourceCompanyId: Number(row.company_id || 0),
-        targetCompanyId,
-        workspaceStatus: row.workspace_status || "",
-        workspaceSource: row.workspace_source || "",
-        targetCompanySource: row.target_company_source || ""
-      };
-
-      window.__PR_CONTEXT__ = {
-        ...(window.__PR_CONTEXT__ || {}),
-        engagementId: Number(row.id || 0),
-        engagement: row,
-        customerName: row.customer_name || "",
-        postingCompanyId: targetCompanyId,
-        targetCompanyId
-      };
-
-      await openPostingForEngagement(row, me, targetCompanyId);
-      return;
-    }
 
       if (action === "working_papers") {
         await switchPractitionerScreen(PR_NAV.workingPapers, me);
@@ -3751,6 +3724,12 @@ function bindAssignmentsScreenEvents(me) {
         await switchPractitionerScreen(PR_NAV.auditTrail, me);
         return;
       }
+
+      if (action === "posting") {
+        await openPostingForEngagement(row, me);
+        return;
+      }
+
     } catch (err) {
       console.error("Engagement action failed:", err);
     }
@@ -9870,35 +9849,84 @@ function getPractitionerActiveCustomerId() {
   );
 }
 
-window.setPractitionerActiveEngagementId = function (engagementId) {
-  const num = Number(engagementId) || null;
+window.setPractitionerActiveEngagement = function (row) {
+  const engagementId = Number(row?.id || row?.engagement_id || 0) || null;
+  const companyId = Number(row?.company_id || window.__PR_ACTIVE_COMPANY_ID__ || window.__PR_CONTEXT__?.companyId || 0) || null;
+  const customerId = Number(row?.customer_id || 0) || null;
 
-  window.__PR_ACTIVE_ENGAGEMENT_ID__ = num;
-  window.__PR_CONTEXT__ = {
-    ...(window.__PR_CONTEXT__ || {}),
-    engagementId: num
+  const payload = {
+    engagementId,
+    companyId,
+    customerId,
+    engagement: row || null
   };
 
-  if (num) {
-    sessionStorage.setItem("fs_pr_active_engagement_id", String(num));
+  window.__PR_ACTIVE_ENGAGEMENT_ID__ = engagementId;
+  window.__PR_ACTIVE_COMPANY_ID__ = companyId || window.__PR_ACTIVE_COMPANY_ID__ || null;
+  window.__PR_ACTIVE_CUSTOMER_ID__ = customerId || null;
+
+  window.__PR_CONTEXT__ = {
+    ...(window.__PR_CONTEXT__ || {}),
+    companyId,
+    customerId,
+    engagementId,
+    engagement: row || null
+  };
+
+  if (engagementId) {
+    sessionStorage.setItem("fs_pr_active_engagement", JSON.stringify(payload));
   } else {
-    sessionStorage.removeItem("fs_pr_active_engagement_id");
+    sessionStorage.removeItem("fs_pr_active_engagement");
   }
 
-  console.log("Active engagement set:", num);
+  return payload;
 };
 
 window.getPractitionerActiveEngagementId = function () {
-  const fromContext =
+  const direct =
     window.__PR_CONTEXT__?.engagementId ||
     window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
     null;
 
-  if (fromContext) return Number(fromContext);
+  if (direct) return Number(direct);
 
-  const fromStorage = Number(sessionStorage.getItem("fs_pr_active_engagement_id") || 0);
-  return fromStorage || null;
+  try {
+    const raw = sessionStorage.getItem("fs_pr_active_engagement");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Number(parsed?.engagementId || 0) || null;
+  } catch (_) {
+    return null;
+  }
 };
+
+window.restorePractitionerActiveEngagement = function () {
+  try {
+    const raw = sessionStorage.getItem("fs_pr_active_engagement");
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.engagementId) return null;
+
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ = Number(parsed.engagementId) || null;
+    window.__PR_ACTIVE_COMPANY_ID__ = Number(parsed.companyId) || null;
+    window.__PR_ACTIVE_CUSTOMER_ID__ = Number(parsed.customerId) || null;
+
+    window.__PR_CONTEXT__ = {
+      ...(window.__PR_CONTEXT__ || {}),
+      companyId: Number(parsed.companyId) || null,
+      customerId: Number(parsed.customerId) || null,
+      engagementId: Number(parsed.engagementId) || null,
+      engagement: parsed.engagement || null
+    };
+
+    return parsed;
+  } catch (err) {
+    console.warn("Failed to restore active engagement", err);
+    return null;
+  }
+};
+
 
 async function openPostingForEngagement(row, me) {
   const targetCompanyId = Number(row?.target_company_id || 0);
@@ -13057,7 +13085,7 @@ async function bootstrapPractitionerApp(me) {
       engagementId: persistedEngagementId
     };
   }
-
+  window.restorePractitionerActiveEngagement?.();
   restorePractitionerReturnContext();
 
   const firstScreen = resolvePractitionerScreenName(getHashScreen() || PR_NAV.dashboard);
