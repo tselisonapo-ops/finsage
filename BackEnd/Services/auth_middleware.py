@@ -101,7 +101,7 @@ def require_auth(_f=None, *, require_company: bool = True):
                             delegated_ok = db_service.user_has_delegated_company_access(
                                 cur,
                                 user_id=user_id,
-                                practitioner_company_id=company_id,
+                                company_id=company_id,
                                 target_company_id=int(cid),
                                 engagement_id=engagement_id,
                             )
