@@ -134,7 +134,7 @@ window.addEventListener("unhandledrejection", (e) => {
       if (postingCtx?.targetCompanyId) {
         headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
       }
-
+      console.log("API FETCH HEADERS", finalUrl, Object.fromEntries(headers.entries()));
     } catch (e) {
       console.warn("Failed to attach posting context headers", e);
     }

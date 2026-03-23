@@ -95,6 +95,17 @@ def require_auth(_f=None, *, require_company: bool = True):
                     except Exception:
                         engagement_id = None
 
+                    print("DELEGATED AUTH CHECK", {
+                        "user_id": user_id,
+                        "requested_company_id": int(cid),
+                        "source_company_id": company_id,
+                        "engagement_id_header": request.headers.get("X-FS-Engagement-Id"),
+                        "engagement_id_parsed": engagement_id,
+                        "token_company_id": payload.get("company_id"),
+                        "token_role": payload.get("role"),
+                        "path": request.path,
+                    })
+
                     delegated_ok = False
                     if company_id:
                         with db_service._conn_cursor() as (_conn, cur):
@@ -105,6 +116,15 @@ def require_auth(_f=None, *, require_company: bool = True):
                                 target_company_id=int(cid),
                                 engagement_id=engagement_id,
                             )
+
+                    print("DELEGATED AUTH RESULT", {
+                        "user_id": user_id,
+                        "requested_company_id": int(cid),
+                        "source_company_id": company_id,
+                        "engagement_id": engagement_id,
+                        "delegated_ok": delegated_ok,
+                        "path": request.path,
+                    })
 
                     if delegated_ok:
                         base = db_service.get_user_by_id(user_id) or {}

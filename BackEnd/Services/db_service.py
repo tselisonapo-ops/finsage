@@ -39952,18 +39952,32 @@ class DatabaseService:
             LIMIT 1
         """
 
-        cur.execute(
-            sql,
-            (
-                int(company_id),
-                int(target_company_id),
-                int(user_id),
-                engagement_id,
-                engagement_id,
-            ),
+        params = (
+            int(company_id),
+            int(target_company_id),
+            int(user_id),
+            engagement_id,
+            engagement_id,
         )
 
-        return cur.fetchone() is not None
+        print("DELEGATED SQL CHECK", {
+            "schema": schema,
+            "company_id": company_id,
+            "target_company_id": target_company_id,
+            "user_id": user_id,
+            "engagement_id": engagement_id,
+            "params": params,
+        })
+
+        cur.execute(sql, params)
+        row = cur.fetchone()
+
+        print("DELEGATED SQL RESULT", {
+            "matched": row is not None,
+            "row": row,
+        })
+
+        return row is not None
 
     def assign_manager_and_partner(
         self,
