@@ -3252,6 +3252,8 @@ function resolveMyEngagementAccess(row) {
     myEngagementRole === "bookkeeper" ||
     myEngagementRole === "fs_preparer" ||
     myEngagementRole === "fs_compiler" ||
+    myEngagementRole === "accountant" ||
+    myEngagementRole === "tax_preparer" ||
     isLegacyPreparer;
 
   const isReviewer =
@@ -3285,41 +3287,18 @@ function resolveMyEngagementAccess(row) {
 
 function getEngagementRowActions(row) {
   const me = window.currentUser || window.__ME__ || {};
-  const myUserId = Number(me?.id || me?.user_id || me?.sub || 0);
-  const myRole = normalizeRoleKey(me?.role || me?.user_role || "");
   const perms = me?.permissions || {};
 
   const engagementType = normalizeRoleKey(row.engagement_type || "");
   const status = normalizeRoleKey(row.status || "");
   const closed = ["completed", "cancelled", "archived"].includes(status);
 
-  const managerId = Number(row.manager_user_id || 0);
-  const partnerId = Number(row.partner_user_id || 0);
-  const preparerId = Number(row.preparer_user_id || row.assigned_user_id || 0);
+  // ✅ USE your main access resolver
+  const access = resolveMyEngagementAccess(row);
 
-  const myEngagementRole = normalizeRoleKey(
-    row.my_role_on_engagement ||
-    row.role_on_engagement ||
-    ""
-  );
-
-  const isManager = !!myUserId && !!managerId && myUserId === managerId;
-  const isPartner = !!myUserId && !!partnerId && myUserId === partnerId;
-  const isLegacyPreparer = !!myUserId && !!preparerId && myUserId === preparerId;
-
-  const isPreparer = ["preparer", "bookkeeper", "fs_compiler", "fs_preparer"].includes(myEngagementRole)
-    || isLegacyPreparer;
-
-  const canManage = isManager || isPartner || [
-    "owner",
-    "admin",
-    "audit_partner",
-    "engagement_partner",
-    "audit_manager",
-    "manager"
-  ].includes(myRole);
-
-  const canWork = isPreparer || !!perms.can_prepare_financials || !!perms.can_post_journals || canManage;
+  const canManage = access.isManagerLike;
+  const canWork = access.isOpsWorker || access.isManagerLike;
+  const isPreparer = access.isPreparer;
 
   const supportsPosting = POSTING_ENGAGEMENT_TYPES.has(engagementType);
   const supportsWorkingPapers = WORKING_PAPERS_ENGAGEMENT_TYPES.has(engagementType);
@@ -3329,12 +3308,12 @@ function getEngagementRowActions(row) {
     {
       key: "posting",
       label: "Start Posting",
-      enabled: supportsPosting && !closed && (isPreparer || !!perms.can_post_journals || canManage),
+      enabled: supportsPosting && !closed && (isPreparer || perms.can_post_journals || canManage),
       reason: !supportsPosting
         ? "Not a posting engagement"
         : closed
         ? "Engagement is closed"
-        : !(isPreparer || !!perms.can_post_journals || canManage)
+        : !(isPreparer || perms.can_post_journals || canManage)
         ? "Posting access required"
         : ""
     },
