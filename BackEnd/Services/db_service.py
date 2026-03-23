@@ -39919,6 +39919,52 @@ class DatabaseService:
         cur.execute(sql, tuple(params))
         return cur.fetchall()
 
+    def user_has_delegated_company_access(
+        self,
+        cur,
+        *,
+        user_id: int,
+        company_id: int,
+        target_company_id: int,
+        engagement_id: int | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT 1
+            FROM {schema}.engagements e
+            JOIN {schema}.engagement_team et
+            ON et.engagement_id = e.id
+            AND et.company_id = e.company_id
+            WHERE e.company_id = %s
+            AND e.target_company_id = %s
+            AND et.user_id = %s
+            AND COALESCE(et.is_active, TRUE) = TRUE
+            AND COALESCE(e.is_active, TRUE) = TRUE
+            AND COALESCE(e.workspace_status, '') = 'provisioned'
+            AND LOWER(COALESCE(et.role_on_engagement, '')) IN (
+                    'preparer',
+                    'manager',
+                    'partner',
+                    'reviewer'
+            )
+            AND (%s IS NULL OR e.id = %s)
+            LIMIT 1
+        """
+
+        cur.execute(
+            sql,
+            (
+                int(company_id),
+                int(target_company_id),
+                int(user_id),
+                engagement_id,
+                engagement_id,
+            ),
+        )
+
+        return cur.fetchone() is not None
+
     def assign_manager_and_partner(
         self,
         cur,

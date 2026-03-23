@@ -80,16 +80,45 @@ def require_auth(_f=None, *, require_company: bool = True):
                     "SELECT owner_user_id FROM public.companies WHERE id=%s",
                     (cid,)
                 ) or {}
+
                 if int(company.get("owner_user_id") or 0) == user_id:
                     base = db_service.get_user_by_id(user_id) or {}
                     base["company_id"] = cid
                     base["user_role"] = base.get("user_role") or "owner"
                     user = base
                 else:
-                    return _corsify(make_response(
-                        jsonify({"error": "User has no access to this company"}), 403
-                    ))
+                    company_id = int(payload.get("company_id") or 0)
 
+                    engagement_id = request.headers.get("X-FS-Engagement-Id")
+                    try:
+                        engagement_id = int(engagement_id) if engagement_id else None
+                    except Exception:
+                        engagement_id = None
+
+                    delegated_ok = False
+                    if company_id:
+                        with db_service._conn_cursor() as (_conn, cur):
+                            delegated_ok = db_service.user_has_delegated_company_access(
+                                cur,
+                                user_id=user_id,
+                                company_id=company_id,
+                                target_company_id=int(cid),
+                                engagement_id=engagement_id,
+                            )
+
+                    if delegated_ok:
+                        base = db_service.get_user_by_id(user_id) or {}
+                        base["company_id"] = int(cid)
+                        base["source_company_id"] = company_id
+                        base["user_role"] = base.get("user_role") or payload.get("role") or "viewer"
+                        base["access_scope"] = payload.get("access_scope") or "assignment"
+                        base["delegated_via_engagement_id"] = engagement_id
+                        user = base
+                    else:
+                        return _corsify(make_response(
+                            jsonify({"error": "User has no access to this company"}), 403
+                        ))
+                    
             user["company_id"] = int(user.get("company_id") or cid)
             user["user_role"] = (user.get("user_role") or user.get("role") or "viewer")
             g.current_user = user

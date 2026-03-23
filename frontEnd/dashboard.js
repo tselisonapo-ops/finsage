@@ -117,6 +117,28 @@ window.addEventListener("unhandledrejection", (e) => {
       if (v != null && String(v).trim() !== "") headers.set(k, String(v));
     });
 
+    // ----------------------------------
+    // 🔥 Delegated posting context headers
+    // ----------------------------------
+    try {
+      const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
+
+      if (postingCtx?.engagementId) {
+        headers.set("X-FS-Engagement-Id", String(postingCtx.engagementId));
+      }
+
+      if (postingCtx?.sourceCompanyId) {
+        headers.set("X-FS-Source-Company-Id", String(postingCtx.sourceCompanyId));
+      }
+
+      if (postingCtx?.targetCompanyId) {
+        headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
+      }
+
+    } catch (e) {
+      console.warn("Failed to attach posting context headers", e);
+    }
+
     const finalUrl = toApiUrl(url);
 
     // -------------------------
