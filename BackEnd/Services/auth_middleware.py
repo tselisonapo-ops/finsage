@@ -101,7 +101,7 @@ def require_auth(_f=None, *, require_company: bool = True):
                             delegated_ok = db_service.user_has_delegated_company_access(
                                 cur,
                                 user_id=user_id,
-                                company_id=company_id,
+                                practitioner_company_id=company_id,
                                 target_company_id=int(cid),
                                 engagement_id=engagement_id,
                             )
@@ -110,7 +110,11 @@ def require_auth(_f=None, *, require_company: bool = True):
                         base = db_service.get_user_by_id(user_id) or {}
                         base["company_id"] = int(cid)
                         base["source_company_id"] = company_id
-                        base["user_role"] = base.get("user_role") or payload.get("role") or "viewer"
+                        base["user_role"] = (
+                            payload.get("role")
+                            or base.get("user_role")
+                            or "viewer"
+                        )
                         base["access_scope"] = payload.get("access_scope") or "assignment"
                         base["delegated_via_engagement_id"] = engagement_id
                         user = base
