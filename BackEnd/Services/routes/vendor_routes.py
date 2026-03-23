@@ -352,7 +352,11 @@ def api_vendors(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -406,7 +410,11 @@ def api_vendor_detail(company_id: int, vendor_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -494,7 +502,11 @@ def api_bills(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -665,7 +677,11 @@ def api_bill_post(company_id: int, bill_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -769,7 +785,11 @@ def api_bill_detail(company_id: int, bill_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -929,7 +949,11 @@ def allocate_bill_payment(company_id: int, bill_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1094,7 +1118,11 @@ def api_vendor_archive_duplicates(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1129,7 +1157,11 @@ def api_create_vendor_payment(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1315,7 +1347,11 @@ def release_vendor_payment_api(company_id: int, payment_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1465,7 +1501,11 @@ def api_list_vendor_payments(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1504,7 +1544,11 @@ def api_get_vendor_payment(company_id: int, payment_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1527,7 +1571,11 @@ def approve_vendor_payment_api(company_id: int, payment_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1582,7 +1630,11 @@ def void_vendor_payment_api(company_id: int, payment_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1624,7 +1676,11 @@ def reverse_bill_api(company_id: int, bill_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1676,7 +1732,11 @@ def writeoff_bill_api(company_id: int, bill_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, current_app, make_response
+from flask import Blueprint, request, current_app, make_response, jsonify
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.practitioner.practitioner_engagements import _corsify, _json_ok, _json_err
 from BackEnd.Services.db_service import db_service
@@ -33,12 +33,85 @@ def _parse_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _deny_if_wrong_company(payload: dict, company_id: int):
-    if not payload:
-        return _json_err("Authentication required.", 401)
-    if _parse_int(payload.get("company_id")) != company_id:
-        return _json_err("You are not authorised for this company.", 403)
-    return None
+def _deny_if_wrong_company(
+    payload,
+    company_id: int,
+    *,
+    db_service,
+    engagement_id: int | None = None,
+):
+    role = (payload.get("role") or "").strip().lower()
+    if role == "admin":
+        return None
+
+    user_id = payload.get("user_id") or payload.get("sub")
+    try:
+        user_id = int(user_id) if user_id is not None else None
+    except Exception:
+        user_id = None
+
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
+    try:
+        target_company_id = int(company_id)
+    except Exception:
+        return jsonify({"ok": False, "error": "AUTH|invalid_company_id"}), 400
+
+    token_company_id = payload.get("token_company_id", payload.get("company_id"))
+    try:
+        token_company_id = int(token_company_id) if token_company_id is not None else None
+    except Exception:
+        token_company_id = None
+
+    allowed_company_ids = (
+        payload.get("token_allowed_company_ids")
+        or payload.get("allowed_company_ids")
+        or []
+    )
+    try:
+        allowed_company_ids = [int(x) for x in allowed_company_ids]
+    except Exception:
+        allowed_company_ids = []
+
+    # direct access
+    if target_company_id == token_company_id:
+        return None
+
+    if target_company_id in allowed_company_ids:
+        return None
+
+    # delegated access through engagement workspaces
+    candidate_home_company_ids = []
+    if token_company_id is not None:
+        candidate_home_company_ids.append(token_company_id)
+
+    for cid in allowed_company_ids:
+        if cid not in candidate_home_company_ids:
+            candidate_home_company_ids.append(cid)
+
+    for home_company_id in candidate_home_company_ids:
+        try:
+            with db_service._conn_cursor() as (_, cur):
+                delegated_ok = db_service.user_has_delegated_company_access(
+                    cur,
+                    user_id=user_id,
+                    company_id=home_company_id,
+                    target_company_id=target_company_id,
+                    engagement_id=engagement_id,
+                )
+            if delegated_ok:
+                return None
+        except Exception as e:
+            print("DELEGATED ACCESS CHECK FAILED", {
+                "user_id": user_id,
+                "home_company_id": home_company_id,
+                "target_company_id": target_company_id,
+                "engagement_id": engagement_id,
+                "error": str(e),
+            })
+
+    return jsonify({"ok": False, "error": "Access denied for this company"}), 403
 
 
 def _can_manage_review_queue(payload: dict) -> bool:
@@ -113,12 +186,18 @@ def review_queue_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
         customer_id = _parse_int(request.args.get("customer_id"))
-        engagement_id = _parse_int(request.args.get("engagement_id"))
         current_user_id = _parse_int(payload.get("id"))
 
         with db_service._conn_cursor() as (conn, cur):
@@ -147,7 +226,14 @@ def review_queue_items_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
@@ -203,7 +289,14 @@ def review_queue_item_detail_route(cid: int, queue_type: str, source_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
@@ -242,7 +335,14 @@ def review_queue_item_status_route(cid: int, queue_type: str, source_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
@@ -324,7 +424,14 @@ def review_queue_item_assign_route(cid: int, queue_type: str, source_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
@@ -401,7 +508,14 @@ def review_queue_item_deactivate_route(cid: int, queue_type: str, source_id: int
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 

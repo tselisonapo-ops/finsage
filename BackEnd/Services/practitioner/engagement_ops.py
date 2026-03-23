@@ -84,7 +84,11 @@ def engagement_reporting_items_collection_route(cid: int, engagement_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -180,7 +184,11 @@ def engagement_reporting_item_detail_route(cid: int, item_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -268,7 +276,11 @@ def set_engagement_reporting_item_status_route(cid: int, item_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -326,7 +338,12 @@ def deactivate_engagement_reporting_item_route(cid: int, item_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            
+        )
         if deny:
             return deny
 
@@ -381,7 +398,12 @@ def engagement_deliverables_collection_route(cid: int, engagement_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -452,7 +474,10 @@ def engagement_deliverable_detail_route(cid: int, deliverable_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+        )
         if deny:
             return deny
 
@@ -508,7 +533,12 @@ def set_engagement_deliverable_status_route(cid: int, deliverable_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            
+        )
         if deny:
             return deny
 
@@ -550,7 +580,11 @@ def deactivate_engagement_deliverable_route(cid: int, deliverable_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -589,7 +623,12 @@ def engagement_posting_activity_collection_route(cid: int, engagement_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -671,7 +710,12 @@ def engagement_posting_activity_detail_route(cid: int, posting_activity_id: int)
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -732,7 +776,12 @@ def set_engagement_posting_activity_status_route(cid: int, posting_activity_id: 
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -774,7 +823,12 @@ def deactivate_engagement_posting_activity_route(cid: int, posting_activity_id: 
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -813,7 +867,12 @@ def engagement_monthly_close_tasks_collection_route(cid: int, engagement_id: int
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -884,7 +943,11 @@ def engagement_monthly_close_task_detail_route(cid: int, task_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -940,7 +1003,12 @@ def set_engagement_monthly_close_task_status_route(cid: int, task_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -982,7 +1050,12 @@ def deactivate_engagement_monthly_close_task_route(cid: int, task_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -1021,7 +1094,12 @@ def engagement_year_end_tasks_collection_route(cid: int, engagement_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -1092,7 +1170,12 @@ def engagement_year_end_task_detail_route(cid: int, task_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -1148,7 +1231,12 @@ def set_engagement_year_end_task_status_route(cid: int, task_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -1190,7 +1278,12 @@ def deactivate_engagement_year_end_task_route(cid: int, task_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+
+        )
         if deny:
             return deny
 
@@ -1229,7 +1322,12 @@ def engagement_signoff_steps_collection_route(cid: int, engagement_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -1298,7 +1396,11 @@ def engagement_signoff_step_detail_route(cid: int, step_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -1352,7 +1454,11 @@ def set_engagement_signoff_step_status_route(cid: int, step_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -1394,7 +1500,11 @@ def deactivate_engagement_signoff_step_route(cid: int, step_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 

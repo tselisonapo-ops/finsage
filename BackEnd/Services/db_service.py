@@ -39941,13 +39941,7 @@ class DatabaseService:
             AND et.user_id = %s
             AND COALESCE(et.is_active, TRUE) = TRUE
             AND COALESCE(e.is_active, TRUE) = TRUE
-            AND COALESCE(e.workspace_status, '') = 'provisioned'
-            AND LOWER(COALESCE(et.role_on_engagement, '')) IN (
-                    'preparer',
-                    'manager',
-                    'partner',
-                    'reviewer'
-            )
+            AND LOWER(COALESCE(e.workspace_status, '')) = 'provisioned'
             AND (%s IS NULL OR e.id = %s)
             LIMIT 1
         """

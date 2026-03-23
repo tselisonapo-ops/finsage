@@ -2,38 +2,89 @@
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request, current_app, make_response, g
-
+from BackEnd.Services.db_service import db_service
 coa_bp = Blueprint("coa_routes", __name__)
 
 # You already have these in your project (import paths may differ)
 from BackEnd.Services.auth_middleware import require_auth, _corsify
-from BackEnd.Services.db_service import db_service # adjust if needed
 
-def _deny_if_wrong_company(payload, company_id: int):
+def _deny_if_wrong_company(
+    payload,
+    company_id: int,
+    *,
+    db_service,
+    engagement_id: int | None = None,
+):
     role = (payload.get("role") or "").strip().lower()
-
     if role == "admin":
         return None
 
-    allowed_company_ids = payload.get("allowed_company_ids") or []
+    user_id = payload.get("user_id") or payload.get("sub")
     try:
-        allowed_company_ids = [int(x) for x in allowed_company_ids]
+        user_id = int(user_id) if user_id is not None else None
     except Exception:
-        allowed_company_ids = []
+        user_id = None
 
-    token_company_id = payload.get("company_id")
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
+    try:
+        target_company_id = int(company_id)
+    except Exception:
+        return jsonify({"ok": False, "error": "AUTH|invalid_company_id"}), 400
+
+    token_company_id = payload.get("token_company_id", payload.get("company_id"))
     try:
         token_company_id = int(token_company_id) if token_company_id is not None else None
     except Exception:
         token_company_id = None
 
-    target_company_id = int(company_id)
+    allowed_company_ids = (
+        payload.get("token_allowed_company_ids")
+        or payload.get("allowed_company_ids")
+        or []
+    )
+    try:
+        allowed_company_ids = [int(x) for x in allowed_company_ids]
+    except Exception:
+        allowed_company_ids = []
+
+    # direct access
+    if target_company_id == token_company_id:
+        return None
 
     if target_company_id in allowed_company_ids:
         return None
 
-    if token_company_id == target_company_id:
-        return None
+    # delegated access through engagement workspaces
+    candidate_home_company_ids = []
+    if token_company_id is not None:
+        candidate_home_company_ids.append(token_company_id)
+
+    for cid in allowed_company_ids:
+        if cid not in candidate_home_company_ids:
+            candidate_home_company_ids.append(cid)
+
+    for home_company_id in candidate_home_company_ids:
+        try:
+            with db_service._conn_cursor() as (_, cur):
+                delegated_ok = db_service.user_has_delegated_company_access(
+                    cur,
+                    user_id=user_id,
+                    company_id=home_company_id,
+                    target_company_id=target_company_id,
+                    engagement_id=engagement_id,
+                )
+            if delegated_ok:
+                return None
+        except Exception as e:
+            print("DELEGATED ACCESS CHECK FAILED", {
+                "user_id": user_id,
+                "home_company_id": home_company_id,
+                "target_company_id": target_company_id,
+                "engagement_id": engagement_id,
+                "error": str(e),
+            })
 
     return jsonify({"ok": False, "error": "Access denied for this company"}), 403
 
@@ -79,9 +130,13 @@ def list_company_coa(cid: int):
 
     company_id = int(cid)
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     try:
         rows = db_service.list_coa(company_id) or []
@@ -117,9 +172,13 @@ def create_company_coa_account(cid: int):
     company_id = int(cid)
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     denied_role = _require_roles("owner", "admin", "cfo", "senior")
     if denied_role:
@@ -289,9 +348,13 @@ def update_company_coa_account(cid: int, coa_id: int):
     company_id = int(cid)
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     denied_role = _require_roles("admin", "cfo", "senior")
     if denied_role:
@@ -351,9 +414,13 @@ def delete_company_coa_account(cid: int, coa_id: int):
     company_id = int(cid)
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     denied_role = _require_roles("admin", "cfo", "senior")
     if denied_role:
@@ -411,9 +478,13 @@ def set_company_controls(cid: int):
     company_id = int(cid)
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     denied_role = _require_roles("admin", "cfo", "senior")
     if denied_role:
@@ -491,9 +562,13 @@ def coa_save_account(cid: int):
     company_id = int(cid)
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     denied_role = _require_roles("admin", "cfo", "senior")
     if denied_role:
@@ -639,9 +714,13 @@ def coa_delete_account(cid: int, code: str):
     company_id = int(cid)
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    denied = _deny_if_wrong_company(payload, company_id)
-    if denied:
-        return denied
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
 
     denied_role = _require_roles("admin", "cfo", "senior")
     if denied_role:

@@ -39,7 +39,11 @@ def get_client_overview_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -74,7 +78,11 @@ def list_client_overview_engagements_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -120,7 +128,11 @@ def get_client_reporting_deliverables_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -155,7 +167,11 @@ def get_client_operations_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -190,7 +206,11 @@ def get_client_close_finalisation_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -225,7 +245,11 @@ def get_client_risk_alerts_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 

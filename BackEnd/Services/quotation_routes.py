@@ -71,7 +71,11 @@ def update_quote(company_id: int, quote_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -175,7 +179,11 @@ def issue_quote(company_id: int, quote_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -336,7 +344,11 @@ def accept_quote(company_id: int, quote_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -817,7 +829,11 @@ def quotes_root(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 

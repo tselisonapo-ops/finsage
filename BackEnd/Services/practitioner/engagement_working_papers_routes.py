@@ -78,7 +78,12 @@ def engagement_working_papers_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -191,7 +196,11 @@ def engagement_working_paper_detail_route(cid: int, working_paper_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -285,7 +294,11 @@ def set_engagement_working_paper_status_route(cid: int, working_paper_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -356,7 +369,11 @@ def deactivate_engagement_working_paper_route(cid: int, working_paper_id: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -420,17 +437,23 @@ def deactivate_engagement_working_paper_route(cid: int, working_paper_id: int):
 def engagement_working_papers_summary_route(cid: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
-
+    
+    engagement_id = _parse_int(request.args.get("engagement_id"))
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
         customer_id = _parse_int(request.args.get("customer_id"))
-        engagement_id = _parse_int(request.args.get("engagement_id"))
+
 
         with db_service._conn_cursor() as (conn, cur):
             row = db_service.get_engagement_working_papers_summary(

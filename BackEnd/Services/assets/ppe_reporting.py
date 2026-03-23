@@ -175,31 +175,83 @@ def _iso_date(s) -> _date | None:
         return None
 
 
-def _deny_if_wrong_company(payload, company_id: int):
+def _deny_if_wrong_company(
+    payload,
+    company_id: int,
+    *,
+    db_service,
+    engagement_id: int | None = None,
+):
     role = (payload.get("role") or "").strip().lower()
-
     if role == "admin":
         return None
 
-    allowed_company_ids = payload.get("allowed_company_ids") or []
+    user_id = payload.get("user_id") or payload.get("sub")
     try:
-        allowed_company_ids = [int(x) for x in allowed_company_ids]
+        user_id = int(user_id) if user_id is not None else None
     except Exception:
-        allowed_company_ids = []
+        user_id = None
 
-    token_company_id = payload.get("company_id")
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
+    try:
+        target_company_id = int(company_id)
+    except Exception:
+        return jsonify({"ok": False, "error": "AUTH|invalid_company_id"}), 400
+
+    token_company_id = payload.get("token_company_id", payload.get("company_id"))
     try:
         token_company_id = int(token_company_id) if token_company_id is not None else None
     except Exception:
         token_company_id = None
 
-    target_company_id = int(company_id)
+    allowed_company_ids = (
+        payload.get("token_allowed_company_ids")
+        or payload.get("allowed_company_ids")
+        or []
+    )
+    try:
+        allowed_company_ids = [int(x) for x in allowed_company_ids]
+    except Exception:
+        allowed_company_ids = []
+
+    # direct access
+    if target_company_id == token_company_id:
+        return None
 
     if target_company_id in allowed_company_ids:
         return None
 
-    if token_company_id == target_company_id:
-        return None
+    # delegated access through engagement workspaces
+    candidate_home_company_ids = []
+    if token_company_id is not None:
+        candidate_home_company_ids.append(token_company_id)
+
+    for cid in allowed_company_ids:
+        if cid not in candidate_home_company_ids:
+            candidate_home_company_ids.append(cid)
+
+    for home_company_id in candidate_home_company_ids:
+        try:
+            with db_service._conn_cursor() as (_, cur):
+                delegated_ok = db_service.user_has_delegated_company_access(
+                    cur,
+                    user_id=user_id,
+                    company_id=home_company_id,
+                    target_company_id=target_company_id,
+                    engagement_id=engagement_id,
+                )
+            if delegated_ok:
+                return None
+        except Exception as e:
+            print("DELEGATED ACCESS CHECK FAILED", {
+                "user_id": user_id,
+                "home_company_id": home_company_id,
+                "target_company_id": target_company_id,
+                "engagement_id": engagement_id,
+                "error": str(e),
+            })
 
     return jsonify({"ok": False, "error": "Access denied for this company"}), 403
 
@@ -314,7 +366,11 @@ def acquisition_journal_preview(company_id, acq_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -340,7 +396,11 @@ def assets_list_or_create(company_id: int):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -428,7 +488,11 @@ def assets_get_or_update(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -517,7 +581,11 @@ def acquisitions_list_or_create(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -608,7 +676,11 @@ def acquisitions_post(company_id, acq_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -649,7 +721,11 @@ def depreciation_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -713,7 +789,11 @@ def depreciation_void(company_id, dep_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -752,7 +832,11 @@ def depreciation_run_generate(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -812,7 +896,12 @@ def depreciation_post(company_id, dep_id):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)  # still ok
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    ) 
     if deny:
         return deny
 
@@ -854,7 +943,11 @@ def depreciation_recalculate(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -916,7 +1009,11 @@ def depreciation_preview(company_id: int):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -984,7 +1081,12 @@ def depreciation_post_batch(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1212,7 +1314,11 @@ def revaluations_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1266,7 +1372,11 @@ def revaluations_void(company_id, reval_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1303,8 +1413,13 @@ def revaluation_post(company_id, reval_id):
     if request.method == "OPTIONS":
         return _opt()
 
+    payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1409,7 +1524,11 @@ def impairments_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1462,7 +1581,11 @@ def impairments_void(company_id, imp_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1502,8 +1625,13 @@ def impairment_post(company_id, imp_id):
     if request.method == "OPTIONS":
         return _opt()
 
+    payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1609,7 +1737,11 @@ def disposals_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1663,7 +1795,11 @@ def disposals_void(company_id, disp_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1703,8 +1839,13 @@ def disposal_post(company_id, disp_id):
     if request.method == "OPTIONS":
         return _opt()
 
+    payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1806,7 +1947,11 @@ def hfs_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1862,7 +2007,11 @@ def hfs_reverse(company_id, hfs_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1901,8 +2050,13 @@ def hfs_post(company_id, hfs_id):
     if request.method == "OPTIONS":
         return _opt()
 
+    payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2004,7 +2158,11 @@ def transfers_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2059,7 +2217,11 @@ def standard_transfers_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2113,7 +2275,11 @@ def standard_transfers_void(company_id, tr_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2150,7 +2316,11 @@ def asset_activity(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2177,7 +2347,11 @@ def asset_documents_list_or_create(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2233,7 +2407,11 @@ def asset_documents_delete(company_id, asset_id, doc_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2277,7 +2455,11 @@ def asset_verifications_list_or_create(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2334,7 +2516,11 @@ def asset_verifications_void(company_id, asset_id, ver_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2377,7 +2563,11 @@ def asset_documents_get_update_delete(company_id, asset_id, doc_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2489,7 +2679,11 @@ def asset_verifications_get_or_update(company_id, asset_id, ver_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2579,7 +2773,11 @@ def asset_document_archive(company_id, asset_id, doc_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2623,7 +2821,11 @@ def asset_document_unarchive(company_id, asset_id, doc_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2667,7 +2869,11 @@ def asset_verification_archive(company_id, asset_id, ver_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2711,7 +2917,11 @@ def asset_verification_unarchive(company_id, asset_id, ver_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2754,7 +2964,11 @@ def asset_usage_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2910,7 +3124,11 @@ def asset_usage_list_or_create(company_id):
 def get_asset_usage(company_id, usage_id):
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2936,7 +3154,11 @@ def get_asset_usage(company_id, usage_id):
 def update_asset_usage(company_id, usage_id):
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2973,7 +3195,11 @@ def update_asset_usage(company_id, usage_id):
 def void_asset_usage(company_id, usage_id):
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2999,8 +3225,13 @@ def approve_post_depreciation(company_id: int, dep_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
+    payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3098,8 +3329,13 @@ def approve_post_revaluation(company_id: int, reval_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
+    payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3197,7 +3433,10 @@ def approve_post_impairment(company_id: int, imp_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3295,7 +3534,10 @@ def approve_post_hfs(company_id: int, hfs_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3416,7 +3658,10 @@ def approve_post_asset_disposal(company_id: int, disposal_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3628,7 +3873,10 @@ def approve_post_depreciation_batch(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3790,7 +4038,11 @@ def subsequent_measurements_list_or_create(company_id):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -3976,8 +4228,12 @@ def subsequent_measurements_preview(company_id):
     if request.method == "OPTIONS":
         return _opt()
 
-    jwt_payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(jwt_payload, company_id)
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -4035,7 +4291,10 @@ def subsequent_measurement_post(company_id: int, sm_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -4201,7 +4460,10 @@ def approve_post_subsequent_measurement(company_id: int, sm_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -4289,7 +4551,11 @@ def asset_policies_get_or_save(company_id: int):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -4382,7 +4648,11 @@ def subsequent_measurement_get_update_delete(company_id: int, sm_id: int):
         return _opt()
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 

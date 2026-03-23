@@ -119,7 +119,11 @@ def api_create_credit_profile():
     if not company_id:
         return jsonify({"error": "No company selected"}), 400
 
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -200,7 +204,11 @@ def api_credit_submit():
     if not company_id:
         return jsonify({"error": "No company selected"}), 400
 
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -344,7 +352,11 @@ def api_credit_decision(profile_id: int):
     if not company_id:
         return jsonify({"error": "No company selected"}), 400
 
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -493,7 +505,11 @@ def upload_kyc_file():
     if not company_id:
         return jsonify({"error": "No company selected"}), 400
 
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 

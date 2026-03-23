@@ -23,7 +23,11 @@ bp_approvals = Blueprint("bp_approvals", __name__)
 @require_auth
 def api_list_approvals(company_id: int):
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -50,7 +54,11 @@ def api_list_approvals(company_id: int):
 @require_auth
 def api_get_approval(company_id: int, request_id: int):
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -70,7 +78,11 @@ def api_get_approval(company_id: int, request_id: int):
 @require_auth
 def api_create_approval(company_id: int):
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -156,7 +168,11 @@ def api_create_approval(company_id: int):
 @require_auth
 def api_decide_approval(company_id: int, request_id: int):
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -890,7 +906,11 @@ def api_decide_approval(company_id: int, request_id: int):
 @require_auth
 def api_list_approval_decisions(company_id: int, request_id: int):
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -913,7 +933,11 @@ def api_list_approval_decisions(company_id: int, request_id: int):
 @require_auth
 def api_list_audit(company_id: int):
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 

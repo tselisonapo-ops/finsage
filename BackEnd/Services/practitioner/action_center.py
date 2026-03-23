@@ -269,16 +269,21 @@ def get_action_center_summary_route(cid: int):
     try:
         company_id = int(cid)
 
+        customer_id = _parse_int(request.args.get("customer_id"))
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
         if not _can_access_action_center(payload):
             return _json_err("You do not have permission to access Action Center.", 403)
-
-        customer_id = _parse_int(request.args.get("customer_id"))
-        engagement_id = _parse_int(request.args.get("engagement_id"))
         mine_only = _parse_bool(request.args.get("mine"), False)
 
         with db_service._conn_cursor() as (conn, cur):
@@ -307,16 +312,22 @@ def list_action_center_queue_route(cid: int):
     try:
         company_id = int(cid)
 
+        customer_id = _parse_int(request.args.get("customer_id"))
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 
         if not _can_access_action_center(payload):
             return _json_err("You do not have permission to access Action Center.", 403)
 
-        customer_id = _parse_int(request.args.get("customer_id"))
-        engagement_id = _parse_int(request.args.get("engagement_id"))
         queue_type = (request.args.get("queue_type") or "").strip().lower() or None
         status = (request.args.get("status") or "").strip().lower() or None
         priority = (request.args.get("priority") or "").strip().lower() or None
@@ -359,9 +370,15 @@ def action_center_item_action_route(cid: int, queue_type: str, source_id: int):
 
     try:
         company_id = int(cid)
+        engagement_id = _parse_int(request.args.get("engagement_id"))
 
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=engagement_id,
+        )
         if deny:
             return deny
 

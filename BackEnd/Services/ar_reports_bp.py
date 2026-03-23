@@ -93,7 +93,11 @@ def reverse_invoice_route(cid: int, invoice_id: int):
         company_id = int(cid)
 
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -182,7 +186,11 @@ def create_period_lock(cid: int):
         company_id = int(cid)
 
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -273,7 +281,11 @@ def disable_period_lock(cid: int, lock_id: int):
     company_id = int(cid)
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, company_id)
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -377,7 +389,11 @@ def writeoff_invoice_route(cid: int, invoice_id: int):
         company_id = int(cid)
 
         payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 

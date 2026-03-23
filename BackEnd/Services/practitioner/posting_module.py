@@ -71,7 +71,11 @@ def get_practitioner_posting_module_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+        )
         if deny:
             return deny
 
@@ -111,7 +115,12 @@ def list_practitioner_posting_module_activity_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 
@@ -195,7 +204,12 @@ def list_practitioner_posting_module_filter_options_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
-        deny = _deny_if_wrong_company(payload, company_id)
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
         if deny:
             return deny
 

@@ -471,7 +471,11 @@ def create_lease(company_id: int):
     lease_id = None
     journal_id = None
 
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -644,7 +648,11 @@ def list_leases(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -687,7 +695,11 @@ def get_lease(company_id: int, lease_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -724,7 +736,11 @@ def get_lease_schedule_period(company_id: int, lease_id: int, period_no: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -798,7 +814,11 @@ def get_lease_schedule(company_id: int, lease_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -876,7 +896,11 @@ def leases_monthly_due(company_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -992,7 +1016,11 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1255,7 +1283,11 @@ def list_lease_payments(company_id: int, lease_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1294,7 +1326,11 @@ def preview_lease_payment(company_id: int, lease_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1371,7 +1407,11 @@ def post_lease_payment(company_id: int, lease_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1700,7 +1740,11 @@ def post_lease_modification(company_id: int, mod_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -1972,7 +2016,11 @@ def post_lease_termination(company_id: int, term_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -2086,7 +2134,11 @@ def lease_modifications(company_id: int, lease_id: int):
 
     # ---- auth (same pattern you use elsewhere) ----
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(payload, int(company_id))
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
     if deny:
         return deny
 
