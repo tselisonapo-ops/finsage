@@ -87,7 +87,26 @@ def require_auth(_f=None, *, require_company: bool = True):
                     base["user_role"] = base.get("user_role") or "owner"
                     user = base
                 else:
-                    company_id = int(payload.get("company_id") or 0)
+                    source_company_id = int(payload.get("company_id") or 0)
+                    role = str(payload.get("role") or "").strip().lower()
+                    access_scope = str(payload.get("access_scope") or "").strip().lower()
+
+                    # Define roles that can post via engagement
+                    delegated_roles = {
+                        "bookkeeper",
+                        "accountant",
+                        "preparer",
+                        "manager",
+                        "partner",
+                        "reviewer",
+                        "owner",
+                        "admin",
+                    }
+
+                    can_use_delegated_workspace = (
+                        role in delegated_roles
+                        and access_scope in {"assignment", "core"}
+                    )
 
                     engagement_id = request.headers.get("X-FS-Engagement-Id")
                     try:
@@ -98,21 +117,20 @@ def require_auth(_f=None, *, require_company: bool = True):
                     print("DELEGATED AUTH CHECK", {
                         "user_id": user_id,
                         "requested_company_id": int(cid),
-                        "source_company_id": company_id,
+                        "source_company_id": source_company_id,
                         "engagement_id_header": request.headers.get("X-FS-Engagement-Id"),
                         "engagement_id_parsed": engagement_id,
-                        "token_company_id": payload.get("company_id"),
-                        "token_role": payload.get("role"),
+                        "can_use_delegated_workspace": can_use_delegated_workspace,
                         "path": request.path,
                     })
 
                     delegated_ok = False
-                    if company_id:
+                    if can_use_delegated_workspace and source_company_id and engagement_id:
                         with db_service._conn_cursor() as (_conn, cur):
                             delegated_ok = db_service.user_has_delegated_company_access(
                                 cur,
                                 user_id=user_id,
-                                company_id=company_id,
+                                company_id=source_company_id,
                                 target_company_id=int(cid),
                                 engagement_id=engagement_id,
                             )
@@ -120,7 +138,7 @@ def require_auth(_f=None, *, require_company: bool = True):
                     print("DELEGATED AUTH RESULT", {
                         "user_id": user_id,
                         "requested_company_id": int(cid),
-                        "source_company_id": company_id,
+                        "source_company_id": source_company_id,
                         "engagement_id": engagement_id,
                         "delegated_ok": delegated_ok,
                         "path": request.path,
@@ -129,7 +147,7 @@ def require_auth(_f=None, *, require_company: bool = True):
                     if delegated_ok:
                         base = db_service.get_user_by_id(user_id) or {}
                         base["company_id"] = int(cid)
-                        base["source_company_id"] = company_id
+                        base["source_company_id"] = source_company_id
                         base["user_role"] = (
                             payload.get("role")
                             or base.get("user_role")
@@ -137,6 +155,7 @@ def require_auth(_f=None, *, require_company: bool = True):
                         )
                         base["access_scope"] = payload.get("access_scope") or "assignment"
                         base["delegated_via_engagement_id"] = engagement_id
+                        base["is_delegated_company_access"] = True
                         user = base
                     else:
                         return _corsify(make_response(

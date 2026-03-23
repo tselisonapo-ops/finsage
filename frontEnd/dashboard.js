@@ -120,26 +120,25 @@ window.addEventListener("unhandledrejection", (e) => {
     // ----------------------------------
     // 🔥 Delegated posting context headers
     // ----------------------------------
+    const finalUrl = toApiUrl(url);
+
     try {
       const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
 
       if (postingCtx?.engagementId) {
         headers.set("X-FS-Engagement-Id", String(postingCtx.engagementId));
       }
-
       if (postingCtx?.sourceCompanyId) {
         headers.set("X-FS-Source-Company-Id", String(postingCtx.sourceCompanyId));
       }
-
       if (postingCtx?.targetCompanyId) {
         headers.set("X-FS-Target-Company-Id", String(postingCtx.targetCompanyId));
       }
+
       console.log("API FETCH HEADERS", finalUrl, Object.fromEntries(headers.entries()));
     } catch (e) {
       console.warn("Failed to attach posting context headers", e);
     }
-
-    const finalUrl = toApiUrl(url);
 
     // -------------------------
     // helpers for review retry

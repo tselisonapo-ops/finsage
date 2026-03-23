@@ -9981,7 +9981,7 @@ async function openPostingForEngagement(row, me) {
   };
 
   localStorage.setItem("fs_posting_context", JSON.stringify(ctx));
-  window.location.href = "dashboard.html#screen=posting";
+  window.location.href = "dashboard.html#screen=journal-desk";
 }
 
 function restorePractitionerReturnContext() {
