@@ -50727,7 +50727,9 @@ async function bootstrapApp(currentUser) {
     console.warn("initCompanyMapFromAddress() missing - skipped");
   }
 
-  await maybeRequireOwnerInvite();
+  if (!isDelegatedPosting) {
+    await maybeRequireOwnerInvite();
+  }
 
   // ------------------------------------------------------------
   // 4) Mode + nav (guard!)
@@ -50774,7 +50776,9 @@ async function bootstrapApp(currentUser) {
   await initHeaderCompanySwitcher?.();
 
   if (typeof initDashboardModeSwitcher === "function") {
+  if (!isDelegatedPosting && typeof initDashboardModeSwitcher === "function") {
     initDashboardModeSwitcher("internal");
+  }
   } else {
     console.warn("initDashboardModeSwitcher() missing - skipped");
   }
