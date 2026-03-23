@@ -39,17 +39,24 @@
       }
 
       try {
-          const API_BASE = window.APP_CONFIG.API_BASE;
+        const API_BASE = window.APP_CONFIG.API_BASE;
 
-          await fetch(`${API_BASE}/api/auth/request-reset`, {
+        const res = await fetch(`${API_BASE}/api/auth/request-reset`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email })
         });
 
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = {};
+        }
+
         statusEl.textContent = res.ok
           ? "If an account exists, a reset link has been sent."
-          : data.error || "Request failed.";
+          : (data.error || "Request failed.");
       } catch (err) {
         console.error("Reset request error:", err);
         statusEl.textContent = "Network error.";

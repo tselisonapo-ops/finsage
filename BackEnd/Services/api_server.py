@@ -1825,8 +1825,11 @@ def invoice_pdf_token(company_id: int, invoice_id: int):
 # Forgot / Reset / Change Password
 # ────────────────────────────────────────────────────────────────
 
-@app.route("/api/auth/request-reset", methods=["POST"])
+@app.route("/api/auth/request-reset", methods=["OPTIONS", "POST"])
 def request_password_reset():
+    if request.method == "OPTIONS":
+        return "", 204
+
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
     if not email:
@@ -1834,7 +1837,6 @@ def request_password_reset():
 
     user = db_service.get_user_by_email(email)
     if not user:
-        # Don't leak user existence
         return jsonify({"message": "If account exists, reset link sent"}), 200
 
     token = secrets.token_urlsafe(32)
@@ -1851,15 +1853,17 @@ def request_password_reset():
     except Exception as e:
         print(f"[RESET] EMAIL SEND FAILED for {email}: {e}")
 
-    return jsonify({"message": "Reset link sent"}), 200
-
+    return jsonify({"message": "If account exists, reset link sent"}), 200
 
 @app.route("/api/auth/reset-password", methods=["OPTIONS", "POST"])
 def reset_password():
+    if request.method == "OPTIONS":
+        return "", 204
 
     data = request.get_json() or {}
     token = data.get("token")
     new_password = data.get("newPassword")
+
     if not token or not new_password:
         return jsonify({"error": "Token and new password required"}), 400
 
@@ -1875,7 +1879,6 @@ def reset_password():
     db_service.update_password(user["email"], new_hash)
     db_service.clear_reset_token(user["email"])
     return jsonify({"message": "Password reset successful"}), 200
-
 
 @app.route("/api/auth/change-password", methods=["POST"])
 @require_auth
