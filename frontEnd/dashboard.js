@@ -50492,6 +50492,8 @@ async function bootstrapApp(currentUser) {
   // ------------------------------------------------------------
   // 1) Resolve company id from multiple places (keep your logic)
   // ------------------------------------------------------------
+  const postingCtx = restorePostingContext?.() || null;
+
   const delegatedPostingCompanyId =
     Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
 
