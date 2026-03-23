@@ -4900,6 +4900,15 @@ function canSeeMenuItem(item) {
 }
 window.canSeeMenuItem = canSeeMenuItem;
 
+function canOpenScreen(name) {
+  const resolved = resolveScreenName(name);
+  const rule = SCREEN_POLICY[resolved];
+
+  // strict allowlist (recommended)
+  return !!rule;
+}
+window.canOpenScreen = canOpenScreen;
+
 function shouldShowNavItem(item) {
   if (!item) return false;
 
@@ -5060,14 +5069,7 @@ const SCREEN_POLICY = {
 };
 
 
-function canOpenScreen(name) {
-  const resolved = resolveScreenName(name);
-  const rule = SCREEN_POLICY[resolved];
 
-  // strict allowlist (recommended)
-  return !!rule;
-}
-window.canOpenScreen = canOpenScreen;
 
 // Optional feature check
 function hasFeature(flag) {
@@ -5112,19 +5114,31 @@ function restorePostingContext() {
     const ctx = JSON.parse(raw);
     if (!ctx?.companyId) return null;
 
-    console.log("Restoring posting context:", ctx);
+    const restored = {
+      ...ctx,
+      sourceDashboard: ctx.sourceDashboard || "practitioner",
+      accessMode: ctx.accessMode || "delegated_workspace",
+      launchMode: ctx.launchMode || "posting",
+      targetCompanyId: Number(ctx.targetCompanyId || ctx.companyId || 0) || null,
+      companyId: Number(ctx.companyId || ctx.targetCompanyId || 0) || null,
+      customerId: Number(ctx.customerId || 0) || null,
+      engagementId: Number(ctx.engagementId || 0) || null
+    };
+
+    console.log("Restoring posting context:", restored);
 
     window.__PR_CONTEXT__ = {
       ...(window.__PR_CONTEXT__ || {}),
-      ...ctx
+      ...restored
     };
 
-    window.__COMPANY_ID__ = Number(ctx.companyId) || null;
-    window.__PR_ACTIVE_COMPANY_ID__ = Number(ctx.companyId) || null;
-    window.__PR_ACTIVE_CUSTOMER_ID__ = Number(ctx.customerId) || null;
-    window.__PR_ACTIVE_ENGAGEMENT_ID__ = Number(ctx.engagementId) || null;
+    window.__FS_DELEGATED_POSTING__ = true;
+    window.__COMPANY_ID__ = restored.targetCompanyId;
+    window.__PR_ACTIVE_COMPANY_ID__ = restored.targetCompanyId;
+    window.__PR_ACTIVE_CUSTOMER_ID__ = restored.customerId;
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ = restored.engagementId;
 
-    return ctx;
+    return restored;
   } catch (err) {
     console.warn("Failed to restore posting context", err);
     return null;
@@ -50482,12 +50496,18 @@ async function bootstrapApp(currentUser) {
   // ------------------------------------------------------------
   // 1) Resolve company id from multiple places (keep your logic)
   // ------------------------------------------------------------
+  const postingCtx = restorePostingContext?.();
+
+  const delegatedPostingCompanyId =
+    Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
+
   const resolvedCompanyId =
+    delegatedPostingCompanyId ||
+    (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     currentUser?.company_id ||
     currentUser?.companyId ||
     currentUser?.company?.id ||
     currentUser?.company_profile?.id ||
-    (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     Number(localStorage.getItem("company_id") || 0) ||
     null;
 
