@@ -1848,12 +1848,26 @@ function companyId() {
 }
 
 function getActiveCompanyId() {
+  try {
+    const postingCtx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
+
+    if (
+      postingCtx &&
+      postingCtx.launchMode === "posting" &&
+      Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0
+    ) {
+      return Number(postingCtx.targetCompanyId || postingCtx.companyId);
+    }
+  } catch (_) {}
+
   const raw = companyId();
   if (!raw) return null;
+
   const cid = parseInt(raw, 10);
   return Number.isNaN(cid) ? null : cid;
 }
 window.getActiveCompanyId = getActiveCompanyId;
+
 window.companyId = companyId;
 
   // Global store (in-memory)
@@ -5176,6 +5190,7 @@ function bindReturnToPractitionerWorkspace() {
     };
 
     localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+    localStorage.removeItem("fs_posting_context");
     window.location.href = ctx.returnTo || "practitionerdashboard.html#screen=assignments";
   };
 }
@@ -50475,6 +50490,23 @@ async function bootstrapApp(currentUser) {
     (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     Number(localStorage.getItem("company_id") || 0) ||
     null;
+
+  const isDelegatedPosting =
+    !!postingCtx &&
+    postingCtx.launchMode === "posting" &&
+    Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) > 0;
+
+  if (
+    isDelegatedPosting &&
+    !(
+      currentUser?.permissions?.can_post_journals ||
+      currentUser?.permissions?.can_prepare_financials
+    )
+  ) {
+    window.location.href =
+      postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
+    return;
+  }
 
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");

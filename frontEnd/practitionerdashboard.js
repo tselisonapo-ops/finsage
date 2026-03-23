@@ -9943,50 +9943,45 @@ window.restorePractitionerActiveEngagement = function () {
 async function openPostingForEngagement(row, me) {
   const targetCompanyId = Number(row?.target_company_id || 0);
   const sourceCompanyId = Number(row?.company_id || 0);
-  const companyId = targetCompanyId || sourceCompanyId || 0;
+
+  if (!targetCompanyId) {
+    console.warn("No provisioned target company for posting", row);
+    return;
+  }
 
   const customerId = Number(row?.customer_id || 0) || null;
   const engagementId = Number(row?.id || 0) || null;
 
-  if (!companyId) {
-    console.warn("No company for posting", row);
-    return;
-  }
-
   const ctx = {
-    companyId,                    // target posting company
-    targetCompanyId: companyId,   // explicit alias for posting screens
+    companyId: targetCompanyId,
+    targetCompanyId,
     sourceCompanyId: sourceCompanyId || null,
+
     customerId,
     customerName: row?.customer_name || "",
+
     engagementId,
     engagementCode: row?.engagement_code || "",
     engagementName: row?.engagement_name || "",
     engagementType: row?.engagement_type || "",
+
     workspaceStatus: row?.workspace_status || "",
     workspaceSource: row?.workspace_source || "",
     targetCompanySource: row?.target_company_source || "",
-    engagement: row || null,
+
     launchMode: "posting",
-    returnTo: "practitionerdashboard.html#screen=assignments"
+    requestedScreen: "posting",
+    sourceDashboard: "practitioner",
+    accessMode: "delegated_workspace",
+
+    engagement: row || null,
+    returnTo: "practitionerdashboard.html#screen=assignments",
+
+    launchedByUserId: Number(me?.id || me?.user_id || me?.sub || 0) || null
   };
-
-  window.__PR_ACTIVE_COMPANY_ID__ = companyId;
-  window.__PR_ACTIVE_CUSTOMER_ID__ = customerId;
-  window.__PR_POSTING_CONTEXT__ = ctx;
-
-  window.setPractitionerActiveEngagementId?.(engagementId);
-
-  window.__PR_CONTEXT__ = {
-    ...(window.__PR_CONTEXT__ || {}),
-    ...ctx
-  };
-
-  console.log("Launching posting with context:", ctx);
 
   localStorage.setItem("fs_posting_context", JSON.stringify(ctx));
-
-  window.location.href = "dashboard.html";
+  window.location.href = "dashboard.html#screen=posting";
 }
 
 function restorePractitionerReturnContext() {
