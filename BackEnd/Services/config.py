@@ -32,7 +32,10 @@ class Config:
     SMTP_USE_SSL = _get_bool("SMTP_USE_SSL", True)
     SMTP_USE_TLS = _get_bool("SMTP_USE_TLS", False)
 
-    FRONTEND_BASE = os.getenv("FRONTEND_BASE", "http://127.0.0.1:5500")
+    FRONTEND_BASE = os.getenv("FRONTEND_BASE")
+
+    if not FRONTEND_BASE:
+        raise RuntimeError("FRONTEND_BASE must be set in production")
     BACKEND_BASE = os.getenv("BACKEND_BASE", "http://127.0.0.1:5000")
     FRONTEND_ORIGINS = _get_list(
         "FRONTEND_ORIGINS",
