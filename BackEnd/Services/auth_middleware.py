@@ -124,16 +124,16 @@ def require_auth(_f=None, *, require_company: bool = True):
                         "path": request.path,
                     })
 
-                    delegated_ok = False
-                    if can_use_delegated_workspace and source_company_id and engagement_id:
-                        with db_service._conn_cursor() as (_conn, cur):
-                            delegated_ok = db_service.user_has_delegated_company_access(
-                                cur,
-                                user_id=user_id,
-                                company_id=source_company_id,
-                                target_company_id=int(cid),
-                                engagement_id=engagement_id,
-                            )
+                delegated_ok = False
+                if can_use_delegated_workspace and source_company_id:
+                    with db_service._conn_cursor() as (_conn, cur):
+                        delegated_ok = db_service.user_has_delegated_company_access(
+                            cur,
+                            user_id=user_id,
+                            company_id=source_company_id,
+                            target_company_id=int(cid),
+                            engagement_id=engagement_id,  # can be None
+                        )
 
                     print("DELEGATED AUTH RESULT", {
                         "user_id": user_id,
