@@ -1825,8 +1825,11 @@ def invoice_pdf_token(company_id: int, invoice_id: int):
 # Forgot / Reset / Change Password
 # ────────────────────────────────────────────────────────────────
 
-@app.route("/api/auth/request-reset", methods=["POST"])
+@app.route("/api/auth/request-reset", methods=["OPTIONS", "POST"])
 def request_password_reset():
+    if request.method == "OPTIONS":
+        return "", 204
+
     data = request.get_json() or {}
     email = (data.get("email") or "").strip().lower()
     if not email:
@@ -1834,7 +1837,6 @@ def request_password_reset():
 
     user = db_service.get_user_by_email(email)
     if not user:
-        print(f"[RESET] no user found for {email}")
         return jsonify({"message": "If account exists, reset link sent"}), 200
 
     token = secrets.token_urlsafe(32)
@@ -1842,18 +1844,28 @@ def request_password_reset():
     db_service.store_reset_token(email, token, expiry)
 
     reset_link = f"{FRONTEND_BASE}/reset-password.html?token={token}"
-    print(f"[RESET] FRONTEND_BASE={FRONTEND_BASE}")
-    print(f"[RESET] reset link generated for {email}: {reset_link}")
+    first_name = (user.get("first_name") or "").strip()
 
-    subject = "Reset your FinSage password"
-    html = f"<p>Click the link to reset your password:</p><p><a href='{reset_link}'>Reset your password</a></p>"
-    text = f"Click the link to reset your password:\n\n{reset_link}"
+    subject = "Your FinSage password reset link (expires in 1 hour)"
+    html = f"""
+    <p>Hi {first_name},</p>
+    <p>We received a request to reset your FinSage password.</p>
+    <p>Use this link to continue: <a href="{reset_link}">Reset password</a></p>
+    <p><b>Note:</b> This link expires in 1 hour.</p>
+    <p>If you did not request this, you can safely ignore this email.</p>
+    """
+    text = (
+        f"Hi {first_name},\n\n"
+        f"We received a request to reset your FinSage password.\n\n"
+        f"Reset password: {reset_link}\n\n"
+        f"Note: This link expires in 1 hour.\n"
+        f"If you did not request this, you can safely ignore this email."
+    )
 
     try:
         send_mail(to_email=email, subject=subject, html_body=html, text_body=text)
-        print(f"[RESET] EMAIL SENT TO {email}")
-    except Exception as e:
-        print(f"[RESET] EMAIL SEND FAILED for {email}: {e}")
+    except Exception:
+        current_app.logger.exception("Password reset email failed")
 
     return jsonify({"message": "If account exists, reset link sent"}), 200
 
