@@ -482,10 +482,18 @@ def build_permissions(*, role: str, access_scope: str) -> dict:
     base["can_access_enterprise_dashboard"] = (
         norm_role in ENTERPRISE_DASHBOARD_ROLES or norm_role in DUAL_DASHBOARD_ROLES
     )
+
     base["can_access_practitioner_dashboard"] = (
         norm_role in PRACTITIONER_DASHBOARD_ROLES or norm_role in DUAL_DASHBOARD_ROLES
     )
 
+    # NEW: limited enterprise-style workspace access for practitioner-assigned staff
+    base["can_access_delegated_posting_workspace"] = bool(
+        scope == "assignment" and (
+            base.get("can_post_journals", False) or
+            base.get("can_prepare_financials", False)
+        )
+    )
     # hard restriction for assignment users
     if scope == "assignment":
         base["can_manage_users"] = False

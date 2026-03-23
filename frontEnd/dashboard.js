@@ -2155,10 +2155,6 @@ window.canSeeRole = function canSeeRole(minRole) {
   return myIdx >= needIdx;
 };
 
-window.getCurrentPermissions = function getCurrentPermissions() {
-  return window.currentUser?.permissions || {};
-};
-
 window.hasPermission = function hasPermission(key) {
   const perms = window.getCurrentPermissions?.() || {};
   return perms[key] === true;
@@ -50496,8 +50492,6 @@ async function bootstrapApp(currentUser) {
   // ------------------------------------------------------------
   // 1) Resolve company id from multiple places (keep your logic)
   // ------------------------------------------------------------
-  const postingCtx = restorePostingContext?.();
-
   const delegatedPostingCompanyId =
     Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
 
@@ -50516,16 +50510,30 @@ async function bootstrapApp(currentUser) {
     postingCtx.launchMode === "posting" &&
     Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) > 0;
 
-  if (
-    isDelegatedPosting &&
-    !(
-      currentUser?.permissions?.can_post_journals ||
-      currentUser?.permissions?.can_prepare_financials
-    )
-  ) {
-    window.location.href =
-      postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
-    return;
+  const perms =
+    currentUser?.permissions ||
+    window.getCurrentPermissions?.() ||
+    {};
+
+  const canUseDelegatedPosting =
+    !!perms.can_access_delegated_posting_workspace ||
+    !!perms.can_post_journals ||
+    !!perms.can_prepare_financials;
+
+  const canUseEnterpriseShell =
+    !!perms.can_access_enterprise_dashboard;
+
+  if (isDelegatedPosting) {
+    if (!canUseDelegatedPosting) {
+      window.location.href =
+        postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
+      return;
+    }
+  } else {
+    if (!canUseEnterpriseShell) {
+      window.location.href = "practitionerdashboard.html";
+      return;
+    }
   }
 
   if (!resolvedCompanyId) {
