@@ -51509,6 +51509,42 @@ async function enforceAuth() {
 }
 window.enforceAuth = enforceAuth;
 
+(function trapRedirects() {
+  const originalAssign = window.location.assign.bind(window.location);
+  const originalReplace = window.location.replace.bind(window.location);
+
+  window.location.assign = function (url) {
+    console.error("[REDIRECT TRAP] location.assign ->", url);
+    console.trace();
+    debugger;
+    return originalAssign(url);
+  };
+
+  window.location.replace = function (url) {
+    console.error("[REDIRECT TRAP] location.replace ->", url);
+    console.trace();
+    debugger;
+    return originalReplace(url);
+  };
+
+  const hrefDesc = Object.getOwnPropertyDescriptor(Location.prototype, "href");
+  if (hrefDesc && hrefDesc.set) {
+    Object.defineProperty(window.location, "href", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return hrefDesc.get.call(window.location);
+      },
+      set(url) {
+        console.error("[REDIRECT TRAP] location.href ->", url);
+        console.trace();
+        debugger;
+        return hrefDesc.set.call(window.location, url);
+      }
+    });
+  }
+})();
+
 async function init() {
   console.log("init: starting");
 
