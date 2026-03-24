@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
+from flask import current_app
 
 from psycopg2 import errorcodes
 import psycopg2
@@ -1126,7 +1127,6 @@ class DatabaseService:
         with self._conn_cursor() as (_c, _cur):
             return _run(_cur)
 
-
     def fetch_all(
         self,
         sql: str,
@@ -1136,7 +1136,10 @@ class DatabaseService:
         exec_params = None
 
         if isinstance(params, dict) and "%(" not in sql:
-            raise TypeError("Named params dict provided, but SQL uses %s placeholders. Use tuple/list params or change SQL to %(name)s.")
+            raise TypeError(
+                "Named params dict provided, but SQL uses %s placeholders. "
+                "Use tuple/list params or change SQL to %(name)s."
+            )
 
         if params is None:
             exec_params = None
@@ -1161,17 +1164,21 @@ class DatabaseService:
                 except Exception:
                     placeholders = None
 
-                print("\\n[DB] fetch_all FAILED")
-                print("[DB] Error:", repr(e))
-                print("[DB] Placeholders:", placeholders)
-                if isinstance(exec_params, dict):
-                    print("[DB] Params type: dict")
-                    print("[DB] Params keys:", list(exec_params.keys()))
-                else:
-                    print("[DB] Params len:", (len(exec_params) if exec_params else 0))
+                try:
+                    current_app.logger.exception(
+                        "[DB] fetch_all FAILED | placeholders=%s | params=%s | sql=%s",
+                        placeholders,
+                        exec_params,
+                        sql,
+                    )
+                except Exception:
+                    print("\n[DB] fetch_all FAILED")
+                    print("[DB] Error:", repr(e))
+                    print("[DB] Placeholders:", placeholders)
                     print("[DB] Params:", exec_params)
-                print("[DB] SQL:\\n", sql)
-                print("[DB] ---\\n")
+                    print("[DB] SQL:\n", sql)
+                    print("[DB] ---\n")
+
                 raise
 
             if _cur.description is None:
@@ -18221,26 +18228,26 @@ class DatabaseService:
     def next_quote_number_cur(self, company_id: int, cur) -> str:
         return self.next_doc_number_cur(company_id, cur, key="quote")
 
-    def list_coa(self, company_id: int) -> list[dict]:
-        schema = f"company_{company_id}"
-        try:
-            rows = self.fetch_all(f"""
-                SELECT
-                    id, code, name, section, category, subcategory,
-                    description, reporting_description, standard,
-                    posting, posting_rules,
-                    template_code, template_code_scoped, template_code_base,
-                    code_family, code_numeric, role,
-                    cf_section, cf_bucket,
-                    is_working_capital, is_cash_equiv, is_non_cash_addback,
-                    is_contra
-                FROM {schema}.coa
-                ORDER BY code_family NULLS LAST, code_numeric NULLS LAST, code;
-            """) or []
-            return rows
-        except Exception:
-            return []
-
+def list_coa(self, company_id: int) -> list[dict]:
+    schema = f"company_{company_id}"
+    try:
+        rows = self.fetch_all(f"""
+            SELECT
+                id, code, name, section, category, subcategory,
+                description, reporting_description, standard,
+                posting, posting_rules,
+                template_code, template_code_scoped, template_code_base,
+                code_family, code_numeric, role,
+                cf_section, cf_bucket,
+                is_working_capital, is_cash_equiv, is_non_cash_addback,
+                is_contra
+            FROM {schema}.coa
+            ORDER BY code_family NULLS LAST, code_numeric NULLS LAST, code;
+        """) or []
+        return rows
+    except Exception:
+        current_app.logger.exception("list_coa failed for company_id=%s", company_id)
+        raise
 
     # ============================
     # DB SERVICE: create_coa_account

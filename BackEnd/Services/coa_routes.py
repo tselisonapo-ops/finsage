@@ -100,8 +100,7 @@ def _require_roles(*roles: str):
         return jsonify({"error": "Not allowed"}), 403
     return None
 
-def _get_coa_normalised(company_id: int):
-    rows = db_service.list_coa(company_id) or []
+def _get_coa_normalised(rows: list[dict]):
     return [{
         "code": (r.get("code") or "").strip(),
         "name": (r.get("name") or "").strip() or (r.get("code") or "").strip(),
@@ -117,8 +116,7 @@ def _get_coa_normalised(company_id: int):
         "cf_bucket": (r.get("cf_bucket") or "").strip(),
         "role": (r.get("role") or "").strip(),
         "is_contra": bool(r.get("is_contra", False)),
-    } for r in rows]
-
+    } for r in (rows or [])]
 # ------------------------------------------------------------
 # COA LIST
 # ------------------------------------------------------------
@@ -141,15 +139,13 @@ def list_company_coa(cid: int):
     try:
         rows = db_service.list_coa(company_id) or []
 
-        # ✅ If COA exists in DB, never fallback
         if rows:
             return jsonify({
                 "ok": True,
                 "seeded": True,
-                "rows": _get_coa_normalised(company_id),
+                "rows": _get_coa_normalised(rows),
             }), 200
 
-        # ✅ If empty, return empty (frontend can show "Please seed COA")
         return jsonify({
             "ok": True,
             "seeded": False,
@@ -158,8 +154,12 @@ def list_company_coa(cid: int):
 
     except Exception as e:
         current_app.logger.exception("list_company_coa failed")
-        return jsonify({"ok": False, "error": "Server error", "detail": str(e)}), 500
-
+        return jsonify({
+            "ok": False,
+            "error": "Server error",
+            "detail": str(e)
+        }), 500
+    
 # ------------------------------------------------------------
 # COA CREATE
 # ------------------------------------------------------------
