@@ -1070,8 +1070,6 @@ async function enforcePractitionerAuth() {
 
   if (!token) return null;
 
-  // If practitioner dashboard is loading with a delegated token,
-  // restore the native/home token first.
   try {
     const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
     const isDelegated = !!payload?.is_delegated_company_access;
@@ -3636,12 +3634,19 @@ async function refreshAssignmentsScreen() {
 
   try {
     if (msg) msg.textContent = "Loading assignments...";
+
+    // ✅ ensure practitioner dashboard is not still using delegated token
+    const me = await enforcePractitionerAuth();
+    if (!me) {
+      throw new Error("Authentication expired or invalid.");
+    }
+
     const rows = await loadAssignmentsData({ q, status, engagement_type });
     PR_ASSIGNMENTS_CACHE = rows;
     renderAssignmentsTable(rows);
     if (msg) msg.textContent = `${rows.length} assignment(s) loaded.`;
   } catch (err) {
-    console.error(err);
+    console.error("refreshAssignmentsScreen failed:", err);
     if (msg) msg.textContent = err.message || "Failed to load assignments.";
     renderAssignmentsTable([]);
   }
