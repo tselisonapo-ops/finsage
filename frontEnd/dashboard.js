@@ -5470,7 +5470,7 @@ function initDashboardModeSwitcher(currentMode = "internal") {
   };
 }
 
-function renderPostingDashboardContextBanner(mount, me) {
+function renderPostingDashboardContextBanner(mount, me, postingCtx = null) {
   const storedCtx = (() => {
     try {
       return JSON.parse(localStorage.getItem("fs_posting_context") || "{}");
@@ -5481,27 +5481,87 @@ function renderPostingDashboardContextBanner(mount, me) {
 
   const ctx = {
     ...storedCtx,
-    ...(window.__PR_POSTING_CONTEXT__ || {})
+    ...(window.__PR_POSTING_CONTEXT__ || {}),
+    ...(postingCtx || {}),
   };
 
   window.__PR_POSTING_CONTEXT__ = ctx;
 
+  const isDelegated =
+    !!ctx &&
+    (
+      ctx.accessMode === "delegated_workspace" ||
+      ctx.launchMode === "posting" ||
+      Number(ctx.targetCompanyId || ctx.companyId || 0) > 0
+    );
+
   const activeCompanyId =
     Number(ctx.targetCompanyId || ctx.companyId || 0) ||
-    Number(window.getActiveCompanyId?.() || 0);
+    Number(window.getActiveCompanyId?.() || 0) ||
+    Number(window.CURRENT_COMPANY_ID || 0) ||
+    0;
 
-  const customerName = ctx.customerName || ctx.engagement?.customer_name || "--";
-  const engagementName = ctx.engagementName || ctx.engagement?.engagement_name || "--";
-  const engagementCode = ctx.engagementCode || ctx.engagement?.engagement_code || "--";
+  const customerName =
+    ctx.customerName ||
+    ctx.engagement?.customer_name ||
+    me?.customer_name ||
+    "--";
+
+  const engagementName =
+    ctx.engagementName ||
+    ctx.engagement?.engagement_name ||
+    "--";
+
+  const engagementCode =
+    ctx.engagementCode ||
+    ctx.engagement?.engagement_code ||
+    "--";
+
+  const workspaceStatus =
+    ctx.workspaceStatus ||
+    ctx.engagement?.workspace_status ||
+    "";
+
+  const companyLabel =
+    ctx.companyName ||
+    ctx.targetCompanyName ||
+    window.CURRENT_COMPANY?.name ||
+    `Company ${activeCompanyId || "--"}`;
+
+  if (!isDelegated) {
+    mount.innerHTML = `
+      <div class="card p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="panel-title">Dashboard</div>
+            <div class="panel-subtitle mt-1">
+              ${esc(companyLabel)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
 
   mount.innerHTML = `
-    <div class="card p-6">
+    <div class="card p-6 border border-amber-200 bg-amber-50/60">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div class="panel-title">Day-to-Day Postings</div>
+          <div class="panel-title">Delegated Posting Workspace</div>
           <div class="panel-subtitle mt-1">
-            Client: ${esc(customerName)} · Engagement: ${esc(engagementName)} (${esc(engagementCode)}) · Target Company: ${esc(String(activeCompanyId))}
+            Client: ${esc(customerName)} ·
+            Engagement: ${esc(engagementName)} (${esc(engagementCode)}) ·
+            Target Company: ${esc(companyLabel)}${activeCompanyId ? ` (#${esc(String(activeCompanyId))})` : ""}
           </div>
+          ${
+            workspaceStatus
+              ? `<div class="text-xs text-amber-700 mt-2">Workspace status: ${esc(workspaceStatus)}</div>`
+              : ""
+          }
+        </div>
+        <div class="text-xs px-2 py-1 rounded-full border border-amber-300 text-amber-800 bg-white">
+          Delegated access
         </div>
       </div>
     </div>
@@ -9560,8 +9620,14 @@ function selectCoaAccount(acc) {
 
 // Somewhere globally (top of file), make sure we have a default:
 window.CURRENT_PERIOD_KEY = window.CURRENT_PERIOD_KEY || "this_month";
+
 async function loadDashboard() {
-  const postingCtx = restorePostingContext();
+  const postingCtx =
+    window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
+    window.restorePostingContext?.() ||
+    null;
+
+  const isDelegated = !!postingCtx;
 
   const me =
     window.currentUser ||
@@ -9569,13 +9635,24 @@ async function loadDashboard() {
     {};
 
   const companyBadge = document.getElementById("companyBadge");
+
   if (companyBadge) {
-    renderPostingDashboardContextBanner(companyBadge, me);
+    // ✅ Use postingCtx if present
+    renderPostingDashboardContextBanner(companyBadge, me, postingCtx);
   }
 
   updatePostingCompanyBadge();
   bindReturnToPractitionerWorkspace();
 
+  // ✅ OPTIONAL: enforce delegated UI mode here
+  if (isDelegated) {
+    document.body.classList.add("delegated-workspace");
+
+    console.log("[Dashboard] Delegated workspace active", {
+      engagementId: postingCtx?.engagementId,
+      companyId: postingCtx?.targetCompanyId,
+    });
+  }
   console.log("loadDashboard(): rendering dashboard widgets…");
   console.log("[loadDashboard] pnlMini exists?", !!document.getElementById("pnlMini"));
   console.log("[loadDashboard] renderPnLMini type:", typeof window.renderPnLMini);
@@ -50696,24 +50773,27 @@ async function bootstrapApp(currentUser) {
     }
   }
 
-  // ------------------------------------------------------------
-  // 1) Resolve company id from multiple places
-  // ------------------------------------------------------------
-  const postingCtx = restorePostingContext?.() || null;
+    // ------------------------------------------------------------
+    // 1) Resolve company id from multiple places
+    // ------------------------------------------------------------
+    const postingCtx =
+      window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
+      window.restorePostingContext?.() ||
+      null;
 
-  const delegatedPostingCompanyId =
-    Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
+    const delegatedPostingCompanyId =
+      Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
 
-  const isDelegatedPosting =
-    !!postingCtx &&
-    postingCtx.launchMode === "posting" &&
-    delegatedPostingCompanyId > 0;
+    const isDelegatedPosting =
+      !!postingCtx &&
+      postingCtx.launchMode === "posting" &&
+      delegatedPostingCompanyId > 0;
 
-  // expose globally as early as possible
-  window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
-  window.__FS_POSTING_CONTEXT__ = postingCtx || null;
+    // expose globally as early as possible
+    window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
+    window.__FS_POSTING_CONTEXT__ = postingCtx || null;
 
-  const resolvedCompanyId =
+    const resolvedCompanyId =
     delegatedPostingCompanyId ||
     (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     currentUser?.company_id ||
@@ -50812,7 +50892,7 @@ async function bootstrapApp(currentUser) {
 
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
-    
+
     // show logged-in UI but don't try company APIs
     if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
     if (typeof switchScreen === "function") switchScreen("company"); // or "company-setup"
