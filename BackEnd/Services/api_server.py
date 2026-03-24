@@ -1663,10 +1663,16 @@ def api_auth_me():
     print(">>> API_AUTH_ME HIT <<<", __file__)
    
     payload = getattr(request, "jwt_payload", {}) or {}
-    user_id = getattr(g, "user_id", None)
+
+    user_id = payload.get("user_id") or payload.get("sub")
+
+    print(">>> PAYLOAD =", payload)
     print(">>> USER_ID =", user_id)
+
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
+
+    user_id = int(user_id)
 
     user = db_service.fetch_one("""
         SELECT id, email, first_name, last_name, user_type
@@ -1695,13 +1701,20 @@ def api_auth_me():
         LIMIT 1;
     """, (int(user_id),))
 
-    token_cid_raw = payload.get("company_id")
+    token_cid_raw = (
+        payload.get("target_company_id")
+        or payload.get("company_id")
+    )
     try:
         token_cid = int(token_cid_raw) if token_cid_raw not in (None, "") else None
     except (TypeError, ValueError):
         token_cid = None
 
-    if primary_mem and primary_mem.get("company_id"):
+    is_delegated = bool(payload.get("is_delegated_company_access"))
+
+    if is_delegated and token_cid:
+        company_id = int(token_cid)
+    elif primary_mem and primary_mem.get("company_id"):
         company_id = int(primary_mem["company_id"])
     elif token_cid and token_cid in allowed:
         company_id = token_cid
