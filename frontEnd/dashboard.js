@@ -45,7 +45,25 @@ window.addEventListener("unhandledrejection", (e) => {
   console.log("UNHANDLED PROMISE:", e.reason);
 });
 
-// ✅ Resolve company profile from API (source of truth)
+(function hardTraceRedirects() {
+  const origOpen = window.open;
+  window.open = function(...args) {
+    console.error("[REDIRECT TRACE] window.open", args, new Error().stack);
+    return origOpen.apply(this, args);
+  };
+
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (a) {
+      console.warn("[REDIRECT TRACE] anchor click", a.href, a, new Error().stack);
+    }
+  }, true);
+
+  window.addEventListener("beforeunload", () => {
+    console.warn("[REDIRECT TRACE] beforeunload from", location.href);
+    console.trace();
+  });
+})();
 
 // dashboard.js — FinSage Command Center
 (async function () {
@@ -5468,44 +5486,32 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     me = window.currentUser || {};
   }
 
+  const postingCtx =
+    window.__FS_POSTING_CONTEXT__ ||
+    window.FS_DELEGATED_WORKSPACE?.getPostingContext?.() ||
+    window.restorePostingContext?.() ||
+    null;
+
   const isDelegatedPosting =
     currentMode === "delegated" ||
     !!window.__FS_DELEGATED_POSTING__ ||
-    !!window.__FS_POSTING_CONTEXT__;
+    !!postingCtx;
 
-  console.log("initDashboardModeSwitcher currentMode =", currentMode);
-  console.log("initDashboardModeSwitcher me =", me);
-  console.log("initDashboardModeSwitcher delegated =", isDelegatedPosting);
+  if (!wrap || !select) return;
 
-  if (!wrap || !select) {
-    console.warn("dashboard switcher elements missing");
-    return;
-  }
-
-  // Delegated workspace must not mode-switch away automatically
   if (isDelegatedPosting) {
     wrap.classList.add("hidden");
     wrap.style.display = "none";
     select.disabled = true;
-
-    // keep the UI state explicit if this option exists
-    const hasDelegatedOption = Array.from(select.options || []).some(
-      (opt) => String(opt.value || "").toLowerCase() === "delegated"
-    );
-    if (hasDelegatedOption) {
-      select.value = "delegated";
-    }
-
-    console.log("dashboard switcher hidden in delegated workspace");
+    select.onchange = null;
     return;
   }
 
   const show = shouldShowDashboardSwitcher(me);
-  console.log("dashboard switcher show =", show);
-
   if (!show) {
     wrap.classList.add("hidden");
     wrap.style.display = "none";
+    select.onchange = null;
     return;
   }
 
@@ -5513,25 +5519,25 @@ function initDashboardModeSwitcher(currentMode = "internal") {
   wrap.style.display = "block";
   select.disabled = false;
 
-  // normalize incoming mode
   const normalizedMode = String(currentMode || "internal").toLowerCase();
-  if (
-    normalizedMode === "internal" ||
-    normalizedMode === "practitioner"
-  ) {
-    select.value = normalizedMode;
-  } else {
-    select.value = "internal";
-  }
+  select.value =
+    normalizedMode === "internal" || normalizedMode === "practitioner"
+      ? normalizedMode
+      : "internal";
 
   select.onchange = () => {
-    const next = String(select.value || "").toLowerCase();
+    const delegatedNow =
+      !!window.__FS_DELEGATED_POSTING__ ||
+      !!window.__FS_POSTING_CONTEXT__ ||
+      !!window.FS_DELEGATED_WORKSPACE?.getPostingContext?.();
 
-    console.warn("dashboard mode switch change", {
-      next,
-      currentMode,
-      delegated: isDelegatedPosting,
-    });
+    if (delegatedNow) {
+      console.warn("Blocked mode switch during delegated workspace");
+      select.value = "internal";
+      return;
+    }
+
+    const next = String(select.value || "").toLowerCase();
 
     if (next === "internal") {
       window.location.href = "dashboard.html";
@@ -5540,11 +5546,6 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
     if (next === "practitioner") {
       window.location.href = "practitionerdashboard.html";
-      return;
-    }
-
-    if (next === "delegated") {
-      console.warn("delegated mode is navigation-controlled only");
       return;
     }
   };
@@ -5800,15 +5801,25 @@ function resolveScreenName(name) {
   /* ==============================
    * Mode (Enterprise vs Practitioner)
    * ============================== */
-  function applyMode() {
-    const mode = $("#modeSelect")?.value;
-    if (!mode) return;
-    store.set(K.MODE, mode);
-    $$(".enterprise-only").forEach(
-      (el) => (el.style.display = mode === "enterprise" ? "" : "none")
-    );
-    setupNav();
+function applyMode() {
+  const isDelegated =
+    !!window.__FS_DELEGATED_POSTING__ ||
+    !!window.__FS_POSTING_CONTEXT__;
+
+  if (isDelegated) {
+    console.log("applyMode skipped in delegated workspace");
+    return;
   }
+
+  const mode = $("#modeSelect")?.value;
+  if (!mode) return;
+
+  store.set(K.MODE, mode);
+  $$(".enterprise-only").forEach(
+    (el) => (el.style.display = mode === "enterprise" ? "" : "none")
+  );
+  setupNav();
+}
 
 function warnScreensMissingPolicy(menu) {
   const missing = [];
@@ -51321,11 +51332,15 @@ async function bootstrapApp(currentUser) {
   // ------------------------------------------------------------
   // 4) Mode + nav (guard!)
   // ------------------------------------------------------------
-  if (typeof applyMode === "function") {
-    $("#modeSelect")?.addEventListener?.("change", applyMode);
-    applyMode();
+  if (!isDelegatedPosting) {
+    if (typeof applyMode === "function") {
+      $("#modeSelect")?.addEventListener?.("change", applyMode);
+      applyMode();
+    } else {
+      console.warn("applyMode() missing - skipped");
+    }
   } else {
-    console.warn("applyMode() missing - skipped");
+    console.log("bootstrapApp: skipping applyMode in delegated workspace");
   }
 
   if (typeof setupNav === "function") {
@@ -51361,6 +51376,14 @@ async function bootstrapApp(currentUser) {
   window.currentUser = currentUser;
   localStorage.setItem("fs_user", JSON.stringify(currentUser || {}));
   await initHeaderCompanySwitcher?.();
+
+  console.log("[BOOT] before initDashboardModeSwitcher", {
+    isDelegatedPosting,
+    postingCtx,
+    delegatedFlag: window.__FS_DELEGATED_POSTING__,
+    postingContextGlobal: window.__FS_POSTING_CONTEXT__,
+    href: location.href
+  });
 
   if (typeof initDashboardModeSwitcher === "function") {
     if (isDelegatedPosting) {
@@ -51564,42 +51587,6 @@ async function enforceAuth() {
   }
 }
 window.enforceAuth = enforceAuth;
-
-(function trapRedirects() {
-  const originalAssign = window.location.assign.bind(window.location);
-  const originalReplace = window.location.replace.bind(window.location);
-
-  window.location.assign = function (url) {
-    console.error("[REDIRECT TRAP] location.assign ->", url);
-    console.trace();
-    debugger;
-    return originalAssign(url);
-  };
-
-  window.location.replace = function (url) {
-    console.error("[REDIRECT TRAP] location.replace ->", url);
-    console.trace();
-    debugger;
-    return originalReplace(url);
-  };
-
-  const hrefDesc = Object.getOwnPropertyDescriptor(Location.prototype, "href");
-  if (hrefDesc && hrefDesc.set) {
-    Object.defineProperty(window.location, "href", {
-      configurable: true,
-      enumerable: true,
-      get() {
-        return hrefDesc.get.call(window.location);
-      },
-      set(url) {
-        console.error("[REDIRECT TRAP] location.href ->", url);
-        console.trace();
-        debugger;
-        return hrefDesc.set.call(window.location, url);
-      }
-    });
-  }
-})();
 
 async function init() {
   const token = window.getToken?.();
