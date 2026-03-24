@@ -266,7 +266,7 @@ window.enterEngagementWorkspace = async function enterEngagementWorkspace(engage
     throw new Error(res?.error || "Failed to enter workspace");
   }
 
-  localStorage.setItem("token", res.token);
+  window.setToken(res.token, true);
 
   localStorage.setItem("fs_posting_context", JSON.stringify({
     engagementId: res.workspace?.engagement_id,
