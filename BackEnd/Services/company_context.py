@@ -473,7 +473,12 @@ ROLE_PERMISSION_PROFILE = {
     },
 }
 
-def build_permissions(*, role: str, access_scope: str) -> dict:
+def build_permissions(
+    *,
+    role: str,
+    access_scope: str,
+    delegated_unlocks: dict | None = None,
+) -> dict:
     norm_role = normalize_role(role)
     scope = (access_scope or "core").strip().lower()
 
@@ -487,20 +492,24 @@ def build_permissions(*, role: str, access_scope: str) -> dict:
         norm_role in PRACTITIONER_DASHBOARD_ROLES or norm_role in DUAL_DASHBOARD_ROLES
     )
 
-    # NEW: limited enterprise-style workspace access for practitioner-assigned staff
     base["can_access_delegated_posting_workspace"] = bool(
         scope == "assignment" and (
             base.get("can_post_journals", False) or
             base.get("can_prepare_financials", False)
         )
     )
-    # hard restriction for assignment users
+
     if scope == "assignment":
         base["can_manage_users"] = False
         base["can_manage_company_setup"] = False
         base["can_edit_tax_settings"] = False
         base["can_lock_periods"] = False
         base["can_manage_banking"] = False
+
+    if delegated_unlocks:
+        for key, value in delegated_unlocks.items():
+            if key in base:
+                base[key] = bool(value)
 
     return base
 
@@ -525,3 +534,68 @@ def resolve_default_dashboard(*, user_type: str, role: str, access_scope: str) -
 
     return None
 
+def get_delegated_workspace_unlocks(
+    *,
+    role: str,
+    access_scope: str,
+    is_provisioned_workspace: bool,
+) -> dict:
+    role = normalize_role(role)
+    scope = (access_scope or "core").strip().lower()
+
+    unlocks = {
+        "can_manage_banking": False,
+        "can_edit_tax_settings": False,
+        "can_manage_company_setup": False,
+        "can_lock_periods": False,
+        "can_manage_users": False,
+    }
+
+    if not is_provisioned_workspace or scope != "assignment":
+        return unlocks
+
+    # operational setup allowed
+    if role in {
+        "bookkeeper",
+        "accountant",
+        "manager",
+        "audit_manager",
+        "client_service_manager",
+        "audit_partner",
+        "engagement_partner",
+        "owner",
+        "admin",
+        "cfo",
+    }:
+        unlocks["can_manage_banking"] = True
+
+    if role in {
+        "manager",
+        "audit_manager",
+        "client_service_manager",
+        "audit_partner",
+        "engagement_partner",
+        "owner",
+        "admin",
+        "cfo",
+        "bookkeeper",
+    }:
+        unlocks["can_edit_tax_settings"] = True
+
+    if role in {
+        "manager",
+        "audit_manager",
+        "client_service_manager",
+        "audit_partner",
+        "engagement_partner",
+        "owner",
+        "admin",
+        "cfo",
+    }:
+        unlocks["can_manage_company_setup"] = True
+
+    # still keep these blocked
+    unlocks["can_lock_periods"] = False
+    unlocks["can_manage_users"] = False
+
+    return unlocks

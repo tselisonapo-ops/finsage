@@ -4210,6 +4210,7 @@ async function maybePromptAfterInvite(invitedRoleRaw) {
 }
 
 
+
 async function sendInvite(email, role, accessScope = "core") {
   const cid =
     window.currentUser?.company_id ||
@@ -5108,7 +5109,26 @@ const SCREEN_POLICY = {
 };
 
 
+function getEffectivePermissions() {
+  const me = window.currentUser || {};
+  const perms = { ...(me.permissions || {}) };
 
+  const ctx =
+    window.FS_DELEGATED_WORKSPACE?.getPostingContext?.() ||
+    window.__FS_POSTING_CONTEXT__ ||
+    null;
+
+  const isDelegatedProvisioned =
+    !!ctx &&
+    (ctx.accessMode === "delegated_workspace" || ctx.launchMode === "posting") &&
+    Number(ctx.targetCompanyId || ctx.companyId || 0) > 0;
+
+  if (!isDelegatedProvisioned) return perms;
+
+  // no extra fake grants here — backend token should already carry what is allowed
+  return perms;
+}
+window.getEffectivePermissions = getEffectivePermissions;
 
 // Optional feature check
 function hasFeature(flag) {
@@ -5325,6 +5345,7 @@ function getStoredUser() {
         ctx.returnTo || "practitionerdashboard.html#screen=assignments";
     };
   }
+  window.bindReturnToPractitionerWorkspace = bindReturnToPractitionerWorkspace;
 
   function decorateApiHeadersWithDelegatedContext(headers) {
     if (!isDelegatedPostingMode()) return headers;
@@ -5583,6 +5604,26 @@ function guardScreenAccess(name) {
     return { ok: true, resolved };
   }
 
+  // Delegated provisioned workspace unlock
+  // This is checked before normal permission/role denial so operational setup
+  // screens can still open in provisioned delegated workspaces.
+  if (canUseDelegatedProvisionedScreen(resolved, rule)) {
+    // still respect feature gate if present
+    if (rule.feature && !hasFeature(rule.feature)) {
+      return { ok: false, reason: "feature" };
+    }
+
+    // still respect policy gates that should remain active
+    if (rule.policy === "approveCustomer") {
+      const cid = FS?.control?.resolveCid?.() || null;
+      const meRole = window.getCurrentRole?.() || "viewer";
+      const allowed = FS?.policy?.canApproveCustomer?.(meRole, cid) === true;
+      if (!allowed) return { ok: false, reason: "policy" };
+    }
+
+    return { ok: true, resolved, via: "delegated_provisioned_unlock" };
+  }
+
   // Permission-first gate
   if (rule.permission) {
     if (!window.hasPermission?.(rule.permission)) {
@@ -5608,6 +5649,68 @@ function guardScreenAccess(name) {
   return { ok: true, resolved };
 }
 window.guardScreenAccess = guardScreenAccess;
+
+function canUseDelegatedProvisionedScreen(screenName, rule) {
+  const ctx =
+    window.FS_DELEGATED_WORKSPACE?.getPostingContext?.() ||
+    window.__FS_POSTING_CONTEXT__ ||
+    null;
+
+  const isDelegatedProvisioned =
+    !!ctx &&
+    (ctx.accessMode === "delegated_workspace" || ctx.launchMode === "posting") &&
+    Number(ctx.targetCompanyId || ctx.companyId || 0) > 0;
+
+  if (!isDelegatedProvisioned) return false;
+
+  // Never unlock native-admin / membership-only screens here
+  const blockedScreens = new Set([
+    "users",
+    "governance",
+    "security",
+    "subscription",
+  ]);
+
+  if (blockedScreens.has(screenName)) return false;
+
+  // Permission-driven operational unlocks
+  const effectivePerms =
+    window.getEffectivePermissions?.() ||
+    window.currentUser?.permissions ||
+    {};
+
+  // Explicit permission route
+  if (rule?.permission && effectivePerms[rule.permission] === true) {
+    return true;
+  }
+
+  // Screen-specific operational exceptions
+  const allowedScreens = new Set([
+    "banking",
+    "bankAccounts",
+    "bankSetup",
+    "vat",
+    "vatSettings",
+    "vatRecon",
+    "tax",
+    "taxSettings",
+    "incomeTax",
+    "reporting",
+    "company",
+    "journal",
+    "journalDesk",
+    "ar",
+    "ap",
+    "fixedAssets",
+    "inventory",
+    "reports",
+    "trialBalance",
+    "pnl",
+    "cashflow",
+  ]);
+
+  return allowedScreens.has(screenName);
+}
 
 function resolveScreenName(name) {
   const n = String(name || "").trim();
