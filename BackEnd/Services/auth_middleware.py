@@ -144,24 +144,66 @@ def require_auth(_f=None, *, require_company: bool = True):
                         "path": request.path,
                     })
 
-                    if delegated_ok:
-                        base = db_service.get_user_by_id(user_id) or {}
-                        base["company_id"] = int(cid)
-                        base["source_company_id"] = source_company_id
-                        base["user_role"] = (
+                # in require_auth
+
+                if delegated_ok:
+                    base = db_service.get_user_by_id(user_id) or {}
+                    perms = payload.get("permissions") or {}
+
+                    user = {
+                        **base,
+                        "id": int(base.get("id") or user_id),
+                        "user_id": int(user_id),
+                        "company_id": int(cid),
+                        "source_company_id": int(source_company_id),
+                        "email": payload.get("email") or base.get("email"),
+                        "first_name": payload.get("first_name") or base.get("first_name"),
+                        "last_name": payload.get("last_name") or base.get("last_name"),
+                        "role": payload.get("role") or base.get("role") or "viewer",
+                        "user_role": (
                             payload.get("role")
                             or base.get("user_role")
+                            or base.get("role")
                             or "viewer"
-                        )
-                        base["access_scope"] = payload.get("access_scope") or "assignment"
-                        base["delegated_via_engagement_id"] = engagement_id
-                        base["is_delegated_company_access"] = True
-                        user = base
-                    else:
-                        return _corsify(make_response(
-                            jsonify({"error": "User has no access to this company"}), 403
-                        ))
-                    
+                        ),
+                        "company_role": (
+                            payload.get("role")
+                            or base.get("user_role")
+                            or base.get("role")
+                            or "viewer"
+                        ),
+                        "user_type": payload.get("user_type") or base.get("user_type"),
+                        "access_scope": str(payload.get("access_scope") or "assignment").strip().lower(),
+                        "access_level": payload.get("access_level") or base.get("access_level"),
+                        "permissions": perms,
+
+                        # flattened permission flags for old code paths
+                        "can_view_dashboard": bool(perms.get("can_view_dashboard")),
+                        "can_view_reports": bool(perms.get("can_view_reports")),
+                        "can_manage_ar": bool(perms.get("can_manage_ar")),
+                        "can_manage_ap": bool(perms.get("can_manage_ap")),
+                        "can_manage_banking": bool(perms.get("can_manage_banking")),
+                        "can_post_journals": bool(perms.get("can_post_journals")),
+                        "can_prepare_financials": bool(perms.get("can_prepare_financials")),
+                        "can_manage_fixed_assets": bool(perms.get("can_manage_fixed_assets")),
+                        "can_manage_users": bool(perms.get("can_manage_users")),
+                        "can_manage_company_setup": bool(perms.get("can_manage_company_setup")),
+                        "can_edit_tax_settings": bool(perms.get("can_edit_tax_settings")),
+                        "can_lock_periods": bool(perms.get("can_lock_periods")),
+                        "can_approve": bool(perms.get("can_approve")),
+                        "can_access_practitioner_dashboard": bool(perms.get("can_access_practitioner_dashboard")),
+                        "can_access_enterprise_dashboard": bool(perms.get("can_access_enterprise_dashboard")),
+
+                        # delegated markers
+                        "delegated_via_engagement_id": engagement_id,
+                        "is_delegated_company_access": True,
+                        "is_native_company_member": False,
+                    }
+                else:
+                    return _corsify(make_response(
+                        jsonify({"error": "User has no access to this company"}), 403
+                    ))
+                                    
             user["company_id"] = int(user.get("company_id") or cid)
             user["user_role"] = (user.get("user_role") or user.get("role") or "viewer")
             g.current_user = user

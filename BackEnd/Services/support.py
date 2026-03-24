@@ -19,7 +19,11 @@ def _get_auth_context(company_id: int):
     if not user_id:
         return None, None, None, (jsonify({"error": "AUTH|missing_user_id"}), 401)
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )   
     if not user:
         return None, None, None, (jsonify({"error": "User has no access to this company"}), 403)
 
@@ -75,7 +79,11 @@ def submit_ticket():
     if not company_id:
         return jsonify({"error": "AUTH|missing_company_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )   
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 

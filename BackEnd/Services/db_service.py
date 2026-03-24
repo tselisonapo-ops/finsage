@@ -2555,17 +2555,30 @@ class DatabaseService:
         """
         return self.fetch_one(sql, (user_id,))
 
-    def get_user_context(self, *, user_id: int, company_id: int | None) -> Optional[dict]:
+    def get_user_context(
+        self,
+        *,
+        user_id: int,
+        company_id: int | None,
+        delegated_fallback: dict | None = None,
+    ) -> Optional[dict]:
         """
         Returns the authenticated user with the correct per-company role applied.
-        Source of truth: public.company_users.role
+
+        Priority:
+        1) direct company membership from public.company_users
+        2) delegated fallback supplied by require_auth
+        3) base user row when company_id is not provided
         """
         u = self.get_user_by_id(int(user_id))
         if not u:
-            return None
+            return delegated_fallback if delegated_fallback else None
 
-        # If no company_id, return the base user row (for public endpoints)
+        # no company context
         if not company_id:
+            if delegated_fallback:
+                merged = {**u, **delegated_fallback}
+                return merged
             return u
 
         mem = self.fetch_one(
@@ -2578,27 +2591,51 @@ class DatabaseService:
             (int(company_id), int(user_id)),
         )
 
-        if not mem:
-            return None
+        # direct membership path
+        if mem and bool(mem.get("is_active", True)):
+            u["company_id"] = int(company_id)
 
-        if not bool(mem.get("is_active", True)):
-            return None
+            r = (mem.get("role") or "").strip()
+            u["user_role"] = normalize_role(r) if r else "other"
+            u["company_role"] = u["user_role"]
 
-        # ✅ apply membership truth
-        u["company_id"] = int(company_id)
+            if mem.get("access_level"):
+                u["access_level"] = mem.get("access_level")
 
-        r = (mem.get("role") or "").strip()
-        u["user_role"] = normalize_role(r) if r else "other"
+            if mem.get("access_scope"):
+                u["access_scope"] = str(mem.get("access_scope")).strip().lower()
 
-        if mem.get("access_level"):
-            u["access_level"] = mem.get("access_level")
+            u["is_native_company_member"] = True
+            u["is_delegated_company_access"] = False
+            return u
 
-        if mem.get("access_scope"):
-            u["access_scope"] = str(mem.get("access_scope")).strip().lower()
+        # delegated fallback path
+        if delegated_fallback:
+            merged = {**u, **delegated_fallback}
+            merged["company_id"] = int(company_id)
+            merged["is_native_company_member"] = False
+            merged["is_delegated_company_access"] = True
 
-        u["company_role"] = u["user_role"]
+            role_raw = (
+                merged.get("user_role")
+                or merged.get("company_role")
+                or merged.get("role")
+                or ""
+            ).strip()
 
-        return u
+            if role_raw:
+                merged["user_role"] = normalize_role(role_raw)
+                merged["company_role"] = merged["user_role"]
+            else:
+                merged["user_role"] = "other"
+                merged["company_role"] = "other"
+
+            if merged.get("access_scope"):
+                merged["access_scope"] = str(merged["access_scope"]).strip().lower()
+
+            return merged
+
+        return None
 
 
     def delete_user(self, user_id: int) -> None:

@@ -484,7 +484,11 @@ def create_lease(company_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -661,7 +665,11 @@ def list_leases(company_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -708,7 +716,11 @@ def get_lease(company_id: int, lease_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -749,7 +761,11 @@ def get_lease_schedule_period(company_id: int, lease_id: int, period_no: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -827,7 +843,11 @@ def get_lease_schedule(company_id: int, lease_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -909,7 +929,11 @@ def leases_monthly_due(company_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -1296,7 +1320,11 @@ def list_lease_payments(company_id: int, lease_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -1339,7 +1367,11 @@ def preview_lease_payment(company_id: int, lease_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -1420,7 +1452,11 @@ def post_lease_payment(company_id: int, lease_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -1753,7 +1789,11 @@ def post_lease_modification(company_id: int, mod_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    ) 
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -2029,7 +2069,11 @@ def post_lease_termination(company_id: int, term_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )   
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -2147,7 +2191,11 @@ def lease_modifications(company_id: int, lease_id: int):
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
-    user = db_service.get_user_context(user_id=user_id, company_id=int(company_id))
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )   
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
