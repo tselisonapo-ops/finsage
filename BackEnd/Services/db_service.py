@@ -18228,26 +18228,26 @@ class DatabaseService:
     def next_quote_number_cur(self, company_id: int, cur) -> str:
         return self.next_doc_number_cur(company_id, cur, key="quote")
 
-def list_coa(self, company_id: int) -> list[dict]:
-    schema = f"company_{company_id}"
-    try:
-        rows = self.fetch_all(f"""
-            SELECT
-                id, code, name, section, category, subcategory,
-                description, reporting_description, standard,
-                posting, posting_rules,
-                template_code, template_code_scoped, template_code_base,
-                code_family, code_numeric, role,
-                cf_section, cf_bucket,
-                is_working_capital, is_cash_equiv, is_non_cash_addback,
-                is_contra
-            FROM {schema}.coa
-            ORDER BY code_family NULLS LAST, code_numeric NULLS LAST, code;
-        """) or []
-        return rows
-    except Exception:
-        current_app.logger.exception("list_coa failed for company_id=%s", company_id)
-        raise
+    def list_coa(self, company_id: int) -> list[dict]:
+        schema = f"company_{company_id}"
+        try:
+            rows = self.fetch_all(f"""
+                SELECT
+                    id, code, name, section, category, subcategory,
+                    description, reporting_description, standard,
+                    posting, posting_rules,
+                    template_code, template_code_scoped, template_code_base,
+                    code_family, code_numeric, role,
+                    cf_section, cf_bucket,
+                    is_working_capital, is_cash_equiv, is_non_cash_addback,
+                    is_contra
+                FROM {schema}.coa
+                ORDER BY code_family NULLS LAST, code_numeric NULLS LAST, code;
+            """) or []
+            return rows
+        except Exception:
+            current_app.logger.exception("list_coa failed for company_id=%s", company_id)
+            raise
 
     # ============================
     # DB SERVICE: create_coa_account
