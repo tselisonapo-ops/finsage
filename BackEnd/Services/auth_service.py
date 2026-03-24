@@ -43,6 +43,16 @@ def make_jwt(
     company_id: int | None = None,
     access_scope: str = "core",
     allowed_company_ids: list[int] | None = None,
+
+    # new optional delegated fields
+    source_company_id: int | None = None,
+    target_company_id: int | None = None,
+    engagement_id: int | None = None,
+    permissions: dict | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    is_delegated_company_access: bool = False,
+    is_native_company_member: bool = True,
 ) -> str:
     now = datetime.now(timezone.utc)
 
@@ -50,11 +60,22 @@ def make_jwt(
         "sub": str(user_id),
         "user_id": int(user_id),
         "email": email,
+        "first_name": first_name,
+        "last_name": last_name,
         "role": (role or "viewer").strip().lower(),
         "user_type": (user_type or "Enterprise").strip(),
         "company_id": int(company_id) if company_id is not None else None,
         "access_scope": (access_scope or "core").strip().lower(),
         "allowed_company_ids": [int(x) for x in (allowed_company_ids or [])],
+
+        # delegated workspace context
+        "source_company_id": int(source_company_id) if source_company_id is not None else None,
+        "target_company_id": int(target_company_id) if target_company_id is not None else None,
+        "engagement_id": int(engagement_id) if engagement_id is not None else None,
+        "permissions": permissions or {},
+        "is_delegated_company_access": bool(is_delegated_company_access),
+        "is_native_company_member": bool(is_native_company_member),
+
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(days=JWT_EXP_DAYS)).timestamp()),
     }

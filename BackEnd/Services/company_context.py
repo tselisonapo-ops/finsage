@@ -524,3 +524,4 @@ def resolve_default_dashboard(*, user_type: str, role: str, access_scope: str) -
         return "practitioner"
 
     return None
+

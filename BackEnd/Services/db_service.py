@@ -2565,10 +2565,9 @@ class DatabaseService:
         """
         Returns the authenticated user with the correct per-company role applied.
 
-        Priority:
-        1) direct company membership from public.company_users
-        2) delegated fallback supplied by require_auth
-        3) base user row when company_id is not provided
+        Source of truth:
+        - direct membership: public.company_users.role
+        - delegated access: delegated_fallback supplied by require_auth
         """
         u = self.get_user_by_id(int(user_id))
         if not u:
@@ -2592,7 +2591,10 @@ class DatabaseService:
         )
 
         # direct membership path
-        if mem and bool(mem.get("is_active", True)):
+        if mem:
+            if not bool(mem.get("is_active", True)):
+                return None
+
             u["company_id"] = int(company_id)
 
             r = (mem.get("role") or "").strip()
@@ -2620,15 +2622,10 @@ class DatabaseService:
                 merged.get("user_role")
                 or merged.get("company_role")
                 or merged.get("role")
-                or ""
-            ).strip()
-
-            if role_raw:
-                merged["user_role"] = normalize_role(role_raw)
-                merged["company_role"] = merged["user_role"]
-            else:
-                merged["user_role"] = "other"
-                merged["company_role"] = "other"
+                or "viewer"
+            )
+            merged["user_role"] = normalize_role(str(role_raw).strip())
+            merged["company_role"] = merged["user_role"]
 
             if merged.get("access_scope"):
                 merged["access_scope"] = str(merged["access_scope"]).strip().lower()
@@ -2637,6 +2634,169 @@ class DatabaseService:
 
         return None
 
+    def build_delegated_workspace_permissions(
+        self,
+        *,
+        user_id: int,
+        source_company_id: int,
+        target_company_id: int,
+        engagement_id: int,
+        base_payload: dict | None = None,
+        role: str = "viewer",
+    ) -> dict:
+        """
+        Build delegated workspace permissions for a user entering a provisioned
+        workspace via engagement assignment.
+
+        Notes:
+        - Native membership-only capabilities stay closed by default.
+        - Existing JWT permissions from the source context are used as an upper bound,
+        not as automatic grants.
+        """
+        base_payload = base_payload or {}
+        incoming = base_payload.get("permissions") or {}
+
+        role = normalize_role(role)
+
+        # Safe defaults for delegated workspace access
+        perms = {
+            "can_view_dashboard": True,
+            "can_view_reports": True,
+            "can_manage_ar": False,
+            "can_manage_ap": False,
+            "can_manage_banking": False,
+            "can_post_journals": False,
+            "can_prepare_financials": False,
+            "can_manage_fixed_assets": False,
+            "can_approve": False,
+
+            # always closed in delegated mode unless you deliberately open them later
+            "can_manage_users": False,
+            "can_manage_company_setup": False,
+            "can_edit_tax_settings": False,
+            "can_lock_periods": False,
+            "can_access_enterprise_dashboard": False,
+            "can_access_practitioner_dashboard": True,
+        }
+
+        # Role-based grants inside delegated workspace
+        if role in {
+            "bookkeeper",
+            "accountant",
+            "clerk",
+            "fs_compiler",
+            "audit_staff",
+            "senior_associate",
+            "reviewer",
+        }:
+            perms["can_manage_ar"] = True
+            perms["can_manage_ap"] = True
+            perms["can_post_journals"] = True
+            perms["can_prepare_financials"] = True
+            perms["can_manage_fixed_assets"] = True
+
+        if role in {
+            "manager",
+            "audit_manager",
+            "client_service_manager",
+            "cfo",
+        }:
+            perms["can_manage_ar"] = True
+            perms["can_manage_ap"] = True
+            perms["can_manage_banking"] = True
+            perms["can_post_journals"] = True
+            perms["can_prepare_financials"] = True
+            perms["can_manage_fixed_assets"] = True
+            perms["can_approve"] = True
+
+        if role in {
+            "owner",
+            "admin",
+            "audit_partner",
+            "engagement_partner",
+        }:
+            perms["can_manage_ar"] = True
+            perms["can_manage_ap"] = True
+            perms["can_manage_banking"] = True
+            perms["can_post_journals"] = True
+            perms["can_prepare_financials"] = True
+            perms["can_manage_fixed_assets"] = True
+            perms["can_view_reports"] = True
+            perms["can_approve"] = True
+
+        # Use source-token permissions as an upper bound.
+        # If source context says user cannot do it, do not elevate here.
+        bounded_keys = [
+            "can_view_dashboard",
+            "can_view_reports",
+            "can_manage_ar",
+            "can_manage_ap",
+            "can_manage_banking",
+            "can_post_journals",
+            "can_prepare_financials",
+            "can_manage_fixed_assets",
+            "can_approve",
+        ]
+
+        for key in bounded_keys:
+            if key in incoming:
+                perms[key] = bool(perms[key] and incoming.get(key))
+
+        # keep native-membership capabilities closed regardless of incoming payload
+        perms["can_manage_users"] = False
+        perms["can_manage_company_setup"] = False
+        perms["can_edit_tax_settings"] = False
+        perms["can_lock_periods"] = False
+        perms["can_access_enterprise_dashboard"] = False
+        perms["can_access_practitioner_dashboard"] = True
+
+        # Optional trace/debug metadata
+        perms["_delegated_meta"] = {
+            "user_id": int(user_id),
+            "source_company_id": int(source_company_id),
+            "target_company_id": int(target_company_id),
+            "engagement_id": int(engagement_id),
+            "role": role,
+        }
+
+        return perms
+
+    def get_delegated_workspace_for_engagement(
+        self,
+        cur,
+        *,
+        company_id: int,
+        engagement_id: int,
+        user_id: int,
+    ) -> Optional[dict]:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                e.id,
+                e.company_id,
+                e.target_company_id,
+                e.engagement_name,
+                e.workspace_status,
+                e.is_active,
+                et.role_on_engagement,
+                c.name AS target_company_name
+            FROM {schema}.engagements e
+            JOIN {schema}.engagement_team et
+            ON et.engagement_id = e.id
+            AND et.company_id = e.company_id
+            LEFT JOIN public.companies c
+            ON c.id = e.target_company_id
+            WHERE e.company_id = %s
+            AND e.id = %s
+            AND et.user_id = %s
+            AND COALESCE(et.is_active, TRUE) = TRUE
+            AND COALESCE(e.is_active, TRUE) = TRUE
+            AND LOWER(COALESCE(e.workspace_status, '')) = 'provisioned'
+            LIMIT 1
+        """
+        cur.execute(sql, (int(company_id), int(engagement_id), int(user_id)))
+        return cur.fetchone()
 
     def delete_user(self, user_id: int) -> None:
         self.execute_sql(

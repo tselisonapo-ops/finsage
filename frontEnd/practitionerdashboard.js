@@ -3738,7 +3738,7 @@ async function bindAssignmentsScreenEvents(me) {
         targetCompanyId
       };
 
-      await openPostingForEngagement(row, me, targetCompanyId);
+      await openPostingForEngagement(row, me);
       return;
     }
 
@@ -3753,6 +3753,19 @@ async function bindAssignmentsScreenEvents(me) {
     }
   });
 }
+
+window.enterEngagementWorkspace = async function enterEngagementWorkspace(engagementId, sourceCompanyId) {
+  const res = await apiFetch(`/api/engagements/${engagementId}/enter-workspace`, {
+    method: "POST",
+    body: JSON.stringify({ source_company_id: sourceCompanyId }),
+  });
+
+  if (!res?.ok || !res?.token) {
+    throw new Error(res?.error || "Failed to enter workspace");
+  }
+
+  return res;
+};
 
 function populateTeamEngagementFilter(rows) {
   const select = document.getElementById("teamEngagementFilter");
@@ -9952,10 +9965,46 @@ async function openPostingForEngagement(row, me) {
   const customerId = Number(row?.customer_id || 0) || null;
   const engagementId = Number(row?.id || 0) || null;
 
+  if (!engagementId || !sourceCompanyId) {
+    console.warn("Missing engagement/source company context for delegated workspace", {
+      engagementId,
+      sourceCompanyId,
+      row
+    });
+    return;
+  }
+
+  // keep original token once
+  try {
+    const currentToken =
+      localStorage.getItem("token") ||
+      localStorage.getItem("access_token");
+
+    if (currentToken && !localStorage.getItem("fs_home_token")) {
+      localStorage.setItem("fs_home_token", currentToken);
+    }
+  } catch (e) {
+    console.warn("Could not preserve home token", e);
+  }
+
+  // ask backend for delegated workspace token
+  const res = await window.enterEngagementWorkspace(engagementId, sourceCompanyId);
+
+  if (!res?.ok || !res?.token) {
+    throw new Error(res?.error || "Failed to enter delegated workspace");
+  }
+
+  // IMPORTANT: store the delegated token using the same key your AUTH_HEADER() reads
+  if (localStorage.getItem("access_token") !== null) {
+    localStorage.setItem("access_token", res.token);
+  } else {
+    localStorage.setItem("token", res.token);
+  }
+
   const ctx = {
     companyId: targetCompanyId,
     targetCompanyId,
-    sourceCompanyId: sourceCompanyId || null,
+    sourceCompanyId,
 
     customerId,
     customerName: row?.customer_name || "",
@@ -9981,6 +10030,15 @@ async function openPostingForEngagement(row, me) {
   };
 
   localStorage.setItem("fs_posting_context", JSON.stringify(ctx));
+
+  // set active company before redirect
+  try {
+    window.setActiveCompanyId?.(targetCompanyId);
+    window.__PR_ACTIVE_COMPANY_ID__ = targetCompanyId;
+  } catch (e) {
+    console.warn("Failed to set active company before redirect", e);
+  }
+
   window.location.href = "dashboard.html#screen=journal-desk";
 }
 

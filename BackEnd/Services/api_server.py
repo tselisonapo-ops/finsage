@@ -2352,6 +2352,119 @@ def api_accept_invite():
 # ────────────────────────────────────────────────────────────────
 # COA template + company endpoints
 # ────────────────────────────────────────────────────────────────
+@app.route("/api/engagements/<int:engagement_id>/enter-workspace", methods=["POST", "OPTIONS"])
+@require_auth(require_company=False)
+def enter_engagement_workspace(engagement_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = getattr(request, "jwt_payload", {}) or {}
+    user_id = payload.get("user_id") or payload.get("sub")
+    user_id = int(user_id) if user_id is not None else None
+    if not user_id:
+        return _corsify(make_response(jsonify({"error": "AUTH|missing_user_id"}), 401))
+
+    body = request.get_json(silent=True) or {}
+
+    source_company_id = (
+        body.get("source_company_id")
+        or payload.get("company_id")
+        or payload.get("token_company_id")
+    )
+    try:
+        source_company_id = int(source_company_id) if source_company_id is not None else None
+    except Exception:
+        source_company_id = None
+
+    if not source_company_id:
+        return _corsify(make_response(
+            jsonify({"error": "AUTH|missing_source_company_id"}), 400
+        ))
+
+    with db_service._conn_cursor() as (_conn, cur):
+        workspace = db_service.get_delegated_workspace_for_engagement(
+            cur,
+            company_id=source_company_id,
+            engagement_id=int(engagement_id),
+            user_id=int(user_id),
+        )
+
+    if not workspace:
+        return _corsify(make_response(
+            jsonify({"error": "User cannot access this engagement workspace"}), 403
+        ))
+
+    target_company_id = int(workspace["target_company_id"])
+
+    base_user = db_service.get_user_by_id(int(user_id)) or {}
+    role_raw = (
+        payload.get("role")
+        or workspace.get("role_on_engagement")
+        or base_user.get("user_role")
+        or base_user.get("role")
+        or "viewer"
+    )
+    role_norm = normalize_role(role_raw)
+
+    delegated_permissions = db_service.build_delegated_workspace_permissions(
+        user_id=int(user_id),
+        source_company_id=int(source_company_id),
+        target_company_id=int(target_company_id),
+        engagement_id=int(engagement_id),
+        base_payload=payload,
+        role=role_norm,
+    )
+
+    delegated_payload = {
+        "sub": int(user_id),
+        "user_id": int(user_id),
+        "email": base_user.get("email"),
+        "first_name": base_user.get("first_name"),
+        "last_name": base_user.get("last_name"),
+        "user_type": payload.get("user_type") or base_user.get("user_type") or "Practitioner",
+        "role": role_norm,
+
+        # IMPORTANT: token now points at target workspace
+        "company_id": int(target_company_id),
+        "token_company_id": int(target_company_id),
+        "allowed_company_ids": [int(target_company_id)],
+        "token_allowed_company_ids": [int(target_company_id)],
+
+        # delegated context
+        "source_company_id": int(source_company_id),
+        "target_company_id": int(target_company_id),
+        "engagement_id": int(engagement_id),
+        "access_scope": "assignment",
+        "token_access_scope": "assignment",
+        "is_delegated_company_access": True,
+        "is_native_company_member": False,
+
+        # UI helpers
+        "default_dashboard": "practitioner",
+        "dashboards": {
+            "enterprise": False,
+            "practitioner": True,
+        },
+
+        "permissions": delegated_permissions,
+    }
+
+    delegated_token = make_jwt(delegated_payload)
+
+    return _corsify(make_response(jsonify({
+        "ok": True,
+        "token": delegated_token,
+        "workspace": {
+            "engagement_id": int(engagement_id),
+            "source_company_id": int(source_company_id),
+            "target_company_id": int(target_company_id),
+            "company_id": int(target_company_id),
+            "company_name": workspace.get("target_company_name"),
+            "engagement_name": workspace.get("engagement_name"),
+            "access_scope": "assignment",
+            "is_delegated_company_access": True,
+        }
+    }), 200))
 
 @app.route("/api/industries", methods=["GET"])
 def get_industries_api():

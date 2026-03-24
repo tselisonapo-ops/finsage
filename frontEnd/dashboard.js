@@ -256,6 +256,28 @@ window.addEventListener("unhandledrejection", (e) => {
     return data;
   };
 
+window.enterEngagementWorkspace = async function enterEngagementWorkspace(engagementId, sourceCompanyId) {
+  const res = await apiFetch(`/api/engagements/${engagementId}/enter-workspace`, {
+    method: "POST",
+    body: JSON.stringify({ source_company_id: sourceCompanyId }),
+  });
+
+  if (!res?.ok || !res?.token) {
+    throw new Error(res?.error || "Failed to enter workspace");
+  }
+
+  localStorage.setItem("token", res.token);
+
+  localStorage.setItem("fs_posting_context", JSON.stringify({
+    engagementId: res.workspace?.engagement_id,
+    sourceCompanyId: res.workspace?.source_company_id,
+    targetCompanyId: res.workspace?.target_company_id,
+  }));
+
+  return res;
+};
+
+
 async function resolveCompanyProfile(currentUser) {
   // Always prefer server truth first:
   // /api/auth/me should return company_id + allowed_company_ids
@@ -5123,44 +5145,241 @@ function getStoredUser() {
   }
 }
 
-function restorePostingContext() {
-  try {
-    const raw = localStorage.getItem("fs_posting_context");
-    if (!raw) return null;
+(function () {
+  function safeParse(json, fallback = null) {
+    try {
+      return JSON.parse(json);
+    } catch {
+      return fallback;
+    }
+  }
 
-    const ctx = JSON.parse(raw);
-    if (!ctx?.companyId) return null;
+  function getAuthStorageKey() {
+    if (localStorage.getItem("access_token") !== null) return "access_token";
+    return "token";
+  }
 
-    const restored = {
-      ...ctx,
-      sourceDashboard: ctx.sourceDashboard || "practitioner",
-      accessMode: ctx.accessMode || "delegated_workspace",
-      launchMode: ctx.launchMode || "posting",
-      targetCompanyId: Number(ctx.targetCompanyId || ctx.companyId || 0) || null,
-      companyId: Number(ctx.companyId || ctx.targetCompanyId || 0) || null,
-      customerId: Number(ctx.customerId || 0) || null,
-      engagementId: Number(ctx.engagementId || 0) || null
-    };
+  function getPostingContext() {
+    return safeParse(localStorage.getItem("fs_posting_context") || "null", null);
+  }
 
-    console.log("Restoring posting context:", restored);
+  function getReturnContext() {
+    return safeParse(localStorage.getItem("fs_pr_return_context") || "null", null);
+  }
 
-    window.__PR_CONTEXT__ = {
-      ...(window.__PR_CONTEXT__ || {}),
-      ...restored
-    };
+  function isDelegatedPostingMode() {
+    const ctx = getPostingContext();
+    return !!(ctx && (ctx.accessMode === "delegated_workspace" || ctx.launchMode === "posting"));
+  }
+
+  function getDelegatedTargetCompanyId() {
+    const ctx = getPostingContext();
+    return Number(ctx?.targetCompanyId || ctx?.companyId || 0) || null;
+  }
+
+  function getDelegatedSourceCompanyId() {
+    const ctx = getPostingContext();
+    return Number(ctx?.sourceCompanyId || 0) || null;
+  }
+
+  function getDelegatedEngagementId() {
+    const ctx = getPostingContext();
+    return Number(ctx?.engagementId || 0) || null;
+  }
+
+  function setDelegatedGlobals(ctx) {
+    if (!ctx) return;
+
+    const targetCompanyId = Number(ctx.targetCompanyId || ctx.companyId || 0) || null;
+    if (!targetCompanyId) return;
 
     window.__FS_DELEGATED_POSTING__ = true;
-    window.__COMPANY_ID__ = restored.targetCompanyId;
-    window.__PR_ACTIVE_COMPANY_ID__ = restored.targetCompanyId;
-    window.__PR_ACTIVE_CUSTOMER_ID__ = restored.customerId;
-    window.__PR_ACTIVE_ENGAGEMENT_ID__ = restored.engagementId;
+    window.__FS_POSTING_CONTEXT__ = ctx;
+    window.__COMPANY_ID__ = targetCompanyId;
+    window.__PR_ACTIVE_COMPANY_ID__ = targetCompanyId;
+    window.__FS_TARGET_COMPANY_ID__ = targetCompanyId;
+    window.__FS_SOURCE_COMPANY_ID__ = Number(ctx.sourceCompanyId || 0) || null;
+    window.__FS_ENGAGEMENT_ID__ = Number(ctx.engagementId || 0) || null;
 
-    return restored;
-  } catch (err) {
-    console.warn("Failed to restore posting context", err);
-    return null;
+    try {
+      if (typeof window.setActiveCompanyId === "function") {
+        window.setActiveCompanyId(targetCompanyId);
+      }
+    } catch (e) {
+      console.warn("setActiveCompanyId failed during delegated restore", e);
+    }
   }
-}
+
+  function restorePostingContext() {
+    const ctx = getPostingContext();
+    if (!ctx) return null;
+
+    setDelegatedGlobals(ctx);
+
+    console.log("[PostingContext] restored", {
+      targetCompanyId: ctx.targetCompanyId,
+      sourceCompanyId: ctx.sourceCompanyId,
+      engagementId: ctx.engagementId,
+      launchMode: ctx.launchMode,
+      accessMode: ctx.accessMode,
+    });
+
+    return ctx;
+  }
+
+  function resolveInitialCompanyId() {
+    const delegatedCid = getDelegatedTargetCompanyId();
+    if (delegatedCid) return delegatedCid;
+
+    const returnCtx = getReturnContext();
+    const returnCid = Number(returnCtx?.companyId || 0) || null;
+    if (returnCid) return returnCid;
+
+    return Number(window.__PR_ACTIVE_COMPANY_ID__ || window.__COMPANY_ID__ || 0) || null;
+  }
+
+  function ensureDelegatedUiBadge() {
+    const ctx = getPostingContext();
+    const host = document.getElementById("delegatedWorkspaceBanner");
+    if (!ctx || !host) return;
+
+    host.classList.remove("hidden");
+    host.innerHTML = `
+      <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div class="font-semibold">Delegated workspace</div>
+        <div class="mt-1">
+          You are working in
+          <span class="font-semibold">${escapeHtml(ctx.engagementName || "client posting workspace")}</span>
+          for
+          <span class="font-semibold">${escapeHtml(ctx.customerName || "client")}</span>.
+        </div>
+      </div>
+    `;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function hideMembershipOnlyUi() {
+    if (!isDelegatedPostingMode()) return;
+
+    const selectors = [
+      '[data-nav="users"]',
+      '[data-nav="company-settings"]',
+      '[data-nav="tax-settings"]',
+      '[data-nav="governance"]',
+      '#nav-users',
+      '#nav-company-settings',
+      '#nav-tax-settings',
+      '#nav-governance',
+      '#screen-users',
+    ];
+
+    selectors.forEach((sel) => {
+      document.querySelectorAll(sel).forEach((el) => {
+        el.classList.add("hidden");
+      });
+    });
+  }
+
+  function bindReturnToPractitionerWorkspace() {
+    const btn = document.getElementById("returnToPractitionerBtn");
+    if (!btn) return;
+
+    const ctx = getPostingContext();
+    if (!ctx?.engagementId) {
+      btn.classList.add("hidden");
+      return;
+    }
+
+    btn.classList.remove("hidden");
+
+    btn.onclick = () => {
+      const returnCtx = {
+        companyId: Number(ctx.sourceCompanyId || 0) || null,
+        customerId: Number(ctx.customerId || 0) || null,
+        engagementId: Number(ctx.engagementId || 0) || null,
+        engagement: ctx.engagement || null,
+        returnScreen: "assignments",
+      };
+
+      localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+
+      const homeToken = localStorage.getItem("fs_home_token");
+      const authKey = getAuthStorageKey();
+
+      if (homeToken) {
+        localStorage.setItem(authKey, homeToken);
+        localStorage.removeItem("fs_home_token");
+      }
+
+      localStorage.removeItem("fs_posting_context");
+
+      window.location.href =
+        ctx.returnTo || "practitionerdashboard.html#screen=assignments";
+    };
+  }
+
+  function decorateApiHeadersWithDelegatedContext(headers) {
+    if (!isDelegatedPostingMode()) return headers;
+
+    const next = headers instanceof Headers ? headers : new Headers(headers || {});
+    const ctx = getPostingContext();
+
+    if (ctx?.engagementId) next.set("X-FS-Engagement-Id", String(ctx.engagementId));
+    if (ctx?.sourceCompanyId) next.set("X-FS-Source-Company-Id", String(ctx.sourceCompanyId));
+    if (ctx?.targetCompanyId) next.set("X-FS-Target-Company-Id", String(ctx.targetCompanyId));
+
+    return next;
+  }
+
+  function patchApiFetchForDelegatedContext() {
+    if (typeof window.apiFetch !== "function") return;
+    if (window.__FS_PATCHED_API_FETCH_FOR_DELEGATED__) return;
+
+    const original = window.apiFetch;
+
+    window.apiFetch = async function patchedApiFetch(url, options = {}) {
+      const headers = decorateApiHeadersWithDelegatedContext(options.headers);
+      return original(url, { ...options, headers });
+    };
+
+    window.__FS_PATCHED_API_FETCH_FOR_DELEGATED__ = true;
+  }
+
+  function initDelegatedWorkspaceMode() {
+    const ctx = restorePostingContext();
+    if (!ctx) return null;
+
+    patchApiFetchForDelegatedContext();
+    ensureDelegatedUiBadge();
+    hideMembershipOnlyUi();
+    bindReturnToPractitionerWorkspace();
+
+    return ctx;
+  }
+
+  // expose helpers for bootstrap / debugging
+  window.FS_DELEGATED_WORKSPACE = {
+    getPostingContext,
+    getDelegatedTargetCompanyId,
+    getDelegatedSourceCompanyId,
+    getDelegatedEngagementId,
+    isDelegatedPostingMode,
+    resolveInitialCompanyId,
+    restorePostingContext,
+    initDelegatedWorkspaceMode,
+  };
+
+  // run early
+  initDelegatedWorkspaceMode();
+})();
 
 function updatePostingCompanyBadge() {
   const badge = document.getElementById("companyBadge");
@@ -5191,39 +5410,6 @@ function updatePostingCompanyBadge() {
   `.trim();
 
   badge.classList.remove("hidden");
-}
-
-function bindReturnToPractitionerWorkspace() {
-  const btn = document.getElementById("returnToPractitionerBtn");
-  if (!btn) return;
-
-  let ctx = null;
-  try {
-    ctx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
-  } catch (_) {
-    ctx = null;
-  }
-
-  if (!ctx?.engagementId) {
-    btn.classList.add("hidden");
-    return;
-  }
-
-  btn.classList.remove("hidden");
-
-  btn.onclick = () => {
-    const returnCtx = {
-      companyId: Number(ctx.companyId) || null,
-      customerId: Number(ctx.customerId) || null,
-      engagementId: Number(ctx.engagementId) || null,
-      engagement: ctx.engagement || null,
-      returnScreen: "assignments"
-    };
-
-    localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
-    localStorage.removeItem("fs_posting_context");
-    window.location.href = ctx.returnTo || "practitionerdashboard.html#screen=assignments";
-  };
 }
 
 function shouldShowDashboardSwitcher(me) {
@@ -50511,12 +50697,21 @@ async function bootstrapApp(currentUser) {
   }
 
   // ------------------------------------------------------------
-  // 1) Resolve company id from multiple places (keep your logic)
+  // 1) Resolve company id from multiple places
   // ------------------------------------------------------------
   const postingCtx = restorePostingContext?.() || null;
 
   const delegatedPostingCompanyId =
     Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
+
+  const isDelegatedPosting =
+    !!postingCtx &&
+    postingCtx.launchMode === "posting" &&
+    delegatedPostingCompanyId > 0;
+
+  // expose globally as early as possible
+  window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
+  window.__FS_POSTING_CONTEXT__ = postingCtx || null;
 
   const resolvedCompanyId =
     delegatedPostingCompanyId ||
@@ -50528,15 +50723,61 @@ async function bootstrapApp(currentUser) {
     Number(localStorage.getItem("company_id") || 0) ||
     null;
 
-  const isDelegatedPosting =
-    !!postingCtx &&
-    postingCtx.launchMode === "posting" &&
-    Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) > 0;
+  // hard-lock company context early for delegated workspace
+  if (resolvedCompanyId) {
+    localStorage.setItem("company_id", String(resolvedCompanyId));
+    CURRENT_COMPANY_ID = Number(resolvedCompanyId);
+    window.CURRENT_COMPANY_ID = CURRENT_COMPANY_ID;
 
-  const perms =
-    currentUser?.permissions ||
-    window.getCurrentPermissions?.() ||
-    {};
+    if (isDelegatedPosting) {
+      window.__COMPANY_ID__ = CURRENT_COMPANY_ID;
+      window.__PR_ACTIVE_COMPANY_ID__ = CURRENT_COMPANY_ID;
+
+      try {
+        if (typeof setActiveCompanyId === "function") {
+          setActiveCompanyId(CURRENT_COMPANY_ID);
+        }
+      } catch (e) {
+        console.warn("bootstrapApp: failed to hard-set delegated active company", e);
+      }
+    }
+  }
+
+  // permissions source:
+  // - delegated mode: trust delegated JWT payload first
+  // - normal mode: use currentUser / standard permission resolver
+  let perms = {};
+
+  if (isDelegatedPosting) {
+    try {
+      const token =
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("token");
+
+      if (token) {
+        const parts = String(token).split(".");
+        if (parts.length >= 2) {
+          const payload = JSON.parse(atob(parts[1]));
+          perms = payload?.permissions || {};
+        }
+      }
+    } catch (e) {
+      console.warn("bootstrapApp: failed to extract delegated permissions from token", e);
+    }
+
+    // fallback if token decode fails
+    if (!perms || typeof perms !== "object") {
+      perms =
+        currentUser?.permissions ||
+        window.getCurrentPermissions?.() ||
+        {};
+    }
+  } else {
+    perms =
+      currentUser?.permissions ||
+      window.getCurrentPermissions?.() ||
+      {};
+  }
 
   const canUseDelegatedPosting =
     !!perms.can_access_delegated_posting_workspace ||
@@ -50545,6 +50786,16 @@ async function bootstrapApp(currentUser) {
 
   const canUseEnterpriseShell =
     !!perms.can_access_enterprise_dashboard;
+
+  console.log("bootstrapApp: access mode", {
+    isDelegatedPosting,
+    resolvedCompanyId,
+    delegatedPostingCompanyId,
+    engagementId: postingCtx?.engagementId || null,
+    canUseDelegatedPosting,
+    canUseEnterpriseShell,
+    perms,
+  });
 
   if (isDelegatedPosting) {
     if (!canUseDelegatedPosting) {
@@ -50561,7 +50812,7 @@ async function bootstrapApp(currentUser) {
 
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
-
+    
     // show logged-in UI but don't try company APIs
     if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
     if (typeof switchScreen === "function") switchScreen("company"); // or "company-setup"
