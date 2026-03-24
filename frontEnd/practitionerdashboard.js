@@ -3754,7 +3754,7 @@ async function bindAssignmentsScreenEvents(me) {
   });
 }
 
-window.enterEngagementWorkspace = async function enterEngagementWorkspace(engagementId, sourceCompanyId) {
+window.enterEngagementWorkspace = async function (engagementId, sourceCompanyId) {
   const res = await apiFetch(`/api/engagements/${engagementId}/enter-workspace`, {
     method: "POST",
     body: JSON.stringify({ source_company_id: sourceCompanyId }),
@@ -3763,6 +3763,9 @@ window.enterEngagementWorkspace = async function enterEngagementWorkspace(engage
   if (!res?.ok || !res?.token) {
     throw new Error(res?.error || "Failed to enter workspace");
   }
+
+  // ✅ CRITICAL FIX
+  window.setToken(res.token, true);
 
   return res;
 };

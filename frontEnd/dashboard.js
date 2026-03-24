@@ -50876,28 +50876,45 @@ async function bootstrapApp(currentUser) {
     }
   }
 
-    // ------------------------------------------------------------
-    // 1) Resolve company id from multiple places
-    // ------------------------------------------------------------
-    const postingCtx =
-      window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
-      window.restorePostingContext?.() ||
-      null;
+  // ------------------------------------------------------------
+  // 1) Resolve company id + access mode
+  // ------------------------------------------------------------
+  const postingCtx =
+    window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
+    window.restorePostingContext?.() ||
+    null;
 
-    const delegatedPostingCompanyId =
-      Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
+  const delegatedPostingCompanyId =
+    Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
 
-    const isDelegatedPosting =
-      !!postingCtx &&
-      postingCtx.launchMode === "posting" &&
-      delegatedPostingCompanyId > 0;
+  const isDelegatedPosting =
+    !!postingCtx &&
+    (postingCtx.launchMode === "posting" || postingCtx.accessMode === "delegated_workspace") &&
+    delegatedPostingCompanyId > 0;
 
-    // expose globally as early as possible
-    window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
-    window.__FS_POSTING_CONTEXT__ = postingCtx || null;
+  // expose globally as early as possible
+  window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
+  window.__FS_POSTING_CONTEXT__ = postingCtx || null;
 
-    const resolvedCompanyId =
+  // read token payload once
+  let tokenPayload = null;
+  try {
+    const token = window.getToken?.();
+    if (token) {
+      const parts = String(token).split(".");
+      if (parts.length >= 2) {
+        tokenPayload = JSON.parse(atob(parts[1]));
+      }
+    }
+  } catch (e) {
+    console.warn("bootstrapApp: failed to decode token payload", e);
+    tokenPayload = null;
+  }
+
+  // when delegated, trust target company first; otherwise use normal resolution
+  const resolvedCompanyId =
     delegatedPostingCompanyId ||
+    Number(tokenPayload?.company_id || 0) ||
     (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     currentUser?.company_id ||
     currentUser?.companyId ||
@@ -50911,9 +50928,9 @@ async function bootstrapApp(currentUser) {
     localStorage.setItem("company_id", String(resolvedCompanyId));
     CURRENT_COMPANY_ID = Number(resolvedCompanyId);
     window.CURRENT_COMPANY_ID = CURRENT_COMPANY_ID;
+    window.__COMPANY_ID__ = CURRENT_COMPANY_ID;
 
     if (isDelegatedPosting) {
-      window.__COMPANY_ID__ = CURRENT_COMPANY_ID;
       window.__PR_ACTIVE_COMPANY_ID__ = CURRENT_COMPANY_ID;
 
       try {
@@ -50932,24 +50949,10 @@ async function bootstrapApp(currentUser) {
   let perms = {};
 
   if (isDelegatedPosting) {
-    try {
-      const token =
-        localStorage.getItem("access_token") ||
-        localStorage.getItem("token");
+    perms = tokenPayload?.permissions || {};
 
-      if (token) {
-        const parts = String(token).split(".");
-        if (parts.length >= 2) {
-          const payload = JSON.parse(atob(parts[1]));
-          perms = payload?.permissions || {};
-        }
-      }
-    } catch (e) {
-      console.warn("bootstrapApp: failed to extract delegated permissions from token", e);
-    }
-
-    // fallback if token decode fails
-    if (!perms || typeof perms !== "object") {
+    // fallback if token has no permissions
+    if (!perms || typeof perms !== "object" || Array.isArray(perms)) {
       perms =
         currentUser?.permissions ||
         window.getCurrentPermissions?.() ||
@@ -50959,6 +50962,7 @@ async function bootstrapApp(currentUser) {
     perms =
       currentUser?.permissions ||
       window.getCurrentPermissions?.() ||
+      tokenPayload?.permissions ||
       {};
   }
 
@@ -50970,16 +50974,31 @@ async function bootstrapApp(currentUser) {
   const canUseEnterpriseShell =
     !!perms.can_access_enterprise_dashboard;
 
+  console.log("TOKEN DEBUG", {
+    token: window.getToken(),
+    tokenPayload: (() => {
+      try {
+        const t = window.getToken();
+        return t ? JSON.parse(atob(t.split(".")[1])) : null;
+      } catch {
+        return null;
+      }
+    })(),
+  });
+
   console.log("bootstrapApp: access mode", {
     isDelegatedPosting,
     resolvedCompanyId,
     delegatedPostingCompanyId,
-    engagementId: postingCtx?.engagementId || null,
+    engagementId: postingCtx?.engagementId || tokenPayload?.engagement_id || null,
+    tokenCompanyId: tokenPayload?.company_id || null,
+    tokenDelegated: !!tokenPayload?.is_delegated_company_access,
     canUseDelegatedPosting,
     canUseEnterpriseShell,
     perms,
   });
 
+  // delegated workspace is its own allowed shell
   if (isDelegatedPosting) {
     if (!canUseDelegatedPosting) {
       window.location.href =
