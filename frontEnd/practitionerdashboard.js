@@ -26,6 +26,33 @@
   }
 })();
 
+(function restoreNativeTokenIfNeeded() {
+  try {
+    const token = window.getToken?.() || "";
+    if (!token) return;
+
+    const payload = JSON.parse(atob(token.split(".")[1] || ""));
+    const isDelegated = !!payload?.is_delegated_company_access;
+
+    if (!isDelegated) return;
+
+    const homeToken =
+      sessionStorage.getItem("fs_home_token") ||
+      localStorage.getItem("fs_home_token") ||
+      "";
+
+    if (homeToken) {
+      window.setToken(homeToken, true);
+      sessionStorage.removeItem("fs_home_token");
+      localStorage.removeItem("fs_home_token");
+      localStorage.removeItem("fs_posting_context");
+      console.log("[Practitioner] Restored native token from fs_home_token");
+    }
+  } catch (e) {
+    console.warn("[Practitioner] Failed native-token restore check", e);
+  }
+})();
+
 (function () {
   "use strict";
 
@@ -1034,34 +1061,65 @@ async function loadEngagementAssignableUsers(companyId) {
   return [];
 }
 
-  /* ======================================================
-   * Init
-   * ==================================================== */
-  async function enforcePractitionerAuth() {
-    const token = getAuthToken();
-    console.log("enforcePractitionerAuth: token =", token || null);
+/* ======================================================
+  * Init
+  * ==================================================== */
+async function enforcePractitionerAuth() {
+  let token = getAuthToken();
+  console.log("enforcePractitionerAuth: token =", token || null);
 
-    if (!token) return null;
+  if (!token) return null;
 
-    try {
-      const me = await loadMe();
-      return me;
-    } catch (err) {
-      console.warn("enforcePractitionerAuth failed:", err);
-      return null;
+  // If practitioner dashboard is loading with a delegated token,
+  // restore the native/home token first.
+  try {
+    const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
+    const isDelegated = !!payload?.is_delegated_company_access;
+
+    if (isDelegated) {
+      const homeToken =
+        sessionStorage.getItem("fs_home_token") ||
+        localStorage.getItem("fs_home_token") ||
+        "";
+
+      if (homeToken) {
+        if (typeof window.setToken === "function") {
+          window.setToken(homeToken, true);
+        } else {
+          localStorage.setItem("fs_user_token", homeToken);
+        }
+
+        sessionStorage.removeItem("fs_home_token");
+        localStorage.removeItem("fs_home_token");
+        localStorage.removeItem("fs_posting_context");
+
+        token = getAuthToken();
+        console.log("enforcePractitionerAuth: restored native token");
+      }
     }
+  } catch (e) {
+    console.warn("enforcePractitionerAuth: token decode failed", e);
   }
 
-  /* ======================================================
-   * Rest of your helpers / renderers / nav logic
-   * ==================================================== */
-  function setStoredUser(user) {
-    localStorage.setItem("fs_user", JSON.stringify(user || {}));
-    if (user?.user_type) localStorage.setItem("userType", user.user_type);
-    if (user?.access_scope) localStorage.setItem("access_scope", user.access_scope);
-    if (user?.company_id != null) localStorage.setItem("company_id", String(user.company_id));
-    if (user?.company_name) localStorage.setItem("companyName", user.company_name);
+  try {
+    const me = await loadMe();
+    return me;
+  } catch (err) {
+    console.warn("enforcePractitionerAuth failed:", err);
+    return null;
   }
+}
+
+/* ======================================================
+  * Rest of your helpers / renderers / nav logic
+  * ==================================================== */
+function setStoredUser(user) {
+  localStorage.setItem("fs_user", JSON.stringify(user || {}));
+  if (user?.user_type) localStorage.setItem("userType", user.user_type);
+  if (user?.access_scope) localStorage.setItem("access_scope", user.access_scope);
+  if (user?.company_id != null) localStorage.setItem("company_id", String(user.company_id));
+  if (user?.company_name) localStorage.setItem("companyName", user.company_name);
+}
 
 function getUserRawRole(user) {
   return (

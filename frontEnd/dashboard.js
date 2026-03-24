@@ -5312,7 +5312,13 @@ function getStoredUser() {
     const btn = document.getElementById("returnToPractitionerBtn");
     if (!btn) return;
 
-    const ctx = getPostingContext();
+    let ctx = null;
+    try {
+      ctx = JSON.parse(localStorage.getItem("fs_posting_context") || "null");
+    } catch {
+      ctx = null;
+    }
+
     if (!ctx?.engagementId) {
       btn.classList.add("hidden");
       return;
@@ -5323,19 +5329,22 @@ function getStoredUser() {
     btn.onclick = () => {
       const returnCtx = {
         companyId: Number(ctx.sourceCompanyId || 0) || null,
-        customerId: Number(ctx.customerId || 0) || null,
         engagementId: Number(ctx.engagementId || 0) || null,
+        customerId: Number(ctx.customerId || 0) || null,
         engagement: ctx.engagement || null,
         returnScreen: "assignments",
       };
 
       localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
 
-      const homeToken = localStorage.getItem("fs_home_token");
-      const authKey = getAuthStorageKey();
+      const homeToken =
+        sessionStorage.getItem("fs_home_token") ||
+        localStorage.getItem("fs_home_token") ||
+        "";
 
       if (homeToken) {
-        localStorage.setItem(authKey, homeToken);
+        window.setToken(homeToken, true);
+        sessionStorage.removeItem("fs_home_token");
         localStorage.removeItem("fs_home_token");
       }
 
