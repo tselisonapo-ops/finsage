@@ -1,3 +1,31 @@
+(function hardBootstrapTokenHelpers() {
+  const TOKEN_KEY = "fs_user_token";
+
+  if (typeof window.getToken !== "function") {
+    window.getToken = function () {
+      return (
+        sessionStorage.getItem(TOKEN_KEY) ||
+        localStorage.getItem(TOKEN_KEY) ||
+        ""
+      );
+    };
+  }
+
+  if (typeof window.setToken !== "function") {
+    window.setToken = function (token, persist = true) {
+      if (!token) return;
+      (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+    };
+  }
+
+  if (typeof window.clearToken !== "function") {
+    window.clearToken = function () {
+      sessionStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+    };
+  }
+})();
+
 (function () {
   "use strict";
 
