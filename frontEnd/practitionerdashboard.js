@@ -1,3 +1,4 @@
+
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
 
@@ -23,33 +24,6 @@
       sessionStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_KEY);
     };
-  }
-})();
-
-(function restoreNativeTokenIfNeeded() {
-  try {
-    const token = window.getToken?.() || "";
-    if (!token) return;
-
-    const payload = JSON.parse(atob(token.split(".")[1] || ""));
-    const isDelegated = !!payload?.is_delegated_company_access;
-
-    if (!isDelegated) return;
-
-    const homeToken =
-      sessionStorage.getItem("fs_home_token") ||
-      localStorage.getItem("fs_home_token") ||
-      "";
-
-    if (homeToken) {
-      window.setToken(homeToken, true);
-      sessionStorage.removeItem("fs_home_token");
-      localStorage.removeItem("fs_home_token");
-      localStorage.removeItem("fs_posting_context");
-      console.log("[Practitioner] Restored native token from fs_home_token");
-    }
-  } catch (e) {
-    console.warn("[Practitioner] Failed native-token restore check", e);
   }
 })();
 
@@ -959,53 +933,53 @@ const PR_NAV = {
   analyticsDetail: "analytics-detail",
 };
 
-  /* ======================================================
-   * Helpers
-   * ==================================================== */
-  function getAuthToken() {
-    return (
-      localStorage.getItem("fs_user_token") ||
-      sessionStorage.getItem("fs_user_token") ||
-      localStorage.getItem("authToken") ||
-      sessionStorage.getItem("authToken") ||
-      ""
-    );
+/* ======================================================
+  * Helpers
+  * ==================================================== */
+function getAuthToken() {
+  return (
+    sessionStorage.getItem("fs_user_token") ||  // 🔥 PRIORITY
+    localStorage.getItem("fs_user_token") ||
+    localStorage.getItem("authToken") ||
+    sessionStorage.getItem("authToken") ||
+    ""
+  );
+}
+function getStoredUser() {
+  try {
+    return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
+  } catch (_) {
+    return {};
   }
-  function getStoredUser() {
-    try {
-      return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
-    } catch (_) {
-      return {};
+}
+
+async function apiFetch(url, options = {}) {
+  const token = getAuthToken();
+
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {})
     }
+  });
+
+  const text = await res.text();
+  let json = null;
+
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch (_) {
+    json = null;
   }
 
-  async function apiFetch(url, options = {}) {
-    const token = getAuthToken();
-
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {})
-      }
-    });
-
-    const text = await res.text();
-    let json = null;
-
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch (_) {
-      json = null;
-    }
-
-    if (!res.ok) {
-      throw new Error(json?.error || json?.message || text || "Request failed");
-    }
-
-    return json;
+  if (!res.ok) {
+    throw new Error(json?.error || json?.message || text || "Request failed");
   }
+
+  return json;
+}
 
 function buildApiUrl(baseUrl, params = {}) {
   const url = new URL(baseUrl, window.location.origin);
