@@ -51602,11 +51602,7 @@ window.enforceAuth = enforceAuth;
 })();
 
 async function init() {
-  console.log("init: starting");
-
   const token = window.getToken?.();
-  console.log("init: fs_user_token at load =", token || null);
-
   if (!token) {
     window.applyLoggedOutUI?.();
     window.switchScreen?.("sign-in");
@@ -51614,37 +51610,38 @@ async function init() {
   }
 
   const me = await window.enforceAuth?.();
-
   if (!me) {
     window.applyLoggedOutUI?.();
     window.switchScreen?.("sign-in");
     return;
   }
 
-  // ✅ require company context
-  const cid =
-    me.company_id ||
-    me.companyId ||
-    me.company?.id ||
-    Number(localStorage.getItem("company_id") || 0) ||
+  const postingCtx =
+    window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
+    window.restorePostingContext?.() ||
     null;
 
+  const isDelegated =
+    !!postingCtx &&
+    (postingCtx.launchMode === "posting" || postingCtx.accessMode === "delegated_workspace");
+
+  const cid =
+    (isDelegated
+      ? Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0)
+      : (me.company_id || me.companyId || me.company?.id || Number(localStorage.getItem("company_id") || 0))
+    ) || null;
+
   if (!cid) {
-    console.warn("Logged in but no company_id -> route to company setup/selection");
     window.applyLoggedInUI?.(me);
-    window.switchScreen?.("company"); // or "company-setup" / "company-select"
+    window.switchScreen?.("company");
     return;
   }
 
-  // keep localStorage in sync
   localStorage.setItem("company_id", String(cid));
-
   window.applyLoggedInUI?.(me);
-  window.switchScreen?.("dashboard");
 
   await window.bootstrapApp?.(me);
 }
-
   window.init = init;
 
 // =======================================
