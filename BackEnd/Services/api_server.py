@@ -2415,41 +2415,23 @@ def enter_engagement_workspace(engagement_id: int):
         role=role_norm,
     )
 
-    delegated_payload = {
-        "sub": int(user_id),
-        "user_id": int(user_id),
-        "email": base_user.get("email"),
-        "first_name": base_user.get("first_name"),
-        "last_name": base_user.get("last_name"),
-        "user_type": payload.get("user_type") or base_user.get("user_type") or "Practitioner",
-        "role": role_norm,
-
-        # IMPORTANT: token now points at target workspace
-        "company_id": int(target_company_id),
-        "token_company_id": int(target_company_id),
-        "allowed_company_ids": [int(target_company_id)],
-        "token_allowed_company_ids": [int(target_company_id)],
-
-        # delegated context
-        "source_company_id": int(source_company_id),
-        "target_company_id": int(target_company_id),
-        "engagement_id": int(engagement_id),
-        "access_scope": "assignment",
-        "token_access_scope": "assignment",
-        "is_delegated_company_access": True,
-        "is_native_company_member": False,
-
-        # UI helpers
-        "default_dashboard": "practitioner",
-        "dashboards": {
-            "enterprise": False,
-            "practitioner": True,
-        },
-
-        "permissions": delegated_permissions,
-    }
-
-    delegated_token = make_jwt(delegated_payload)
+    delegated_token = make_jwt(
+        user_id=int(user_id),
+        email=base_user.get("email") or payload.get("email") or "",
+        role=role_norm,
+        user_type=payload.get("user_type") or base_user.get("user_type") or "Practitioner",
+        company_id=int(target_company_id),
+        access_scope="assignment",
+        allowed_company_ids=[int(target_company_id)],
+        source_company_id=int(source_company_id),
+        target_company_id=int(target_company_id),
+        engagement_id=int(engagement_id),
+        permissions=delegated_permissions,
+        first_name=base_user.get("first_name") or payload.get("first_name"),
+        last_name=base_user.get("last_name") or payload.get("last_name"),
+        is_delegated_company_access=True,
+        is_native_company_member=False,
+    )
 
     return _corsify(make_response(jsonify({
         "ok": True,
