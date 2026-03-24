@@ -51019,30 +51019,55 @@ async function bootstrapApp(currentUser) {
   // delegated workspace is its own allowed shell
   if (isDelegatedPosting) {
     if (!canUseDelegatedPosting) {
-      console.warn("bootstrapApp: delegated posting denied", {
+      console.error("bootstrapApp: delegated posting denied", {
+        reason: "canUseDelegatedPosting=false",
         postingCtx,
+        token: window.getToken?.() || null,
         tokenPayload,
+        currentUser,
         perms,
+        resolvedCompanyId,
+        delegatedPostingCompanyId,
+        nativeResolvedCompanyId,
+        activeCompanyId:
+          (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null),
+        localStorageCompanyId: localStorage.getItem("company_id"),
+        sessionTokenPresent: !!sessionStorage.getItem("fs_user_token"),
+        localTokenPresent: !!localStorage.getItem("fs_user_token"),
       });
-      window.location.href =
-        postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
+
+      // TEMP: do not redirect yet — pause so you can inspect
+      debugger;
       return;
     }
   } else {
     if (!canUseEnterpriseShell) {
-      console.warn("bootstrapApp: enterprise shell denied", {
-        currentUser,
+      console.error("bootstrapApp: enterprise shell denied", {
+        reason: "canUseEnterpriseShell=false",
+        postingCtx,
+        token: window.getToken?.() || null,
         tokenPayload,
+        currentUser,
         perms,
+        resolvedCompanyId,
+        delegatedPostingCompanyId,
+        nativeResolvedCompanyId,
+        activeCompanyId:
+          (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null),
+        localStorageCompanyId: localStorage.getItem("company_id"),
+        sessionTokenPresent: !!sessionStorage.getItem("fs_user_token"),
+        localTokenPresent: !!localStorage.getItem("fs_user_token"),
       });
-      window.location.href = "practitionerdashboard.html";
+
+      // TEMP: do not redirect yet — pause so you can inspect
+      debugger;
       return;
     }
   }
 
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
-    
+
     // show logged-in UI but don't try company APIs
     if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
     if (typeof switchScreen === "function") switchScreen("company"); // or "company-setup"

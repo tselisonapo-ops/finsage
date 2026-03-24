@@ -36,6 +36,17 @@ def require_auth(_f=None, *, require_company: bool = True):
 
             token = auth_header.split(" ", 1)[1].strip()
 
+            current_app.logger.warning("AUTH DEBUG %s", {
+                "path": request.path,
+                "user_id": user_id,
+                "token_company_id": payload.get("company_id"),
+                "source_company_id": payload.get("source_company_id"),
+                "target_company_id": payload.get("target_company_id"),
+                "engagement_id": payload.get("engagement_id"),
+                "is_delegated_company_access": payload.get("is_delegated_company_access"),
+                "access_scope": payload.get("access_scope"),
+                "allowed_company_ids": payload.get("allowed_company_ids"),
+            })
             try:
                 payload = decode_jwt(token)
             except Exception:
