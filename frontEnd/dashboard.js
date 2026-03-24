@@ -5326,7 +5326,10 @@ function getStoredUser() {
 
     btn.classList.remove("hidden");
 
-    btn.onclick = () => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
       const returnCtx = {
         companyId: Number(ctx.sourceCompanyId || 0) || null,
         engagementId: Number(ctx.engagementId || 0) || null,
@@ -5465,11 +5468,35 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     me = window.currentUser || {};
   }
 
+  const isDelegatedPosting =
+    currentMode === "delegated" ||
+    !!window.__FS_DELEGATED_POSTING__ ||
+    !!window.__FS_POSTING_CONTEXT__;
+
   console.log("initDashboardModeSwitcher currentMode =", currentMode);
   console.log("initDashboardModeSwitcher me =", me);
+  console.log("initDashboardModeSwitcher delegated =", isDelegatedPosting);
 
   if (!wrap || !select) {
     console.warn("dashboard switcher elements missing");
+    return;
+  }
+
+  // Delegated workspace must not mode-switch away automatically
+  if (isDelegatedPosting) {
+    wrap.classList.add("hidden");
+    wrap.style.display = "none";
+    select.disabled = true;
+
+    // keep the UI state explicit if this option exists
+    const hasDelegatedOption = Array.from(select.options || []).some(
+      (opt) => String(opt.value || "").toLowerCase() === "delegated"
+    );
+    if (hasDelegatedOption) {
+      select.value = "delegated";
+    }
+
+    console.log("dashboard switcher hidden in delegated workspace");
     return;
   }
 
@@ -5478,16 +5505,33 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
   if (!show) {
     wrap.classList.add("hidden");
+    wrap.style.display = "none";
     return;
   }
 
   wrap.classList.remove("hidden");
   wrap.style.display = "block";
+  select.disabled = false;
 
-  select.value = currentMode;
+  // normalize incoming mode
+  const normalizedMode = String(currentMode || "internal").toLowerCase();
+  if (
+    normalizedMode === "internal" ||
+    normalizedMode === "practitioner"
+  ) {
+    select.value = normalizedMode;
+  } else {
+    select.value = "internal";
+  }
 
   select.onchange = () => {
     const next = String(select.value || "").toLowerCase();
+
+    console.warn("dashboard mode switch change", {
+      next,
+      currentMode,
+      delegated: isDelegatedPosting,
+    });
 
     if (next === "internal") {
       window.location.href = "dashboard.html";
@@ -5496,6 +5540,12 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
     if (next === "practitioner") {
       window.location.href = "practitionerdashboard.html";
+      return;
+    }
+
+    if (next === "delegated") {
+      console.warn("delegated mode is navigation-controlled only");
+      return;
     }
   };
 }
@@ -51313,9 +51363,15 @@ async function bootstrapApp(currentUser) {
   await initHeaderCompanySwitcher?.();
 
   if (typeof initDashboardModeSwitcher === "function") {
-  if (!isDelegatedPosting && typeof initDashboardModeSwitcher === "function") {
-    initDashboardModeSwitcher("internal");
-  }
+    if (isDelegatedPosting) {
+      console.log("🧠 Delegated mode detected → forcing delegated dashboard mode");
+
+      initDashboardModeSwitcher("delegated"); // 👈 NEW MODE
+
+    } else {
+      initDashboardModeSwitcher("internal");
+    }
+
   } else {
     console.warn("initDashboardModeSwitcher() missing - skipped");
   }
