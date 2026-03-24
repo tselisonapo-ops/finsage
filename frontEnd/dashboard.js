@@ -50920,10 +50920,9 @@ async function bootstrapApp(currentUser) {
     tokenPayload = null;
   }
 
-  // when delegated, trust target company first; otherwise use normal resolution
-  const resolvedCompanyId =
-    delegatedPostingCompanyId ||
-    Number(tokenPayload?.company_id || 0) ||
+  // In delegated mode, NEVER fall back to native company sources.
+  // Use target company only.
+  const nativeResolvedCompanyId =
     (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     currentUser?.company_id ||
     currentUser?.companyId ||
@@ -50932,7 +50931,11 @@ async function bootstrapApp(currentUser) {
     Number(localStorage.getItem("company_id") || 0) ||
     null;
 
-  // hard-lock company context early for delegated workspace
+  const resolvedCompanyId = isDelegatedPosting
+    ? delegatedPostingCompanyId
+    : nativeResolvedCompanyId;
+
+  // hard-lock company context early
   if (resolvedCompanyId) {
     localStorage.setItem("company_id", String(resolvedCompanyId));
     CURRENT_COMPANY_ID = Number(resolvedCompanyId);
@@ -50940,7 +50943,11 @@ async function bootstrapApp(currentUser) {
     window.__COMPANY_ID__ = CURRENT_COMPANY_ID;
 
     if (isDelegatedPosting) {
+      // delegated workspace must remain pinned to target company
       window.__PR_ACTIVE_COMPANY_ID__ = CURRENT_COMPANY_ID;
+      window.__FS_TARGET_COMPANY_ID__ = CURRENT_COMPANY_ID;
+      window.__FS_SOURCE_COMPANY_ID__ =
+        Number(postingCtx?.sourceCompanyId || tokenPayload?.source_company_id || 0) || null;
 
       try {
         if (typeof setActiveCompanyId === "function") {
@@ -50960,7 +50967,6 @@ async function bootstrapApp(currentUser) {
   if (isDelegatedPosting) {
     perms = tokenPayload?.permissions || {};
 
-    // fallback if token has no permissions
     if (!perms || typeof perms !== "object" || Array.isArray(perms)) {
       perms =
         currentUser?.permissions ||
@@ -50984,21 +50990,24 @@ async function bootstrapApp(currentUser) {
     !!perms.can_access_enterprise_dashboard;
 
   console.log("TOKEN DEBUG", {
-    token: window.getToken(),
-    tokenPayload: (() => {
-      try {
-        const t = window.getToken();
-        return t ? JSON.parse(atob(t.split(".")[1])) : null;
-      } catch {
-        return null;
-      }
-    })(),
+    token: window.getToken?.() || null,
+    tokenPayload,
   });
 
   console.log("bootstrapApp: access mode", {
     isDelegatedPosting,
-    resolvedCompanyId,
+    postingCtx,
     delegatedPostingCompanyId,
+    nativeResolvedCompanyId,
+    resolvedCompanyId,
+    currentUserCompanyId:
+      currentUser?.company_id ||
+      currentUser?.companyId ||
+      currentUser?.company?.id ||
+      currentUser?.company_profile?.id ||
+      null,
+    localStorageCompanyId: Number(localStorage.getItem("company_id") || 0) || null,
+    activeCompanyId: (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null),
     engagementId: postingCtx?.engagementId || tokenPayload?.engagement_id || null,
     tokenCompanyId: tokenPayload?.company_id || null,
     tokenDelegated: !!tokenPayload?.is_delegated_company_access,
@@ -51010,12 +51019,22 @@ async function bootstrapApp(currentUser) {
   // delegated workspace is its own allowed shell
   if (isDelegatedPosting) {
     if (!canUseDelegatedPosting) {
+      console.warn("bootstrapApp: delegated posting denied", {
+        postingCtx,
+        tokenPayload,
+        perms,
+      });
       window.location.href =
         postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
       return;
     }
   } else {
     if (!canUseEnterpriseShell) {
+      console.warn("bootstrapApp: enterprise shell denied", {
+        currentUser,
+        tokenPayload,
+        perms,
+      });
       window.location.href = "practitionerdashboard.html";
       return;
     }
@@ -51023,7 +51042,7 @@ async function bootstrapApp(currentUser) {
 
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
-
+    
     // show logged-in UI but don't try company APIs
     if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
     if (typeof switchScreen === "function") switchScreen("company"); // or "company-setup"
