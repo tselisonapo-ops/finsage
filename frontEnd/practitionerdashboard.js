@@ -2534,7 +2534,7 @@ function getAvailableDashboardModes(companies = [], role = "") {
   };
 }
 
-function initDashboardModeSwitcher(companies = [], me = {}, currentMode = "internal") {
+function initPractitionerDashboardModeSwitcher(companies = [], me = {}, currentMode = "internal") {
   const wrap = document.getElementById("dashboardModeSwitcherWrap");
   const select = document.getElementById("dashboardModeSwitcher");
   if (!wrap || !select) return;
@@ -13224,7 +13224,7 @@ async function bootstrapPractitionerApp(me) {
   const firstScreen = resolvePractitionerScreenName(getHashScreen() || PR_NAV.dashboard);
   switchPractitionerScreen(firstScreen, me, { updateHash: false });
 
-  initDashboardModeSwitcher(companies, me, "practitioner");
+  initPractitionerDashboardModeSwitcher(companies, me, "practitioner");
   attachEvents(companies, me);
 
   window.addEventListener("hashchange", () => {

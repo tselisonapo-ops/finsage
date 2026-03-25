@@ -47,9 +47,22 @@ window.addEventListener("unhandledrejection", (e) => {
 
 (function hardTraceRedirects() {
   const origOpen = window.open;
-  window.open = function(...args) {
+  window.open = function (...args) {
     console.error("[REDIRECT TRACE] window.open", args, new Error().stack);
     return origOpen.apply(this, args);
+  };
+
+  const origAssign = window.location.assign.bind(window.location);
+  const origReplace = window.location.replace.bind(window.location);
+
+  window.location.assign = function (url) {
+    console.error("[REDIRECT TRACE] location.assign", url, new Error().stack);
+    return origAssign(url);
+  };
+
+  window.location.replace = function (url) {
+    console.error("[REDIRECT TRACE] location.replace", url, new Error().stack);
+    return origReplace(url);
   };
 
   document.addEventListener("click", (e) => {
@@ -61,7 +74,6 @@ window.addEventListener("unhandledrejection", (e) => {
 
   window.addEventListener("beforeunload", () => {
     console.warn("[REDIRECT TRACE] beforeunload from", location.href);
-    console.trace();
   });
 })();
 
@@ -273,28 +285,6 @@ window.addEventListener("unhandledrejection", (e) => {
 
     return data;
   };
-
-window.enterEngagementWorkspace = async function enterEngagementWorkspace(engagementId, sourceCompanyId) {
-  const res = await apiFetch(`/api/engagements/${engagementId}/enter-workspace`, {
-    method: "POST",
-    body: JSON.stringify({ source_company_id: sourceCompanyId }),
-  });
-
-  if (!res?.ok || !res?.token) {
-    throw new Error(res?.error || "Failed to enter workspace");
-  }
-
-  window.setToken(res.token, true);
-
-  localStorage.setItem("fs_posting_context", JSON.stringify({
-    engagementId: res.workspace?.engagement_id,
-    sourceCompanyId: res.workspace?.source_company_id,
-    targetCompanyId: res.workspace?.target_company_id,
-  }));
-
-  return res;
-};
-
 
 async function resolveCompanyProfile(currentUser) {
   // Always prefer server truth first:
@@ -50959,7 +50949,8 @@ async function bootstrapApp(currentUser) {
 
   const isDelegatedPosting =
     !!postingCtx &&
-    (postingCtx.launchMode === "posting" || postingCtx.accessMode === "delegated_workspace") &&
+    (postingCtx.launchMode === "posting" ||
+      postingCtx.accessMode === "delegated_workspace") &&
     delegatedPostingCompanyId > 0;
 
   // expose globally as early as possible
@@ -50981,6 +50972,97 @@ async function bootstrapApp(currentUser) {
     tokenPayload = null;
   }
 
+  // ------------------------------------------------------------
+  // 2) Resolve access scope + permissions
+  // ------------------------------------------------------------
+  const accessScope = String(
+    tokenPayload?.access_scope ||
+    currentUser?.token_access_scope ||
+    currentUser?.access_scope ||
+    ""
+  ).toLowerCase();
+
+  const isInternalScope =
+    accessScope === "internal" || accessScope === "core";
+
+  // In delegated mode, trust delegated JWT payload first.
+  // Otherwise prefer currentUser permissions.
+  let perms = {};
+
+  if (isDelegatedPosting) {
+    perms = tokenPayload?.permissions || {};
+    if (!perms || typeof perms !== "object" || Array.isArray(perms)) {
+      perms =
+        currentUser?.permissions ||
+        window.getCurrentPermissions?.() ||
+        {};
+    }
+  } else {
+    perms =
+      currentUser?.permissions ||
+      window.getCurrentPermissions?.() ||
+      tokenPayload?.permissions ||
+      {};
+  }
+
+  const canUseDelegatedPosting =
+    !!perms?.can_access_delegated_posting_workspace ||
+    !!perms?.can_post_journals ||
+    !!perms?.can_prepare_financials;
+
+  // dashboard.html shell access rule:
+  // - internal/core scope always allowed
+  // - assignment allowed only inside delegated posting with delegated permission
+  const canUseDashboardShell =
+    isInternalScope || (isDelegatedPosting && canUseDelegatedPosting);
+
+  console.log("TOKEN DEBUG", {
+    token: window.getToken?.() || null,
+    tokenPayload,
+  });
+
+  console.log("bootstrapApp: access mode", {
+    accessScope,
+    isInternalScope,
+    isDelegatedPosting,
+    postingCtx,
+    delegatedPostingCompanyId,
+    currentUserCompanyId:
+      currentUser?.company_id ||
+      currentUser?.companyId ||
+      currentUser?.company?.id ||
+      currentUser?.company_profile?.id ||
+      null,
+    tokenCompanyId: tokenPayload?.company_id || null,
+    tokenDelegated: !!tokenPayload?.is_delegated_company_access,
+    canUseDelegatedPosting,
+    canUseDashboardShell,
+    perms,
+  });
+
+  if (!canUseDashboardShell) {
+    console.error("bootstrapApp: dashboard shell denied", {
+      reason: "canUseDashboardShell=false",
+      accessScope,
+      isInternalScope,
+      isDelegatedPosting,
+      canUseDelegatedPosting,
+      postingCtx,
+      token: window.getToken?.() || null,
+      tokenPayload,
+      currentUser,
+      perms,
+      sessionTokenPresent: !!sessionStorage.getItem("fs_user_token"),
+      localTokenPresent: !!localStorage.getItem("fs_user_token"),
+    });
+
+    window.location.replace("practitionerdashboard.html");
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // 3) Resolve company id
+  // ------------------------------------------------------------
   // In delegated mode, NEVER fall back to native company sources.
   // Use target company only.
   const nativeResolvedCompanyId =
@@ -51004,7 +51086,6 @@ async function bootstrapApp(currentUser) {
     window.__COMPANY_ID__ = CURRENT_COMPANY_ID;
 
     if (isDelegatedPosting) {
-      // delegated workspace must remain pinned to target company
       window.__PR_ACTIVE_COMPANY_ID__ = CURRENT_COMPANY_ID;
       window.__FS_TARGET_COMPANY_ID__ = CURRENT_COMPANY_ID;
       window.__FS_SOURCE_COMPANY_ID__ =
@@ -51020,118 +51101,11 @@ async function bootstrapApp(currentUser) {
     }
   }
 
-  // permissions source:
-  // - delegated mode: trust delegated JWT payload first
-  // - normal mode: use currentUser / standard permission resolver
-  let perms = {};
-
-  if (isDelegatedPosting) {
-    perms = tokenPayload?.permissions || {};
-
-    if (!perms || typeof perms !== "object" || Array.isArray(perms)) {
-      perms =
-        currentUser?.permissions ||
-        window.getCurrentPermissions?.() ||
-        {};
-    }
-  } else {
-    perms =
-      currentUser?.permissions ||
-      window.getCurrentPermissions?.() ||
-      tokenPayload?.permissions ||
-      {};
-  }
-
-  const canUseDelegatedPosting =
-    !!perms.can_access_delegated_posting_workspace ||
-    !!perms.can_post_journals ||
-    !!perms.can_prepare_financials;
-
-  const canUseEnterpriseShell =
-    !!perms.can_access_enterprise_dashboard;
-
-  console.log("TOKEN DEBUG", {
-    token: window.getToken?.() || null,
-    tokenPayload,
-  });
-
-  console.log("bootstrapApp: access mode", {
-    isDelegatedPosting,
-    postingCtx,
-    delegatedPostingCompanyId,
-    nativeResolvedCompanyId,
-    resolvedCompanyId,
-    currentUserCompanyId:
-      currentUser?.company_id ||
-      currentUser?.companyId ||
-      currentUser?.company?.id ||
-      currentUser?.company_profile?.id ||
-      null,
-    localStorageCompanyId: Number(localStorage.getItem("company_id") || 0) || null,
-    activeCompanyId: (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null),
-    engagementId: postingCtx?.engagementId || tokenPayload?.engagement_id || null,
-    tokenCompanyId: tokenPayload?.company_id || null,
-    tokenDelegated: !!tokenPayload?.is_delegated_company_access,
-    canUseDelegatedPosting,
-    canUseEnterpriseShell,
-    perms,
-  });
-
-  // delegated workspace is its own allowed shell
-  if (isDelegatedPosting) {
-    if (!canUseDelegatedPosting) {
-      console.error("bootstrapApp: delegated posting denied", {
-        reason: "canUseDelegatedPosting=false",
-        postingCtx,
-        token: window.getToken?.() || null,
-        tokenPayload,
-        currentUser,
-        perms,
-        resolvedCompanyId,
-        delegatedPostingCompanyId,
-        nativeResolvedCompanyId,
-        activeCompanyId:
-          (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null),
-        localStorageCompanyId: localStorage.getItem("company_id"),
-        sessionTokenPresent: !!sessionStorage.getItem("fs_user_token"),
-        localTokenPresent: !!localStorage.getItem("fs_user_token"),
-      });
-
-      // TEMP: do not redirect yet — pause so you can inspect
-      debugger;
-      return;
-    }
-  } else {
-    if (!canUseEnterpriseShell) {
-      console.error("bootstrapApp: enterprise shell denied", {
-        reason: "canUseEnterpriseShell=false",
-        postingCtx,
-        token: window.getToken?.() || null,
-        tokenPayload,
-        currentUser,
-        perms,
-        resolvedCompanyId,
-        delegatedPostingCompanyId,
-        nativeResolvedCompanyId,
-        activeCompanyId:
-          (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null),
-        localStorageCompanyId: localStorage.getItem("company_id"),
-        sessionTokenPresent: !!sessionStorage.getItem("fs_user_token"),
-        localTokenPresent: !!localStorage.getItem("fs_user_token"),
-      });
-
-      // TEMP: do not redirect yet — pause so you can inspect
-      debugger;
-      return;
-    }
-  }
-
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
 
-    // show logged-in UI but don't try company APIs
     if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
-    if (typeof switchScreen === "function") switchScreen("company"); // or "company-setup"
+    if (typeof switchScreen === "function") switchScreen("company");
     return;
   }
 
@@ -51140,14 +51114,12 @@ async function bootstrapApp(currentUser) {
   CURRENT_COMPANY_ID = Number(resolvedCompanyId);
   window.CURRENT_COMPANY_ID = CURRENT_COMPANY_ID;
 
-  // IMPORTANT: refresh companyStore after company_id is set
   if (typeof refreshCompanyStore === "function") refreshCompanyStore();
 
   // ------------------------------------------------------------
-  // 2) Resolve company object (source of truth = /api/companies/:id)
+  // 4) Resolve company object
   // ------------------------------------------------------------
   async function fetchCompanyProfile(cid) {
-    // If /me already includes company details, use them
     if (currentUser?.company && currentUser.company.id) return currentUser.company;
     if (currentUser?.company_profile && currentUser.company_profile.id) return currentUser.company_profile;
 
@@ -51157,7 +51129,6 @@ async function bootstrapApp(currentUser) {
     }
 
     try {
-      // ✅ Prefer ENDPOINTS if available (prevents wrong base URL)
       const url = (window.ENDPOINTS?.company)
         ? ENDPOINTS.company(cid)
         : `/api/companies/${encodeURIComponent(cid)}`;
@@ -51172,7 +51143,6 @@ async function bootstrapApp(currentUser) {
 
   const companyObj = await fetchCompanyProfile(resolvedCompanyId);
 
-  // fallback: if API fails, use cached profile; if none, build minimal from /me
   CURRENT_COMPANY =
     companyObj ||
     COMPANY_PROFILE ||
@@ -51183,16 +51153,13 @@ async function bootstrapApp(currentUser) {
       sub_industry: currentUser?.sub_industry || null,
     };
 
-  // ✅ Mirror to window immediately (THIS is what was missing)
   window.CURRENT_COMPANY = CURRENT_COMPANY;
 
-  // ✅ Render nav once we know a real company object
   if (typeof setupNav === "function") setupNav();
 
   updateHeaderCompanyBadge?.();
   await populateCompanySwitcher?.();
-  
-  // Set CURRENT_COMPANY_ID from company object when possible
+
   CURRENT_COMPANY_ID =
     CURRENT_COMPANY?.id ||
     CURRENT_COMPANY?.company_id ||
@@ -51201,7 +51168,6 @@ async function bootstrapApp(currentUser) {
 
   window.CURRENT_COMPANY_ID = CURRENT_COMPANY_ID;
 
-  // cache company profile for next boot
   if (CURRENT_COMPANY && typeof store?.set === "function") {
     store.set("fs_company_profile", CURRENT_COMPANY);
   }
@@ -51212,18 +51178,13 @@ async function bootstrapApp(currentUser) {
   });
 
   // ------------------------------------------------------------
-  // 3) Hydrate from backend truth (credit_policy, VAT, etc)
+  // 5) Hydrate from backend truth
   // ------------------------------------------------------------
   try {
-    // ✅ This will call loadCompanyProfile(cid) internally
     await ensureCompanyDataLoaded?.();
     FS.control.syncFromCompany?.(window.CURRENT_COMPANY);
-
-    // ✅ now policy is known, show assisted choice banner if needed
     FS.ui.promptReviewChoice?.(window.CURRENT_COMPANY_ID);
 
-    // ✅ ensureCompanyDataLoaded/loadCompanyProfile may update window.CURRENT_COMPANY
-    // so re-sync local variables from window
     if (window.CURRENT_COMPANY) {
       CURRENT_COMPANY = window.CURRENT_COMPANY;
     }
@@ -51234,7 +51195,6 @@ async function bootstrapApp(currentUser) {
       CURRENT_COMPANY_ID = window.CURRENT_COMPANY_ID;
     }
 
-    // also refresh cache so next boot gets policy
     if (CURRENT_COMPANY && typeof store?.set === "function") {
       store.set("fs_company_profile", CURRENT_COMPANY);
     }
@@ -51242,14 +51202,8 @@ async function bootstrapApp(currentUser) {
     console.warn("ensureCompanyDataLoaded failed:", e);
   }
 
-  // ✅ Sync backend credit_policy.mode ("single") → frontend control mode ("owner_managed")
-  if (window.FS?.control?.syncFromCompany) {
-    FS.control.syncFromCompany(CURRENT_COMPANY);
-  }
-
   // ------------------------------------------------------------
-  // 4) Continue existing flow (tax + map)
-  // IMPORTANT: compute addr AFTER hydration
+  // 6) Continue existing flow
   // ------------------------------------------------------------
   const addr =
     CURRENT_COMPANY?.physical_address ||
@@ -51260,7 +51214,6 @@ async function bootstrapApp(currentUser) {
     const me = window.currentUser || {};
     const company = window.CURRENT_COMPANY || {};
     const ownerId = company.owner_user_id;
-
     return ownerId != null && me.id != null && String(ownerId) === String(me.id);
   };
 
@@ -51268,23 +51221,20 @@ async function bootstrapApp(currentUser) {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid) return;
 
-    // Ensure we have a company object with owner_user_id
     let company = window.CURRENT_COMPANY;
 
-    // If missing or wrong company loaded, fetch fresh
     if (!company || Number(company.id) !== Number(cid) || company.owner_user_id === undefined) {
       try {
         company = await apiFetch(`/api/companies/${encodeURIComponent(cid)}`, { method: "GET" });
         window.CURRENT_COMPANY = company;
       } catch (e) {
         console.warn("[OwnerInvite] could not load company profile", e);
-        return; // don't spam popup if we can't confirm
+        return;
       }
     }
 
     const ownerUserId = company.owner_user_id || company.ownerUserId || null;
 
-    // ✅ ONLY show if company truly has no owner
     if (!ownerUserId) {
       FS.modePrompt.open({
         title: "Invite the Owner",
@@ -51305,14 +51255,13 @@ async function bootstrapApp(currentUser) {
     }
   }
 
-  // after CURRENT_COMPANY and CURRENT_COMPANY_ID are set
   try {
-    await ensureCompanyDataLoaded();         // ✅ hydrates CURRENT_COMPANY.credit_policy, VAT, etc
+    await ensureCompanyDataLoaded();
     FS.ui.promptReviewChoice?.(CURRENT_COMPANY_ID);
   } catch (e) {
     console.warn("ensureCompanyDataLoaded failed:", e);
   }
-  
+
   if (typeof hydrateCompanyTaxUI === "function") {
     hydrateCompanyTaxUI(CURRENT_COMPANY);
   } else {
@@ -51330,7 +51279,7 @@ async function bootstrapApp(currentUser) {
   }
 
   // ------------------------------------------------------------
-  // 4) Mode + nav (guard!)
+  // 7) Mode + nav
   // ------------------------------------------------------------
   if (!isDelegatedPosting) {
     if (typeof applyMode === "function") {
@@ -51349,9 +51298,8 @@ async function bootstrapApp(currentUser) {
     console.warn("setupNav() missing - skipped");
   }
 
-
   // ------------------------------------------------------------
-  // 5) COA + IFRS
+  // 8) COA + IFRS
   // ------------------------------------------------------------
   try {
     await fetchCOAReal();
@@ -51364,12 +51312,7 @@ async function bootstrapApp(currentUser) {
   populateAccountSelects();
 
   // ------------------------------------------------------------
-  // 6) Logged-in header
-  // ------------------------------------------------------------
-  if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
-
-  // ------------------------------------------------------------
-  // 6.1) Dashboard mode switcher
+  // 9) Logged-in header
   // ------------------------------------------------------------
   if (typeof applyAuthUI === "function") applyAuthUI(currentUser);
 
@@ -51386,15 +51329,7 @@ async function bootstrapApp(currentUser) {
   });
 
   if (typeof initDashboardModeSwitcher === "function") {
-    if (isDelegatedPosting) {
-      console.log("🧠 Delegated mode detected → forcing delegated dashboard mode");
-
-      initDashboardModeSwitcher("delegated"); // 👈 NEW MODE
-
-    } else {
-      initDashboardModeSwitcher("internal");
-    }
-
+    initDashboardModeSwitcher(isDelegatedPosting ? "delegated" : "internal");
   } else {
     console.warn("initDashboardModeSwitcher() missing - skipped");
   }
