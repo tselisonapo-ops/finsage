@@ -2,29 +2,39 @@
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
 
-  if (typeof window.getToken !== "function") {
-    window.getToken = function () {
-      return (
-        sessionStorage.getItem(TOKEN_KEY) ||
-        localStorage.getItem(TOKEN_KEY) ||
-        ""
-      );
-    };
-  }
+  window.getToken = function () {
+    return (
+      localStorage.getItem(TOKEN_KEY) ||
+      sessionStorage.getItem(TOKEN_KEY) ||
+      ""
+    );
+  };
 
-  if (typeof window.setToken !== "function") {
-    window.setToken = function (token, persist = true) {
-      if (!token) return;
-      (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
-    };
-  }
+  window.setToken = function (token, persist = true) {
+    if (!token) return;
 
-  if (typeof window.clearToken !== "function") {
-    window.clearToken = function () {
-      sessionStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-    };
-  }
+    // clear legacy keys
+    localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("access_token");
+
+    // clear current key in both stores first
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+
+    // write one source of truth
+    (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+  };
+
+  window.clearToken = function () {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("access_token");
+  };
 })();
 
 (function () {
@@ -938,13 +948,27 @@ const PR_NAV = {
   * ==================================================== */
 function getAuthToken() {
   return (
-    sessionStorage.getItem("fs_user_token") ||  // 🔥 PRIORITY
     localStorage.getItem("fs_user_token") ||
-    localStorage.getItem("authToken") ||
-    sessionStorage.getItem("authToken") ||
+    sessionStorage.getItem("fs_user_token") ||
     ""
   );
 }
+
+function setAuthToken(token, persist = true) {
+  if (!token) return;
+
+  localStorage.removeItem("token");
+  localStorage.removeItem("access_token");
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("access_token");
+  localStorage.removeItem("authToken");
+  sessionStorage.removeItem("authToken");
+  localStorage.removeItem("fs_user_token");
+  sessionStorage.removeItem("fs_user_token");
+
+  (persist ? localStorage : sessionStorage).setItem("fs_user_token", token);
+}
+
 function getStoredUser() {
   try {
     return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
