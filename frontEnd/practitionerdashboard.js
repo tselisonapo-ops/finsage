@@ -1181,7 +1181,8 @@ const PR_NAV = {
 
   teamCapacity: "team-capacity",
   portfolioReview: "portfolio-review",
-  escalations: "escalations",
+  engagementEscalations: "engagement-escalations",
+  escalationCenter: "escalation-center",
   approvalCenter: "approval-center",
   resourcePlanning: "resource-planning",
 
@@ -1794,9 +1795,9 @@ const PR_NAV_MENU = [
       },
       {
         name: "Escalations",
-        screen: PR_NAV.escalations,
-        desc: "Blocked work, overdue items, and intervention-required workflow issues",
-        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.escalations)
+        screen: PR_NAV.engagementEscalations,
+        desc: "Raise and view escalation items for the current engagement",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.engagementEscalations)
       },
       {
         name: "Engagement Audit Trail",
@@ -1934,14 +1935,14 @@ const PR_NAV_MENU = [
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.portfolioReview)
       },
       {
-        name: "Escalations",
-        screen: PR_NAV.escalations,
-        desc: "Blocked work, overdue items, and manager-level intervention queue",
-        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.escalations)
+        name: "Escalation Center",
+        screen: PR_NAV.escalationCenter,
+        desc: "Review, assign, update, and resolve escalations across engagements",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.escalationCenter)
       },
       {
-        name: "Approval Center",
-        screen: PR_NAV.approvalCenter,
+        name: "Escalation Center",
+        screen: PR_NAV.escalationCenter,
         desc: "Manager approvals, review decisions, and rework routing",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.approvalCenter)
       },
@@ -2080,9 +2081,40 @@ PR_SCREEN_POLICY["portfolio-review"] = {
   roles: ["owner", "admin", "manager", "audit_manager", "audit_partner", "engagement_partner", "client_service_manager"]
 };
 
-PR_SCREEN_POLICY["escalations"] = {
+PR_SCREEN_POLICY["engagement-escalations"] = {
   auth: "private",
-  roles: ["owner", "admin", "manager", "audit_manager", "client_service_manager", "reviewer"]
+  roles: [
+    "owner",
+    "admin",
+    "manager",
+    "senior",
+    "accountant",
+    "bookkeeper",
+    "audit_staff",
+    "senior_associate",
+    "audit_manager",
+    "audit_partner",
+    "engagement_partner",
+    "quality_control_reviewer",
+    "fs_compiler",
+    "reviewer",
+    "client_service_manager"
+  ]
+};
+
+PR_SCREEN_POLICY["escalation-center"] = {
+  auth: "private",
+  roles: [
+    "owner",
+    "admin",
+    "manager",
+    "audit_manager",
+    "audit_partner",
+    "engagement_partner",
+    "quality_control_reviewer",
+    "client_service_manager",
+    "reviewer"
+  ]
 };
 
 PR_SCREEN_POLICY["approval-center"] = {
@@ -2194,7 +2226,9 @@ function resolvePractitionerScreenName(name) {
     "working-papers": "working-papers",
     "deliverables-register": "deliverables-register",
     "engagement-audit-trail": "engagement-audit-trail",
-    "practice-audit-trail": "practice-audit-trail"
+    "practice-audit-trail": "practice-audit-trail",
+    "engagement-escalations": "engagement-escalations",
+    "escalation-center": "escalation-center"
   };
 
   return alias[n] || n || PR_NAV.dashboard;
@@ -2234,7 +2268,8 @@ async function switchPractitionerScreen(name, me, opts = {}) {
     PR_NAV.workingPapers,
     PR_NAV.reviewQueue,
     PR_NAV.engagementAuditTrail,
-    PR_NAV.team
+    PR_NAV.team,
+    PR_NAV.engagementEscalations
   ]);
 
   if (needsEngagementContext.has(screen)) {
@@ -2312,7 +2347,8 @@ function renderPractitionerScreenTitle(screen, me) {
     "review-queue": "Review Queue",
     "team-capacity": "Team Capacity",
     "portfolio-review": "Portfolio Review",
-    escalations: "Escalations",
+    "engagement-escalations": "Engagement Escalations",
+    "escalation-center": "Escalation Center",
     "approval-center": "Approval Center",
     "resource-planning": "Resource Planning",
     "partner-signoff": "Partner Sign-Off",
@@ -2353,8 +2389,8 @@ function renderPractitionerScreenTitle(screen, me) {
     "review-queue": "Review work awaiting reviewer or manager action.",
     "team-capacity": "Cross-engagement staffing, allocation load, and reviewer capacity visibility.",
     "portfolio-review": "Portfolio-wide engagement health, due dates, blockers, and manager risk signals.",
-    escalations: "Blocked work, overdue items, and intervention-required workflow issues.",
-    "approval-center": "Manager approvals, review decisions, rework routing, and release controls.",
+    "engagement-escalations": "Raise and track escalation items for the current engagement.",
+    "escalation-center": "Review, assign, update, and resolve escalation items across engagements.",    "approval-center": "Manager approvals, review decisions, rework routing, and release controls.",
     "resource-planning": "Forward-looking staffing, scheduling pressure, and workload balancing.",
     "partner-signoff": "Final approval workflow, sign-off steps, and completion control.",
     "final-deliverables-review": "Final reporting pack review before sign-off and release.",
@@ -3369,8 +3405,12 @@ async function runPractitionerScreenBinder(screen, me) {
       await renderPortfolioReviewScreen?.(me);
       break;
 
-    case PR_NAV.escalations:
-      await renderEscalationsScreen?.(me);
+    case PR_NAV.engagementEscalations:
+      await renderEngagementEscalationsScreen?.(me);
+      break;
+
+    case PR_NAV.escalationCenter:
+      await renderEscalationCenterScreen?.(me);
       break;
 
     case PR_NAV.approvalCenter:
@@ -12466,8 +12506,8 @@ function syncPortfolioReviewFiltersFromDom() {
   PR_PORTFOLIO_REVIEW_CACHE.filters.offset = 0;
 }
 
-async function renderEscalationsScreen(me) {
-  const host = document.getElementById("screen-escalations");
+async function renderEscalationCenterScreen(me) {
+  const host = document.getElementById("screen-escalation-center");
   if (!host) {
     console.warn("screen-escalations not found");
     return;
@@ -12479,7 +12519,7 @@ async function renderEscalationsScreen(me) {
         <div>
           <h1 class="pr-screen__title">Escalations</h1>
           <p class="pr-screen__subtitle">
-            Blocked work, overdue items, and intervention-required workflow issues across engagements.
+             Review, assign, update, and resolve escalation items across engagements.
           </p>
         </div>
 
@@ -12701,6 +12741,200 @@ async function renderEscalationsScreen(me) {
 
   bindEscalationsEvents(me);
   await loadEscalationsScreen(me, { force: true });
+}
+
+async function renderEngagementEscalationsScreen(me) {
+  const host = document.getElementById("screen-engagement-escalations");
+  if (!host) {
+    console.warn("screen-engagement-escalations not found");
+    return;
+  }
+
+  const engagementId =
+    window.getPractitionerActiveEngagementId?.() ||
+    Number(window.__PR_CONTEXT__?.engagementId || 0) ||
+    Number(PR_SELECTED_ENGAGEMENT?.id || 0) ||
+    0;
+
+  host.innerHTML = `
+    <div class="pr-screen pr-escalations-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Engagement Escalations</h1>
+          <p class="pr-screen__subtitle">
+            Raise and track escalation items for the current engagement.
+          </p>
+        </div>
+
+        <div class="pr-screen__actions pr-filter-actions">
+          <button class="btn btn-primary" id="prEngagementEscalationsNewBtn" type="button">New Escalation</button>
+          <button class="btn btn-ghost" id="prEngagementEscalationsRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="pr-panel">
+        <div class="pr-filter-grid pr-filter-grid--escalations">
+          <label class="pr-field">
+            <span class="pr-field__label">Search</span>
+            <input
+              id="prEngagementEscalationsSearch"
+              class="pr-input"
+              type="text"
+              placeholder="Search title, type, source"
+              value="${escapeHtml(PR_ESCALATIONS_CACHE.filters.q || "")}"
+            />
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Status</span>
+            <select id="prEngagementEscalationsStatus" class="pr-select">
+              <option value="">All</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Severity</span>
+            <select id="prEngagementEscalationsSeverity" class="pr-select">
+              <option value="">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="prEngagementEscalationsActiveOnly" type="checkbox" ${PR_ESCALATIONS_CACHE.filters.active_only ? "checked" : ""} />
+            <span>Active only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button class="btn btn-primary" id="prEngagementEscalationsApplyBtn" type="button">Apply</button>
+            <button class="btn btn-ghost" id="prEngagementEscalationsResetBtn" type="button">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-escalations-layout">
+        <div class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Escalations for engagement</h3>
+              <p>${engagementId ? `Engagement ID: ${engagementId}` : "No engagement selected."}</p>
+            </div>
+          </div>
+          <div id="prEngagementEscalationsTableWrap">
+            ${renderEscalationsTableSkeleton()}
+          </div>
+        </div>
+
+        <aside class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Detail</h3>
+              <p>Selected escalation details for this engagement.</p>
+            </div>
+          </div>
+          <div id="prEngagementEscalationsDetailWrap">
+            ${renderEscalationsEmptyDetail()}
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div id="prEngagementEscalationsModal" class="pr-modal hidden">
+      <div class="pr-modal__backdrop" data-close-engagement-escalation-modal="1"></div>
+      <div class="pr-modal__dialog">
+        <div class="pr-modal__head">
+          <h3 id="prEngagementEscalationsModalTitle">New Escalation</h3>
+          <button class="btn btn-ghost" type="button" data-close-engagement-escalation-modal="1">Close</button>
+        </div>
+
+        <div class="pr-modal__body pr-escalation-form">
+          <input type="hidden" id="prEngagementEscalationFormId" />
+
+          <label class="pr-field">
+            <span class="pr-field__label">Engagement ID</span>
+            <input id="prEngagementEscalationEngagementId" class="pr-input" type="number" value="${engagementId || ""}" />
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Source type</span>
+            <select id="prEngagementEscalationSourceType" class="pr-select">
+              <option value="manual">Manual</option>
+              <option value="working_paper">Working paper</option>
+              <option value="deliverable">Deliverable</option>
+              <option value="signoff">Signoff</option>
+              <option value="posting_activity">Posting activity</option>
+              <option value="monthly_close_task">Monthly close task</option>
+              <option value="year_end_task">Year-end task</option>
+            </select>
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Source ID</span>
+            <input id="prEngagementEscalationSourceId" class="pr-input" type="number" />
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Type</span>
+            <select id="prEngagementEscalationType" class="pr-select">
+              <option value="deadline_risk">Deadline risk</option>
+              <option value="quality_issue">Quality issue</option>
+              <option value="blocker">Blocker</option>
+              <option value="client_issue">Client issue</option>
+              <option value="review_delay">Review delay</option>
+              <option value="signoff_delay">Signoff delay</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Severity</span>
+            <select id="prEngagementEscalationSeverity" class="pr-select">
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Due date</span>
+            <input id="prEngagementEscalationDueDate" class="pr-input" type="date" />
+          </label>
+
+          <label class="pr-field pr-field--full">
+            <span class="pr-field__label">Title</span>
+            <input id="prEngagementEscalationTitle" class="pr-input" type="text" />
+          </label>
+
+          <label class="pr-field pr-field--full">
+            <span class="pr-field__label">Description</span>
+            <textarea id="prEngagementEscalationDescription" class="pr-textarea" rows="5"></textarea>
+          </label>
+        </div>
+
+        <div class="pr-modal__foot">
+          <button class="btn btn-primary" id="prEngagementEscalationSaveBtn" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const statusEl = document.getElementById("prEngagementEscalationsStatus");
+  const severityEl = document.getElementById("prEngagementEscalationsSeverity");
+
+  if (statusEl) statusEl.value = PR_ESCALATIONS_CACHE.filters.status || "";
+  if (severityEl) severityEl.value = PR_ESCALATIONS_CACHE.filters.severity || "";
+
+  bindEngagementEscalationsEvents(me);
+  await loadEngagementEscalationsScreen(me, { force: true });
 }
 
 function getEscalationSeverityClass(severity) {
@@ -13039,7 +13273,7 @@ function bindEscalationsEvents(me) {
         limit: 100,
         offset: 0
       };
-      await renderEscalationsScreen(me);
+      await renderEscalationCenterScreen(me);
       return;
     }
 
@@ -13112,6 +13346,362 @@ function bindEscalationsEvents(me) {
       syncEscalationsFiltersFromDom();
     }
   });
+}
+
+async function loadEngagementEscalationsScreen(me, { force = false } = {}) {
+  if (!me?.company_id) return;
+
+  const engagementId =
+    window.getPractitionerActiveEngagementId?.() ||
+    Number(window.__PR_CONTEXT__?.engagementId || 0) ||
+    Number(PR_SELECTED_ENGAGEMENT?.id || 0) ||
+    0;
+
+  const tableWrap = document.getElementById("prEngagementEscalationsTableWrap");
+  const detailWrap = document.getElementById("prEngagementEscalationsDetailWrap");
+
+  if (force && tableWrap) {
+    tableWrap.innerHTML = renderEscalationsTableSkeleton();
+  }
+
+  if (!engagementId) {
+    if (tableWrap) {
+      tableWrap.innerHTML = `
+        <div class="pr-table-state">
+          <div class="pr-empty-state__title">No engagement selected</div>
+          <div class="pr-empty-state__desc">Select an engagement first to view engagement escalations.</div>
+        </div>
+      `;
+    }
+    if (detailWrap) detailWrap.innerHTML = renderEscalationsEmptyDetail();
+    return;
+  }
+
+  try {
+    const res = await apiFetch(
+      ENDPOINTS.escalationsList(me.company_id, {
+        engagement_id: engagementId,
+        status: PR_ESCALATIONS_CACHE.filters.status,
+        severity: PR_ESCALATIONS_CACHE.filters.severity,
+        q: PR_ESCALATIONS_CACHE.filters.q,
+        active_only: PR_ESCALATIONS_CACHE.filters.active_only,
+        limit: PR_ESCALATIONS_CACHE.filters.limit,
+        offset: PR_ESCALATIONS_CACHE.filters.offset
+      })
+    );
+
+    PR_ESCALATIONS_CACHE.rows = res?.data?.rows || res?.rows || [];
+
+    renderEngagementEscalationsTable(PR_ESCALATIONS_CACHE.rows);
+
+    const selectedStillExists = PR_ESCALATIONS_CACHE.rows.some(
+      (r) => Number(r.id) === Number(PR_ESCALATIONS_CACHE.selectedId)
+    );
+
+    if (!selectedStillExists) {
+      PR_ESCALATIONS_CACHE.selectedId = PR_ESCALATIONS_CACHE.rows[0]?.id || null;
+    }
+
+    if (PR_ESCALATIONS_CACHE.selectedId) {
+      await loadEngagementEscalationDetail(me, PR_ESCALATIONS_CACHE.selectedId);
+    } else {
+      PR_ESCALATIONS_CACHE.selectedRow = null;
+      if (detailWrap) detailWrap.innerHTML = renderEscalationsEmptyDetail();
+    }
+  } catch (err) {
+    console.error("loadEngagementEscalationsScreen failed", err);
+    if (tableWrap) {
+      tableWrap.innerHTML = `
+        <div class="pr-table-state">
+          <div class="pr-empty-state__title">Could not load engagement escalations</div>
+          <div class="pr-empty-state__desc">${escapeHtml(err.message || "Request failed")}</div>
+        </div>
+      `;
+    }
+    if (detailWrap) detailWrap.innerHTML = renderEscalationsEmptyDetail();
+  }
+}
+
+async function loadEngagementEscalationDetail(me, escalationId) {
+  if (!me?.company_id || !escalationId) return;
+
+  PR_ESCALATIONS_CACHE.selectedId = escalationId;
+  renderEngagementEscalationsTable(PR_ESCALATIONS_CACHE.rows);
+
+  const host = document.getElementById("prEngagementEscalationsDetailWrap");
+  if (host) host.innerHTML = `<div class="pr-loading">Loading escalation detail…</div>`;
+
+  try {
+    const res = await apiFetch(ENDPOINTS.escalationsGet(me.company_id, escalationId));
+    PR_ESCALATIONS_CACHE.selectedRow = res?.data?.row || res?.row || null;
+    renderEngagementEscalationsDetail(PR_ESCALATIONS_CACHE.selectedRow);
+  } catch (err) {
+    console.error("loadEngagementEscalationDetail failed", err);
+    if (host) {
+      host.innerHTML = `
+        <div class="pr-empty-state">
+          <div class="pr-empty-state__title">Could not load escalation</div>
+          <div class="pr-empty-state__desc">${escapeHtml(err.message || "Request failed")}</div>
+        </div>
+      `;
+    }
+  }
+}
+
+function renderEngagementEscalationsTable(rows = []) {
+  const host = document.getElementById("prEngagementEscalationsTableWrap");
+  if (!host) return;
+
+  if (!rows.length) {
+    host.innerHTML = `
+      <div class="pr-table-state">
+        <div class="pr-empty-state__title">No escalations found</div>
+        <div class="pr-empty-state__desc">Raise a new escalation for this engagement when needed.</div>
+      </div>
+    `;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="pr-table-scroll">
+      <table class="pr-table pr-escalations-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Severity</th>
+            <th>Status</th>
+            <th>Type</th>
+            <th>Due date</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr class="pr-escalation-row ${Number(PR_ESCALATIONS_CACHE.selectedId) === Number(row.id) ? "is-selected" : ""}" data-engagement-escalation-id="${Number(row.id)}" tabindex="0">
+              <td>
+                <div class="pr-user-cell">
+                  <div class="pr-user-cell__name">${escapeHtml(row.title || "Untitled escalation")}</div>
+                  <div class="pr-user-cell__meta">${escapeHtml(row.source_type || "")}</div>
+                </div>
+              </td>
+              <td><span class="pr-badge ${getEscalationSeverityClass(row.severity)}">${escapeHtml(row.severity || "—")}</span></td>
+              <td><span class="pr-badge ${getEscalationStatusClass(row.status)}">${escapeHtml(row.status || "—")}</span></td>
+              <td>${escapeHtml(row.escalation_type || "—")}</td>
+              <td>${escapeHtml(row.due_date || "—")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderEngagementEscalationsDetail(row) {
+  const host = document.getElementById("prEngagementEscalationsDetailWrap");
+  if (!host) return;
+
+  if (!row) {
+    host.innerHTML = renderEscalationsEmptyDetail();
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="pr-user-detail">
+      <div class="pr-detail-card">
+        <div class="pr-detail-card__top">
+          <div>
+            <div class="pr-detail-card__title">${escapeHtml(row.title || "Untitled escalation")}</div>
+            <div class="pr-detail-card__meta">${escapeHtml(row.engagement_name || "—")}</div>
+          </div>
+          <div class="pr-filter-actions">
+            <button class="btn btn-primary" type="button" id="prEngagementEscalationEditBtn">Edit</button>
+          </div>
+        </div>
+
+        <div class="pr-detail-card__grid">
+          <div><span>Severity</span><strong>${escapeHtml(row.severity || "—")}</strong></div>
+          <div><span>Status</span><strong>${escapeHtml(row.status || "—")}</strong></div>
+          <div><span>Type</span><strong>${escapeHtml(row.escalation_type || "—")}</strong></div>
+          <div><span>Source</span><strong>${escapeHtml(row.source_type || "—")}</strong></div>
+          <div><span>Source ID</span><strong>${escapeHtml(row.source_id || "—")}</strong></div>
+          <div><span>Due date</span><strong>${escapeHtml(row.due_date || "—")}</strong></div>
+        </div>
+
+        <div class="pr-empty-state__desc" style="margin-top:12px;">
+          ${escapeHtml(row.description || "No description provided.")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openEngagementEscalationModal(mode, row = null) {
+  const modal = document.getElementById("prEngagementEscalationsModal");
+  if (!modal) return;
+
+  const engagementId =
+    row?.engagement_id ||
+    window.getPractitionerActiveEngagementId?.() ||
+    Number(window.__PR_CONTEXT__?.engagementId || 0) ||
+    Number(PR_SELECTED_ENGAGEMENT?.id || 0) ||
+    "";
+
+  document.getElementById("prEngagementEscalationsModalTitle").textContent =
+    mode === "edit" ? "Edit Escalation" : "New Escalation";
+
+  document.getElementById("prEngagementEscalationFormId").value = row?.id || "";
+  document.getElementById("prEngagementEscalationEngagementId").value = engagementId;
+  document.getElementById("prEngagementEscalationSourceType").value = row?.source_type || "manual";
+  document.getElementById("prEngagementEscalationSourceId").value = row?.source_id || "";
+  document.getElementById("prEngagementEscalationType").value = row?.escalation_type || "deadline_risk";
+  document.getElementById("prEngagementEscalationSeverity").value = row?.severity || "medium";
+  document.getElementById("prEngagementEscalationDueDate").value = row?.due_date || "";
+  document.getElementById("prEngagementEscalationTitle").value = row?.title || "";
+  document.getElementById("prEngagementEscalationDescription").value = row?.description || "";
+
+  modal.classList.remove("hidden");
+}
+
+function closeEngagementEscalationModal() {
+  const modal = document.getElementById("prEngagementEscalationsModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function saveEngagementEscalation(me) {
+  const escalationId = document.getElementById("prEngagementEscalationFormId")?.value || "";
+  const payload = {
+    engagement_id: Number(document.getElementById("prEngagementEscalationEngagementId")?.value || 0),
+    source_type: document.getElementById("prEngagementEscalationSourceType")?.value || "manual",
+    source_id: document.getElementById("prEngagementEscalationSourceId")?.value
+      ? Number(document.getElementById("prEngagementEscalationSourceId").value)
+      : null,
+    escalation_type: document.getElementById("prEngagementEscalationType")?.value || "other",
+    severity: document.getElementById("prEngagementEscalationSeverity")?.value || "medium",
+    title: document.getElementById("prEngagementEscalationTitle")?.value?.trim() || "",
+    description: document.getElementById("prEngagementEscalationDescription")?.value?.trim() || "",
+    due_date: document.getElementById("prEngagementEscalationDueDate")?.value || null
+  };
+
+  if (!payload.engagement_id) {
+    alert("Engagement ID is required.");
+    return;
+  }
+
+  if (!payload.source_type || !payload.escalation_type) {
+    alert("Source type and escalation type are required.");
+    return;
+  }
+
+  if (escalationId) {
+    await apiFetch(ENDPOINTS.escalationsUpdate(me.company_id, escalationId), {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  } else {
+    await apiFetch(ENDPOINTS.escalationsCreate(me.company_id), {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  closeEngagementEscalationModal();
+  await loadEngagementEscalationsScreen(me, { force: true });
+}
+
+function bindEngagementEscalationsEvents(me) {
+  if (window.__PR_ENGAGEMENT_ESCALATIONS_EVENTS_BOUND__) return;
+  window.__PR_ENGAGEMENT_ESCALATIONS_EVENTS_BOUND__ = true;
+
+  document.addEventListener("click", async (event) => {
+    if (event.target.closest("#prEngagementEscalationsRefreshBtn")) {
+      await loadEngagementEscalationsScreen(me, { force: true });
+      return;
+    }
+
+    if (event.target.closest("#prEngagementEscalationsApplyBtn")) {
+      syncEngagementEscalationsFiltersFromDom();
+      await loadEngagementEscalationsScreen(me, { force: true });
+      return;
+    }
+
+    if (event.target.closest("#prEngagementEscalationsResetBtn")) {
+      PR_ESCALATIONS_CACHE.filters.q = "";
+      PR_ESCALATIONS_CACHE.filters.status = "";
+      PR_ESCALATIONS_CACHE.filters.severity = "";
+      PR_ESCALATIONS_CACHE.filters.active_only = true;
+      PR_ESCALATIONS_CACHE.filters.offset = 0;
+      await renderEngagementEscalationsScreen(me);
+      return;
+    }
+
+    if (event.target.closest("#prEngagementEscalationsNewBtn")) {
+      openEngagementEscalationModal("create");
+      return;
+    }
+
+    if (event.target.closest("#prEngagementEscalationEditBtn")) {
+      if (PR_ESCALATIONS_CACHE.selectedRow) {
+        openEngagementEscalationModal("edit", PR_ESCALATIONS_CACHE.selectedRow);
+      }
+      return;
+    }
+
+    if (event.target.closest("#prEngagementEscalationSaveBtn")) {
+      await saveEngagementEscalation(me);
+      return;
+    }
+
+    if (event.target.closest("[data-close-engagement-escalation-modal='1']")) {
+      closeEngagementEscalationModal();
+      return;
+    }
+
+    const row = event.target.closest(".pr-escalation-row[data-engagement-escalation-id]");
+    if (row) {
+      const escalationId = Number(row.dataset.engagementEscalationId || 0);
+      if (escalationId) {
+        await loadEngagementEscalationDetail(me, escalationId);
+      }
+    }
+  });
+
+  document.addEventListener("keydown", async (event) => {
+    const row = event.target.closest(".pr-escalation-row[data-engagement-escalation-id]");
+    if (row && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      const escalationId = Number(row.dataset.engagementEscalationId || 0);
+      if (escalationId) {
+        await loadEngagementEscalationDetail(me, escalationId);
+      }
+      return;
+    }
+
+    if (event.target?.id === "prEngagementEscalationsSearch" && event.key === "Enter") {
+      syncEngagementEscalationsFiltersFromDom();
+      await loadEngagementEscalationsScreen(me, { force: true });
+    }
+  });
+
+  document.addEventListener("change", (event) => {
+    if (
+      event.target?.id === "prEngagementEscalationsStatus" ||
+      event.target?.id === "prEngagementEscalationsSeverity" ||
+      event.target?.id === "prEngagementEscalationsActiveOnly"
+    ) {
+      syncEngagementEscalationsFiltersFromDom();
+    }
+  });
+}
+
+function syncEngagementEscalationsFiltersFromDom() {
+  PR_ESCALATIONS_CACHE.filters.q =
+    document.getElementById("prEngagementEscalationsSearch")?.value?.trim() || "";
+  PR_ESCALATIONS_CACHE.filters.status =
+    document.getElementById("prEngagementEscalationsStatus")?.value || "";
+  PR_ESCALATIONS_CACHE.filters.severity =
+    document.getElementById("prEngagementEscalationsSeverity")?.value || "";
+  PR_ESCALATIONS_CACHE.filters.active_only =
+    !!document.getElementById("prEngagementEscalationsActiveOnly")?.checked;
+  PR_ESCALATIONS_CACHE.filters.offset = 0;
 }
 
 function syncEscalationsFiltersFromDom() {
