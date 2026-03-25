@@ -5335,34 +5335,28 @@ function getStoredUser() {
   }
 
   function ensureDelegatedUiBadge() {
-    const ctx = getPostingContext();
     const host = document.getElementById("delegatedWorkspaceBanner");
-    if (!ctx || !host) return;
+    if (!host) return;
 
-    const engagementSummary =
-      ctx.engagementSummary ||
-      ctx.engagementTitle ||
+    let ctx = {};
+    try {
+      ctx = JSON.parse(localStorage.getItem("fs_posting_context") || "{}");
+    } catch (_) {}
+
+    ctx = {
+      ...ctx,
+      ...(window.__PR_POSTING_CONTEXT__ || {})
+    };
+
+    const engagementName =
       ctx.engagementName ||
-      "Client posting workspace";
-
-    const companyName =
-      ctx.customerName ||
-      ctx.companyName ||
-      "Client";
+      ctx.engagement?.engagement_name ||
+      "Engagement";
 
     host.classList.remove("hidden");
-    host.innerHTML = `
-      <div class="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        <span class="rounded-full border border-amber-300 bg-white px-2 py-1 text-xs font-semibold">
-          ${escapeHtml(companyName)}
-        </span>
-        <span class="font-semibold">
-          ${escapeHtml(engagementSummary)}
-        </span>
-      </div>
-    `;
+    host.textContent = engagementName;
   }
-
+  
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -6942,12 +6936,6 @@ async function initHeaderCompanySwitcher() {
 function updateHeaderCompanyBadge() {
   const badge = document.getElementById("companyBadge");
   if (!badge) return;
-
-  const isDelegated =
-    !!window.__PR_POSTING_CONTEXT__ ||
-    !!localStorage.getItem("fs_posting_context");
-
-  if (isDelegated) return;
 
   const company = window.CURRENT_COMPANY || CURRENT_COMPANY || {};
   const name =
