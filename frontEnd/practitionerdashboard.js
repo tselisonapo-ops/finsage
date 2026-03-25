@@ -10107,7 +10107,7 @@ async function openPostingForEngagement(row, me) {
     console.warn("Failed to set active company before redirect", e);
   }
 
-  window.location.href = "dashboard.html#screen=journal-desk";
+  window.location.href = "dashboard.html";
 }
 
 function restorePractitionerReturnContext() {
