@@ -506,6 +506,7 @@ const ENDPOINTS = {
     requestReset: `${API_BASE}/api/auth/request-reset`,
     resetPassword: `${API_BASE}/api/auth/reset-password`,
     changePassword: `${API_BASE}/api/auth/change-password`,
+    restoreNative: `${API_BASE}/api/auth/restore-native-context`,
   },
 
   // --- Credit control / approvals ---
@@ -5533,6 +5534,28 @@ function shouldShowDashboardSwitcher(me) {
   return canEnterprise && canPractitioner;
 }
 
+async function returnToPractitionerNative() {
+  const res = await apiFetch("/api/auth/restore-native-context", {
+    method: "POST"
+  });
+
+  if (!res?.ok || !res?.token) {
+    throw new Error(res?.error || "Failed to restore native context");
+  }
+
+  window.setToken(res.token, true);
+  localStorage.removeItem("fs_posting_context");
+  localStorage.removeItem("fs_home_token");
+
+  const returnCtx = {
+    companyId: res.company_id || null,
+    returnScreen: "assignments",
+  };
+  localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+
+  window.location.href = "practitionerdashboard.html#screen=assignments";
+}
+
 function initDashboardModeSwitcher(currentMode = "internal") {
   const wrap = document.getElementById("dashboardModeSwitcherWrap");
   const select = document.getElementById("dashboardModeSwitcher");
@@ -5570,7 +5593,7 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     `;
     select.value = "internal";
 
-    select.onchange = () => {
+    select.onchange = async () => {
       const next = String(select.value || "").toLowerCase();
 
       if (next === "internal") {
@@ -5579,44 +5602,41 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       }
 
       if (next === "practitioner") {
-        const homeToken =
-          sessionStorage.getItem("fs_home_token") ||
-          localStorage.getItem("fs_home_token") ||
-          "";
+        try {
+          console.log("Restoring native context via API...");
 
-        if (!homeToken) {
-          console.warn("No native token found for practitioner return");
+          const res = await apiFetch(ENDPOINTS.auth.restoreNative, {
+            method: "POST",
+          });
+
+          if (!res?.ok || !res?.token) {
+            throw new Error(res?.error || "Failed to restore native context");
+          }
+
+          console.log("RESTORE NATIVE RESPONSE", res);
+
+          // ✅ set new native token
+          window.setToken(res.token, true);
+
+          // clean delegated state
+          localStorage.removeItem("fs_posting_context");
+          localStorage.removeItem("fs_home_token");
+          window.__FS_DELEGATED_POSTING__ = false;
+          window.__FS_POSTING_CONTEXT__ = null;
+
+          // optional return context
+          const returnCtx = {
+            companyId: res.company_id || null,
+            returnScreen: "assignments",
+          };
+          localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+
+          // go back to practitioner
+          window.location.href = "practitionerdashboard.html#screen=assignments";
+        } catch (e) {
+          console.error("Failed to restore native workspace", e);
           select.value = "internal";
-          return;
         }
-
-        const returnCtx = {
-          companyId: Number(
-            postingCtx?.sourceCompanyId ||
-            me?.source_company_id ||
-            0
-          ) || null,
-          engagementId: Number(
-            postingCtx?.engagementId ||
-            me?.engagement_id ||
-            0
-          ) || null,
-          customerId: Number(postingCtx?.customerId || 0) || null,
-          engagement: postingCtx?.engagement || null,
-          returnScreen: "assignments",
-        };
-
-        localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
-
-        window.setToken(homeToken, true);
-        sessionStorage.removeItem("fs_home_token");
-        localStorage.removeItem("fs_home_token");
-        localStorage.removeItem("fs_posting_context");
-        window.__FS_DELEGATED_POSTING__ = false;
-        window.__FS_POSTING_CONTEXT__ = null;
-
-        window.location.href =
-          postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
       }
     };
 

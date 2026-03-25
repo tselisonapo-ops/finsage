@@ -2531,6 +2531,70 @@ def enter_engagement_workspace(engagement_id: int):
         }
     }), 200))
 
+@app.route("/api/auth/restore-native-context", methods=["POST", "OPTIONS"])
+@require_auth(require_company=False)
+def restore_native_context():
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = getattr(request, "jwt_payload", {}) or {}
+
+    user_id = payload.get("user_id") or payload.get("sub")
+    user_id = int(user_id) if user_id is not None else None
+    if not user_id:
+        return _corsify(make_response(jsonify({"error": "AUTH|missing_user_id"}), 401))
+
+    is_delegated = bool(
+        payload.get("is_delegated_company_access") or
+        payload.get("access_scope") == "delegated_workspace"
+    )
+    if not is_delegated:
+        return _corsify(make_response(jsonify({"error": "AUTH|not_in_delegated_workspace"}), 400))
+
+    source_company_id = payload.get("source_company_id")
+    try:
+        source_company_id = int(source_company_id) if source_company_id is not None else None
+    except Exception:
+        source_company_id = None
+
+    if not source_company_id:
+        return _corsify(make_response(jsonify({"error": "AUTH|missing_source_company_id"}), 400))
+
+    base_user = db_service.get_user_by_id(int(user_id)) or {}
+    if not base_user:
+        return _corsify(make_response(jsonify({"error": "AUTH|user_not_found"}), 404))
+
+    native_ctx = db_service.get_user_context(
+        user_id=int(user_id),
+        company_id=int(source_company_id),
+    )
+    if not native_ctx:
+        return _corsify(make_response(jsonify({"error": "AUTH|no_native_company_access"}), 403))
+
+    native_permissions = native_ctx.get("permissions") or {}
+
+    native_token = make_jwt(
+        user_id=int(user_id),
+        email=base_user.get("email") or "",
+        role=native_ctx.get("role") or base_user.get("user_role") or "viewer",
+        user_type=base_user.get("user_type") or "Practitioner",
+        company_id=int(source_company_id),
+        access_scope=native_ctx.get("access_scope") or "assignment",
+        allowed_company_ids=native_ctx.get("allowed_company_ids") or [int(source_company_id)],
+        permissions=native_permissions,
+        first_name=base_user.get("first_name"),
+        last_name=base_user.get("last_name"),
+        is_delegated_company_access=False,
+        is_native_company_member=True,
+    )
+
+    return _corsify(make_response(jsonify({
+        "ok": True,
+        "token": native_token,
+        "company_id": int(source_company_id),
+        "access_scope": native_ctx.get("access_scope") or "assignment",
+    }), 200))
+
 @app.route("/api/industries", methods=["GET"])
 def get_industries_api():
     return jsonify({"industries": list_industries()}), 200
