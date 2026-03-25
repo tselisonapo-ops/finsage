@@ -13230,7 +13230,11 @@ async function bootstrapPractitionerApp(me) {
     String(me?.access_scope || "").toLowerCase() === "delegated_workspace";
 
   if (isDelegated) {
-    window.location.replace("dashboard.html");
+    if (window.__STOP_REDIRECTS__) {
+      console.warn("[REDIRECT BLOCKED] delegated workspace -> dashboard.html");
+    } else {
+      window.location.replace("dashboard.html");
+    }
     return;
   }
 
@@ -13309,8 +13313,13 @@ async function initPractitioner() {
     window.currentUser = me;
     localStorage.setItem("fs_user", JSON.stringify(me || {}));
 
-    window.location.replace("dashboard.html");
+    if (window.__STOP_REDIRECTS__) {
+      console.warn("[REDIRECT BLOCKED] initPractitioner delegated -> dashboard.html");
+    } else {
+      window.location.replace("dashboard.html");
+    }
     return;
+  
   }
 
   window.currentUser = me;
