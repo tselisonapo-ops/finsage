@@ -1767,13 +1767,12 @@ def api_auth_me():
             "sub_industry": sub_industry,
             "governance_mode": governance_mode,
 
-            # delegated context only
             "allowed_company_ids": delegated_allowed,
-            "token_company_id": payload.get("company_id"),
+            "token_company_id": company_id,
             "token_access_scope": "delegated_workspace",
             "token_allowed_company_ids": delegated_allowed,
             "source_company_id": payload.get("source_company_id"),
-            "target_company_id": payload.get("target_company_id"),
+            "target_company_id": payload.get("target_company_id") or company_id,
             "engagement_id": payload.get("engagement_id"),
             "is_delegated_company_access": True,
             "is_native_company_member": False,
@@ -1857,31 +1856,20 @@ def api_auth_me():
         "first_name": user.get("first_name"),
         "last_name": user.get("last_name"),
         "user_type": user.get("user_type") or payload.get("user_type"),
-
         "role": role,
-        "access_scope": "delegated_workspace",
+        "access_scope": access_scope,
         "company_id": company_id,
         "company_name": company_name,
         "industry": industry,
         "sub_industry": sub_industry,
         "governance_mode": governance_mode,
-
-        "allowed_company_ids": delegated_allowed,
-        "token_company_id": company_id,
-        "token_access_scope": "delegated_workspace",
-        "token_allowed_company_ids": delegated_allowed,
-        "source_company_id": payload.get("source_company_id"),
-        "target_company_id": payload.get("target_company_id") or company_id,
-        "engagement_id": payload.get("engagement_id"),
-        "is_delegated_company_access": True,
-        "is_native_company_member": False,
-
-        "dashboards": {
-            "enterprise": True,
-            "practitioner": False,
-        },
+        "allowed_company_ids": native_allowed,
+        "token_company_id": payload.get("company_id"),
+        "token_access_scope": payload.get("access_scope"),
+        "token_allowed_company_ids": payload.get("allowed_company_ids"),
+        "dashboards": dashboards,
         "permissions": permissions,
-        "default_dashboard": "enterprise",
+        "default_dashboard": default_dashboard,
     }
 
     return jsonify(out), 200
