@@ -2682,8 +2682,8 @@ class DatabaseService:
             "can_manage_company_setup": False,
             "can_edit_tax_settings": False,
             "can_lock_periods": False,
-            "can_access_enterprise_dashboard": False,
-            "can_access_practitioner_dashboard": True,
+            "can_access_enterprise_dashboard": True,
+            "can_access_practitioner_dashboard": False,
         }
 
         # Role-based grants inside delegated workspace

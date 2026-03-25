@@ -157,7 +157,7 @@ def require_auth(_f=None, *, require_company: bool = True):
 
                     can_use_delegated_workspace = (
                         role_norm in delegated_roles
-                        and access_scope in {"assignment", "core"}
+                        and access_scope in {"assignment", "core", "delegated_workspace"}
                     )
 
                     engagement_id = (
@@ -241,7 +241,7 @@ def require_auth(_f=None, *, require_company: bool = True):
                             "user_role": role_norm,
                             "company_role": role_norm,
                             "user_type": payload.get("user_type") or base.get("user_type"),
-                            "access_scope": access_scope or "assignment",
+                            "access_scope": "delegated_workspace" if payload.get("is_delegated_company_access") else (access_scope or "assignment"),
                             "access_level": payload.get("access_level") or base.get("access_level"),
                             "permissions": perms,
 
