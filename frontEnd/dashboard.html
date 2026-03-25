@@ -7037,16 +7037,27 @@ window.safeRedirect = function (url, mode = "href") {
   const TOKEN_KEY = "fs_user_token";
 
   const token =
-    localStorage.getItem(TOKEN_KEY) ||
     sessionStorage.getItem(TOKEN_KEY) ||
+    localStorage.getItem(TOKEN_KEY) ||
+    sessionStorage.getItem("authToken") ||
     localStorage.getItem("authToken") ||
-    sessionStorage.getItem("authToken");
+    "";
 
   if (!token) {
     if (!window.location.pathname.includes("signin")) {
-      window.location.replace("/signin.html");
+      window.safeRedirect("/signin.html", "replace");
     }
     return;
+  }
+
+  let payload = null;
+  try {
+    const parts = String(token).split(".");
+    if (parts.length >= 2) {
+      payload = JSON.parse(atob(parts[1]));
+    }
+  } catch (e) {
+    console.warn("signin bootstrap: token decode failed", e);
   }
 
   let user = null;
@@ -7056,14 +7067,31 @@ window.safeRedirect = function (url, mode = "href") {
     user = null;
   }
 
+  const accessScope = String(
+    payload?.access_scope ||
+    user?.access_scope ||
+    ""
+  ).toLowerCase();
+
+  const isDelegated =
+    !!payload?.is_delegated_company_access ||
+    accessScope === "delegated_workspace";
+
   const canEnterprise =
+    isDelegated ||
+    !!payload?.permissions?.can_access_enterprise_dashboard ||
     !!user?.dashboards?.enterprise ||
     localStorage.getItem("can_access_enterprise_dashboard") === "true";
 
-  if (!canEnterprise) {
-    if (!window.location.pathname.includes("practitionerdashboard")) {
-      window.location.replace("/practitionerdashboard.html");
+  if (isDelegated || canEnterprise) {
+    if (!window.location.pathname.includes("dashboard.html")) {
+      window.safeRedirect("/dashboard.html", "replace");
     }
+    return;
+  }
+
+  if (!window.location.pathname.includes("practitionerdashboard.html")) {
+    window.safeRedirect("/practitionerdashboard.html", "replace");
   }
 })();
 </script>
