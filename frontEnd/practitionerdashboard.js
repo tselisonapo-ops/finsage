@@ -950,8 +950,6 @@ function getAuthToken() {
   return (
     localStorage.getItem("fs_user_token") ||
     sessionStorage.getItem("fs_user_token") ||
-    localStorage.getItem("authToken") ||
-    sessionStorage.getItem("authToken") ||
     ""
   );
 }
@@ -10071,7 +10069,29 @@ async function openPostingForEngagement(row, me) {
   }
 
   // ask backend for delegated workspace token
+  console.log("BEFORE ENTER", {
+    getToken: window.getToken?.(),
+    fs_user_token_local: localStorage.getItem("fs_user_token"),
+    fs_user_token_session: sessionStorage.getItem("fs_user_token"),
+    authToken_local: localStorage.getItem("authToken"),
+    authToken_session: sessionStorage.getItem("authToken"),
+  });
+
   const res = await window.enterEngagementWorkspace(engagementId, sourceCompanyId);
+
+  console.log("AFTER ENTER RESPONSE", res);
+
+  console.log("AFTER TOKEN SET", {
+    getToken: window.getToken?.(),
+    fs_user_token_local: localStorage.getItem("fs_user_token"),
+    fs_user_token_session: sessionStorage.getItem("fs_user_token"),
+    authToken_local: localStorage.getItem("authToken"),
+    authToken_session: sessionStorage.getItem("authToken"),
+  });
+
+  const meAfter = await apiFetch("/api/auth/me", { method: "GET" });
+  console.log("AFTER SWITCH /api/auth/me", meAfter);
+
   console.log("POST ENTER WORKSPACE RES", res);
 
   if (!res?.ok || !res?.token) {
