@@ -12280,7 +12280,7 @@ async function loadPortfolioReviewDashboard(me, { force = false } = {}) {
   }
 
   try {
-    const url = ENDPOINTS.engagements.portfolioReviewDashboard(companyId, {
+    const url = ENDPOINTS.portfolioReviewDashboard(companyId, {
       customer_id: filters.customer_id,
       q: filters.q,
       active_only: filters.active_only,
