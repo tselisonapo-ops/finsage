@@ -950,23 +950,10 @@ function getAuthToken() {
   return (
     localStorage.getItem("fs_user_token") ||
     sessionStorage.getItem("fs_user_token") ||
+    localStorage.getItem("authToken") ||
+    sessionStorage.getItem("authToken") ||
     ""
   );
-}
-
-function setAuthToken(token, persist = true) {
-  if (!token) return;
-
-  localStorage.removeItem("token");
-  localStorage.removeItem("access_token");
-  sessionStorage.removeItem("token");
-  sessionStorage.removeItem("access_token");
-  localStorage.removeItem("authToken");
-  sessionStorage.removeItem("authToken");
-  localStorage.removeItem("fs_user_token");
-  sessionStorage.removeItem("fs_user_token");
-
-  (persist ? localStorage : sessionStorage).setItem("fs_user_token", token);
 }
 
 function getStoredUser() {
