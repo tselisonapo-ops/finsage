@@ -51011,19 +51011,6 @@ async function bootstrapApp(currentUser) {
     window.restorePostingContext?.() ||
     null;
 
-  const delegatedPostingCompanyId =
-    Number(postingCtx?.targetCompanyId || postingCtx?.companyId || 0) || null;
-
-  const isDelegatedPosting =
-    !!postingCtx &&
-    (postingCtx.launchMode === "posting" ||
-      postingCtx.accessMode === "delegated_workspace") &&
-    delegatedPostingCompanyId > 0;
-
-  // expose globally as early as possible
-  window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
-  window.__FS_POSTING_CONTEXT__ = postingCtx || null;
-
   // read token payload once
   let tokenPayload = null;
   try {
@@ -51039,9 +51026,6 @@ async function bootstrapApp(currentUser) {
     tokenPayload = null;
   }
 
-  // ------------------------------------------------------------
-  // 2) Resolve access scope + permissions
-  // ------------------------------------------------------------
   const accessScope = String(
     tokenPayload?.access_scope ||
     currentUser?.token_access_scope ||
@@ -51049,21 +51033,55 @@ async function bootstrapApp(currentUser) {
     ""
   ).toLowerCase();
 
+  const tokenDelegated =
+    !!tokenPayload?.is_delegated_company_access ||
+    !!currentUser?.is_delegated_company_access ||
+    accessScope === "delegated_workspace";
+
+  const delegatedPostingCompanyId =
+    Number(
+      postingCtx?.targetCompanyId ||
+      postingCtx?.companyId ||
+      tokenPayload?.target_company_id ||
+      currentUser?.target_company_id ||
+      tokenPayload?.company_id ||
+      currentUser?.company_id ||
+      0
+    ) || null;
+
+  const isDelegatedPosting =
+    !!tokenDelegated && delegatedPostingCompanyId > 0;
+
+  // expose globally as early as possible
+  window.__FS_DELEGATED_POSTING__ = isDelegatedPosting;
+  window.__FS_POSTING_CONTEXT__ = postingCtx || {
+    accessMode: tokenDelegated ? "delegated_workspace" : null,
+    launchMode: tokenDelegated ? "posting" : null,
+    sourceCompanyId:
+      Number(
+        postingCtx?.sourceCompanyId ||
+        tokenPayload?.source_company_id ||
+        currentUser?.source_company_id ||
+        0
+      ) || null,
+    targetCompanyId: delegatedPostingCompanyId,
+    companyId: delegatedPostingCompanyId
+  };
+
+  // ------------------------------------------------------------
+  // 2) Resolve access scope + permissions
+  // ------------------------------------------------------------
   const isInternalScope =
     accessScope === "internal" || accessScope === "core";
 
-  // In delegated mode, trust delegated JWT payload first.
-  // Otherwise prefer currentUser permissions.
   let perms = {};
 
   if (isDelegatedPosting) {
-    perms = tokenPayload?.permissions || {};
-    if (!perms || typeof perms !== "object" || Array.isArray(perms)) {
-      perms =
-        currentUser?.permissions ||
-        window.getCurrentPermissions?.() ||
-        {};
-    }
+    perms =
+      tokenPayload?.permissions ||
+      currentUser?.permissions ||
+      window.getCurrentPermissions?.() ||
+      {};
   } else {
     perms =
       currentUser?.permissions ||
@@ -51075,11 +51093,9 @@ async function bootstrapApp(currentUser) {
   const canUseDelegatedPosting =
     !!perms?.can_access_delegated_posting_workspace ||
     !!perms?.can_post_journals ||
-    !!perms?.can_prepare_financials;
+    !!perms?.can_prepare_financials ||
+    !!perms?.can_access_enterprise_dashboard;
 
-  // dashboard.html shell access rule:
-  // - internal/core scope always allowed
-  // - assignment allowed only inside delegated posting with delegated permission
   const canUseDashboardShell =
     isInternalScope || (isDelegatedPosting && canUseDelegatedPosting);
 
@@ -51091,6 +51107,7 @@ async function bootstrapApp(currentUser) {
   console.log("bootstrapApp: access mode", {
     accessScope,
     isInternalScope,
+    tokenDelegated,
     isDelegatedPosting,
     postingCtx,
     delegatedPostingCompanyId,
@@ -51101,7 +51118,6 @@ async function bootstrapApp(currentUser) {
       currentUser?.company_profile?.id ||
       null,
     tokenCompanyId: tokenPayload?.company_id || null,
-    tokenDelegated: !!tokenPayload?.is_delegated_company_access,
     canUseDelegatedPosting,
     canUseDashboardShell,
     perms,
@@ -51112,6 +51128,7 @@ async function bootstrapApp(currentUser) {
       reason: "canUseDashboardShell=false",
       accessScope,
       isInternalScope,
+      tokenDelegated,
       isDelegatedPosting,
       canUseDelegatedPosting,
       postingCtx,
@@ -51123,6 +51140,13 @@ async function bootstrapApp(currentUser) {
       localTokenPresent: !!localStorage.getItem("fs_user_token"),
     });
 
+    // Delegated users should never be bounced back to practitioner
+    // just because postingCtx restored late.
+    if (tokenDelegated) {
+      console.warn("bootstrapApp: delegated token detected, suppressing bounce to practitioner");
+      return;
+    }
+
     window.location.replace("practitionerdashboard.html");
     return;
   }
@@ -51130,8 +51154,6 @@ async function bootstrapApp(currentUser) {
   // ------------------------------------------------------------
   // 3) Resolve company id
   // ------------------------------------------------------------
-  // In delegated mode, NEVER fall back to native company sources.
-  // Use target company only.
   const nativeResolvedCompanyId =
     (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
     currentUser?.company_id ||
@@ -51145,7 +51167,6 @@ async function bootstrapApp(currentUser) {
     ? delegatedPostingCompanyId
     : nativeResolvedCompanyId;
 
-  // hard-lock company context early
   if (resolvedCompanyId) {
     localStorage.setItem("company_id", String(resolvedCompanyId));
     CURRENT_COMPANY_ID = Number(resolvedCompanyId);
@@ -51156,7 +51177,12 @@ async function bootstrapApp(currentUser) {
       window.__PR_ACTIVE_COMPANY_ID__ = CURRENT_COMPANY_ID;
       window.__FS_TARGET_COMPANY_ID__ = CURRENT_COMPANY_ID;
       window.__FS_SOURCE_COMPANY_ID__ =
-        Number(postingCtx?.sourceCompanyId || tokenPayload?.source_company_id || 0) || null;
+        Number(
+          postingCtx?.sourceCompanyId ||
+          tokenPayload?.source_company_id ||
+          currentUser?.source_company_id ||
+          0
+        ) || null;
 
       try {
         if (typeof setActiveCompanyId === "function") {
@@ -51167,7 +51193,7 @@ async function bootstrapApp(currentUser) {
       }
     }
   }
-
+  
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
 
