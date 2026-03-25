@@ -75,14 +75,20 @@
   };
 
   window.setToken = function (token, persist = true) {
-    if (!token) return;
+      if (!token) return;
 
-    // always clear old copies first so one source of truth remains
-    sessionStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_KEY);
+      // 🔥 CLEAR EVERYTHING (THIS IS IMPORTANT)
+      localStorage.removeItem("token");
+      localStorage.removeItem("access_token");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("access_token");
 
-    (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
-  };
+      sessionStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+
+      (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+    };
+
 
   window.clearToken = function () {
     sessionStorage.removeItem(TOKEN_KEY);
@@ -127,23 +133,6 @@ window.addEventListener("unhandledrejection", (e) => {
 
   const TOKEN_KEY = "fs_user_token";
   const COMPANY_KEY = "company_id";
-
-  if (typeof window.getToken !== "function") {
-    window.getToken = function () {
-      return (
-        sessionStorage.getItem(TOKEN_KEY) ||
-        localStorage.getItem(TOKEN_KEY) ||
-        ""
-      );
-    };
-  }
-
-  if (typeof window.setToken !== "function") {
-    window.setToken = function (token, persist = true) {
-      if (!token) return;
-      (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
-    };
-  }
 
   if (typeof window.clearToken !== "function") {
     window.clearToken = function () {

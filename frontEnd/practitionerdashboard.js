@@ -10044,17 +10044,14 @@ async function openPostingForEngagement(row, me) {
     console.warn("Missing engagement/source company context for delegated workspace", {
       engagementId,
       sourceCompanyId,
-      row
+      row,
     });
     return;
   }
 
-  // keep original token once
+  // keep original home token once, using the SAME token system
   try {
-    const currentToken =
-      localStorage.getItem("token") ||
-      localStorage.getItem("access_token");
-
+    const currentToken = window.getToken?.() || "";
     if (currentToken && !localStorage.getItem("fs_home_token")) {
       localStorage.setItem("fs_home_token", currentToken);
     }
@@ -10065,17 +10062,13 @@ async function openPostingForEngagement(row, me) {
   // ask backend for delegated workspace token
   const res = await window.enterEngagementWorkspace(engagementId, sourceCompanyId);
   console.log("POST ENTER WORKSPACE RES", res);
-  
+
   if (!res?.ok || !res?.token) {
     throw new Error(res?.error || "Failed to enter delegated workspace");
   }
 
-  // IMPORTANT: store the delegated token using the same key your AUTH_HEADER() reads
-  if (localStorage.getItem("access_token") !== null) {
-    localStorage.setItem("access_token", res.token);
-  } else {
-    localStorage.setItem("token", res.token);
-  }
+  // store delegated token using the SAME key your AUTH_HEADER() reads
+  window.setToken(res.token, true);
 
   const ctx = {
     companyId: targetCompanyId,
@@ -10102,7 +10095,7 @@ async function openPostingForEngagement(row, me) {
     engagement: row || null,
     returnTo: "practitionerdashboard.html#screen=assignments",
 
-    launchedByUserId: Number(me?.id || me?.user_id || me?.sub || 0) || null
+    launchedByUserId: Number(me?.id || me?.user_id || me?.sub || 0) || null,
   };
 
   localStorage.setItem("fs_posting_context", JSON.stringify(ctx));
@@ -10114,6 +10107,17 @@ async function openPostingForEngagement(row, me) {
   } catch (e) {
     console.warn("Failed to set active company before redirect", e);
   }
+
+  console.log("FINAL TOKEN BEFORE REDIRECT", {
+    fs_user_token_local: localStorage.getItem("fs_user_token"),
+    fs_user_token_session: sessionStorage.getItem("fs_user_token"),
+    token_local: localStorage.getItem("token"),
+    access_token_local: localStorage.getItem("access_token"),
+    posting_context: localStorage.getItem("fs_posting_context"),
+    targetCompanyId,
+    sourceCompanyId,
+    engagementId,
+  });
 
   window.location.href = "dashboard.html";
 }
