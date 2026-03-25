@@ -13244,6 +13244,19 @@ async function renderClientsScreen(me) {
 async function bootstrapPractitionerApp(me) {
   console.log("bootstrapPractitionerApp me =", me);
 
+  const isDelegated =
+    !!me?.is_delegated_company_access ||
+    String(me?.access_scope || "").toLowerCase() === "delegated_workspace";
+
+  if (isDelegated) {
+    if (window.__STOP_REDIRECTS__) {
+      console.warn("[REDIRECT BLOCKED] delegated workspace -> dashboard.html");
+    } else {
+      window.location.replace("dashboard.html");
+    }
+    return;
+  }
+
   const userType = String(me?.user_type || "").toLowerCase();
   const canPractitionerDashboard = !!me?.dashboards?.practitioner;
   const isPractitionerScope = userType === "practitioner";
@@ -13311,7 +13324,22 @@ async function initPractitioner() {
     return;
   }
 
-  // make user globally accessible
+  const isDelegated =
+    !!me?.is_delegated_company_access ||
+    String(me?.access_scope || "").toLowerCase() === "delegated_workspace";
+
+  if (isDelegated) {
+    window.currentUser = me;
+    localStorage.setItem("fs_user", JSON.stringify(me || {}));
+
+    if (window.__STOP_REDIRECTS__) {
+      console.warn("[REDIRECT BLOCKED] initPractitioner delegated -> dashboard.html");
+    } else {
+      window.location.replace("dashboard.html");
+    }
+    return;
+  }
+
   window.currentUser = me;
   localStorage.setItem("fs_user", JSON.stringify(me || {}));
 
