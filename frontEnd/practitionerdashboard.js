@@ -13249,11 +13249,7 @@ async function bootstrapPractitionerApp(me) {
     String(me?.access_scope || "").toLowerCase() === "delegated_workspace";
 
   if (isDelegated) {
-    if (window.__STOP_REDIRECTS__) {
-      console.warn("[REDIRECT BLOCKED] delegated workspace -> dashboard.html");
-    } else {
-      window.location.replace("dashboard.html");
-    }
+    window.location.replace("dashboard.html");
     return;
   }
 
