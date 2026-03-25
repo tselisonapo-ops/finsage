@@ -68,32 +68,70 @@
 
   window.getToken = function () {
     return (
-      localStorage.getItem(TOKEN_KEY) ||
       sessionStorage.getItem(TOKEN_KEY) ||
+      localStorage.getItem(TOKEN_KEY) ||
       ""
     );
   };
 
   window.setToken = function (token, persist = true) {
-      if (!token) return;
+    if (!token) return;
 
-      // 🔥 CLEAR EVERYTHING (THIS IS IMPORTANT)
-      localStorage.removeItem("token");
-      localStorage.removeItem("access_token");
-      sessionStorage.removeItem("token");
-      sessionStorage.removeItem("access_token");
+    // 🔥 CLEAR EVERYTHING (THIS IS IMPORTANT)
+    localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("access_token");
 
-      sessionStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
 
-      (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
-    };
-
+    (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+  };
 
   window.clearToken = function () {
     sessionStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_KEY);
   };
+
+  // ---- TEMP DEBUG WRAPPERS ----
+  const _origSetToken = window.setToken;
+  window.setToken = function (token, persist = true) {
+    try {
+      const payload = JSON.parse(atob(String(token).split(".")[1]));
+      console.warn("[SET TOKEN]", {
+        persist,
+        company_id: payload.company_id,
+        source_company_id: payload.source_company_id,
+        target_company_id: payload.target_company_id,
+        access_scope: payload.access_scope,
+        is_delegated_company_access: payload.is_delegated_company_access,
+      });
+      console.trace("[SET TOKEN TRACE]");
+    } catch (e) {
+      console.warn("[SET TOKEN] decode failed", e);
+    }
+    return _origSetToken.call(this, token, persist);
+  };
+
+  const _origGetToken = window.getToken;
+  window.getToken = function () {
+    const token = _origGetToken();
+    try {
+      const payload = JSON.parse(atob(String(token).split(".")[1]));
+      console.warn("[GET TOKEN]", {
+        fromSession: !!sessionStorage.getItem(TOKEN_KEY),
+        fromLocal: !!localStorage.getItem(TOKEN_KEY),
+        company_id: payload.company_id,
+        source_company_id: payload.source_company_id,
+        target_company_id: payload.target_company_id,
+        access_scope: payload.access_scope,
+        is_delegated_company_access: payload.is_delegated_company_access,
+      });
+    } catch (_) {}
+    return token;
+  };
+  // ---- END TEMP DEBUG WRAPPERS ----
 
   console.log("[bootstrap] typeof window.getToken =", typeof window.getToken);
   console.log("[bootstrap] token source", {
