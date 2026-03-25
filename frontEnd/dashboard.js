@@ -9880,7 +9880,7 @@ async function loadDashboard() {
 
   if (companyBadge) {
     // ✅ Use postingCtx if present
-    renderPostingDashboardContextBanner(companyBadge, me, postingCtx);
+   // renderPostingDashboardContextBanner(companyBadge, me, postingCtx);
   }
 
   updatePostingCompanyBadge();
