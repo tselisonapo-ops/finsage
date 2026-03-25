@@ -1124,3 +1124,281 @@ def get_team_capacity_dashboard_route(cid: int):
     except Exception as e:
         current_app.logger.exception("get_team_capacity_dashboard_route failed")
         return _json_err(str(e), 500)
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-escalations",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def list_engagement_escalations_route(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        engagement_id = _parse_int(request.args.get("engagement_id"))
+        customer_id = _parse_int(request.args.get("customer_id"))
+        assigned_to_user_id = _parse_int(request.args.get("assigned_to_user_id"))
+
+        status = (request.args.get("status") or "").strip().lower()
+        severity = (request.args.get("severity") or "").strip().lower()
+        escalation_type = (request.args.get("escalation_type") or "").strip().lower()
+        source_type = (request.args.get("source_type") or "").strip().lower()
+        q = (request.args.get("q") or "").strip()
+
+        active_only = _parse_bool(request.args.get("active_only"), True)
+        limit = _parse_int(request.args.get("limit"), 100)
+        offset = _parse_int(request.args.get("offset"), 0)
+
+        if limit is None or limit < 1:
+            limit = 100
+        if limit > 500:
+            limit = 500
+        if offset is None or offset < 0:
+            offset = 0
+
+        with db_service._conn_cursor() as (conn, cur):
+            rows = db_service.list_engagement_escalations(
+                cur,
+                company_id,
+                engagement_id=engagement_id,
+                customer_id=customer_id,
+                status=status,
+                severity=severity,
+                escalation_type=escalation_type,
+                source_type=source_type,
+                assigned_to_user_id=assigned_to_user_id,
+                q=q,
+                active_only=active_only,
+                limit=limit,
+                offset=offset,
+            )
+
+        return _json_ok({
+            "rows": rows or [],
+            "filters": {
+                "engagement_id": engagement_id,
+                "customer_id": customer_id,
+                "assigned_to_user_id": assigned_to_user_id,
+                "status": status,
+                "severity": severity,
+                "escalation_type": escalation_type,
+                "source_type": source_type,
+                "q": q,
+                "active_only": active_only,
+                "limit": limit,
+                "offset": offset,
+            },
+        })
+
+    except Exception as e:
+        current_app.logger.exception("list_engagement_escalations_route failed")
+        return _json_err(str(e), 500)
+    
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-escalations/<int:escalation_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def get_engagement_escalation_route(cid: int, escalation_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        with db_service._conn_cursor() as (conn, cur):
+            row = db_service.get_engagement_escalation(
+                cur,
+                company_id,
+                escalation_id=escalation_id,
+            )
+
+        if not row:
+            return _json_err("Escalation not found.", 404)
+
+        return _json_ok({"row": row})
+
+    except Exception as e:
+        current_app.logger.exception("get_engagement_escalation_route failed")
+        return _json_err(str(e), 500)
+    
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-escalations/<int:escalation_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def get_engagement_escalation_route(cid: int, escalation_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        with db_service._conn_cursor() as (conn, cur):
+            row = db_service.get_engagement_escalation(
+                cur,
+                company_id,
+                escalation_id=escalation_id,
+            )
+
+        if not row:
+            return _json_err("Escalation not found.", 404)
+
+        return _json_ok({"row": row})
+
+    except Exception as e:
+        current_app.logger.exception("get_engagement_escalation_route failed")
+        return _json_err(str(e), 500)
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-escalations/<int:escalation_id>",
+    methods=["PUT", "OPTIONS"],
+)
+@require_auth
+def update_engagement_escalation_route(cid: int, escalation_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        body = request.get_json(silent=True) or {}
+
+        source_id = _parse_int(body.get("source_id")) if "source_id" in body else None
+        assigned_to_user_id = _parse_int(body.get("assigned_to_user_id")) if "assigned_to_user_id" in body else None
+
+        source_type = (body.get("source_type") or "").strip().lower() if "source_type" in body else None
+        escalation_type = (body.get("escalation_type") or "").strip().lower() if "escalation_type" in body else None
+        severity = (body.get("severity") or "").strip().lower() if "severity" in body else None
+        title = body.get("title") if "title" in body else None
+        description = body.get("description") if "description" in body else None
+        status = (body.get("status") or "").strip().lower() if "status" in body else None
+        due_date = body.get("due_date") if "due_date" in body else None
+
+        user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+        with db_service._conn_cursor() as (conn, cur):
+            existing = db_service.get_engagement_escalation(
+                cur,
+                company_id,
+                escalation_id=escalation_id,
+            )
+            if not existing:
+                return _json_err("Escalation not found.", 404)
+
+            db_service.update_engagement_escalation(
+                cur,
+                company_id,
+                escalation_id=escalation_id,
+                source_type=source_type,
+                source_id=source_id,
+                escalation_type=escalation_type,
+                severity=severity,
+                title=title,
+                description=description,
+                status=status,
+                assigned_to_user_id=assigned_to_user_id,
+                due_date=due_date,
+                updated_by_user_id=user_id,
+            )
+
+            row = db_service.get_engagement_escalation(
+                cur,
+                company_id,
+                escalation_id=escalation_id,
+            )
+
+            conn.commit()
+
+        return _json_ok({"row": row})
+
+    except Exception as e:
+        current_app.logger.exception("update_engagement_escalation_route failed")
+        return _json_err(str(e), 500)
+    
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-escalations/<int:escalation_id>/deactivate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deactivate_engagement_escalation_route(cid: int, escalation_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+        with db_service._conn_cursor() as (conn, cur):
+            affected = db_service.deactivate_engagement_escalation(
+                cur,
+                company_id,
+                escalation_id=escalation_id,
+                updated_by_user_id=user_id,
+            )
+            conn.commit()
+
+        if not affected:
+            return _json_err("Escalation not found or already inactive.", 404)
+
+        return _json_ok({"ok": True})
+
+    except Exception as e:
+        current_app.logger.exception("deactivate_engagement_escalation_route failed")
+        return _json_err(str(e), 500)
+    
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-escalations/auto-backfill-overdue-working-papers",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def backfill_overdue_working_paper_escalations_route(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        with db_service._conn_cursor() as (conn, cur):
+            inserted = db_service.backfill_overdue_working_paper_escalations(
+                cur,
+                company_id,
+            )
+            conn.commit()
+
+        return _json_ok({"inserted": inserted})
+
+    except Exception as e:
+        current_app.logger.exception("backfill_overdue_working_paper_escalations_route failed")
+        return _json_err(str(e), 500)
+

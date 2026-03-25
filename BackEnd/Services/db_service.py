@@ -7959,6 +7959,381 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_eng_wp_is_active_idx
             ON {schema}.engagement_working_papers(is_active);
 
+        CREATE TABLE IF NOT EXISTS {schema}.engagement_escalations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            engagement_id INT NOT NULL,
+
+            escalation_code TEXT NULL,
+
+            source_type TEXT NOT NULL,       -- working_paper, deliverable, signoff, posting_activity, monthly_close_task, year_end_task, manual
+            source_id INT NULL,
+
+            escalation_type TEXT NOT NULL,   -- deadline_risk, quality_issue, blocker, client_issue, review_delay, signoff_delay, other
+            severity TEXT NOT NULL DEFAULT 'medium', -- low, medium, high, critical
+
+            title TEXT NULL,
+            description TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'open', -- open, in_progress, resolved, closed, dismissed
+
+            raised_by_user_id INT NULL,
+            assigned_to_user_id INT NULL,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            due_date DATE NULL,
+            resolved_at TIMESTAMPTZ NULL,
+            closed_at TIMESTAMPTZ NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.engagement_escalations
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS engagement_id INT,
+
+            ADD COLUMN IF NOT EXISTS escalation_code TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS source_type TEXT,
+            ADD COLUMN IF NOT EXISTS source_id INT NULL,
+
+            ADD COLUMN IF NOT EXISTS escalation_type TEXT,
+            ADD COLUMN IF NOT EXISTS severity TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS title TEXT NULL,
+            ADD COLUMN IF NOT EXISTS description TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS status TEXT,
+
+            ADD COLUMN IF NOT EXISTS raised_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS assigned_to_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+
+            ADD COLUMN IF NOT EXISTS due_date DATE NULL,
+            ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL,
+
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.engagement_escalations
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        UPDATE {schema}.engagement_escalations
+        SET source_type = 'manual'
+        WHERE source_type IS NULL OR BTRIM(source_type) = '';
+
+        UPDATE {schema}.engagement_escalations
+        SET escalation_type = 'other'
+        WHERE escalation_type IS NULL OR BTRIM(escalation_type) = '';
+
+        UPDATE {schema}.engagement_escalations
+        SET severity = 'medium'
+        WHERE severity IS NULL OR BTRIM(severity) = '';
+
+        UPDATE {schema}.engagement_escalations
+        SET status = 'open'
+        WHERE status IS NULL OR BTRIM(status) = '';
+
+        UPDATE {schema}.engagement_escalations
+        SET is_active = TRUE
+        WHERE is_active IS NULL;
+
+        UPDATE {schema}.engagement_escalations
+        SET created_at = NOW()
+        WHERE created_at IS NULL;
+
+        UPDATE {schema}.engagement_escalations
+        SET updated_at = NOW()
+        WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN source_type SET DEFAULT 'manual';
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN escalation_type SET DEFAULT 'other';
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN severity SET DEFAULT 'medium';
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN status SET DEFAULT 'open';
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN is_active SET DEFAULT TRUE;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN created_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN engagement_id SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN source_type SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN escalation_type SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN severity SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN status SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN is_active SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN created_at SET NOT NULL;
+
+        ALTER TABLE {schema}.engagement_escalations
+            ALTER COLUMN updated_at SET NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_engagement
+        ON {schema}.engagement_escalations (engagement_id);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_company
+        ON {schema}.engagement_escalations (company_id);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_status
+        ON {schema}.engagement_escalations (status);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_active
+        ON {schema}.engagement_escalations (is_active);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_due_date
+        ON {schema}.engagement_escalations (due_date);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_assigned_to
+        ON {schema}.engagement_escalations (assigned_to_user_id);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_raised_by
+        ON {schema}.engagement_escalations (raised_by_user_id);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_escalations_source
+        ON {schema}.engagement_escalations (source_type, source_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_engagement_escalations_code_unique
+        ON {schema}.engagement_escalations (company_id, escalation_code)
+        WHERE escalation_code IS NOT NULL AND BTRIM(escalation_code) <> '';
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_engagement_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (engagement_id)
+                    REFERENCES %I.engagements(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_eng_esc_engagement_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_raised_by_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (raised_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_esc_raised_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_assigned_to_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (assigned_to_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_esc_assigned_to_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_created_by_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (created_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_esc_created_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_updated_by_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (updated_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_esc_updated_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_source_type_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        source_type IN (
+                            ''working_paper'',
+                            ''deliverable'',
+                            ''signoff'',
+                            ''posting_activity'',
+                            ''monthly_close_task'',
+                            ''year_end_task'',
+                            ''manual''
+                        )
+                    )',
+                    '{schema}', '{schema}_eng_esc_source_type_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_type_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        escalation_type IN (
+                            ''deadline_risk'',
+                            ''quality_issue'',
+                            ''blocker'',
+                            ''client_issue'',
+                            ''review_delay'',
+                            ''signoff_delay'',
+                            ''other''
+                        )
+                    )',
+                    '{schema}', '{schema}_eng_esc_type_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_severity_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    CHECK (severity IN (''low'', ''medium'', ''high'', ''critical''))',
+                    '{schema}', '{schema}_eng_esc_severity_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_status_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    CHECK (status IN (''open'', ''in_progress'', ''resolved'', ''closed'', ''dismissed''))',
+                    '{schema}', '{schema}_eng_esc_status_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_esc_due_closed_chk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_escalations
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        (resolved_at IS NULL OR resolved_at >= created_at)
+                        AND (closed_at IS NULL OR closed_at >= created_at)
+                    )',
+                    '{schema}', '{schema}_eng_esc_due_closed_chk'
+                );
+            END IF;
+        END $$;
+
+        CREATE OR REPLACE FUNCTION {schema}.set_engagement_escalations_updated_at()
+        RETURNS TRIGGER AS $fn$
+        BEGIN
+            NEW.updated_at = NOW();
+            RETURN NEW;
+        END;
+        $fn$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS trg_engagement_escalations_updated_at
+        ON {schema}.engagement_escalations;
+
+        CREATE TRIGGER trg_engagement_escalations_updated_at
+        BEFORE UPDATE ON {schema}.engagement_escalations
+        FOR EACH ROW
+        EXECUTE PROCEDURE {schema}.set_engagement_escalations_updated_at();
+
         -- ==================================================
         -- NOTES
         -- ==================================================
@@ -16721,12 +17096,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v38")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v39")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=38,
+                    migration_version=39,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -45526,6 +45901,72 @@ class DatabaseService:
         row = cur.fetchone()
         return int(row["id"] if isinstance(row, dict) else row[0])
 
+    def backfill_overdue_working_paper_escalations(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.engagement_escalations (
+                company_id,
+                engagement_id,
+                source_type,
+                source_id,
+                escalation_type,
+                severity,
+                title,
+                description,
+                status,
+                raised_by_user_id,
+                assigned_to_user_id,
+                due_date,
+                is_active,
+                created_at,
+                updated_at
+            )
+            SELECT
+                wp.company_id,
+                wp.engagement_id,
+                'working_paper' AS source_type,
+                wp.id AS source_id,
+                'deadline_risk' AS escalation_type,
+                CASE
+                    WHEN wp.due_date < CURRENT_DATE - INTERVAL '7 days' THEN 'high'
+                    ELSE 'medium'
+                END AS severity,
+                CONCAT('Overdue working paper: ', wp.paper_name) AS title,
+                CONCAT(
+                    'Working paper ',
+                    COALESCE(wp.paper_code, '#' || wp.id::text),
+                    ' is overdue and still not completed.'
+                ) AS description,
+                'open' AS status,
+                wp.preparer_user_id AS raised_by_user_id,
+                wp.reviewer_user_id AS assigned_to_user_id,
+                wp.due_date,
+                TRUE,
+                NOW(),
+                NOW()
+            FROM {schema}.engagement_working_papers wp
+            WHERE wp.company_id = %s
+            AND wp.is_active = TRUE
+            AND wp.due_date IS NOT NULL
+            AND wp.due_date < CURRENT_DATE
+            AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.engagement_escalations e
+                WHERE e.company_id = wp.company_id
+                    AND e.engagement_id = wp.engagement_id
+                    AND e.source_type = 'working_paper'
+                    AND e.source_id = wp.id
+                    AND e.escalation_type = 'deadline_risk'
+                    AND e.is_active = TRUE
+                    AND e.status IN ('open', 'in_progress')
+            )
+            """,
+            (company_id,),
+        )
+
     def update_engagement_working_paper(
         self,
         cur,
@@ -46799,6 +47240,357 @@ class DatabaseService:
         )
         return cur.fetchall()
 
+    def list_engagement_escalations(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        status: str = "",
+        severity: str = "",
+        escalation_type: str = "",
+        source_type: str = "",
+        assigned_to_user_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                e.*,
+                eng.engagement_name,
+                eng.engagement_code,
+                eng.customer_id,
+                c.name AS customer_name,
+
+                CONCAT(
+                    COALESCE(ru.first_name, ''),
+                    CASE
+                        WHEN COALESCE(ru.last_name, '') <> '' THEN ' ' || ru.last_name
+                        ELSE ''
+                    END
+                ) AS raised_by_user_name,
+
+                CONCAT(
+                    COALESCE(au.first_name, ''),
+                    CASE
+                        WHEN COALESCE(au.last_name, '') <> '' THEN ' ' || au.last_name
+                        ELSE ''
+                    END
+                ) AS assigned_to_user_name
+            FROM {schema}.engagement_escalations e
+            JOIN {schema}.engagements eng
+            ON eng.id = e.engagement_id
+            AND eng.company_id = e.company_id
+            LEFT JOIN {schema}.customers c
+            ON c.id = eng.customer_id
+            AND c.company_id = eng.company_id
+            LEFT JOIN public.users ru
+            ON ru.id = e.raised_by_user_id
+            LEFT JOIN public.users au
+            ON au.id = e.assigned_to_user_id
+            WHERE e.company_id = %s
+            AND (%s = FALSE OR e.is_active = TRUE)
+            AND (%s IS NULL OR e.engagement_id = %s)
+            AND (%s IS NULL OR eng.customer_id = %s)
+            AND (%s = '' OR LOWER(e.status) = LOWER(%s))
+            AND (%s = '' OR LOWER(e.severity) = LOWER(%s))
+            AND (%s = '' OR LOWER(e.escalation_type) = LOWER(%s))
+            AND (%s = '' OR LOWER(e.source_type) = LOWER(%s))
+            AND (%s IS NULL OR e.assigned_to_user_id = %s)
+            AND (
+                    %s = ''
+                    OR COALESCE(e.escalation_code, '') ILIKE %s
+                    OR COALESCE(e.title, '') ILIKE %s
+                    OR COALESCE(e.description, '') ILIKE %s
+                    OR COALESCE(eng.engagement_name, '') ILIKE %s
+                    OR COALESCE(eng.engagement_code, '') ILIKE %s
+                    OR COALESCE(c.name, '') ILIKE %s
+                )
+            ORDER BY
+                CASE e.severity
+                    WHEN 'critical' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'medium' THEN 3
+                    ELSE 4
+                END,
+                CASE e.status
+                    WHEN 'open' THEN 1
+                    WHEN 'in_progress' THEN 2
+                    ELSE 3
+                END,
+                e.due_date NULLS LAST,
+                e.created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+                status.strip(), status.strip(),
+                severity.strip(), severity.strip(),
+                escalation_type.strip(), escalation_type.strip(),
+                source_type.strip(), source_type.strip(),
+                assigned_to_user_id, assigned_to_user_id,
+                q.strip(),
+                like, like, like, like, like, like,
+                limit, offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def list_engagement_escalations(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        status: str = "",
+        severity: str = "",
+        escalation_type: str = "",
+        source_type: str = "",
+        assigned_to_user_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                e.*,
+                eng.engagement_name,
+                eng.engagement_code,
+                eng.customer_id,
+                c.name AS customer_name,
+
+                CONCAT(
+                    COALESCE(ru.first_name, ''),
+                    CASE
+                        WHEN COALESCE(ru.last_name, '') <> '' THEN ' ' || ru.last_name
+                        ELSE ''
+                    END
+                ) AS raised_by_user_name,
+
+                CONCAT(
+                    COALESCE(au.first_name, ''),
+                    CASE
+                        WHEN COALESCE(au.last_name, '') <> '' THEN ' ' || au.last_name
+                        ELSE ''
+                    END
+                ) AS assigned_to_user_name
+            FROM {schema}.engagement_escalations e
+            JOIN {schema}.engagements eng
+            ON eng.id = e.engagement_id
+            AND eng.company_id = e.company_id
+            LEFT JOIN {schema}.customers c
+            ON c.id = eng.customer_id
+            AND c.company_id = eng.company_id
+            LEFT JOIN public.users ru
+            ON ru.id = e.raised_by_user_id
+            LEFT JOIN public.users au
+            ON au.id = e.assigned_to_user_id
+            WHERE e.company_id = %s
+            AND (%s = FALSE OR e.is_active = TRUE)
+            AND (%s IS NULL OR e.engagement_id = %s)
+            AND (%s IS NULL OR eng.customer_id = %s)
+            AND (%s = '' OR LOWER(e.status) = LOWER(%s))
+            AND (%s = '' OR LOWER(e.severity) = LOWER(%s))
+            AND (%s = '' OR LOWER(e.escalation_type) = LOWER(%s))
+            AND (%s = '' OR LOWER(e.source_type) = LOWER(%s))
+            AND (%s IS NULL OR e.assigned_to_user_id = %s)
+            AND (
+                    %s = ''
+                    OR COALESCE(e.escalation_code, '') ILIKE %s
+                    OR COALESCE(e.title, '') ILIKE %s
+                    OR COALESCE(e.description, '') ILIKE %s
+                    OR COALESCE(eng.engagement_name, '') ILIKE %s
+                    OR COALESCE(eng.engagement_code, '') ILIKE %s
+                    OR COALESCE(c.name, '') ILIKE %s
+                )
+            ORDER BY
+                CASE e.severity
+                    WHEN 'critical' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'medium' THEN 3
+                    ELSE 4
+                END,
+                CASE e.status
+                    WHEN 'open' THEN 1
+                    WHEN 'in_progress' THEN 2
+                    ELSE 3
+                END,
+                e.due_date NULLS LAST,
+                e.created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+                status.strip(), status.strip(),
+                severity.strip(), severity.strip(),
+                escalation_type.strip(), escalation_type.strip(),
+                source_type.strip(), source_type.strip(),
+                assigned_to_user_id, assigned_to_user_id,
+                q.strip(),
+                like, like, like, like, like, like,
+                limit, offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def get_engagement_escalation(
+        self,
+        cur,
+        company_id: int,
+        *,
+        escalation_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                e.*,
+                eng.engagement_name,
+                eng.engagement_code,
+                eng.customer_id,
+                c.name AS customer_name,
+
+                CONCAT(
+                    COALESCE(ru.first_name, ''),
+                    CASE
+                        WHEN COALESCE(ru.last_name, '') <> '' THEN ' ' || ru.last_name
+                        ELSE ''
+                    END
+                ) AS raised_by_user_name,
+
+                CONCAT(
+                    COALESCE(au.first_name, ''),
+                    CASE
+                        WHEN COALESCE(au.last_name, '') <> '' THEN ' ' || au.last_name
+                        ELSE ''
+                    END
+                ) AS assigned_to_user_name
+            FROM {schema}.engagement_escalations e
+            JOIN {schema}.engagements eng
+            ON eng.id = e.engagement_id
+            AND eng.company_id = e.company_id
+            LEFT JOIN {schema}.customers c
+            ON c.id = eng.customer_id
+            AND c.company_id = eng.company_id
+            LEFT JOIN public.users ru
+            ON ru.id = e.raised_by_user_id
+            LEFT JOIN public.users au
+            ON au.id = e.assigned_to_user_id
+            WHERE e.company_id = %s
+            AND e.id = %s
+            LIMIT 1
+        """
+        cur.execute(sql, (company_id, escalation_id))
+        return cur.fetchone()
+
+    def create_engagement_escalation(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        source_type: str,
+        source_id: int = None,
+        escalation_type: str,
+        severity: str = "medium",
+        title: str = "",
+        description: str = "",
+        status: str = "open",
+        raised_by_user_id: int = None,
+        assigned_to_user_id: int = None,
+        due_date=None,
+        created_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.engagement_escalations (
+                company_id,
+                engagement_id,
+                source_type,
+                source_id,
+                escalation_type,
+                severity,
+                title,
+                description,
+                status,
+                raised_by_user_id,
+                assigned_to_user_id,
+                due_date,
+                created_by_user_id,
+                updated_by_user_id,
+                is_active
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+            RETURNING id
+            """,
+            (
+                company_id,
+                engagement_id,
+                source_type,
+                source_id,
+                escalation_type,
+                severity,
+                title or None,
+                description or None,
+                status,
+                raised_by_user_id,
+                assigned_to_user_id,
+                due_date,
+                created_by_user_id,
+                created_by_user_id,
+            ),
+        )
+        row = cur.fetchone()
+        return row["id"] if isinstance(row, dict) else row[0]
+
+
+
+    def deactivate_engagement_escalation(
+        self,
+        cur,
+        company_id: int,
+        *,
+        escalation_id: int,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.engagement_escalations
+            SET
+                is_active = FALSE,
+                updated_by_user_id = COALESCE(%s, updated_by_user_id)
+            WHERE company_id = %s
+            AND id = %s
+            AND is_active = TRUE
+            """,
+            (updated_by_user_id, company_id, escalation_id),
+        )
+        return cur.rowcount
 
     def insert_ticket(
         self,
