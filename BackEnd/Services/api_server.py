@@ -1660,15 +1660,8 @@ def api_auth_me():
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
-    print(">>> API_AUTH_ME HIT <<<", __file__)
-   
     payload = getattr(request, "jwt_payload", {}) or {}
-
     user_id = payload.get("user_id") or payload.get("sub")
-
-    print(">>> PAYLOAD =", payload)
-    print(">>> USER_ID =", user_id)
-
     if not user_id:
         return jsonify({"error": "AUTH|missing_user_id"}), 401
 
@@ -1679,7 +1672,7 @@ def api_auth_me():
         FROM public.users
         WHERE id=%s
         LIMIT 1;
-    """, (int(user_id),))
+    """, (user_id,))
     if not user:
         return jsonify({"error": "AUTH|user_not_found"}), 401
 
@@ -1688,23 +1681,10 @@ def api_auth_me():
         FROM public.company_users
         WHERE user_id=%s AND is_active=TRUE
         ORDER BY company_id;
-    """, (int(user_id),)) or []
-    allowed = [int(r["company_id"]) for r in allowed_rows]
+    """, (user_id,)) or []
+    native_allowed = [int(r["company_id"]) for r in allowed_rows]
 
-    # prefer primary membership
-    primary_mem = db_service.fetch_one("""
-        SELECT company_id, role, access_scope, is_active
-        FROM public.company_users
-        WHERE user_id=%s
-        AND is_active=TRUE
-        AND is_primary=TRUE
-        LIMIT 1;
-    """, (int(user_id),))
-
-    token_cid_raw = (
-        payload.get("target_company_id")
-        or payload.get("company_id")
-    )
+    token_cid_raw = payload.get("target_company_id") or payload.get("company_id")
     try:
         token_cid = int(token_cid_raw) if token_cid_raw not in (None, "") else None
     except (TypeError, ValueError):
@@ -1712,29 +1692,118 @@ def api_auth_me():
 
     is_delegated = bool(payload.get("is_delegated_company_access"))
 
-    if is_delegated and token_cid:
-        company_id = int(token_cid)
-    elif primary_mem and primary_mem.get("company_id"):
-        company_id = int(primary_mem["company_id"])
-    elif token_cid and token_cid in allowed:
-        company_id = token_cid
-    elif allowed:
-        company_id = allowed[0]
-    else:
-        company_id = None
-
+    company_id = None
     role = "viewer"
     access_scope = "core"
     governance_mode = "owner_managed"
-    mem = None
+    company_name = None
+    industry = None
+    sub_industry = None
 
+    if is_delegated and token_cid:
+        # TRUST THE DELEGATED TOKEN
+        company_id = token_cid
+
+        raw_role = (
+            payload.get("role")
+            or "viewer"
+        )
+        role = normalize_role(raw_role)
+
+        # keep token scope as-is, or use a dedicated label if you prefer
+        access_scope = str(payload.get("access_scope") or "assignment").strip().lower()
+
+        company = db_service.fetch_one("""
+            SELECT name, industry, sub_industry, credit_policy
+            FROM public.companies
+            WHERE id=%s
+            LIMIT 1;
+        """, (company_id,))
+        if company:
+            company_name = company.get("name")
+            industry = company.get("industry")
+            sub_industry = company.get("sub_industry")
+            cp = company.get("credit_policy") or {}
+            if isinstance(cp, dict):
+                governance_mode = (cp.get("mode") or "owner_managed").strip().lower()
+
+        # TRUST TOKEN PERMISSIONS FIRST IN DELEGATED MODE
+        permissions = payload.get("permissions") or {}
+        if not isinstance(permissions, dict):
+            permissions = {}
+
+        # Force dashboard shape for delegated posting shell
+        dashboards = {
+            "enterprise": False,
+            "practitioner": True,
+        }
+
+        default_dashboard = "practitioner"
+
+        out = {
+            "id": int(user["id"]),
+            "email": user["email"],
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
+            "user_type": user.get("user_type") or payload.get("user_type"),
+            "role": role,
+            "access_scope": access_scope,
+            "company_id": company_id,
+            "company_name": company_name,
+            "industry": industry,
+            "sub_industry": sub_industry,
+            "governance_mode": governance_mode,
+
+            # native memberships
+            "allowed_company_ids": native_allowed,
+
+            # token context
+            "token_company_id": payload.get("company_id"),
+            "token_access_scope": payload.get("access_scope"),
+            "token_allowed_company_ids": payload.get("allowed_company_ids"),
+            "source_company_id": payload.get("source_company_id"),
+            "target_company_id": payload.get("target_company_id"),
+            "engagement_id": payload.get("engagement_id"),
+            "is_delegated_company_access": True,
+            "is_native_company_member": False,
+
+            "dashboards": dashboards,
+            "permissions": permissions,
+            "default_dashboard": default_dashboard,
+        }
+
+        app.logger.warning("AUTH_ME delegated out=%s", out)
+        return jsonify(out), 200
+
+    # -----------------------------
+    # Normal native membership flow
+    # -----------------------------
+    primary_mem = db_service.fetch_one("""
+        SELECT company_id, role, access_scope, is_active
+        FROM public.company_users
+        WHERE user_id=%s
+          AND is_active=TRUE
+          AND is_primary=TRUE
+        LIMIT 1;
+    """, (user_id,))
+
+    if primary_mem and primary_mem.get("company_id"):
+        company_id = int(primary_mem["company_id"])
+    elif token_cid and token_cid in native_allowed:
+        company_id = token_cid
+    elif native_allowed:
+        company_id = native_allowed[0]
+    else:
+        company_id = None
+
+    mem = None
     if company_id:
         mem = db_service.fetch_one("""
             SELECT role, access_scope, is_active
             FROM public.company_users
             WHERE company_id=%s AND user_id=%s
             LIMIT 1;
-        """, (int(company_id), int(user_id)))
+        """, (company_id, user_id))
 
         if not mem or not bool(mem.get("is_active", True)):
             company_id = None
@@ -1742,35 +1811,8 @@ def api_auth_me():
             access_scope = "core"
         else:
             raw_role = (mem.get("role") or "viewer").strip().lower()
-            role = raw_role
-            normalized_role = normalize_role(raw_role)
+            role = normalize_role(raw_role)
             access_scope = (mem.get("access_scope") or "core").strip().lower()
-
-            app.logger.warning(
-                "AUTH_ME DEBUG user_id=%s company_id=%s raw_role=%r normalized_role=%r normalize_role_fn=%r",
-                user_id,
-                company_id,
-                raw_role,
-                normalized_role,
-                normalize_role,
-            )
-
-            role = normalized_role
-            access_scope = (mem.get("access_scope") or "core").strip().lower()
-
-
-            app.logger.warning(
-                "AUTH_ME user_id=%s company_id=%s raw_role=%r normalized_role=%r access_scope=%r",
-                user_id,
-                company_id,
-                raw_role,
-                role,
-                access_scope,
-            )
-
-    company_name = None
-    industry = None
-    sub_industry = None
 
     if company_id:
         company = db_service.fetch_one("""
@@ -1778,12 +1820,11 @@ def api_auth_me():
             FROM public.companies
             WHERE id=%s
             LIMIT 1;
-        """, (int(company_id),))
+        """, (company_id,))
         if company:
             company_name = company.get("name")
             industry = company.get("industry")
             sub_industry = company.get("sub_industry")
-
             cp = company.get("credit_policy") or {}
             if isinstance(cp, dict):
                 governance_mode = (cp.get("mode") or "owner_managed").strip().lower()
@@ -1809,7 +1850,7 @@ def api_auth_me():
         "industry": industry,
         "sub_industry": sub_industry,
         "governance_mode": governance_mode,
-        "allowed_company_ids": allowed,
+        "allowed_company_ids": native_allowed,
         "token_company_id": payload.get("company_id"),
         "token_access_scope": payload.get("access_scope"),
         "token_allowed_company_ids": payload.get("allowed_company_ids"),
@@ -1818,7 +1859,6 @@ def api_auth_me():
         "default_dashboard": default_dashboard,
     }
 
-    print(">>> AUTH_ME RESPONSE =", out)
     return jsonify(out), 200
 
 
@@ -2434,7 +2474,7 @@ def enter_engagement_workspace(engagement_id: int):
         role=role_norm,
         user_type=payload.get("user_type") or base_user.get("user_type") or "Practitioner",
         company_id=int(target_company_id),
-        access_scope="assignment",
+        access_scope="delegated_workspace",
         allowed_company_ids=[int(target_company_id)],
         source_company_id=int(source_company_id),
         target_company_id=int(target_company_id),
@@ -2456,7 +2496,7 @@ def enter_engagement_workspace(engagement_id: int):
             "company_id": int(target_company_id),
             "company_name": workspace.get("target_company_name"),
             "engagement_name": workspace.get("engagement_name"),
-            "access_scope": "assignment",
+            "access_scope": "delegated_workspace",
             "is_delegated_company_access": True,
         }
     }), 200))
