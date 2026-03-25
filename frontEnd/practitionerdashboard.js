@@ -1062,25 +1062,29 @@ async function enforcePractitionerAuth() {
     const isDelegated = !!payload?.is_delegated_company_access;
 
     // Only restore native token when truly booting practitioner shell
-    if (onPractitionerPage && isDelegated) {
+    const returnCtx = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("fs_pr_return_context") || "null");
+      } catch {
+        return null;
+      }
+    })();
+
+    // Only restore native token on explicit return flow
+    if (onPractitionerPage && isDelegated && returnCtx) {
       const homeToken =
         sessionStorage.getItem("fs_home_token") ||
         localStorage.getItem("fs_home_token") ||
         "";
 
       if (homeToken) {
-        if (typeof window.setToken === "function") {
-          window.setToken(homeToken, true);
-        } else {
-          localStorage.setItem("fs_user_token", homeToken);
-        }
-
+        window.setToken(homeToken, true);
         sessionStorage.removeItem("fs_home_token");
         localStorage.removeItem("fs_home_token");
         localStorage.removeItem("fs_posting_context");
-
+        localStorage.removeItem("fs_pr_return_context");
         token = getAuthToken();
-        console.log("enforcePractitionerAuth: restored native token");
+        console.log("enforcePractitionerAuth: restored native token from explicit return");
       }
     }
   } catch (e) {
