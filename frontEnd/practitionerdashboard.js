@@ -205,6 +205,84 @@ const ENDPOINTS = {
     }
   },
 
+  portfolioReviewSummary: (
+    companyId,
+    {
+      customer_id = "",
+      q = "",
+      active_only = true
+    } = {}
+  ) => {
+    const params = new URLSearchParams();
+    if (customer_id) params.set("customer_id", String(customer_id));
+    if (q) params.set("q", q);
+    params.set("active_only", active_only ? "true" : "false");
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/portfolio-review/summary?${params.toString()}`;
+  },
+
+  portfolioReviewEngagements: (
+    companyId,
+    {
+      customer_id = "",
+      q = "",
+      active_only = true,
+      risk_only = false,
+      overdue_only = false,
+      limit = 100,
+      offset = 0
+    } = {}
+  ) => {
+    const params = new URLSearchParams();
+    if (customer_id) params.set("customer_id", String(customer_id));
+    if (q) params.set("q", q);
+    params.set("active_only", active_only ? "true" : "false");
+    params.set("risk_only", risk_only ? "true" : "false");
+    params.set("overdue_only", overdue_only ? "true" : "false");
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/portfolio-review/engagements?${params.toString()}`;
+  },
+
+  portfolioReviewClientRisk: (
+    companyId,
+    {
+      q = "",
+      active_only = true,
+      limit = 50,
+      offset = 0
+    } = {}
+  ) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    params.set("active_only", active_only ? "true" : "false");
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/portfolio-review/client-risk?${params.toString()}`;
+  },
+
+  portfolioReviewDashboard: (
+    companyId,
+    {
+      customer_id = "",
+      q = "",
+      active_only = true,
+      risk_only = false,
+      overdue_only = false,
+      limit = 100,
+      offset = 0
+    } = {}
+  ) => {
+    const params = new URLSearchParams();
+    if (customer_id) params.set("customer_id", String(customer_id));
+    if (q) params.set("q", q);
+    params.set("active_only", active_only ? "true" : "false");
+    params.set("risk_only", risk_only ? "true" : "false");
+    params.set("overdue_only", overdue_only ? "true" : "false");
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/portfolio-review?${params.toString()}`;
+  },
+
   engagementOps: {
     reportingItemsList: (
       companyId,
@@ -984,6 +1062,24 @@ const ENDPOINTS = {
   };
 
   let PR_TEAM_CAPACITY_EVENTS_BOUND = false;
+
+  let PR_PORTFOLIO_REVIEW_CACHE = {
+    summary: null,
+    engagements: [],
+    clientRisk: [],
+    loading: false,
+    filters: {
+      customer_id: "",
+      q: "",
+      active_only: true,
+      risk_only: false,
+      overdue_only: false,
+      limit: 100,
+      offset: 0
+    }
+  };
+
+  let PR_PORTFOLIO_REVIEW_EVENTS_BOUND = false;
 
 const PR_NAV = {
   dashboard: "dashboard",
@@ -3276,18 +3372,7 @@ async function renderAssignmentsScreen(me) {
   refreshAssignmentsScreen();
 }
 
-function renderActionCenterScreen(me) {
-  const canPost = canPostInEngagement(me.role);
-  const canApprove = canApproveOnly(me.role);
 
-  bindText("summary.role_name", humanizeRole(me.role));
-
-  const postControls = document.getElementById("postingControls");
-  const approvalControls = document.getElementById("approvalControls");
-
-  if (postControls) postControls.classList.toggle("hidden", !canPost);
-  if (approvalControls) approvalControls.classList.toggle("hidden", !canApprove);
-}
 
 function getActiveCompanyId() {
   return Number(
@@ -7540,6 +7625,7 @@ function populateActionCenterStatusFilter() {
 async function renderActionCenterScreen(me) {
   window.__PR_LAST_ME__ = me;
 
+  applyActionCenterRoleVisibility(me);
   bindActionCenterEvents(me);
 
   populateActionCenterClientFilter();
@@ -7547,6 +7633,19 @@ async function renderActionCenterScreen(me) {
   populateActionCenterStatusFilter();
 
   await loadActionCenterScreen(me, { force: false });
+}
+
+function applyActionCenterRoleVisibility(me) {
+  const canPost = canPostInEngagement(me.role);
+  const canApprove = canApproveOnly(me.role);
+
+  bindText("summary.role_name", humanizeRole(me.role));
+
+  const postControls = document.getElementById("postingControls");
+  const approvalControls = document.getElementById("approvalControls");
+
+  if (postControls) postControls.classList.toggle("hidden", !canPost);
+  if (approvalControls) approvalControls.classList.toggle("hidden", !canApprove);
 }
 
 function getPractitionerPostingModuleName(screen) {
@@ -11295,7 +11394,7 @@ async function renderWorkingPapersScreen(me) {
   }
 }
 
-function renderTeamCapacityScreen(me) {
+async function renderTeamCapacityScreen(me) {
   const host = document.getElementById("screen-team-capacity");
   if (!host) {
     console.warn("screen-team-capacity host not found");
@@ -11761,7 +11860,7 @@ function bindTeamCapacityEvents(me) {
         limit: 100,
         offset: 0
       };
-      renderTeamCapacityScreen(me);
+      await renderTeamCapacityScreen(me);
       return;
     }
 
@@ -11832,18 +11931,466 @@ function syncTeamCapacityFiltersFromDom() {
 }
 
 
-function renderPortfolioReviewScreen(me) {
-  renderManagerStubScreen(PR_NAV.portfolioReview, {
-    title: "Portfolio Review",
-    subtitle: "Portfolio-wide engagement health, due dates, blockers, and risk indicators.",
-    items: [
-      { label: "Engagement health", desc: "Summarize active engagements by overdue, blocked, or at-risk status." },
-      { label: "Due-date pressure", desc: "Show work due this week, this month, and items already overdue." },
-      { label: "Readiness tracking", desc: "Monitor progress across deliverables, working papers, review, and sign-off." },
-      { label: "Client risk view", desc: "Surface clients requiring escalation, management focus, or partner attention." }
-    ]
+async function renderPortfolioReviewScreen(me) {
+  const host = document.getElementById("screen-portfolio-review");
+  if (!host) {
+    console.warn("screen-portfolio-review not found");
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="pr-screen pr-portfolio-review-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Portfolio Review</h1>
+          <p class="pr-screen__subtitle">
+            Portfolio-wide engagement health, due dates, blockers, readiness tracking, and client risk indicators.
+          </p>
+        </div>
+
+        <div class="pr-screen__actions">
+          <button class="btn btn-ghost" id="prPortfolioReviewRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="pr-panel pr-portfolio-review-filters">
+        <div class="pr-filter-grid pr-filter-grid--portfolio">
+          <label class="pr-field">
+            <span class="pr-field__label">Search</span>
+            <input
+              id="prPortfolioReviewSearch"
+              class="pr-input"
+              type="text"
+              placeholder="Search engagement, code, type, or client"
+              value="${escapeHtml(PR_PORTFOLIO_REVIEW_CACHE.filters.q || "")}"
+            />
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input
+              id="prPortfolioReviewActiveOnly"
+              type="checkbox"
+              ${PR_PORTFOLIO_REVIEW_CACHE.filters.active_only ? "checked" : ""}
+            />
+            <span>Active only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input
+              id="prPortfolioReviewRiskOnly"
+              type="checkbox"
+              ${PR_PORTFOLIO_REVIEW_CACHE.filters.risk_only ? "checked" : ""}
+            />
+            <span>Risk only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input
+              id="prPortfolioReviewOverdueOnly"
+              type="checkbox"
+              ${PR_PORTFOLIO_REVIEW_CACHE.filters.overdue_only ? "checked" : ""}
+            />
+            <span>Overdue only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button class="btn btn-primary" id="prPortfolioReviewApplyBtn" type="button">Apply</button>
+            <button class="btn btn-ghost" id="prPortfolioReviewResetBtn" type="button">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="prPortfolioReviewSummary" class="pr-portfolio-review-summary"></div>
+
+      <div class="pr-portfolio-review-layout">
+        <div class="pr-panel pr-portfolio-review-main">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Portfolio engagements</h3>
+              <p>Health, due-date pressure, blockers, and readiness across the engagement portfolio.</p>
+            </div>
+          </div>
+
+          <div id="prPortfolioReviewTableWrap" class="pr-portfolio-review-table-wrap">
+            ${renderPortfolioReviewTableSkeleton()}
+          </div>
+        </div>
+
+        <aside class="pr-panel pr-portfolio-review-side">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Client risk view</h3>
+              <p>Clients requiring escalation, management focus, or partner attention.</p>
+            </div>
+          </div>
+
+          <div id="prPortfolioReviewClientRiskWrap">
+            ${renderPortfolioReviewClientRiskSkeleton()}
+          </div>
+        </aside>
+      </div>
+    </div>
+  `;
+
+  bindPortfolioReviewEvents(me);
+  loadPortfolioReviewDashboard(me, { force: true });
+}
+
+function getPortfolioRiskClass(riskBand) {
+  if (riskBand === "high") return "is-danger";
+  if (riskBand === "medium") return "is-warning";
+  return "is-good";
+}
+
+function getPortfolioRiskLabel(riskBand) {
+  if (riskBand === "high") return "High";
+  if (riskBand === "medium") return "Medium";
+  return "Low";
+}
+
+function renderPortfolioReviewTableSkeleton() {
+  return `
+    <div class="pr-table-state">
+      <div class="pr-loading">Loading portfolio review…</div>
+    </div>
+  `;
+}
+
+function renderPortfolioReviewClientRiskSkeleton() {
+  return `
+    <div class="pr-table-state">
+      <div class="pr-loading">Loading client risk…</div>
+    </div>
+  `;
+}
+
+function formatPortfolioPct(value) {
+  return `${Number(value || 0).toFixed(2)}%`;
+}
+
+function renderPortfolioReviewSummary(summary = {}) {
+  const host = document.getElementById("prPortfolioReviewSummary");
+  if (!host) return;
+
+  const wpCompletion =
+    Number(summary.total_working_papers || 0) > 0
+      ? (Number(summary.completed_working_papers || 0) / Number(summary.total_working_papers || 0)) * 100
+      : 0;
+
+  const deliverableCompletion =
+    Number(summary.total_deliverables || 0) > 0
+      ? (Number(summary.completed_deliverables || 0) / Number(summary.total_deliverables || 0)) * 100
+      : 0;
+
+  host.innerHTML = `
+    <div class="pr-summary-grid">
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Active engagements</div>
+        <div class="pr-summary-card__value">${formatInt(summary.total_engagements)}</div>
+        <div class="pr-summary-card__hint">Portfolio items currently in scope</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Overdue engagements</div>
+        <div class="pr-summary-card__value pr-text-danger">${formatInt(summary.overdue_engagements)}</div>
+        <div class="pr-summary-card__hint">Past due and not yet completed</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Due this week</div>
+        <div class="pr-summary-card__value pr-text-warning">${formatInt(summary.due_this_week)}</div>
+        <div class="pr-summary-card__hint">Immediate date pressure</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Blocked engagements</div>
+        <div class="pr-summary-card__value pr-text-warning">${formatInt(summary.blocked_engagements)}</div>
+        <div class="pr-summary-card__hint">Blocked work papers or deliverables</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Pending sign-off</div>
+        <div class="pr-summary-card__value">${formatInt(summary.pending_signoff_engagements)}</div>
+        <div class="pr-summary-card__hint">Awaiting review or sign-off completion</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Escalated</div>
+        <div class="pr-summary-card__value pr-text-danger">${formatInt(summary.escalated_engagements)}</div>
+        <div class="pr-summary-card__hint">Open escalation activity</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">WP completion</div>
+        <div class="pr-summary-card__value">${formatPortfolioPct(wpCompletion)}</div>
+        <div class="pr-summary-card__hint">Working paper completion rate</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Deliverable completion</div>
+        <div class="pr-summary-card__value">${formatPortfolioPct(deliverableCompletion)}</div>
+        <div class="pr-summary-card__hint">Deliverable completion rate</div>
+      </article>
+    </div>
+  `;
+}
+
+function renderPortfolioReviewEngagements(rows = []) {
+  const host = document.getElementById("prPortfolioReviewTableWrap");
+  if (!host) return;
+
+  if (!rows.length) {
+    host.innerHTML = `
+      <div class="pr-table-state">
+        <div class="pr-empty-state__title">No portfolio items found</div>
+        <div class="pr-empty-state__desc">Try adjusting the filters.</div>
+      </div>
+    `;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="pr-table-scroll">
+      <table class="pr-table pr-portfolio-review-table">
+        <thead>
+          <tr>
+            <th>Engagement</th>
+            <th>Client</th>
+            <th>Due date</th>
+            <th>Risk</th>
+            <th>Readiness</th>
+            <th>Overdue WP</th>
+            <th>Blocked</th>
+            <th>Escalations</th>
+            <th>Pending sign-off</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(renderPortfolioReviewEngagementRow).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPortfolioReviewEngagementRow(row) {
+  const blockedCount =
+    Number(row.blocked_working_papers || 0) + Number(row.blocked_deliverables || 0);
+
+  return `
+    <tr>
+      <td>
+        <div class="pr-user-cell">
+          <div class="pr-user-cell__name">${escapeHtml(row.engagement_name || "Untitled engagement")}</div>
+          <div class="pr-user-cell__meta">
+            ${escapeHtml(row.engagement_code || "")}
+            ${row.engagement_type ? `• ${escapeHtml(row.engagement_type)}` : ""}
+            ${row.priority ? `• ${escapeHtml(row.priority)}` : ""}
+          </div>
+        </div>
+      </td>
+      <td>${escapeHtml(row.customer_name || "—")}</td>
+      <td>${escapeHtml(row.due_date || "—")}</td>
+      <td>
+        <span class="pr-badge ${getPortfolioRiskClass(row.risk_band)}">
+          ${escapeHtml(getPortfolioRiskLabel(row.risk_band))}
+        </span>
+      </td>
+      <td><strong>${formatPortfolioPct(row.readiness_percent)}</strong></td>
+      <td>${formatInt(row.overdue_working_papers)}</td>
+      <td>${formatInt(blockedCount)}</td>
+      <td>${formatInt(row.open_escalations)}</td>
+      <td>${formatInt(row.pending_signoff_steps)}</td>
+    </tr>
+  `;
+}
+
+function renderPortfolioReviewClientRisk(rows = []) {
+  const host = document.getElementById("prPortfolioReviewClientRiskWrap");
+  if (!host) return;
+
+  if (!rows.length) {
+    host.innerHTML = `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">No client risk items</div>
+        <div class="pr-empty-state__desc">No clients currently match the risk view.</div>
+      </div>
+    `;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="pr-client-risk-list">
+      ${rows.map(renderPortfolioReviewClientRiskItem).join("")}
+    </div>
+  `;
+}
+
+function renderPortfolioReviewClientRiskItem(row) {
+  const riskScore =
+    Number(row.open_escalations || 0) +
+    Number(row.overdue_engagements || 0) +
+    Number(row.overdue_deliverables || 0) +
+    Number(row.blocked_deliverables || 0) +
+    Number(row.blocked_working_papers || 0);
+
+  const band = riskScore >= 3 ? "high" : riskScore >= 1 ? "medium" : "low";
+
+  return `
+    <article class="pr-detail-card">
+      <div class="pr-detail-card__top">
+        <div>
+          <div class="pr-detail-card__title">${escapeHtml(row.customer_name || "Unassigned client")}</div>
+          <div class="pr-detail-card__meta">
+            ${formatInt(row.total_engagements)} engagements
+          </div>
+        </div>
+        <span class="pr-badge ${getPortfolioRiskClass(band)}">
+          ${escapeHtml(getPortfolioRiskLabel(band))}
+        </span>
+      </div>
+
+      <div class="pr-detail-card__grid">
+        <div><span>Overdue engagements</span><strong>${formatInt(row.overdue_engagements)}</strong></div>
+        <div><span>Overdue deliverables</span><strong>${formatInt(row.overdue_deliverables)}</strong></div>
+        <div><span>Overdue WP</span><strong>${formatInt(row.overdue_working_papers)}</strong></div>
+        <div><span>Blocked deliverables</span><strong>${formatInt(row.blocked_deliverables)}</strong></div>
+        <div><span>Blocked WP</span><strong>${formatInt(row.blocked_working_papers)}</strong></div>
+        <div><span>Open escalations</span><strong>${formatInt(row.open_escalations)}</strong></div>
+      </div>
+    </article>
+  `;
+}
+
+async function loadPortfolioReviewDashboard(me, { force = false } = {}) {
+  if (!me?.company_id) return;
+
+  const companyId = me.company_id;
+  const filters = { ...PR_PORTFOLIO_REVIEW_CACHE.filters };
+  PR_PORTFOLIO_REVIEW_CACHE.loading = true;
+
+  const tableWrap = document.getElementById("prPortfolioReviewTableWrap");
+  const clientRiskWrap = document.getElementById("prPortfolioReviewClientRiskWrap");
+
+  if (force && tableWrap) {
+    tableWrap.innerHTML = renderPortfolioReviewTableSkeleton();
+  }
+  if (force && clientRiskWrap) {
+    clientRiskWrap.innerHTML = renderPortfolioReviewClientRiskSkeleton();
+  }
+
+  try {
+    const url = ENDPOINTS.engagements.portfolioReviewDashboard(companyId, {
+      customer_id: filters.customer_id,
+      q: filters.q,
+      active_only: filters.active_only,
+      risk_only: filters.risk_only,
+      overdue_only: filters.overdue_only,
+      limit: filters.limit,
+      offset: filters.offset
+    });
+
+    const res = await apiFetch(url);
+    const data = res?.data || res || {};
+
+    PR_PORTFOLIO_REVIEW_CACHE.summary = data.summary || {};
+    PR_PORTFOLIO_REVIEW_CACHE.engagements = data.engagements || [];
+    PR_PORTFOLIO_REVIEW_CACHE.clientRisk = data.client_risk || [];
+
+    renderPortfolioReviewSummary(PR_PORTFOLIO_REVIEW_CACHE.summary);
+    renderPortfolioReviewEngagements(PR_PORTFOLIO_REVIEW_CACHE.engagements);
+    renderPortfolioReviewClientRisk(PR_PORTFOLIO_REVIEW_CACHE.clientRisk);
+  } catch (err) {
+    console.error("loadPortfolioReviewDashboard failed", err);
+
+    if (tableWrap) {
+      tableWrap.innerHTML = `
+        <div class="pr-table-state">
+          <div class="pr-empty-state__title">Could not load portfolio review</div>
+          <div class="pr-empty-state__desc">${escapeHtml(err.message || "Request failed")}</div>
+        </div>
+      `;
+    }
+
+    if (clientRiskWrap) {
+      clientRiskWrap.innerHTML = `
+        <div class="pr-empty-state">
+          <div class="pr-empty-state__title">Could not load client risk</div>
+          <div class="pr-empty-state__desc">${escapeHtml(err.message || "Request failed")}</div>
+        </div>
+      `;
+    }
+
+    renderPortfolioReviewSummary({});
+  } finally {
+    PR_PORTFOLIO_REVIEW_CACHE.loading = false;
+  }
+}
+
+function bindPortfolioReviewEvents(me) {
+  if (PR_PORTFOLIO_REVIEW_EVENTS_BOUND) return;
+  PR_PORTFOLIO_REVIEW_EVENTS_BOUND = true;
+
+  document.addEventListener("click", async (event) => {
+    const refreshBtn = event.target.closest("#prPortfolioReviewRefreshBtn");
+    if (refreshBtn) {
+      await loadPortfolioReviewDashboard(me, { force: true });
+      return;
+    }
+
+    const applyBtn = event.target.closest("#prPortfolioReviewApplyBtn");
+    if (applyBtn) {
+      syncPortfolioReviewFiltersFromDom();
+      await loadPortfolioReviewDashboard(me, { force: true });
+      return;
+    }
+
+    const resetBtn = event.target.closest("#prPortfolioReviewResetBtn");
+    if (resetBtn) {
+      PR_PORTFOLIO_REVIEW_CACHE.filters = {
+        customer_id: "",
+        q: "",
+        active_only: true,
+        risk_only: false,
+        overdue_only: false,
+        limit: 100,
+        offset: 0
+      };
+      renderPortfolioReviewScreen(me);
+    }
+  });
+
+  document.addEventListener("change", (event) => {
+    if (
+      event.target?.id === "prPortfolioReviewActiveOnly" ||
+      event.target?.id === "prPortfolioReviewRiskOnly" ||
+      event.target?.id === "prPortfolioReviewOverdueOnly"
+    ) {
+      syncPortfolioReviewFiltersFromDom();
+    }
+  });
+
+  document.addEventListener("keydown", async (event) => {
+    if (event.target?.id === "prPortfolioReviewSearch" && event.key === "Enter") {
+      syncPortfolioReviewFiltersFromDom();
+      await loadPortfolioReviewDashboard(me, { force: true });
+    }
   });
 }
+
+function syncPortfolioReviewFiltersFromDom() {
+  const qEl = document.getElementById("prPortfolioReviewSearch");
+  const activeEl = document.getElementById("prPortfolioReviewActiveOnly");
+  const riskEl = document.getElementById("prPortfolioReviewRiskOnly");
+  const overdueEl = document.getElementById("prPortfolioReviewOverdueOnly");
+
+  PR_PORTFOLIO_REVIEW_CACHE.filters.q = qEl?.value?.trim() || "";
+  PR_PORTFOLIO_REVIEW_CACHE.filters.active_only = !!activeEl?.checked;
+  PR_PORTFOLIO_REVIEW_CACHE.filters.risk_only = !!riskEl?.checked;
+  PR_PORTFOLIO_REVIEW_CACHE.filters.overdue_only = !!overdueEl?.checked;
+  PR_PORTFOLIO_REVIEW_CACHE.filters.offset = 0;
+}
+
 
 function renderEscalationsScreen(me) {
   renderManagerStubScreen(PR_NAV.escalations, {

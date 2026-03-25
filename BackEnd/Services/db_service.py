@@ -46288,6 +46288,518 @@ class DatabaseService:
         )
         return cur.fetchone()
 
+    def get_portfolio_review_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH scoped_engagements AS (
+                SELECT
+                    e.id,
+                    e.company_id,
+                    e.customer_id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.due_date,
+                    c.name AS customer_name
+                FROM {schema}.engagements e
+                LEFT JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                AND c.company_id = e.company_id
+                WHERE e.company_id = %s
+                AND (%s = FALSE OR e.is_active = TRUE)
+                AND (%s IS NULL OR e.customer_id = %s)
+                AND (
+                        %s = ''
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                        OR COALESCE(e.engagement_type, '') ILIKE %s
+                        OR COALESCE(c.name, '') ILIKE %s
+                    )
+            ),
+            wp_stats AS (
+                SELECT
+                    wp.engagement_id,
+                    COUNT(*) AS total_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status IN ('reviewed', 'cleared', 'archived')) AS completed_working_papers,
+                    COUNT(*) FILTER (
+                        WHERE wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status = 'blocked') AS blocked_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status IN ('prepared', 'in_review')) AS in_review_working_papers
+                FROM {schema}.engagement_working_papers wp
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                GROUP BY wp.engagement_id
+            ),
+            deliverable_stats AS (
+                SELECT
+                    d.engagement_id,
+                    COUNT(*) AS total_deliverables,
+                    COUNT(*) FILTER (WHERE d.status IN ('approved', 'completed', 'signed_off')) AS completed_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('approved', 'completed', 'signed_off')
+                    ) AS overdue_deliverables,
+                    COUNT(*) FILTER (WHERE d.status = 'blocked') AS blocked_deliverables
+                FROM {schema}.engagement_deliverables d
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+                GROUP BY d.engagement_id
+            ),
+            signoff_stats AS (
+                SELECT
+                    s.engagement_id,
+                    COUNT(*) AS total_signoff_steps,
+                    COUNT(*) FILTER (WHERE s.status IN ('completed', 'approved', 'signed_off')) AS completed_signoff_steps,
+                    COUNT(*) FILTER (
+                        WHERE s.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS pending_signoff_steps
+                FROM {schema}.engagement_signoff_steps s
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+                GROUP BY s.engagement_id
+            ),
+            escalations AS (
+                SELECT
+                    x.engagement_id,
+                    COUNT(*) FILTER (WHERE x.status NOT IN ('resolved', 'closed')) AS open_escalations
+                FROM {schema}.engagement_escalations x
+                WHERE x.company_id = %s
+                AND x.is_active = TRUE
+                GROUP BY x.engagement_id
+            ),
+            combined AS (
+                SELECT
+                    e.id,
+                    e.customer_id,
+                    e.customer_name,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.due_date,
+
+                    COALESCE(w.total_working_papers, 0) AS total_working_papers,
+                    COALESCE(w.completed_working_papers, 0) AS completed_working_papers,
+                    COALESCE(w.overdue_working_papers, 0) AS overdue_working_papers,
+                    COALESCE(w.blocked_working_papers, 0) AS blocked_working_papers,
+                    COALESCE(w.in_review_working_papers, 0) AS in_review_working_papers,
+
+                    COALESCE(d.total_deliverables, 0) AS total_deliverables,
+                    COALESCE(d.completed_deliverables, 0) AS completed_deliverables,
+                    COALESCE(d.overdue_deliverables, 0) AS overdue_deliverables,
+                    COALESCE(d.blocked_deliverables, 0) AS blocked_deliverables,
+
+                    COALESCE(s.total_signoff_steps, 0) AS total_signoff_steps,
+                    COALESCE(s.completed_signoff_steps, 0) AS completed_signoff_steps,
+                    COALESCE(s.pending_signoff_steps, 0) AS pending_signoff_steps,
+
+                    COALESCE(x.open_escalations, 0) AS open_escalations
+                FROM scoped_engagements e
+                LEFT JOIN wp_stats w
+                ON w.engagement_id = e.id
+                LEFT JOIN deliverable_stats d
+                ON d.engagement_id = e.id
+                LEFT JOIN signoff_stats s
+                ON s.engagement_id = e.id
+                LEFT JOIN escalations x
+                ON x.engagement_id = e.id
+            )
+            SELECT
+                COUNT(*) AS total_engagements,
+                COUNT(*) FILTER (
+                    WHERE due_date IS NOT NULL
+                    AND due_date < CURRENT_DATE
+                    AND status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS overdue_engagements,
+                COUNT(*) FILTER (
+                    WHERE due_date IS NOT NULL
+                    AND due_date >= CURRENT_DATE
+                    AND due_date < (CURRENT_DATE + INTERVAL '7 days')
+                    AND status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS due_this_week,
+                COUNT(*) FILTER (
+                    WHERE due_date IS NOT NULL
+                    AND due_date >= date_trunc('month', CURRENT_DATE)
+                    AND due_date < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')
+                    AND status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS due_this_month,
+                COUNT(*) FILTER (
+                    WHERE blocked_working_papers > 0
+                    OR blocked_deliverables > 0
+                ) AS blocked_engagements,
+                COUNT(*) FILTER (
+                    WHERE open_escalations > 0
+                ) AS escalated_engagements,
+                COUNT(*) FILTER (
+                    WHERE pending_signoff_steps > 0
+                ) AS pending_signoff_engagements,
+                COALESCE(SUM(total_working_papers), 0) AS total_working_papers,
+                COALESCE(SUM(completed_working_papers), 0) AS completed_working_papers,
+                COALESCE(SUM(total_deliverables), 0) AS total_deliverables,
+                COALESCE(SUM(completed_deliverables), 0) AS completed_deliverables
+            FROM combined
+        """
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                customer_id, customer_id,
+                q.strip(), like, like, like, like,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
+    def list_portfolio_review_engagements(
+        self,
+        cur,
+        company_id: int,
+        *,
+        customer_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+        risk_only: bool = False,
+        overdue_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH scoped_engagements AS (
+                SELECT
+                    e.id,
+                    e.company_id,
+                    e.customer_id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.due_date,
+                    c.name AS customer_name
+                FROM {schema}.engagements e
+                LEFT JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                AND c.company_id = e.company_id
+                WHERE e.company_id = %s
+                AND (%s = FALSE OR e.is_active = TRUE)
+                AND (%s IS NULL OR e.customer_id = %s)
+                AND (
+                        %s = ''
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                        OR COALESCE(e.engagement_type, '') ILIKE %s
+                        OR COALESCE(c.name, '') ILIKE %s
+                    )
+            ),
+            wp_stats AS (
+                SELECT
+                    wp.engagement_id,
+                    COUNT(*) AS total_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status IN ('reviewed', 'cleared', 'archived')) AS completed_working_papers,
+                    COUNT(*) FILTER (
+                        WHERE wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status = 'blocked') AS blocked_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status IN ('prepared', 'in_review')) AS in_review_working_papers
+                FROM {schema}.engagement_working_papers wp
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                GROUP BY wp.engagement_id
+            ),
+            deliverable_stats AS (
+                SELECT
+                    d.engagement_id,
+                    COUNT(*) AS total_deliverables,
+                    COUNT(*) FILTER (WHERE d.status IN ('approved', 'completed', 'signed_off')) AS completed_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('approved', 'completed', 'signed_off')
+                    ) AS overdue_deliverables,
+                    COUNT(*) FILTER (WHERE d.status = 'blocked') AS blocked_deliverables
+                FROM {schema}.engagement_deliverables d
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+                GROUP BY d.engagement_id
+            ),
+            signoff_stats AS (
+                SELECT
+                    s.engagement_id,
+                    COUNT(*) AS total_signoff_steps,
+                    COUNT(*) FILTER (WHERE s.status IN ('completed', 'approved', 'signed_off')) AS completed_signoff_steps,
+                    COUNT(*) FILTER (
+                        WHERE s.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS pending_signoff_steps
+                FROM {schema}.engagement_signoff_steps s
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+                GROUP BY s.engagement_id
+            ),
+            escalations AS (
+                SELECT
+                    x.engagement_id,
+                    COUNT(*) FILTER (WHERE x.status NOT IN ('resolved', 'closed')) AS open_escalations
+                FROM {schema}.engagement_escalations x
+                WHERE x.company_id = %s
+                AND x.is_active = TRUE
+                GROUP BY x.engagement_id
+            ),
+            combined AS (
+                SELECT
+                    e.id,
+                    e.customer_id,
+                    e.customer_name,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.due_date,
+
+                    COALESCE(w.total_working_papers, 0) AS total_working_papers,
+                    COALESCE(w.completed_working_papers, 0) AS completed_working_papers,
+                    COALESCE(w.overdue_working_papers, 0) AS overdue_working_papers,
+                    COALESCE(w.blocked_working_papers, 0) AS blocked_working_papers,
+                    COALESCE(w.in_review_working_papers, 0) AS in_review_working_papers,
+
+                    COALESCE(d.total_deliverables, 0) AS total_deliverables,
+                    COALESCE(d.completed_deliverables, 0) AS completed_deliverables,
+                    COALESCE(d.overdue_deliverables, 0) AS overdue_deliverables,
+                    COALESCE(d.blocked_deliverables, 0) AS blocked_deliverables,
+
+                    COALESCE(s.total_signoff_steps, 0) AS total_signoff_steps,
+                    COALESCE(s.completed_signoff_steps, 0) AS completed_signoff_steps,
+                    COALESCE(s.pending_signoff_steps, 0) AS pending_signoff_steps,
+
+                    COALESCE(x.open_escalations, 0) AS open_escalations
+                FROM scoped_engagements e
+                LEFT JOIN wp_stats w
+                ON w.engagement_id = e.id
+                LEFT JOIN deliverable_stats d
+                ON d.engagement_id = e.id
+                LEFT JOIN signoff_stats s
+                ON s.engagement_id = e.id
+                LEFT JOIN escalations x
+                ON x.engagement_id = e.id
+            ),
+            final AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN (
+                            (due_date IS NOT NULL AND due_date < CURRENT_DATE AND status NOT IN ('completed', 'cancelled', 'archived'))
+                            OR overdue_working_papers > 0
+                            OR overdue_deliverables > 0
+                            OR open_escalations > 0
+                        ) THEN 'high'
+                        WHEN (
+                            blocked_working_papers > 0
+                            OR blocked_deliverables > 0
+                            OR pending_signoff_steps > 0
+                            OR in_review_working_papers > 0
+                        ) THEN 'medium'
+                        ELSE 'low'
+                    END AS risk_band,
+                    CASE
+                        WHEN (total_working_papers + total_deliverables + total_signoff_steps) = 0 THEN 0
+                        ELSE ROUND(
+                            (
+                                (completed_working_papers + completed_deliverables + completed_signoff_steps)::numeric
+                                / NULLIF((total_working_papers + total_deliverables + total_signoff_steps), 0)
+                            ) * 100,
+                            2
+                        )
+                    END AS readiness_percent
+                FROM combined
+            )
+            SELECT *
+            FROM final
+            WHERE (%s = FALSE OR risk_band IN ('high', 'medium'))
+            AND (
+                    %s = FALSE
+                    OR (
+                        due_date IS NOT NULL
+                        AND due_date < CURRENT_DATE
+                        AND status NOT IN ('completed', 'cancelled', 'archived')
+                    )
+                )
+            ORDER BY
+                CASE risk_band
+                    WHEN 'high' THEN 1
+                    WHEN 'medium' THEN 2
+                    ELSE 3
+                END,
+                due_date NULLS LAST,
+                engagement_name ASC
+            LIMIT %s OFFSET %s
+        """
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                customer_id, customer_id,
+                q.strip(), like, like, like, like,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                risk_only,
+                overdue_only,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def list_portfolio_review_client_risk(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH scoped_engagements AS (
+                SELECT
+                    e.id,
+                    e.customer_id,
+                    c.name AS customer_name,
+                    e.status,
+                    e.due_date
+                FROM {schema}.engagements e
+                LEFT JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                AND c.company_id = e.company_id
+                WHERE e.company_id = %s
+                AND (%s = FALSE OR e.is_active = TRUE)
+                AND (
+                        %s = ''
+                        OR COALESCE(c.name, '') ILIKE %s
+                    )
+            ),
+            wp_stats AS (
+                SELECT
+                    wp.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_working_papers,
+                    COUNT(*) FILTER (WHERE wp.status = 'blocked') AS blocked_working_papers
+                FROM {schema}.engagement_working_papers wp
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                GROUP BY wp.engagement_id
+            ),
+            deliverable_stats AS (
+                SELECT
+                    d.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('approved', 'completed', 'signed_off')
+                    ) AS overdue_deliverables,
+                    COUNT(*) FILTER (WHERE d.status = 'blocked') AS blocked_deliverables
+                FROM {schema}.engagement_deliverables d
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+                GROUP BY d.engagement_id
+            ),
+            escalations AS (
+                SELECT
+                    x.engagement_id,
+                    COUNT(*) FILTER (WHERE x.status NOT IN ('resolved', 'closed')) AS open_escalations
+                FROM {schema}.engagement_escalations x
+                WHERE x.company_id = %s
+                AND x.is_active = TRUE
+                GROUP BY x.engagement_id
+            )
+            SELECT
+                e.customer_id,
+                MAX(e.customer_name) AS customer_name,
+                COUNT(*) AS total_engagements,
+                COUNT(*) FILTER (
+                    WHERE e.due_date IS NOT NULL
+                    AND e.due_date < CURRENT_DATE
+                    AND e.status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS overdue_engagements,
+                COALESCE(SUM(COALESCE(w.overdue_working_papers, 0)), 0) AS overdue_working_papers,
+                COALESCE(SUM(COALESCE(d.overdue_deliverables, 0)), 0) AS overdue_deliverables,
+                COALESCE(SUM(COALESCE(w.blocked_working_papers, 0)), 0) AS blocked_working_papers,
+                COALESCE(SUM(COALESCE(d.blocked_deliverables, 0)), 0) AS blocked_deliverables,
+                COALESCE(SUM(COALESCE(x.open_escalations, 0)), 0) AS open_escalations
+            FROM scoped_engagements e
+            LEFT JOIN wp_stats w
+            ON w.engagement_id = e.id
+            LEFT JOIN deliverable_stats d
+            ON d.engagement_id = e.id
+            LEFT JOIN escalations x
+            ON x.engagement_id = e.id
+            GROUP BY e.customer_id
+            ORDER BY
+                open_escalations DESC,
+                overdue_engagements DESC,
+                overdue_deliverables DESC,
+                customer_name ASC
+            LIMIT %s OFFSET %s
+        """
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like,
+                company_id,
+                company_id,
+                company_id,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+
     def insert_ticket(
         self,
         cur,
