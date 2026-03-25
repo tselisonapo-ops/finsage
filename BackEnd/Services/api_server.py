@@ -1711,7 +1711,7 @@ def api_auth_me():
         role = normalize_role(raw_role)
 
         # keep token scope as-is, or use a dedicated label if you prefer
-        access_scope = str(payload.get("access_scope") or "assignment").strip().lower()
+        access_scope = "delegated_workspace"
 
         company = db_service.fetch_one("""
             SELECT name, industry, sub_industry, credit_policy
@@ -1733,12 +1733,16 @@ def api_auth_me():
             permissions = {}
 
         # Force dashboard shape for delegated posting shell
+        # Delegated workspace MUST use enterprise shell (posting dashboard)
         dashboards = {
-            "enterprise": False,
-            "practitioner": True,
+            "enterprise": True,
+            "practitioner": False,
         }
 
-        default_dashboard = "practitioner"
+        default_dashboard = "enterprise"
+
+        # also force scope for frontend logic
+        access_scope = "delegated_workspace"
 
         out = {
             "id": int(user["id"]),
@@ -1759,7 +1763,7 @@ def api_auth_me():
 
             # token context
             "token_company_id": payload.get("company_id"),
-            "token_access_scope": payload.get("access_scope"),
+            "token_access_scope": "delegated_workspace",
             "token_allowed_company_ids": payload.get("allowed_company_ids"),
             "source_company_id": payload.get("source_company_id"),
             "target_company_id": payload.get("target_company_id"),
@@ -2502,7 +2506,7 @@ def enter_engagement_workspace(engagement_id: int):
         engagement_id,
         delegated_permissions,
     )
-    
+
     return _corsify(make_response(jsonify({
         "ok": True,
         "token": delegated_token,
