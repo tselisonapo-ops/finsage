@@ -1048,20 +1048,17 @@ async function loadEngagementAssignableUsers(companyId) {
   * Init
   * ==================================================== */
 async function enforcePractitionerAuth() {
-  let token = getAuthToken();
-  console.log("enforcePractitionerAuth: token =", token || null);
-
-  if (!token) return null;
-
   const onPractitionerPage =
     /practitionerdashboard\.html$/i.test(location.pathname) ||
     location.pathname.includes("practitionerdashboard.html");
+
+  let token = getAuthToken();
+  if (!token) return null;
 
   try {
     const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
     const isDelegated = !!payload?.is_delegated_company_access;
 
-    // Only restore native token when truly booting practitioner shell
     if (onPractitionerPage && isDelegated) {
       const homeToken =
         sessionStorage.getItem("fs_home_token") ||
@@ -1069,31 +1066,19 @@ async function enforcePractitionerAuth() {
         "";
 
       if (homeToken) {
-        if (typeof window.setToken === "function") {
-          window.setToken(homeToken, true);
-        } else {
-          localStorage.setItem("fs_user_token", homeToken);
-        }
-
+        window.setToken?.(homeToken, true);
         sessionStorage.removeItem("fs_home_token");
         localStorage.removeItem("fs_home_token");
-        localStorage.removeItem("fs_posting_context");
-
-        token = getAuthToken();
-        console.log("enforcePractitionerAuth: restored native token");
       }
+
+      localStorage.removeItem("fs_posting_context");
+      token = getAuthToken();
     }
   } catch (e) {
     console.warn("enforcePractitionerAuth: token decode failed", e);
   }
 
-  try {
-    const me = await loadMe();
-    return me;
-  } catch (err) {
-    console.warn("enforcePractitionerAuth failed:", err);
-    return null;
-  }
+  return await loadMe();
 }
 
 /* ======================================================
