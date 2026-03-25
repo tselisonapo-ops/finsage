@@ -5515,8 +5515,8 @@ function getStoredUser() {
   initDelegatedWorkspaceMode();
 })();
 
-function updatePostingCompanyBadge() {
-  const badge = document.getElementById("companyBadge");
+function updatePostingEngagementBadge() {
+  const badge = document.getElementById("postingEngagementBadge");
   if (!badge) return;
 
   let ctx = {};
@@ -5529,21 +5529,12 @@ function updatePostingCompanyBadge() {
     ...(window.__PR_POSTING_CONTEXT__ || {})
   };
 
-  const customerName =
-    ctx.customerName ||
-    ctx.engagement?.customer_name ||
+  const engagementName =
+    ctx.engagementName ||
+    ctx.engagement?.engagement_name ||
     "";
 
-  const companyId = Number(ctx.targetCompanyId || ctx.companyId || 0);
-
-  if (!companyId) {
-    badge.textContent = "Your company";
-    return;
-  }
-
-  // ✅ ONLY company name
-  badge.textContent = customerName || "Client";
-
+  badge.textContent = engagementName || "Engagement";
   badge.classList.remove("hidden");
 }
 
@@ -6952,11 +6943,19 @@ function updateHeaderCompanyBadge() {
   const badge = document.getElementById("companyBadge");
   if (!badge) return;
 
-  const company = window.CURRENT_COMPANY || CURRENT_COMPANY || {};
-  const name = company.name || window.currentUser?.company_name || "Your company";
-  const code = company.system_company_code || "";
+  const isDelegated =
+    !!window.__PR_POSTING_CONTEXT__ ||
+    !!localStorage.getItem("fs_posting_context");
 
-  badge.textContent = code ? `${name} · ${code}` : name;
+  if (isDelegated) return;
+
+  const company = window.CURRENT_COMPANY || CURRENT_COMPANY || {};
+  const name =
+    company.name ||
+    window.currentUser?.company_name ||
+    "Your company";
+
+  badge.textContent = name;
   badge.classList.remove("hidden");
 }
 
