@@ -1048,37 +1048,17 @@ async function loadEngagementAssignableUsers(companyId) {
   * Init
   * ==================================================== */
 async function enforcePractitionerAuth() {
-  const onPractitionerPage =
-    /practitionerdashboard\.html$/i.test(location.pathname) ||
-    location.pathname.includes("practitionerdashboard.html");
-
   let token = getAuthToken();
   if (!token) return null;
 
   try {
-    const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
-    const isDelegated = !!payload?.is_delegated_company_access;
-
-    if (onPractitionerPage && isDelegated) {
-      const homeToken =
-        sessionStorage.getItem("fs_home_token") ||
-        localStorage.getItem("fs_home_token") ||
-        "";
-
-      if (homeToken) {
-        window.setToken?.(homeToken, true);
-        sessionStorage.removeItem("fs_home_token");
-        localStorage.removeItem("fs_home_token");
-      }
-
-      localStorage.removeItem("fs_posting_context");
-      token = getAuthToken();
-    }
-  } catch (e) {
-    console.warn("enforcePractitionerAuth: token decode failed", e);
+    // ❌ DO NOT restore token here anymore
+    const me = await loadMe();
+    return me;
+  } catch (err) {
+    console.warn("enforcePractitionerAuth failed:", err);
+    return null;
   }
-
-  return await loadMe();
 }
 
 /* ======================================================
