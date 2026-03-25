@@ -2651,21 +2651,10 @@ class DatabaseService:
         base_payload: dict | None = None,
         role: str = "viewer",
     ) -> dict:
-        """
-        Build delegated workspace permissions for a user entering a provisioned
-        workspace via engagement assignment.
-
-        Notes:
-        - Native membership-only capabilities stay closed by default.
-        - Existing JWT permissions from the source context are used as an upper bound,
-        not as automatic grants.
-        """
         base_payload = base_payload or {}
         incoming = base_payload.get("permissions") or {}
-
         role = normalize_role(role)
 
-        # Safe defaults for delegated workspace access
         perms = {
             "can_view_dashboard": True,
             "can_view_reports": True,
@@ -2677,16 +2666,17 @@ class DatabaseService:
             "can_manage_fixed_assets": False,
             "can_approve": False,
 
-            # always closed in delegated mode unless you deliberately open them later
             "can_manage_users": False,
             "can_manage_company_setup": False,
             "can_edit_tax_settings": False,
             "can_lock_periods": False,
+
+            # delegated posting shell
             "can_access_enterprise_dashboard": True,
             "can_access_practitioner_dashboard": False,
+            "can_access_delegated_posting_workspace": True,
         }
 
-        # Role-based grants inside delegated workspace
         if role in {
             "bookkeeper",
             "accountant",
@@ -2731,8 +2721,6 @@ class DatabaseService:
             perms["can_view_reports"] = True
             perms["can_approve"] = True
 
-        # Use source-token permissions as an upper bound.
-        # If source context says user cannot do it, do not elevate here.
         bounded_keys = [
             "can_view_dashboard",
             "can_view_reports",
@@ -2749,15 +2737,6 @@ class DatabaseService:
             if key in incoming:
                 perms[key] = bool(perms[key] and incoming.get(key))
 
-        # keep native-membership capabilities closed regardless of incoming payload
-        perms["can_manage_users"] = False
-        perms["can_manage_company_setup"] = False
-        perms["can_edit_tax_settings"] = False
-        perms["can_lock_periods"] = False
-        perms["can_access_enterprise_dashboard"] = False
-        perms["can_access_practitioner_dashboard"] = True
-
-        # Optional trace/debug metadata
         perms["_delegated_meta"] = {
             "user_id": int(user_id),
             "source_company_id": int(source_company_id),
@@ -2767,7 +2746,6 @@ class DatabaseService:
         }
 
         return perms
-
     def get_delegated_workspace_for_engagement(
         self,
         cur,
