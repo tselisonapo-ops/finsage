@@ -1053,11 +1053,16 @@ async function enforcePractitionerAuth() {
 
   if (!token) return null;
 
+  const onPractitionerPage =
+    /practitionerdashboard\.html$/i.test(location.pathname) ||
+    location.pathname.includes("practitionerdashboard.html");
+
   try {
     const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
     const isDelegated = !!payload?.is_delegated_company_access;
 
-    if (isDelegated) {
+    // Only restore native token when truly booting practitioner shell
+    if (onPractitionerPage && isDelegated) {
       const homeToken =
         sessionStorage.getItem("fs_home_token") ||
         localStorage.getItem("fs_home_token") ||
