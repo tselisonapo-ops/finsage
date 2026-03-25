@@ -331,7 +331,7 @@ async function resolveCompanyProfile(currentUser) {
   // Legacy/cache fallback (ONLY use if allowed or no allowed list provided)
   const cachedCidRaw =
     localStorage.getItem("CURRENT_COMPANY_ID") ||
-    localStorage.getItem("company_id") ||
+    getActiveCompanyId()
     null;
 
   const cachedCid = cachedCidRaw ? Number(cachedCidRaw) : null;

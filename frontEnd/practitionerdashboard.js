@@ -1049,10 +1049,45 @@ async function loadEngagementAssignableUsers(companyId) {
   * ==================================================== */
 async function enforcePractitionerAuth() {
   let token = getAuthToken();
+  console.log("enforcePractitionerAuth: token =", token || null);
+
   if (!token) return null;
 
+  const onPractitionerPage =
+    /practitionerdashboard\.html$/i.test(location.pathname) ||
+    location.pathname.includes("practitionerdashboard.html");
+
   try {
-    // ❌ DO NOT restore token here anymore
+    const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
+    const isDelegated = !!payload?.is_delegated_company_access;
+
+    // Only restore native token when truly booting practitioner shell
+    if (onPractitionerPage && isDelegated) {
+      const homeToken =
+        sessionStorage.getItem("fs_home_token") ||
+        localStorage.getItem("fs_home_token") ||
+        "";
+
+      if (homeToken) {
+        if (typeof window.setToken === "function") {
+          window.setToken(homeToken, true);
+        } else {
+          localStorage.setItem("fs_user_token", homeToken);
+        }
+
+        sessionStorage.removeItem("fs_home_token");
+        localStorage.removeItem("fs_home_token");
+        localStorage.removeItem("fs_posting_context");
+
+        token = getAuthToken();
+        console.log("enforcePractitionerAuth: restored native token");
+      }
+    }
+  } catch (e) {
+    console.warn("enforcePractitionerAuth: token decode failed", e);
+  }
+
+  try {
     const me = await loadMe();
     return me;
   } catch (err) {
@@ -10070,6 +10105,14 @@ async function openPostingForEngagement(row, me) {
 
   // store delegated token using the SAME key your AUTH_HEADER() reads
   window.setToken(res.token, true);
+
+  // 🔥 CRITICAL: sync active company with delegated company
+  localStorage.setItem("company_id", String(targetCompanyId));
+
+  console.log("AFTER SET DELEGATED", {
+    tokenCompany: targetCompanyId,
+    storedCompany: localStorage.getItem("company_id"),
+  }); 
 
   const ctx = {
     companyId: targetCompanyId,
