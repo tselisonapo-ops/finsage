@@ -5618,11 +5618,19 @@ function initDashboardModeSwitcher(currentMode = "internal") {
           // ✅ set new native token
           window.setToken(res.token, true);
 
-          // clean delegated state
           localStorage.removeItem("fs_posting_context");
           localStorage.removeItem("fs_home_token");
+          localStorage.removeItem("company_id");
+
           window.__FS_DELEGATED_POSTING__ = false;
           window.__FS_POSTING_CONTEXT__ = null;
+          window.__FS_TARGET_COMPANY_ID__ = null;
+          window.__FS_SOURCE_COMPANY_ID__ = null;
+          window.__PR_ACTIVE_COMPANY_ID__ = null;
+
+          window.currentUser = null;
+          localStorage.removeItem("fs_user");
+          sessionStorage.removeItem("fs_user");
 
           // optional return context
           const returnCtx = {
