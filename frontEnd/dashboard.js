@@ -5402,36 +5402,50 @@ function getStoredUser() {
 
     btn.classList.remove("hidden");
 
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.preventDefault();
       e.stopPropagation();
 
-      const returnCtx = {
-        companyId: Number(ctx.sourceCompanyId || 0) || null,
-        engagementId: Number(ctx.engagementId || 0) || null,
-        customerId: Number(ctx.customerId || 0) || null,
-        engagement: ctx.engagement || null,
-        returnScreen: "assignments",
-      };
+      try {
+        const res = await apiFetch(ENDPOINTS.auth.restoreNative, {
+          method: "POST",
+        });
 
-      localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+        if (!res?.ok || !res?.token) {
+          throw new Error(res?.error || "Failed to restore native context");
+        }
 
-      const homeToken =
-        sessionStorage.getItem("fs_home_token") ||
-        localStorage.getItem("fs_home_token") ||
-        "";
+        window.setToken(res.token, true);
 
-      if (homeToken) {
-        window.setToken(homeToken, true);
-        sessionStorage.removeItem("fs_home_token");
+        const returnCtx = {
+          companyId: Number(res.company_id || ctx.sourceCompanyId || 0) || null,
+          engagementId: Number(ctx.engagementId || 0) || null,
+          customerId: Number(ctx.customerId || 0) || null,
+          engagement: ctx.engagement || null,
+          returnScreen: "assignments",
+        };
+
+        localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+
+        localStorage.removeItem("fs_posting_context");
         localStorage.removeItem("fs_home_token");
+        localStorage.removeItem("company_id");
+
+        window.__FS_DELEGATED_POSTING__ = false;
+        window.__FS_POSTING_CONTEXT__ = null;
+        window.__FS_TARGET_COMPANY_ID__ = null;
+        window.__FS_SOURCE_COMPANY_ID__ = null;
+        window.__PR_ACTIVE_COMPANY_ID__ = null;
+
+        window.currentUser = null;
+        localStorage.removeItem("fs_user");
+        sessionStorage.removeItem("fs_user");
+
+        window.location.href =
+          ctx.returnTo || "practitionerdashboard.html#screen=assignments";
+      } catch (err) {
+        console.error("Failed to return to practitioner workspace", err);
       }
-
-      localStorage.removeItem("fs_posting_context");
-      localStorage.removeItem("fs_pr_return_context");
-
-      window.location.href =
-        ctx.returnTo || "practitionerdashboard.html#screen=assignments";
     };
   }
   window.bindReturnToPractitionerWorkspace = bindReturnToPractitionerWorkspace;
@@ -5562,7 +5576,10 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
   let me = null;
   try {
-    me = window.currentUser || JSON.parse(localStorage.getItem("fs_user") || "null") || {};
+    me =
+      window.currentUser ||
+      JSON.parse(localStorage.getItem("fs_user") || "null") ||
+      {};
   } catch (_) {
     me = window.currentUser || {};
   }
@@ -5581,37 +5598,15 @@ function initDashboardModeSwitcher(currentMode = "internal") {
   if (!wrap || !select) return;
 
   if (isDelegatedPosting) {
-    wrap.classList.remove("hidden");
-    wrap.style.display = "block";
-    select.disabled = false;
-
-    select.innerHTML = `
-      <option value="internal">Internal Dashboard</option>
-      <option value="practitioner">Practitioner Dashboard</option>
-    `;
-    select.value = "internal";
-
-    select.onchange = () => {
-      const next = String(select.value || "").toLowerCase();
-
-      if (next === "internal") {
-        select.value = "internal";
-        return;
-      }
-
-      if (next === "practitioner") {
-        returnToPractitionerNative().catch((e) => {
-          console.error("FAILED RETURN FLOW", e);
-          select.value = "internal";
-        });
-        return;
-      }
-    };
-
+    wrap.classList.add("hidden");
+    wrap.style.display = "none";
+    select.disabled = true;
+    select.onchange = null;
     return;
   }
 
   const show = shouldShowDashboardSwitcher(me);
+
   if (!show) {
     wrap.classList.add("hidden");
     wrap.style.display = "none";
@@ -5624,12 +5619,24 @@ function initDashboardModeSwitcher(currentMode = "internal") {
   select.disabled = false;
 
   const normalizedMode = String(currentMode || "internal").toLowerCase();
+
   select.value =
     normalizedMode === "internal" || normalizedMode === "practitioner"
       ? normalizedMode
       : "internal";
 
   select.onchange = () => {
+    const delegatedNow =
+      !!window.__FS_DELEGATED_POSTING__ ||
+      !!window.__FS_POSTING_CONTEXT__ ||
+      !!window.FS_DELEGATED_WORKSPACE?.getPostingContext?.();
+
+    if (delegatedNow) {
+      console.warn("Blocked mode switch during delegated workspace");
+      select.value = "internal";
+      return;
+    }
+
     const next = String(select.value || "").toLowerCase();
 
     if (next === "internal") {
