@@ -1063,10 +1063,10 @@ async function enforcePractitionerAuth() {
       /practitionerdashboard\.html$/i.test(location.pathname) ||
       location.pathname.includes("practitionerdashboard.html");
 
-    // Do NOT restore native token here.
-    // Only block practitioner shell while delegated token is active.
     if (onPractitionerPage && isDelegated) {
       console.warn("enforcePractitionerAuth: delegated token detected on practitioner page");
+      window.location.replace("dashboard.html");
+      return null;
     }
   } catch (e) {
     console.warn("enforcePractitionerAuth: token decode failed", e);
