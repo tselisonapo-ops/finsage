@@ -1,4 +1,68 @@
-﻿// ====== HARD BOOTSTRAP (must be outside the IIFE) ======
+﻿(function hardTraceRedirects() {
+  const logState = (label, extra = {}) => {
+    try {
+      console.error(label, {
+        href: location.href,
+        path: location.pathname,
+        hash: location.hash,
+        fs_user_token_local: !!localStorage.getItem("fs_user_token"),
+        fs_user_token_session: !!sessionStorage.getItem("fs_user_token"),
+        postingCtx: localStorage.getItem("fs_posting_context"),
+        delegatedFlag: window.__FS_DELEGATED_POSTING__,
+        postingContextGlobal: window.__FS_POSTING_CONTEXT__,
+        ...extra,
+        stack: new Error().stack,
+      });
+    } catch (e) {
+      console.error(label, extra, e);
+    }
+  };
+
+  const origOpen = window.open;
+  window.open = function (...args) {
+    logState("[REDIRECT TRACE] window.open", { args });
+    return origOpen.apply(this, args);
+  };
+
+  const origAssign = window.location.assign.bind(window.location);
+  window.location.assign = function (url) {
+    logState("[REDIRECT TRACE] location.assign", { url });
+    return origAssign(url);
+  };
+
+  const origReplace = window.location.replace.bind(window.location);
+  window.location.replace = function (url) {
+    logState("[REDIRECT TRACE] location.replace", { url });
+    return origReplace(url);
+  };
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      const a = e.target.closest("a[href]");
+      if (a) {
+        logState("[REDIRECT TRACE] anchor click", { url: a.href });
+      }
+    },
+    true
+  );
+
+  const originalHref = location.href;
+  window.addEventListener("beforeunload", () => {
+    logState("[REDIRECT TRACE] beforeunload", {
+      originalHref,
+      currentHref: location.href,
+    });
+  });
+
+  window.addEventListener("pagehide", () => {
+    logState("[REDIRECT TRACE] pagehide");
+  });
+
+  console.warn("[REDIRECT TRACE] installed");
+})();
+
+// ====== HARD BOOTSTRAP (must be outside the IIFE) ======
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
 
@@ -52,37 +116,6 @@ window.addEventListener("unhandledrejection", (e) => {
   console.log("UNHANDLED PROMISE:", e.reason);
 });
 
-(function hardTraceRedirects() {
-  const origOpen = window.open;
-  window.open = function (...args) {
-    console.error("[REDIRECT TRACE] window.open", args, new Error().stack);
-    return origOpen.apply(this, args);
-  };
-
-  const origAssign = window.location.assign.bind(window.location);
-  const origReplace = window.location.replace.bind(window.location);
-
-  window.location.assign = function (url) {
-    console.error("[REDIRECT TRACE] location.assign", url, new Error().stack);
-    return origAssign(url);
-  };
-
-  window.location.replace = function (url) {
-    console.error("[REDIRECT TRACE] location.replace", url, new Error().stack);
-    return origReplace(url);
-  };
-
-  document.addEventListener("click", (e) => {
-    const a = e.target.closest("a[href]");
-    if (a) {
-      console.warn("[REDIRECT TRACE] anchor click", a.href, a, new Error().stack);
-    }
-  }, true);
-
-  window.addEventListener("beforeunload", () => {
-    console.warn("[REDIRECT TRACE] beforeunload from", location.href);
-  });
-})();
 
 // dashboard.js — FinSage Command Center
 (async function () {
