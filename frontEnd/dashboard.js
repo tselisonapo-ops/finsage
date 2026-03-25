@@ -5339,16 +5339,26 @@ function getStoredUser() {
     const host = document.getElementById("delegatedWorkspaceBanner");
     if (!ctx || !host) return;
 
+    const engagementSummary =
+      ctx.engagementSummary ||
+      ctx.engagementTitle ||
+      ctx.engagementName ||
+      "Client posting workspace";
+
+    const companyName =
+      ctx.customerName ||
+      ctx.companyName ||
+      "Client";
+
     host.classList.remove("hidden");
     host.innerHTML = `
-      <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        <div class="font-semibold">Delegated workspace</div>
-        <div class="mt-1">
-          You are working in
-          <span class="font-semibold">${escapeHtml(ctx.engagementName || "client posting workspace")}</span>
-          for
-          <span class="font-semibold">${escapeHtml(ctx.customerName || "client")}</span>.
-        </div>
+      <div class="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <span class="rounded-full border border-amber-300 bg-white px-2 py-1 text-xs font-semibold">
+          ${escapeHtml(companyName)}
+        </span>
+        <span class="font-semibold">
+          ${escapeHtml(engagementSummary)}
+        </span>
       </div>
     `;
   }
@@ -5519,9 +5529,11 @@ function updatePostingCompanyBadge() {
     ...(window.__PR_POSTING_CONTEXT__ || {})
   };
 
-  const customerName = ctx.customerName || ctx.engagement?.customer_name || "";
-  const engagementName = ctx.engagementName || ctx.engagement?.engagement_name || "";
-  const engagementCode = ctx.engagementCode || ctx.engagement?.engagement_code || "";
+  const customerName =
+    ctx.customerName ||
+    ctx.engagement?.customer_name ||
+    "";
+
   const companyId = Number(ctx.targetCompanyId || ctx.companyId || 0);
 
   if (!companyId) {
@@ -5529,9 +5541,8 @@ function updatePostingCompanyBadge() {
     return;
   }
 
-  badge.textContent = `
-    ${customerName || "Client"} · ${engagementName || "Engagement"} (${engagementCode || "--"})
-  `.trim();
+  // ✅ ONLY company name
+  badge.textContent = customerName || "Client";
 
   badge.classList.remove("hidden");
 }
