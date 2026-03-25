@@ -883,3 +883,164 @@ def deactivate_engagement_team_member_route(cid: int, engagement_team_id: int):
     except Exception as e:
         current_app.logger.exception("deactivate_engagement_team_member_route failed")
         return _json_err(str(e), 500)
+    
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-team/capacity/summary",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def get_team_capacity_summary_route(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(
+            payload,
+            company_id,
+            db_service=db_service,
+        )
+        if deny:
+            return deny
+
+        search = (request.args.get("q") or "").strip()
+        role_on_engagement = (request.args.get("role_on_engagement") or "").strip().lower()
+        active_only = _parse_bool(request.args.get("active_only"), True)
+
+        with db_service._conn_cursor() as (conn, cur):
+            summary = db_service.get_team_capacity_summary(
+                cur,
+                company_id,
+                search=search,
+                role_on_engagement=role_on_engagement,
+                active_only=active_only,
+            )
+
+        return _json_ok({"summary": summary or {}})
+
+    except Exception as e:
+        current_app.logger.exception("get_team_capacity_summary_route failed")
+        return _json_err(str(e), 500)
+
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-team/capacity/users",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def list_team_capacity_users_route(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(
+            payload,
+            company_id,
+            db_service=db_service,
+        )
+        if deny:
+            return deny
+
+        search = (request.args.get("q") or "").strip()
+        role_on_engagement = (request.args.get("role_on_engagement") or "").strip().lower()
+
+        active_only = _parse_bool(request.args.get("active_only"), True)
+        only_available = _parse_bool(request.args.get("only_available"), False)
+        only_overloaded = _parse_bool(request.args.get("only_overloaded"), False)
+
+        limit = _parse_int(request.args.get("limit"), 100)
+        offset = _parse_int(request.args.get("offset"), 0)
+
+        if limit is None or limit < 1:
+            limit = 100
+        if limit > 500:
+            limit = 500
+        if offset is None or offset < 0:
+            offset = 0
+
+        with db_service._conn_cursor() as (conn, cur):
+            rows = db_service.list_team_capacity_by_user(
+                cur,
+                company_id,
+                search=search,
+                role_on_engagement=role_on_engagement,
+                active_only=active_only,
+                only_available=only_available,
+                only_overloaded=only_overloaded,
+                limit=limit,
+                offset=offset,
+            )
+
+        return _json_ok(
+            {
+                "rows": rows,
+                "filters": {
+                    "q": search,
+                    "role_on_engagement": role_on_engagement,
+                    "active_only": active_only,
+                    "only_available": only_available,
+                    "only_overloaded": only_overloaded,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            }
+        )
+
+    except Exception as e:
+        current_app.logger.exception("list_team_capacity_users_route failed")
+        return _json_err(str(e), 500)
+
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-team/capacity/users/<int:user_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def get_team_capacity_user_route(cid: int, user_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(
+            payload,
+            company_id,
+            db_service=db_service,
+        )
+        if deny:
+            return deny
+
+        active_only = _parse_bool(request.args.get("active_only"), True)
+
+        with db_service._conn_cursor() as (conn, cur):
+            totals = db_service.get_team_capacity_user_totals(
+                cur,
+                company_id,
+                user_id=user_id,
+                active_only=active_only,
+            )
+            engagements = db_service.list_team_capacity_user_engagements(
+                cur,
+                company_id,
+                user_id=user_id,
+                active_only=active_only,
+            )
+
+        return _json_ok(
+            {
+                "totals": totals or {},
+                "engagements": engagements or [],
+            }
+        )
+
+    except Exception as e:
+        current_app.logger.exception("get_team_capacity_user_route failed")
+        return _json_err(str(e), 500)

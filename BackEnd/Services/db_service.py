@@ -45738,7 +45738,556 @@ class DatabaseService:
         )
         return cur.fetchone()
 
- 
+    def get_team_capacity_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        search: str = "",
+        role_on_engagement: str = "",
+        active_only: bool = True,
+        as_of_date=None,
+    ):
+        schema = self.company_schema(company_id)
+        as_of_date = as_of_date or "CURRENT_DATE"
+
+        sql = f"""
+            WITH team_scope AS (
+                SELECT
+                    et.id,
+                    et.company_id,
+                    et.engagement_id,
+                    et.user_id,
+                    LOWER(et.role_on_engagement) AS role_on_engagement,
+                    et.allocation_percent,
+                    et.start_date,
+                    et.end_date,
+                    et.is_active,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.status AS engagement_status,
+                    u.email,
+                    TRIM(
+                        CONCAT(
+                            COALESCE(u.first_name, ''),
+                            CASE
+                                WHEN COALESCE(u.last_name, '') <> '' THEN ' ' || u.last_name
+                                ELSE ''
+                            END
+                        )
+                    ) AS full_name
+                FROM {schema}.engagement_team et
+                JOIN {schema}.engagements e
+                ON e.id = et.engagement_id
+                AND e.company_id = et.company_id
+                JOIN public.users u
+                ON u.id = et.user_id
+                WHERE et.company_id = %s
+                AND e.company_id = %s
+                AND e.is_active = TRUE
+                AND (%s = FALSE OR et.is_active = TRUE)
+                AND (%s = '' OR LOWER(et.role_on_engagement) = LOWER(%s))
+                AND (
+                        %s = ''
+                        OR TRIM(
+                            CONCAT(
+                                COALESCE(u.first_name, ''),
+                                CASE
+                                    WHEN COALESCE(u.last_name, '') <> '' THEN ' ' || u.last_name
+                                    ELSE ''
+                                END
+                            )
+                        ) ILIKE %s
+                        OR COALESCE(u.email, '') ILIKE %s
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                    )
+                AND (
+                        et.start_date IS NULL
+                        OR et.start_date <= {as_of_date}
+                    )
+                AND (
+                        et.end_date IS NULL
+                        OR et.end_date >= {as_of_date}
+                    )
+            ),
+            alloc_by_user AS (
+                SELECT
+                    user_id,
+                    MAX(full_name) AS full_name,
+                    MAX(email) AS email,
+                    COUNT(*) AS active_assignments,
+                    COUNT(DISTINCT engagement_id) AS active_engagements,
+                    COALESCE(SUM(COALESCE(allocation_percent, 0)), 0) AS total_allocation_percent
+                FROM team_scope
+                GROUP BY user_id
+            ),
+            reviewer_load AS (
+                SELECT
+                    wp.reviewer_user_id AS user_id,
+                    COUNT(*) FILTER (
+                        WHERE wp.status IN ('prepared', 'in_review')
+                    ) AS review_queue_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.status = 'in_review'
+                    ) AS in_review_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_review_items
+                FROM {schema}.engagement_working_papers wp
+                JOIN {schema}.engagements e
+                ON e.id = wp.engagement_id
+                AND e.company_id = wp.company_id
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                AND e.is_active = TRUE
+                AND wp.reviewer_user_id IS NOT NULL
+                GROUP BY wp.reviewer_user_id
+            ),
+            combined AS (
+                SELECT
+                    a.user_id,
+                    a.full_name,
+                    a.email,
+                    a.active_assignments,
+                    a.active_engagements,
+                    a.total_allocation_percent,
+                    GREATEST(0, 100 - a.total_allocation_percent) AS available_capacity_percent,
+                    COALESCE(r.review_queue_count, 0) AS review_queue_count,
+                    COALESCE(r.in_review_count, 0) AS in_review_count,
+                    COALESCE(r.overdue_review_items, 0) AS overdue_review_items,
+                    CASE
+                        WHEN a.total_allocation_percent >= 100 THEN 'overloaded'
+                        WHEN a.total_allocation_percent >= 80 THEN 'near_capacity'
+                        ELSE 'available'
+                    END AS load_band
+                FROM alloc_by_user a
+                LEFT JOIN reviewer_load r
+                ON r.user_id = a.user_id
+            )
+            SELECT
+                COUNT(*) AS total_users,
+                COUNT(*) FILTER (WHERE total_allocation_percent >= 100) AS overloaded_users,
+                COUNT(*) FILTER (WHERE total_allocation_percent BETWEEN 80 AND 99.99) AS near_capacity_users,
+                COUNT(*) FILTER (WHERE total_allocation_percent < 80) AS available_users,
+                COUNT(*) FILTER (
+                    WHERE review_queue_count > 0
+                    OR overdue_review_items > 0
+                ) AS reviewers_with_pressure,
+                COALESCE(SUM(active_assignments), 0) AS total_assignments,
+                COALESCE(SUM(active_engagements), 0) AS total_engagement_links,
+                COALESCE(AVG(total_allocation_percent), 0) AS avg_allocation_percent,
+                COALESCE(SUM(review_queue_count), 0) AS total_review_queue,
+                COALESCE(SUM(overdue_review_items), 0) AS total_overdue_review_items
+            FROM combined
+        """
+        like = f"%{search.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                company_id,
+                active_only,
+                role_on_engagement.strip(),
+                role_on_engagement.strip(),
+                search.strip(),
+                like,
+                like,
+                like,
+                like,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
+
+    def list_team_capacity_by_user(
+        self,
+        cur,
+        company_id: int,
+        *,
+        search: str = "",
+        role_on_engagement: str = "",
+        active_only: bool = True,
+        only_available: bool = False,
+        only_overloaded: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+        as_of_date=None,
+    ):
+        schema = self.company_schema(company_id)
+        as_of_date = as_of_date or "CURRENT_DATE"
+
+        sql = f"""
+            WITH team_scope AS (
+                SELECT
+                    et.id,
+                    et.company_id,
+                    et.engagement_id,
+                    et.user_id,
+                    LOWER(et.role_on_engagement) AS role_on_engagement,
+                    et.allocation_percent,
+                    et.start_date,
+                    et.end_date,
+                    et.notes,
+                    et.is_active,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.status AS engagement_status,
+                    e.due_date AS engagement_due_date,
+                    u.email,
+                    TRIM(
+                        CONCAT(
+                            COALESCE(u.first_name, ''),
+                            CASE
+                                WHEN COALESCE(u.last_name, '') <> '' THEN ' ' || u.last_name
+                                ELSE ''
+                            END
+                        )
+                    ) AS full_name
+                FROM {schema}.engagement_team et
+                JOIN {schema}.engagements e
+                ON e.id = et.engagement_id
+                AND e.company_id = et.company_id
+                JOIN public.users u
+                ON u.id = et.user_id
+                WHERE et.company_id = %s
+                AND e.company_id = %s
+                AND e.is_active = TRUE
+                AND (%s = FALSE OR et.is_active = TRUE)
+                AND (%s = '' OR LOWER(et.role_on_engagement) = LOWER(%s))
+                AND (
+                        et.start_date IS NULL
+                        OR et.start_date <= {as_of_date}
+                    )
+                AND (
+                        et.end_date IS NULL
+                        OR et.end_date >= {as_of_date}
+                    )
+                AND (
+                        %s = ''
+                        OR TRIM(
+                            CONCAT(
+                                COALESCE(u.first_name, ''),
+                                CASE
+                                    WHEN COALESCE(u.last_name, '') <> '' THEN ' ' || u.last_name
+                                    ELSE ''
+                                END
+                            )
+                        ) ILIKE %s
+                        OR COALESCE(u.email, '') ILIKE %s
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                    )
+            ),
+            alloc_by_user AS (
+                SELECT
+                    user_id,
+                    MAX(full_name) AS full_name,
+                    MAX(email) AS email,
+                    COUNT(*) AS active_assignments,
+                    COUNT(DISTINCT engagement_id) AS active_engagements,
+                    COALESCE(SUM(COALESCE(allocation_percent, 0)), 0) AS total_allocation_percent,
+                    COALESCE(AVG(NULLIF(allocation_percent, 0)), 0) AS avg_assignment_allocation_percent,
+                    MIN(start_date) AS first_assignment_start_date,
+                    MAX(end_date) AS last_assignment_end_date,
+                    COUNT(*) FILTER (
+                        WHERE engagement_due_date IS NOT NULL
+                        AND engagement_due_date < CURRENT_DATE
+                        AND engagement_status NOT IN ('completed', 'cancelled', 'archived')
+                    ) AS overdue_engagements
+                FROM team_scope
+                GROUP BY user_id
+            ),
+            reviewer_load AS (
+                SELECT
+                    wp.reviewer_user_id AS user_id,
+                    COUNT(*) FILTER (
+                        WHERE wp.status IN ('prepared', 'in_review')
+                    ) AS review_queue_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.status = 'in_review'
+                    ) AS in_review_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_review_items
+                FROM {schema}.engagement_working_papers wp
+                JOIN {schema}.engagements e
+                ON e.id = wp.engagement_id
+                AND e.company_id = wp.company_id
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                AND e.is_active = TRUE
+                AND wp.reviewer_user_id IS NOT NULL
+                GROUP BY wp.reviewer_user_id
+            ),
+            preparer_load AS (
+                SELECT
+                    wp.preparer_user_id AS user_id,
+                    COUNT(*) FILTER (
+                        WHERE wp.status IN ('draft', 'prepared', 'returned', 'blocked')
+                    ) AS prep_queue_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.status = 'blocked'
+                    ) AS blocked_items
+                FROM {schema}.engagement_working_papers wp
+                JOIN {schema}.engagements e
+                ON e.id = wp.engagement_id
+                AND e.company_id = wp.company_id
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                AND e.is_active = TRUE
+                AND wp.preparer_user_id IS NOT NULL
+                GROUP BY wp.preparer_user_id
+            ),
+            combined AS (
+                SELECT
+                    a.user_id,
+                    a.full_name,
+                    a.email,
+                    a.active_assignments,
+                    a.active_engagements,
+                    ROUND(a.total_allocation_percent::numeric, 2) AS total_allocation_percent,
+                    ROUND(a.avg_assignment_allocation_percent::numeric, 2) AS avg_assignment_allocation_percent,
+                    GREATEST(0, ROUND((100 - a.total_allocation_percent)::numeric, 2)) AS available_capacity_percent,
+                    a.first_assignment_start_date,
+                    a.last_assignment_end_date,
+                    a.overdue_engagements,
+                    COALESCE(r.review_queue_count, 0) AS review_queue_count,
+                    COALESCE(r.in_review_count, 0) AS in_review_count,
+                    COALESCE(r.overdue_review_items, 0) AS overdue_review_items,
+                    COALESCE(p.prep_queue_count, 0) AS prep_queue_count,
+                    COALESCE(p.blocked_items, 0) AS blocked_items,
+                    CASE
+                        WHEN a.total_allocation_percent >= 100 THEN 'overloaded'
+                        WHEN a.total_allocation_percent >= 80 THEN 'near_capacity'
+                        ELSE 'available'
+                    END AS load_band
+                FROM alloc_by_user a
+                LEFT JOIN reviewer_load r
+                ON r.user_id = a.user_id
+                LEFT JOIN preparer_load p
+                ON p.user_id = a.user_id
+            )
+            SELECT
+                *
+            FROM combined
+            WHERE (%s = FALSE OR total_allocation_percent < 80)
+            AND (%s = FALSE OR total_allocation_percent >= 100)
+            ORDER BY
+                total_allocation_percent DESC,
+                overdue_review_items DESC,
+                review_queue_count DESC,
+                full_name ASC
+            LIMIT %s OFFSET %s
+        """
+        like = f"%{search.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                company_id,
+                active_only,
+                role_on_engagement.strip(),
+                role_on_engagement.strip(),
+                search.strip(),
+                like,
+                like,
+                like,
+                like,
+                company_id,
+                company_id,
+                only_available,
+                only_overloaded,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+
+    def list_team_capacity_user_engagements(
+        self,
+        cur,
+        company_id: int,
+        *,
+        user_id: int,
+        active_only: bool = True,
+        as_of_date=None,
+    ):
+        schema = self.company_schema(company_id)
+        as_of_date = as_of_date or "CURRENT_DATE"
+
+        sql = f"""
+            WITH wp_stats AS (
+                SELECT
+                    wp.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE wp.preparer_user_id = %s
+                    ) AS prepared_items,
+                    COUNT(*) FILTER (
+                        WHERE wp.reviewer_user_id = %s
+                    ) AS assigned_for_review,
+                    COUNT(*) FILTER (
+                        WHERE wp.reviewer_user_id = %s
+                        AND wp.status IN ('prepared', 'in_review')
+                    ) AS review_queue_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.reviewer_user_id = %s
+                        AND wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_review_items,
+                    COUNT(*) FILTER (
+                        WHERE (wp.preparer_user_id = %s OR wp.reviewer_user_id = %s)
+                        AND wp.status = 'blocked'
+                    ) AS blocked_items
+                FROM {schema}.engagement_working_papers wp
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                GROUP BY wp.engagement_id
+            )
+            SELECT
+                et.id,
+                et.engagement_id,
+                e.customer_id,
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.status AS engagement_status,
+                e.priority,
+                e.workflow_stage,
+                e.due_date,
+                LOWER(et.role_on_engagement) AS role_on_engagement,
+                et.allocation_percent,
+                et.start_date,
+                et.end_date,
+                et.notes,
+                et.is_active,
+                COALESCE(w.prepared_items, 0) AS prepared_items,
+                COALESCE(w.assigned_for_review, 0) AS assigned_for_review,
+                COALESCE(w.review_queue_count, 0) AS review_queue_count,
+                COALESCE(w.overdue_review_items, 0) AS overdue_review_items,
+                COALESCE(w.blocked_items, 0) AS blocked_items
+            FROM {schema}.engagement_team et
+            JOIN {schema}.engagements e
+            ON e.id = et.engagement_id
+            AND e.company_id = et.company_id
+            LEFT JOIN wp_stats w
+            ON w.engagement_id = et.engagement_id
+            WHERE et.company_id = %s
+            AND et.user_id = %s
+            AND e.is_active = TRUE
+            AND (%s = FALSE OR et.is_active = TRUE)
+            AND (
+                    et.start_date IS NULL
+                    OR et.start_date <= {as_of_date}
+                )
+            AND (
+                    et.end_date IS NULL
+                    OR et.end_date >= {as_of_date}
+                )
+            ORDER BY
+                COALESCE(et.allocation_percent, 0) DESC,
+                e.due_date NULLS LAST,
+                e.engagement_name ASC
+        """
+        cur.execute(
+            sql,
+            (
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                user_id,
+                company_id,
+                company_id,
+                user_id,
+                active_only,
+            ),
+        )
+        return cur.fetchall()
+
+
+    def get_team_capacity_user_totals(
+        self,
+        cur,
+        company_id: int,
+        *,
+        user_id: int,
+        active_only: bool = True,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH assignments AS (
+                SELECT
+                    et.engagement_id,
+                    COALESCE(et.allocation_percent, 0) AS allocation_percent
+                FROM {schema}.engagement_team et
+                JOIN {schema}.engagements e
+                ON e.id = et.engagement_id
+                AND e.company_id = et.company_id
+                WHERE et.company_id = %s
+                AND et.user_id = %s
+                AND e.is_active = TRUE
+                AND (%s = FALSE OR et.is_active = TRUE)
+            ),
+            reviewer_load AS (
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE wp.reviewer_user_id = %s
+                        AND wp.status IN ('prepared', 'in_review')
+                    ) AS review_queue_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.reviewer_user_id = %s
+                        AND wp.status = 'in_review'
+                    ) AS in_review_count,
+                    COUNT(*) FILTER (
+                        WHERE wp.reviewer_user_id = %s
+                        AND wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_review_items
+                FROM {schema}.engagement_working_papers wp
+                JOIN {schema}.engagements e
+                ON e.id = wp.engagement_id
+                AND e.company_id = wp.company_id
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                AND e.is_active = TRUE
+            )
+            SELECT
+                COALESCE((SELECT COUNT(*) FROM assignments), 0) AS active_assignments,
+                COALESCE((SELECT COUNT(DISTINCT engagement_id) FROM assignments), 0) AS active_engagements,
+                COALESCE((SELECT SUM(allocation_percent) FROM assignments), 0) AS total_allocation_percent,
+                GREATEST(
+                    0,
+                    100 - COALESCE((SELECT SUM(allocation_percent) FROM assignments), 0)
+                ) AS available_capacity_percent,
+                COALESCE((SELECT review_queue_count FROM reviewer_load), 0) AS review_queue_count,
+                COALESCE((SELECT in_review_count FROM reviewer_load), 0) AS in_review_count,
+                COALESCE((SELECT overdue_review_items FROM reviewer_load), 0) AS overdue_review_items
+        """
+        cur.execute(
+            sql,
+            (
+                company_id,
+                user_id,
+                active_only,
+                user_id,
+                user_id,
+                user_id,
+                company_id,
+            ),
+        )
+        return cur.fetchone()
+
     def insert_ticket(
         self,
         cur,

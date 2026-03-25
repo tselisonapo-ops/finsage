@@ -133,7 +133,76 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/${encodeURIComponent(engagementId)}/team`,
 
     teamDeactivate: (companyId, engagementTeamId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/team/${encodeURIComponent(engagementTeamId)}/deactivate`
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagements/team/${encodeURIComponent(engagementTeamId)}/deactivate`,
+
+    capacitySummary: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-team/capacity/summary?${params.toString()}`;
+    },
+
+    capacityUsers: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        only_available = false,
+        only_overloaded = false,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("only_available", only_available ? "true" : "false");
+      params.set("only_overloaded", only_overloaded ? "true" : "false");
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-team/capacity/users?${params.toString()}`;
+    },
+
+    capacityUser: (
+      companyId,
+      userId,
+      {
+        active_only = true
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      params.set("active_only", active_only ? "true" : "false");
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-team/capacity/users/${encodeURIComponent(userId)}?${params.toString()}`;
+    },
+
+    capacityDashboard: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-team/capacity?${params.toString()}`;
+    }
   },
 
   engagementOps: {
@@ -896,6 +965,25 @@ const ENDPOINTS = {
       offset: 0
     }
   };
+
+  let PR_TEAM_CAPACITY_CACHE = {
+    summary: null,
+    rows: [],
+    selectedUserId: null,
+    selectedUserDetail: null,
+    loading: false,
+    filters: {
+      q: "",
+      role_on_engagement: "",
+      active_only: true,
+      only_available: false,
+      only_overloaded: false,
+      limit: 100,
+      offset: 0
+    }
+  };
+
+  let PR_TEAM_CAPACITY_EVENTS_BOUND = false;
 
 const PR_NAV = {
   dashboard: "dashboard",
@@ -2025,6 +2113,7 @@ async function switchPractitionerScreen(name, me, opts = {}) {
     }
   }
 }
+
 function renderPractitionerScreenTitle(screen, me) {
   const titles = {
     dashboard: "Assignment Dashboard",
@@ -8073,6 +8162,46 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+
+function formatInt(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function formatPct(value) {
+  return `${Number(value || 0).toFixed(2)}%`;
+}
+
+function getTeamCapacityLoadBandClass(loadBand) {
+  if (loadBand === "overloaded") return "is-danger";
+  if (loadBand === "near_capacity") return "is-warning";
+  return "is-good";
+}
+
+function getTeamCapacityLoadBandLabel(loadBand) {
+  if (loadBand === "overloaded") return "Overloaded";
+  if (loadBand === "near_capacity") return "Near capacity";
+  return "Available";
+}
+
+function renderTeamCapacityTableSkeleton() {
+  return `
+    <div class="pr-table-state">
+      <div class="pr-loading">Loading team capacity…</div>
+    </div>
+  `;
+}
+
+function renderTeamCapacityEmptyDetail() {
+  return `
+    <div class="pr-empty-state">
+      <div class="pr-empty-state__title">No user selected</div>
+      <div class="pr-empty-state__desc">
+        Select a team member from the allocation table to view detailed engagement load.
+      </div>
+    </div>
+  `;
+}
+
 function formatDateLite(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -11167,17 +11296,538 @@ async function renderWorkingPapersScreen(me) {
 }
 
 function renderTeamCapacityScreen(me) {
-  renderManagerStubScreen(PR_NAV.teamCapacity, {
-    title: "Team Capacity",
-    subtitle: "Cross-engagement staffing, allocation load, and reviewer capacity visibility.",
-    items: [
-      { label: "Allocation by user", desc: "Show total assigned workload per team member across active engagements." },
-      { label: "Reviewer pressure", desc: "Highlight reviewers carrying too many in-review items or overdue approvals." },
-      { label: "Available capacity", desc: "Identify staff with room for new assignments or urgent reallocation." },
-      { label: "Overload alerts", desc: "Flag users exceeding target allocation or too many concurrent deadlines." }
-    ]
+  const host = document.getElementById("practitionerScreen");
+  if (!host) return;
+
+  host.innerHTML = `
+    <section class="pr-screen pr-team-capacity-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Team Capacity</h1>
+          <p class="pr-screen__subtitle">
+            Cross-engagement staffing, allocation load, reviewer pressure, and available capacity visibility.
+          </p>
+        </div>
+
+        <div class="pr-screen__actions">
+          <button class="btn btn-ghost" id="prTeamCapacityRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="pr-panel pr-team-capacity-filters">
+        <div class="pr-filter-grid">
+          <label class="pr-field">
+            <span class="pr-field__label">Search</span>
+            <input
+              id="prTeamCapacitySearch"
+              class="pr-input"
+              type="text"
+              placeholder="Search user, engagement, or code"
+              value="${escapeHtml(PR_TEAM_CAPACITY_CACHE.filters.q || "")}"
+            />
+          </label>
+
+          <label class="pr-field">
+            <span class="pr-field__label">Role</span>
+            <select id="prTeamCapacityRole" class="pr-select">
+              <option value="">All roles</option>
+              <option value="partner">Partner</option>
+              <option value="manager">Manager</option>
+              <option value="reviewer">Reviewer</option>
+              <option value="preparer">Preparer</option>
+              <option value="staff">Staff</option>
+            </select>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input
+              id="prTeamCapacityActiveOnly"
+              type="checkbox"
+              ${PR_TEAM_CAPACITY_CACHE.filters.active_only ? "checked" : ""}
+            />
+            <span>Active only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input
+              id="prTeamCapacityOnlyAvailable"
+              type="checkbox"
+              ${PR_TEAM_CAPACITY_CACHE.filters.only_available ? "checked" : ""}
+            />
+            <span>Available only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input
+              id="prTeamCapacityOnlyOverloaded"
+              type="checkbox"
+              ${PR_TEAM_CAPACITY_CACHE.filters.only_overloaded ? "checked" : ""}
+            />
+            <span>Overloaded only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button class="btn btn-primary" id="prTeamCapacityApplyBtn" type="button">Apply</button>
+            <button class="btn btn-ghost" id="prTeamCapacityResetBtn" type="button">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="prTeamCapacitySummary" class="pr-team-capacity-summary"></div>
+
+      <div class="pr-team-capacity-layout">
+        <div class="pr-panel pr-team-capacity-main">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Allocation by user</h3>
+              <p>Total assigned workload across active engagements.</p>
+            </div>
+          </div>
+
+          <div id="prTeamCapacityTableWrap" class="pr-team-capacity-table-wrap">
+            ${renderTeamCapacityTableSkeleton()}
+          </div>
+        </div>
+
+        <aside class="pr-panel pr-team-capacity-side">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Reviewer pressure</h3>
+              <p>Selected user workload and engagement breakdown.</p>
+            </div>
+          </div>
+
+          <div id="prTeamCapacityUserDetail">
+            ${renderTeamCapacityEmptyDetail()}
+          </div>
+        </aside>
+      </div>
+    </section>
+  `;
+
+  const roleEl = document.getElementById("prTeamCapacityRole");
+  if (roleEl) {
+    roleEl.value = PR_TEAM_CAPACITY_CACHE.filters.role_on_engagement || "";
+  }
+
+  bindTeamCapacityEvents(me);
+  loadTeamCapacityDashboard(me, { force: true });
+}
+
+function renderTeamCapacitySummary(summary = {}) {
+  const host = document.getElementById("prTeamCapacitySummary");
+  if (!host) return;
+
+  host.innerHTML = `
+    <div class="pr-summary-grid">
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Team members</div>
+        <div class="pr-summary-card__value">${formatInt(summary.total_users)}</div>
+        <div class="pr-summary-card__hint">Users with active engagement allocation</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Overloaded</div>
+        <div class="pr-summary-card__value pr-text-danger">${formatInt(summary.overloaded_users)}</div>
+        <div class="pr-summary-card__hint">Allocation at or above 100%</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Near capacity</div>
+        <div class="pr-summary-card__value pr-text-warning">${formatInt(summary.near_capacity_users)}</div>
+        <div class="pr-summary-card__hint">Allocation between 80% and 99.99%</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Available</div>
+        <div class="pr-summary-card__value pr-text-good">${formatInt(summary.available_users)}</div>
+        <div class="pr-summary-card__hint">Users below target allocation</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Reviewer pressure</div>
+        <div class="pr-summary-card__value">${formatInt(summary.reviewers_with_pressure)}</div>
+        <div class="pr-summary-card__hint">Reviewers with queue or overdue items</div>
+      </article>
+
+      <article class="pr-summary-card">
+        <div class="pr-summary-card__label">Average allocation</div>
+        <div class="pr-summary-card__value">${formatPct(summary.avg_allocation_percent)}</div>
+        <div class="pr-summary-card__hint">Across active assigned users</div>
+      </article>
+    </div>
+  `;
+}
+
+function renderTeamCapacityTable(rows = []) {
+  const host = document.getElementById("prTeamCapacityTableWrap");
+  if (!host) return;
+
+  if (!rows.length) {
+    host.innerHTML = `
+      <div class="pr-table-state">
+        <div class="pr-empty-state__title">No team capacity data found</div>
+        <div class="pr-empty-state__desc">Try adjusting the filters.</div>
+      </div>
+    `;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="pr-table-scroll">
+      <table class="pr-table pr-team-capacity-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Assignments</th>
+            <th>Engagements</th>
+            <th>Total allocation</th>
+            <th>Available</th>
+            <th>Review queue</th>
+            <th>Overdue review</th>
+            <th>Blocked</th>
+            <th>Load</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(renderTeamCapacityRow).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderTeamCapacityRow(row) {
+  const selected = Number(PR_TEAM_CAPACITY_CACHE.selectedUserId) === Number(row.user_id);
+  const loadClass = getTeamCapacityLoadBandClass(row.load_band);
+
+  return `
+    <tr
+      class="pr-team-capacity-row ${selected ? "is-selected" : ""}"
+      data-user-id="${Number(row.user_id)}"
+      tabindex="0"
+    >
+      <td>
+        <div class="pr-user-cell">
+          <div class="pr-user-cell__name">${escapeHtml(row.full_name || "Unknown user")}</div>
+          <div class="pr-user-cell__meta">${escapeHtml(row.email || "")}</div>
+        </div>
+      </td>
+      <td>${formatInt(row.active_assignments)}</td>
+      <td>${formatInt(row.active_engagements)}</td>
+      <td><strong>${formatPct(row.total_allocation_percent)}</strong></td>
+      <td>${formatPct(row.available_capacity_percent)}</td>
+      <td>${formatInt(row.review_queue_count)}</td>
+      <td>${formatInt(row.overdue_review_items)}</td>
+      <td>${formatInt(row.blocked_items)}</td>
+      <td>
+        <span class="pr-badge ${loadClass}">
+          ${escapeHtml(getTeamCapacityLoadBandLabel(row.load_band))}
+        </span>
+      </td>
+    </tr>
+  `;
+}
+
+function renderTeamCapacityUserDetail(detail) {
+  const host = document.getElementById("prTeamCapacityUserDetail");
+  if (!host) return;
+
+  if (!detail || !detail.totals) {
+    host.innerHTML = renderTeamCapacityEmptyDetail();
+    return;
+  }
+
+  const totals = detail.totals || {};
+  const engagements = Array.isArray(detail.engagements) ? detail.engagements : [];
+
+  host.innerHTML = `
+    <div class="pr-user-detail">
+      <div class="pr-user-detail__stats">
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Assignments</span>
+          <strong>${formatInt(totals.active_assignments)}</strong>
+        </div>
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Engagements</span>
+          <strong>${formatInt(totals.active_engagements)}</strong>
+        </div>
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Total allocation</span>
+          <strong>${formatPct(totals.total_allocation_percent)}</strong>
+        </div>
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Available capacity</span>
+          <strong>${formatPct(totals.available_capacity_percent)}</strong>
+        </div>
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Review queue</span>
+          <strong>${formatInt(totals.review_queue_count)}</strong>
+        </div>
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Overdue reviews</span>
+          <strong>${formatInt(totals.overdue_review_items)}</strong>
+        </div>
+      </div>
+
+      <div class="pr-detail-list">
+        <div class="pr-detail-list__title">Engagement breakdown</div>
+        ${
+          engagements.length
+            ? engagements.map(renderTeamCapacityDetailItem).join("")
+            : `
+              <div class="pr-empty-state__desc">
+                No engagement assignments found for this user.
+              </div>
+            `
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderTeamCapacityDetailItem(row) {
+  return `
+    <article class="pr-detail-card">
+      <div class="pr-detail-card__top">
+        <div>
+          <div class="pr-detail-card__title">
+            ${escapeHtml(row.engagement_name || "Untitled engagement")}
+          </div>
+          <div class="pr-detail-card__meta">
+            ${escapeHtml(row.engagement_code || "")}
+            ${row.role_on_engagement ? `• ${escapeHtml(row.role_on_engagement)}` : ""}
+          </div>
+        </div>
+        <div class="pr-detail-card__allocation">${formatPct(row.allocation_percent)}</div>
+      </div>
+
+      <div class="pr-detail-card__grid">
+        <div><span>Status</span><strong>${escapeHtml(row.engagement_status || "—")}</strong></div>
+        <div><span>Priority</span><strong>${escapeHtml(row.priority || "—")}</strong></div>
+        <div><span>Review queue</span><strong>${formatInt(row.review_queue_count)}</strong></div>
+        <div><span>Overdue review</span><strong>${formatInt(row.overdue_review_items)}</strong></div>
+        <div><span>Blocked</span><strong>${formatInt(row.blocked_items)}</strong></div>
+        <div><span>Due date</span><strong>${escapeHtml(row.due_date || "—")}</strong></div>
+      </div>
+    </article>
+  `;
+}
+
+async function loadTeamCapacityDashboard(me, { force = false } = {}) {
+  if (!me?.company_id) return;
+
+  const companyId = me.company_id;
+  const filters = { ...PR_TEAM_CAPACITY_CACHE.filters };
+
+  PR_TEAM_CAPACITY_CACHE.loading = true;
+
+  const tableWrap = document.getElementById("prTeamCapacityTableWrap");
+  if (tableWrap && force) {
+    tableWrap.innerHTML = renderTeamCapacityTableSkeleton();
+  }
+
+  try {
+    const dashboardUrl = ENDPOINTS.engagements.capacityDashboard(companyId, {
+      q: filters.q,
+      role_on_engagement: filters.role_on_engagement,
+      active_only: filters.active_only,
+      limit: filters.limit,
+      offset: filters.offset
+    });
+
+    const usersUrl = ENDPOINTS.engagements.capacityUsers(companyId, {
+      q: filters.q,
+      role_on_engagement: filters.role_on_engagement,
+      active_only: filters.active_only,
+      only_available: filters.only_available,
+      only_overloaded: filters.only_overloaded,
+      limit: filters.limit,
+      offset: filters.offset
+    });
+
+    const [dashboardRes, usersRes] = await Promise.all([
+      apiFetch(dashboardUrl),
+      apiFetch(usersUrl)
+    ]);
+
+    PR_TEAM_CAPACITY_CACHE.summary =
+      dashboardRes?.data?.summary || dashboardRes?.summary || {};
+
+    PR_TEAM_CAPACITY_CACHE.rows =
+      usersRes?.data?.rows || usersRes?.rows || [];
+
+    renderTeamCapacitySummary(PR_TEAM_CAPACITY_CACHE.summary);
+    renderTeamCapacityTable(PR_TEAM_CAPACITY_CACHE.rows);
+
+    const selectedStillExists = PR_TEAM_CAPACITY_CACHE.rows.some(
+      (r) => Number(r.user_id) === Number(PR_TEAM_CAPACITY_CACHE.selectedUserId)
+    );
+
+    if (!selectedStillExists) {
+      PR_TEAM_CAPACITY_CACHE.selectedUserId =
+        PR_TEAM_CAPACITY_CACHE.rows[0]?.user_id || null;
+    }
+
+    if (PR_TEAM_CAPACITY_CACHE.selectedUserId) {
+      await loadTeamCapacityUserDetail(me, PR_TEAM_CAPACITY_CACHE.selectedUserId);
+    } else {
+      PR_TEAM_CAPACITY_CACHE.selectedUserDetail = null;
+      renderTeamCapacityUserDetail(null);
+    }
+  } catch (err) {
+    console.error("loadTeamCapacityDashboard failed", err);
+
+
+    if (tableWrap) {
+      tableWrap.innerHTML = `
+        <div class="pr-table-state">
+          <div class="pr-empty-state__title">Could not load team capacity</div>
+          <div class="pr-empty-state__desc">${escapeHtml(err.message || "Request failed")}</div>
+        </div>
+      `;
+    }
+
+    renderTeamCapacitySummary({});
+    renderTeamCapacityUserDetail(null);
+  } finally {
+    PR_TEAM_CAPACITY_CACHE.loading = false;
+  }
+}
+
+async function loadTeamCapacityUserDetail(me, userId) {
+  if (!me?.company_id || !userId) return;
+
+  const companyId = me.company_id;
+  PR_TEAM_CAPACITY_CACHE.selectedUserId = userId;
+
+  renderTeamCapacityTable(PR_TEAM_CAPACITY_CACHE.rows);
+
+  const host = document.getElementById("prTeamCapacityUserDetail");
+  if (host) {
+    host.innerHTML = `<div class="pr-loading">Loading user detail…</div>`;
+  }
+
+  try {
+    const url = ENDPOINTS.engagements.capacityUser(companyId, userId, {
+      active_only: PR_TEAM_CAPACITY_CACHE.filters.active_only
+    });
+
+    const res = await apiFetch(url);
+    PR_TEAM_CAPACITY_CACHE.selectedUserDetail = res?.data || res || null;
+    renderTeamCapacityUserDetail(PR_TEAM_CAPACITY_CACHE.selectedUserDetail);
+  } catch (err) {
+    console.error("loadTeamCapacityUserDetail failed", err);
+    if (host) {
+      host.innerHTML = `
+        <div class="pr-empty-state">
+          <div class="pr-empty-state__title">Could not load user detail</div>
+          <div class="pr-empty-state__desc">${escapeHtml(err.message || "Request failed")}</div>
+        </div>
+      `;
+    }
+  }
+}
+
+function bindTeamCapacityEvents(me) {
+  if (PR_TEAM_CAPACITY_EVENTS_BOUND) return;
+  PR_TEAM_CAPACITY_EVENTS_BOUND = true;
+
+  document.addEventListener("click", async (event) => {
+    const refreshBtn = event.target.closest("#prTeamCapacityRefreshBtn");
+    if (refreshBtn) {
+      await loadTeamCapacityDashboard(me, { force: true });
+      return;
+    }
+
+    const applyBtn = event.target.closest("#prTeamCapacityApplyBtn");
+    if (applyBtn) {
+      syncTeamCapacityFiltersFromDom();
+      await loadTeamCapacityDashboard(me, { force: true });
+      return;
+    }
+
+    const resetBtn = event.target.closest("#prTeamCapacityResetBtn");
+    if (resetBtn) {
+      PR_TEAM_CAPACITY_CACHE.filters = {
+        q: "",
+        role_on_engagement: "",
+        active_only: true,
+        only_available: false,
+        only_overloaded: false,
+        limit: 100,
+        offset: 0
+      };
+      renderTeamCapacityScreen(me);
+      return;
+    }
+
+    const row = event.target.closest(".pr-team-capacity-row");
+    if (row) {
+      const userId = Number(row.dataset.userId || 0);
+      if (userId) {
+        await loadTeamCapacityUserDetail(me, userId);
+      }
+    }
+  });
+
+  document.addEventListener("keydown", async (event) => {
+    const row = event.target.closest(".pr-team-capacity-row");
+    if (!row) return;
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const userId = Number(row.dataset.userId || 0);
+      if (userId) {
+        await loadTeamCapacityUserDetail(me, userId);
+      }
+    }
+  });
+
+  document.addEventListener("change", (event) => {
+    if (
+      event.target?.id === "prTeamCapacityActiveOnly" ||
+      event.target?.id === "prTeamCapacityOnlyAvailable" ||
+      event.target?.id === "prTeamCapacityOnlyOverloaded" ||
+      event.target?.id === "prTeamCapacityRole"
+    ) {
+      syncTeamCapacityFiltersFromDom();
+    }
+  });
+
+  document.addEventListener("keydown", async (event) => {
+    if (event.target?.id === "prTeamCapacitySearch" && event.key === "Enter") {
+      syncTeamCapacityFiltersFromDom();
+      await loadTeamCapacityDashboard(me, { force: true });
+    }
   });
 }
+
+function syncTeamCapacityFiltersFromDom() {
+  const qEl = document.getElementById("prTeamCapacitySearch");
+  const roleEl = document.getElementById("prTeamCapacityRole");
+  const activeEl = document.getElementById("prTeamCapacityActiveOnly");
+  const availEl = document.getElementById("prTeamCapacityOnlyAvailable");
+  const overloadEl = document.getElementById("prTeamCapacityOnlyOverloaded");
+
+  PR_TEAM_CAPACITY_CACHE.filters.q = qEl?.value?.trim() || "";
+  PR_TEAM_CAPACITY_CACHE.filters.role_on_engagement = roleEl?.value || "";
+  PR_TEAM_CAPACITY_CACHE.filters.active_only = !!activeEl?.checked;
+  PR_TEAM_CAPACITY_CACHE.filters.only_available = !!availEl?.checked;
+  PR_TEAM_CAPACITY_CACHE.filters.only_overloaded = !!overloadEl?.checked;
+  PR_TEAM_CAPACITY_CACHE.filters.offset = 0;
+
+  if (PR_TEAM_CAPACITY_CACHE.filters.only_available) {
+    PR_TEAM_CAPACITY_CACHE.filters.only_overloaded = false;
+    if (overloadEl) overloadEl.checked = false;
+  }
+
+  if (PR_TEAM_CAPACITY_CACHE.filters.only_overloaded) {
+    PR_TEAM_CAPACITY_CACHE.filters.only_available = false;
+    if (availEl) availEl.checked = false;
+  }
+}
+
 
 function renderPortfolioReviewScreen(me) {
   renderManagerStubScreen(PR_NAV.portfolioReview, {
@@ -11587,7 +12237,7 @@ async function sendWorkingPaperToReview(workingPaperId) {
     throw new Error("Missing working paper context.");
   }
 
-  await apiFetch(API_ROUTES.workingPapers.setStatus(companyId, workingPaperId), {
+  await apiFetch(ENDPOINTS.workingPapers.setStatus(companyId, workingPaperId), {
     method: "POST",
     body: JSON.stringify({
       status: "in_review"
