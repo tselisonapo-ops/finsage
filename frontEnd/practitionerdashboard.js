@@ -1048,44 +1048,25 @@ async function loadEngagementAssignableUsers(companyId) {
   * Init
   * ==================================================== */
 async function enforcePractitionerAuth() {
-  let token = getAuthToken();
+  const token = getAuthToken();
   console.log("enforcePractitionerAuth: token =", token || null);
 
   if (!token) return null;
 
-  const onPractitionerPage =
-    /practitionerdashboard\.html$/i.test(location.pathname) ||
-    location.pathname.includes("practitionerdashboard.html");
-
   try {
     const payload = JSON.parse(atob(String(token).split(".")[1] || ""));
-    const isDelegated = !!payload?.is_delegated_company_access;
+    const isDelegated =
+      !!payload?.is_delegated_company_access ||
+      String(payload?.access_scope || "").toLowerCase() === "delegated_workspace";
 
-    // Only restore native token when truly booting practitioner shell
-    const returnCtx = (() => {
-      try {
-        return JSON.parse(localStorage.getItem("fs_pr_return_context") || "null");
-      } catch {
-        return null;
-      }
-    })();
+    const onPractitionerPage =
+      /practitionerdashboard\.html$/i.test(location.pathname) ||
+      location.pathname.includes("practitionerdashboard.html");
 
-    // Only restore native token on explicit return flow
-    if (onPractitionerPage && isDelegated && returnCtx) {
-      const homeToken =
-        sessionStorage.getItem("fs_home_token") ||
-        localStorage.getItem("fs_home_token") ||
-        "";
-
-      if (homeToken) {
-        window.setToken(homeToken, true);
-        sessionStorage.removeItem("fs_home_token");
-        localStorage.removeItem("fs_home_token");
-        localStorage.removeItem("fs_posting_context");
-        localStorage.removeItem("fs_pr_return_context");
-        token = getAuthToken();
-        console.log("enforcePractitionerAuth: restored native token from explicit return");
-      }
+    // Do NOT restore native token here.
+    // Only block practitioner shell while delegated token is active.
+    if (onPractitionerPage && isDelegated) {
+      console.warn("enforcePractitionerAuth: delegated token detected on practitioner page");
     }
   } catch (e) {
     console.warn("enforcePractitionerAuth: token decode failed", e);

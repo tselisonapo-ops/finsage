@@ -5427,6 +5427,7 @@ function getStoredUser() {
       }
 
       localStorage.removeItem("fs_posting_context");
+      localStorage.removeItem("fs_pr_return_context");
 
       window.location.href =
         ctx.returnTo || "practitionerdashboard.html#screen=assignments";
@@ -51193,7 +51194,7 @@ async function bootstrapApp(currentUser) {
       }
     }
   }
-  
+
   if (!resolvedCompanyId) {
     console.warn("bootstrapApp: logged in but NO company_id found; routing to company setup");
 
