@@ -1234,38 +1234,6 @@ def get_engagement_escalation_route(cid: int, escalation_id: int):
         current_app.logger.exception("get_engagement_escalation_route failed")
         return _json_err(str(e), 500)
     
-@engagements_bp.route(
-    "/api/companies/<int:cid>/engagement-escalations/<int:escalation_id>",
-    methods=["GET", "OPTIONS"],
-)
-@require_auth
-def get_engagement_escalation_route(cid: int, escalation_id: int):
-    if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
-
-    try:
-        company_id = int(cid)
-        payload = request.jwt_payload or {}
-
-        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
-        if deny:
-            return deny
-
-        with db_service._conn_cursor() as (conn, cur):
-            row = db_service.get_engagement_escalation(
-                cur,
-                company_id,
-                escalation_id=escalation_id,
-            )
-
-        if not row:
-            return _json_err("Escalation not found.", 404)
-
-        return _json_ok({"row": row})
-
-    except Exception as e:
-        current_app.logger.exception("get_engagement_escalation_route failed")
-        return _json_err(str(e), 500)
 
 @engagements_bp.route(
     "/api/companies/<int:cid>/engagement-escalations/<int:escalation_id>",
