@@ -1285,6 +1285,18 @@
     margin-bottom: 6px;
   }
 
+  .pr-table tr:hover {
+    background: #f8fafc;
+  }
+
+  .pr-table td {
+    padding: 16px 12px;
+  }
+
+  .pr-table th {
+    background: #f9fbfd;
+  }
+
   .pr-empty-state__desc {
     font-size: 13px;
     color: #64748b;
@@ -1292,7 +1304,7 @@
 
   .pr-portfolio-review-screen {
     display: grid;
-    gap: 18px;
+    gap: 22px;
   }
 
   .pr-filter-grid--portfolio {
@@ -1301,9 +1313,28 @@
 
   .pr-portfolio-review-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);
-    gap: 18px;
+    grid-template-columns: 2fr 1fr;
+    gap: 22px;
     align-items: start;
+  }
+
+  .pr-panel {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  }
+
+  .pr-portfolio-review-main {
+    padding: 22px;
+  }
+
+  .pr-portfolio-review-table-wrap {
+    margin-top: 14px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #edf2f7;
   }
 
   .pr-portfolio-review-table {
@@ -1444,6 +1475,21 @@
     color: #0f172a;
     resize: vertical;
     min-height: 110px;
+  }
+
+  .pr-modal.hidden {
+    display: none !important;
+  }
+
+  .pr-team-capacity-summary,
+  .pr-portfolio-review-summary {
+    display: block;
+  }
+
+  .pr-client-risk-list,
+  .pr-detail-list {
+    display: grid;
+    gap: 10px;
   }
 
   @media (max-width: 1280px) {
