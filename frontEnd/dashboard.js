@@ -5580,8 +5580,6 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
   if (!wrap || !select) return;
 
-  // In delegated mode, show the control if you want it to act as "return to practitioner"
-  // otherwise keep hidden. This version allows explicit return.
   if (isDelegatedPosting) {
     wrap.classList.remove("hidden");
     wrap.style.display = "block";
@@ -5593,7 +5591,7 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     `;
     select.value = "internal";
 
-    select.onchange = async () => {
+    select.onchange = () => {
       const next = String(select.value || "").toLowerCase();
 
       if (next === "internal") {
@@ -5602,63 +5600,11 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       }
 
       if (next === "practitioner") {
-        try {
-          console.log("=== RETURN TO PRACTITIONER START ===");
-
-          const beforeToken = window.getToken?.();
-          console.log("BEFORE restore token:", beforeToken);
-
-          const res = await apiFetch(ENDPOINTS.auth.restoreNative, {
-            method: "POST",
-          });
-
-          console.log("RESTORE RESPONSE RAW:", res);
-
-          if (!res?.ok || !res?.token) {
-            throw new Error(res?.error || "Failed to restore native context");
-          }
-
-          // 🔥 decode returned token BEFORE setting it
-          try {
-            const payload = JSON.parse(atob(res.token.split(".")[1]));
-            console.log("NEW TOKEN PAYLOAD (BEFORE SET):", payload);
-          } catch (e) {
-            console.warn("Failed to decode returned token", e);
-          }
-
-          window.setToken(res.token, true);
-
-          const afterToken = window.getToken?.();
-          console.log("AFTER setToken():", afterToken);
-
-          // 🔥 decode AFTER setting
-          try {
-            const payload = JSON.parse(atob(afterToken.split(".")[1]));
-            console.log("ACTIVE TOKEN PAYLOAD (AFTER SET):", payload);
-          } catch (e) {}
-
-          // cleanup
-          localStorage.removeItem("fs_posting_context");
-          localStorage.removeItem("fs_home_token");
-          localStorage.removeItem("company_id");
-
-          window.__FS_DELEGATED_POSTING__ = false;
-          window.__FS_POSTING_CONTEXT__ = null;
-          window.__FS_TARGET_COMPANY_ID__ = null;
-          window.__FS_SOURCE_COMPANY_ID__ = null;
-          window.__PR_ACTIVE_COMPANY_ID__ = null;
-
-          window.currentUser = null;
-          localStorage.removeItem("fs_user");
-          sessionStorage.removeItem("fs_user");
-
-          console.log("=== CLEANUP COMPLETE ===");
-
-          window.location.href = "practitionerdashboard.html#screen=assignments";
-        } catch (e) {
+        returnToPractitionerNative().catch((e) => {
           console.error("FAILED RETURN FLOW", e);
           select.value = "internal";
-        }
+        });
+        return;
       }
     };
 
