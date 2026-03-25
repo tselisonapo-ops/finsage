@@ -11296,11 +11296,14 @@ async function renderWorkingPapersScreen(me) {
 }
 
 function renderTeamCapacityScreen(me) {
-  const host = document.getElementById("practitionerScreen");
-  if (!host) return;
+  const host = document.getElementById("screen-team-capacity");
+  if (!host) {
+    console.warn("screen-team-capacity host not found");
+    return;
+  }
 
   host.innerHTML = `
-    <section class="pr-screen pr-team-capacity-screen">
+    <div class="pr-screen pr-team-capacity-screen">
       <div class="pr-screen__hero">
         <div>
           <h1 class="pr-screen__title">Team Capacity</h1>
@@ -11402,7 +11405,7 @@ function renderTeamCapacityScreen(me) {
           </div>
         </aside>
       </div>
-    </section>
+    </div>
   `;
 
   const roleEl = document.getElementById("prTeamCapacityRole");
