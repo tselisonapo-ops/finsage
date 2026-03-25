@@ -13328,11 +13328,7 @@ async function initPractitioner() {
     window.currentUser = me;
     localStorage.setItem("fs_user", JSON.stringify(me || {}));
 
-    if (window.__STOP_REDIRECTS__) {
-      console.warn("[REDIRECT BLOCKED] initPractitioner delegated -> dashboard.html");
-    } else {
-      window.location.replace("dashboard.html");
-    }
+    window.location.replace("dashboard.html");
     return;
   }
 
