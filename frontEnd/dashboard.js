@@ -5356,7 +5356,7 @@ function getStoredUser() {
     host.classList.remove("hidden");
     host.textContent = engagementName;
   }
-  
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -5678,26 +5678,10 @@ function renderPostingDashboardContextBanner(mount, me, postingCtx = null) {
     Number(window.CURRENT_COMPANY_ID || 0) ||
     0;
 
-  const customerName =
-    ctx.customerName ||
-    ctx.engagement?.customer_name ||
-    me?.customer_name ||
-    "--";
-
   const engagementName =
     ctx.engagementName ||
     ctx.engagement?.engagement_name ||
     "--";
-
-  const engagementCode =
-    ctx.engagementCode ||
-    ctx.engagement?.engagement_code ||
-    "--";
-
-  const workspaceStatus =
-    ctx.workspaceStatus ||
-    ctx.engagement?.workspace_status ||
-    "";
 
   const companyLabel =
     ctx.companyName ||
@@ -5722,23 +5706,10 @@ function renderPostingDashboardContextBanner(mount, me, postingCtx = null) {
   }
 
   mount.innerHTML = `
-    <div class="card p-6 border border-amber-200 bg-amber-50/60">
+    <div class="card p-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div class="panel-title">Delegated Posting Workspace</div>
-          <div class="panel-subtitle mt-1">
-            Client: ${esc(customerName)} ·
-            Engagement: ${esc(engagementName)} (${esc(engagementCode)}) ·
-            Target Company: ${esc(companyLabel)}${activeCompanyId ? ` (#${esc(String(activeCompanyId))})` : ""}
-          </div>
-          ${
-            workspaceStatus
-              ? `<div class="text-xs text-amber-700 mt-2">Workspace status: ${esc(workspaceStatus)}</div>`
-              : ""
-          }
-        </div>
-        <div class="text-xs px-2 py-1 rounded-full border border-amber-300 text-amber-800 bg-white">
-          Delegated access
+          <div class="panel-title">${esc(engagementName || "Engagement")}</div>
         </div>
       </div>
     </div>
