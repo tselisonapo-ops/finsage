@@ -2,37 +2,44 @@
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
 
-  if (typeof window.getToken !== "function") {
-    window.getToken = function () {
-      return (
-        sessionStorage.getItem(TOKEN_KEY) ||
-        localStorage.getItem(TOKEN_KEY) ||
-        ""
-      );
-    };
-  }
+  window.getToken = function () {
+    return (
+      localStorage.getItem(TOKEN_KEY) ||
+      sessionStorage.getItem(TOKEN_KEY) ||
+      ""
+    );
+  };
 
-  if (typeof window.setToken !== "function") {
-    window.setToken = function (token, persist = true) {
-      if (!token) return;
-      (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
-    };
-  }
+  window.setToken = function (token, persist = true) {
+    if (!token) return;
 
-  if (typeof window.clearToken !== "function") {
-    window.clearToken = function () {
-      sessionStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-    };
-  }
+    // always clear old copies first so one source of truth remains
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+
+    (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+  };
+
+  window.clearToken = function () {
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+  };
 
   console.log("[bootstrap] typeof window.getToken =", typeof window.getToken);
+  console.log("[bootstrap] token source", {
+    local: !!localStorage.getItem(TOKEN_KEY),
+    session: !!sessionStorage.getItem(TOKEN_KEY),
+    path: window.location.pathname,
+  });
 
-  // 🚀 Redirect guard
   if (!window.getToken() && !window.location.pathname.includes("signin")) {
+    console.warn("[bootstrap] no token found, redirecting to /signin", {
+      path: window.location.pathname,
+      local: !!localStorage.getItem(TOKEN_KEY),
+      session: !!sessionStorage.getItem(TOKEN_KEY),
+    });
     window.location.href = "/signin";
-    console.log("Token:", window.getToken());
-    console.log("Path:", window.location.pathname);
+    return;
   }
 })();
 
