@@ -5569,6 +5569,7 @@ async function returnToPractitionerNative() {
 function initDashboardModeSwitcher(currentMode = "internal") {
   const wrap = document.getElementById("dashboardModeSwitcherWrap");
   const select = document.getElementById("dashboardModeSwitcher");
+  if (!wrap || !select) return;
 
   let me = null;
   try {
@@ -5582,16 +5583,25 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
   const postingCtx =
     window.__FS_POSTING_CONTEXT__ ||
+    window.__PR_POSTING_CONTEXT__ ||
     window.FS_DELEGATED_WORKSPACE?.getPostingContext?.() ||
     window.restorePostingContext?.() ||
     null;
 
-  const isDelegatedPosting =
-    currentMode === "delegated" ||
-    !!window.__FS_DELEGATED_POSTING__ ||
-    !!postingCtx;
+  const delegatedFromCtx =
+    !!postingCtx &&
+    (
+      postingCtx.accessMode === "delegated_workspace" ||
+      postingCtx.launchMode === "posting" ||
+      postingCtx.mode === "delegated" ||
+      Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0 &&
+      !!postingCtx.engagementName
+    );
 
-  if (!wrap || !select) return;
+  const isDelegatedPosting =
+    String(currentMode || "").toLowerCase() === "delegated" ||
+    !!window.__FS_DELEGATED_POSTING__ ||
+    delegatedFromCtx;
 
   if (isDelegatedPosting) {
     wrap.classList.add("hidden");
@@ -5622,10 +5632,22 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       : "internal";
 
   select.onchange = () => {
+    const liveCtx =
+      window.__FS_POSTING_CONTEXT__ ||
+      window.__PR_POSTING_CONTEXT__ ||
+      window.FS_DELEGATED_WORKSPACE?.getPostingContext?.() ||
+      null;
+
     const delegatedNow =
       !!window.__FS_DELEGATED_POSTING__ ||
-      !!window.__FS_POSTING_CONTEXT__ ||
-      !!window.FS_DELEGATED_WORKSPACE?.getPostingContext?.();
+      (
+        !!liveCtx &&
+        (
+          liveCtx.accessMode === "delegated_workspace" ||
+          liveCtx.launchMode === "posting" ||
+          liveCtx.mode === "delegated"
+        )
+      );
 
     if (delegatedNow) {
       console.warn("Blocked mode switch during delegated workspace");
