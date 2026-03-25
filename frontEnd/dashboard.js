@@ -5557,11 +5557,69 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
   if (!wrap || !select) return;
 
+  // In delegated mode, show the control if you want it to act as "return to practitioner"
+  // otherwise keep hidden. This version allows explicit return.
   if (isDelegatedPosting) {
-    wrap.classList.add("hidden");
-    wrap.style.display = "none";
-    select.disabled = true;
-    select.onchange = null;
+    wrap.classList.remove("hidden");
+    wrap.style.display = "block";
+    select.disabled = false;
+
+    select.innerHTML = `
+      <option value="internal">Internal Dashboard</option>
+      <option value="practitioner">Practitioner Dashboard</option>
+    `;
+    select.value = "internal";
+
+    select.onchange = () => {
+      const next = String(select.value || "").toLowerCase();
+
+      if (next === "internal") {
+        select.value = "internal";
+        return;
+      }
+
+      if (next === "practitioner") {
+        const homeToken =
+          sessionStorage.getItem("fs_home_token") ||
+          localStorage.getItem("fs_home_token") ||
+          "";
+
+        if (!homeToken) {
+          console.warn("No native token found for practitioner return");
+          select.value = "internal";
+          return;
+        }
+
+        const returnCtx = {
+          companyId: Number(
+            postingCtx?.sourceCompanyId ||
+            me?.source_company_id ||
+            0
+          ) || null,
+          engagementId: Number(
+            postingCtx?.engagementId ||
+            me?.engagement_id ||
+            0
+          ) || null,
+          customerId: Number(postingCtx?.customerId || 0) || null,
+          engagement: postingCtx?.engagement || null,
+          returnScreen: "assignments",
+        };
+
+        localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+
+        window.setToken(homeToken, true);
+        sessionStorage.removeItem("fs_home_token");
+        localStorage.removeItem("fs_home_token");
+        localStorage.removeItem("fs_posting_context");
+        window.__FS_DELEGATED_POSTING__ = false;
+        window.__FS_POSTING_CONTEXT__ = null;
+
+        window.location.href =
+          postingCtx?.returnTo || "practitionerdashboard.html#screen=assignments";
+      }
+    };
+
     return;
   }
 
@@ -5584,17 +5642,6 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       : "internal";
 
   select.onchange = () => {
-    const delegatedNow =
-      !!window.__FS_DELEGATED_POSTING__ ||
-      !!window.__FS_POSTING_CONTEXT__ ||
-      !!window.FS_DELEGATED_WORKSPACE?.getPostingContext?.();
-
-    if (delegatedNow) {
-      console.warn("Blocked mode switch during delegated workspace");
-      select.value = "internal";
-      return;
-    }
-
     const next = String(select.value || "").toLowerCase();
 
     if (next === "internal") {
