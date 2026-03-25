@@ -2486,6 +2486,23 @@ def enter_engagement_workspace(engagement_id: int):
         is_native_company_member=False,
     )
 
+    import jwt
+
+    try:
+        decoded = jwt.decode(delegated_token, options={"verify_signature": False})
+        app.logger.warning("ENTER_WORKSPACE TOKEN DEBUG decoded=%s", decoded)
+    except Exception as e:
+        app.logger.warning("ENTER_WORKSPACE TOKEN DEBUG decode_failed=%s", e)
+
+    app.logger.warning(
+        "ENTER_WORKSPACE RESPONSE user_id=%s source_company_id=%s target_company_id=%s engagement_id=%s delegated_permissions=%s",
+        user_id,
+        source_company_id,
+        target_company_id,
+        engagement_id,
+        delegated_permissions,
+    )
+    
     return _corsify(make_response(jsonify({
         "ok": True,
         "token": delegated_token,

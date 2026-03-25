@@ -3829,8 +3829,15 @@ window.enterEngagementWorkspace = async function (engagementId, sourceCompanyId)
     throw new Error(res?.error || "Failed to enter workspace");
   }
 
-  // ✅ CRITICAL FIX
+  console.log("ENTER WORKSPACE RAW RESPONSE", res);
+
   window.setToken(res.token, true);
+
+  console.log("TOKEN AFTER SET", {
+    getToken: window.getToken?.(),
+    local: localStorage.getItem("fs_user_token"),
+    session: sessionStorage.getItem("fs_user_token"),
+  });
 
   return res;
 };
@@ -10057,7 +10064,8 @@ async function openPostingForEngagement(row, me) {
 
   // ask backend for delegated workspace token
   const res = await window.enterEngagementWorkspace(engagementId, sourceCompanyId);
-
+  console.log("POST ENTER WORKSPACE RES", res);
+  
   if (!res?.ok || !res?.token) {
     throw new Error(res?.error || "Failed to enter delegated workspace");
   }
