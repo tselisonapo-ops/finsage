@@ -2538,6 +2538,7 @@ def restore_native_context():
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
+    app.logger.warning("RESTORE_NATIVE incoming payload=%s", payload)
 
     user_id = payload.get("user_id") or payload.get("sub")
     user_id = int(user_id) if user_id is not None else None
@@ -2549,6 +2550,7 @@ def restore_native_context():
         payload.get("access_scope") == "delegated_workspace"
     )
     if not is_delegated:
+        app.logger.warning("RESTORE_NATIVE rejected: not delegated payload=%s", payload)
         return _corsify(make_response(jsonify({"error": "AUTH|not_in_delegated_workspace"}), 400))
 
     source_company_id = payload.get("source_company_id")
@@ -2558,10 +2560,12 @@ def restore_native_context():
         source_company_id = None
 
     if not source_company_id:
+        app.logger.warning("RESTORE_NATIVE rejected: missing source_company_id payload=%s", payload)
         return _corsify(make_response(jsonify({"error": "AUTH|missing_source_company_id"}), 400))
 
     base_user = db_service.get_user_by_id(int(user_id)) or {}
     if not base_user:
+        app.logger.warning("RESTORE_NATIVE rejected: user not found user_id=%s", user_id)
         return _corsify(make_response(jsonify({"error": "AUTH|user_not_found"}), 404))
 
     native_ctx = db_service.get_user_context(
@@ -2569,6 +2573,11 @@ def restore_native_context():
         company_id=int(source_company_id),
     )
     if not native_ctx:
+        app.logger.warning(
+            "RESTORE_NATIVE rejected: no native company access user_id=%s source_company_id=%s",
+            user_id,
+            source_company_id,
+        )
         return _corsify(make_response(jsonify({"error": "AUTH|no_native_company_access"}), 403))
 
     native_permissions = native_ctx.get("permissions") or {}
@@ -2586,6 +2595,20 @@ def restore_native_context():
         last_name=base_user.get("last_name"),
         is_delegated_company_access=False,
         is_native_company_member=True,
+    )
+
+    try:
+        import jwt
+        decoded = jwt.decode(native_token, options={"verify_signature": False})
+        app.logger.warning("RESTORE_NATIVE issued token payload=%s", decoded)
+    except Exception as e:
+        app.logger.warning("RESTORE_NATIVE token decode failed error=%s", e)
+
+    app.logger.warning(
+        "RESTORE_NATIVE success user_id=%s source_company_id=%s access_scope=%s",
+        user_id,
+        source_company_id,
+        native_ctx.get("access_scope") or "assignment",
     )
 
     return _corsify(make_response(jsonify({

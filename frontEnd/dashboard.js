@@ -5603,21 +5603,41 @@ function initDashboardModeSwitcher(currentMode = "internal") {
 
       if (next === "practitioner") {
         try {
-          console.log("Restoring native context via API...");
+          console.log("=== RETURN TO PRACTITIONER START ===");
+
+          const beforeToken = window.getToken?.();
+          console.log("BEFORE restore token:", beforeToken);
 
           const res = await apiFetch(ENDPOINTS.auth.restoreNative, {
             method: "POST",
           });
 
+          console.log("RESTORE RESPONSE RAW:", res);
+
           if (!res?.ok || !res?.token) {
             throw new Error(res?.error || "Failed to restore native context");
           }
 
-          console.log("RESTORE NATIVE RESPONSE", res);
+          // 🔥 decode returned token BEFORE setting it
+          try {
+            const payload = JSON.parse(atob(res.token.split(".")[1]));
+            console.log("NEW TOKEN PAYLOAD (BEFORE SET):", payload);
+          } catch (e) {
+            console.warn("Failed to decode returned token", e);
+          }
 
-          // ✅ set new native token
           window.setToken(res.token, true);
 
+          const afterToken = window.getToken?.();
+          console.log("AFTER setToken():", afterToken);
+
+          // 🔥 decode AFTER setting
+          try {
+            const payload = JSON.parse(atob(afterToken.split(".")[1]));
+            console.log("ACTIVE TOKEN PAYLOAD (AFTER SET):", payload);
+          } catch (e) {}
+
+          // cleanup
           localStorage.removeItem("fs_posting_context");
           localStorage.removeItem("fs_home_token");
           localStorage.removeItem("company_id");
@@ -5632,17 +5652,11 @@ function initDashboardModeSwitcher(currentMode = "internal") {
           localStorage.removeItem("fs_user");
           sessionStorage.removeItem("fs_user");
 
-          // optional return context
-          const returnCtx = {
-            companyId: res.company_id || null,
-            returnScreen: "assignments",
-          };
-          localStorage.setItem("fs_pr_return_context", JSON.stringify(returnCtx));
+          console.log("=== CLEANUP COMPLETE ===");
 
-          // go back to practitioner
           window.location.href = "practitionerdashboard.html#screen=assignments";
         } catch (e) {
-          console.error("Failed to restore native workspace", e);
+          console.error("FAILED RETURN FLOW", e);
           select.value = "internal";
         }
       }
