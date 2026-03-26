@@ -16154,21 +16154,33 @@ async function loadEngagementAcceptanceRows(me) {
   const filters = PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters || {};
   const tbody = document.getElementById("eaTableBody");
   if (tbody) {
-    tbody.innerHTML = `<tr><td colspan="9" class="muted">Loading…</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">Loading...</td></tr>`;
   }
 
   try {
-    const rows = await apiFetch(
+    const res = await apiFetch(
       ENDPOINTS.engagementAcceptance.list(companyId, filters)
     );
 
-    PR_ENGAGEMENT_ACCEPTANCE_CACHE.rows = Array.isArray(rows) ? rows : [];
+    const rows =
+      Array.isArray(res) ? res :
+      Array.isArray(res?.rows) ? res.rows :
+      Array.isArray(res?.items) ? res.items :
+      [];
+
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.rows = rows;
     renderEngagementAcceptanceRows();
+
+    const selectedId = PR_ENGAGEMENT_ACCEPTANCE_CACHE.selectedRow?.id;
+    if (selectedId && rows.some((r) => Number(r.id) === Number(selectedId))) {
+      markSelectedAcceptanceRow(selectedId);
+    }
   } catch (err) {
     console.error("loadEngagementAcceptanceRows failed", err);
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-danger">${escapeHtml(err.message || "Failed to load items")}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="text-danger">${escapeHtml(err.message || "Failed to load items")}</td></tr>`;
     }
+    renderEngagementAcceptanceStats([]);
   }
 }
 
@@ -16233,23 +16245,30 @@ async function openEngagementAcceptanceDetail(me, acceptanceId) {
   const companyId = me?.company_id || window.currentUser?.company_id;
   if (!companyId || !acceptanceId) return;
 
-  const detailCard = document.getElementById("eaDetailCard");
-  if (detailCard) {
-    detailCard.innerHTML = `<div class="muted">Loading detail…</div>`;
+  const detailHost = document.getElementById("eaDetailHost");
+  if (detailHost) {
+    detailHost.innerHTML = `<div class="empty-state">Loading detail...</div>`;
   }
 
   try {
-    const row = await apiFetch(
+    const res = await apiFetch(
       ENDPOINTS.engagementAcceptance.get(companyId, acceptanceId)
     );
 
+    const row = res?.row || res || null;
+    if (!row) {
+      throw new Error("Acceptance detail not found.");
+    }
+
     PR_ENGAGEMENT_ACCEPTANCE_CACHE.selectedRow = row;
     PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail = row;
+
+    markSelectedAcceptanceRow(acceptanceId);
     renderEngagementAcceptanceDetail(row);
   } catch (err) {
     console.error("openEngagementAcceptanceDetail failed", err);
-    if (detailCard) {
-      detailCard.innerHTML = `<div class="text-danger">${escapeHtml(err.message || "Failed to load detail")}</div>`;
+    if (detailHost) {
+      detailHost.innerHTML = `<div class="text-danger">${escapeHtml(err.message || "Failed to load detail")}</div>`;
     }
   }
 }
@@ -16258,11 +16277,20 @@ function renderEngagementAcceptanceDetail(row) {
   const host = document.getElementById("eaDetailHost");
   if (!host) return;
 
+  const status = String(row.status || "").toLowerCase();
+  const canSubmit = status === "draft" || status === "returned";
+  const canDecide = status === "submitted" || status === "under_review";
+
   host.innerHTML = `
     <div class="detail-grid">
       <div class="detail-card">
         <div class="detail-label">Customer</div>
         <div class="detail-value">${escapeHtml(row.customer_name || "-")}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Type</div>
+        <div class="detail-value">${escapeHtml(titleize(row.acceptance_type || "-"))}</div>
       </div>
 
       <div class="detail-card">
@@ -16273,11 +16301,6 @@ function renderEngagementAcceptanceDetail(row) {
       <div class="detail-card">
         <div class="detail-label">Status</div>
         <div class="detail-value">${escapeHtml(titleize((row.status || "-").replaceAll("_", " ")))}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Decision</div>
-        <div class="detail-value">${escapeHtml(titleize((row.decision || "-").replaceAll("_", " ")))}</div>
       </div>
 
       <div class="detail-card">
@@ -16322,12 +16345,21 @@ function renderEngagementAcceptanceDetail(row) {
     </div>
 
     <div class="detail-actions">
-      <button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>
-      <button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}">Approve</button>
-      <button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>
-      <button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>
+      ${canSubmit ? `<button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>` : ""}
+      ${canDecide ? `<button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}">Approve</button>` : ""}
+      ${canDecide ? `<button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>` : ""}
+      ${canDecide ? `<button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>` : ""}
     </div>
   `;
+}
+
+function markSelectedAcceptanceRow(id) {
+  document.querySelectorAll("#eaTableBody tr[data-ea-id]").forEach((tr) => {
+    tr.classList.toggle(
+      "is-selected",
+      Number(tr.getAttribute("data-ea-id")) === Number(id)
+    );
+  });
 }
 
 function bindEngagementAcceptanceScreen(me) {
@@ -16345,6 +16377,8 @@ function bindEngagementAcceptanceScreen(me) {
         document.getElementById("eaStatusFilter")?.value || "";
       PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters.risk_level =
         document.getElementById("eaRiskFilter")?.value || "";
+      PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters.ready_only =
+        !!document.getElementById("eaReadyOnly")?.checked;
 
       await loadEngagementAcceptanceRows(me);
     };
@@ -16369,6 +16403,7 @@ function bindEngagementAcceptanceScreen(me) {
         acceptance_type: "",
         status: "",
         risk_level: "",
+        ready_only: false,
         active_only: true,
         limit: 100,
         offset: 0
