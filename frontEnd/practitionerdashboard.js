@@ -821,14 +821,16 @@ const ENDPOINTS = {
         active_only = true,
         horizon_days = 60
       } = {}
-    ) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
-      params.set("active_only", active_only ? "true" : "false");
-      params.set("horizon_days", String(horizon_days));
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/summary?${params.toString()}`;
-    },
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/summary`,
+        {
+          q,
+          role_on_engagement,
+          active_only,
+          horizon_days
+        }
+      ),
 
     peaks: (
       companyId,
@@ -840,16 +842,18 @@ const ENDPOINTS = {
         limit = 100,
         offset = 0
       } = {}
-    ) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
-      params.set("active_only", active_only ? "true" : "false");
-      params.set("horizon_days", String(horizon_days));
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/peaks?${params.toString()}`;
-    },
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/peaks`,
+        {
+          q,
+          role_on_engagement,
+          active_only,
+          horizon_days,
+          limit,
+          offset
+        }
+      ),
 
     coverageGaps: (
       companyId,
@@ -860,17 +864,19 @@ const ENDPOINTS = {
         limit = 100,
         offset = 0
       } = {}
-    ) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      params.set("active_only", active_only ? "true" : "false");
-      params.set("horizon_days", String(horizon_days));
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/coverage-gaps?${params.toString()}`;
-    },
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/coverage-gaps`,
+        {
+          q,
+          active_only,
+          horizon_days,
+          limit,
+          offset
+        }
+      ),
 
-    reallocationOpportunities: (
+    reallocation: (
       companyId,
       {
         q = "",
@@ -880,16 +886,18 @@ const ENDPOINTS = {
         limit = 100,
         offset = 0
       } = {}
-    ) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
-      params.set("active_only", active_only ? "true" : "false");
-      params.set("horizon_days", String(horizon_days));
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/reallocation-opportunities?${params.toString()}`;
-    },
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/reallocation-opportunities`,
+        {
+          q,
+          role_on_engagement,
+          active_only,
+          horizon_days,
+          limit,
+          offset
+        }
+      ),
 
     schedule: (
       companyId,
@@ -898,23 +906,25 @@ const ENDPOINTS = {
         role_on_engagement = "",
         active_only = true,
         horizon_days = 60,
-        only_overloaded = false,
         only_available = false,
+        only_overloaded = false,
         limit = 100,
         offset = 0
       } = {}
-    ) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
-      params.set("active_only", active_only ? "true" : "false");
-      params.set("horizon_days", String(horizon_days));
-      params.set("only_overloaded", only_overloaded ? "true" : "false");
-      params.set("only_available", only_available ? "true" : "false");
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/schedule?${params.toString()}`;
-    },
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/schedule`,
+        {
+          q,
+          role_on_engagement,
+          active_only,
+          horizon_days,
+          only_available,
+          only_overloaded,
+          limit,
+          offset
+        }
+      ),
 
     dashboard: (
       companyId,
@@ -926,16 +936,18 @@ const ENDPOINTS = {
         limit = 100,
         offset = 0
       } = {}
-    ) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
-      params.set("active_only", active_only ? "true" : "false");
-      params.set("horizon_days", String(horizon_days));
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning?${params.toString()}`;
-    }
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning`,
+        {
+          q,
+          role_on_engagement,
+          active_only,
+          horizon_days,
+          limit,
+          offset
+        }
+      )
   },
 
   analytics: {
