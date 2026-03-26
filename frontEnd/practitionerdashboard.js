@@ -16391,6 +16391,24 @@ function titleize(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function formatShortDate(value) {
+  if (!value) return "-";
+
+  try {
+    const d = new Date(value);
+
+    if (isNaN(d.getTime())) return "-";
+
+    return d.toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  } catch {
+    return "-";
+  }
+}
+
 function renderEngagementAcceptanceRows() {
   const tbody = document.getElementById("eaTableBody");
   if (!tbody) return;
