@@ -38,7 +38,7 @@ def approval_center_summary_route(cid: int):
             return deny
 
         q = (request.args.get("q") or "").strip()
-        queue_type = (request.args.get("queue_type") or "").strip().lower()
+        module = (request.args.get("module") or "").strip().lower()
         status = (request.args.get("status") or "").strip().lower()
         ready_only = _ac_bool(request.args.get("ready_only"), False)
         blockers_only = _ac_bool(request.args.get("blockers_only"), False)
@@ -49,7 +49,7 @@ def approval_center_summary_route(cid: int):
                 cur,
                 company_id,
                 q=q,
-                queue_type=queue_type,
+                module=module,
                 status=status,
                 ready_only=ready_only,
                 blockers_only=blockers_only,
@@ -63,7 +63,6 @@ def approval_center_summary_route(cid: int):
     except Exception as e:
         current_app.logger.exception("approval_center_summary_route failed")
         return _json_err(str(e), 500)
-
 
 @approval_center_bp.route(
     "/api/companies/<int:cid>/approval-center/list",
@@ -83,7 +82,7 @@ def approval_center_list_route(cid: int):
             return deny
 
         q = (request.args.get("q") or "").strip()
-        queue_type = (request.args.get("queue_type") or "").strip().lower()
+        module = (request.args.get("module") or "").strip().lower()
         status = (request.args.get("status") or "").strip().lower()
         ready_only = _ac_bool(request.args.get("ready_only"), False)
         blockers_only = _ac_bool(request.args.get("blockers_only"), False)
@@ -96,7 +95,7 @@ def approval_center_list_route(cid: int):
                 cur,
                 company_id,
                 q=q,
-                queue_type=queue_type,
+                module=module,
                 status=status,
                 ready_only=ready_only,
                 blockers_only=blockers_only,
@@ -112,8 +111,7 @@ def approval_center_list_route(cid: int):
     except Exception as e:
         current_app.logger.exception("approval_center_list_route failed")
         return _json_err(str(e), 500)
-
-
+    
 @approval_center_bp.route(
     "/api/companies/<int:cid>/approval-center/<queue_type>/<int:source_id>",
     methods=["GET", "OPTIONS"],

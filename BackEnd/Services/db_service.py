@@ -48788,52 +48788,59 @@ class DatabaseService:
                 SELECT DISTINCT ON (d.approval_request_id)
                     d.approval_request_id,
                     LOWER(COALESCE(d.decision, '')) AS last_action,
-                    d.comment AS decision_comment,
-                    d.actor_user_id AS decision_actor_user_id,
-                    d.created_at AS decision_created_at
+                    d.note AS decision_note,
+                    d.decided_by_user_id,
+                    d.decided_at
                 FROM {schema}.approval_decisions d
                 WHERE d.company_id = %s
-                ORDER BY d.approval_request_id, d.created_at DESC, d.id DESC
+                ORDER BY d.approval_request_id, d.decided_at DESC, d.id DESC
             ),
             request_items AS (
                 SELECT
                     ar.id AS source_id,
-                    LOWER(COALESCE(ar.request_type, 'approval')) AS queue_type,
+                    LOWER(COALESCE(ar.module, '')) AS queue_type,
                     ar.company_id,
-                    ar.engagement_id,
+                    NULLIF(COALESCE(ar.payload_json ->> 'engagement_id', ''), '')::INT AS engagement_id,
                     ar.entity_type,
                     ar.entity_id,
                     ar.entity_ref,
                     ar.module,
                     ar.action,
-                    ar.title,
-                    ar.description,
+                    COALESCE(
+                        NULLIF(ar.payload_json ->> 'title', ''),
+                        NULLIF(ar.entity_ref, ''),
+                        CONCAT(ar.entity_type, ' ', ar.entity_id)
+                    ) AS title,
+                    COALESCE(
+                        NULLIF(ar.payload_json ->> 'description', ''),
+                        NULLIF(ar.decision_note, ''),
+                        ''
+                    ) AS description,
                     LOWER(COALESCE(ar.status, 'pending')) AS status,
-                    LOWER(COALESCE(ar.priority, 'normal')) AS priority,
                     LOWER(COALESCE(ar.risk_level, 'low')) AS risk_band,
                     ar.requested_by_user_id,
-                    ar.assigned_user_id AS assigned_reviewer_user_id,
-                    ar.approver_user_id AS assigned_manager_user_id,
+                    NULL::INT AS assigned_reviewer_user_id,
+                    ar.decided_by_user_id AS assigned_manager_user_id,
                     ar.amount,
                     ar.currency,
-                    ar.due_date,
+                    NULL::DATE AS due_date,
                     ar.payload_json,
+                    ar.requested_at,
                     ar.created_at,
                     ar.updated_at,
                     ld.last_action,
-                    ld.decision_comment AS manager_comment
+                    COALESCE(ld.decision_note, ar.decision_note) AS manager_comment
                 FROM {schema}.approval_requests ar
                 LEFT JOIN last_decision ld
                 ON ld.approval_request_id = ar.id
                 WHERE ar.company_id = %s
-                AND (%s = FALSE OR COALESCE(ar.is_active, TRUE) = TRUE)
-                AND (%s = '' OR LOWER(COALESCE(ar.request_type, 'approval')) = %s)
+                AND (%s = '' OR LOWER(COALESCE(ar.module, '')) = %s)
                 AND (%s = '' OR LOWER(COALESCE(ar.status, 'pending')) = %s)
                 AND (
                         %s = ''
-                        OR COALESCE(ar.title, '') ILIKE %s
-                        OR COALESCE(ar.description, '') ILIKE %s
                         OR COALESCE(ar.entity_ref, '') ILIKE %s
+                        OR COALESCE(ar.entity_type, '') ILIKE %s
+                        OR COALESCE(ar.action, '') ILIKE %s
                         OR COALESCE(ar.module, '') ILIKE %s
                     )
             ),
@@ -48861,7 +48868,6 @@ class DatabaseService:
                     r.title,
                     r.description,
                     r.status,
-                    r.priority,
                     r.risk_band,
                     r.requested_by_user_id,
                     r.assigned_reviewer_user_id,
@@ -48870,6 +48876,7 @@ class DatabaseService:
                     r.currency,
                     r.due_date,
                     r.payload_json,
+                    r.requested_at,
                     r.created_at,
                     r.updated_at,
                     r.last_action,
@@ -48893,7 +48900,7 @@ class DatabaseService:
                 SELECT
                     *,
                     CASE
-                        WHEN LOWER(COALESCE(status, '')) IN ('approved', 'released') THEN TRUE
+                        WHEN status IN ('approved') THEN TRUE
                         WHEN overdue_deliverables = 0
                         AND open_escalations = 0
                         AND pending_signoff_steps = 0
@@ -48911,11 +48918,11 @@ class DatabaseService:
         company_id: int,
         *,
         q: str = "",
-        queue_type: str = "",
+        module: str = "",
         status: str = "",
         ready_only: bool = False,
         blockers_only: bool = False,
-        active_only: bool = True,
+        active_only: bool = True,  # kept for compatibility
     ):
         schema = self.company_schema(company_id)
         base_sql = self._approval_center_base_sql(schema)
@@ -48924,19 +48931,19 @@ class DatabaseService:
             SELECT
                 COUNT(*) AS total_items,
                 COUNT(*) FILTER (
-                    WHERE status IN ('pending', 'in_review', 'awaiting_approval')
+                    WHERE status = 'pending'
                 ) AS pending_approvals,
                 COUNT(*) FILTER (
                     WHERE ready_for_release = TRUE
                 ) AS ready_for_release,
                 COUNT(*) FILTER (
-                    WHERE risk_band = 'high'
+                    WHERE risk_band IN ('high', 'critical')
                 ) AS high_risk,
                 COUNT(*) FILTER (
-                    WHERE last_action = 'return' OR status = 'returned'
+                    WHERE last_action IN ('reassign', 'reject') OR status = 'rejected'
                 ) AS returned_for_rework,
                 COUNT(*) FILTER (
-                    WHERE open_escalations > 0 OR status = 'escalated'
+                    WHERE open_escalations > 0
                 ) AS escalated_items
             FROM final
             WHERE (%s = FALSE OR ready_for_release = TRUE)
@@ -48945,7 +48952,7 @@ class DatabaseService:
                         overdue_deliverables > 0
                         OR pending_signoff_steps > 0
                         OR open_escalations > 0
-                        OR status IN ('returned', 'escalated')
+                        OR status = 'rejected'
                     )
                 )
         """
@@ -48961,8 +48968,7 @@ class DatabaseService:
                 company_id,
                 company_id,
                 company_id,
-                active_only,
-                queue_type, queue_type,
+                module, module,
                 status, status,
                 q.strip(), like, like, like, like,
                 ready_only,
@@ -49065,7 +49071,6 @@ class DatabaseService:
                 company_id,
                 company_id,
                 company_id,
-                True,
                 "", "",
                 "", "",
                 "", "%%", "%%", "%%", "%%",
@@ -49077,20 +49082,20 @@ class DatabaseService:
         if not row:
             return None
 
-        decisions = []
         cur.execute(
             f"""
             SELECT
                 id,
                 approval_request_id,
                 decision,
-                comment,
-                actor_user_id,
-                created_at
+                decided_by_user_id,
+                decided_at,
+                note,
+                meta_json
             FROM {schema}.approval_decisions
             WHERE company_id = %s
             AND approval_request_id = %s
-            ORDER BY created_at DESC, id DESC
+            ORDER BY decided_at DESC, id DESC
             """,
             (company_id, source_id),
         )
@@ -49171,7 +49176,6 @@ class DatabaseService:
             "escalations": escalations,
         }
 
-
     def apply_approval_center_action(
         self,
         cur,
@@ -49182,21 +49186,27 @@ class DatabaseService:
         action: str,
         actor_user_id: int,
         comment: str = "",
-        due_date=None,
+        due_date=None,  # ignored, kept for compatibility
     ):
         schema = self.company_schema(company_id)
 
         status_map = {
             "approve": "approved",
-            "return": "returned",
-            "escalate": "escalated",
-            "release": "released",
+            "return": "rejected",
+            "reject": "rejected",
+            "cancel": "cancelled",
+            "release": "approved",
+            "escalate": "pending",
+            "comment": "pending",
         }
         decision_map = {
             "approve": "approve",
-            "return": "return",
-            "escalate": "escalate",
-            "release": "release",
+            "return": "reassign",
+            "reject": "reject",
+            "cancel": "cancel",
+            "release": "approve",
+            "escalate": "comment",
+            "comment": "comment",
         }
 
         new_status = status_map.get(action)
@@ -49213,21 +49223,18 @@ class DatabaseService:
                     WHEN %s <> '' THEN %s
                     ELSE decision_note
                 END,
-                due_date = COALESCE(%s, due_date),
                 decided_by_user_id = %s,
                 decided_at = NOW(),
                 updated_at = NOW()
             WHERE company_id = %s
             AND id = %s
-            AND LOWER(COALESCE(request_type, 'approval')) = %s
-            AND COALESCE(is_active, TRUE) = TRUE
+            AND LOWER(COALESCE(module, '')) = %s
             RETURNING id
             """,
             (
                 new_status,
                 comment,
                 comment,
-                due_date,
                 actor_user_id,
                 company_id,
                 source_id,
@@ -49244,19 +49251,20 @@ class DatabaseService:
                 company_id,
                 approval_request_id,
                 decision,
-                comment,
-                actor_user_id,
-                created_at
+                decided_by_user_id,
+                decided_at,
+                note,
+                meta_json
             )
-            VALUES (%s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, NOW(), %s, '{{}}'::jsonb)
             RETURNING id
             """,
             (
                 company_id,
                 source_id,
                 decision,
-                comment or None,
                 actor_user_id,
+                comment or None,
             ),
         )
         return updated
