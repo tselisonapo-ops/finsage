@@ -47938,6 +47938,7 @@ class DatabaseService:
             ),
         )
         return cur.fetchall()
+    
     def list_resource_planning_reallocation_opportunities(
         self,
         cur,
@@ -48078,6 +48079,873 @@ class DatabaseService:
             ),
         )
         return cur.fetchall()
+
+    def _final_deliverables_review_base_sql(self, schema: str):
+        return f"""
+            WITH scoped_engagements AS (
+                SELECT
+                    e.id,
+                    e.company_id,
+                    e.customer_id,
+                    c.name AS customer_name,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.due_date
+                FROM {schema}.engagements e
+                LEFT JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                AND c.company_id = e.company_id
+                WHERE e.company_id = %s
+                AND (%s = FALSE OR e.is_active = TRUE)
+                AND (
+                        %s = ''
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                        OR COALESCE(e.engagement_type, '') ILIKE %s
+                        OR COALESCE(c.name, '') ILIKE %s
+                    )
+                AND (
+                        %s = ''
+                        OR LOWER(COALESCE(e.status, '')) = %s
+                    )
+            ),
+            wp_stats AS (
+                SELECT
+                    wp.engagement_id,
+                    COUNT(*) AS total_working_papers,
+                    COUNT(*) FILTER (
+                        WHERE wp.status IN ('reviewed', 'cleared', 'archived')
+                    ) AS completed_working_papers,
+                    COUNT(*) FILTER (
+                        WHERE wp.due_date IS NOT NULL
+                        AND wp.due_date < CURRENT_DATE
+                        AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+                    ) AS overdue_working_papers,
+                    COUNT(*) FILTER (
+                        WHERE wp.status = 'blocked'
+                    ) AS blocked_working_papers,
+                    COUNT(*) FILTER (
+                        WHERE wp.status IN ('prepared', 'in_review')
+                    ) AS in_review_working_papers
+                FROM {schema}.engagement_working_papers wp
+                WHERE wp.company_id = %s
+                AND wp.is_active = TRUE
+                GROUP BY wp.engagement_id
+            ),
+            deliverable_stats AS (
+                SELECT
+                    d.engagement_id,
+                    COUNT(*) AS total_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.status IN ('completed', 'approved', 'signed_off')
+                    ) AS completed_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS overdue_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.status IN ('outstanding', 'requested')
+                    ) AS outstanding_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.status = 'in_review'
+                    ) AS in_review_deliverables
+                FROM {schema}.engagement_deliverables d
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+                GROUP BY d.engagement_id
+            ),
+            signoff_stats AS (
+                SELECT
+                    s.engagement_id,
+                    COUNT(*) AS total_signoff_steps,
+                    COUNT(*) FILTER (
+                        WHERE s.status IN ('completed', 'approved', 'signed_off')
+                    ) AS completed_signoff_steps,
+                    COUNT(*) FILTER (
+                        WHERE s.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS pending_signoff_steps
+                FROM {schema}.engagement_signoff_steps s
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+                GROUP BY s.engagement_id
+            ),
+            reporting_stats AS (
+                SELECT
+                    r.engagement_id,
+                    COUNT(*) AS total_reporting_items
+                FROM {schema}.engagement_reporting_items r
+                WHERE r.company_id = %s
+                AND r.is_active = TRUE
+                GROUP BY r.engagement_id
+            ),
+            escalations AS (
+                SELECT
+                    x.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE x.status NOT IN ('resolved', 'closed')
+                    ) AS open_escalations
+                FROM {schema}.engagement_escalations x
+                WHERE x.company_id = %s
+                AND x.is_active = TRUE
+                GROUP BY x.engagement_id
+            ),
+            combined AS (
+                SELECT
+                    e.id AS engagement_id,
+                    e.customer_id,
+                    e.customer_name,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.due_date,
+
+                    COALESCE(w.total_working_papers, 0) AS total_working_papers,
+                    COALESCE(w.completed_working_papers, 0) AS completed_working_papers,
+                    COALESCE(w.overdue_working_papers, 0) AS overdue_working_papers,
+                    COALESCE(w.blocked_working_papers, 0) AS blocked_working_papers,
+                    COALESCE(w.in_review_working_papers, 0) AS in_review_working_papers,
+
+                    COALESCE(d.total_deliverables, 0) AS total_deliverables,
+                    COALESCE(d.completed_deliverables, 0) AS completed_deliverables,
+                    COALESCE(d.overdue_deliverables, 0) AS overdue_deliverables,
+                    COALESCE(d.outstanding_deliverables, 0) AS outstanding_deliverables,
+                    COALESCE(d.in_review_deliverables, 0) AS in_review_deliverables,
+
+                    COALESCE(s.total_signoff_steps, 0) AS total_signoff_steps,
+                    COALESCE(s.completed_signoff_steps, 0) AS completed_signoff_steps,
+                    COALESCE(s.pending_signoff_steps, 0) AS pending_signoff_steps,
+
+                    COALESCE(r.total_reporting_items, 0) AS total_reporting_items,
+                    COALESCE(x.open_escalations, 0) AS open_escalations
+                FROM scoped_engagements e
+                LEFT JOIN wp_stats w ON w.engagement_id = e.id
+                LEFT JOIN deliverable_stats d ON d.engagement_id = e.id
+                LEFT JOIN signoff_stats s ON s.engagement_id = e.id
+                LEFT JOIN reporting_stats r ON r.engagement_id = e.id
+                LEFT JOIN escalations x ON x.engagement_id = e.id
+            ),
+            final AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN (
+                            overdue_working_papers > 0
+                            OR overdue_deliverables > 0
+                            OR open_escalations > 0
+                            OR (due_date IS NOT NULL AND due_date < CURRENT_DATE AND status NOT IN ('completed', 'cancelled', 'archived'))
+                        ) THEN 'high'
+                        WHEN (
+                            pending_signoff_steps > 0
+                            OR outstanding_deliverables > 0
+                            OR in_review_working_papers > 0
+                            OR in_review_deliverables > 0
+                        ) THEN 'medium'
+                        ELSE 'low'
+                    END AS risk_band,
+                    CASE
+                        WHEN (total_working_papers + total_deliverables + total_signoff_steps) = 0 THEN 0
+                        ELSE ROUND(
+                            (
+                                (completed_working_papers + completed_deliverables + completed_signoff_steps)::numeric
+                                / NULLIF((total_working_papers + total_deliverables + total_signoff_steps), 0)
+                            ) * 100,
+                            2
+                        )
+                    END AS readiness_percent,
+                    CASE
+                        WHEN
+                            overdue_working_papers = 0
+                            AND overdue_deliverables = 0
+                            AND pending_signoff_steps = 0
+                            AND outstanding_deliverables = 0
+                            AND open_escalations = 0
+                        THEN TRUE
+                        ELSE FALSE
+                    END AS ready_for_signoff
+                FROM combined
+            )
+        """
+
+    def get_final_deliverables_review_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        status: str = "",
+        risk_band: str = "",
+        active_only: bool = True,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._final_deliverables_review_base_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                COUNT(*) AS total_engagements,
+                COUNT(*) FILTER (WHERE ready_for_signoff = TRUE) AS ready_for_signoff,
+                COUNT(*) FILTER (WHERE risk_band = 'high') AS high_risk,
+                COUNT(*) FILTER (WHERE overdue_deliverables > 0 OR overdue_working_papers > 0) AS overdue_items,
+                COUNT(*) FILTER (WHERE pending_signoff_steps > 0) AS pending_signoffs,
+                ROUND(AVG(readiness_percent), 2) AS avg_readiness_percent
+            FROM final
+            WHERE (%s = '' OR risk_band = %s)
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                status, status,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                risk_band, risk_band,
+            ),
+        )
+        return cur.fetchone()
+
+    def list_final_deliverables_review(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        status: str = "",
+        risk_band: str = "",
+        ready_only: bool = False,
+        blockers_only: bool = False,
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._final_deliverables_review_base_sql(schema)
+
+        sql = base_sql + """
+            SELECT *
+            FROM final
+            WHERE (%s = '' OR risk_band = %s)
+            AND (%s = FALSE OR ready_for_signoff = TRUE)
+            AND (
+                    %s = FALSE OR (
+                        overdue_working_papers > 0
+                        OR overdue_deliverables > 0
+                        OR pending_signoff_steps > 0
+                        OR open_escalations > 0
+                    )
+                )
+            ORDER BY
+                CASE risk_band
+                    WHEN 'high' THEN 1
+                    WHEN 'medium' THEN 2
+                    ELSE 3
+                END,
+                ready_for_signoff DESC,
+                due_date NULLS LAST,
+                engagement_name ASC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                status, status,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                risk_band, risk_band,
+                ready_only,
+                blockers_only,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def get_final_deliverables_review_detail(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        summary_sql = self._final_deliverables_review_base_sql(schema) + """
+            SELECT *
+            FROM final
+            WHERE engagement_id = %s
+            LIMIT 1
+        """
+
+        cur.execute(
+            summary_sql,
+            (
+                company_id,
+                True,
+                "", "%%", "%%", "%%", "%%",
+                "", "",
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                engagement_id,
+            ),
+        )
+        summary_row = cur.fetchone()
+        if not summary_row:
+            return None
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                deliverable_code,
+                deliverable_name,
+                deliverable_type,
+                requested_from,
+                assigned_user_id,
+                reviewer_user_id,
+                due_date,
+                received_date,
+                status,
+                priority,
+                notes,
+                document_count
+            FROM {schema}.engagement_deliverables
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY
+                CASE priority
+                    WHEN 'urgent' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3
+                    ELSE 4
+                END,
+                due_date NULLS LAST,
+                deliverable_name ASC
+            """,
+            (company_id, engagement_id),
+        )
+        deliverables = cur.fetchall()
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                paper_code,
+                paper_title,
+                paper_type,
+                status,
+                priority,
+                due_date,
+                assigned_user_id,
+                reviewer_user_id
+            FROM {schema}.engagement_working_papers
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY due_date NULLS LAST, paper_title ASC
+            """,
+            (company_id, engagement_id),
+        )
+        working_papers = cur.fetchall()
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                step_code,
+                step_name,
+                status,
+                assigned_user_id,
+                due_date,
+                completed_at,
+                notes
+            FROM {schema}.engagement_signoff_steps
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY due_date NULLS LAST, step_name ASC
+            """,
+            (company_id, engagement_id),
+        )
+        signoff_steps = cur.fetchall()
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                item_type,
+                item_name,
+                status,
+                due_date,
+                owner_user_id,
+                reviewer_user_id,
+                notes
+            FROM {schema}.engagement_reporting_items
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY due_date NULLS LAST, item_name ASC
+            """,
+            (company_id, engagement_id),
+        )
+        reporting_items = cur.fetchall()
+
+        return {
+            "summary": summary_row,
+            "deliverables": deliverables,
+            "working_papers": working_papers,
+            "signoff_steps": signoff_steps,
+            "reporting_items": reporting_items,
+        }
+        
+    def _approval_center_base_sql(self, schema: str):
+        return f"""
+            WITH scoped_engagements AS (
+                SELECT
+                    e.id AS engagement_id,
+                    e.company_id,
+                    e.customer_id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status AS engagement_status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.due_date,
+                    c.name AS customer_name
+                FROM {schema}.engagements e
+                LEFT JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                AND c.company_id = e.company_id
+                WHERE e.company_id = %s
+                AND (%s = FALSE OR e.is_active = TRUE)
+                AND (
+                        %s = ''
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                        OR COALESCE(c.name, '') ILIKE %s
+                    )
+            ),
+            deliverable_stats AS (
+                SELECT
+                    d.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE d.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS pending_deliverables,
+                    COUNT(*) FILTER (
+                        WHERE d.due_date IS NOT NULL
+                        AND d.due_date < CURRENT_DATE
+                        AND d.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS overdue_deliverables
+                FROM {schema}.engagement_deliverables d
+                WHERE d.company_id = %s
+                AND d.is_active = TRUE
+                GROUP BY d.engagement_id
+            ),
+            signoff_stats AS (
+                SELECT
+                    s.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE s.status NOT IN ('completed', 'approved', 'signed_off')
+                    ) AS pending_signoff_steps
+                FROM {schema}.engagement_signoff_steps s
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+                GROUP BY s.engagement_id
+            ),
+            escalation_stats AS (
+                SELECT
+                    x.engagement_id,
+                    COUNT(*) FILTER (
+                        WHERE x.status NOT IN ('resolved', 'closed')
+                    ) AS open_escalations
+                FROM {schema}.engagement_escalations x
+                WHERE x.company_id = %s
+                AND x.is_active = TRUE
+                GROUP BY x.engagement_id
+            ),
+            review_items AS (
+                SELECT
+                    rq.id AS source_id,
+                    LOWER(COALESCE(rq.queue_type, 'review')) AS queue_type,
+                    rq.engagement_id,
+                    rq.company_id,
+                    rq.status,
+                    rq.priority,
+                    rq.review_state,
+                    rq.title,
+                    rq.description,
+                    rq.assigned_reviewer_user_id,
+                    rq.assigned_manager_user_id,
+                    rq.due_date,
+                    rq.last_action,
+                    rq.created_at,
+                    rq.updated_at
+                FROM {schema}.review_queue rq
+                WHERE rq.company_id = %s
+                AND (%s = '' OR LOWER(COALESCE(rq.queue_type, 'review')) = %s)
+                AND (%s = '' OR LOWER(COALESCE(rq.status, '')) = %s)
+            ),
+            combined AS (
+                SELECT
+                    r.source_id,
+                    r.queue_type,
+                    r.engagement_id,
+                    e.customer_id,
+                    e.customer_name,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.engagement_status,
+                    e.priority AS engagement_priority,
+                    e.workflow_stage,
+                    e.due_date AS engagement_due_date,
+
+                    r.status,
+                    r.priority,
+                    r.review_state,
+                    r.title,
+                    r.description,
+                    r.assigned_reviewer_user_id,
+                    r.assigned_manager_user_id,
+                    r.due_date,
+                    r.last_action,
+                    r.created_at,
+                    r.updated_at,
+
+                    COALESCE(d.pending_deliverables, 0) AS pending_deliverables,
+                    COALESCE(d.overdue_deliverables, 0) AS overdue_deliverables,
+                    COALESCE(s.pending_signoff_steps, 0) AS pending_signoff_steps,
+                    COALESCE(x.open_escalations, 0) AS open_escalations
+                FROM review_items r
+                LEFT JOIN scoped_engagements e
+                ON e.engagement_id = r.engagement_id
+                LEFT JOIN deliverable_stats d
+                ON d.engagement_id = r.engagement_id
+                LEFT JOIN signoff_stats s
+                ON s.engagement_id = r.engagement_id
+                LEFT JOIN escalation_stats x
+                ON x.engagement_id = r.engagement_id
+            ),
+            final AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN overdue_deliverables > 0 OR open_escalations > 0 THEN 'high'
+                        WHEN pending_signoff_steps > 0 OR pending_deliverables > 0 THEN 'medium'
+                        ELSE 'low'
+                    END AS risk_band,
+                    CASE
+                        WHEN overdue_deliverables = 0
+                        AND open_escalations = 0
+                        AND pending_signoff_steps = 0
+                        THEN TRUE
+                        ELSE FALSE
+                    END AS ready_for_release
+                FROM combined
+            )
+        """
+
+    def get_approval_center_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        queue_type: str = "",
+        status: str = "",
+        ready_only: bool = False,
+        blockers_only: bool = False,
+        active_only: bool = True,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._approval_center_base_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                COUNT(*) AS total_items,
+                COUNT(*) FILTER (WHERE status IN ('pending', 'in_review', 'awaiting_approval')) AS pending_approvals,
+                COUNT(*) FILTER (WHERE ready_for_release = TRUE) AS ready_for_release,
+                COUNT(*) FILTER (WHERE risk_band = 'high') AS high_risk,
+                COUNT(*) FILTER (WHERE last_action = 'returned' OR status = 'returned') AS returned_for_rework,
+                COUNT(*) FILTER (WHERE open_escalations > 0) AS escalated_items
+            FROM final
+            WHERE (%s = FALSE OR ready_for_release = TRUE)
+            AND (
+                    %s = FALSE OR (
+                        overdue_deliverables > 0
+                        OR pending_signoff_steps > 0
+                        OR open_escalations > 0
+                    )
+                )
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                queue_type, queue_type,
+                status, status,
+                ready_only,
+                blockers_only,
+            ),
+        )
+        return cur.fetchone()
+
+    def list_approval_center_items(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        queue_type: str = "",
+        status: str = "",
+        ready_only: bool = False,
+        blockers_only: bool = False,
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._approval_center_base_sql(schema)
+
+        sql = base_sql + """
+            SELECT *
+            FROM final
+            WHERE (%s = FALSE OR ready_for_release = TRUE)
+            AND (
+                    %s = FALSE OR (
+                        overdue_deliverables > 0
+                        OR pending_signoff_steps > 0
+                        OR open_escalations > 0
+                    )
+                )
+            ORDER BY
+                CASE risk_band
+                    WHEN 'high' THEN 1
+                    WHEN 'medium' THEN 2
+                    ELSE 3
+                END,
+                due_date NULLS LAST,
+                created_at DESC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                queue_type, queue_type,
+                status, status,
+                ready_only,
+                blockers_only,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def get_approval_center_item_detail(
+        self,
+        cur,
+        company_id: int,
+        *,
+        queue_type: str,
+        source_id: int,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._approval_center_base_sql(schema)
+
+        sql = base_sql + """
+            SELECT *
+            FROM final
+            WHERE queue_type = %s
+            AND source_id = %s
+            LIMIT 1
+        """
+
+        cur.execute(
+            sql,
+            (
+                company_id,
+                True,
+                "", "%%", "%%", "%%",
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                "", "",
+                "", "",
+                queue_type,
+                source_id,
+            ),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                deliverable_code,
+                deliverable_name,
+                deliverable_type,
+                status,
+                priority,
+                due_date,
+                notes
+            FROM {schema}.engagement_deliverables
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY due_date NULLS LAST, deliverable_name ASC
+            """,
+            (company_id, row["engagement_id"]),
+        )
+        deliverables = cur.fetchall()
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                step_code,
+                step_name,
+                status,
+                due_date,
+                completed_at,
+                notes
+            FROM {schema}.engagement_signoff_steps
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY due_date NULLS LAST, step_name ASC
+            """,
+            (company_id, row["engagement_id"]),
+        )
+        signoff_steps = cur.fetchall()
+
+        cur.execute(
+            f"""
+            SELECT
+                id,
+                title,
+                status,
+                priority,
+                due_date,
+                owner_user_id,
+                resolution_summary
+            FROM {schema}.engagement_escalations
+            WHERE company_id = %s
+            AND engagement_id = %s
+            AND is_active = TRUE
+            ORDER BY due_date NULLS LAST, id DESC
+            """,
+            (company_id, row["engagement_id"]),
+        )
+        escalations = cur.fetchall()
+
+        return {
+            "summary": row,
+            "deliverables": deliverables,
+            "signoff_steps": signoff_steps,
+            "escalations": escalations,
+        }
+
+    def apply_approval_center_action(
+        self,
+        cur,
+        company_id: int,
+        *,
+        queue_type: str,
+        source_id: int,
+        action: str,
+        actor_user_id: int,
+        comment: str = "",
+        due_date=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        status_map = {
+            "approve": "approved",
+            "return": "returned",
+            "escalate": "escalated",
+            "release": "released",
+        }
+
+        new_status = status_map.get(action)
+        if not new_status:
+            return False
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.review_queue
+            SET
+                status = %s,
+                last_action = %s,
+                manager_comment = CASE
+                    WHEN %s <> '' THEN %s
+                    ELSE manager_comment
+                END,
+                due_date = COALESCE(%s, due_date),
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND LOWER(COALESCE(queue_type, 'review')) = %s
+            RETURNING id
+            """,
+            (
+                new_status,
+                action,
+                comment,
+                comment,
+                due_date,
+                company_id,
+                source_id,
+                queue_type,
+            ),
+        )
+        return cur.fetchone()
 
         
     def insert_ticket(

@@ -950,6 +950,43 @@ const ENDPOINTS = {
       )
   },
 
+  finalDeliverablesReview: {
+    summary: (companyId, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/final-deliverables-review/summary`,
+        params
+      ),
+
+    list: (companyId, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/final-deliverables-review/list`,
+        params
+      ),
+
+    detail: (companyId, engagementId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/final-deliverables-review/${encodeURIComponent(engagementId)}`
+  },
+
+  approvalCenter: {
+    summary: (companyId, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/approval-center/summary`,
+        params
+      ),
+
+    list: (companyId, params = {}) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/approval-center/list`,
+        params
+      ),
+
+    detail: (companyId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/approval-center/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}`,
+
+    action: (companyId, queueType, sourceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/approval-center/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/action`
+  },
+
   analytics: {
     overview: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/overview`,
@@ -1312,6 +1349,46 @@ window.endpoints = ENDPOINTS;
   };
 
   let PR_RESOURCE_PLANNING_EVENTS_BOUND = false;
+
+  let PR_FINAL_DELIVERABLES_REVIEW_CACHE = {
+    summary: null,
+    rows: [],
+    selectedRow: null,
+    detail: null,
+    loading: false,
+    detailLoading: false,
+    error: "",
+    filters: {
+      q: "",
+      status: "",
+      risk_band: "",
+      ready_only: false,
+      blockers_only: false,
+      active_only: true,
+      limit: 100,
+      offset: 0
+    }
+  };
+
+let PR_APPROVAL_CENTER_CACHE = {
+  summary: null,
+  rows: [],
+  selectedRow: null,
+  detail: null,
+  loading: false,
+  detailLoading: false,
+  error: "",
+  filters: {
+    q: "",
+    queue_type: "",
+    status: "",
+    ready_only: false,
+    blockers_only: false,
+    active_only: true,
+    limit: 100,
+    offset: 0
+  }
+};
 
 const PR_NAV = {
   dashboard: "dashboard",
@@ -2122,6 +2199,12 @@ const PR_NAV_MENU = [
     name: "Partner Tools",
     isParent: true,
     children: [
+      {
+        name: "Approval Center",
+        screen: PR_NAV.approvalCenter,
+        desc: "Manager approvals, rework routing, release controls, and approval history",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.approvalCenter)
+      },
       {
         name: "Partner Sign-Off",
         screen: PR_NAV.partnerSignoff,
@@ -14764,30 +14847,995 @@ function renderResourcePlanningScreenContent(me) {
   bindResourcePlanningEvents(me);
 }
 
-function renderApprovalCenterScreen(me) {
-  renderManagerStubScreen(PR_NAV.approvalCenter, {
-    title: "Approval Center",
-    subtitle: "Manager approvals, review decisions, rework routing, and release controls.",
-    items: [
-      { label: "Pending approvals", desc: "Centralize records awaiting manager review or release decisions." },
-      { label: "Return for rework", desc: "Allow structured rework routing with comments and deadlines." },
-      { label: "Approval audit trail", desc: "Track who approved, returned, or escalated each item." },
-      { label: "Release controls", desc: "Control movement from review completion into partner or final stages." }
-    ]
+function getFinalDeliverablesReviewCompanyId(me) {
+  return (
+    me?.company_id ||
+    window.__PR_ME__?.company_id ||
+    window.currentUser?.company_id ||
+    JSON.parse(localStorage.getItem("fs_user") || "null")?.company_id ||
+    ""
+  );
+}
+
+function formatSafeDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
+function formatSafeNumber(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n.toLocaleString() : "0";
+}
+
+function formatSafePercent(value) {
+  const n = Number(value || 0);
+  return `${Number.isFinite(n) ? n.toFixed(0) : "0"}%`;
+}
+
+function fdrBadgeClass(value) {
+  const v = String(value || "").toLowerCase();
+  if (v === "high") return "pr-badge is-danger";
+  if (v === "medium") return "pr-badge is-warning";
+  if (v === "low") return "pr-badge is-good";
+  if (v === "completed" || v === "approved" || v === "signed_off") return "pr-badge is-good";
+  if (v === "in_review") return "pr-badge is-warning";
+  return "pr-badge";
+}
+
+async function loadFinalDeliverablesReviewData(me) {
+  const companyId = getFinalDeliverablesReviewCompanyId(me);
+  if (!companyId) throw new Error("Company context missing.");
+
+  const filters = PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters;
+  PR_FINAL_DELIVERABLES_REVIEW_CACHE.loading = true;
+  PR_FINAL_DELIVERABLES_REVIEW_CACHE.error = "";
+  renderFinalDeliverablesReviewScreenContent(me);
+
+  try {
+    const [summaryRes, listRes] = await Promise.all([
+      apiFetch(ENDPOINTS.finalDeliverablesReview.summary(companyId, filters)),
+      apiFetch(ENDPOINTS.finalDeliverablesReview.list(companyId, filters))
+    ]);
+
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.summary = summaryRes?.data || summaryRes || {};
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.rows = listRes?.data || listRes || [];
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.selectedRow =
+      PR_FINAL_DELIVERABLES_REVIEW_CACHE.rows.find(
+        (r) => r.engagement_id === PR_FINAL_DELIVERABLES_REVIEW_CACHE.selectedRow?.engagement_id
+      ) || PR_FINAL_DELIVERABLES_REVIEW_CACHE.rows[0] || null;
+
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.detail = null;
+
+    if (PR_FINAL_DELIVERABLES_REVIEW_CACHE.selectedRow?.engagement_id) {
+      await loadFinalDeliverablesReviewDetail(me, PR_FINAL_DELIVERABLES_REVIEW_CACHE.selectedRow.engagement_id, true);
+    }
+  } catch (err) {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.error =
+      err?.message || "Failed to load final deliverables review.";
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.rows = [];
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.detail = null;
+  } finally {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.loading = false;
+    renderFinalDeliverablesReviewScreenContent(me);
+  }
+}
+
+async function loadFinalDeliverablesReviewDetail(me, engagementId, silent = false) {
+  const companyId = getFinalDeliverablesReviewCompanyId(me);
+  if (!companyId || !engagementId) return;
+
+  if (!silent) {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.detailLoading = true;
+    renderFinalDeliverablesReviewScreenContent(me);
+  }
+
+  try {
+    const res = await apiFetch(
+      ENDPOINTS.finalDeliverablesReview.detail(companyId, engagementId)
+    );
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.detail = res?.data || res || null;
+  } catch (err) {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.detail = null;
+  } finally {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.detailLoading = false;
+  }
+}
+
+function renderFinalDeliverablesReviewTable(cache) {
+  const rows = cache.rows || [];
+  if (!rows.length) {
+    return `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">No engagements found</div>
+        <div class="pr-empty-state__desc">Try different status, risk, or search filters.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="pr-fdr-table-wrap">
+      <div class="pr-table-scroll">
+        <table class="pr-fdr-table">
+          <thead>
+            <tr>
+              <th>Engagement</th>
+              <th>Risk</th>
+              <th>Readiness</th>
+              <th>Deliverables</th>
+              <th>Sign-off</th>
+              <th>Due date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr
+                class="pr-fdr-row ${cache.selectedRow?.engagement_id === row.engagement_id ? "is-selected" : ""}"
+                data-fdr-engagement-id="${row.engagement_id}"
+              >
+                <td>
+                  <div class="pr-fdr-name">
+                    <div class="pr-fdr-name__title">${escapeHtml(row.engagement_name || "Untitled engagement")}</div>
+                    <div class="pr-fdr-name__meta">
+                      ${escapeHtml(row.engagement_code || "No code")} · ${escapeHtml(row.customer_name || "—")}
+                    </div>
+                  </div>
+                </td>
+                <td><span class="${fdrBadgeClass(row.risk_band)}">${escapeHtml(row.risk_band || "low")}</span></td>
+                <td>${escapeHtml(formatSafePercent(row.readiness_percent))}</td>
+                <td>${escapeHtml(formatSafeNumber(row.completed_deliverables))}/${escapeHtml(formatSafeNumber(row.total_deliverables))}</td>
+                <td>${escapeHtml(formatSafeNumber(row.completed_signoff_steps))}/${escapeHtml(formatSafeNumber(row.total_signoff_steps))}</td>
+                <td>${escapeHtml(formatSafeDate(row.due_date))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderFinalDeliverablesReviewDetail(cache) {
+  const detail = cache.detail;
+  const row = detail?.summary || cache.selectedRow;
+
+  if (!row) {
+    return `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">Nothing selected</div>
+        <div class="pr-empty-state__desc">Choose an engagement to inspect final pack readiness.</div>
+      </div>
+    `;
+  }
+
+  const deliverables = detail?.deliverables || [];
+  const signoffSteps = detail?.signoff_steps || [];
+  const reportingItems = detail?.reporting_items || [];
+
+  return `
+    <div class="pr-fdr-stack">
+      <div class="pr-fdr-block">
+        <div class="pr-fdr-block__title">Readiness overview</div>
+        <div class="pr-fdr-mini-grid">
+          <div class="pr-fdr-field">
+            <div class="pr-fdr-field__label">Customer</div>
+            <div class="pr-fdr-field__value">${escapeHtml(row.customer_name || "—")}</div>
+          </div>
+          <div class="pr-fdr-field">
+            <div class="pr-fdr-field__label">Risk band</div>
+            <div class="pr-fdr-field__value">${escapeHtml(row.risk_band || "low")}</div>
+          </div>
+          <div class="pr-fdr-field">
+            <div class="pr-fdr-field__label">Readiness</div>
+            <div class="pr-fdr-field__value">${escapeHtml(formatSafePercent(row.readiness_percent))}</div>
+          </div>
+          <div class="pr-fdr-field">
+            <div class="pr-fdr-field__label">Ready for sign-off</div>
+            <div class="pr-fdr-field__value">${row.ready_for_signoff ? "Yes" : "No"}</div>
+          </div>
+          <div class="pr-fdr-field">
+            <div class="pr-fdr-field__label">Overdue deliverables</div>
+            <div class="pr-fdr-field__value">${escapeHtml(formatSafeNumber(row.overdue_deliverables))}</div>
+          </div>
+          <div class="pr-fdr-field">
+            <div class="pr-fdr-field__label">Pending sign-off steps</div>
+            <div class="pr-fdr-field__value">${escapeHtml(formatSafeNumber(row.pending_signoff_steps))}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-fdr-block">
+        <div class="pr-fdr-block__title">Deliverables</div>
+        <div class="pr-fdr-list">
+          ${
+            deliverables.length
+              ? deliverables.map((d) => `
+                  <div class="pr-fdr-item">
+                    <div class="pr-fdr-item__title">
+                      ${escapeHtml(d.deliverable_name || "Deliverable")}
+                      <span class="${fdrBadgeClass(d.status)}">${escapeHtml(d.status || "—")}</span>
+                    </div>
+                    <div class="pr-fdr-item__meta">
+                      ${escapeHtml(d.deliverable_type || "—")} · due ${escapeHtml(formatSafeDate(d.due_date))} · docs ${escapeHtml(formatSafeNumber(d.document_count))}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No deliverables found.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="pr-fdr-block">
+        <div class="pr-fdr-block__title">Sign-off steps</div>
+        <div class="pr-fdr-list">
+          ${
+            signoffSteps.length
+              ? signoffSteps.map((s) => `
+                  <div class="pr-fdr-item">
+                    <div class="pr-fdr-item__title">
+                      ${escapeHtml(s.step_name || "Step")}
+                      <span class="${fdrBadgeClass(s.status)}">${escapeHtml(s.status || "—")}</span>
+                    </div>
+                    <div class="pr-fdr-item__meta">
+                      due ${escapeHtml(formatSafeDate(s.due_date))} · completed ${escapeHtml(formatSafeDate(s.completed_at))}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No sign-off steps found.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="pr-fdr-block">
+        <div class="pr-fdr-block__title">Reporting pack items</div>
+        <div class="pr-fdr-list">
+          ${
+            reportingItems.length
+              ? reportingItems.map((r) => `
+                  <div class="pr-fdr-item">
+                    <div class="pr-fdr-item__title">
+                      ${escapeHtml(r.item_name || "Reporting item")}
+                      <span class="${fdrBadgeClass(r.status)}">${escapeHtml(r.status || "—")}</span>
+                    </div>
+                    <div class="pr-fdr-item__meta">
+                      ${escapeHtml(r.item_type || "—")} · due ${escapeHtml(formatSafeDate(r.due_date))}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No reporting items found.</div>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindFinalDeliverablesReviewEvents(me) {
+  const host = document.getElementById("screen-final-deliverables-review");
+  if (!host) return;
+
+  host.querySelector("#fdrApplyBtn")?.addEventListener("click", async () => {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters.q =
+      host.querySelector("#fdrSearchInput")?.value?.trim() || "";
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters.status =
+      host.querySelector("#fdrStatusFilter")?.value || "";
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters.risk_band =
+      host.querySelector("#fdrRiskFilter")?.value || "";
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters.ready_only =
+      !!host.querySelector("#fdrReadyOnly")?.checked;
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters.blockers_only =
+      !!host.querySelector("#fdrBlockersOnly")?.checked;
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters.offset = 0;
+
+    await loadFinalDeliverablesReviewData(me);
+  });
+
+  host.querySelector("#fdrResetBtn")?.addEventListener("click", async () => {
+    PR_FINAL_DELIVERABLES_REVIEW_CACHE.filters = {
+      q: "",
+      status: "",
+      risk_band: "",
+      ready_only: false,
+      blockers_only: false,
+      active_only: true,
+      limit: 100,
+      offset: 0
+    };
+    await loadFinalDeliverablesReviewData(me);
+  });
+
+  host.querySelectorAll("[data-fdr-engagement-id]").forEach((rowEl) => {
+    rowEl.addEventListener("click", async () => {
+      const engagementId = Number(rowEl.getAttribute("data-fdr-engagement-id"));
+      PR_FINAL_DELIVERABLES_REVIEW_CACHE.selectedRow =
+        PR_FINAL_DELIVERABLES_REVIEW_CACHE.rows.find((r) => r.engagement_id === engagementId) || null;
+      PR_FINAL_DELIVERABLES_REVIEW_CACHE.detail = null;
+      PR_FINAL_DELIVERABLES_REVIEW_CACHE.detailLoading = true;
+      renderFinalDeliverablesReviewScreenContent(me);
+      await loadFinalDeliverablesReviewDetail(me, engagementId);
+      renderFinalDeliverablesReviewScreenContent(me);
+    });
   });
 }
 
-function renderFinalDeliverablesReviewScreen(me) {
-  renderPartnerStubScreen(PR_NAV.finalDeliverablesReview, {
-    title: "Final Deliverables Review",
-    subtitle: "Final reporting pack review before sign-off and release.",
-    items: [
-      { label: "Final pack completeness", desc: "Review the financial statements pack, notes, and required outputs together." },
-      { label: "Readiness confirmation", desc: "Confirm all required deliverables are complete before sign-off." },
-      { label: "Partner comments", desc: "Capture final review notes and release conditions." },
-      { label: "Pre-sign-off controls", desc: "Prevent sign-off where required pack elements are still missing." }
-    ]
+async function renderFinalDeliverablesReviewScreen(me) {
+  const host = document.getElementById("screen-final-deliverables-review");
+  if (!host) return;
+
+  if (!PR_FINAL_DELIVERABLES_REVIEW_CACHE.summary && !PR_FINAL_DELIVERABLES_REVIEW_CACHE.loading) {
+    await loadFinalDeliverablesReviewData(me);
+    return;
+  }
+
+  renderFinalDeliverablesReviewScreenContent(me);
+}
+
+function renderFinalDeliverablesReviewScreenContent(me) {
+  const host = document.getElementById("screen-final-deliverables-review");
+  if (!host) return;
+
+  const cache = PR_FINAL_DELIVERABLES_REVIEW_CACHE;
+  const summary = cache.summary || {};
+
+  host.innerHTML = `
+    <div class="pr-screen pr-fdr-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Final Deliverables Review</h1>
+          <p class="pr-screen__subtitle">Final reporting pack review before sign-off and release.</p>
+        </div>
+      </div>
+
+      <section class="pr-panel">
+        <div class="pr-panel__head">
+          <div>
+            <h3>Review filters</h3>
+            <p>Filter engagements by status, risk, and sign-off readiness.</p>
+          </div>
+        </div>
+
+        <div class="pr-fdr-filter-grid">
+          <div class="pr-field">
+            <label class="pr-field__label" for="fdrSearchInput">Search</label>
+            <input id="fdrSearchInput" class="pr-input" type="text" value="${escapeHtml(cache.filters.q)}" placeholder="Search engagement, code, customer" />
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="fdrStatusFilter">Status</label>
+            <select id="fdrStatusFilter" class="pr-select">
+              <option value="">All statuses</option>
+              <option value="active" ${cache.filters.status === "active" ? "selected" : ""}>Active</option>
+              <option value="completed" ${cache.filters.status === "completed" ? "selected" : ""}>Completed</option>
+              <option value="archived" ${cache.filters.status === "archived" ? "selected" : ""}>Archived</option>
+            </select>
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="fdrRiskFilter">Risk band</label>
+            <select id="fdrRiskFilter" class="pr-select">
+              <option value="">All risk bands</option>
+              <option value="high" ${cache.filters.risk_band === "high" ? "selected" : ""}>High</option>
+              <option value="medium" ${cache.filters.risk_band === "medium" ? "selected" : ""}>Medium</option>
+              <option value="low" ${cache.filters.risk_band === "low" ? "selected" : ""}>Low</option>
+            </select>
+          </div>
+
+          <label class="pr-field pr-field--check">
+            <input id="fdrReadyOnly" type="checkbox" ${cache.filters.ready_only ? "checked" : ""} />
+            <span class="pr-field__label">Ready only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="fdrBlockersOnly" type="checkbox" ${cache.filters.blockers_only ? "checked" : ""} />
+            <span class="pr-field__label">Blockers only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button id="fdrApplyBtn" class="btn btn-primary" type="button">Apply</button>
+            <button id="fdrResetBtn" class="btn btn-ghost" type="button">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pr-summary-grid">
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Total engagements</div>
+          <div class="pr-summary-card__value">${formatSafeNumber(summary.total_engagements)}</div>
+          <div class="pr-summary-card__hint">In review scope</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Ready for sign-off</div>
+          <div class="pr-summary-card__value pr-text-good">${formatSafeNumber(summary.ready_for_signoff)}</div>
+          <div class="pr-summary-card__hint">No sign-off blockers</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">High risk</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatSafeNumber(summary.high_risk)}</div>
+          <div class="pr-summary-card__hint">Needs partner attention</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Overdue items</div>
+          <div class="pr-summary-card__value pr-text-warning">${formatSafeNumber(summary.overdue_items)}</div>
+          <div class="pr-summary-card__hint">Late pack components</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Pending sign-offs</div>
+          <div class="pr-summary-card__value">${formatSafeNumber(summary.pending_signoffs)}</div>
+          <div class="pr-summary-card__hint">Incomplete sign-off chain</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Avg readiness</div>
+          <div class="pr-summary-card__value">${formatSafePercent(summary.avg_readiness_percent)}</div>
+          <div class="pr-summary-card__hint">Across listed engagements</div>
+        </div>
+      </section>
+
+      <section class="pr-fdr-layout">
+        <div class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Review queue</h3>
+              <p>Engagement-level final pack readiness and sign-off exposure.</p>
+            </div>
+          </div>
+
+          ${
+            cache.loading
+              ? `<div class="pr-loading">Loading final deliverables review…</div>`
+              : cache.error
+              ? `<div class="pr-empty-state"><div class="pr-empty-state__title">Could not load review queue</div><div class="pr-empty-state__desc">${escapeHtml(cache.error)}</div></div>`
+              : renderFinalDeliverablesReviewTable(cache)
+          }
+        </div>
+
+        <aside class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Selected detail</h3>
+              <p>Deliverables, reporting items, and sign-off steps for the chosen engagement.</p>
+            </div>
+          </div>
+
+          ${
+            cache.detailLoading
+              ? `<div class="pr-loading">Loading engagement detail…</div>`
+              : renderFinalDeliverablesReviewDetail(cache)
+          }
+        </aside>
+      </section>
+    </div>
+  `;
+
+  bindFinalDeliverablesReviewEvents(me);
+}
+
+function getApprovalCenterCompanyId(me) {
+  return (
+    me?.company_id ||
+    window.__PR_ME__?.company_id ||
+    window.currentUser?.company_id ||
+    JSON.parse(localStorage.getItem("fs_user") || "null")?.company_id ||
+    ""
+  );
+}
+
+function formatApprovalCenterDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
+function formatApprovalCenterNumber(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n.toLocaleString() : "0";
+}
+
+function approvalCenterBadgeClass(value) {
+  const v = String(value || "").toLowerCase();
+  if (["high", "escalated", "returned"].includes(v)) return "pr-badge is-danger";
+  if (["medium", "in_review", "awaiting_approval", "pending"].includes(v)) return "pr-badge is-warning";
+  if (["approved", "released", "ready"].includes(v)) return "pr-badge is-good";
+  return "pr-badge";
+}
+
+async function loadApprovalCenterData(me) {
+  const companyId = getApprovalCenterCompanyId(me);
+  if (!companyId) throw new Error("Company context missing.");
+
+  const filters = PR_APPROVAL_CENTER_CACHE.filters;
+  PR_APPROVAL_CENTER_CACHE.loading = true;
+  PR_APPROVAL_CENTER_CACHE.error = "";
+  renderApprovalCenterScreenContent(me);
+
+  try {
+    const [summaryRes, listRes] = await Promise.all([
+      apiFetch(ENDPOINTS.approvalCenter.summary(companyId, filters)),
+      apiFetch(ENDPOINTS.approvalCenter.list(companyId, filters))
+    ]);
+
+    PR_APPROVAL_CENTER_CACHE.summary = summaryRes?.data || summaryRes || {};
+    PR_APPROVAL_CENTER_CACHE.rows = listRes?.data || listRes || [];
+    PR_APPROVAL_CENTER_CACHE.selectedRow =
+      PR_APPROVAL_CENTER_CACHE.rows.find(
+        (r) =>
+          r.source_id === PR_APPROVAL_CENTER_CACHE.selectedRow?.source_id &&
+          r.queue_type === PR_APPROVAL_CENTER_CACHE.selectedRow?.queue_type
+      ) ||
+      PR_APPROVAL_CENTER_CACHE.rows[0] ||
+      null;
+
+    PR_APPROVAL_CENTER_CACHE.detail = null;
+
+    if (PR_APPROVAL_CENTER_CACHE.selectedRow?.source_id) {
+      await loadApprovalCenterDetail(
+        me,
+        PR_APPROVAL_CENTER_CACHE.selectedRow.queue_type,
+        PR_APPROVAL_CENTER_CACHE.selectedRow.source_id,
+        true
+      );
+    }
+  } catch (err) {
+    PR_APPROVAL_CENTER_CACHE.error = err?.message || "Failed to load approval center.";
+    PR_APPROVAL_CENTER_CACHE.rows = [];
+    PR_APPROVAL_CENTER_CACHE.detail = null;
+  } finally {
+    PR_APPROVAL_CENTER_CACHE.loading = false;
+    renderApprovalCenterScreenContent(me);
+  }
+}
+
+async function loadApprovalCenterDetail(me, queueType, sourceId, silent = false) {
+  const companyId = getApprovalCenterCompanyId(me);
+  if (!companyId || !queueType || !sourceId) return;
+
+  if (!silent) {
+    PR_APPROVAL_CENTER_CACHE.detailLoading = true;
+    renderApprovalCenterScreenContent(me);
+  }
+
+  try {
+    const res = await apiFetch(
+      ENDPOINTS.approvalCenter.detail(companyId, queueType, sourceId)
+    );
+    PR_APPROVAL_CENTER_CACHE.detail = res?.data || res || null;
+  } catch (_) {
+    PR_APPROVAL_CENTER_CACHE.detail = null;
+  } finally {
+    PR_APPROVAL_CENTER_CACHE.detailLoading = false;
+  }
+}
+
+async function applyApprovalCenterAction(me, action) {
+  const selected = PR_APPROVAL_CENTER_CACHE.selectedRow;
+  if (!selected) return;
+
+  const companyId = getApprovalCenterCompanyId(me);
+  if (!companyId) return;
+
+  let comment = "";
+  let due_date = "";
+
+  if (action === "return" || action === "escalate") {
+    comment = window.prompt("Add a comment for this action:", "") || "";
+  }
+
+  if (action === "return") {
+    due_date = window.prompt("Optional rework due date (YYYY-MM-DD):", "") || "";
+  }
+
+  await apiFetch(
+    ENDPOINTS.approvalCenter.action(companyId, selected.queue_type, selected.source_id),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+        comment,
+        due_date: due_date || null
+      })
+    }
+  );
+
+  await loadApprovalCenterData(me);
+}
+
+function renderApprovalCenterTable(cache) {
+  const rows = cache.rows || [];
+  if (!rows.length) {
+    return `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">No approval items found</div>
+        <div class="pr-empty-state__desc">Try different queue, status, or blocker filters.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="pr-approval-center-table-wrap">
+      <div class="pr-table-scroll">
+        <table class="pr-approval-center-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Queue</th>
+              <th>Status</th>
+              <th>Risk</th>
+              <th>Ready</th>
+              <th>Due date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr
+                class="pr-approval-center-row ${
+                  cache.selectedRow?.source_id === row.source_id &&
+                  cache.selectedRow?.queue_type === row.queue_type
+                    ? "is-selected"
+                    : ""
+                }"
+                data-approval-key="${escapeHtml(`${row.queue_type}:${row.source_id}`)}"
+              >
+                <td>
+                  <div class="pr-approval-center-name">
+                    <div class="pr-approval-center-name__title">${escapeHtml(row.title || row.engagement_name || "Approval item")}</div>
+                    <div class="pr-approval-center-name__meta">
+                      ${escapeHtml(row.engagement_code || "No code")} · ${escapeHtml(row.customer_name || "—")}
+                    </div>
+                  </div>
+                </td>
+                <td><span class="${approvalCenterBadgeClass(row.queue_type)}">${escapeHtml(row.queue_type || "review")}</span></td>
+                <td><span class="${approvalCenterBadgeClass(row.status)}">${escapeHtml(row.status || "pending")}</span></td>
+                <td><span class="${approvalCenterBadgeClass(row.risk_band)}">${escapeHtml(row.risk_band || "low")}</span></td>
+                <td>${row.ready_for_release ? "Yes" : "No"}</td>
+                <td>${escapeHtml(formatApprovalCenterDate(row.due_date || row.engagement_due_date))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderApprovalCenterDetail(cache) {
+  const detail = cache.detail;
+  const row = detail?.summary || cache.selectedRow;
+
+  if (!row) {
+    return `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">Nothing selected</div>
+        <div class="pr-empty-state__desc">Choose an approval item to inspect release readiness.</div>
+      </div>
+    `;
+  }
+
+  const deliverables = detail?.deliverables || [];
+  const signoffSteps = detail?.signoff_steps || [];
+  const escalations = detail?.escalations || [];
+
+  return `
+    <div class="pr-approval-center-stack">
+      <div class="pr-approval-center-block">
+        <div class="pr-approval-center-block__title">Approval overview</div>
+        <div class="pr-approval-center-mini-grid">
+          <div class="pr-approval-center-field">
+            <div class="pr-approval-center-field__label">Customer</div>
+            <div class="pr-approval-center-field__value">${escapeHtml(row.customer_name || "—")}</div>
+          </div>
+          <div class="pr-approval-center-field">
+            <div class="pr-approval-center-field__label">Queue type</div>
+            <div class="pr-approval-center-field__value">${escapeHtml(row.queue_type || "review")}</div>
+          </div>
+          <div class="pr-approval-center-field">
+            <div class="pr-approval-center-field__label">Status</div>
+            <div class="pr-approval-center-field__value">${escapeHtml(row.status || "pending")}</div>
+          </div>
+          <div class="pr-approval-center-field">
+            <div class="pr-approval-center-field__label">Risk band</div>
+            <div class="pr-approval-center-field__value">${escapeHtml(row.risk_band || "low")}</div>
+          </div>
+          <div class="pr-approval-center-field">
+            <div class="pr-approval-center-field__label">Pending deliverables</div>
+            <div class="pr-approval-center-field__value">${escapeHtml(formatApprovalCenterNumber(row.pending_deliverables))}</div>
+          </div>
+          <div class="pr-approval-center-field">
+            <div class="pr-approval-center-field__label">Pending sign-off steps</div>
+            <div class="pr-approval-center-field__value">${escapeHtml(formatApprovalCenterNumber(row.pending_signoff_steps))}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-approval-center-block">
+        <div class="pr-approval-center-block__title">Actions</div>
+        <div class="pr-approval-center-actionbar">
+          <button class="btn btn-primary" type="button" data-approval-action="approve">Approve</button>
+          <button class="btn btn-ghost" type="button" data-approval-action="return">Return for rework</button>
+          <button class="btn btn-ghost" type="button" data-approval-action="escalate">Escalate</button>
+          <button class="btn btn-ghost" type="button" data-approval-action="release">Release</button>
+        </div>
+      </div>
+
+      <div class="pr-approval-center-block">
+        <div class="pr-approval-center-block__title">Deliverables</div>
+        <div class="pr-approval-center-list">
+          ${
+            deliverables.length
+              ? deliverables.map((d) => `
+                  <div class="pr-approval-center-item">
+                    <div class="pr-approval-center-item__title">
+                      ${escapeHtml(d.deliverable_name || "Deliverable")}
+                      <span class="${approvalCenterBadgeClass(d.status)}">${escapeHtml(d.status || "—")}</span>
+                    </div>
+                    <div class="pr-approval-center-item__meta">
+                      ${escapeHtml(d.deliverable_type || "—")} · due ${escapeHtml(formatApprovalCenterDate(d.due_date))}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No deliverables found.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="pr-approval-center-block">
+        <div class="pr-approval-center-block__title">Sign-off steps</div>
+        <div class="pr-approval-center-list">
+          ${
+            signoffSteps.length
+              ? signoffSteps.map((s) => `
+                  <div class="pr-approval-center-item">
+                    <div class="pr-approval-center-item__title">
+                      ${escapeHtml(s.step_name || "Step")}
+                      <span class="${approvalCenterBadgeClass(s.status)}">${escapeHtml(s.status || "—")}</span>
+                    </div>
+                    <div class="pr-approval-center-item__meta">
+                      due ${escapeHtml(formatApprovalCenterDate(s.due_date))} · completed ${escapeHtml(formatApprovalCenterDate(s.completed_at))}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No sign-off steps found.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="pr-approval-center-block">
+        <div class="pr-approval-center-block__title">Escalations</div>
+        <div class="pr-approval-center-list">
+          ${
+            escalations.length
+              ? escalations.map((e) => `
+                  <div class="pr-approval-center-item">
+                    <div class="pr-approval-center-item__title">
+                      ${escapeHtml(e.title || "Escalation")}
+                      <span class="${approvalCenterBadgeClass(e.status)}">${escapeHtml(e.status || "—")}</span>
+                    </div>
+                    <div class="pr-approval-center-item__meta">
+                      priority ${escapeHtml(e.priority || "—")} · due ${escapeHtml(formatApprovalCenterDate(e.due_date))}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No escalations found.</div>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindApprovalCenterEvents(me) {
+  const host = document.getElementById("screen-approval-center");
+  if (!host) return;
+
+  host.querySelector("#approvalCenterApplyBtn")?.addEventListener("click", async () => {
+    PR_APPROVAL_CENTER_CACHE.filters.q =
+      host.querySelector("#approvalCenterSearchInput")?.value?.trim() || "";
+    PR_APPROVAL_CENTER_CACHE.filters.queue_type =
+      host.querySelector("#approvalCenterQueueTypeFilter")?.value || "";
+    PR_APPROVAL_CENTER_CACHE.filters.status =
+      host.querySelector("#approvalCenterStatusFilter")?.value || "";
+    PR_APPROVAL_CENTER_CACHE.filters.ready_only =
+      !!host.querySelector("#approvalCenterReadyOnly")?.checked;
+    PR_APPROVAL_CENTER_CACHE.filters.blockers_only =
+      !!host.querySelector("#approvalCenterBlockersOnly")?.checked;
+    PR_APPROVAL_CENTER_CACHE.filters.offset = 0;
+
+    await loadApprovalCenterData(me);
   });
+
+  host.querySelector("#approvalCenterResetBtn")?.addEventListener("click", async () => {
+    PR_APPROVAL_CENTER_CACHE.filters = {
+      q: "",
+      queue_type: "",
+      status: "",
+      ready_only: false,
+      blockers_only: false,
+      active_only: true,
+      limit: 100,
+      offset: 0
+    };
+    await loadApprovalCenterData(me);
+  });
+
+  host.querySelectorAll("[data-approval-key]").forEach((rowEl) => {
+    rowEl.addEventListener("click", async () => {
+      const [queueType, sourceIdRaw] = String(rowEl.getAttribute("data-approval-key") || "").split(":");
+      const sourceId = Number(sourceIdRaw || 0);
+
+      PR_APPROVAL_CENTER_CACHE.selectedRow =
+        PR_APPROVAL_CENTER_CACHE.rows.find(
+          (r) => r.queue_type === queueType && Number(r.source_id) === sourceId
+        ) || null;
+
+      PR_APPROVAL_CENTER_CACHE.detail = null;
+      PR_APPROVAL_CENTER_CACHE.detailLoading = true;
+      renderApprovalCenterScreenContent(me);
+      await loadApprovalCenterDetail(me, queueType, sourceId);
+      renderApprovalCenterScreenContent(me);
+    });
+  });
+
+  host.querySelectorAll("[data-approval-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.getAttribute("data-approval-action");
+      if (!action) return;
+      await applyApprovalCenterAction(me, action);
+    });
+  });
+}
+
+async function renderApprovalCenterScreen(me) {
+  const host = document.getElementById("screen-approval-center");
+  if (!host) return;
+
+  if (!PR_APPROVAL_CENTER_CACHE.summary && !PR_APPROVAL_CENTER_CACHE.loading) {
+    await loadApprovalCenterData(me);
+    return;
+  }
+
+  renderApprovalCenterScreenContent(me);
+}
+
+function renderApprovalCenterScreenContent(me) {
+  const host = document.getElementById("screen-approval-center");
+  if (!host) return;
+
+  const cache = PR_APPROVAL_CENTER_CACHE;
+  const summary = cache.summary || {};
+
+  host.innerHTML = `
+    <div class="pr-screen pr-approval-center-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Approval Center</h1>
+          <p class="pr-screen__subtitle">Manager approvals, review decisions, rework routing, and release controls.</p>
+        </div>
+      </div>
+
+      <section class="pr-panel">
+        <div class="pr-panel__head">
+          <div>
+            <h3>Approval filters</h3>
+            <p>Filter pending approvals by queue type, state, blockers, and release readiness.</p>
+          </div>
+        </div>
+
+        <div class="pr-approval-center-filter-grid">
+          <div class="pr-field">
+            <label class="pr-field__label" for="approvalCenterSearchInput">Search</label>
+            <input id="approvalCenterSearchInput" class="pr-input" type="text" value="${escapeHtml(cache.filters.q)}" placeholder="Search title, engagement, code, customer" />
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="approvalCenterQueueTypeFilter">Queue type</label>
+            <select id="approvalCenterQueueTypeFilter" class="pr-select">
+              <option value="">All queues</option>
+              <option value="review" ${cache.filters.queue_type === "review" ? "selected" : ""}>Review</option>
+              <option value="deliverable" ${cache.filters.queue_type === "deliverable" ? "selected" : ""}>Deliverable</option>
+              <option value="signoff" ${cache.filters.queue_type === "signoff" ? "selected" : ""}>Sign-off</option>
+            </select>
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="approvalCenterStatusFilter">Status</label>
+            <select id="approvalCenterStatusFilter" class="pr-select">
+              <option value="">All statuses</option>
+              <option value="pending" ${cache.filters.status === "pending" ? "selected" : ""}>Pending</option>
+              <option value="in_review" ${cache.filters.status === "in_review" ? "selected" : ""}>In review</option>
+              <option value="awaiting_approval" ${cache.filters.status === "awaiting_approval" ? "selected" : ""}>Awaiting approval</option>
+              <option value="returned" ${cache.filters.status === "returned" ? "selected" : ""}>Returned</option>
+              <option value="approved" ${cache.filters.status === "approved" ? "selected" : ""}>Approved</option>
+              <option value="released" ${cache.filters.status === "released" ? "selected" : ""}>Released</option>
+            </select>
+          </div>
+
+          <label class="pr-field pr-field--check">
+            <input id="approvalCenterReadyOnly" type="checkbox" ${cache.filters.ready_only ? "checked" : ""} />
+            <span class="pr-field__label">Ready only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="approvalCenterBlockersOnly" type="checkbox" ${cache.filters.blockers_only ? "checked" : ""} />
+            <span class="pr-field__label">Blockers only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button id="approvalCenterApplyBtn" class="btn btn-primary" type="button">Apply</button>
+            <button id="approvalCenterResetBtn" class="btn btn-ghost" type="button">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pr-summary-grid">
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Total items</div>
+          <div class="pr-summary-card__value">${formatApprovalCenterNumber(summary.total_items)}</div>
+          <div class="pr-summary-card__hint">Approval queue scope</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Pending approvals</div>
+          <div class="pr-summary-card__value">${formatApprovalCenterNumber(summary.pending_approvals)}</div>
+          <div class="pr-summary-card__hint">Awaiting manager decision</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Ready for release</div>
+          <div class="pr-summary-card__value pr-text-good">${formatApprovalCenterNumber(summary.ready_for_release)}</div>
+          <div class="pr-summary-card__hint">No approval blockers</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">High risk</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatApprovalCenterNumber(summary.high_risk)}</div>
+          <div class="pr-summary-card__hint">Needs escalation attention</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Returned for rework</div>
+          <div class="pr-summary-card__value pr-text-warning">${formatApprovalCenterNumber(summary.returned_for_rework)}</div>
+          <div class="pr-summary-card__hint">Sent back with comments</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Escalated items</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatApprovalCenterNumber(summary.escalated_items)}</div>
+          <div class="pr-summary-card__hint">Open escalations present</div>
+        </div>
+      </section>
+
+      <section class="pr-approval-center-layout">
+        <div class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Approval queue</h3>
+              <p>Cross-engagement items awaiting approval, return, escalation, or release action.</p>
+            </div>
+          </div>
+
+          ${
+            cache.loading
+              ? `<div class="pr-loading">Loading approval center…</div>`
+              : cache.error
+              ? `<div class="pr-empty-state"><div class="pr-empty-state__title">Could not load approval queue</div><div class="pr-empty-state__desc">${escapeHtml(cache.error)}</div></div>`
+              : renderApprovalCenterTable(cache)
+          }
+        </div>
+
+        <aside class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Selected detail</h3>
+              <p>Release readiness, blockers, deliverables, sign-off steps, and escalation context.</p>
+            </div>
+          </div>
+
+          ${
+            cache.detailLoading
+              ? `<div class="pr-loading">Loading approval detail…</div>`
+              : renderApprovalCenterDetail(cache)
+          }
+        </aside>
+      </section>
+    </div>
+  `;
+
+  bindApprovalCenterEvents(me);
 }
 
 function renderEngagementAcceptanceScreen(me) {

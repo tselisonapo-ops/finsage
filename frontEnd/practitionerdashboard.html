@@ -1046,7 +1046,164 @@
   }
 
   /* === FinSage Card System === */
+  .pr-fdr-screen {
+    display: grid;
+    gap: 20px;
+  }
 
+  .pr-fdr-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.95fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .pr-fdr-filter-grid {
+    display: grid;
+    grid-template-columns: 1.8fr 180px 180px auto auto auto;
+    gap: 12px;
+    align-items: end;
+  }
+
+  .pr-fdr-table-wrap {
+    border: 1px solid #e7eef5;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #fff;
+    margin-top: 14px;
+  }
+
+  .pr-fdr-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .pr-fdr-table th,
+  .pr-fdr-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #edf2f7;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .pr-fdr-table th {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .pr-fdr-row {
+    cursor: pointer;
+  }
+
+  .pr-fdr-row:hover {
+    background: #f8fbfd;
+  }
+
+  .pr-fdr-row.is-selected {
+    background: #eef8f7;
+  }
+
+  .pr-fdr-name {
+    display: grid;
+    gap: 4px;
+  }
+
+  .pr-fdr-name__title {
+    font-weight: 800;
+    color: #123040;
+  }
+
+  .pr-fdr-name__meta {
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  .pr-fdr-stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  .pr-fdr-block {
+    border: 1px solid #d7e4ea;
+    border-radius: 16px;
+    background: #fbfdfe;
+    padding: 14px;
+  }
+
+  .pr-fdr-block__title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #123040;
+    margin-bottom: 10px;
+  }
+
+  .pr-fdr-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pr-fdr-field {
+    border: 1px solid #e6eef2;
+    border-radius: 14px;
+    background: #fff;
+    padding: 10px 12px;
+  }
+
+  .pr-fdr-field__label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #6a8390;
+    margin-bottom: 5px;
+  }
+
+  .pr-fdr-field__value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #123040;
+  }
+
+  .pr-fdr-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .pr-fdr-item {
+    border: 1px solid #e6eef2;
+    border-radius: 14px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  .pr-fdr-item__title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #123040;
+  }
+
+  .pr-fdr-item__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  @media (max-width: 1280px) {
+    .pr-fdr-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .pr-fdr-filter-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
+    .pr-fdr-mini-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  
   .card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -1688,6 +1845,170 @@
     gap: 10px;
   }
 
+  .pr-approval-center-screen {
+    display: grid;
+    gap: 20px;
+  }
+
+  .pr-approval-center-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.95fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .pr-approval-center-filter-grid {
+    display: grid;
+    grid-template-columns: 1.8fr 180px 180px auto auto auto;
+    gap: 12px;
+    align-items: end;
+  }
+
+  .pr-approval-center-table-wrap {
+    border: 1px solid #e7eef5;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #fff;
+    margin-top: 14px;
+  }
+
+  .pr-approval-center-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .pr-approval-center-table th,
+  .pr-approval-center-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #edf2f7;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .pr-approval-center-table th {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .pr-approval-center-row {
+    cursor: pointer;
+  }
+
+  .pr-approval-center-row:hover {
+    background: #f8fbfd;
+  }
+
+  .pr-approval-center-row.is-selected {
+    background: #eef8f7;
+  }
+
+  .pr-approval-center-name {
+    display: grid;
+    gap: 4px;
+  }
+
+  .pr-approval-center-name__title {
+    font-weight: 800;
+    color: #123040;
+  }
+
+  .pr-approval-center-name__meta {
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  .pr-approval-center-stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  .pr-approval-center-block {
+    border: 1px solid #d7e4ea;
+    border-radius: 16px;
+    background: #fbfdfe;
+    padding: 14px;
+  }
+
+  .pr-approval-center-block__title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #123040;
+    margin-bottom: 10px;
+  }
+
+  .pr-approval-center-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pr-approval-center-field {
+    border: 1px solid #e6eef2;
+    border-radius: 14px;
+    background: #fff;
+    padding: 10px 12px;
+  }
+
+  .pr-approval-center-field__label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #6a8390;
+    margin-bottom: 5px;
+  }
+
+  .pr-approval-center-field__value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #123040;
+  }
+
+  .pr-approval-center-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .pr-approval-center-item {
+    border: 1px solid #e6eef2;
+    border-radius: 14px;
+    background: #fff;
+    padding: 12px;
+  }
+
+  .pr-approval-center-item__title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #123040;
+  }
+
+  .pr-approval-center-item__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6a8390;
+  }
+
+  .pr-approval-center-actionbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  @media (max-width: 1280px) {
+    .pr-approval-center-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .pr-approval-center-filter-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 768px) {
+    .pr-approval-center-mini-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  
   @media (max-width: 1280px) {
     .pr-filter-grid--escalations {
       grid-template-columns: repeat(2, minmax(0, 1fr));
