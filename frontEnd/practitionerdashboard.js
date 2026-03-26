@@ -4668,18 +4668,43 @@ async function createEngagementApi(payload) {
   );
 }
 
+function getEffectiveCustomerWorkspaceDefaults(customer) {
+  if (!customer) {
+    return {
+      country: "",
+      fin_year_start: "",
+      currency: "",
+      industry: "",
+      sub_industry: ""
+    };
+  }
+
+  return {
+    country: String(customer.country || customer.billing_country || "").trim(),
+    fin_year_start: String(customer.fin_year_start || "").trim(),
+    currency: String(customer.currency || "").trim(),
+    industry: String(customer.industry || "").trim(),
+    sub_industry: String(customer.sub_industry || "").trim()
+  };
+}
+
 function readEngagementModalPayload() {
+  const customer = getSelectedEngagementCustomer();
   const customerId = Number(document.getElementById("engCustomerId")?.value || 0);
+
   const targetCompanyId =
-    _parseModalInt(document.getElementById("engTargetCompanyId")?.value) || null;
+    _parseModalInt(document.getElementById("engTargetCompanyId")?.value) ||
+    _parseModalInt(customer?.company_master_id) ||
+    null;
 
   const engagementType = document.getElementById("engType")?.value || "";
-  const customer = getSelectedEngagementCustomer();
 
   const requiresWorkspace = engagementTypeRequiresWorkspace(engagementType);
   const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
   const missingDefaults = customerMissingWorkspaceDefaults(customer);
   const needsWorkspaceSetup = requiresWorkspace && (!alreadyProvisioned || missingDefaults);
+
+  const customerDefaults = getEffectiveCustomerWorkspaceDefaults(customer);
 
   const payload = {
     customer_id: customerId,
@@ -4687,8 +4712,6 @@ function readEngagementModalPayload() {
     engagement_code: document.getElementById("engCode")?.value?.trim() || "",
     engagement_name: document.getElementById("engName")?.value?.trim() || "",
     engagement_type: engagementType,
-
-    // backend now controls acceptance lifecycle, so do not drive it from modal
     governance_mode: document.getElementById("engGovernanceMode")?.value || "",
     reporting_cycle: document.getElementById("engReportingCycle")?.value || "",
     start_date: document.getElementById("engStartDate")?.value || null,
@@ -4700,15 +4723,30 @@ function readEngagementModalPayload() {
     partner_user_id: _parseModalInt(document.getElementById("engPartnerUserId")?.value),
     description: document.getElementById("engDescription")?.value?.trim() || "",
     scope_summary: document.getElementById("engScopeSummary")?.value?.trim() || "",
-    financial_year_start: document.getElementById("engFinancialYearStart")?.value?.trim() || null
+    financial_year_start:
+      document.getElementById("engFinancialYearStart")?.value?.trim() ||
+      customerDefaults.fin_year_start ||
+      null
   };
 
-  if (needsWorkspaceSetup) {
+  if (requiresWorkspace) {
     payload.target_company = {
-      country: document.getElementById("engCountry")?.value?.trim() || "",
-      currency: document.getElementById("engCurrency")?.value?.trim() || "",
-      industry: document.getElementById("engIndustry")?.value?.trim() || "",
-      sub_industry: document.getElementById("engSubIndustry")?.value?.trim() || ""
+      country:
+        document.getElementById("engCountry")?.value?.trim() ||
+        customerDefaults.country ||
+        "",
+      currency:
+        document.getElementById("engCurrency")?.value?.trim() ||
+        customerDefaults.currency ||
+        "",
+      industry:
+        document.getElementById("engIndustry")?.value?.trim() ||
+        customerDefaults.industry ||
+        "",
+      sub_industry:
+        document.getElementById("engSubIndustry")?.value?.trim() ||
+        customerDefaults.sub_industry ||
+        ""
     };
   }
 
@@ -4841,18 +4879,51 @@ function toggleEngagementWorkspaceSetup() {
   const requiresWorkspace = engagementTypeRequiresWorkspace(type);
   const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
   const missingDefaults = customerMissingWorkspaceDefaults(customer);
-
   const shouldShow = requiresWorkspace && (!alreadyProvisioned || missingDefaults);
 
   block.classList.toggle("hidden", !shouldShow);
 
+  const targetCompanyEl = document.getElementById("engTargetCompanyId");
   const countryEl = document.getElementById("engCountry");
-  const finYearStartEl = document.getElementById("engFinYearStart");
+  const finYearStartEl = document.getElementById("engFinancialYearStart");
   const currencyEl = document.getElementById("engCurrency");
   const industryEl = document.getElementById("engIndustry");
   const subIndustryEl = document.getElementById("engSubIndustry");
 
-  if (!shouldShow) {
+  if (targetCompanyEl) {
+    targetCompanyEl.value = customer?.company_master_id || "";
+  }
+
+  if (customer) {
+    if (countryEl && !countryEl.value) {
+      countryEl.value = customer.country || customer.billing_country || "";
+    }
+
+    if (finYearStartEl && !finYearStartEl.value) {
+      finYearStartEl.value = customer.fin_year_start || "";
+    }
+
+    if (currencyEl && !currencyEl.value) {
+      currencyEl.value = customer.currency || "";
+    }
+
+    if (industryEl && !industryEl.value && customer.industry) {
+      industryEl.value = customer.industry;
+      populateSubIndustryOptions(customer.industry);
+    }
+
+    if (subIndustryEl) {
+      if (industryEl?.value && subIndustryEl.options.length <= 1) {
+        populateSubIndustryOptions(industryEl.value);
+      }
+
+      if (!subIndustryEl.value && customer.sub_industry) {
+        subIndustryEl.value = customer.sub_industry;
+      }
+    }
+  }
+
+  if (!shouldShow && !customer) {
     if (countryEl) countryEl.value = "";
     if (finYearStartEl) finYearStartEl.value = "";
     if (currencyEl) currencyEl.value = "";
@@ -4861,40 +4932,6 @@ function toggleEngagementWorkspaceSetup() {
       subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
       subIndustryEl.value = "";
       subIndustryEl.disabled = true;
-    }
-    return;
-  }
-
-  if (!customer) return;
-
-  if (countryEl && !countryEl.value) {
-    countryEl.value = customer.country || customer.billing_country || "";
-  }
-
-  if (finYearStartEl && !finYearStartEl.value) {
-    finYearStartEl.value = customer.fin_year_start || "";
-  }
-
-  if (currencyEl && !currencyEl.value) {
-    currencyEl.value = customer.currency || "";
-  }
-
-  if (industryEl && !industryEl.value && customer.industry) {
-    industryEl.value = customer.industry;
-    populateSubIndustryOptions(customer.industry);
-  }
-
-  if (subIndustryEl) {
-    if (!industryEl?.value) {
-      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
-      subIndustryEl.value = "";
-      subIndustryEl.disabled = true;
-    } else if (subIndustryEl.options.length <= 1) {
-      populateSubIndustryOptions(industryEl.value);
-    }
-
-    if (!subIndustryEl.value && customer.sub_industry) {
-      subIndustryEl.value = customer.sub_industry;
     }
   }
 }
