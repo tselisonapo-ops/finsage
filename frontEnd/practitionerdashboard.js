@@ -3621,13 +3621,21 @@ function populateIndustryOptions() {
   const industryEl = document.getElementById("engIndustry");
   if (!industryEl) return;
 
-  const current = industryEl.value || "";
-  const keys = Object.keys(INDUSTRY_CATALOG).sort();
+  const catalog =
+    typeof INDUSTRY_CATALOG !== "undefined" && INDUSTRY_CATALOG
+      ? INDUSTRY_CATALOG
+      : window.INDUSTRY_CATALOG || {};
 
-  industryEl.innerHTML = '<option value="">Select industry</option>' +
+  const current = industryEl.value || "";
+  const keys = Object.keys(catalog).sort();
+
+  industryEl.innerHTML =
+    `<option value="">Select industry</option>` +
     keys.map(name => `<option value="${name}">${name}</option>`).join("");
 
-  industryEl.value = current;
+  if (current && keys.includes(current)) {
+    industryEl.value = current;
+  }
 }
 
 function populateSubIndustryOptions(industry, selectedValue = "") {
