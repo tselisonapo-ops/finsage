@@ -2630,9 +2630,26 @@
   /* filter layout */
   .acceptance-screen .form-row {
     display: grid;
-    grid-template-columns: minmax(320px, 1.7fr) 150px 150px 150px auto auto;
+    grid-template-columns: minmax(280px, 1.8fr) repeat(3, minmax(140px, 160px)) auto auto;
     gap: 12px;
     align-items: end;
+  }
+
+  @media (max-width: 1500px) {
+    .acceptance-screen .form-row {
+      grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(140px, 1fr));
+    }
+
+    .acceptance-screen .checkbox-field,
+    .acceptance-screen .filter-actions {
+      grid-column: auto;
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .acceptance-screen .form-row {
+      grid-template-columns: 1fr 1fr;
+    }
   }
 
   .acceptance-screen .field {
