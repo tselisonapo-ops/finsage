@@ -163,6 +163,7 @@ def approval_center_action_route(cid: int, queue_type: str, source_id: int):
     try:
         company_id = int(cid)
         payload = request.jwt_payload or {}
+
         deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
         if deny:
             return deny

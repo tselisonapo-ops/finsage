@@ -1360,8 +1360,8 @@ window.endpoints = ENDPOINTS;
     error: "",
     filters: {
       q: "",
+      module: "",
       status: "",
-      risk_band: "",
       ready_only: false,
       blockers_only: false,
       active_only: true,
@@ -15340,6 +15340,21 @@ function approvalCenterBadgeClass(value) {
   return "pr-badge";
 }
 
+function resolveApprovalCenterReviewTarget(row) {
+  const payload = row?.payload_json || {};
+  return {
+    screen:
+      payload.redirect_screen ||
+      payload.screen ||
+      (row.module === "engagements" ? PR_NAV.finalDeliverablesReview : null),
+    entityType: row.entity_type || "",
+    entityId: row.entity_id || "",
+    engagementId: row.engagement_id || payload.engagement_id || null,
+    module: row.module || payload.module || "",
+    payload
+  };
+}
+
 async function loadApprovalCenterData(me) {
   const companyId = getApprovalCenterCompanyId(me);
   if (!companyId) throw new Error("Company context missing.");
@@ -15514,6 +15529,7 @@ function renderApprovalCenterDetail(cache) {
   const deliverables = detail?.deliverables || [];
   const signoffSteps = detail?.signoff_steps || [];
   const escalations = detail?.escalations || [];
+  const decisions = detail?.decisions || [];
 
   return `
     <div class="pr-approval-center-stack">
@@ -15550,7 +15566,8 @@ function renderApprovalCenterDetail(cache) {
       <div class="pr-approval-center-block">
         <div class="pr-approval-center-block__title">Actions</div>
         <div class="pr-approval-center-actionbar">
-          <button class="btn btn-primary" type="button" data-approval-action="approve">Approve</button>
+          <button class="btn btn-primary" type="button" data-approval-review="true">Review</button>
+          <button class="btn btn-ghost" type="button" data-approval-action="approve">Approve</button>
           <button class="btn btn-ghost" type="button" data-approval-action="return">Return for rework</button>
           <button class="btn btn-ghost" type="button" data-approval-action="escalate">Escalate</button>
           <button class="btn btn-ghost" type="button" data-approval-action="release">Release</button>
@@ -15619,6 +15636,28 @@ function renderApprovalCenterDetail(cache) {
           }
         </div>
       </div>
+
+      <div class="pr-approval-center-block">
+        <div class="pr-approval-center-block__title">Decision history</div>
+        <div class="pr-approval-center-list">
+          ${
+            decisions.length
+              ? decisions.map((d) => `
+                  <div class="pr-approval-center-item">
+                    <div class="pr-approval-center-item__title">
+                      ${escapeHtml(d.decision || "decision")}
+                      <span class="${approvalCenterBadgeClass(d.decision)}">${escapeHtml(d.decision || "—")}</span>
+                    </div>
+                    <div class="pr-approval-center-item__meta">
+                      actor ${escapeHtml(String(d.actor_user_id || "—"))} · ${escapeHtml(formatApprovalCenterDate(d.created_at))}
+                      ${d.comment ? `· ${escapeHtml(d.comment)}` : ""}
+                    </div>
+                  </div>
+                `).join("")
+              : `<div class="pr-empty-state__desc">No decisions recorded yet.</div>`
+          }
+        </div>
+      </div>
     </div>
   `;
 }
@@ -15630,8 +15669,8 @@ function bindApprovalCenterEvents(me) {
   host.querySelector("#approvalCenterApplyBtn")?.addEventListener("click", async () => {
     PR_APPROVAL_CENTER_CACHE.filters.q =
       host.querySelector("#approvalCenterSearchInput")?.value?.trim() || "";
-    PR_APPROVAL_CENTER_CACHE.filters.queue_type =
-      host.querySelector("#approvalCenterQueueTypeFilter")?.value || "";
+PR_APPROVAL_CENTER_CACHE.filters.module =
+  host.querySelector("#approvalCenterModuleFilter")?.value || "";
     PR_APPROVAL_CENTER_CACHE.filters.status =
       host.querySelector("#approvalCenterStatusFilter")?.value || "";
     PR_APPROVAL_CENTER_CACHE.filters.ready_only =
@@ -15646,7 +15685,7 @@ function bindApprovalCenterEvents(me) {
   host.querySelector("#approvalCenterResetBtn")?.addEventListener("click", async () => {
     PR_APPROVAL_CENTER_CACHE.filters = {
       q: "",
-      queue_type: "",
+      module: "",
       status: "",
       ready_only: false,
       blockers_only: false,
@@ -15673,6 +15712,36 @@ function bindApprovalCenterEvents(me) {
       await loadApprovalCenterDetail(me, queueType, sourceId);
       renderApprovalCenterScreenContent(me);
     });
+  });
+
+  host.querySelector('[data-approval-review="true"]')?.addEventListener("click", async () => {
+    const row = PR_APPROVAL_CENTER_CACHE.selectedRow;
+    if (!row) return;
+
+    const target = resolveApprovalCenterReviewTarget(row);
+    if (!target.screen) {
+      window.alert("No review target is configured for this approval item.");
+      return;
+    }
+
+    if (target.engagementId) {
+      try {
+        sessionStorage.setItem(
+          "fs_approval_context",
+          JSON.stringify({
+            approval_request_id: row.source_id,
+            queue_type: row.queue_type,
+            engagement_id: target.engagementId,
+            entity_type: row.entity_type,
+            entity_id: row.entity_id,
+            module: row.module,
+            payload_json: row.payload_json || {}
+          })
+        );
+      } catch (_) {}
+    }
+
+    await switchPractitionerScreen(target.screen);
   });
 
   host.querySelectorAll("[data-approval-action]").forEach((btn) => {
@@ -15727,12 +15796,14 @@ function renderApprovalCenterScreenContent(me) {
           </div>
 
           <div class="pr-field">
-            <label class="pr-field__label" for="approvalCenterQueueTypeFilter">Queue type</label>
-            <select id="approvalCenterQueueTypeFilter" class="pr-select">
-              <option value="">All queues</option>
-              <option value="review" ${cache.filters.queue_type === "review" ? "selected" : ""}>Review</option>
-              <option value="deliverable" ${cache.filters.queue_type === "deliverable" ? "selected" : ""}>Deliverable</option>
-              <option value="signoff" ${cache.filters.queue_type === "signoff" ? "selected" : ""}>Sign-off</option>
+            <label class="pr-field__label" for="approvalCenterModuleFilter">Module</label>
+            <select id="approvalCenterModuleFilter" class="pr-select">
+              <option value="">All modules</option>
+              <option value="gl" ${cache.filters.module === "gl" ? "selected" : ""}>GL</option>
+              <option value="ap" ${cache.filters.module === "ap" ? "selected" : ""}>AP</option>
+              <option value="ar" ${cache.filters.module === "ar" ? "selected" : ""}>AR</option>
+              <option value="control_room" ${cache.filters.module === "control_room" ? "selected" : ""}>Control Room</option>
+              <option value="engagements" ${cache.filters.module === "engagements" ? "selected" : ""}>Engagements</option>
             </select>
           </div>
 
