@@ -3619,23 +3619,20 @@ const WORKSPACE_REQUIRED_ENGAGEMENT_TYPES = new Set([
 
 function populateIndustryOptions() {
   const industryEl = document.getElementById("engIndustry");
+  console.log("[populateIndustryOptions] called");
+  console.log("[populateIndustryOptions] industryEl:", industryEl);
+  console.log("[populateIndustryOptions] INDUSTRY_CATALOG:", typeof INDUSTRY_CATALOG, INDUSTRY_CATALOG);
+
   if (!industryEl) return;
 
-  const catalog =
-    typeof INDUSTRY_CATALOG !== "undefined" && INDUSTRY_CATALOG
-      ? INDUSTRY_CATALOG
-      : window.INDUSTRY_CATALOG || {};
-
-  const current = industryEl.value || "";
-  const keys = Object.keys(catalog).sort();
+  const keys = Object.keys(INDUSTRY_CATALOG || {}).sort();
+  console.log("[populateIndustryOptions] keys:", keys);
 
   industryEl.innerHTML =
-    `<option value="">Select industry</option>` +
+    '<option value="">Select industry</option>' +
     keys.map(name => `<option value="${name}">${name}</option>`).join("");
 
-  if (current && keys.includes(current)) {
-    industryEl.value = current;
-  }
+  console.log("[populateIndustryOptions] final options count:", industryEl.options.length);
 }
 
 function populateSubIndustryOptions(industry, selectedValue = "") {
