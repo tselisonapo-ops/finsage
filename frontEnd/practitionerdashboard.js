@@ -16335,11 +16335,16 @@ async function loadEngagementAcceptanceRows(me) {
       ENDPOINTS.engagementAcceptance.list(companyId, filters)
     );
 
+    console.log("engagementAcceptance.list response =", res);
+
     const rows =
       Array.isArray(res) ? res :
       Array.isArray(res?.rows) ? res.rows :
       Array.isArray(res?.items) ? res.items :
+      Array.isArray(res?.data) ? res.data :
       [];
+
+    console.log("engagementAcceptance.list rows =", rows);
 
     PR_ENGAGEMENT_ACCEPTANCE_CACHE.rows = rows;
     renderEngagementAcceptanceRows();
@@ -16386,7 +16391,7 @@ function renderEngagementAcceptanceRows() {
   if (!rows.length) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" class="muted">No engagement acceptance records found.</td>
+        <td colspan="8" class="muted">No engagement acceptance records found.</td>
       </tr>
     `;
     renderEngagementAcceptanceStats([]);
@@ -16408,6 +16413,9 @@ function renderEngagementAcceptanceRows() {
       <td>${escapeHtml(row.assigned_partner_user_name || "-")}</td>
       <td>${escapeHtml(titleize((row.decision || "-").replaceAll("_", " ")))}</td>
       <td>${formatShortDate(row.decision_date || row.updated_at)}</td>
+      <td>
+        <button class="btn btn-sm btn-secondary" type="button">Review</button>
+      </td>
     </tr>
   `).join("");
 

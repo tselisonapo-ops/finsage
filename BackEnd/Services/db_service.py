@@ -5990,14 +5990,28 @@ class DatabaseService:
             END IF;
 
             IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c
+                SELECT 1
+                FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_engagements_status_chk' AND n.nspname = '{schema}'
+                WHERE c.conname = '{schema}_engagements_status_chk'
+                AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.engagements
                     ADD CONSTRAINT %I
-                    CHECK (status IN (''draft'', ''pending'', ''active'', ''on_hold'', ''completed'', ''cancelled'', ''archived''))',
+                    CHECK (
+                        status IN (
+                            ''draft'',
+                            ''pending'',
+                            ''pending_acceptance'',
+                            ''active'',
+                            ''declined'',
+                            ''on_hold'',
+                            ''completed'',
+                            ''cancelled'',
+                            ''archived''
+                        )
+                    )',
                     '{schema}', '{schema}_engagements_status_chk'
                 );
             END IF;
