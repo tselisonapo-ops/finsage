@@ -48925,58 +48925,72 @@ class DatabaseService:
         active_only: bool = True,  # kept for compatibility
     ):
         schema = self.company_schema(company_id)
-        base_sql = self._approval_center_base_sql(schema)
 
-        sql = base_sql + """
+        where = ["ar.company_id = %s"]
+        params = [company_id]
+
+        if module:
+            where.append("LOWER(COALESCE(ar.module, '')) = LOWER(%s)")
+            params.append(module)
+
+        if status:
+            where.append("LOWER(COALESCE(ar.status, '')) = LOWER(%s)")
+            params.append(status)
+
+        if q:
+            like = f"%{q}%"
+            where.append("""
+                (
+                    COALESCE(ar.entity_ref, '') ILIKE %s
+                    OR COALESCE(ar.entity_type, '') ILIKE %s
+                    OR COALESCE(ar.action, '') ILIKE %s
+                    OR COALESCE(ar.module, '') ILIKE %s
+                )
+            """)
+            params.extend([like, like, like, like])
+
+        if ready_only:
+            where.append("""
+                LOWER(COALESCE(ar.status, '')) IN ('approved')
+            """)
+
+        if blockers_only:
+            where.append("""
+                (
+                    LOWER(COALESCE(ar.status, '')) IN ('rejected')
+                    OR LOWER(COALESCE(ar.risk_level, '')) IN ('high', 'critical')
+                )
+            """)
+
+        where_sql = " AND ".join(where)
+
+        cur.execute(
+            f"""
             SELECT
                 COUNT(*) AS total_items,
                 COUNT(*) FILTER (
-                    WHERE status = 'pending'
+                    WHERE LOWER(COALESCE(ar.status, '')) = 'pending'
                 ) AS pending_approvals,
                 COUNT(*) FILTER (
-                    WHERE ready_for_release = TRUE
+                    WHERE LOWER(COALESCE(ar.status, '')) = 'approved'
                 ) AS ready_for_release,
                 COUNT(*) FILTER (
-                    WHERE risk_band IN ('high', 'critical')
+                    WHERE LOWER(COALESCE(ar.risk_level, '')) IN ('high', 'critical')
                 ) AS high_risk,
                 COUNT(*) FILTER (
-                    WHERE last_action IN ('reassign', 'reject') OR status = 'rejected'
+                    WHERE LOWER(COALESCE(ar.status, '')) = 'rejected'
                 ) AS returned_for_rework,
                 COUNT(*) FILTER (
-                    WHERE open_escalations > 0
+                    WHERE LOWER(COALESCE(ar.action, '')) = 'escalate'
+                    OR LOWER(COALESCE(ar.risk_level, '')) IN ('high', 'critical')
                 ) AS escalated_items
-            FROM final
-            WHERE (%s = FALSE OR ready_for_release = TRUE)
-            AND (
-                    %s = FALSE OR (
-                        overdue_deliverables > 0
-                        OR pending_signoff_steps > 0
-                        OR open_escalations > 0
-                        OR status = 'rejected'
-                    )
-                )
-        """
-
-        like = f"%{q.strip()}%"
-        cur.execute(
-            sql,
-            (
-                company_id,
-                active_only,
-                q.strip(), like, like, like,
-                company_id,
-                company_id,
-                company_id,
-                company_id,
-                module, module,
-                status, status,
-                q.strip(), like, like, like, like,
-                ready_only,
-                blockers_only,
-            ),
+            FROM {schema}.approval_requests ar
+            WHERE {where_sql}
+            """,
+            params,
         )
-        return cur.fetchone()
 
+        return cur.fetchone()
 
     def list_approval_center_items(
         self,
@@ -48984,63 +48998,99 @@ class DatabaseService:
         company_id: int,
         *,
         q: str = "",
-        queue_type: str = "",
+        module: str = "",
         status: str = "",
         ready_only: bool = False,
         blockers_only: bool = False,
-        active_only: bool = True,
+        active_only: bool = True,  # kept for compatibility
         limit: int = 100,
         offset: int = 0,
     ):
         schema = self.company_schema(company_id)
-        base_sql = self._approval_center_base_sql(schema)
 
-        sql = base_sql + """
-            SELECT *
-            FROM final
-            WHERE (%s = FALSE OR ready_for_release = TRUE)
-            AND (
-                    %s = FALSE OR (
-                        overdue_deliverables > 0
-                        OR pending_signoff_steps > 0
-                        OR open_escalations > 0
-                        OR status IN ('returned', 'escalated')
-                    )
+        where = ["ar.company_id = %s"]
+        params = [company_id]
+
+        if module:
+            where.append("LOWER(COALESCE(ar.module, '')) = LOWER(%s)")
+            params.append(module)
+
+        if status:
+            where.append("LOWER(COALESCE(ar.status, '')) = LOWER(%s)")
+            params.append(status)
+
+        if q:
+            like = f"%{q}%"
+            where.append("""
+                (
+                    COALESCE(ar.entity_ref, '') ILIKE %s
+                    OR COALESCE(ar.entity_type, '') ILIKE %s
+                    OR COALESCE(ar.action, '') ILIKE %s
+                    OR COALESCE(ar.module, '') ILIKE %s
                 )
-            ORDER BY
-                CASE risk_band
-                    WHEN 'high' THEN 1
-                    WHEN 'medium' THEN 2
-                    ELSE 3
-                END,
-                COALESCE(due_date, engagement_due_date) NULLS LAST,
-                created_at DESC
-            LIMIT %s OFFSET %s
-        """
+            """)
+            params.extend([like, like, like, like])
 
-        like = f"%{q.strip()}%"
+        if ready_only:
+            where.append("LOWER(COALESCE(ar.status, '')) = 'approved'")
+
+        if blockers_only:
+            where.append("""
+                (
+                    LOWER(COALESCE(ar.status, '')) = 'rejected'
+                    OR LOWER(COALESCE(ar.risk_level, '')) IN ('high', 'critical')
+                )
+            """)
+
+        where_sql = " AND ".join(where)
+
         cur.execute(
-            sql,
-            (
-                company_id,
-                active_only,
-                q.strip(), like, like, like,
-                company_id,
-                company_id,
-                company_id,
-                company_id,
-                active_only,
-                queue_type, queue_type,
-                status, status,
-                q.strip(), like, like, like, like,
-                ready_only,
-                blockers_only,
-                limit,
-                offset,
-            ),
+            f"""
+            SELECT
+                ar.id AS source_id,
+                LOWER(COALESCE(ar.module, '')) AS queue_type,
+                NULLIF(COALESCE(ar.payload_json ->> 'engagement_id', ''), '')::INT AS engagement_id,
+                ar.entity_type,
+                ar.entity_id,
+                ar.entity_ref,
+                ar.module,
+                ar.action,
+                COALESCE(
+                    NULLIF(ar.payload_json ->> 'title', ''),
+                    NULLIF(ar.entity_ref, ''),
+                    CONCAT(COALESCE(ar.entity_type, 'item'), ' ', COALESCE(ar.entity_id, ''))
+                ) AS title,
+                COALESCE(
+                    NULLIF(ar.payload_json ->> 'description', ''),
+                    COALESCE(ar.decision_note, '')
+                ) AS description,
+                LOWER(COALESCE(ar.status, 'pending')) AS status,
+                LOWER(COALESCE(ar.risk_level, 'low')) AS risk_band,
+                ar.requested_by_user_id,
+                ar.decided_by_user_id AS assigned_manager_user_id,
+                ar.amount,
+                ar.currency,
+                ar.payload_json,
+                ar.requested_at,
+                ar.created_at,
+                ar.updated_at
+            FROM {schema}.approval_requests ar
+            WHERE {where_sql}
+            ORDER BY
+                CASE LOWER(COALESCE(ar.risk_level, 'low'))
+                    WHEN 'critical' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'medium' THEN 3
+                    ELSE 4
+                END,
+                ar.requested_at DESC NULLS LAST,
+                ar.created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            [*params, limit, offset],
         )
-        return cur.fetchall()
 
+        return cur.fetchall()
 
     def get_approval_center_item_detail(
         self,
@@ -49051,32 +49101,44 @@ class DatabaseService:
         source_id: int,
     ):
         schema = self.company_schema(company_id)
-        base_sql = self._approval_center_base_sql(schema)
-
-        sql = base_sql + """
-            SELECT *
-            FROM final
-            WHERE queue_type = %s
-            AND source_id = %s
-            LIMIT 1
-        """
 
         cur.execute(
-            sql,
-            (
-                company_id,
-                True,
-                "", "%%", "%%", "%%",
-                company_id,
-                company_id,
-                company_id,
-                company_id,
-                "", "",
-                "", "",
-                "", "%%", "%%", "%%", "%%",
-                queue_type,
-                source_id,
-            ),
+            f"""
+            SELECT
+                ar.id AS source_id,
+                LOWER(COALESCE(ar.module, '')) AS queue_type,
+                NULLIF(COALESCE(ar.payload_json ->> 'engagement_id', ''), '')::INT AS engagement_id,
+                ar.entity_type,
+                ar.entity_id,
+                ar.entity_ref,
+                ar.module,
+                ar.action,
+                COALESCE(
+                    NULLIF(ar.payload_json ->> 'title', ''),
+                    NULLIF(ar.entity_ref, ''),
+                    CONCAT(COALESCE(ar.entity_type, 'item'), ' ', COALESCE(ar.entity_id, ''))
+                ) AS title,
+                COALESCE(
+                    NULLIF(ar.payload_json ->> 'description', ''),
+                    COALESCE(ar.decision_note, '')
+                ) AS description,
+                LOWER(COALESCE(ar.status, 'pending')) AS status,
+                LOWER(COALESCE(ar.risk_level, 'low')) AS risk_band,
+                ar.requested_by_user_id,
+                ar.decided_by_user_id AS assigned_manager_user_id,
+                ar.amount,
+                ar.currency,
+                ar.payload_json,
+                ar.requested_at,
+                ar.created_at,
+                ar.updated_at
+            FROM {schema}.approval_requests ar
+            WHERE ar.company_id = %s
+            AND ar.id = %s
+            AND LOWER(COALESCE(ar.module, '')) = %s
+            LIMIT 1
+            """,
+            (company_id, source_id, queue_type),
         )
         row = cur.fetchone()
         if not row:
@@ -49186,7 +49248,7 @@ class DatabaseService:
         action: str,
         actor_user_id: int,
         comment: str = "",
-        due_date=None,  # ignored, kept for compatibility
+        due_date=None,  # ignored
     ):
         schema = self.company_schema(company_id)
 
@@ -49267,6 +49329,7 @@ class DatabaseService:
                 comment or None,
             ),
         )
+
         return updated
             
     def insert_ticket(
