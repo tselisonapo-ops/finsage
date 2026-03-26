@@ -16316,8 +16316,10 @@ async function renderEngagementAcceptanceScreen(me) {
     </div>
   `;
 
-  await loadEngagementAcceptanceRows(me);
   bindEngagementAcceptanceScreen(me);
+  bindAcceptanceAssessmentModalEvents(me);
+  await loadEngagementAcceptanceRows(me);
+
 }
 
 async function loadEngagementAcceptanceRows(me) {
@@ -16487,6 +16489,7 @@ function renderEngagementAcceptanceDetail(row) {
   const status = String(row.status || "").toLowerCase();
   const canSubmit = status === "draft" || status === "returned";
   const canDecide = status === "submitted" || status === "under_review";
+  const canEditAssessment = ["draft", "returned", "submitted", "under_review"].includes(status);
 
   host.innerHTML = `
     <div class="detail-grid">
@@ -16552,6 +16555,7 @@ function renderEngagementAcceptanceDetail(row) {
     </div>
 
     <div class="detail-actions">
+      ${canEditAssessment ? `<button class="btn btn-secondary" data-ea-edit="${row.id}">Edit assessment</button>` : ""}
       ${canSubmit ? `<button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>` : ""}
       ${canDecide ? `<button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}">Approve</button>` : ""}
       ${canDecide ? `<button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>` : ""}
@@ -16635,6 +16639,16 @@ function bindEngagementAcceptanceScreen(me) {
   const detailHost = document.getElementById("eaDetailHost");
   if (detailHost) {
     detailHost.onclick = async (event) => {
+      const editBtn = event.target.closest("[data-ea-edit]");
+      if (editBtn) {
+        const row = PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail;
+        if (row) {
+          populateAcceptanceAssessmentModal(row);
+          openAcceptanceAssessmentModal();
+        }
+        return;
+      }
+
       const btn = event.target.closest("[data-ea-action]");
       if (!btn) return;
 
@@ -16646,6 +16660,7 @@ function bindEngagementAcceptanceScreen(me) {
     };
   }
 }
+
 
 async function applyEngagementAcceptanceDecision(me, acceptanceId, action) {
   const companyId = me?.company_id || window.currentUser?.company_id;
@@ -16673,6 +16688,104 @@ async function applyEngagementAcceptanceDecision(me, acceptanceId, action) {
   }
 }
 
+function setAcceptanceAssessmentMsg(message = "", type = "") {
+  const el = document.getElementById("acceptanceAssessmentMsg");
+  if (!el) return;
+  el.textContent = message || "";
+  el.className = `form-message${type ? ` ${type}` : ""}`;
+}
+
+function openAcceptanceAssessmentModal() {
+  document.getElementById("acceptanceAssessmentModal")?.classList.remove("hidden");
+}
+
+function closeAcceptanceAssessmentModal() {
+  document.getElementById("acceptanceAssessmentModal")?.classList.add("hidden");
+  setAcceptanceAssessmentMsg("");
+}
+
+function populateAcceptanceAssessmentModal(row) {
+  if (!row) return;
+
+  document.getElementById("aaAcceptanceId").value = row.id || "";
+  document.getElementById("aaIndependenceCleared").checked = !!row.independence_cleared;
+  document.getElementById("aaConflictsChecked").checked = !!row.conflicts_checked;
+  document.getElementById("aaCompetenceConfirmed").checked = !!row.competence_confirmed;
+  document.getElementById("aaCapacityConfirmed").checked = !!row.capacity_confirmed;
+  document.getElementById("aaRiskLevel").value = row.risk_level || "normal";
+  document.getElementById("aaClientRiskNotes").value = row.client_risk_notes || "";
+  document.getElementById("aaServiceComplexityNotes").value = row.service_complexity_notes || "";
+  document.getElementById("aaPreconditionsNotes").value = row.preconditions_notes || "";
+  document.getElementById("aaDecisionNotes").value = row.decision_notes || "";
+}
+
+async function saveAcceptanceAssessment(me) {
+  const companyId = me?.company_id || window.currentUser?.company_id;
+  const acceptanceId = Number(document.getElementById("aaAcceptanceId")?.value || 0);
+  if (!companyId || !acceptanceId) return;
+
+  const saveBtn = document.getElementById("acceptanceAssessmentSave");
+
+  try {
+    if (saveBtn) saveBtn.disabled = true;
+    setAcceptanceAssessmentMsg("Saving assessment...");
+
+    const payload = {
+      acceptance_type: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.acceptance_type || "acceptance",
+      assigned_partner_user_id: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.assigned_partner_user_id || null,
+      risk_level: document.getElementById("aaRiskLevel")?.value || "normal",
+      independence_cleared: !!document.getElementById("aaIndependenceCleared")?.checked,
+      conflicts_checked: !!document.getElementById("aaConflictsChecked")?.checked,
+      competence_confirmed: !!document.getElementById("aaCompetenceConfirmed")?.checked,
+      capacity_confirmed: !!document.getElementById("aaCapacityConfirmed")?.checked,
+      client_risk_notes: document.getElementById("aaClientRiskNotes")?.value?.trim() || "",
+      service_complexity_notes: document.getElementById("aaServiceComplexityNotes")?.value?.trim() || "",
+      preconditions_notes: document.getElementById("aaPreconditionsNotes")?.value?.trim() || "",
+      decision_notes: document.getElementById("aaDecisionNotes")?.value?.trim() || "",
+      valid_from: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.valid_from || null,
+      valid_to: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.valid_to || null
+    };
+
+    const res = await apiFetch(
+      ENDPOINTS.engagementAcceptance.update(companyId, acceptanceId),
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const row = res?.row || res || null;
+    if (!row) {
+      throw new Error("Failed to save assessment.");
+    }
+
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail = row;
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.selectedRow = row;
+
+    setAcceptanceAssessmentMsg("Assessment saved.", "success");
+
+    renderEngagementAcceptanceDetail(row);
+    await loadEngagementAcceptanceRows(me);
+
+    window.setTimeout(() => {
+      closeAcceptanceAssessmentModal();
+    }, 300);
+  } catch (err) {
+    console.error(err);
+    setAcceptanceAssessmentMsg(err.message || "Failed to save assessment.", "error");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function bindAcceptanceAssessmentModalEvents(me) {
+  document.getElementById("acceptanceAssessmentClose")?.addEventListener("click", closeAcceptanceAssessmentModal);
+  document.getElementById("acceptanceAssessmentCancel")?.addEventListener("click", closeAcceptanceAssessmentModal);
+  document.getElementById("acceptanceAssessmentBackdrop")?.addEventListener("click", closeAcceptanceAssessmentModal);
+  document.getElementById("acceptanceAssessmentSave")?.addEventListener("click", async () => {
+    await saveAcceptanceAssessment(me);
+  });
+}
 
 function renderRiskIndependenceScreen(me) {
   renderPartnerStubScreen(PR_NAV.riskIndependence, {

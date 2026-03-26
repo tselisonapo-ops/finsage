@@ -1877,6 +1877,48 @@
     align-items: start;
   }
 
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.form-grid.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field textarea,
+.field select {
+  width: 100%;
+  border: 1px solid #ccd8e3;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.form-message {
+  min-height: 20px;
+  font-size: 13px;
+}
+
+.form-message.error {
+  color: #c0392b;
+}
+
+.form-message.success {
+  color: #1f7a4d;
+}
   .pr-approval-center-filter-grid {
     display: grid;
     grid-template-columns: 1.8fr 180px 180px auto auto auto;
@@ -8518,6 +8560,89 @@ window.safeRedirect = function (url, mode = "href") {
       <button id="rqAssignModalSaveBtn" type="button" class="h-10 px-5 rounded-xl bg-[var(--brand)] text-white font-semibold">
         Save assignment
       </button>
+    </div>
+  </div>
+</div>
+
+<div id="acceptanceAssessmentModal" class="modal hidden">
+  <div class="modal-backdrop" id="acceptanceAssessmentBackdrop"></div>
+
+  <div class="modal-dialog modal-lg">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h3>Edit Acceptance Assessment</h3>
+          <p class="muted">Complete the acceptance checks and supporting notes.</p>
+        </div>
+        <button type="button" class="btn btn-secondary" id="acceptanceAssessmentClose">Close</button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="aaAcceptanceId" />
+
+        <div class="detail-section">
+          <h4>Checks</h4>
+
+          <label class="check-item">
+            <input type="checkbox" id="aaIndependenceCleared" />
+            <span>Independence cleared</span>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox" id="aaConflictsChecked" />
+            <span>Conflicts checked</span>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox" id="aaCompetenceConfirmed" />
+            <span>Competence confirmed</span>
+          </label>
+
+          <label class="check-item">
+            <input type="checkbox" id="aaCapacityConfirmed" />
+            <span>Capacity confirmed</span>
+          </label>
+        </div>
+
+        <div class="form-grid two-col">
+          <div class="field">
+            <label for="aaRiskLevel">Risk band</label>
+            <select id="aaRiskLevel">
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="aaClientRiskNotes">Client risk notes</label>
+          <textarea id="aaClientRiskNotes" rows="4" placeholder="Enter client risk notes"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="aaServiceComplexityNotes">Service complexity notes</label>
+          <textarea id="aaServiceComplexityNotes" rows="4" placeholder="Enter service complexity notes"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="aaPreconditionsNotes">Preconditions notes</label>
+          <textarea id="aaPreconditionsNotes" rows="4" placeholder="Enter preconditions notes"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="aaDecisionNotes">Decision notes</label>
+          <textarea id="aaDecisionNotes" rows="4" placeholder="Enter decision notes"></textarea>
+        </div>
+
+        <div id="acceptanceAssessmentMsg" class="form-message"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="acceptanceAssessmentCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="acceptanceAssessmentSave">Save assessment</button>
+      </div>
     </div>
   </div>
 </div>
