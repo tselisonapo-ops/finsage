@@ -1394,6 +1394,7 @@ async function apiFetch(url, options = {}) {
 
   return json;
 }
+window.apiFetch = apiFetch;
 
 function buildApiUrl(baseUrl, params = {}) {
   const url = new URL(baseUrl, window.location.origin);
@@ -16143,8 +16144,11 @@ function renderAuditTrailWorkspace({
     me?.id ||
     "";
 
-  const apiFetchFn = window.apiFetch || null;
-  const endpoints = window.ENDPOINTS || window.endpoints || {};
+  const apiFetchFn =
+    typeof apiFetch === "function" ? apiFetch : window.apiFetch || null;
+
+  const endpoints =
+    typeof ENDPOINTS !== "undefined" ? ENDPOINTS : (window.ENDPOINTS || window.endpoints || {});
 
   if (!apiFetchFn) {
     root.innerHTML = `
