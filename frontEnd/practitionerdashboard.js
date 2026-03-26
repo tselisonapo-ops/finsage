@@ -3649,61 +3649,6 @@ function populateSubIndustryOptions(industry, selectedValue = "") {
   subEl.value = items.includes(selectedValue) ? selectedValue : "";
 }
 
-function toggleEngagementWorkspaceSetup() {
-  const block = document.getElementById("engWorkspaceSetupBlock");
-  if (!block) return;
-
-  // make sure industry select has options before we use/set it
-  window.populateIndustryOptions();
-
-  const type = document.getElementById("engType")?.value || "";
-  const customer = getSelectedEngagementCustomer();
-
-  const requiresWorkspace = engagementTypeRequiresWorkspace(type);
-  const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
-  const shouldShow = requiresWorkspace && !alreadyProvisioned;
-
-  block.classList.toggle("hidden", !shouldShow);
-
-  const countryEl = document.getElementById("engCountry");
-  const currencyEl = document.getElementById("engCurrency");
-  const industryEl = document.getElementById("engIndustry");
-  const subIndustryEl = document.getElementById("engSubIndustry");
-
-  if (shouldShow && customer) {
-    if (countryEl && !countryEl.value) {
-      countryEl.value = customer.country || customer.billing_country || "";
-    }
-
-    if (currencyEl && !currencyEl.value) {
-      currencyEl.value = customer.currency || "";
-    }
-
-    if (industryEl && !industryEl.value && customer.industry) {
-      industryEl.value = customer.industry;
-      populateSubIndustryOptions(customer.industry);
-    }
-
-    if (subIndustryEl && customer.sub_industry) {
-      subIndustryEl.value = customer.sub_industry;
-    }
-
-    return;
-  }
-
-  if (!shouldShow) {
-    if (countryEl) countryEl.value = "";
-    if (currencyEl) currencyEl.value = "";
-    if (industryEl) industryEl.value = "";
-
-    if (subIndustryEl) {
-      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
-      subIndustryEl.value = "";
-      subIndustryEl.disabled = true;
-    }
-  }
-}
-
 function bindPractitionerNav(me) {
   const host = document.getElementById("prSidebarNav");
   if (!host || PR_NAV_EVENTS_BOUND) return;
@@ -4991,12 +4936,20 @@ function toggleEngagementWorkspaceSetup() {
   const block = document.getElementById("engWorkspaceSetupBlock");
   if (!block) return;
 
+  if (typeof window.populateIndustryOptions === "function") {
+    window.populateIndustryOptions();
+  }
+
   const type = document.getElementById("engType")?.value || "";
   const customer = getSelectedEngagementCustomer();
 
   const requiresWorkspace = engagementTypeRequiresWorkspace(type);
   const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
-  const missingDefaults = customerMissingWorkspaceDefaults(customer);
+  const missingDefaults =
+    typeof customerMissingWorkspaceDefaults === "function"
+      ? customerMissingWorkspaceDefaults(customer)
+      : false;
+
   const shouldShow = requiresWorkspace && (!alreadyProvisioned || missingDefaults);
 
   block.classList.toggle("hidden", !shouldShow);
@@ -5012,7 +4965,7 @@ function toggleEngagementWorkspaceSetup() {
     targetCompanyEl.value = customer?.company_master_id || "";
   }
 
-  if (customer) {
+  if (shouldShow && customer) {
     if (countryEl && !countryEl.value) {
       countryEl.value = customer.country || customer.billing_country || "";
     }
@@ -5025,32 +4978,42 @@ function toggleEngagementWorkspaceSetup() {
       currencyEl.value = customer.currency || "";
     }
 
-    if (industryEl && !industryEl.value && customer.industry) {
-      industryEl.value = customer.industry;
-      populateSubIndustryOptions(customer.industry);
+    if (industryEl) {
+      if (industryEl.options.length <= 1) {
+        window.populateIndustryOptions?.();
+      }
+
+      if (customer.industry) {
+        industryEl.value = customer.industry;
+      }
     }
 
     if (subIndustryEl) {
-      if (industryEl?.value && subIndustryEl.options.length <= 1) {
-        populateSubIndustryOptions(industryEl.value);
-      }
-
-      if (!subIndustryEl.value && customer.sub_industry) {
-        subIndustryEl.value = customer.sub_industry;
+      if (industryEl?.value) {
+        populateSubIndustryOptions(
+          industryEl.value,
+          customer.sub_industry || ""
+        );
+      } else {
+        subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
+        subIndustryEl.value = "";
+        subIndustryEl.disabled = true;
       }
     }
+
+    return;
   }
 
-  if (!shouldShow && !customer) {
-    if (countryEl) countryEl.value = "";
-    if (finYearStartEl) finYearStartEl.value = "";
-    if (currencyEl) currencyEl.value = "";
-    if (industryEl) industryEl.value = "";
-    if (subIndustryEl) {
-      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
-      subIndustryEl.value = "";
-      subIndustryEl.disabled = true;
-    }
+  if (targetCompanyEl) targetCompanyEl.value = "";
+  if (countryEl) countryEl.value = "";
+  if (finYearStartEl) finYearStartEl.value = "";
+  if (currencyEl) currencyEl.value = "";
+  if (industryEl) industryEl.value = "";
+
+  if (subIndustryEl) {
+    subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
+    subIndustryEl.value = "";
+    subIndustryEl.disabled = true;
   }
 }
 
