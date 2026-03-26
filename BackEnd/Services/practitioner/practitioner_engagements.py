@@ -285,9 +285,8 @@ def create_engagement_route(cid: int):
         payload = request.jwt_payload or {}
         deny = _deny_if_wrong_company(
             payload,
-            int(company_id),
+            company_id,
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -301,7 +300,8 @@ def create_engagement_route(cid: int):
         target_company_id = _parse_int(body.get("target_company_id"))
         engagement_name = (body.get("engagement_name") or "").strip()
         engagement_type = (body.get("engagement_type") or "").strip().lower()
-        current_user_id = _parse_int(payload.get("id"))
+        current_user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+        partner_user_id = _parse_int(body.get("partner_user_id"))
 
         if not customer_id:
             return _json_err("customer_id is required.", 400)
@@ -310,8 +310,6 @@ def create_engagement_route(cid: int):
         if not engagement_type:
             return _json_err("engagement_type is required.", 400)
 
-        # Normalize engagement-level fiscal year end.
-        # Keep it optional for now.
         financial_year_start = (body.get("financial_year_start") or "").strip() or None
         if financial_year_start:
             try:
@@ -324,7 +322,6 @@ def create_engagement_route(cid: int):
             if financial_year_start else None
         )
 
-        # Phase 1: read policy + customer/workspace state
         with db_service._conn_cursor() as (_conn1, cur1):
             policy = db_service.get_engagement_service_policy(cur1, company_id, engagement_type)
             if not policy or not policy.get("is_active"):
@@ -333,9 +330,17 @@ def create_engagement_route(cid: int):
             requires_workspace = bool(policy.get("requires_workspace"))
             allows_auto_provision = bool(policy.get("allows_auto_provision"))
 
-            status = (body.get("status") or policy.get("default_status") or "draft").strip().lower()
-            workflow_stage = (body.get("workflow_stage") or policy.get("default_workflow_stage") or "planning").strip().lower()
-            priority = (body.get("priority") or policy.get("default_priority") or "normal").strip().lower()
+            workflow_stage = (
+                body.get("workflow_stage")
+                or policy.get("default_workflow_stage")
+                or "planning"
+            ).strip().lower()
+
+            priority = (
+                body.get("priority")
+                or policy.get("default_priority")
+                or "normal"
+            ).strip().lower()
 
             workspace_status = "not_required"
             workspace_source = None
@@ -358,7 +363,6 @@ def create_engagement_route(cid: int):
                         workspace_source = "customer_link"
                         target_company_source = "customer_link"
 
-        # Phase 2: provision workspace if still needed and missing
         if requires_workspace and not target_company_id:
             if not allows_auto_provision:
                 return _json_err(
@@ -382,7 +386,6 @@ def create_engagement_route(cid: int):
                     return _json_err(msg, 400)
                 return _json_err(str(msg), 400)
 
-        # Phase 3: create engagement with a fresh cursor
         with db_service._conn_cursor() as (conn3, cur3):
             engagement_id = db_service.create_engagement(
                 cur3,
@@ -392,14 +395,14 @@ def create_engagement_route(cid: int):
                 engagement_name=engagement_name,
                 engagement_type=engagement_type,
                 engagement_code=(body.get("engagement_code") or "").strip() or None,
-                status=status,
+                status="pending_acceptance",
                 governance_mode=(body.get("governance_mode") or "").strip().lower() or None,
                 reporting_cycle=(body.get("reporting_cycle") or "").strip().lower() or None,
                 due_date=body.get("due_date"),
                 start_date=body.get("start_date"),
                 end_date=body.get("end_date"),
                 manager_user_id=_parse_int(body.get("manager_user_id")),
-                partner_user_id=_parse_int(body.get("partner_user_id")),
+                partner_user_id=partner_user_id,
                 description=(body.get("description") or "").strip() or None,
                 scope_summary=(body.get("scope_summary") or "").strip() or None,
                 fiscal_year_end=fiscal_year_end,
@@ -410,6 +413,27 @@ def create_engagement_route(cid: int):
                 workspace_status=workspace_status,
                 workspace_source=workspace_source,
                 target_company_source=target_company_source,
+            )
+
+            acceptance_id = db_service.create_engagement_acceptance(
+                cur3,
+                company_id,
+                engagement_id=engagement_id,
+                acceptance_type="acceptance",
+                assigned_partner_user_id=partner_user_id,
+                risk_level="normal",
+                independence_cleared=False,
+                conflicts_checked=False,
+                competence_confirmed=False,
+                capacity_confirmed=False,
+                client_risk_notes="",
+                service_complexity_notes="",
+                preconditions_notes="",
+                decision_notes="",
+                valid_from=body.get("start_date"),
+                valid_to=body.get("end_date"),
+                requested_by_user_id=current_user_id,
+                actor_user_id=current_user_id,
             )
 
             row = db_service.get_engagement(cur3, company_id, engagement_id=engagement_id)
@@ -423,13 +447,24 @@ def create_engagement_route(cid: int):
                 entity_id=engagement_id,
                 entity_ref=(row.get("engagement_name") or engagement_name or f"ENG-{engagement_id}"),
                 before_json={"request": body},
-                after_json=row,
-                message=f"Created engagement {engagement_id}",
+                after_json={
+                    **(row or {}),
+                    "_acceptance": {
+                        "acceptance_id": acceptance_id,
+                        "status": "draft",
+                        "acceptance_type": "acceptance",
+                    },
+                },
+                message=f"Created engagement {engagement_id} pending acceptance",
             )
 
             conn3.commit()
 
-        return _json_ok({"row": row}, 201)
+        return _json_ok({
+            "row": row,
+            "acceptance_id": acceptance_id,
+            "message": "Engagement created and sent for acceptance review.",
+        }, 201)
 
     except Exception as e:
         current_app.logger.exception("create_engagement_route failed; body=%r", body)
@@ -621,9 +656,9 @@ def set_engagement_status_route(cid: int, engagement_id: int):
         payload = request.jwt_payload or {}
         deny = _deny_if_wrong_company(
             payload,
-            int(company_id),
+            company_id,
             db_service=db_service,
-            engagement_id=int(engagement_id),
+            engagement_id=engagement_id,
         )
         if deny:
             return deny
@@ -636,7 +671,9 @@ def set_engagement_status_route(cid: int, engagement_id: int):
         allowed_statuses = {
             "draft",
             "pending",
+            "pending_acceptance",
             "active",
+            "declined",
             "on_hold",
             "completed",
             "cancelled",
@@ -646,14 +683,20 @@ def set_engagement_status_route(cid: int, engagement_id: int):
             return _json_err(f"Invalid status '{status}'.", 400)
 
         closing_statuses = {"completed", "archived", "cancelled"}
-        if status in closing_statuses and not _can_close_engagements(payload):
-            return _json_err("You do not have permission to set this status.", 403)
+        governance_statuses = {"pending_acceptance", "active", "declined"}
 
-        if status not in closing_statuses and not _can_manage_engagements(payload):
-            return _json_err("You do not have permission to update engagement status.", 403)
+        if status in closing_statuses:
+            if not _can_close_engagements(payload):
+                return _json_err("You do not have permission to set this status.", 403)
+        elif status in governance_statuses:
+            if not _can_manage_engagements(payload):
+                return _json_err("You do not have permission to update engagement status.", 403)
+        else:
+            if not _can_manage_engagements(payload):
+                return _json_err("You do not have permission to update engagement status.", 403)
 
         updated_by_user_id = _parse_int(
-            payload.get("id") or payload.get("user_id") or payload.get("sub")
+            payload.get("user_id") or payload.get("id") or payload.get("sub")
         )
         if not updated_by_user_id:
             return _json_err("Missing authenticated user id.", 401)
@@ -672,7 +715,7 @@ def set_engagement_status_route(cid: int, engagement_id: int):
                 company_id,
                 engagement_id=engagement_id,
                 status=status,
-                updated_by_user_id=_parse_int(payload.get("id")),
+                updated_by_user_id=updated_by_user_id,
             )
             if not row:
                 return _json_err("Engagement not found.", 404)
@@ -693,6 +736,8 @@ def set_engagement_status_route(cid: int, engagement_id: int):
                 after_json=row,
                 message=f"Changed engagement {engagement_id} status to {status}",
             )
+
+            conn.commit()
 
         return _json_ok({"row": row})
 
@@ -1554,8 +1599,11 @@ def decide_engagement_acceptance_route(cid: int, acceptance_id: int):
 
         body = request.get_json(silent=True) or {}
         action = (body.get("action") or "").strip().lower()
-        decision_notes = body.get("decision_notes") or ""
+        decision_notes = (body.get("decision_notes") or "").strip()
         user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+        if not user_id:
+            return _json_err("Missing authenticated user id.", 401)
 
         if action not in ("submit", "approve", "decline", "return"):
             return _json_err("Unsupported action.", 400)
@@ -1578,10 +1626,64 @@ def decide_engagement_acceptance_route(cid: int, acceptance_id: int):
                 decision_notes=decision_notes,
             )
 
-            row = db_service.get_engagement_acceptance_detail(
+            acceptance_row = db_service.get_engagement_acceptance_detail(
                 cur,
                 company_id,
                 acceptance_id=acceptance_id,
+            )
+            if not acceptance_row:
+                return _json_err("Engagement acceptance item not found after update.", 404)
+
+            engagement_id = acceptance_row.get("engagement_id")
+            if not engagement_id:
+                return _json_err("Linked engagement not found for acceptance item.", 400)
+
+            if action == "approve":
+                db_service.set_engagement_status(
+                    cur,
+                    company_id,
+                    engagement_id=engagement_id,
+                    status="active",
+                    updated_by_user_id=user_id,
+                )
+            elif action == "decline":
+                db_service.set_engagement_status(
+                    cur,
+                    company_id,
+                    engagement_id=engagement_id,
+                    status="declined",
+                    updated_by_user_id=user_id,
+                )
+            elif action in ("submit", "return"):
+                db_service.set_engagement_status(
+                    cur,
+                    company_id,
+                    engagement_id=engagement_id,
+                    status="pending_acceptance",
+                    updated_by_user_id=user_id,
+                )
+
+            engagement_row = db_service.get_engagement(
+                cur,
+                company_id,
+                engagement_id=engagement_id,
+            )
+
+            _engagement_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="decide_engagement_acceptance",
+                entity_type="engagement_acceptance",
+                entity_id=acceptance_id,
+                entity_ref=(
+                    acceptance_row.get("engagement_name")
+                    or (engagement_row or {}).get("engagement_name")
+                    or f"EA-{acceptance_id}"
+                ),
+                before_json=existing,
+                after_json=acceptance_row,
+                message=f"Applied engagement acceptance action '{action}' to acceptance {acceptance_id}",
             )
 
             conn.commit()
@@ -1589,7 +1691,8 @@ def decide_engagement_acceptance_route(cid: int, acceptance_id: int):
         return _json_ok({
             "updated": True,
             "action": action,
-            "row": row,
+            "row": acceptance_row,
+            "engagement_row": engagement_row,
         })
 
     except ValueError as e:

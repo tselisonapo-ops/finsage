@@ -40623,36 +40623,6 @@ class DatabaseService:
                 updated_at = NOW()
             WHERE company_id = %s
             AND id = %s
-            RETURNING id
-        """
-        cur.execute(sql, (
-            status,
-            updated_by_user_id,
-            company_id,
-            engagement_id,
-        ))
-        row = cur.fetchone()
-        return (row["id"] if isinstance(row, dict) else row[0]) if row else None
-
-    def set_engagement_status(
-        self,
-        cur,
-        company_id: int,
-        *,
-        engagement_id: int,
-        status: str,
-        updated_by_user_id: int,
-    ):
-        schema = self.company_schema(company_id)
-
-        sql = f"""
-            UPDATE {schema}.engagements
-            SET
-                status = %s,
-                updated_by_user_id = %s,
-                updated_at = NOW()
-            WHERE company_id = %s
-            AND id = %s
             RETURNING *
         """
         cur.execute(sql, (
@@ -43022,71 +42992,6 @@ class DatabaseService:
         return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
 
-    def update_engagement_year_end_task(
-        self,
-        cur,
-        company_id: int,
-        *,
-        year_end_task_id: int,
-        updated_by_user_id: int,
-        reporting_year_end=None,
-        task_code: str = None,
-        task_name: str = None,
-        description: str = None,
-        owner_user_id: int = None,
-        reviewer_user_id: int = None,
-        due_date=None,
-        completed_at=None,
-        status: str = None,
-        priority: str = None,
-        notes: str = None,
-        sort_order: int = None,
-        is_active: bool = None,
-    ):
-        schema = self.company_schema(company_id)
-
-        sql = f"""
-            UPDATE {schema}.engagement_year_end_tasks
-            SET
-                reporting_year_end = COALESCE(%s, reporting_year_end),
-                task_code = COALESCE(NULLIF(BTRIM(%s), ''), task_code),
-                task_name = COALESCE(NULLIF(BTRIM(%s), ''), task_name),
-                description = COALESCE(NULLIF(BTRIM(%s), ''), description),
-                owner_user_id = COALESCE(%s, owner_user_id),
-                reviewer_user_id = COALESCE(%s, reviewer_user_id),
-                due_date = COALESCE(%s, due_date),
-                completed_at = COALESCE(%s, completed_at),
-                status = COALESCE(NULLIF(BTRIM(%s), ''), status),
-                priority = COALESCE(NULLIF(BTRIM(%s), ''), priority),
-                notes = COALESCE(NULLIF(BTRIM(%s), ''), notes),
-                sort_order = COALESCE(%s, sort_order),
-                is_active = COALESCE(%s, is_active),
-                updated_by_user_id = %s,
-                updated_at = NOW()
-            WHERE company_id = %s
-            AND id = %s
-            RETURNING id
-        """
-        cur.execute(sql, (
-            reporting_year_end,
-            task_code,
-            task_name,
-            description,
-            owner_user_id,
-            reviewer_user_id,
-            due_date,
-            completed_at,
-            status,
-            priority,
-            notes,
-            sort_order,
-            is_active,
-            updated_by_user_id,
-            company_id,
-            year_end_task_id,
-        ))
-        row = cur.fetchone()
-        return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
 
     def set_engagement_year_end_task_status(
