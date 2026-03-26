@@ -6245,6 +6245,191 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_engagement_team_is_active_idx
             ON {schema}.engagement_team(is_active);
 
+
+        CREATE TABLE IF NOT EXISTS {schema}.review_queue (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT %s,
+            engagement_id INT NOT NULL,
+
+            queue_type TEXT NOT NULL DEFAULT 'review', -- review, deliverable, signoff
+            title TEXT NOT NULL,
+            description TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'pending', -- pending, in_review, awaiting_approval, returned, approved, escalated, released, archived
+            priority TEXT NOT NULL DEFAULT 'normal', -- low, normal, high, urgent
+            review_state TEXT NOT NULL DEFAULT 'pending',
+
+            assigned_reviewer_user_id INT NULL,
+            assigned_manager_user_id INT NULL,
+
+            due_date DATE NULL,
+            last_action TEXT NULL,
+            manager_comment TEXT NULL,
+
+            source_table TEXT NULL,
+            source_id INT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+
+
+        ALTER TABLE {schema}.review_queue
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS engagement_id INT,
+            ADD COLUMN IF NOT EXISTS queue_type TEXT,
+            ADD COLUMN IF NOT EXISTS title TEXT,
+            ADD COLUMN IF NOT EXISTS description TEXT NULL,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS priority TEXT,
+            ADD COLUMN IF NOT EXISTS review_state TEXT,
+            ADD COLUMN IF NOT EXISTS assigned_reviewer_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS assigned_manager_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS due_date DATE NULL,
+            ADD COLUMN IF NOT EXISTS last_action TEXT NULL,
+            ADD COLUMN IF NOT EXISTS manager_comment TEXT NULL,
+            ADD COLUMN IF NOT EXISTS source_table TEXT NULL,
+            ADD COLUMN IF NOT EXISTS source_id INT NULL,
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
+            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+
+        UPDATE {schema}.review_queue
+        SET company_id = %s
+        WHERE company_id IS NULL
+
+        UPDATE {schema}.review_queue
+        SET queue_type = 'review'
+        WHERE queue_type IS NULL OR BTRIM(queue_type) = ''
+
+        UPDATE {schema}.review_queue
+        SET status = 'pending'
+        WHERE status IS NULL OR BTRIM(status) = ''
+
+        UPDATE {schema}.review_queue
+        SET priority = 'normal'
+        WHERE priority IS NULL OR BTRIM(priority) = ''
+
+        UPDATE {schema}.review_queue
+        SET review_state = 'pending'
+        WHERE review_state IS NULL OR BTRIM(review_state) = ''
+
+        UPDATE {schema}.review_queue
+        SET is_active = TRUE
+        WHERE is_active IS NULL
+
+        UPDATE {schema}.review_queue
+        SET created_at = NOW()
+        WHERE created_at IS NULL
+
+        UPDATE {schema}.review_queue
+        SET updated_at = NOW()
+        WHERE updated_at IS NULL
+
+        ALTER TABLE {schema}.review_queue
+            ALTER COLUMN company_id SET DEFAULT %s
+
+        ALTER TABLE {schema}.review_queue
+            ALTER COLUMN queue_type SET DEFAULT 'review',
+            ALTER COLUMN status SET DEFAULT 'pending',
+            ALTER COLUMN priority SET DEFAULT 'normal',
+            ALTER COLUMN review_state SET DEFAULT 'pending',
+            ALTER COLUMN is_active SET DEFAULT TRUE,
+            ALTER COLUMN created_at SET DEFAULT NOW(),
+            ALTER COLUMN updated_at SET DEFAULT NOW()
+
+        ALTER TABLE {schema}.review_queue
+            ALTER COLUMN company_id SET NOT NULL,
+            ALTER COLUMN engagement_id SET NOT NULL,
+            ALTER COLUMN queue_type SET NOT NULL,
+            ALTER COLUMN title SET NOT NULL,
+            ALTER COLUMN status SET NOT NULL,
+            ALTER COLUMN priority SET NOT NULL,
+            ALTER COLUMN review_state SET NOT NULL,
+            ALTER COLUMN is_active SET NOT NULL,
+            ALTER COLUMN created_at SET NOT NULL,
+            ALTER COLUMN updated_at SET NOT NULL
+
+        CREATE INDEX IF NOT EXISTS {schema}_review_queue_company_idx
+            ON {schema}.review_queue(company_id)
+
+        CREATE INDEX IF NOT EXISTS {schema}_review_queue_engagement_idx
+            ON {schema}.review_queue(engagement_id)
+
+        CREATE INDEX IF NOT EXISTS {schema}_review_queue_queue_type_idx
+            ON {schema}.review_queue(queue_type)
+
+        CREATE INDEX IF NOT EXISTS {schema}_review_queue_status_idx
+            ON {schema}.review_queue(status)
+
+
+        CREATE INDEX IF NOT EXISTS {schema}_review_queue_due_date_idx
+            ON {schema}.review_queue(due_date)
+
+
+        CREATE INDEX IF NOT EXISTS {schema}_review_queue_active_idx
+            ON {schema}.review_queue(is_active)
+
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_review_queue_engagement_fk'
+                    AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.review_queue
+                        ADD CONSTRAINT %I
+                        FOREIGN KEY (engagement_id)
+                        REFERENCES %I.engagements(id)
+                        ON DELETE CASCADE',
+                    '{schema}', '{schema}_review_queue_engagement_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_review_queue_reviewer_fk'
+                    AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.review_queue
+                        ADD CONSTRAINT %I
+                        FOREIGN KEY (assigned_reviewer_user_id)
+                        REFERENCES public.users(id)
+                        ON DELETE SET NULL',
+                    '{schema}', '{schema}_review_queue_reviewer_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_review_queue_manager_fk'
+                    AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.review_queue
+                        ADD CONSTRAINT %I
+                        FOREIGN KEY (assigned_manager_user_id)
+                        REFERENCES public.users(id)
+                        ON DELETE SET NULL',
+                    '{schema}', '{schema}_review_queue_manager_fk'
+                );
+            END IF;
+        END $$;
+
         -- ==================================================
         -- ENGAGEMENT REPORTING ITEMS
         -- ==================================================
@@ -48457,18 +48642,27 @@ class DatabaseService:
             SELECT
                 id,
                 paper_code,
-                paper_title,
+                paper_name,
+                paper_section,
                 paper_type,
                 status,
                 priority,
                 due_date,
-                assigned_user_id,
-                reviewer_user_id
+                preparer_user_id,
+                reviewer_user_id,
+                document_count,
+                notes,
+                review_notes,
+                linked_reporting_item_id,
+                linked_deliverable_id,
+                prepared_at,
+                reviewed_at,
+                cleared_at
             FROM {schema}.engagement_working_papers
             WHERE company_id = %s
             AND engagement_id = %s
             AND is_active = TRUE
-            ORDER BY due_date NULLS LAST, paper_title ASC
+            ORDER BY due_date NULLS LAST, paper_name ASC
             """,
             (company_id, engagement_id),
         )
