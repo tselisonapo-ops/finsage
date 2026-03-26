@@ -15993,7 +15993,7 @@ async function renderEngagementAcceptanceScreen(me) {
   if (!host) return;
 
   host.innerHTML = `
-    <div class="screen-shell partner-workspace-screen">
+    <div class="screen-shell partner-workspace-screen acceptance-screen">
       <div class="screen-header">
         <h1>Engagement Acceptance</h1>
         <p>Acceptance, continuation, and approval decisions for client engagements.</p>
@@ -16008,7 +16008,11 @@ async function renderEngagementAcceptanceScreen(me) {
         <div class="form-row">
           <div class="field grow">
             <label for="eaSearchInput">Search</label>
-            <input id="eaSearchInput" type="text" placeholder="Search engagement, code, customer" />
+            <input
+              id="eaSearchInput"
+              type="text"
+              placeholder="Search engagement, code, customer"
+            />
           </div>
 
           <div class="field">
@@ -16045,15 +16049,15 @@ async function renderEngagementAcceptanceScreen(me) {
           </div>
 
           <div class="field checkbox-field">
-            <label>
+            <label for="eaReadyOnly">
               <input id="eaReadyOnly" type="checkbox" />
-              Ready only
+              <span>Ready only</span>
             </label>
           </div>
 
           <div class="filter-actions">
-            <button id="eaApplyFiltersBtn" class="btn btn-primary">Apply</button>
-            <button id="eaResetFiltersBtn" class="btn btn-secondary">Reset</button>
+            <button id="eaApplyFiltersBtn" class="btn btn-primary" type="button">Apply</button>
+            <button id="eaResetFiltersBtn" class="btn btn-secondary" type="button">Reset</button>
           </div>
         </div>
       </section>
@@ -16141,7 +16145,6 @@ async function renderEngagementAcceptanceScreen(me) {
 
   await loadEngagementAcceptanceRows(me);
   bindEngagementAcceptanceScreen(me);
-  bindEngagementAcceptanceScreenEvents(me);
 }
 
 async function loadEngagementAcceptanceRows(me) {

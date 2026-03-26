@@ -2569,6 +2569,341 @@
     padding: 12px;
   }
 
+  /* page shell */
+  .acceptance-screen {
+    padding: 28px 24px 32px;
+  }
+
+  .acceptance-screen .screen-header {
+    margin-bottom: 18px;
+  }
+
+  .acceptance-screen .screen-header h1 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    line-height: 1.25;
+    font-weight: 600;
+    color: #183247;
+  }
+
+  .acceptance-screen .screen-header p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #496579;
+  }
+
+  /* filter card */
+  .acceptance-screen .filter-panel,
+  .acceptance-screen .queue-panel,
+  .acceptance-screen .detail-panel {
+    background: #fff;
+    border: 1px solid #d9e3ec;
+    border-radius: 16px;
+    padding: 18px 18px 16px;
+    box-shadow: none;
+  }
+
+  .acceptance-screen .filter-panel {
+    margin-bottom: 18px;
+  }
+
+  .acceptance-screen .panel-header {
+    margin-bottom: 12px;
+  }
+
+  .acceptance-screen .panel-header h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    line-height: 1.35;
+    font-weight: 600;
+    color: #183247;
+  }
+
+  .acceptance-screen .panel-header p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #6a8193;
+  }
+
+  /* filter layout */
+  .acceptance-screen .form-row {
+    display: grid;
+    grid-template-columns: minmax(320px, 1.7fr) 150px 150px 150px auto auto;
+    gap: 12px;
+    align-items: end;
+  }
+
+  .acceptance-screen .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .acceptance-screen .field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #26455b;
+  }
+
+  .acceptance-screen .field input,
+  .acceptance-screen .field select {
+    height: 40px;
+    border: 1px solid #ccd8e3;
+    border-radius: 12px;
+    padding: 0 14px;
+    font-size: 14px;
+    color: #183247;
+    background: #fff;
+    outline: none;
+  }
+
+  .acceptance-screen .field input::placeholder {
+    color: #8ca0b1;
+  }
+
+  .acceptance-screen .checkbox-field {
+    display: flex;
+    align-items: center;
+    padding-bottom: 8px;
+  }
+
+  .acceptance-screen .checkbox-field label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #36556a;
+    white-space: nowrap;
+  }
+
+  .acceptance-screen .filter-actions {
+    display: flex;
+    gap: 10px;
+    align-items: end;
+  }
+
+  /* stat cards */
+  .acceptance-screen .stats-row {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .acceptance-screen .stat-card {
+    background: #fff;
+    border: 1px solid #d9e3ec;
+    border-radius: 16px;
+    padding: 16px 16px 14px;
+    min-height: 92px;
+  }
+
+  .acceptance-screen .stat-label {
+    margin-bottom: 8px;
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #6b8192;
+    text-transform: uppercase;
+  }
+
+  .acceptance-screen .stat-value {
+    font-size: 18px;
+    line-height: 1.1;
+    font-weight: 700;
+    color: #0f2740;
+    margin-bottom: 8px;
+  }
+
+  .acceptance-screen .stat-subtext {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #698093;
+  }
+
+  /* split content */
+  .acceptance-screen .split-layout {
+    display: grid;
+    grid-template-columns: 1.65fr 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  /* table panel */
+  .acceptance-screen .queue-panel {
+    min-height: 300px;
+  }
+
+  .acceptance-screen .table-wrap {
+    overflow-x: auto;
+    margin-top: 6px;
+  }
+
+  .acceptance-screen .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .acceptance-screen .data-table thead th {
+    padding: 12px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6f8596;
+    border-bottom: 1px solid #e4ebf2;
+    text-align: left;
+    background: #f8fbfd;
+  }
+
+  .acceptance-screen .data-table tbody td {
+    padding: 14px 10px;
+    font-size: 13px;
+    color: #183247;
+    border-bottom: 1px solid #edf2f7;
+    vertical-align: top;
+  }
+
+  .acceptance-screen .data-table tbody tr {
+    cursor: pointer;
+  }
+
+  .acceptance-screen .data-table tbody tr:hover {
+    background: #f8fbfd;
+  }
+
+  .acceptance-screen .row-title {
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 600;
+    color: #183247;
+    margin-bottom: 4px;
+  }
+
+  .acceptance-screen .row-subtitle {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #7a8e9f;
+  }
+
+  .acceptance-screen .muted,
+  .acceptance-screen .empty-state {
+    font-size: 13px;
+    color: #748999;
+  }
+
+  /* detail panel */
+  .acceptance-screen .detail-panel {
+    min-height: 300px;
+  }
+
+  .acceptance-screen .detail-body {
+    margin-top: 6px;
+  }
+
+  .acceptance-screen .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .acceptance-screen .detail-card,
+  .acceptance-screen .detail-section {
+    background: #fff;
+    border: 1px solid #dfe8ef;
+    border-radius: 14px;
+  }
+
+  .acceptance-screen .detail-card {
+    padding: 14px;
+  }
+
+  .acceptance-screen .detail-label {
+    margin-bottom: 6px;
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6d8293;
+  }
+
+  .acceptance-screen .detail-value {
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 600;
+    color: #163146;
+  }
+
+  .acceptance-screen .detail-section {
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .acceptance-screen .detail-section h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    line-height: 1.35;
+    font-weight: 600;
+    color: #183247;
+  }
+
+  .acceptance-screen .detail-section p,
+  .acceptance-screen .detail-section li {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #5a7184;
+  }
+
+  .acceptance-screen .simple-list {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  .acceptance-screen .detail-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  /* buttons */
+  .acceptance-screen .btn {
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* responsive */
+  @media (max-width: 1400px) {
+    .acceptance-screen .stats-row {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .acceptance-screen .form-row {
+      grid-template-columns: minmax(260px, 1fr) 150px 150px 150px;
+    }
+
+    .acceptance-screen .split-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .acceptance-screen .stats-row,
+    .acceptance-screen .detail-grid,
+    .acceptance-screen .form-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .split-layout {
     display: grid;
     grid-template-columns: 1.6fr 1fr;
