@@ -16383,6 +16383,14 @@ function setText(id, value) {
   if (el) el.textContent = String(value ?? "");
 }
 
+function titleize(value) {
+  if (!value) return "";
+  return String(value)
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function renderEngagementAcceptanceRows() {
   const tbody = document.getElementById("eaTableBody");
   if (!tbody) return;
