@@ -2630,9 +2630,63 @@
   /* filter layout */
 .acceptance-screen .form-row {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) 150px 150px 150px auto;
+  grid-template-columns:
+    minmax(320px, 1.8fr)
+    repeat(3, minmax(120px, 145px))
+    max-content
+    max-content;
   gap: 12px;
   align-items: end;
+}
+
+.acceptance-screen .checkbox-field {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.acceptance-screen .filter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 1550px) {
+  .acceptance-screen .form-row {
+    grid-template-columns:
+      minmax(280px, 1fr)
+      repeat(3, minmax(120px, 1fr));
+  }
+
+  .acceptance-screen .checkbox-field {
+    grid-column: 1 / 2;
+    align-self: center;
+  }
+
+  .acceptance-screen .filter-actions {
+    grid-column: 2 / 5;
+    justify-self: end;
+  }
+}
+
+@media (max-width: 1200px) {
+  .acceptance-screen .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .acceptance-screen .checkbox-field,
+  .acceptance-screen .filter-actions {
+    grid-column: auto;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .acceptance-screen .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 
   .acceptance-screen .field {
