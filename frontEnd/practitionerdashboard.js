@@ -812,6 +812,132 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-working-papers/${encodeURIComponent(workingPaperId)}/deactivate`
   },
 
+  resourcePlanning: {
+    summary: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        horizon_days = 60
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("horizon_days", String(horizon_days));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/summary?${params.toString()}`;
+    },
+
+    peaks: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        horizon_days = 60,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("horizon_days", String(horizon_days));
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/peaks?${params.toString()}`;
+    },
+
+    coverageGaps: (
+      companyId,
+      {
+        q = "",
+        active_only = true,
+        horizon_days = 60,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("horizon_days", String(horizon_days));
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/coverage-gaps?${params.toString()}`;
+    },
+
+    reallocationOpportunities: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        horizon_days = 60,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("horizon_days", String(horizon_days));
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/reallocation-opportunities?${params.toString()}`;
+    },
+
+    schedule: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        horizon_days = 60,
+        only_overloaded = false,
+        only_available = false,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("horizon_days", String(horizon_days));
+      params.set("only_overloaded", only_overloaded ? "true" : "false");
+      params.set("only_available", only_available ? "true" : "false");
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning/schedule?${params.toString()}`;
+    },
+
+    dashboard: (
+      companyId,
+      {
+        q = "",
+        role_on_engagement = "",
+        active_only = true,
+        horizon_days = 60,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (role_on_engagement) params.set("role_on_engagement", role_on_engagement);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("horizon_days", String(horizon_days));
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/resource-planning?${params.toString()}`;
+    }
+  },
+
   analytics: {
     overview: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/overview`,
@@ -940,7 +1066,8 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/risk-alerts/rows${qs ? `?${qs}` : ""}`;
     }
   }
-};
+};window.ENDPOINTS = ENDPOINTS;
+window.endpoints = ENDPOINTS;
 
   let PR_ASSIGNMENTS_CACHE = [];
   let PR_SELECTED_ENGAGEMENT = null;
@@ -1149,6 +1276,30 @@ const ENDPOINTS = {
   };
 
   let PR_ESCALATIONS_EVENTS_BOUND = false;
+
+  let PR_RESOURCE_PLANNING_CACHE = {
+    summary: null,
+    peaks: [],
+    coverageGaps: [],
+    reallocation: [],
+    schedule: [],
+    selectedTab: "peaks",
+    selectedKey: "",
+    selectedRow: null,
+    loading: false,
+    filters: {
+      q: "",
+      role_on_engagement: "",
+      active_only: true,
+      only_available: false,
+      only_overloaded: false,
+      horizon_days: 60,
+      limit: 100,
+      offset: 0
+    }
+  };
+
+  let PR_RESOURCE_PLANNING_EVENTS_BOUND = false;
 
 const PR_NAV = {
   dashboard: "dashboard",
@@ -1939,12 +2090,6 @@ const PR_NAV_MENU = [
         screen: PR_NAV.escalationCenter,
         desc: "Review, assign, update, and resolve escalations across engagements",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.escalationCenter)
-      },
-      {
-        name: "Escalation Center",
-        screen: PR_NAV.escalationCenter,
-        desc: "Manager approvals, review decisions, and rework routing",
-        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.approvalCenter)
       },
       {
         name: "Practice Audit Trail",
@@ -13714,6 +13859,897 @@ function syncEscalationsFiltersFromDom() {
   PR_ESCALATIONS_CACHE.filters.offset = 0;
 }
 
+function getPractitionerCompanyId(me) {
+  return (
+    me?.company_id ||
+    window.__PR_ME__?.company_id ||
+    window.currentUser?.company_id ||
+    JSON.parse(localStorage.getItem("fs_user") || "null")?.company_id ||
+    ""
+  );
+}
+
+function formatDateSafe(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString();
+}
+
+function formatNumberSafe(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n.toLocaleString() : "0";
+}
+
+function formatPercentSafe(value) {
+  const n = Number(value || 0);
+  return `${Number.isFinite(n) ? n.toFixed(0) : "0"}%`;
+}
+
+function badgeClassForCapacityBand(value) {
+  const v = String(value || "").toLowerCase();
+  if (v === "overloaded") return "pr-badge is-danger";
+  if (v === "available") return "pr-badge is-good";
+  return "pr-badge is-warning";
+}
+
+function badgeClassForPressure(value) {
+  const v = String(value || "").toLowerCase();
+  if (v === "overdue" || v === "this_week") return "pr-badge is-danger";
+  if (v === "this_month") return "pr-badge is-warning";
+  return "pr-badge is-good";
+}
+
+function resourcePlanningSelectedRows(cache) {
+  switch (cache.selectedTab) {
+    case "coverage":
+      return cache.coverageGaps || [];
+    case "reallocation":
+      return cache.reallocation || [];
+    case "schedule":
+      return cache.schedule || [];
+    case "peaks":
+    default:
+      return cache.peaks || [];
+  }
+}
+
+function getResourcePlanningRowKey(tab, row) {
+  if (!row) return "";
+  if (tab === "peaks" || tab === "coverage") {
+    return `engagement:${row.engagement_id}`;
+  }
+  return `user:${row.user_id}`;
+}
+
+function syncResourcePlanningSelection() {
+  const rows = resourcePlanningSelectedRows(PR_RESOURCE_PLANNING_CACHE);
+  const selected =
+    rows.find((row) => getResourcePlanningRowKey(PR_RESOURCE_PLANNING_CACHE.selectedTab, row) === PR_RESOURCE_PLANNING_CACHE.selectedKey) ||
+    rows[0] ||
+    null;
+
+  PR_RESOURCE_PLANNING_CACHE.selectedRow = selected;
+  PR_RESOURCE_PLANNING_CACHE.selectedKey = selected
+    ? getResourcePlanningRowKey(PR_RESOURCE_PLANNING_CACHE.selectedTab, selected)
+    : "";
+}
+
+async function loadResourcePlanningData(me, { silent = false } = {}) {
+  const companyId = getPractitionerCompanyId(me);
+  if (!companyId) throw new Error("Company context missing.");
+
+  const filters = PR_RESOURCE_PLANNING_CACHE.filters;
+
+  if (!silent) {
+    PR_RESOURCE_PLANNING_CACHE.loading = true;
+    renderResourcePlanningScreen(me);
+  }
+
+  try {
+    const [summaryRes, peaksRes, coverageRes, reallocationRes, scheduleRes] = await Promise.all([
+      apiFetch(
+        ENDPOINTS.resourcePlanning.summary(companyId, {
+          q: filters.q,
+          role_on_engagement: filters.role_on_engagement,
+          active_only: filters.active_only,
+          horizon_days: filters.horizon_days
+        })
+      ),
+      apiFetch(
+        ENDPOINTS.resourcePlanning.peaks(companyId, {
+          q: filters.q,
+          role_on_engagement: filters.role_on_engagement,
+          active_only: filters.active_only,
+          horizon_days: filters.horizon_days,
+          limit: filters.limit,
+          offset: filters.offset
+        })
+      ),
+      apiFetch(
+        ENDPOINTS.resourcePlanning.coverageGaps(companyId, {
+          q: filters.q,
+          active_only: filters.active_only,
+          horizon_days: filters.horizon_days,
+          limit: filters.limit,
+          offset: filters.offset
+        })
+      ),
+      apiFetch(
+        ENDPOINTS.resourcePlanning.reallocation(companyId, {
+          q: filters.q,
+          role_on_engagement: filters.role_on_engagement,
+          active_only: filters.active_only,
+          horizon_days: filters.horizon_days,
+          limit: filters.limit,
+          offset: filters.offset
+        })
+      ),
+      apiFetch(
+        ENDPOINTS.resourcePlanning.schedule(companyId, {
+          q: filters.q,
+          role_on_engagement: filters.role_on_engagement,
+          active_only: filters.active_only,
+          horizon_days: filters.horizon_days,
+          only_available: filters.only_available,
+          only_overloaded: filters.only_overloaded,
+          limit: filters.limit,
+          offset: filters.offset
+        })
+      )
+    ]);
+
+    PR_RESOURCE_PLANNING_CACHE.summary = summaryRes?.data || summaryRes || {};
+    PR_RESOURCE_PLANNING_CACHE.peaks = peaksRes?.data || peaksRes || [];
+    PR_RESOURCE_PLANNING_CACHE.coverageGaps = coverageRes?.data || coverageRes || [];
+    PR_RESOURCE_PLANNING_CACHE.reallocation = reallocationRes?.data || reallocationRes || [];
+    PR_RESOURCE_PLANNING_CACHE.schedule = scheduleRes?.data || scheduleRes || [];
+
+    syncResourcePlanningSelection();
+  } finally {
+    PR_RESOURCE_PLANNING_CACHE.loading = false;
+  }
+}
+
+function renderResourcePlanningTable(cache) {
+  const rows = resourcePlanningSelectedRows(cache);
+
+  if (!rows.length) {
+    return `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">No results found</div>
+        <div class="pr-empty-state__desc">Try adjusting the search, role, workload, or horizon filters.</div>
+      </div>
+    `;
+  }
+
+  if (cache.selectedTab === "peaks") {
+    return `
+      <div class="pr-resource-planning-table-wrap">
+        <div class="pr-table-scroll">
+          <table class="pr-resource-planning-table">
+            <thead>
+              <tr>
+                <th>Engagement</th>
+                <th>Customer</th>
+                <th>Due date</th>
+                <th>Stage</th>
+                <th>Pressure</th>
+                <th>Total alloc.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row) => {
+                const key = getResourcePlanningRowKey("peaks", row);
+                const selected = key === cache.selectedKey ? "is-selected" : "";
+                return `
+                  <tr class="pr-resource-row ${selected}" data-rp-row="${escapeHtml(key)}">
+                    <td>
+                      <div class="pr-resource-name">
+                        <div class="pr-resource-name__title">${escapeHtml(row.engagement_name || "Untitled engagement")}</div>
+                        <div class="pr-resource-name__meta">${escapeHtml(row.engagement_code || "No code")} · ${escapeHtml(row.engagement_type || "—")}</div>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(row.customer_name || "—")}</td>
+                    <td>${escapeHtml(formatDateSafe(row.due_date))}</td>
+                    <td>${escapeHtml(row.workflow_stage || "—")}</td>
+                    <td><span class="${badgeClassForPressure(row.pressure_window)}">${escapeHtml(row.pressure_window || "upcoming")}</span></td>
+                    <td>${escapeHtml(formatPercentSafe(row.total_allocation_percent))}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  if (cache.selectedTab === "coverage") {
+    return `
+      <div class="pr-resource-planning-table-wrap">
+        <div class="pr-table-scroll">
+          <table class="pr-resource-planning-table">
+            <thead>
+              <tr>
+                <th>Engagement</th>
+                <th>Customer</th>
+                <th>Due date</th>
+                <th>Missing roles</th>
+                <th>Alloc.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row) => {
+                const key = getResourcePlanningRowKey("coverage", row);
+                const selected = key === cache.selectedKey ? "is-selected" : "";
+                const missingRoles = Array.isArray(row.missing_roles) ? row.missing_roles : [];
+                return `
+                  <tr class="pr-resource-row ${selected}" data-rp-row="${escapeHtml(key)}">
+                    <td>
+                      <div class="pr-resource-name">
+                        <div class="pr-resource-name__title">${escapeHtml(row.engagement_name || "Untitled engagement")}</div>
+                        <div class="pr-resource-name__meta">${escapeHtml(row.engagement_code || "No code")} · ${escapeHtml(row.status || "—")}</div>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(row.customer_name || "—")}</td>
+                    <td>${escapeHtml(formatDateSafe(row.due_date))}</td>
+                    <td>
+                      <div class="pr-missing-role-list">
+                        ${missingRoles.length
+                          ? missingRoles.map((role) => `<span class="pr-chip-soft">${escapeHtml(role)}</span>`).join("")
+                          : `<span class="pr-chip-soft">none</span>`}
+                      </div>
+                    </td>
+                    <td>${escapeHtml(formatPercentSafe(row.total_allocation_percent))}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  if (cache.selectedTab === "reallocation") {
+    return `
+      <div class="pr-resource-planning-table-wrap">
+        <div class="pr-table-scroll">
+          <table class="pr-resource-planning-table">
+            <thead>
+              <tr>
+                <th>Team member</th>
+                <th>Email</th>
+                <th>Engagements</th>
+                <th>Total alloc.</th>
+                <th>Band</th>
+                <th>Adjustment</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row) => {
+                const key = getResourcePlanningRowKey("reallocation", row);
+                const selected = key === cache.selectedKey ? "is-selected" : "";
+                return `
+                  <tr class="pr-resource-row ${selected}" data-rp-row="${escapeHtml(key)}">
+                    <td>
+                      <div class="pr-resource-name">
+                        <div class="pr-resource-name__title">${escapeHtml(row.user_name || "Unknown user")}</div>
+                        <div class="pr-resource-name__meta">Due soon: ${escapeHtml(formatNumberSafe(row.engagements_due_soon))}</div>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(row.email || "—")}</td>
+                    <td>${escapeHtml(formatNumberSafe(row.active_engagements))}</td>
+                    <td>${escapeHtml(formatPercentSafe(row.total_allocation_percent))}</td>
+                    <td><span class="${badgeClassForCapacityBand(row.capacity_band)}">${escapeHtml(row.capacity_band || "balanced")}</span></td>
+                    <td>${escapeHtml(formatPercentSafe(row.adjustment_percent))}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="pr-resource-planning-table-wrap">
+      <div class="pr-table-scroll">
+        <table class="pr-resource-planning-table">
+          <thead>
+            <tr>
+              <th>Team member</th>
+              <th>Email</th>
+              <th>Engagements</th>
+              <th>Total alloc.</th>
+              <th>Due soon</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => {
+              const key = getResourcePlanningRowKey("schedule", row);
+              const selected = key === cache.selectedKey ? "is-selected" : "";
+              const band = row.is_overloaded ? "overloaded" : row.is_available ? "available" : "balanced";
+              return `
+                <tr class="pr-resource-row ${selected}" data-rp-row="${escapeHtml(key)}">
+                  <td>
+                    <div class="pr-resource-name">
+                      <div class="pr-resource-name__title">${escapeHtml(row.user_name || "Unknown user")}</div>
+                    </div>
+                  </td>
+                  <td>${escapeHtml(row.email || "—")}</td>
+                  <td>${escapeHtml(formatNumberSafe(row.active_engagements))}</td>
+                  <td>${escapeHtml(formatPercentSafe(row.total_allocation_percent))}</td>
+                  <td>${escapeHtml(formatNumberSafe(row.engagements_due_soon))}</td>
+                  <td><span class="${badgeClassForCapacityBand(band)}">${escapeHtml(band)}</span></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderResourcePlanningDetail(cache) {
+  const row = cache.selectedRow;
+
+  if (!row) {
+    return `
+      <div class="pr-empty-state">
+        <div class="pr-empty-state__title">Nothing selected</div>
+        <div class="pr-empty-state__desc">Pick a row to inspect workload, gaps, and upcoming pressure.</div>
+      </div>
+    `;
+  }
+
+  if (cache.selectedTab === "peaks" || cache.selectedTab === "coverage") {
+    const missingRoles = Array.isArray(row.missing_roles) ? row.missing_roles : [];
+    return `
+      <div class="pr-user-detail">
+        <div class="pr-side-card">
+          <div class="pr-side-card__title">Engagement overview</div>
+          <div class="pr-side-card__grid">
+            <div class="pr-side-card__field">
+              <span>Engagement</span>
+              <strong>${escapeHtml(row.engagement_name || "—")}</strong>
+            </div>
+            <div class="pr-side-card__field">
+              <span>Code</span>
+              <strong>${escapeHtml(row.engagement_code || "—")}</strong>
+            </div>
+            <div class="pr-side-card__field">
+              <span>Customer</span>
+              <strong>${escapeHtml(row.customer_name || "—")}</strong>
+            </div>
+            <div class="pr-side-card__field">
+              <span>Due date</span>
+              <strong>${escapeHtml(formatDateSafe(row.due_date))}</strong>
+            </div>
+            <div class="pr-side-card__field">
+              <span>Status</span>
+              <strong>${escapeHtml(row.status || "—")}</strong>
+            </div>
+            <div class="pr-side-card__field">
+              <span>Workflow stage</span>
+              <strong>${escapeHtml(row.workflow_stage || "—")}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="pr-user-detail__stats">
+          <div class="pr-mini-stat">
+            <span class="pr-mini-stat__label">Manager coverage</span>
+            <strong>${formatNumberSafe(row.manager_count)}</strong>
+          </div>
+          <div class="pr-mini-stat">
+            <span class="pr-mini-stat__label">Reviewer coverage</span>
+            <strong>${formatNumberSafe(row.reviewer_count)}</strong>
+          </div>
+          <div class="pr-mini-stat">
+            <span class="pr-mini-stat__label">Partner coverage</span>
+            <strong>${formatNumberSafe(row.partner_count)}</strong>
+          </div>
+          <div class="pr-mini-stat">
+            <span class="pr-mini-stat__label">Total allocation</span>
+            <strong>${formatPercentSafe(row.total_allocation_percent)}</strong>
+          </div>
+        </div>
+
+        <div class="pr-side-card">
+          <div class="pr-side-card__title">Gap and pressure view</div>
+          <div class="pr-list-compact">
+            <div class="pr-list-compact__item">
+              <div class="pr-list-compact__title">Pressure window</div>
+              <div class="pr-list-compact__meta">
+                ${escapeHtml(row.pressure_window || "No pressure label")}
+              </div>
+            </div>
+            <div class="pr-list-compact__item">
+              <div class="pr-list-compact__title">Missing roles</div>
+              <div class="pr-list-compact__meta">
+                ${
+                  missingRoles.length
+                    ? missingRoles.map((role) => escapeHtml(role)).join(", ")
+                    : "No flagged role gaps on this row"
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="pr-user-detail">
+      <div class="pr-side-card">
+        <div class="pr-side-card__title">Resource overview</div>
+        <div class="pr-side-card__grid">
+          <div class="pr-side-card__field">
+            <span>Name</span>
+            <strong>${escapeHtml(row.user_name || "—")}</strong>
+          </div>
+          <div class="pr-side-card__field">
+            <span>Email</span>
+            <strong>${escapeHtml(row.email || "—")}</strong>
+          </div>
+          <div class="pr-side-card__field">
+            <span>Active engagements</span>
+            <strong>${formatNumberSafe(row.active_engagements)}</strong>
+          </div>
+          <div class="pr-side-card__field">
+            <span>Due soon</span>
+            <strong>${formatNumberSafe(row.engagements_due_soon)}</strong>
+          </div>
+          <div class="pr-side-card__field">
+            <span>Total allocation</span>
+            <strong>${formatPercentSafe(row.total_allocation_percent)}</strong>
+          </div>
+          <div class="pr-side-card__field">
+            <span>Band</span>
+            <strong>${
+              escapeHtml(
+                row.capacity_band ||
+                (row.is_overloaded ? "overloaded" : row.is_available ? "available" : "balanced")
+              )
+            }</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-user-detail__stats">
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Capacity adjustment</span>
+          <strong>${formatPercentSafe(row.adjustment_percent)}</strong>
+        </div>
+        <div class="pr-mini-stat">
+          <span class="pr-mini-stat__label">Load status</span>
+          <strong>${
+            row.is_overloaded ? "Overloaded" :
+            row.is_available ? "Available" :
+            row.capacity_band ? escapeHtml(row.capacity_band) :
+            "Balanced"
+          }</strong>
+        </div>
+      </div>
+
+      <div class="pr-side-card">
+        <div class="pr-side-card__title">Planning note</div>
+        <div class="pr-list-compact">
+          <div class="pr-list-compact__item">
+            <div class="pr-list-compact__title">Reallocation guidance</div>
+            <div class="pr-list-compact__meta">
+              ${
+                Number(row.total_allocation_percent || 0) > 100
+                  ? "This person is above target capacity and may need workload moved off before upcoming deadlines."
+                  : Number(row.total_allocation_percent || 0) < 70
+                  ? "This person appears to have room for reassignment or peak-period support."
+                  : "This person looks broadly balanced based on current allocation totals."
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderResourcePlanningScreen(me) {
+  const host = document.getElementById("screen-resource-planning");
+  if (!host) return;
+
+  const cache = PR_RESOURCE_PLANNING_CACHE;
+  const summary = cache.summary || {};
+
+  host.innerHTML = `
+    <div class="pr-screen pr-resource-planning-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Resource Planning</h1>
+          <p class="pr-screen__subtitle">
+            Forward-looking staffing, scheduling pressure, coverage gaps, and reallocation planning.
+          </p>
+        </div>
+      </div>
+
+      <section class="pr-panel pr-team-capacity-filters">
+        <div class="pr-panel__head">
+          <div>
+            <h3>Planning filters</h3>
+            <p>Refine by workload horizon, role, and availability pressure.</p>
+          </div>
+        </div>
+
+        <div class="pr-filter-grid pr-filter-grid--resource-planning">
+          <div class="pr-field">
+            <label class="pr-field__label" for="rpSearchInput">Search</label>
+            <input
+              id="rpSearchInput"
+              class="pr-input"
+              type="text"
+              placeholder="Search engagement, customer, code, or user"
+              value="${escapeHtml(cache.filters.q)}"
+            />
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="rpRoleFilter">Role</label>
+            <select id="rpRoleFilter" class="pr-select">
+              <option value="">All roles</option>
+              <option value="manager" ${cache.filters.role_on_engagement === "manager" ? "selected" : ""}>Manager</option>
+              <option value="reviewer" ${cache.filters.role_on_engagement === "reviewer" ? "selected" : ""}>Reviewer</option>
+              <option value="partner" ${cache.filters.role_on_engagement === "partner" ? "selected" : ""}>Partner</option>
+              <option value="qc" ${cache.filters.role_on_engagement === "qc" ? "selected" : ""}>QC</option>
+              <option value="preparer" ${cache.filters.role_on_engagement === "preparer" ? "selected" : ""}>Preparer</option>
+            </select>
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="rpHorizonFilter">Horizon</label>
+            <select id="rpHorizonFilter" class="pr-select">
+              <option value="30" ${String(cache.filters.horizon_days) === "30" ? "selected" : ""}>30 days</option>
+              <option value="60" ${String(cache.filters.horizon_days) === "60" ? "selected" : ""}>60 days</option>
+              <option value="90" ${String(cache.filters.horizon_days) === "90" ? "selected" : ""}>90 days</option>
+              <option value="120" ${String(cache.filters.horizon_days) === "120" ? "selected" : ""}>120 days</option>
+            </select>
+          </div>
+
+          <label class="pr-field pr-field--check">
+            <input id="rpActiveOnly" type="checkbox" ${cache.filters.active_only ? "checked" : ""} />
+            <span class="pr-field__label">Active only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="rpOnlyAvailable" type="checkbox" ${cache.filters.only_available ? "checked" : ""} />
+            <span class="pr-field__label">Available only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="rpOnlyOverloaded" type="checkbox" ${cache.filters.only_overloaded ? "checked" : ""} />
+            <span class="pr-field__label">Overloaded only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button id="rpApplyFiltersBtn" class="btn btn-primary" type="button">Apply</button>
+            <button id="rpResetFiltersBtn" class="btn btn-ghost" type="button">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pr-summary-grid pr-team-capacity-summary">
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Total engagements</div>
+          <div class="pr-summary-card__value">${formatNumberSafe(summary.total_engagements)}</div>
+          <div class="pr-summary-card__hint">In current planning scope</div>
+        </div>
+
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Upcoming peaks</div>
+          <div class="pr-summary-card__value">${formatNumberSafe(summary.upcoming_peaks)}</div>
+          <div class="pr-summary-card__hint">Deadlines approaching within horizon</div>
+        </div>
+
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Coverage gaps</div>
+          <div class="pr-summary-card__value pr-text-warning">${formatNumberSafe(summary.coverage_gaps)}</div>
+          <div class="pr-summary-card__hint">Manager/reviewer/partner gaps</div>
+        </div>
+
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Overloaded engagements</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatNumberSafe(summary.overloaded_engagements)}</div>
+          <div class="pr-summary-card__hint">Allocation above expected level</div>
+        </div>
+
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Overloaded users</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatNumberSafe(summary.overloaded_users)}</div>
+          <div class="pr-summary-card__hint">Potential reassignment targets</div>
+        </div>
+
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Available users</div>
+          <div class="pr-summary-card__value pr-text-good">${formatNumberSafe(summary.available_users)}</div>
+          <div class="pr-summary-card__hint">Capacity available for support</div>
+        </div>
+      </section>
+
+      <section class="pr-resource-planning-layout">
+        <div class="pr-panel pr-resource-planning-main">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Planning workspace</h3>
+              <p>Switch between due-date pressure, coverage gaps, reallocation, and schedule view.</p>
+            </div>
+          </div>
+
+          <div class="pr-resource-tabs">
+            <button class="pr-resource-tab ${cache.selectedTab === "peaks" ? "is-active" : ""}" data-rp-tab="peaks" type="button">Upcoming peaks</button>
+            <button class="pr-resource-tab ${cache.selectedTab === "coverage" ? "is-active" : ""}" data-rp-tab="coverage" type="button">Coverage gaps</button>
+            <button class="pr-resource-tab ${cache.selectedTab === "reallocation" ? "is-active" : ""}" data-rp-tab="reallocation" type="button">Reallocation</button>
+            <button class="pr-resource-tab ${cache.selectedTab === "schedule" ? "is-active" : ""}" data-rp-tab="schedule" type="button">Schedule view</button>
+          </div>
+
+          ${
+            cache.loading
+              ? `<div class="pr-loading">Loading resource planning data…</div>`
+              : renderResourcePlanningTable(cache)
+          }
+        </div>
+
+        <aside class="pr-panel pr-resource-planning-side">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Selection detail</h3>
+              <p>Quick context for action and reassignment decisions.</p>
+            </div>
+          </div>
+
+          ${
+            cache.loading
+              ? `<div class="pr-loading">Loading detail…</div>`
+              : renderResourcePlanningDetail(cache)
+          }
+        </aside>
+      </section>
+    </div>
+  `;
+
+  bindResourcePlanningEvents(me);
+}
+
+function bindResourcePlanningEvents(me) {
+  const host = document.getElementById("screen-resource-planning");
+  if (!host) return;
+
+  const searchInput = host.querySelector("#rpSearchInput");
+  const roleFilter = host.querySelector("#rpRoleFilter");
+  const horizonFilter = host.querySelector("#rpHorizonFilter");
+  const activeOnly = host.querySelector("#rpActiveOnly");
+  const onlyAvailable = host.querySelector("#rpOnlyAvailable");
+  const onlyOverloaded = host.querySelector("#rpOnlyOverloaded");
+  const applyBtn = host.querySelector("#rpApplyFiltersBtn");
+  const resetBtn = host.querySelector("#rpResetFiltersBtn");
+
+  host.querySelectorAll("[data-rp-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      PR_RESOURCE_PLANNING_CACHE.selectedTab = btn.getAttribute("data-rp-tab") || "peaks";
+      syncResourcePlanningSelection();
+      renderResourcePlanningScreen(me);
+    });
+  });
+
+  host.querySelectorAll("[data-rp-row]").forEach((rowEl) => {
+    rowEl.addEventListener("click", () => {
+      PR_RESOURCE_PLANNING_CACHE.selectedKey = rowEl.getAttribute("data-rp-row") || "";
+      syncResourcePlanningSelection();
+      renderResourcePlanningScreen(me);
+    });
+  });
+
+  applyBtn?.addEventListener("click", async () => {
+    PR_RESOURCE_PLANNING_CACHE.filters.q = searchInput?.value?.trim() || "";
+    PR_RESOURCE_PLANNING_CACHE.filters.role_on_engagement = roleFilter?.value || "";
+    PR_RESOURCE_PLANNING_CACHE.filters.horizon_days = Number(horizonFilter?.value || 60);
+    PR_RESOURCE_PLANNING_CACHE.filters.active_only = !!activeOnly?.checked;
+    PR_RESOURCE_PLANNING_CACHE.filters.only_available = !!onlyAvailable?.checked;
+    PR_RESOURCE_PLANNING_CACHE.filters.only_overloaded = !!onlyOverloaded?.checked;
+    PR_RESOURCE_PLANNING_CACHE.filters.offset = 0;
+
+    await loadResourcePlanningData(me);
+    renderResourcePlanningScreen(me);
+  });
+
+  resetBtn?.addEventListener("click", async () => {
+    PR_RESOURCE_PLANNING_CACHE.filters = {
+      q: "",
+      role_on_engagement: "",
+      active_only: true,
+      only_available: false,
+      only_overloaded: false,
+      horizon_days: 60,
+      limit: 100,
+      offset: 0
+    };
+
+    await loadResourcePlanningData(me);
+    renderResourcePlanningScreen(me);
+  });
+
+  searchInput?.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyBtn?.click();
+    }
+  });
+}
+
+async function renderResourcePlanningScreen(me) {
+  const host = document.getElementById("screen-resource-planning");
+  if (!host) return;
+
+  if (!PR_RESOURCE_PLANNING_CACHE.summary && !PR_RESOURCE_PLANNING_CACHE.loading) {
+    await loadResourcePlanningData(me);
+  }
+
+  renderResourcePlanningScreenBody(me);
+}
+
+function renderResourcePlanningScreenBody(me) {
+  const original = window.renderResourcePlanningScreen;
+  if (typeof original === "function" && original !== renderResourcePlanningScreenBody) {
+    // no-op guard if needed
+  }
+  renderResourcePlanningScreenContent(me);
+}
+
+function renderResourcePlanningScreenContent(me) {
+  const host = document.getElementById("screen-resource-planning");
+  if (!host) return;
+
+  const cache = PR_RESOURCE_PLANNING_CACHE;
+  const summary = cache.summary || {};
+
+  host.innerHTML = `
+    <div class="pr-screen pr-resource-planning-screen">
+      <div class="pr-screen__hero">
+        <div>
+          <h1 class="pr-screen__title">Resource Planning</h1>
+          <p class="pr-screen__subtitle">Forward-looking staffing, scheduling pressure, and workload balancing.</p>
+        </div>
+      </div>
+
+      <section class="pr-panel">
+        <div class="pr-panel__head">
+          <div>
+            <h3>Planning filters</h3>
+            <p>Adjust scope and workload thresholds for resource review.</p>
+          </div>
+        </div>
+
+        <div class="pr-filter-grid pr-filter-grid--resource-planning">
+          <div class="pr-field">
+            <label class="pr-field__label" for="rpSearchInput">Search</label>
+            <input id="rpSearchInput" class="pr-input" type="text" placeholder="Search by engagement, customer, code, or team member" value="${escapeHtml(cache.filters.q)}" />
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="rpRoleFilter">Role</label>
+            <select id="rpRoleFilter" class="pr-select">
+              <option value="">All roles</option>
+              <option value="manager" ${cache.filters.role_on_engagement === "manager" ? "selected" : ""}>Manager</option>
+              <option value="reviewer" ${cache.filters.role_on_engagement === "reviewer" ? "selected" : ""}>Reviewer</option>
+              <option value="partner" ${cache.filters.role_on_engagement === "partner" ? "selected" : ""}>Partner</option>
+              <option value="qc" ${cache.filters.role_on_engagement === "qc" ? "selected" : ""}>QC</option>
+              <option value="preparer" ${cache.filters.role_on_engagement === "preparer" ? "selected" : ""}>Preparer</option>
+            </select>
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label" for="rpHorizonFilter">Horizon</label>
+            <select id="rpHorizonFilter" class="pr-select">
+              <option value="30" ${String(cache.filters.horizon_days) === "30" ? "selected" : ""}>30 days</option>
+              <option value="60" ${String(cache.filters.horizon_days) === "60" ? "selected" : ""}>60 days</option>
+              <option value="90" ${String(cache.filters.horizon_days) === "90" ? "selected" : ""}>90 days</option>
+              <option value="120" ${String(cache.filters.horizon_days) === "120" ? "selected" : ""}>120 days</option>
+            </select>
+          </div>
+
+          <label class="pr-field pr-field--check">
+            <input id="rpActiveOnly" type="checkbox" ${cache.filters.active_only ? "checked" : ""} />
+            <span class="pr-field__label">Active only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="rpOnlyAvailable" type="checkbox" ${cache.filters.only_available ? "checked" : ""} />
+            <span class="pr-field__label">Available only</span>
+          </label>
+
+          <label class="pr-field pr-field--check">
+            <input id="rpOnlyOverloaded" type="checkbox" ${cache.filters.only_overloaded ? "checked" : ""} />
+            <span class="pr-field__label">Overloaded only</span>
+          </label>
+
+          <div class="pr-filter-actions">
+            <button id="rpApplyFiltersBtn" class="btn btn-primary" type="button">Apply</button>
+            <button id="rpResetFiltersBtn" class="btn btn-ghost" type="button">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pr-summary-grid">
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Total engagements</div>
+          <div class="pr-summary-card__value">${formatNumberSafe(summary.total_engagements)}</div>
+          <div class="pr-summary-card__hint">Planning scope</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Upcoming peaks</div>
+          <div class="pr-summary-card__value">${formatNumberSafe(summary.upcoming_peaks)}</div>
+          <div class="pr-summary-card__hint">Deadline pressure</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Coverage gaps</div>
+          <div class="pr-summary-card__value pr-text-warning">${formatNumberSafe(summary.coverage_gaps)}</div>
+          <div class="pr-summary-card__hint">Missing key roles</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Overloaded engagements</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatNumberSafe(summary.overloaded_engagements)}</div>
+          <div class="pr-summary-card__hint">Above target allocation</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Overloaded users</div>
+          <div class="pr-summary-card__value pr-text-danger">${formatNumberSafe(summary.overloaded_users)}</div>
+          <div class="pr-summary-card__hint">High staff pressure</div>
+        </div>
+        <div class="pr-summary-card">
+          <div class="pr-summary-card__label">Available users</div>
+          <div class="pr-summary-card__value pr-text-good">${formatNumberSafe(summary.available_users)}</div>
+          <div class="pr-summary-card__hint">Can absorb workload</div>
+        </div>
+      </section>
+
+      <section class="pr-resource-planning-layout">
+        <div class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Planning workspace</h3>
+              <p>Select the working view below.</p>
+            </div>
+          </div>
+
+          <div class="pr-resource-tabs">
+            <button class="pr-resource-tab ${cache.selectedTab === "peaks" ? "is-active" : ""}" data-rp-tab="peaks" type="button">Upcoming peaks</button>
+            <button class="pr-resource-tab ${cache.selectedTab === "coverage" ? "is-active" : ""}" data-rp-tab="coverage" type="button">Coverage gaps</button>
+            <button class="pr-resource-tab ${cache.selectedTab === "reallocation" ? "is-active" : ""}" data-rp-tab="reallocation" type="button">Reallocation</button>
+            <button class="pr-resource-tab ${cache.selectedTab === "schedule" ? "is-active" : ""}" data-rp-tab="schedule" type="button">Schedule view</button>
+          </div>
+
+          ${cache.loading ? `<div class="pr-loading">Loading resource planning data…</div>` : renderResourcePlanningTable(cache)}
+        </div>
+
+        <div class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Selected detail</h3>
+              <p>Context and guidance for the current row.</p>
+            </div>
+          </div>
+
+          ${cache.loading ? `<div class="pr-loading">Loading detail…</div>` : renderResourcePlanningDetail(cache)}
+        </div>
+      </section>
+    </div>
+  `;
+
+  bindResourcePlanningEvents(me);
+}
 
 function renderApprovalCenterScreen(me) {
   renderManagerStubScreen(PR_NAV.approvalCenter, {
@@ -13724,19 +14760,6 @@ function renderApprovalCenterScreen(me) {
       { label: "Return for rework", desc: "Allow structured rework routing with comments and deadlines." },
       { label: "Approval audit trail", desc: "Track who approved, returned, or escalated each item." },
       { label: "Release controls", desc: "Control movement from review completion into partner or final stages." }
-    ]
-  });
-}
-
-function renderResourcePlanningScreen(me) {
-  renderManagerStubScreen(PR_NAV.resourcePlanning, {
-    title: "Resource Planning",
-    subtitle: "Forward-looking staffing, scheduling pressure, and workload balancing.",
-    items: [
-      { label: "Upcoming peaks", desc: "Preview month-end, year-end, and reporting-cycle pressure across the firm." },
-      { label: "Coverage gaps", desc: "Identify engagements with missing managers, reviewers, or specialist roles." },
-      { label: "Reallocation planning", desc: "Support reassignment of staff before deadlines become at risk." },
-      { label: "Scheduling view", desc: "Show who is free, who is overloaded, and where conflicts will arise." }
     ]
   });
 }
@@ -15093,19 +16116,75 @@ function renderAuditTrailWorkspace({
   const root = document.getElementById(rootId);
   if (!root) return;
 
-  const companyId = window.getActiveCompanyId?.();
-  const currentEngagementId = window.getActiveEngagementId?.() || "";
-  const currentUserId = window.getCurrentUser?.()?.id || "";
-  const apiFetch = window.apiFetch;
-  const ENDPOINTS = window.endpoints || window.ENDPOINTS;
+  const me =
+    window.__PR_ME__ ||
+    window.currentUser ||
+    (() => {
+      try {
+        return JSON.parse(localStorage.getItem("fs_user") || "null") || {};
+      } catch (_) {
+        return {};
+      }
+    })();
 
-  if (!companyId || !apiFetch || !ENDPOINTS?.audit?.list) {
+  const companyId =
+    window.getActiveCompanyId?.() ||
+    me?.company_id ||
+    me?.companyId ||
+    "";
+
+  const currentEngagementId =
+    window.getActiveEngagementId?.() ||
+    window.__ENGAGEMENT_ID__ ||
+    "";
+
+  const currentUserId =
+    window.getCurrentUser?.()?.id ||
+    me?.id ||
+    "";
+
+  const apiFetch =
+    window.apiFetch ||
+    (typeof apiFetch === "function" ? apiFetch : null);
+
+  const ENDPOINTS =
+    window.ENDPOINTS ||
+    window.endpoints ||
+    {};
+
+  if (!apiFetch) {
     root.innerHTML = `
       <div class="audit-screen-shell">
         <div class="audit-card">
           <div class="audit-title">${escapeHtml(title)}</div>
           <div class="audit-subtitle">${escapeHtml(subtitle)}</div>
-          <div class="audit-empty">Audit route or company context is not available.</div>
+          <div class="audit-empty">apiFetch is not available.</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if (!companyId) {
+    root.innerHTML = `
+      <div class="audit-screen-shell">
+        <div class="audit-card">
+          <div class="audit-title">${escapeHtml(title)}</div>
+          <div class="audit-subtitle">${escapeHtml(subtitle)}</div>
+          <div class="audit-empty">Company context is not available.</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if (!ENDPOINTS?.audit?.list) {
+    root.innerHTML = `
+      <div class="audit-screen-shell">
+        <div class="audit-card">
+          <div class="audit-title">${escapeHtml(title)}</div>
+          <div class="audit-subtitle">${escapeHtml(subtitle)}</div>
+          <div class="audit-empty">Audit endpoint is not registered.</div>
         </div>
       </div>
     `;
@@ -15193,113 +16272,127 @@ function renderAuditTrailWorkspace({
         color: #fff;
       }
       .audit-btn:hover {
-        filter: brightness(0.98);
+        background: #f8fbfd;
+      }
+      .audit-btn-primary:hover {
+        background: #0b5f59;
       }
       .audit-meta {
         display: flex;
         justify-content: space-between;
-        align-items: center;
         gap: 12px;
-        margin: 8px 0 14px;
-        color: #5c7481;
-        font-size: 0.88rem;
+        align-items: center;
+        margin: 14px 0 10px;
+        color: #55707f;
+        font-size: 0.85rem;
       }
       .audit-table-wrap {
         overflow: auto;
-        border: 1px solid #e2ebf0;
+        border: 1px solid #d7e4ea;
         border-radius: 16px;
+        background: #fff;
       }
       .audit-table {
         width: 100%;
         border-collapse: collapse;
-        min-width: 1150px;
       }
       .audit-table th,
       .audit-table td {
         padding: 12px 14px;
-        border-bottom: 1px solid #edf3f6;
-        vertical-align: top;
         text-align: left;
-        font-size: 0.9rem;
+        border-bottom: 1px solid #e6eef2;
+        vertical-align: top;
       }
       .audit-table th {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #5d7786;
         background: #f8fbfd;
-        color: #48616f;
-        font-weight: 700;
-        position: sticky;
-        top: 0;
-        z-index: 1;
+      }
+      .audit-table td {
+        color: #123040;
+        font-size: 0.9rem;
+      }
+      .audit-empty,
+      .audit-loading {
+        padding: 18px 8px;
+        text-align: center;
+        color: #607987;
       }
       .audit-pill {
         display: inline-flex;
         align-items: center;
+        min-height: 24px;
+        padding: 0 10px;
         border-radius: 999px;
-        padding: 4px 10px;
-        font-size: 0.76rem;
-        font-weight: 700;
-        background: #e7f6f4;
+        background: #e8f6f4;
         color: #0f766e;
+        font-size: 0.75rem;
+        font-weight: 700;
       }
       .audit-pill-muted {
         background: #eef4f7;
-        color: #58707d;
+        color: #4d6573;
       }
       .audit-code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.8rem;
-        color: #123040;
-        background: #f8fbfd;
-        border: 1px solid #e2ebf0;
-        border-radius: 10px;
-        padding: 2px 8px;
         display: inline-block;
+        padding: 2px 8px;
+        border-radius: 8px;
+        background: #f4f7f9;
+        color: #375160;
+        font-size: 0.78rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
       .audit-row-actions {
         display: flex;
         gap: 8px;
-        flex-wrap: wrap;
       }
       .audit-link-btn {
         border: 0;
         background: transparent;
         color: #0f766e;
+        font-weight: 700;
         cursor: pointer;
-        font-weight: 600;
         padding: 0;
       }
-      .audit-empty,
-      .audit-loading {
-        padding: 24px;
-        text-align: center;
-        color: #5c7481;
-      }
-      .audit-pagination {
+      .audit-footer {
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 12px;
-        margin-top: 14px;
+        margin-top: 12px;
+      }
+      .audit-footer-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .hidden {
+        display: none !important;
       }
       .audit-drawer {
-        margin-top: 16px;
+        margin-top: 18px;
         border: 1px solid #d7e4ea;
         border-radius: 18px;
-        background: #fbfdfe;
         overflow: hidden;
+        background: #fbfdfe;
       }
       .audit-drawer-head {
-        padding: 14px 16px;
-        border-bottom: 1px solid #e6eef2;
-        font-weight: 700;
-        color: #123040;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e6eef2;
+      }
+      .audit-drawer-title {
+        font-weight: 700;
+        color: #123040;
       }
       .audit-drawer-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 0;
       }
       .audit-json-panel {
         padding: 14px 16px;
@@ -15378,60 +16471,61 @@ function renderAuditTrailWorkspace({
           <div class="audit-field">
             <label>Severity</label>
             <select class="audit-select" data-role="severity">
-              <option value="">All severity</option>
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-              <option value="error">Error</option>
+              <option value="">All severities</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
             </select>
           </div>
 
           <div class="audit-field">
-            <label>Entity Type</label>
-            <input class="audit-input" data-role="entity_type" placeholder="engagement, engagement_working_paper..." />
+            <label>Entity type</label>
+            <input class="audit-input" data-role="entity_type" placeholder="e.g. engagement" />
           </div>
 
           <div class="audit-field">
             <label>Entity ID</label>
-            <input class="audit-input" data-role="entity_id" placeholder="e.g. 42 or signoff:42" />
+            <input class="audit-input" data-role="entity_id" placeholder="Filter by entity id" />
           </div>
 
           <div class="audit-field">
-            <label>Actor User ID</label>
-            <input class="audit-input" data-role="actor_user_id" placeholder="User ID" />
-          </div>
-
-          <div class="audit-field">
-            <label>Date from</label>
-            <input type="date" class="audit-input" data-role="from" />
-          </div>
-
-          <div class="audit-field">
-            <label>Date to</label>
-            <input type="date" class="audit-input" data-role="to" />
-          </div>
-
-          <div class="audit-field">
-            <label>Search note/ref</label>
-            <input class="audit-input" data-role="search_text" placeholder="Client, note, reference..." />
+            <label>Actor user ID</label>
+            <input class="audit-input" data-role="actor_user_id" placeholder="Filter by user id" />
           </div>
 
           <div class="audit-field">
             <label>Scope</label>
             <select class="audit-select" data-role="scope">
-              <option value="practice">Practice-wide</option>
-              <option value="engagement">Current engagement</option>
-              <option value="mine">My actions</option>
+              <option value="practice">Practice</option>
+              <option value="engagement">Engagement</option>
+              <option value="mine">Mine</option>
             </select>
           </div>
 
-          <div class="audit-actions">
+          <div class="audit-field">
+            <label>From</label>
+            <input class="audit-input" data-role="from" type="date" />
+          </div>
+
+          <div class="audit-field">
+            <label>To</label>
+            <input class="audit-input" data-role="to" type="date" />
+          </div>
+
+          <div class="audit-field" style="grid-column: span 2;">
+            <label>Search text</label>
+            <input class="audit-input" data-role="search_text" placeholder="Search message, ref, action" />
+          </div>
+
+          <div class="audit-actions" style="grid-column: span 2;">
             <button class="audit-btn audit-btn-primary" data-role="apply">Apply</button>
             <button class="audit-btn" data-role="reset">Reset</button>
           </div>
         </div>
 
         <div class="audit-meta">
-          <div data-role="summary">Ready</div>
+          <div data-role="summary">Loading audit entries…</div>
           <div data-role="page-info"></div>
         </div>
 
@@ -15439,35 +16533,31 @@ function renderAuditTrailWorkspace({
           <table class="audit-table">
             <thead>
               <tr>
-                <th>When</th>
+                <th>Date</th>
                 <th>Module</th>
                 <th>Action</th>
                 <th>Entity</th>
                 <th>Actor</th>
                 <th>Message</th>
                 <th>Severity</th>
-                <th>Inspect</th>
+                <th></th>
               </tr>
             </thead>
-            <tbody data-role="rows">
-              <tr><td colspan="8" class="audit-loading">Loading audit trail...</td></tr>
-            </tbody>
+            <tbody data-role="rows"></tbody>
           </table>
         </div>
 
-        <div class="audit-pagination">
-          <div>
-            <button class="audit-btn" data-role="prev">Previous</button>
+        <div class="audit-footer">
+          <div data-role="offset-label">Offset 0</div>
+          <div class="audit-footer-actions">
+            <button class="audit-btn" data-role="prev">Prev</button>
             <button class="audit-btn" data-role="next">Next</button>
-          </div>
-          <div class="audit-meta" style="margin:0;">
-            <span data-role="offset-label"></span>
           </div>
         </div>
 
         <div class="audit-drawer hidden" data-role="drawer">
           <div class="audit-drawer-head">
-            <span data-role="drawer-title">Audit Entry</span>
+            <div class="audit-drawer-title" data-role="drawer-title">Audit Entry</div>
             <button class="audit-btn" data-role="close-drawer">Close</button>
           </div>
           <div class="audit-drawer-grid">
@@ -15522,7 +16612,7 @@ function renderAuditTrailWorkspace({
   els.scope.value = scope === "engagement" ? "engagement" : "practice";
 
   async function loadAuditRows() {
-    els.rows.innerHTML = `<tr><td colspan="8" class="audit-loading">Loading audit trail...</td></tr>`;
+    els.rows.innerHTML = `<tr><td colspan="8" class="audit-loading">Loading audit trail.</td></tr>`;
 
     const scopeValue = els.scope.value || "practice";
     const moduleValue = (els.module.value || "").trim();
@@ -15556,14 +16646,20 @@ function renderAuditTrailWorkspace({
 
     try {
       const url = ENDPOINTS.audit.list(companyId, query);
-      const res = await apiFetch(url);
-      const data = await res.json();
+      const data = await apiFetch(url);
 
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || "Failed to load audit trail.");
+      if (data?.ok === false) {
+        throw new Error(data?.error || data?.message || "Failed to load audit trail.");
       }
 
-      let rows = Array.isArray(data.rows) ? data.rows : Array.isArray(data.data) ? data.data : [];
+      let rows = Array.isArray(data?.rows)
+        ? data.rows
+        : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+
       if (searchTextValue) {
         const needle = searchTextValue.toLowerCase();
         rows = rows.filter((r) => {
@@ -15637,7 +16733,7 @@ function renderAuditTrailWorkspace({
     els.summary.textContent = `${rows.length} audit entr${rows.length === 1 ? "y" : "ies"} loaded`;
     els.pageInfo.textContent = `Showing ${state.offset + 1} - ${state.offset + rows.length}`;
     els.offsetLabel.textContent = `Offset ${state.offset}`;
-    
+
     els.rows.querySelectorAll("[data-inspect-index]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const idx = Number(btn.getAttribute("data-inspect-index"));

@@ -47592,6 +47592,494 @@ class DatabaseService:
         )
         return cur.rowcount
 
+    def _resource_planning_base_cte_sql(self, schema: str):
+        return f"""
+            WITH engagement_scope AS (
+                SELECT
+                    e.id AS engagement_id,
+                    e.company_id,
+                    e.customer_id,
+                    e.engagement_name,
+                    e.engagement_code,
+                    e.engagement_type,
+                    e.status,
+                    e.priority,
+                    e.workflow_stage,
+                    e.start_date,
+                    e.end_date,
+                    e.due_date,
+                    c.name AS customer_name
+                FROM {schema}.engagements e
+                LEFT JOIN {schema}.customers c
+                ON c.id = e.customer_id
+                AND c.company_id = e.company_id
+                WHERE e.company_id = %s
+                AND (%s = FALSE OR e.is_active = TRUE)
+                AND (
+                        %s = ''
+                        OR COALESCE(e.engagement_name, '') ILIKE %s
+                        OR COALESCE(e.engagement_code, '') ILIKE %s
+                        OR COALESCE(e.engagement_type, '') ILIKE %s
+                        OR COALESCE(c.name, '') ILIKE %s
+                    )
+                AND (
+                        e.start_date IS NULL
+                        OR e.start_date <= (CURRENT_DATE + (%s * INTERVAL '1 day'))
+                    )
+                AND (
+                        e.due_date IS NULL
+                        OR e.due_date >= CURRENT_DATE - INTERVAL '30 day'
+                    )
+            ),
+            team_alloc AS (
+                SELECT
+                    et.id,
+                    et.engagement_id,
+                    et.user_id,
+                    LOWER(COALESCE(et.role_on_engagement, '')) AS role_on_engagement,
+                    COALESCE(et.allocation_percent, 0) AS allocation_percent,
+                    et.start_date,
+                    et.end_date,
+                    et.is_active
+                FROM {schema}.engagement_team et
+                WHERE et.company_id = %s
+                AND (%s = FALSE OR et.is_active = TRUE)
+                AND (
+                        %s = ''
+                        OR LOWER(COALESCE(et.role_on_engagement, '')) = %s
+                    )
+            ),
+            users_scope AS (
+                SELECT
+                    u.id AS user_id,
+                    CONCAT(
+                        COALESCE(u.first_name, ''),
+                        CASE
+                            WHEN COALESCE(u.last_name, '') <> '' THEN ' ' || u.last_name
+                            ELSE ''
+                        END
+                    ) AS user_name,
+                    COALESCE(u.email, '') AS email
+                FROM public.users u
+            ),
+            alloc_joined AS (
+                SELECT
+                    es.engagement_id,
+                    es.customer_id,
+                    es.customer_name,
+                    es.engagement_name,
+                    es.engagement_code,
+                    es.engagement_type,
+                    es.status,
+                    es.priority,
+                    es.workflow_stage,
+                    es.start_date AS engagement_start_date,
+                    es.end_date AS engagement_end_date,
+                    es.due_date,
+                    ta.user_id,
+                    us.user_name,
+                    us.email,
+                    ta.role_on_engagement,
+                    ta.allocation_percent,
+                    ta.start_date AS allocation_start_date,
+                    ta.end_date AS allocation_end_date
+                FROM engagement_scope es
+                LEFT JOIN team_alloc ta
+                ON ta.engagement_id = es.engagement_id
+                LEFT JOIN users_scope us
+                ON us.user_id = ta.user_id
+            ),
+            engagement_staffing AS (
+                SELECT
+                    aj.engagement_id,
+                    MAX(aj.customer_id) AS customer_id,
+                    MAX(aj.customer_name) AS customer_name,
+                    MAX(aj.engagement_name) AS engagement_name,
+                    MAX(aj.engagement_code) AS engagement_code,
+                    MAX(aj.engagement_type) AS engagement_type,
+                    MAX(aj.status) AS status,
+                    MAX(aj.priority) AS priority,
+                    MAX(aj.workflow_stage) AS workflow_stage,
+                    MAX(aj.engagement_start_date) AS start_date,
+                    MAX(aj.engagement_end_date) AS end_date,
+                    MAX(aj.due_date) AS due_date,
+
+                    COUNT(*) FILTER (WHERE aj.user_id IS NOT NULL) AS team_rows,
+                    COUNT(*) FILTER (WHERE aj.role_on_engagement = 'manager') AS manager_count,
+                    COUNT(*) FILTER (WHERE aj.role_on_engagement = 'reviewer') AS reviewer_count,
+                    COUNT(*) FILTER (WHERE aj.role_on_engagement = 'partner') AS partner_count,
+                    COUNT(*) FILTER (WHERE aj.role_on_engagement = 'qc') AS qc_count,
+
+                    COALESCE(SUM(aj.allocation_percent), 0) AS total_allocation_percent
+                FROM alloc_joined aj
+                GROUP BY aj.engagement_id
+            ),
+            user_load AS (
+                SELECT
+                    aj.user_id,
+                    MAX(aj.user_name) AS user_name,
+                    MAX(aj.email) AS email,
+                    COUNT(DISTINCT aj.engagement_id) AS active_engagements,
+                    ROUND(COALESCE(SUM(aj.allocation_percent), 0), 2) AS total_allocation_percent,
+                    COUNT(*) FILTER (
+                        WHERE aj.due_date IS NOT NULL
+                        AND aj.due_date <= (CURRENT_DATE + INTERVAL '14 day')
+                        AND aj.status NOT IN ('completed', 'cancelled', 'archived')
+                    ) AS engagements_due_soon
+                FROM alloc_joined aj
+                WHERE aj.user_id IS NOT NULL
+                GROUP BY aj.user_id
+            )
+        """
+    def get_resource_planning_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        role_on_engagement: str = "",
+        active_only: bool = True,
+        horizon_days: int = 60,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._resource_planning_base_cte_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                COUNT(*) AS total_engagements,
+                COUNT(*) FILTER (
+                    WHERE due_date IS NOT NULL
+                    AND due_date <= (CURRENT_DATE + INTERVAL '30 day')
+                    AND status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS upcoming_peaks,
+                COUNT(*) FILTER (
+                    WHERE manager_count = 0
+                    OR reviewer_count = 0
+                ) AS coverage_gaps,
+                COUNT(*) FILTER (
+                    WHERE total_allocation_percent > 100
+                ) AS overloaded_engagements,
+                COUNT(*) FILTER (
+                    WHERE total_allocation_percent < 100
+                    AND status NOT IN ('completed', 'cancelled', 'archived')
+                ) AS under_allocated_engagements,
+                (
+                    SELECT COUNT(*)
+                    FROM user_load ul
+                    WHERE ul.total_allocation_percent > 100
+                ) AS overloaded_users,
+                (
+                    SELECT COUNT(*)
+                    FROM user_load ul
+                    WHERE ul.total_allocation_percent < 70
+                ) AS available_users
+            FROM engagement_staffing
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                horizon_days,
+                company_id,
+                active_only,
+                role_on_engagement, role_on_engagement,
+            ),
+        )
+        return cur.fetchone()
+
+    def list_resource_planning_peaks(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        role_on_engagement: str = "",
+        active_only: bool = True,
+        horizon_days: int = 60,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._resource_planning_base_cte_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                engagement_id,
+                customer_id,
+                customer_name,
+                engagement_name,
+                engagement_code,
+                engagement_type,
+                status,
+                priority,
+                workflow_stage,
+                start_date,
+                end_date,
+                due_date,
+                manager_count,
+                reviewer_count,
+                partner_count,
+                qc_count,
+                total_allocation_percent,
+                CASE
+                    WHEN due_date IS NOT NULL AND due_date < CURRENT_DATE THEN 'overdue'
+                    WHEN due_date IS NOT NULL AND due_date <= (CURRENT_DATE + INTERVAL '7 day') THEN 'this_week'
+                    WHEN due_date IS NOT NULL AND due_date <= (CURRENT_DATE + INTERVAL '30 day') THEN 'this_month'
+                    ELSE 'upcoming'
+                END AS pressure_window
+            FROM engagement_staffing
+            WHERE due_date IS NOT NULL
+            AND due_date <= (CURRENT_DATE + (%s * INTERVAL '1 day'))
+            AND status NOT IN ('completed', 'cancelled', 'archived')
+            ORDER BY
+                due_date ASC,
+                CASE priority
+                    WHEN 'urgent' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3
+                    ELSE 4
+                END,
+                engagement_name ASC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                horizon_days,
+                company_id,
+                active_only,
+                role_on_engagement, role_on_engagement,
+                horizon_days,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def list_resource_planning_coverage_gaps(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        active_only: bool = True,
+        horizon_days: int = 60,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._resource_planning_base_cte_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                engagement_id,
+                customer_id,
+                customer_name,
+                engagement_name,
+                engagement_code,
+                engagement_type,
+                status,
+                priority,
+                workflow_stage,
+                start_date,
+                end_date,
+                due_date,
+                manager_count,
+                reviewer_count,
+                partner_count,
+                qc_count,
+                total_allocation_percent,
+                ARRAY_REMOVE(ARRAY[
+                    CASE WHEN manager_count = 0 THEN 'manager' END,
+                    CASE WHEN reviewer_count = 0 THEN 'reviewer' END,
+                    CASE WHEN partner_count = 0 THEN 'partner' END
+                ], NULL) AS missing_roles
+            FROM engagement_staffing
+            WHERE (
+                    manager_count = 0
+                OR reviewer_count = 0
+                OR partner_count = 0
+            )
+            AND (
+                    due_date IS NULL
+                    OR due_date <= (CURRENT_DATE + (%s * INTERVAL '1 day'))
+                )
+            AND status NOT IN ('completed', 'cancelled', 'archived')
+            ORDER BY
+                due_date NULLS LAST,
+                priority DESC,
+                engagement_name ASC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                horizon_days,
+                company_id,
+                active_only,
+                "", "",
+                horizon_days,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+    def list_resource_planning_reallocation_opportunities(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        role_on_engagement: str = "",
+        active_only: bool = True,
+        horizon_days: int = 60,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._resource_planning_base_cte_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                user_id,
+                user_name,
+                email,
+                active_engagements,
+                total_allocation_percent,
+                engagements_due_soon,
+                CASE
+                    WHEN total_allocation_percent > 100 THEN 'overloaded'
+                    WHEN total_allocation_percent < 70 THEN 'available'
+                    ELSE 'balanced'
+                END AS capacity_band,
+                CASE
+                    WHEN total_allocation_percent > 100 THEN ROUND(total_allocation_percent - 100, 2)
+                    WHEN total_allocation_percent < 70 THEN ROUND(70 - total_allocation_percent, 2)
+                    ELSE 0
+                END AS adjustment_percent
+            FROM user_load
+            WHERE (
+                    total_allocation_percent > 100
+                OR total_allocation_percent < 70
+            )
+            AND (
+                    %s = ''
+                    OR COALESCE(user_name, '') ILIKE %s
+                    OR COALESCE(email, '') ILIKE %s
+            )
+            ORDER BY
+                CASE
+                    WHEN total_allocation_percent > 100 THEN 1
+                    WHEN total_allocation_percent < 70 THEN 2
+                    ELSE 3
+                END,
+                ABS(total_allocation_percent - 100) DESC,
+                user_name ASC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                horizon_days,
+                company_id,
+                active_only,
+                role_on_engagement, role_on_engagement,
+                q.strip(), like, like,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+    def list_resource_planning_schedule(
+        self,
+        cur,
+        company_id: int,
+        *,
+        q: str = "",
+        role_on_engagement: str = "",
+        active_only: bool = True,
+        horizon_days: int = 60,
+        only_overloaded: bool = False,
+        only_available: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+        base_sql = self._resource_planning_base_cte_sql(schema)
+
+        sql = base_sql + """
+            SELECT
+                user_id,
+                user_name,
+                email,
+                active_engagements,
+                total_allocation_percent,
+                engagements_due_soon,
+                CASE
+                    WHEN total_allocation_percent > 100 THEN TRUE
+                    ELSE FALSE
+                END AS is_overloaded,
+                CASE
+                    WHEN total_allocation_percent < 70 THEN TRUE
+                    ELSE FALSE
+                END AS is_available
+            FROM user_load
+            WHERE user_id IS NOT NULL
+            AND (%s = FALSE OR total_allocation_percent > 100)
+            AND (%s = FALSE OR total_allocation_percent < 70)
+            AND (
+                    %s = ''
+                    OR COALESCE(user_name, '') ILIKE %s
+                    OR COALESCE(email, '') ILIKE %s
+            )
+            ORDER BY
+                total_allocation_percent DESC,
+                engagements_due_soon DESC,
+                user_name ASC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                q.strip(), like, like, like, like,
+                horizon_days,
+                company_id,
+                active_only,
+                role_on_engagement, role_on_engagement,
+                only_overloaded,
+                only_available,
+                q.strip(), like, like,
+                limit,
+                offset,
+            ),
+        )
+        return cur.fetchall()
+
+        
     def insert_ticket(
         self,
         cur,
