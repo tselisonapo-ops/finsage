@@ -180,6 +180,7 @@ from BackEnd.Services.practitioner.resource_planning import resource_planning_bp
 from BackEnd.Services.practitioner.final_deliverables_review import final_deliverables_review_bp
 from BackEnd.Services.practitioner.approval_center import approval_center_bp
 from BackEnd.Services.practitioner.practitioner_risk_independence import risk_independence_bp
+from BackEnd.Services.practitioner.practitioner_override_log import override_log_bp
 
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
@@ -310,6 +311,7 @@ app.register_blueprint(resource_planning_bp)
 app.register_blueprint(final_deliverables_review_bp)
 app.register_blueprint(approval_center_bp)
 app.register_blueprint(risk_independence_bp)
+app.register_blueprint(override_log_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

@@ -1031,6 +1031,79 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}/decision`
   },
 
+  overrideLogDashboard: (
+    companyId,
+    {
+      engagement_id = "",
+      customer_id = "",
+      status = "",
+      override_type = "",
+      severity = "",
+      assigned_to_user_id = "",
+      q = "",
+      active_only = true,
+      limit = 100,
+      offset = 0
+    } = {}
+  ) => {
+    const params = new URLSearchParams();
+    if (engagement_id) params.set("engagement_id", String(engagement_id));
+    if (customer_id) params.set("customer_id", String(customer_id));
+    if (status) params.set("status", status);
+    if (override_type) params.set("override_type", override_type);
+    if (severity) params.set("severity", severity);
+    if (assigned_to_user_id) params.set("assigned_to_user_id", String(assigned_to_user_id));
+    if (q) params.set("q", q);
+    params.set("active_only", active_only ? "true" : "false");
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/override-log/dashboard?${params.toString()}`;
+  },
+
+  overrideLog: {
+    list: (
+      companyId,
+      {
+        engagement_id = "",
+        customer_id = "",
+        status = "",
+        override_type = "",
+        severity = "",
+        assigned_to_user_id = "",
+        q = "",
+        active_only = true,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (engagement_id) params.set("engagement_id", String(engagement_id));
+      if (customer_id) params.set("customer_id", String(customer_id));
+      if (status) params.set("status", status);
+      if (override_type) params.set("override_type", override_type);
+      if (severity) params.set("severity", severity);
+      if (assigned_to_user_id) params.set("assigned_to_user_id", String(assigned_to_user_id));
+      if (q) params.set("q", q);
+      params.set("active_only", active_only ? "true" : "false");
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/override-log${qs ? `?${qs}` : ""}`;
+    },
+
+    create: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/override-log`,
+
+    get: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/override-log/${encodeURIComponent(itemId)}`,
+
+    update: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/override-log/${encodeURIComponent(itemId)}`,
+
+    setStatus: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/override-log/${encodeURIComponent(itemId)}/status`
+  },
+
   riskIndependence: (
     companyId,
     {
@@ -17352,17 +17425,550 @@ async function renderRiskIndependenceScreen(me) {
 }
 
 
-function renderOverrideLogScreen(me) {
-  renderPartnerStubScreen(PR_NAV.overrideLog, {
-    title: "Override Log",
-    subtitle: "Partner overrides, exceptions, disputes, and final documented resolutions.",
-    items: [
-      { label: "Override register", desc: "Track final partner decisions that differ from normal workflow outcomes." },
-      { label: "Exception documentation", desc: "Record why exceptions were accepted and by whom." },
-      { label: "Dispute resolution", desc: "Log resolved disagreements between preparers, reviewers, and approvers." },
-      { label: "Audit trail", desc: "Keep a durable record of sensitive approval decisions and their rationale." }
-    ]
+async function renderOverrideLogScreen(me) {
+  const host = document.getElementById("screen-override-log");
+  if (!host) return;
+
+  const companyId = me?.company_id || window.currentUser?.company_id;
+  const engagementId =
+    window.__FS_CURRENT_ENGAGEMENT_ID__ ||
+    window.FS_ENGAGEMENT_CONTEXT?.engagement_id ||
+    "";
+
+  const canDecide =
+    !!me?.permissions?.can_approve ||
+    String(me?.user_type || "").toLowerCase() === "partner";
+
+  host.innerHTML = `
+    <div class="pr-override-screen">
+      <section class="pr-panel">
+        <div class="pr-screen__hero">
+          <div>
+            <h2 class="pr-screen__title">Override Log</h2>
+            <p class="pr-screen__subtitle">
+              Partner overrides, exceptions, disputes, and final documented resolutions.
+            </p>
+          </div>
+          <div class="pr-filter-actions">
+            <button class="btn btn-primary" id="olNewBtn">New entry</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pr-panel">
+        <div class="pr-panel__head">
+          <div>
+            <h3>Filters</h3>
+            <p>Search and narrow override items for this engagement.</p>
+          </div>
+        </div>
+
+        <div class="pr-filter-grid pr-filter-grid--override">
+          <div class="pr-field">
+            <label class="pr-field__label">Search</label>
+            <input id="olSearch" class="pr-input" placeholder="Search title, rationale, client, engagement..." />
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label">Status</label>
+            <select id="olStatusFilter" class="pr-select">
+              <option value="">All statuses</option>
+              <option value="open">Open</option>
+              <option value="under_review">Under review</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label">Type</label>
+            <select id="olTypeFilter" class="pr-select">
+              <option value="">All types</option>
+              <option value="override">Override</option>
+              <option value="exception">Exception</option>
+              <option value="dispute">Dispute</option>
+              <option value="waiver">Waiver</option>
+              <option value="approval_exception">Approval exception</option>
+            </select>
+          </div>
+
+          <div class="pr-field">
+            <label class="pr-field__label">Severity</label>
+            <select id="olSeverityFilter" class="pr-select">
+              <option value="">All severities</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+
+          <div class="pr-filter-actions">
+            <button class="btn btn-ghost" id="olRefreshBtn">Refresh</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pr-summary-grid" id="olStats"></section>
+
+      <section class="pr-override-layout">
+        <div class="pr-panel">
+          <div class="pr-panel__head">
+            <div>
+              <h3>Override register</h3>
+              <p>Click an item to review or update the documented decision trail.</p>
+            </div>
+          </div>
+
+          <div class="pr-override-table-wrap">
+            <table class="pr-override-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Severity</th>
+                  <th>Status</th>
+                  <th>Engagement</th>
+                  <th>Due</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="olTableBody">
+                <tr><td colspan="7" class="pr-table-state">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="pr-override-side-stack">
+          <section class="pr-panel">
+            <div class="pr-panel__head">
+              <div>
+                <h3 id="olEditorTitle">New override entry</h3>
+                <p>Document exception details, rationale, and final resolution.</p>
+              </div>
+            </div>
+
+            <div class="pr-override-form">
+              <input type="hidden" id="olItemId" />
+              <input type="hidden" id="olEngagementId" />
+
+              <div class="pr-override-form-grid">
+                <div class="pr-field">
+                  <label class="pr-field__label">Title</label>
+                  <input id="olTitle" class="pr-input" />
+                </div>
+                <div class="pr-field">
+                  <label class="pr-field__label">Type</label>
+                  <select id="olOverrideType" class="pr-select">
+                    <option value="override">Override</option>
+                    <option value="exception">Exception</option>
+                    <option value="dispute">Dispute</option>
+                    <option value="waiver">Waiver</option>
+                    <option value="approval_exception">Approval exception</option>
+                  </select>
+                </div>
+                <div class="pr-field">
+                  <label class="pr-field__label">Severity</label>
+                  <select id="olSeverity" class="pr-select">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div class="pr-field">
+                  <label class="pr-field__label">Status</label>
+                  <select id="olStatus" class="pr-select">
+                    <option value="open">Open</option>
+                    <option value="under_review">Under review</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="pr-override-form-grid">
+                <div class="pr-field">
+                  <label class="pr-field__label">Source type</label>
+                  <select id="olSourceType" class="pr-select">
+                    <option value="engagement">Engagement</option>
+                    <option value="acceptance">Acceptance</option>
+                    <option value="deliverable">Deliverable</option>
+                    <option value="signoff_step">Sign-off step</option>
+                    <option value="escalation">Escalation</option>
+                    <option value="posting">Posting</option>
+                    <option value="working_paper">Working paper</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="pr-field">
+                  <label class="pr-field__label">Source ID</label>
+                  <input id="olSourceId" class="pr-input" />
+                </div>
+              </div>
+
+              <div class="pr-field">
+                <label class="pr-field__label">Description</label>
+                <textarea id="olDescription" class="input" rows="3"></textarea>
+              </div>
+
+              <div class="pr-field">
+                <label class="pr-field__label">Rationale</label>
+                <textarea id="olRationale" class="input" rows="3"></textarea>
+              </div>
+
+              <div class="pr-field">
+                <label class="pr-field__label">Resolution summary</label>
+                <textarea id="olResolutionSummary" class="input" rows="3"></textarea>
+              </div>
+
+              <div class="pr-override-form-grid">
+                <div class="pr-field">
+                  <label class="pr-field__label">Decision outcome</label>
+                  <input id="olDecisionOutcome" class="pr-input" placeholder="approved / rejected / accepted_exception / waived" />
+                </div>
+                <div class="pr-field">
+                  <label class="pr-field__label">Reason code</label>
+                  <input id="olReasonCode" class="pr-input" />
+                </div>
+              </div>
+
+              <div class="pr-override-form-grid">
+                <div class="pr-field">
+                  <label class="pr-field__label">Due date</label>
+                  <input type="date" id="olDueDate" class="pr-input" />
+                </div>
+                <div class="pr-field">
+                  <label class="pr-field__label">Sensitive</label>
+                  <label class="pr-risk-check">
+                    <input type="checkbox" id="olIsSensitive" />
+                    <span>Restrict / highlight sensitive entry</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pr-approval-center-actionbar">
+                <button class="btn btn-ghost" id="olClearBtn">Clear</button>
+                <button class="btn btn-primary" id="olSaveBtn">Save</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="pr-panel">
+            <div class="pr-panel__head">
+              <div>
+                <h3>Resolution actions</h3>
+                <p>Advance the item through review, resolution, and closure.</p>
+              </div>
+            </div>
+
+            <div class="pr-approval-center-actionbar">
+              <button class="btn" id="olReviewBtn">Mark under review</button>
+              <button class="btn btn-primary" id="olResolveBtn" ${canDecide ? "" : "style='display:none'"}>Resolve</button>
+              <button class="btn" id="olCloseBtn" ${canDecide ? "" : "style='display:none'"}>Close</button>
+            </div>
+
+            <div id="olActionMessage" class="form-message" style="margin-top:10px;"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+  `;
+
+  function setMessage(message = "", kind = "") {
+    const el = document.getElementById("olActionMessage");
+    if (!el) return;
+    el.className = `form-message ${kind}`.trim();
+    el.textContent = message || "";
+  }
+
+  function badgeClass(value, mapType) {
+    const v = String(value || "").toLowerCase();
+    if (mapType === "severity") {
+      if (v === "critical" || v === "high") return "pr-badge is-danger";
+      if (v === "low") return "pr-badge is-good";
+      return "pr-badge is-warning";
+    }
+    if (mapType === "status") {
+      if (v === "resolved" || v === "closed") return "pr-badge is-good";
+      if (v === "under_review") return "pr-badge is-warning";
+      return "pr-badge is-danger";
+    }
+    return "pr-badge";
+  }
+
+  function clearEditor() {
+    document.getElementById("olEditorTitle").textContent = "New override entry";
+    document.getElementById("olItemId").value = "";
+    document.getElementById("olEngagementId").value = engagementId || "";
+    document.getElementById("olTitle").value = "";
+    document.getElementById("olOverrideType").value = "override";
+    document.getElementById("olSeverity").value = "medium";
+    document.getElementById("olStatus").value = "open";
+    document.getElementById("olSourceType").value = "engagement";
+    document.getElementById("olSourceId").value = "";
+    document.getElementById("olDescription").value = "";
+    document.getElementById("olRationale").value = "";
+    document.getElementById("olResolutionSummary").value = "";
+    document.getElementById("olDecisionOutcome").value = "";
+    document.getElementById("olReasonCode").value = "";
+    document.getElementById("olDueDate").value = "";
+    document.getElementById("olIsSensitive").checked = false;
+    document.querySelectorAll(".pr-override-row").forEach((row) => row.classList.remove("is-selected"));
+    setMessage("", "");
+  }
+
+  async function loadItem(itemId) {
+    const res = await fetch(ENDPOINTS.overrideLog.get(companyId, itemId), {
+      headers: AUTH_HEADER()
+    });
+    const payload = await res.json();
+    if (!res.ok || !payload?.ok) throw new Error(payload?.error || "Failed to load override entry");
+
+    const item = payload.data || {};
+    document.getElementById("olEditorTitle").textContent = `Override #${item.id}`;
+    document.getElementById("olItemId").value = item.id || "";
+    document.getElementById("olEngagementId").value = item.engagement_id || "";
+    document.getElementById("olTitle").value = item.title || "";
+    document.getElementById("olOverrideType").value = item.override_type || "override";
+    document.getElementById("olSeverity").value = item.severity || "medium";
+    document.getElementById("olStatus").value = item.status || "open";
+    document.getElementById("olSourceType").value = item.source_type || "engagement";
+    document.getElementById("olSourceId").value = item.source_id || "";
+    document.getElementById("olDescription").value = item.description || "";
+    document.getElementById("olRationale").value = item.rationale || "";
+    document.getElementById("olResolutionSummary").value = item.resolution_summary || "";
+    document.getElementById("olDecisionOutcome").value = item.decision_outcome || "";
+    document.getElementById("olReasonCode").value = item.override_reason_code || "";
+    document.getElementById("olDueDate").value = item.due_date || "";
+    document.getElementById("olIsSensitive").checked = !!item.is_sensitive;
+    setMessage("", "");
+  }
+
+  async function loadDashboard() {
+    const q = document.getElementById("olSearch")?.value?.trim() || "";
+    const status = document.getElementById("olStatusFilter")?.value || "";
+    const override_type = document.getElementById("olTypeFilter")?.value || "";
+    const severity = document.getElementById("olSeverityFilter")?.value || "";
+
+    const res = await fetch(
+      ENDPOINTS.overrideLogDashboard(companyId, {
+        engagement_id: engagementId || "",
+        status,
+        override_type,
+        severity,
+        q,
+        active_only: true,
+        limit: 100,
+        offset: 0
+      }),
+      { headers: AUTH_HEADER() }
+    );
+
+    const payload = await res.json();
+    if (!res.ok || !payload?.ok) {
+      throw new Error(payload?.error || "Failed to load override log");
+    }
+
+    const summary = payload.data?.summary || {};
+    const items = payload.data?.items || [];
+
+    document.getElementById("olStats").innerHTML = `
+      <div class="pr-summary-card">
+        <div class="pr-summary-card__label">Open items</div>
+        <div class="pr-summary-card__value">${Number(summary.open_items || 0)}</div>
+        <div class="pr-summary-card__hint">Open and under review.</div>
+      </div>
+      <div class="pr-summary-card">
+        <div class="pr-summary-card__label">High risk</div>
+        <div class="pr-summary-card__value pr-text-danger">${Number(summary.high_risk_items || 0)}</div>
+        <div class="pr-summary-card__hint">High and critical override matters.</div>
+      </div>
+      <div class="pr-summary-card">
+        <div class="pr-summary-card__label">Exceptions</div>
+        <div class="pr-summary-card__value">${Number(summary.exception_items || 0)}</div>
+        <div class="pr-summary-card__hint">Entries logged as exceptions.</div>
+      </div>
+      <div class="pr-summary-card">
+        <div class="pr-summary-card__label">Closed</div>
+        <div class="pr-summary-card__value">${Number(summary.closed_items || 0)}</div>
+        <div class="pr-summary-card__hint">Fully completed items.</div>
+      </div>
+    `;
+
+    const body = document.getElementById("olTableBody");
+    if (!items.length) {
+      body.innerHTML = `<tr><td colspan="7" class="pr-empty-state">No override log items found.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = items.map((item) => `
+      <tr class="pr-override-row" data-ol-id="${item.id}">
+        <td>
+          <div class="pr-risk-name">
+            <div class="pr-risk-name__title">${escapeHtml(item.title || "—")}</div>
+            <div class="pr-risk-name__meta">${escapeHtml(item.customer_name || "")}</div>
+          </div>
+        </td>
+        <td><span class="pr-badge">${escapeHtml(item.override_type || "override")}</span></td>
+        <td><span class="${badgeClass(item.severity, "severity")}">${escapeHtml(item.severity || "medium")}</span></td>
+        <td><span class="${badgeClass(item.status, "status")}">${escapeHtml(item.status || "open")}</span></td>
+        <td>${escapeHtml(item.engagement_name || "—")}</td>
+        <td>${escapeHtml(item.due_date || "—")}</td>
+        <td>${escapeHtml(item.updated_at ? new Date(item.updated_at).toLocaleDateString() : "—")}</td>
+      </tr>
+    `).join("");
+
+    body.querySelectorAll(".pr-override-row").forEach((row) => {
+      row.addEventListener("click", async () => {
+        try {
+          document.querySelectorAll(".pr-override-row").forEach((r) => r.classList.remove("is-selected"));
+          row.classList.add("is-selected");
+          await loadItem(row.dataset.olId);
+        } catch (err) {
+          console.error(err);
+          setMessage(err.message || "Failed to load item", "error");
+        }
+      });
+    });
+  }
+
+  async function saveItem() {
+    const formState = {
+      id: document.getElementById("olItemId").value || "",
+      engagement_id: Number(document.getElementById("olEngagementId").value || 0),
+      title: document.getElementById("olTitle").value.trim(),
+      override_type: document.getElementById("olOverrideType").value || "override",
+      severity: document.getElementById("olSeverity").value || "medium",
+      status: document.getElementById("olStatus").value || "open",
+      source_type: document.getElementById("olSourceType").value || "engagement",
+      source_id: document.getElementById("olSourceId").value ? Number(document.getElementById("olSourceId").value) : null,
+      description: document.getElementById("olDescription").value.trim(),
+      rationale: document.getElementById("olRationale").value.trim(),
+      resolution_summary: document.getElementById("olResolutionSummary").value.trim(),
+      decision_outcome: document.getElementById("olDecisionOutcome").value.trim(),
+      override_reason_code: document.getElementById("olReasonCode").value.trim(),
+      due_date: document.getElementById("olDueDate").value || null,
+      is_sensitive: !!document.getElementById("olIsSensitive").checked
+    };
+
+    if (!formState.engagement_id) throw new Error("Engagement is required.");
+    if (!formState.title) throw new Error("Title is required.");
+
+    const isEdit = !!formState.id;
+    const url = isEdit
+      ? ENDPOINTS.overrideLog.update(companyId, formState.id)
+      : ENDPOINTS.overrideLog.create(companyId);
+
+    const res = await fetch(url, {
+      method: isEdit ? "PATCH" : "POST",
+      headers: {
+        ...AUTH_HEADER(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(formState)
+    });
+
+    const payload = await res.json();
+    if (!res.ok || !payload?.ok) {
+      throw new Error(payload?.error || "Failed to save override item");
+    }
+    return payload.data || {};
+  }
+
+  async function setItemStatus(nextStatus) {
+    const itemId = document.getElementById("olItemId").value;
+    if (!itemId) throw new Error("Save the item first.");
+
+    const res = await fetch(ENDPOINTS.overrideLog.setStatus(companyId, itemId), {
+      method: "POST",
+      headers: {
+        ...AUTH_HEADER(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        status: nextStatus,
+        decision_outcome: document.getElementById("olDecisionOutcome").value.trim() || null,
+        resolution_summary: document.getElementById("olResolutionSummary").value.trim() || null
+      })
+    });
+
+    const payload = await res.json();
+    if (!res.ok || !payload?.ok) {
+      throw new Error(payload?.error || "Failed to update status");
+    }
+    return payload.data || {};
+  }
+
+  document.getElementById("olRefreshBtn")?.addEventListener("click", loadDashboard);
+  document.getElementById("olStatusFilter")?.addEventListener("change", loadDashboard);
+  document.getElementById("olTypeFilter")?.addEventListener("change", loadDashboard);
+  document.getElementById("olSeverityFilter")?.addEventListener("change", loadDashboard);
+  document.getElementById("olSearch")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loadDashboard();
   });
+
+  document.getElementById("olNewBtn")?.addEventListener("click", clearEditor);
+  document.getElementById("olClearBtn")?.addEventListener("click", clearEditor);
+
+  document.getElementById("olSaveBtn")?.addEventListener("click", async () => {
+    try {
+      const saved = await saveItem();
+      await loadDashboard();
+      await loadItem(saved.id);
+      setMessage("Override entry saved.", "success");
+    } catch (err) {
+      console.error(err);
+      setMessage(err.message || "Failed to save", "error");
+    }
+  });
+
+  document.getElementById("olReviewBtn")?.addEventListener("click", async () => {
+    try {
+      const updated = await setItemStatus("under_review");
+      await loadDashboard();
+      await loadItem(updated.id);
+      setMessage("Marked under review.", "success");
+    } catch (err) {
+      console.error(err);
+      setMessage(err.message || "Failed to update status", "error");
+    }
+  });
+
+  document.getElementById("olResolveBtn")?.addEventListener("click", async () => {
+    try {
+      const updated = await setItemStatus("resolved");
+      await loadDashboard();
+      await loadItem(updated.id);
+      setMessage("Override item resolved.", "success");
+    } catch (err) {
+      console.error(err);
+      setMessage(err.message || "Failed to resolve", "error");
+    }
+  });
+
+  document.getElementById("olCloseBtn")?.addEventListener("click", async () => {
+    try {
+      const updated = await setItemStatus("closed");
+      await loadDashboard();
+      await loadItem(updated.id);
+      setMessage("Override item closed.", "success");
+    } catch (err) {
+      console.error(err);
+      setMessage(err.message || "Failed to close", "error");
+    }
+  });
+
+  clearEditor();
+
+  try {
+    await loadDashboard();
+  } catch (err) {
+    console.error(err);
+    document.getElementById("olTableBody").innerHTML =
+      `<tr><td colspan="7" class="pr-table-state">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
+  }
 }
 
 function renderManagerStubScreen(screen, config = {}) {

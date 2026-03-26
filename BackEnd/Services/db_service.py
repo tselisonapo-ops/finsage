@@ -8783,6 +8783,239 @@ class DatabaseService:
         EXECUTE PROCEDURE {schema}.set_engagement_escalations_updated_at();
 
         -- ==================================================
+        -- ENGAGEMENT OVERRIDE LOG
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.engagement_override_log (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            engagement_id INT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'engagement', -- engagement, deliverable, signoff_step, acceptance, escalation, posting, working_paper, other
+            source_id INT NULL,
+            override_type TEXT NOT NULL DEFAULT 'override', -- override, exception, dispute, waiver, approval_exception
+            severity TEXT NOT NULL DEFAULT 'medium', -- low, medium, high, critical
+            title TEXT NOT NULL,
+            description TEXT NULL,
+            rationale TEXT NULL,
+            resolution_summary TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'open', -- open, under_review, resolved, closed
+            decision_outcome TEXT NULL, -- approved, rejected, accepted_exception, waived, no_change
+            override_reason_code TEXT NULL,
+            assigned_to_user_id INT NULL,
+            requested_by_user_id INT NULL,
+            decided_by_user_id INT NULL,
+            resolved_by_user_id INT NULL,
+            decision_date TIMESTAMPTZ NULL,
+            resolved_at TIMESTAMPTZ NULL,
+            closed_at TIMESTAMPTZ NULL,
+            due_date DATE NULL,
+            is_sensitive BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.engagement_override_log
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS engagement_id INT,
+            ADD COLUMN IF NOT EXISTS source_type TEXT,
+            ADD COLUMN IF NOT EXISTS source_id INT NULL,
+            ADD COLUMN IF NOT EXISTS override_type TEXT,
+            ADD COLUMN IF NOT EXISTS severity TEXT,
+            ADD COLUMN IF NOT EXISTS title TEXT,
+            ADD COLUMN IF NOT EXISTS description TEXT NULL,
+            ADD COLUMN IF NOT EXISTS rationale TEXT NULL,
+            ADD COLUMN IF NOT EXISTS resolution_summary TEXT NULL,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS decision_outcome TEXT NULL,
+            ADD COLUMN IF NOT EXISTS override_reason_code TEXT NULL,
+            ADD COLUMN IF NOT EXISTS assigned_to_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS requested_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS decided_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS resolved_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS decision_date TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS due_date DATE NULL,
+            ADD COLUMN IF NOT EXISTS is_sensitive BOOLEAN,
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
+            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.engagement_override_log SET company_id = {company_id} WHERE company_id IS NULL;
+        UPDATE {schema}.engagement_override_log SET source_type = 'engagement' WHERE source_type IS NULL;
+        UPDATE {schema}.engagement_override_log SET override_type = 'override' WHERE override_type IS NULL;
+        UPDATE {schema}.engagement_override_log SET severity = 'medium' WHERE severity IS NULL;
+        UPDATE {schema}.engagement_override_log SET status = 'open' WHERE status IS NULL;
+        UPDATE {schema}.engagement_override_log SET is_sensitive = FALSE WHERE is_sensitive IS NULL;
+        UPDATE {schema}.engagement_override_log SET is_active = TRUE WHERE is_active IS NULL;
+        UPDATE {schema}.engagement_override_log SET created_at = NOW() WHERE created_at IS NULL;
+        UPDATE {schema}.engagement_override_log SET updated_at = NOW() WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN company_id SET DEFAULT {company_id};
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN source_type SET DEFAULT 'engagement';
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN override_type SET DEFAULT 'override';
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN severity SET DEFAULT 'medium';
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN status SET DEFAULT 'open';
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN is_sensitive SET DEFAULT FALSE;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN is_active SET DEFAULT TRUE;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN created_at SET DEFAULT NOW();
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN company_id SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN engagement_id SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN source_type SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN override_type SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN severity SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN title SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN status SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN is_sensitive SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN is_active SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE {schema}.engagement_override_log ALTER COLUMN updated_at SET NOT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_engagement_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (engagement_id)
+                    REFERENCES %I.engagements(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_eng_override_engagement_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_assigned_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (assigned_to_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_override_assigned_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_requested_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (requested_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_override_requested_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_decided_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (decided_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_override_decided_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_resolved_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (resolved_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_override_resolved_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_type_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    CHECK (override_type IN (''override'', ''exception'', ''dispute'', ''waiver'', ''approval_exception''))',
+                    '{schema}', '{schema}_eng_override_type_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_severity_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    CHECK (severity IN (''low'', ''medium'', ''high'', ''critical''))',
+                    '{schema}', '{schema}_eng_override_severity_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_override_status_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_override_log
+                    ADD CONSTRAINT %I
+                    CHECK (status IN (''open'', ''under_review'', ''resolved'', ''closed''))',
+                    '{schema}', '{schema}_eng_override_status_chk'
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_company_idx
+            ON {schema}.engagement_override_log(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_engagement_idx
+            ON {schema}.engagement_override_log(engagement_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_status_idx
+            ON {schema}.engagement_override_log(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_type_idx
+            ON {schema}.engagement_override_log(override_type);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_severity_idx
+            ON {schema}.engagement_override_log(severity);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_due_date_idx
+            ON {schema}.engagement_override_log(due_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_override_active_idx
+            ON {schema}.engagement_override_log(is_active);
+
+        -- ==================================================
         -- NOTES
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.notes (
@@ -50292,6 +50525,526 @@ class DatabaseService:
             limit=limit,
             offset=offset,
         )
+
+    def create_engagement_override_log_item(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        source_type: str = "engagement",
+        source_id: int = None,
+        override_type: str = "override",
+        severity: str = "medium",
+        title: str,
+        description: str = None,
+        rationale: str = None,
+        resolution_summary: str = None,
+        status: str = "open",
+        decision_outcome: str = None,
+        override_reason_code: str = None,
+        assigned_to_user_id: int = None,
+        requested_by_user_id: int = None,
+        decided_by_user_id: int = None,
+        resolved_by_user_id: int = None,
+        decision_date=None,
+        resolved_at=None,
+        closed_at=None,
+        due_date=None,
+        is_sensitive: bool = False,
+        created_by_user_id: int = None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.engagement_override_log (
+                company_id,
+                engagement_id,
+                source_type,
+                source_id,
+                override_type,
+                severity,
+                title,
+                description,
+                rationale,
+                resolution_summary,
+                status,
+                decision_outcome,
+                override_reason_code,
+                assigned_to_user_id,
+                requested_by_user_id,
+                decided_by_user_id,
+                resolved_by_user_id,
+                decision_date,
+                resolved_at,
+                closed_at,
+                due_date,
+                is_sensitive,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            RETURNING id
+            """,
+            (
+                company_id,
+                engagement_id,
+                (source_type or "engagement").strip().lower(),
+                source_id,
+                (override_type or "override").strip().lower(),
+                (severity or "medium").strip().lower(),
+                title,
+                description,
+                rationale,
+                resolution_summary,
+                (status or "open").strip().lower(),
+                decision_outcome,
+                override_reason_code,
+                assigned_to_user_id,
+                requested_by_user_id,
+                decided_by_user_id,
+                resolved_by_user_id,
+                decision_date,
+                resolved_at,
+                closed_at,
+                due_date,
+                bool(is_sensitive),
+                created_by_user_id,
+                updated_by_user_id,
+            ),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None
+
+
+    def list_engagement_override_log_items(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        status: str = "",
+        override_type: str = "",
+        severity: str = "",
+        assigned_to_user_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                o.id,
+                o.company_id,
+                o.engagement_id,
+                o.source_type,
+                o.source_id,
+                o.override_type,
+                o.severity,
+                o.title,
+                o.description,
+                o.rationale,
+                o.resolution_summary,
+                o.status,
+                o.decision_outcome,
+                o.override_reason_code,
+                o.assigned_to_user_id,
+                o.requested_by_user_id,
+                o.decided_by_user_id,
+                o.resolved_by_user_id,
+                o.decision_date,
+                o.resolved_at,
+                o.closed_at,
+                o.due_date,
+                o.is_sensitive,
+                o.created_at,
+                o.updated_at,
+
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.customer_id,
+                c.name AS customer_name,
+
+                TRIM(CONCAT(
+                    COALESCE(assignee.first_name, ''),
+                    CASE WHEN COALESCE(assignee.last_name, '') <> '' THEN ' ' || assignee.last_name ELSE '' END
+                )) AS assigned_to_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(requestor.first_name, ''),
+                    CASE WHEN COALESCE(requestor.last_name, '') <> '' THEN ' ' || requestor.last_name ELSE '' END
+                )) AS requested_by_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(decider.first_name, ''),
+                    CASE WHEN COALESCE(decider.last_name, '') <> '' THEN ' ' || decider.last_name ELSE '' END
+                )) AS decided_by_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(resolver.first_name, ''),
+                    CASE WHEN COALESCE(resolver.last_name, '') <> '' THEN ' ' || resolver.last_name ELSE '' END
+                )) AS resolved_by_user_name
+            FROM {schema}.engagement_override_log o
+            JOIN {schema}.engagements e
+            ON e.id = o.engagement_id
+            AND e.company_id = o.company_id
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            LEFT JOIN public.users assignee
+            ON assignee.id = o.assigned_to_user_id
+            LEFT JOIN public.users requestor
+            ON requestor.id = o.requested_by_user_id
+            LEFT JOIN public.users decider
+            ON decider.id = o.decided_by_user_id
+            LEFT JOIN public.users resolver
+            ON resolver.id = o.resolved_by_user_id
+            WHERE o.company_id = %s
+            AND (%s = FALSE OR o.is_active = TRUE)
+            AND (%s IS NULL OR o.engagement_id = %s)
+            AND (%s IS NULL OR e.customer_id = %s)
+            AND (%s = '' OR LOWER(o.status) = LOWER(%s))
+            AND (%s = '' OR LOWER(o.override_type) = LOWER(%s))
+            AND (%s = '' OR LOWER(o.severity) = LOWER(%s))
+            AND (%s IS NULL OR o.assigned_to_user_id = %s)
+            AND (
+                    %s = ''
+                    OR COALESCE(e.engagement_name, '') ILIKE %s
+                    OR COALESCE(e.engagement_code, '') ILIKE %s
+                    OR COALESCE(c.name, '') ILIKE %s
+                    OR COALESCE(o.title, '') ILIKE %s
+                    OR COALESCE(o.description, '') ILIKE %s
+                    OR COALESCE(o.rationale, '') ILIKE %s
+                    OR COALESCE(o.resolution_summary, '') ILIKE %s
+            )
+            ORDER BY
+            CASE o.status
+                WHEN 'under_review' THEN 1
+                WHEN 'open' THEN 2
+                WHEN 'resolved' THEN 3
+                WHEN 'closed' THEN 4
+                ELSE 99
+            END,
+            CASE o.severity
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'medium' THEN 3
+                WHEN 'low' THEN 4
+                ELSE 99
+            END,
+            o.updated_at DESC,
+            o.id DESC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+                status.strip(), status.strip(),
+                override_type.strip(), override_type.strip(),
+                severity.strip(), severity.strip(),
+                assigned_to_user_id, assigned_to_user_id,
+                q.strip(),
+                like, like, like, like, like, like, like,
+                limit, offset,
+            ),
+        )
+        return cur.fetchall()
+
+
+    def get_engagement_override_log_detail(
+        self,
+        cur,
+        company_id: int,
+        *,
+        override_log_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT
+                o.*,
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.customer_id,
+                c.name AS customer_name,
+
+                TRIM(CONCAT(
+                    COALESCE(assignee.first_name, ''),
+                    CASE WHEN COALESCE(assignee.last_name, '') <> '' THEN ' ' || assignee.last_name ELSE '' END
+                )) AS assigned_to_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(requestor.first_name, ''),
+                    CASE WHEN COALESCE(requestor.last_name, '') <> '' THEN ' ' || requestor.last_name ELSE '' END
+                )) AS requested_by_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(decider.first_name, ''),
+                    CASE WHEN COALESCE(decider.last_name, '') <> '' THEN ' ' || decider.last_name ELSE '' END
+                )) AS decided_by_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(resolver.first_name, ''),
+                    CASE WHEN COALESCE(resolver.last_name, '') <> '' THEN ' ' || resolver.last_name ELSE '' END
+                )) AS resolved_by_user_name
+            FROM {schema}.engagement_override_log o
+            JOIN {schema}.engagements e
+            ON e.id = o.engagement_id
+            AND e.company_id = o.company_id
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            LEFT JOIN public.users assignee
+            ON assignee.id = o.assigned_to_user_id
+            LEFT JOIN public.users requestor
+            ON requestor.id = o.requested_by_user_id
+            LEFT JOIN public.users decider
+            ON decider.id = o.decided_by_user_id
+            LEFT JOIN public.users resolver
+            ON resolver.id = o.resolved_by_user_id
+            WHERE o.company_id = %s
+            AND o.id = %s
+            LIMIT 1
+            """,
+            (company_id, override_log_id),
+        )
+        return cur.fetchone()
+
+
+    def update_engagement_override_log_item(
+        self,
+        cur,
+        company_id: int,
+        *,
+        override_log_id: int,
+        source_type: str = None,
+        source_id: int = None,
+        override_type: str = None,
+        severity: str = None,
+        title: str = None,
+        description: str = None,
+        rationale: str = None,
+        resolution_summary: str = None,
+        status: str = None,
+        decision_outcome: str = None,
+        override_reason_code: str = None,
+        assigned_to_user_id: int = None,
+        requested_by_user_id: int = None,
+        decided_by_user_id: int = None,
+        resolved_by_user_id: int = None,
+        decision_date=None,
+        resolved_at=None,
+        closed_at=None,
+        due_date=None,
+        is_sensitive: bool = None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.engagement_override_log
+            SET
+                source_type = COALESCE(%s, source_type),
+                source_id = COALESCE(%s, source_id),
+                override_type = COALESCE(%s, override_type),
+                severity = COALESCE(%s, severity),
+                title = COALESCE(%s, title),
+                description = COALESCE(%s, description),
+                rationale = COALESCE(%s, rationale),
+                resolution_summary = COALESCE(%s, resolution_summary),
+                status = COALESCE(%s, status),
+                decision_outcome = COALESCE(%s, decision_outcome),
+                override_reason_code = COALESCE(%s, override_reason_code),
+                assigned_to_user_id = COALESCE(%s, assigned_to_user_id),
+                requested_by_user_id = COALESCE(%s, requested_by_user_id),
+                decided_by_user_id = COALESCE(%s, decided_by_user_id),
+                resolved_by_user_id = COALESCE(%s, resolved_by_user_id),
+                decision_date = COALESCE(%s, decision_date),
+                resolved_at = COALESCE(%s, resolved_at),
+                closed_at = COALESCE(%s, closed_at),
+                due_date = COALESCE(%s, due_date),
+                is_sensitive = COALESCE(%s, is_sensitive),
+                updated_by_user_id = COALESCE(%s, updated_by_user_id),
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                source_type.strip().lower() if isinstance(source_type, str) else source_type,
+                source_id,
+                override_type.strip().lower() if isinstance(override_type, str) else override_type,
+                severity.strip().lower() if isinstance(severity, str) else severity,
+                title,
+                description,
+                rationale,
+                resolution_summary,
+                status.strip().lower() if isinstance(status, str) else status,
+                decision_outcome,
+                override_reason_code,
+                assigned_to_user_id,
+                requested_by_user_id,
+                decided_by_user_id,
+                resolved_by_user_id,
+                decision_date,
+                resolved_at,
+                closed_at,
+                due_date,
+                is_sensitive,
+                updated_by_user_id,
+                company_id,
+                override_log_id,
+            ),
+        )
+        return cur.rowcount
+
+
+    def set_engagement_override_log_status(
+        self,
+        cur,
+        company_id: int,
+        *,
+        override_log_id: int,
+        status: str,
+        decision_outcome: str = None,
+        resolution_summary: str = None,
+        actor_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+        normalized = (status or "").strip().lower()
+
+        if normalized not in ("open", "under_review", "resolved", "closed"):
+            raise ValueError("Invalid status.")
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.engagement_override_log
+            SET
+                status = %s,
+                decision_outcome = COALESCE(%s, decision_outcome),
+                resolution_summary = COALESCE(%s, resolution_summary),
+                decided_by_user_id = CASE
+                    WHEN %s IN ('resolved', 'closed') THEN COALESCE(decided_by_user_id, %s)
+                    ELSE decided_by_user_id
+                END,
+                resolved_by_user_id = CASE
+                    WHEN %s IN ('resolved', 'closed') THEN COALESCE(resolved_by_user_id, %s)
+                    ELSE resolved_by_user_id
+                END,
+                decision_date = CASE
+                    WHEN %s IN ('resolved', 'closed') AND decision_date IS NULL THEN NOW()
+                    ELSE decision_date
+                END,
+                resolved_at = CASE
+                    WHEN %s = 'resolved' AND resolved_at IS NULL THEN NOW()
+                    WHEN %s = 'closed' AND resolved_at IS NULL THEN NOW()
+                    ELSE resolved_at
+                END,
+                closed_at = CASE
+                    WHEN %s = 'closed' AND closed_at IS NULL THEN NOW()
+                    ELSE closed_at
+                END,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                normalized,
+                decision_outcome,
+                resolution_summary,
+                normalized, actor_user_id,
+                normalized, actor_user_id,
+                normalized,
+                normalized,
+                normalized,
+                normalized,
+                actor_user_id,
+                company_id,
+                override_log_id,
+            ),
+        )
+        return cur.rowcount
+
+
+    def get_engagement_override_log_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+    ):
+        schema = self.company_schema(company_id)
+        like = f"%{q.strip()}%"
+
+        cur.execute(
+            f"""
+            SELECT
+                COUNT(*) FILTER (WHERE (%s = FALSE OR o.is_active = TRUE)) AS total_items,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR o.is_active = TRUE)
+                    AND o.status IN ('open', 'under_review')
+                ) AS open_items,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR o.is_active = TRUE)
+                    AND o.severity IN ('high', 'critical')
+                ) AS high_risk_items,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR o.is_active = TRUE)
+                    AND o.override_type = 'exception'
+                ) AS exception_items,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR o.is_active = TRUE)
+                    AND o.status = 'closed'
+                ) AS closed_items
+            FROM {schema}.engagement_override_log o
+            JOIN {schema}.engagements e
+            ON e.id = o.engagement_id
+            AND e.company_id = o.company_id
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            WHERE o.company_id = %s
+            AND (%s IS NULL OR o.engagement_id = %s)
+            AND (%s IS NULL OR e.customer_id = %s)
+            AND (
+                    %s = ''
+                    OR COALESCE(e.engagement_name, '') ILIKE %s
+                    OR COALESCE(e.engagement_code, '') ILIKE %s
+                    OR COALESCE(c.name, '') ILIKE %s
+                    OR COALESCE(o.title, '') ILIKE %s
+            )
+            """,
+            (
+                active_only,
+                active_only,
+                active_only,
+                active_only,
+                active_only,
+                company_id,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+                q.strip(),
+                like, like, like, like,
+            ),
+        )
+        return cur.fetchone()
 
     def insert_ticket(
         self,
