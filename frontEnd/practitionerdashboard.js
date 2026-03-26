@@ -16143,16 +16143,10 @@ function renderAuditTrailWorkspace({
     me?.id ||
     "";
 
-  const apiFetch =
-    window.apiFetch ||
-    (typeof apiFetch === "function" ? apiFetch : null);
+  const apiFetchFn = window.apiFetch || null;
+  const endpoints = window.ENDPOINTS || window.endpoints || {};
 
-  const ENDPOINTS =
-    window.ENDPOINTS ||
-    window.endpoints ||
-    {};
-
-  if (!apiFetch) {
+  if (!apiFetchFn) {
     root.innerHTML = `
       <div class="audit-screen-shell">
         <div class="audit-card">
@@ -16178,7 +16172,7 @@ function renderAuditTrailWorkspace({
     return;
   }
 
-  if (!ENDPOINTS?.audit?.list) {
+  if (!endpoints?.audit?.list) {
     root.innerHTML = `
       <div class="audit-screen-shell">
         <div class="audit-card">
@@ -16645,8 +16639,8 @@ function renderAuditTrailWorkspace({
     }
 
     try {
-      const url = ENDPOINTS.audit.list(companyId, query);
-      const data = await apiFetch(url);
+      const url = endpoints.audit.list(companyId, query);
+      const data = await apiFetchFn(url);
 
       if (data?.ok === false) {
         throw new Error(data?.error || data?.message || "Failed to load audit trail.");
