@@ -3654,7 +3654,7 @@ function toggleEngagementWorkspaceSetup() {
   if (!block) return;
 
   // make sure industry select has options before we use/set it
-  populateIndustryOptions();
+  window.populateIndustryOptions();
 
   const type = document.getElementById("engType")?.value || "";
   const customer = getSelectedEngagementCustomer();
