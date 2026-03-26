@@ -3634,6 +3634,7 @@ function populateIndustryOptions() {
 
   console.log("[populateIndustryOptions] final options count:", industryEl.options.length);
 }
+window.populateIndustryOptions = populateIndustryOptions;
 
 function populateSubIndustryOptions(industry, selectedValue = "") {
   const subEl = document.getElementById("engSubIndustry");
