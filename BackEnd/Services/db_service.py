@@ -50009,6 +50009,289 @@ class DatabaseService:
 
         raise ValueError("Unsupported action.")
         
+    def create_engagement_acceptance_item(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        acceptance_type: str = "acceptance",
+        status: str = "draft",
+        requested_by_user_id: int = None,
+        assigned_partner_user_id: int = None,
+        risk_level: str = "normal",
+        independence_cleared: bool = False,
+        conflicts_checked: bool = False,
+        competence_confirmed: bool = False,
+        capacity_confirmed: bool = False,
+        client_risk_notes: str = None,
+        service_complexity_notes: str = None,
+        preconditions_notes: str = None,
+        decision_notes: str = None,
+        valid_from=None,
+        valid_to=None,
+        created_by_user_id: int = None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.engagement_acceptance (
+                company_id,
+                engagement_id,
+                acceptance_type,
+                status,
+                requested_by_user_id,
+                assigned_partner_user_id,
+                risk_level,
+                independence_cleared,
+                conflicts_checked,
+                competence_confirmed,
+                capacity_confirmed,
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            RETURNING id
+            """,
+            (
+                company_id,
+                engagement_id,
+                (acceptance_type or "acceptance").strip().lower(),
+                (status or "draft").strip().lower(),
+                requested_by_user_id,
+                assigned_partner_user_id,
+                (risk_level or "normal").strip().lower(),
+                bool(independence_cleared),
+                bool(conflicts_checked),
+                bool(competence_confirmed),
+                bool(capacity_confirmed),
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                created_by_user_id,
+                updated_by_user_id,
+            ),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None
+
+
+    def update_engagement_acceptance_item(
+        self,
+        cur,
+        company_id: int,
+        *,
+        acceptance_id: int,
+        acceptance_type: str = None,
+        status: str = None,
+        assigned_partner_user_id: int = None,
+        risk_level: str = None,
+        independence_cleared: bool = None,
+        conflicts_checked: bool = None,
+        competence_confirmed: bool = None,
+        capacity_confirmed: bool = None,
+        client_risk_notes: str = None,
+        service_complexity_notes: str = None,
+        preconditions_notes: str = None,
+        decision_notes: str = None,
+        valid_from=None,
+        valid_to=None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.engagement_acceptance
+            SET
+                acceptance_type = COALESCE(%s, acceptance_type),
+                status = COALESCE(%s, status),
+                assigned_partner_user_id = COALESCE(%s, assigned_partner_user_id),
+                risk_level = COALESCE(%s, risk_level),
+                independence_cleared = COALESCE(%s, independence_cleared),
+                conflicts_checked = COALESCE(%s, conflicts_checked),
+                competence_confirmed = COALESCE(%s, competence_confirmed),
+                capacity_confirmed = COALESCE(%s, capacity_confirmed),
+                client_risk_notes = COALESCE(%s, client_risk_notes),
+                service_complexity_notes = COALESCE(%s, service_complexity_notes),
+                preconditions_notes = COALESCE(%s, preconditions_notes),
+                decision_notes = COALESCE(%s, decision_notes),
+                valid_from = COALESCE(%s, valid_from),
+                valid_to = COALESCE(%s, valid_to),
+                updated_by_user_id = COALESCE(%s, updated_by_user_id),
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                acceptance_type.strip().lower() if isinstance(acceptance_type, str) else acceptance_type,
+                status.strip().lower() if isinstance(status, str) else status,
+                assigned_partner_user_id,
+                risk_level.strip().lower() if isinstance(risk_level, str) else risk_level,
+                independence_cleared,
+                conflicts_checked,
+                competence_confirmed,
+                capacity_confirmed,
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                updated_by_user_id,
+                company_id,
+                acceptance_id,
+            ),
+        )
+        return cur.rowcount
+
+
+    def decide_engagement_acceptance_item(
+        self,
+        cur,
+        company_id: int,
+        *,
+        acceptance_id: int,
+        decision: str,
+        decision_notes: str = None,
+        decided_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        normalized = (decision or "").strip().lower()
+        if normalized not in ("approve", "decline", "return"):
+            raise ValueError("Invalid decision. Use approve, decline, or return.")
+
+        mapped_status = {
+            "approve": "approved",
+            "decline": "declined",
+            "return": "returned",
+        }[normalized]
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.engagement_acceptance
+            SET
+                decision = %s,
+                status = %s,
+                decision_date = NOW(),
+                decision_notes = COALESCE(%s, decision_notes),
+                decided_by_user_id = %s,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                normalized,
+                mapped_status,
+                decision_notes,
+                decided_by_user_id,
+                decided_by_user_id,
+                company_id,
+                acceptance_id,
+            ),
+        )
+        return cur.rowcount
+
+
+    def get_risk_independence_summary(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        active_only: bool = True,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT
+                COUNT(*) FILTER (WHERE (%s = FALSE OR ea.is_active = TRUE)) AS total_items,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR ea.is_active = TRUE)
+                    AND ea.status IN ('submitted', 'under_review')
+                ) AS open_reviews,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR ea.is_active = TRUE)
+                    AND ea.risk_level IN ('high', 'critical')
+                ) AS high_risk_items,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR ea.is_active = TRUE)
+                    AND (
+                            COALESCE(ea.independence_cleared, FALSE) = FALSE
+                        OR COALESCE(ea.conflicts_checked, FALSE) = FALSE
+                    )
+                ) AS independence_gaps,
+                COUNT(*) FILTER (
+                    WHERE (%s = FALSE OR ea.is_active = TRUE)
+                    AND COALESCE(BTRIM(ea.preconditions_notes), '') <> ''
+                ) AS items_with_conditions
+            FROM {schema}.engagement_acceptance ea
+            JOIN {schema}.engagements e
+            ON e.id = ea.engagement_id
+            AND e.company_id = ea.company_id
+            WHERE ea.company_id = %s
+            AND (%s IS NULL OR ea.engagement_id = %s)
+            AND (%s IS NULL OR e.customer_id = %s)
+            """,
+            (
+                active_only,
+                active_only,
+                active_only,
+                active_only,
+                active_only,
+                company_id,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+            ),
+        )
+        return cur.fetchone()
+
+
+    def list_risk_independence_items(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        status: str = "",
+        risk_level: str = "",
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        return self.list_engagement_acceptance_items(
+            cur,
+            company_id,
+            engagement_id=engagement_id,
+            customer_id=customer_id,
+            acceptance_type="",
+            status=status,
+            risk_level=risk_level,
+            assigned_partner_user_id=None,
+            q=q,
+            active_only=active_only,
+            limit=limit,
+            offset=offset,
+        )
 
     def insert_ticket(
         self,

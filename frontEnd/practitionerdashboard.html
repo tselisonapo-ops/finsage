@@ -257,6 +257,133 @@
     background: #fff;
   }
 
+.pr-risk-screen {
+  display: grid;
+  gap: 18px;
+}
+
+.pr-risk-filter-panel {
+  padding-bottom: 18px;
+}
+
+.pr-filter-grid--risk {
+  grid-template-columns: 1.7fr 180px 180px auto;
+}
+
+.pr-risk-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.95fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.pr-risk-table-wrap {
+  border: 1px solid #e7eef5;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  margin-top: 14px;
+}
+
+.pr-risk-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pr-risk-table th,
+.pr-risk-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  vertical-align: top;
+}
+
+.pr-risk-table th {
+  font-size: 12px;
+  color: #64748b;
+  background: #f9fbfd;
+}
+
+.pr-risk-row {
+  cursor: pointer;
+}
+
+.pr-risk-row:hover {
+  background: #f8fbfd;
+}
+
+.pr-risk-row.is-selected {
+  background: #eef8f7;
+}
+
+.pr-risk-name {
+  display: grid;
+  gap: 4px;
+}
+
+.pr-risk-name__title {
+  font-weight: 800;
+  color: #123040;
+}
+
+.pr-risk-name__meta {
+  font-size: 12px;
+  color: #6a8390;
+}
+
+.pr-risk-side-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.pr-risk-form {
+  display: grid;
+  gap: 14px;
+}
+
+.pr-risk-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pr-risk-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  padding: 2px 0 4px;
+}
+
+.pr-risk-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #e7eef5;
+  border-radius: 14px;
+  background: #fbfdff;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #123040;
+}
+
+@media (max-width: 1280px) {
+  .pr-filter-grid--risk {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pr-risk-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .pr-risk-form-grid,
+  .pr-risk-check-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
   .pr-list-compact__title {
     font-size: 13px;
     font-weight: 700;
