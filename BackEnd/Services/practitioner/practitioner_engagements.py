@@ -1370,3 +1370,230 @@ def backfill_overdue_working_paper_escalations_route(cid: int):
         current_app.logger.exception("backfill_overdue_working_paper_escalations_route failed")
         return _json_err(str(e), 500)
 
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-acceptance",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def engagement_acceptance_list_create_route(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        if request.method == "GET":
+            engagement_id = _parse_int(request.args.get("engagement_id"))
+            customer_id = _parse_int(request.args.get("customer_id"))
+            acceptance_type = (request.args.get("acceptance_type") or "").strip().lower()
+            status = (request.args.get("status") or "").strip().lower()
+            risk_level = (request.args.get("risk_level") or "").strip().lower()
+            assigned_partner_user_id = _parse_int(request.args.get("assigned_partner_user_id"))
+            q = (request.args.get("q") or "").strip()
+            active_only = str(request.args.get("active_only", "true")).strip().lower() in ("1", "true", "yes", "on")
+            limit = _parse_int(request.args.get("limit")) or 100
+            offset = _parse_int(request.args.get("offset")) or 0
+
+            with db_service._conn_cursor() as (conn, cur):
+                rows = db_service.list_engagement_acceptance_items(
+                    cur,
+                    company_id,
+                    engagement_id=engagement_id,
+                    customer_id=customer_id,
+                    acceptance_type=acceptance_type,
+                    status=status,
+                    risk_level=risk_level,
+                    assigned_partner_user_id=assigned_partner_user_id,
+                    q=q,
+                    active_only=active_only,
+                    limit=limit,
+                    offset=offset,
+                )
+
+            return _json_ok(rows or [])
+
+        body = request.get_json(silent=True) or {}
+        user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+        with db_service._conn_cursor() as (conn, cur):
+            acceptance_id = db_service.create_engagement_acceptance(
+                cur,
+                company_id,
+                engagement_id=_parse_int(body.get("engagement_id")),
+                acceptance_type=(body.get("acceptance_type") or "acceptance"),
+                assigned_partner_user_id=_parse_int(body.get("assigned_partner_user_id")),
+                risk_level=(body.get("risk_level") or "normal"),
+                independence_cleared=bool(body.get("independence_cleared")),
+                conflicts_checked=bool(body.get("conflicts_checked")),
+                competence_confirmed=bool(body.get("competence_confirmed")),
+                capacity_confirmed=bool(body.get("capacity_confirmed")),
+                client_risk_notes=body.get("client_risk_notes") or "",
+                service_complexity_notes=body.get("service_complexity_notes") or "",
+                preconditions_notes=body.get("preconditions_notes") or "",
+                decision_notes=body.get("decision_notes") or "",
+                valid_from=body.get("valid_from"),
+                valid_to=body.get("valid_to"),
+                requested_by_user_id=user_id,
+                actor_user_id=user_id,
+            )
+
+            row = db_service.get_engagement_acceptance_detail(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+            )
+
+            conn.commit()
+
+        return _json_ok({"row": row}, 201)
+
+    except ValueError as e:
+        return _json_err(str(e), 400)
+    except Exception as e:
+        current_app.logger.exception("engagement_acceptance_list_create_route failed")
+        return _json_err(str(e), 500)
+
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-acceptance/<int:acceptance_id>",
+    methods=["GET", "PUT", "OPTIONS"],
+)
+@require_auth
+def update_engagement_acceptance_route(cid: int, acceptance_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        with db_service._conn_cursor() as (conn, cur):
+            if request.method == "GET":
+                row = db_service.get_engagement_acceptance_detail(
+                    cur,
+                    company_id,
+                    acceptance_id=acceptance_id,
+                )
+                if not row:
+                    return _json_err("Engagement acceptance item not found.", 404)
+                return _json_ok({"row": row})
+
+            body = request.get_json(silent=True) or {}
+            user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+            existing = db_service.get_engagement_acceptance_detail(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+            )
+            if not existing:
+                return _json_err("Engagement acceptance item not found.", 404)
+
+            db_service.update_engagement_acceptance(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+                acceptance_type=(body.get("acceptance_type") or "acceptance"),
+                assigned_partner_user_id=_parse_int(body.get("assigned_partner_user_id")),
+                risk_level=(body.get("risk_level") or "normal"),
+                independence_cleared=bool(body.get("independence_cleared")),
+                conflicts_checked=bool(body.get("conflicts_checked")),
+                competence_confirmed=bool(body.get("competence_confirmed")),
+                capacity_confirmed=bool(body.get("capacity_confirmed")),
+                client_risk_notes=body.get("client_risk_notes") or "",
+                service_complexity_notes=body.get("service_complexity_notes") or "",
+                preconditions_notes=body.get("preconditions_notes") or "",
+                decision_notes=body.get("decision_notes") or "",
+                valid_from=body.get("valid_from"),
+                valid_to=body.get("valid_to"),
+                actor_user_id=user_id,
+            )
+
+            row = db_service.get_engagement_acceptance_detail(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+            )
+
+            conn.commit()
+
+        return _json_ok({"row": row})
+
+    except ValueError as e:
+        return _json_err(str(e), 400)
+    except Exception as e:
+        current_app.logger.exception("update_engagement_acceptance_route failed")
+        return _json_err(str(e), 500)
+
+
+@engagements_bp.route(
+    "/api/companies/<int:cid>/engagement-acceptance/<int:acceptance_id>/decision",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def decide_engagement_acceptance_route(cid: int, acceptance_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id = int(cid)
+        payload = request.jwt_payload or {}
+
+        deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+        if deny:
+            return deny
+
+        body = request.get_json(silent=True) or {}
+        action = (body.get("action") or "").strip().lower()
+        decision_notes = body.get("decision_notes") or ""
+        user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+        if action not in ("submit", "approve", "decline", "return"):
+            return _json_err("Unsupported action.", 400)
+
+        with db_service._conn_cursor() as (conn, cur):
+            existing = db_service.get_engagement_acceptance_detail(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+            )
+            if not existing:
+                return _json_err("Engagement acceptance item not found.", 404)
+
+            db_service.apply_engagement_acceptance_decision(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+                action=action,
+                actor_user_id=user_id,
+                decision_notes=decision_notes,
+            )
+
+            row = db_service.get_engagement_acceptance_detail(
+                cur,
+                company_id,
+                acceptance_id=acceptance_id,
+            )
+
+            conn.commit()
+
+        return _json_ok({
+            "updated": True,
+            "action": action,
+            "row": row,
+        })
+
+    except ValueError as e:
+        return _json_err(str(e), 400)
+    except Exception as e:
+        current_app.logger.exception("decide_engagement_acceptance_route failed")
+        return _json_err(str(e), 500)

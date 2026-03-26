@@ -7677,6 +7677,255 @@ class DatabaseService:
             ON {schema}.engagement_signoff_steps(is_active);
 
         -- ==================================================
+        -- ENGAGEMENT ACCEPTANCE
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.engagement_acceptance (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            engagement_id INT NOT NULL,
+
+            acceptance_type TEXT NOT NULL DEFAULT 'acceptance', -- acceptance, continuation
+            status TEXT NOT NULL DEFAULT 'draft',               -- draft, submitted, under_review, approved, declined, returned
+            decision TEXT NULL,                                 -- approve, decline, return
+            decision_date TIMESTAMPTZ NULL,
+
+            requested_by_user_id INT NULL,
+            assigned_partner_user_id INT NULL,
+            decided_by_user_id INT NULL,
+
+            risk_level TEXT NOT NULL DEFAULT 'normal',          -- low, normal, high, critical
+            independence_cleared BOOLEAN NOT NULL DEFAULT FALSE,
+            conflicts_checked BOOLEAN NOT NULL DEFAULT FALSE,
+            competence_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+            capacity_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+
+            client_risk_notes TEXT NULL,
+            service_complexity_notes TEXT NULL,
+            preconditions_notes TEXT NULL,
+            decision_notes TEXT NULL,
+
+            valid_from DATE NULL,
+            valid_to DATE NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.engagement_acceptance
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS engagement_id INT,
+            ADD COLUMN IF NOT EXISTS acceptance_type TEXT,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS decision TEXT NULL,
+            ADD COLUMN IF NOT EXISTS decision_date TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS requested_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS assigned_partner_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS decided_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS risk_level TEXT,
+            ADD COLUMN IF NOT EXISTS independence_cleared BOOLEAN,
+            ADD COLUMN IF NOT EXISTS conflicts_checked BOOLEAN,
+            ADD COLUMN IF NOT EXISTS competence_confirmed BOOLEAN,
+            ADD COLUMN IF NOT EXISTS capacity_confirmed BOOLEAN,
+            ADD COLUMN IF NOT EXISTS client_risk_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS service_complexity_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS preconditions_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS decision_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS valid_from DATE NULL,
+            ADD COLUMN IF NOT EXISTS valid_to DATE NULL,
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
+            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.engagement_acceptance SET company_id = {company_id} WHERE company_id IS NULL;
+        UPDATE {schema}.engagement_acceptance SET acceptance_type = 'acceptance' WHERE acceptance_type IS NULL OR BTRIM(acceptance_type) = '';
+        UPDATE {schema}.engagement_acceptance SET status = 'draft' WHERE status IS NULL OR BTRIM(status) = '';
+        UPDATE {schema}.engagement_acceptance SET risk_level = 'normal' WHERE risk_level IS NULL OR BTRIM(risk_level) = '';
+        UPDATE {schema}.engagement_acceptance SET independence_cleared = FALSE WHERE independence_cleared IS NULL;
+        UPDATE {schema}.engagement_acceptance SET conflicts_checked = FALSE WHERE conflicts_checked IS NULL;
+        UPDATE {schema}.engagement_acceptance SET competence_confirmed = FALSE WHERE competence_confirmed IS NULL;
+        UPDATE {schema}.engagement_acceptance SET capacity_confirmed = FALSE WHERE capacity_confirmed IS NULL;
+        UPDATE {schema}.engagement_acceptance SET is_active = TRUE WHERE is_active IS NULL;
+        UPDATE {schema}.engagement_acceptance SET created_at = NOW() WHERE created_at IS NULL;
+        UPDATE {schema}.engagement_acceptance SET updated_at = NOW() WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN company_id SET DEFAULT {company_id};
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN acceptance_type SET DEFAULT 'acceptance';
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN status SET DEFAULT 'draft';
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN risk_level SET DEFAULT 'normal';
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN independence_cleared SET DEFAULT FALSE;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN conflicts_checked SET DEFAULT FALSE;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN competence_confirmed SET DEFAULT FALSE;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN capacity_confirmed SET DEFAULT FALSE;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN is_active SET DEFAULT TRUE;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN created_at SET DEFAULT NOW();
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN company_id SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN engagement_id SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN acceptance_type SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN status SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN risk_level SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN independence_cleared SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN conflicts_checked SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN competence_confirmed SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN capacity_confirmed SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN is_active SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN updated_at SET NOT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_engagement_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (engagement_id)
+                    REFERENCES %I.engagements(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_eng_acceptance_engagement_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_requested_by_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (requested_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_acceptance_requested_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_partner_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (assigned_partner_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_acceptance_partner_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_decided_by_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (decided_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_eng_acceptance_decided_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_type_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    CHECK (acceptance_type IN (''acceptance'', ''continuation''))',
+                    '{schema}', '{schema}_eng_acceptance_type_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_status_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    CHECK (status IN (''draft'', ''submitted'', ''under_review'', ''approved'', ''declined'', ''returned''))',
+                    '{schema}', '{schema}_eng_acceptance_status_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_decision_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    CHECK (decision IS NULL OR decision IN (''approve'', ''decline'', ''return''))',
+                    '{schema}', '{schema}_eng_acceptance_decision_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_risk_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    CHECK (risk_level IN (''low'', ''normal'', ''high'', ''critical''))',
+                    '{schema}', '{schema}_eng_acceptance_risk_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_eng_acceptance_validity_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.engagement_acceptance
+                    ADD CONSTRAINT %I
+                    CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from)',
+                    '{schema}', '{schema}_eng_acceptance_validity_chk'
+                );
+            END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_eng_acceptance_active_uq
+            ON {schema}.engagement_acceptance(company_id, engagement_id, acceptance_type)
+            WHERE is_active = TRUE;
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_acceptance_company_idx
+            ON {schema}.engagement_acceptance(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_acceptance_engagement_idx
+            ON {schema}.engagement_acceptance(engagement_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_acceptance_status_idx
+            ON {schema}.engagement_acceptance(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_acceptance_partner_idx
+            ON {schema}.engagement_acceptance(assigned_partner_user_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_eng_acceptance_decision_date_idx
+            ON {schema}.engagement_acceptance(decision_date);
+            
+        -- ==================================================
         -- ENGAGEMENT WORKING PAPERS
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.engagement_working_papers (
@@ -49331,7 +49580,481 @@ class DatabaseService:
         )
 
         return updated
-            
+
+    def update_engagement_escalation(
+        self,
+        cur,
+        company_id: int,
+        *,
+        escalation_id: int,
+        source_type: str = None,
+        source_id: int = None,
+        escalation_type: str = None,
+        severity: str = None,
+        title: str = None,
+        description: str = None,
+        status: str = None,
+        assigned_to_user_id: int = None,
+        due_date=None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.engagement_escalations
+            SET
+                source_type = COALESCE(%s, source_type),
+                source_id = COALESCE(%s, source_id),
+                escalation_type = COALESCE(%s, escalation_type),
+                severity = COALESCE(%s, severity),
+                title = COALESCE(%s, title),
+                description = COALESCE(%s, description),
+                status = COALESCE(%s, status),
+                assigned_to_user_id = COALESCE(%s, assigned_to_user_id),
+                due_date = COALESCE(%s, due_date),
+                updated_by_user_id = COALESCE(%s, updated_by_user_id),
+                resolved_at = CASE
+                    WHEN %s IN ('resolved', 'closed') AND resolved_at IS NULL THEN NOW()
+                    ELSE resolved_at
+                END,
+                closed_at = CASE
+                    WHEN %s = 'closed' AND closed_at IS NULL THEN NOW()
+                    ELSE closed_at
+                END
+            WHERE company_id = %s
+            AND id = %s
+            """,
+            (
+                source_type,
+                source_id,
+                escalation_type,
+                severity,
+                title,
+                description,
+                status,
+                assigned_to_user_id,
+                due_date,
+                updated_by_user_id,
+                status,
+                status,
+                company_id,
+                escalation_id,
+            ),
+        )
+        return cur.rowcount
+    
+    def list_engagement_acceptance_items(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int = None,
+        customer_id: int = None,
+        acceptance_type: str = "",
+        status: str = "",
+        risk_level: str = "",
+        assigned_partner_user_id: int = None,
+        q: str = "",
+        active_only: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                ea.id,
+                ea.company_id,
+                ea.engagement_id,
+                ea.acceptance_type,
+                ea.status,
+                ea.decision,
+                ea.decision_date,
+                ea.risk_level,
+                ea.independence_cleared,
+                ea.conflicts_checked,
+                ea.competence_confirmed,
+                ea.capacity_confirmed,
+                ea.client_risk_notes,
+                ea.service_complexity_notes,
+                ea.preconditions_notes,
+                ea.decision_notes,
+                ea.valid_from,
+                ea.valid_to,
+                ea.assigned_partner_user_id,
+                ea.decided_by_user_id,
+                ea.created_at,
+                ea.updated_at,
+
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.customer_id,
+                e.status AS engagement_status,
+
+                c.name AS customer_name,
+
+                TRIM(CONCAT(
+                    COALESCE(req.first_name, ''),
+                    CASE WHEN COALESCE(req.last_name, '') <> '' THEN ' ' || req.last_name ELSE '' END
+                )) AS requested_by_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(partner.first_name, ''),
+                    CASE WHEN COALESCE(partner.last_name, '') <> '' THEN ' ' || partner.last_name ELSE '' END
+                )) AS assigned_partner_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(decider.first_name, ''),
+                    CASE WHEN COALESCE(decider.last_name, '') <> '' THEN ' ' || decider.last_name ELSE '' END
+                )) AS decided_by_user_name
+            FROM {schema}.engagement_acceptance ea
+            JOIN {schema}.engagements e
+            ON e.id = ea.engagement_id
+            AND e.company_id = ea.company_id
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            LEFT JOIN public.users req
+            ON req.id = ea.requested_by_user_id
+            LEFT JOIN public.users partner
+            ON partner.id = ea.assigned_partner_user_id
+            LEFT JOIN public.users decider
+            ON decider.id = ea.decided_by_user_id
+            WHERE ea.company_id = %s
+            AND (%s = FALSE OR ea.is_active = TRUE)
+            AND (%s IS NULL OR ea.engagement_id = %s)
+            AND (%s IS NULL OR e.customer_id = %s)
+            AND (%s = '' OR LOWER(ea.acceptance_type) = LOWER(%s))
+            AND (%s = '' OR LOWER(ea.status) = LOWER(%s))
+            AND (%s = '' OR LOWER(ea.risk_level) = LOWER(%s))
+            AND (%s IS NULL OR ea.assigned_partner_user_id = %s)
+            AND (
+                    %s = ''
+                    OR COALESCE(e.engagement_name, '') ILIKE %s
+                    OR COALESCE(e.engagement_code, '') ILIKE %s
+                    OR COALESCE(c.name, '') ILIKE %s
+                    OR COALESCE(ea.client_risk_notes, '') ILIKE %s
+                    OR COALESCE(ea.service_complexity_notes, '') ILIKE %s
+                    OR COALESCE(ea.decision_notes, '') ILIKE %s
+            )
+            ORDER BY
+                CASE ea.status
+                    WHEN 'under_review' THEN 1
+                    WHEN 'submitted' THEN 2
+                    WHEN 'returned' THEN 3
+                    WHEN 'draft' THEN 4
+                    WHEN 'approved' THEN 5
+                    WHEN 'declined' THEN 6
+                    ELSE 99
+                END,
+                ea.updated_at DESC,
+                ea.id DESC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{q.strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+                acceptance_type.strip(), acceptance_type.strip(),
+                status.strip(), status.strip(),
+                risk_level.strip(), risk_level.strip(),
+                assigned_partner_user_id, assigned_partner_user_id,
+                q.strip(),
+                like, like, like, like, like, like,
+                limit, offset,
+            ),
+        )
+        return cur.fetchall()
+
+
+    def get_engagement_acceptance_detail(
+        self,
+        cur,
+        company_id: int,
+        *,
+        acceptance_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                ea.*,
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.customer_id,
+                e.status AS engagement_status,
+                c.name AS customer_name,
+
+                TRIM(CONCAT(
+                    COALESCE(req.first_name, ''),
+                    CASE WHEN COALESCE(req.last_name, '') <> '' THEN ' ' || req.last_name ELSE '' END
+                )) AS requested_by_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(partner.first_name, ''),
+                    CASE WHEN COALESCE(partner.last_name, '') <> '' THEN ' ' || partner.last_name ELSE '' END
+                )) AS assigned_partner_user_name,
+
+                TRIM(CONCAT(
+                    COALESCE(decider.first_name, ''),
+                    CASE WHEN COALESCE(decider.last_name, '') <> '' THEN ' ' || decider.last_name ELSE '' END
+                )) AS decided_by_user_name
+            FROM {schema}.engagement_acceptance ea
+            JOIN {schema}.engagements e
+            ON e.id = ea.engagement_id
+            AND e.company_id = ea.company_id
+            JOIN {schema}.customers c
+            ON c.id = e.customer_id
+            LEFT JOIN public.users req
+            ON req.id = ea.requested_by_user_id
+            LEFT JOIN public.users partner
+            ON partner.id = ea.assigned_partner_user_id
+            LEFT JOIN public.users decider
+            ON decider.id = ea.decided_by_user_id
+            WHERE ea.company_id = %s
+            AND ea.id = %s
+            LIMIT 1
+        """
+        cur.execute(sql, (company_id, acceptance_id))
+        return cur.fetchone()
+
+
+    def create_engagement_acceptance(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        acceptance_type: str,
+        assigned_partner_user_id: int = None,
+        risk_level: str = "normal",
+        independence_cleared: bool = False,
+        conflicts_checked: bool = False,
+        competence_confirmed: bool = False,
+        capacity_confirmed: bool = False,
+        client_risk_notes: str = "",
+        service_complexity_notes: str = "",
+        preconditions_notes: str = "",
+        decision_notes: str = "",
+        valid_from=None,
+        valid_to=None,
+        requested_by_user_id: int = None,
+        actor_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            INSERT INTO {schema}.engagement_acceptance (
+                company_id,
+                engagement_id,
+                acceptance_type,
+                status,
+                requested_by_user_id,
+                assigned_partner_user_id,
+                risk_level,
+                independence_cleared,
+                conflicts_checked,
+                competence_confirmed,
+                capacity_confirmed,
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (%s, %s, %s, 'draft', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+        cur.execute(
+            sql,
+            (
+                company_id,
+                engagement_id,
+                acceptance_type.strip().lower(),
+                requested_by_user_id,
+                assigned_partner_user_id,
+                risk_level.strip().lower() or "normal",
+                bool(independence_cleared),
+                bool(conflicts_checked),
+                bool(competence_confirmed),
+                bool(capacity_confirmed),
+                (client_risk_notes or "").strip(),
+                (service_complexity_notes or "").strip(),
+                (preconditions_notes or "").strip(),
+                (decision_notes or "").strip(),
+                valid_from,
+                valid_to,
+                actor_user_id,
+                actor_user_id,
+            ),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None
+
+
+    def update_engagement_acceptance(
+        self,
+        cur,
+        company_id: int,
+        *,
+        acceptance_id: int,
+        acceptance_type: str,
+        assigned_partner_user_id: int = None,
+        risk_level: str = "normal",
+        independence_cleared: bool = False,
+        conflicts_checked: bool = False,
+        competence_confirmed: bool = False,
+        capacity_confirmed: bool = False,
+        client_risk_notes: str = "",
+        service_complexity_notes: str = "",
+        preconditions_notes: str = "",
+        decision_notes: str = "",
+        valid_from=None,
+        valid_to=None,
+        actor_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            UPDATE {schema}.engagement_acceptance
+            SET
+                acceptance_type = %s,
+                assigned_partner_user_id = %s,
+                risk_level = %s,
+                independence_cleared = %s,
+                conflicts_checked = %s,
+                competence_confirmed = %s,
+                capacity_confirmed = %s,
+                client_risk_notes = %s,
+                service_complexity_notes = %s,
+                preconditions_notes = %s,
+                decision_notes = %s,
+                valid_from = %s,
+                valid_to = %s,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND is_active = TRUE
+            RETURNING id
+        """
+        cur.execute(
+            sql,
+            (
+                acceptance_type.strip().lower(),
+                assigned_partner_user_id,
+                risk_level.strip().lower() or "normal",
+                bool(independence_cleared),
+                bool(conflicts_checked),
+                bool(competence_confirmed),
+                bool(capacity_confirmed),
+                (client_risk_notes or "").strip(),
+                (service_complexity_notes or "").strip(),
+                (preconditions_notes or "").strip(),
+                (decision_notes or "").strip(),
+                valid_from,
+                valid_to,
+                actor_user_id,
+                company_id,
+                acceptance_id,
+            ),
+        )
+        return cur.fetchone()
+
+
+    def apply_engagement_acceptance_decision(
+        self,
+        cur,
+        company_id: int,
+        *,
+        acceptance_id: int,
+        action: str,
+        actor_user_id: int,
+        decision_notes: str = "",
+    ):
+        schema = self.company_schema(company_id)
+        action = (action or "").strip().lower()
+
+        if action == "submit":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'submitted',
+                    decision = NULL,
+                    decision_date = NULL,
+                    decided_by_user_id = NULL,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        if action == "approve":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'approved',
+                    decision = 'approve',
+                    decision_date = NOW(),
+                    decided_by_user_id = %s,
+                    decision_notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        if action == "decline":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'declined',
+                    decision = 'decline',
+                    decision_date = NOW(),
+                    decided_by_user_id = %s,
+                    decision_notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        if action == "return":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'returned',
+                    decision = 'return',
+                    decision_date = NOW(),
+                    decided_by_user_id = %s,
+                    decision_notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        raise ValueError("Unsupported action.")
+        
+
     def insert_ticket(
         self,
         cur,

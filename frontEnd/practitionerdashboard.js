@@ -987,6 +987,50 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/approval-center/${encodeURIComponent(queueType)}/${encodeURIComponent(sourceId)}/action`
   },
 
+  engagementAcceptance: {
+    list: (
+      companyId,
+      {
+        engagement_id = "",
+        customer_id = "",
+        acceptance_type = "",
+        status = "",
+        risk_level = "",
+        assigned_partner_user_id = "",
+        q = "",
+        active_only = true,
+        limit = 100,
+        offset = 0
+      } = {}
+    ) =>
+      buildApiUrl(
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance`,
+        {
+          engagement_id,
+          customer_id,
+          acceptance_type,
+          status,
+          risk_level,
+          assigned_partner_user_id,
+          q,
+          active_only,
+          limit,
+          offset
+        }
+      ),
+
+    create: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance`,
+
+    get: (companyId, acceptanceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}`,
+
+  update: (companyId, acceptanceId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}`,
+    decision: (companyId, acceptanceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}/decision`
+  },
+
   analytics: {
     overview: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/analytics/overview`,
@@ -1389,6 +1433,26 @@ let PR_APPROVAL_CENTER_CACHE = {
     offset: 0
   }
 };
+
+let PR_ENGAGEMENT_ACCEPTANCE_CACHE = {
+  rows: [],
+  selectedRow: null,
+  detail: null,
+  filters: {
+    engagement_id: "",
+    customer_id: "",
+    acceptance_type: "",
+    status: "",
+    risk_level: "",
+    assigned_partner_user_id: "",
+    q: "",
+    active_only: true,
+    limit: 100,
+    offset: 0
+  }
+};
+
+let PR_ENGAGEMENT_ACCEPTANCE_EVENTS_BOUND = false;
 
 const PR_NAV = {
   dashboard: "dashboard",
@@ -8144,6 +8208,21 @@ function titleCaseToken(value) {
   return String(value || "")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function titleCase(value) {
+  return String(value || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString();
 }
 
 function getSelectedPractitionerEngagementId() {
@@ -15909,18 +15988,446 @@ function renderApprovalCenterScreenContent(me) {
   bindApprovalCenterEvents(me);
 }
 
-function renderEngagementAcceptanceScreen(me) {
-  renderPartnerStubScreen(PR_NAV.engagementAcceptance, {
-    title: "Engagement Acceptance",
-    subtitle: "Acceptance, continuation, and approval decisions for client engagements.",
-    items: [
-      { label: "Acceptance decisions", desc: "Approve or decline new engagements before onboarding or execution." },
-      { label: "Continuation review", desc: "Review whether an existing client should be continued into a new cycle." },
-      { label: "Risk factors", desc: "Capture client risk, service complexity, and concern indicators." },
-      { label: "Partner approval evidence", desc: "Store who approved, when, and under what conditions." }
-    ]
-  });
+async function renderEngagementAcceptanceScreen(me) {
+  const host = document.getElementById("screen-engagement-acceptance");
+  if (!host) return;
+
+  host.innerHTML = `
+    <div class="screen-shell partner-workspace-screen">
+      <div class="screen-header">
+        <h1>Engagement Acceptance</h1>
+        <p>Acceptance, continuation, and approval decisions for client engagements.</p>
+      </div>
+
+      <section class="panel filter-panel">
+        <div class="panel-header">
+          <h3>Acceptance filters</h3>
+          <p>Filter engagement acceptance records by type, status, risk, and approval readiness.</p>
+        </div>
+
+        <div class="form-row">
+          <div class="field grow">
+            <label for="eaSearchInput">Search</label>
+            <input id="eaSearchInput" type="text" placeholder="Search engagement, code, customer" />
+          </div>
+
+          <div class="field">
+            <label for="eaTypeFilter">Type</label>
+            <select id="eaTypeFilter">
+              <option value="">All types</option>
+              <option value="acceptance">Acceptance</option>
+              <option value="continuation">Continuation</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="eaStatusFilter">Status</label>
+            <select id="eaStatusFilter">
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="submitted">Submitted</option>
+              <option value="under_review">Under review</option>
+              <option value="approved">Approved</option>
+              <option value="declined">Declined</option>
+              <option value="returned">Returned</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="eaRiskFilter">Risk band</label>
+            <select id="eaRiskFilter">
+              <option value="">All risk bands</option>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+
+          <div class="field checkbox-field">
+            <label>
+              <input id="eaReadyOnly" type="checkbox" />
+              Ready only
+            </label>
+          </div>
+
+          <div class="filter-actions">
+            <button id="eaApplyFiltersBtn" class="btn btn-primary">Apply</button>
+            <button id="eaResetFiltersBtn" class="btn btn-secondary">Reset</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-row" id="eaStatsRow">
+        <div class="stat-card">
+          <div class="stat-label">TOTAL ITEMS</div>
+          <div class="stat-value" id="eaStatTotal">0</div>
+          <div class="stat-subtext">Acceptance records in scope</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">READY FOR REVIEW</div>
+          <div class="stat-value" id="eaStatReady">0</div>
+          <div class="stat-subtext">Submitted and reviewable</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">HIGH RISK</div>
+          <div class="stat-value" id="eaStatHighRisk">0</div>
+          <div class="stat-subtext">Needs partner attention</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">APPROVED</div>
+          <div class="stat-value" id="eaStatApproved">0</div>
+          <div class="stat-subtext">Approved records</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">DECLINED</div>
+          <div class="stat-value" id="eaStatDeclined">0</div>
+          <div class="stat-subtext">Declined records</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">PENDING</div>
+          <div class="stat-value" id="eaStatPending">0</div>
+          <div class="stat-subtext">Awaiting decision</div>
+        </div>
+      </section>
+
+      <div class="split-layout">
+        <section class="panel queue-panel">
+          <div class="panel-header">
+            <h3>Acceptance queue</h3>
+            <p>Engagement-level acceptance and continuation records awaiting review or action.</p>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Engagement</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Risk</th>
+                  <th>Partner</th>
+                  <th>Decision</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="eaTableBody">
+                <tr>
+                  <td colspan="7" class="muted">Loading records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="panel detail-panel">
+          <div class="panel-header">
+            <h3>Selected detail</h3>
+            <p>Acceptance checks, notes, and approval actions for the chosen engagement.</p>
+          </div>
+
+          <div id="eaDetailHost" class="detail-body">
+            <div class="empty-state">Select a record to view details.</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  `;
+
+  await loadEngagementAcceptanceRows(me);
+  bindEngagementAcceptanceScreen(me);
+  bindEngagementAcceptanceScreenEvents(me);
 }
+
+async function loadEngagementAcceptanceRows(me) {
+  const companyId = me?.company_id || window.currentUser?.company_id;
+  if (!companyId) return;
+
+  const filters = PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters || {};
+  const tbody = document.getElementById("eaTableBody");
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="9" class="muted">Loading…</td></tr>`;
+  }
+
+  try {
+    const rows = await apiFetch(
+      ENDPOINTS.engagementAcceptance.list(companyId, filters)
+    );
+
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.rows = Array.isArray(rows) ? rows : [];
+    renderEngagementAcceptanceRows();
+  } catch (err) {
+    console.error("loadEngagementAcceptanceRows failed", err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="9" class="text-danger">${escapeHtml(err.message || "Failed to load items")}</td></tr>`;
+    }
+  }
+}
+
+function renderEngagementAcceptanceStats(rows) {
+  const total = rows.length;
+  const ready = rows.filter(r => ["submitted", "under_review"].includes((r.status || "").toLowerCase())).length;
+  const highRisk = rows.filter(r => ["high", "critical"].includes((r.risk_level || "").toLowerCase())).length;
+  const approved = rows.filter(r => (r.status || "").toLowerCase() === "approved").length;
+  const declined = rows.filter(r => (r.status || "").toLowerCase() === "declined").length;
+  const pending = rows.filter(r => ["draft", "submitted", "under_review", "returned"].includes((r.status || "").toLowerCase())).length;
+
+  setText("eaStatTotal", total);
+  setText("eaStatReady", ready);
+  setText("eaStatHighRisk", highRisk);
+  setText("eaStatApproved", approved);
+  setText("eaStatDeclined", declined);
+  setText("eaStatPending", pending);
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = String(value ?? "");
+}
+
+function renderEngagementAcceptanceRows() {
+  const tbody = document.getElementById("eaTableBody");
+  if (!tbody) return;
+
+  const rows = PR_ENGAGEMENT_ACCEPTANCE_CACHE.rows || [];
+  if (!rows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="muted">No engagement acceptance records found.</td>
+      </tr>
+    `;
+    renderEngagementAcceptanceStats([]);
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => `
+    <tr class="clickable-row" data-ea-id="${row.id}">
+      <td>
+        <div class="row-title">${escapeHtml(row.engagement_name || "")}</div>
+        <div class="row-subtitle">
+          ${escapeHtml(row.engagement_code || "")}
+          ${row.customer_name ? ` - ${escapeHtml(row.customer_name)}` : ""}
+        </div>
+      </td>
+      <td>${escapeHtml(titleize(row.acceptance_type || ""))}</td>
+      <td>${escapeHtml(titleize((row.status || "").replaceAll("_", " ")))}</td>
+      <td>${escapeHtml(titleize(row.risk_level || ""))}</td>
+      <td>${escapeHtml(row.assigned_partner_user_name || "-")}</td>
+      <td>${escapeHtml(titleize((row.decision || "-").replaceAll("_", " ")))}</td>
+      <td>${formatShortDate(row.decision_date || row.updated_at)}</td>
+    </tr>
+  `).join("");
+
+  renderEngagementAcceptanceStats(rows);
+}
+
+async function openEngagementAcceptanceDetail(me, acceptanceId) {
+  const companyId = me?.company_id || window.currentUser?.company_id;
+  if (!companyId || !acceptanceId) return;
+
+  const detailCard = document.getElementById("eaDetailCard");
+  if (detailCard) {
+    detailCard.innerHTML = `<div class="muted">Loading detail…</div>`;
+  }
+
+  try {
+    const row = await apiFetch(
+      ENDPOINTS.engagementAcceptance.get(companyId, acceptanceId)
+    );
+
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.selectedRow = row;
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail = row;
+    renderEngagementAcceptanceDetail(row);
+  } catch (err) {
+    console.error("openEngagementAcceptanceDetail failed", err);
+    if (detailCard) {
+      detailCard.innerHTML = `<div class="text-danger">${escapeHtml(err.message || "Failed to load detail")}</div>`;
+    }
+  }
+}
+
+function renderEngagementAcceptanceDetail(row) {
+  const host = document.getElementById("eaDetailHost");
+  if (!host) return;
+
+  host.innerHTML = `
+    <div class="detail-grid">
+      <div class="detail-card">
+        <div class="detail-label">Customer</div>
+        <div class="detail-value">${escapeHtml(row.customer_name || "-")}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Risk band</div>
+        <div class="detail-value">${escapeHtml(titleize(row.risk_level || "-"))}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Status</div>
+        <div class="detail-value">${escapeHtml(titleize((row.status || "-").replaceAll("_", " ")))}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Decision</div>
+        <div class="detail-value">${escapeHtml(titleize((row.decision || "-").replaceAll("_", " ")))}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Assigned partner</div>
+        <div class="detail-value">${escapeHtml(row.assigned_partner_user_name || "-")}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Decision date</div>
+        <div class="detail-value">${formatShortDate(row.decision_date) || "-"}</div>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h4>Checks</h4>
+      <ul class="simple-list">
+        <li>Independence cleared: <strong>${row.independence_cleared ? "Yes" : "No"}</strong></li>
+        <li>Conflicts checked: <strong>${row.conflicts_checked ? "Yes" : "No"}</strong></li>
+        <li>Competence confirmed: <strong>${row.competence_confirmed ? "Yes" : "No"}</strong></li>
+        <li>Capacity confirmed: <strong>${row.capacity_confirmed ? "Yes" : "No"}</strong></li>
+      </ul>
+    </div>
+
+    <div class="detail-section">
+      <h4>Client risk notes</h4>
+      <p>${escapeHtml(row.client_risk_notes || "No notes recorded.")}</p>
+    </div>
+
+    <div class="detail-section">
+      <h4>Service complexity notes</h4>
+      <p>${escapeHtml(row.service_complexity_notes || "No notes recorded.")}</p>
+    </div>
+
+    <div class="detail-section">
+      <h4>Preconditions notes</h4>
+      <p>${escapeHtml(row.preconditions_notes || "No notes recorded.")}</p>
+    </div>
+
+    <div class="detail-section">
+      <h4>Decision notes</h4>
+      <p>${escapeHtml(row.decision_notes || "No notes recorded.")}</p>
+    </div>
+
+    <div class="detail-actions">
+      <button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>
+      <button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}">Approve</button>
+      <button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>
+      <button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>
+    </div>
+  `;
+}
+
+function bindEngagementAcceptanceScreen(me) {
+  const applyBtn = document.getElementById("eaApplyFiltersBtn");
+  const resetBtn = document.getElementById("eaResetFiltersBtn");
+  const tbody = document.getElementById("eaTableBody");
+
+  if (applyBtn) {
+    applyBtn.onclick = async () => {
+      PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters.q =
+        document.getElementById("eaSearchInput")?.value?.trim() || "";
+      PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters.acceptance_type =
+        document.getElementById("eaTypeFilter")?.value || "";
+      PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters.status =
+        document.getElementById("eaStatusFilter")?.value || "";
+      PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters.risk_level =
+        document.getElementById("eaRiskFilter")?.value || "";
+
+      await loadEngagementAcceptanceRows(me);
+    };
+  }
+
+  if (resetBtn) {
+    resetBtn.onclick = async () => {
+      const search = document.getElementById("eaSearchInput");
+      const type = document.getElementById("eaTypeFilter");
+      const status = document.getElementById("eaStatusFilter");
+      const risk = document.getElementById("eaRiskFilter");
+      const ready = document.getElementById("eaReadyOnly");
+
+      if (search) search.value = "";
+      if (type) type.value = "";
+      if (status) status.value = "";
+      if (risk) risk.value = "";
+      if (ready) ready.checked = false;
+
+      PR_ENGAGEMENT_ACCEPTANCE_CACHE.filters = {
+        q: "",
+        acceptance_type: "",
+        status: "",
+        risk_level: "",
+        active_only: true,
+        limit: 100,
+        offset: 0
+      };
+
+      await loadEngagementAcceptanceRows(me);
+    };
+  }
+
+  if (tbody) {
+    tbody.onclick = async (event) => {
+      const row = event.target.closest("[data-ea-id]");
+      if (!row) return;
+
+      const id = Number(row.getAttribute("data-ea-id"));
+      if (!id) return;
+
+      await openEngagementAcceptanceDetail(me, id);
+    };
+  }
+
+  const detailHost = document.getElementById("eaDetailHost");
+  if (detailHost) {
+    detailHost.onclick = async (event) => {
+      const btn = event.target.closest("[data-ea-action]");
+      if (!btn) return;
+
+      const action = btn.getAttribute("data-ea-action");
+      const id = Number(btn.getAttribute("data-ea-id"));
+      if (!id || !action) return;
+
+      await applyEngagementAcceptanceDecision(me, id, action);
+    };
+  }
+}
+
+async function applyEngagementAcceptanceDecision(me, acceptanceId, action) {
+  const companyId = me?.company_id || window.currentUser?.company_id;
+  if (!companyId || !acceptanceId) return;
+
+  const decisionNotes = window.prompt(`Add ${action} note (optional):`, "") || "";
+
+  try {
+    await apiFetch(
+      ENDPOINTS.engagementAcceptance.decision(companyId, acceptanceId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          action,
+          decision_notes: decisionNotes
+        })
+      }
+    );
+
+    await loadEngagementAcceptanceRows(me);
+    await openEngagementAcceptanceDetail(me, acceptanceId);
+  } catch (err) {
+    console.error("applyEngagementAcceptanceDecision failed", err);
+    window.alert(err.message || `Failed to ${action} item`);
+  }
+}
+
 
 function renderRiskIndependenceScreen(me) {
   renderPartnerStubScreen(PR_NAV.riskIndependence, {
