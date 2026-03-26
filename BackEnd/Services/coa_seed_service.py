@@ -51,18 +51,15 @@ def seed_company_coa_once(
     company_id: int,
     industry: str,
     sub_industry: Optional[str],
-    source: str = "pool",   # "pool" only for now
+    source: str = "pool",
 ) -> dict:
     print(f"[SEED] start company={company_id} source={source!r}")
 
-    # 0) Schema always
     db_service.ensure_company_schema(company_id)
     db_service.ensure_company_coa_table(company_id)
-    # 1) Public schema + settings
     db_service.initialize_public_schema()
     db_service.ensure_company_account_settings(company_id)
 
-    # ✅ compute BEFORE printing
     already_seeded = _coa_is_seeded(db_service, company_id)
     print(f"[SEED] already_seeded={already_seeded} (company={company_id})")
 
@@ -98,12 +95,6 @@ def seed_company_coa_once(
             or (slugify(sub_industry) if sub_industry else None)
         )
 
-        print(
-            "[SEED] pool seed params "
-            f"industry_slug={industry_slug!r} sub_slug={sub_slug!r} "
-            f"industry_display={industry_display!r} sub_display={sub_display!r}"
-        )
-
         inserted = sync_company_coa_from_pool(
             db_service,
             company_id=company_id,
@@ -114,18 +105,20 @@ def seed_company_coa_once(
         )
 
         print(f"[SEED] pool inserted={inserted}")
+        assert_reserved_control_integrity(db_service, company_id)
     else:
         print("[SEED] skipping pool seed (already seeded)")
 
-    # controls always enforced AFTER pool seed
     print("[SEED] enforcing mandatory controls...")
     db_service.ensure_mandatory_company_accounts(company_id)
     print("[SEED] mandatory controls enforced")
+    assert_reserved_control_integrity(db_service, company_id)
 
     if hasattr(db_service, "ensure_required_control_accounts"):
         print("[SEED] enforcing required control accounts...")
         db_service.ensure_required_control_accounts(company_id)
         print("[SEED] required control accounts enforced")
+        assert_reserved_control_integrity(db_service, company_id)
 
     print("[SEED] applying account settings defaults...")
     db_service.ensure_company_account_settings_defaults(company_id)
@@ -134,6 +127,7 @@ def seed_company_coa_once(
     print("[SEED] setup company defaults...")
     db_service.setup_company_defaults(company_id)
     print("[SEED] company defaults done")
+    assert_reserved_control_integrity(db_service, company_id)
 
     out = {
         "seeded": (not already_seeded),
@@ -144,4 +138,90 @@ def seed_company_coa_once(
     print(f"[SEED] done -> {out}")
     return out
 
+from typing import Dict, Any, Optional, List
 
+
+def assert_reserved_control_integrity(db_service, company_id: int) -> None:
+    schema = f"company_{company_id}"
+
+    expected: Dict[str, Dict[str, Any]] = {
+        "BS_CA_1000": {
+            "template_code": "1000",
+            "template_code_scoped": None,
+            "name_like_any": ["cash", "bank"],
+        },
+        "BS_CA_1010": {
+            "template_code": "1010",
+            "template_code_scoped": None,
+        },
+        "BS_CA_1050": {
+            "template_code": "1050",
+            "template_code_scoped": None,
+        },
+        "BS_CL_2105": {
+            "template_code": "2105",
+            "template_code_scoped": None,
+        },
+        "BS_CA_1410": {
+            "template_code": "1410",
+            "template_code_scoped": None,
+        },
+        "BS_CL_2310": {
+            "template_code": "2310",
+            "template_code_scoped": None,
+        },
+    }
+
+    rows = db_service.fetch_all(
+        f"""
+        SELECT
+            code,
+            name,
+            category,
+            section,
+            subcategory,
+            template_code,
+            template_code_scoped
+        FROM {schema}.coa
+        WHERE code = ANY(%s)
+        """,
+        (list(expected.keys()),),
+    ) or []
+
+    by_code = {str(r.get("code") or "").strip(): r for r in rows}
+    bad: List[str] = []
+
+    for code, rule in expected.items():
+        r = by_code.get(code)
+        if not r:
+            bad.append(f"{code}: missing")
+            continue
+
+        actual_tc = str(r.get("template_code") or "").strip() or None
+        actual_tcs = str(r.get("template_code_scoped") or "").strip() or None
+        actual_name = str(r.get("name") or "").strip().lower()
+
+        expected_tc = str(rule.get("template_code") or "").strip() or None
+        expected_tcs = str(rule.get("template_code_scoped") or "").strip() or None
+
+        if expected_tc != actual_tc:
+            bad.append(
+                f"{code}: wrong template_code actual={actual_tc!r} expected={expected_tc!r}"
+            )
+
+        if expected_tcs != actual_tcs:
+            bad.append(
+                f"{code}: wrong template_code_scoped actual={actual_tcs!r} expected={expected_tcs!r}"
+            )
+
+        name_like_any = rule.get("name_like_any") or []
+        if name_like_any and not any(tok in actual_name for tok in name_like_any):
+            bad.append(
+                f"{code}: suspicious name={r.get('name')!r} expected one of {name_like_any!r}"
+            )
+
+    if bad:
+        raise RuntimeError(
+            "Reserved control corruption detected for company "
+            f"{company_id}: " + "; ".join(bad)
+        )

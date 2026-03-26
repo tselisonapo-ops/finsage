@@ -457,22 +457,43 @@ def _normalize_coa_rows_codes(
         if is_locked_reporting_code(src_code):
             fam, num = _parse_reporting_code(src_code)
             if not fam or num is None:
-                raise ValueError(f"Reserved code '{src_code}' could not be parsed by _parse_reporting_code")
+                raise ValueError(
+                    f"Reserved code '{src_code}' could not be parsed by _parse_reporting_code"
+                )
 
-            # Ensure we mark the numeric as used so nothing else takes it
+            required_template_by_code = {
+                "BS_CA_1000": "1000",
+                "BS_CA_1010": "1010",
+                "BS_CA_1050": "1050",
+                "BS_CL_2105": "2105",
+                "BS_CA_1410": "1410",
+                "BS_CL_2310": "2310",
+            }
+
+            expected_tc = required_template_by_code.get(src_code)
+            actual_tc = (row.get("template_code") or "").strip() or None
+
+            # Critical: do NOT allow a wrong semantic row to keep a reserved code
+            if expected_tc and actual_tc != expected_tc:
+                raise RuntimeError(
+                    f"Reserved reporting code misuse: code={src_code!r} "
+                    f"name={row.get('name')!r} template_code={actual_tc!r} "
+                    f"expected_template_code={expected_tc!r}"
+                )
+
             used_numeric_by_bucket.setdefault(fam, set()).add(int(num))
-            next_num_by_bucket[fam] = max(next_num_by_bucket.get(fam, ac.BUCKET_BASE.get(fam, 0)), int(num) + 1)
+            next_num_by_bucket[fam] = max(
+                next_num_by_bucket.get(fam, ac.BUCKET_BASE.get(fam, 0)),
+                int(num) + 1
+            )
 
-            # Persist locked fields
-            template_code_raw = (row.get("template_code") or "").strip()
-            row["template_code"] = template_code_raw if template_code_raw else None
+            row["template_code"] = actual_tc
             row["code_family"] = fam
             row["code_numeric"] = int(num)
             row["code"] = src_code
 
             existing_codes.add(src_code)
 
-            # ✅ preserve role if provided; otherwise derive
             existing_role = (row.get("role") or "").strip()
             if not existing_role:
                 row["role"] = ac._coa_role_from_text(

@@ -3647,6 +3647,9 @@ function toggleEngagementWorkspaceSetup() {
   const block = document.getElementById("engWorkspaceSetupBlock");
   if (!block) return;
 
+  // make sure industry select has options before we use/set it
+  populateIndustryOptions();
+
   const type = document.getElementById("engType")?.value || "";
   const customer = getSelectedEngagementCustomer();
 
@@ -3665,16 +3668,20 @@ function toggleEngagementWorkspaceSetup() {
     if (countryEl && !countryEl.value) {
       countryEl.value = customer.country || customer.billing_country || "";
     }
+
     if (currencyEl && !currencyEl.value) {
       currencyEl.value = customer.currency || "";
     }
+
     if (industryEl && !industryEl.value && customer.industry) {
       industryEl.value = customer.industry;
       populateSubIndustryOptions(customer.industry);
     }
+
     if (subIndustryEl && customer.sub_industry) {
       subIndustryEl.value = customer.sub_industry;
     }
+
     return;
   }
 
@@ -3682,6 +3689,7 @@ function toggleEngagementWorkspaceSetup() {
     if (countryEl) countryEl.value = "";
     if (currencyEl) currencyEl.value = "";
     if (industryEl) industryEl.value = "";
+
     if (subIndustryEl) {
       subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
       subIndustryEl.value = "";
