@@ -27591,33 +27591,69 @@ class DatabaseService:
 
     def list_customers(self, company_id: int, include_inactive: bool = False) -> List[Dict[str, Any]]:
         schema = f"company_{company_id}"
-        if include_inactive:
-            sql = f"""
-            SELECT *
-            FROM {schema}.customers
-            ORDER BY name ASC;
-            """
-            return self.fetch_all(sql)
-        else:
-            sql = f"""
-            SELECT *
-            FROM {schema}.customers
-            WHERE is_active = TRUE
-            ORDER BY name ASC;
-            """
-            return self.fetch_all(sql)
 
+        where_sql = ""
+        if not include_inactive:
+            where_sql = "WHERE c.is_active = TRUE"
+
+        sql = f"""
+            SELECT
+                c.*,
+
+                -- ✅ Hydrated / effective values
+                COALESCE(NULLIF(BTRIM(c.country), ''), NULLIF(BTRIM(c.billing_country), ''), cmp.country) AS country,
+                COALESCE(NULLIF(BTRIM(c.currency), ''), cmp.currency) AS currency,
+                COALESCE(NULLIF(BTRIM(c.industry), ''), cmp.industry) AS industry,
+                COALESCE(NULLIF(BTRIM(c.sub_industry), ''), cmp.sub_industry) AS sub_industry,
+                COALESCE(NULLIF(BTRIM(c.fin_year_start), ''), cmp.fin_year_start) AS fin_year_start,
+
+                -- Optional debugging / traceability
+                cmp.id AS linked_company_id,
+                cmp.name AS linked_company_name,
+                cmp.country AS linked_company_country,
+                cmp.currency AS linked_company_currency,
+                cmp.industry AS linked_company_industry,
+                cmp.sub_industry AS linked_company_sub_industry,
+                cmp.fin_year_start AS linked_company_fin_year_start
+
+            FROM {schema}.customers c
+            LEFT JOIN public.companies cmp
+            ON cmp.id = c.company_master_id
+            {where_sql}
+            ORDER BY c.name ASC;
+        """
+
+        return self.fetch_all(sql)
 
     def get_customer(self, company_id: int, customer_id: int) -> Optional[Dict[str, Any]]:
         schema = f"company_{company_id}"
-        sql = f"""
-        SELECT *
-        FROM {schema}.customers
-        WHERE id = %s
-        LIMIT 1;
-        """
-        return self.fetch_one(sql, (customer_id,))
 
+        sql = f"""
+            SELECT
+                c.*,
+
+                COALESCE(NULLIF(BTRIM(c.country), ''), NULLIF(BTRIM(c.billing_country), ''), cmp.country) AS country,
+                COALESCE(NULLIF(BTRIM(c.currency), ''), cmp.currency) AS currency,
+                COALESCE(NULLIF(BTRIM(c.industry), ''), cmp.industry) AS industry,
+                COALESCE(NULLIF(BTRIM(c.sub_industry), ''), cmp.sub_industry) AS sub_industry,
+                COALESCE(NULLIF(BTRIM(c.fin_year_start), ''), cmp.fin_year_start) AS fin_year_start,
+
+                cmp.id AS linked_company_id,
+                cmp.name AS linked_company_name,
+                cmp.country AS linked_company_country,
+                cmp.currency AS linked_company_currency,
+                cmp.industry AS linked_company_industry,
+                cmp.sub_industry AS linked_company_sub_industry,
+                cmp.fin_year_start AS linked_company_fin_year_start
+
+            FROM {schema}.customers c
+            LEFT JOIN public.companies cmp
+            ON cmp.id = c.company_master_id
+            WHERE c.id = %s
+            LIMIT 1;
+        """
+
+        return self.fetch_one(sql, (customer_id,))
 
     def delete_customer(self, company_id: int, customer_id: int, *, hard: bool = False) -> bool:
         """

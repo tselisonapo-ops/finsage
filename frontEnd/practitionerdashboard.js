@@ -4678,7 +4678,8 @@ function readEngagementModalPayload() {
 
   const requiresWorkspace = engagementTypeRequiresWorkspace(engagementType);
   const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
-  const needsWorkspaceSetup = requiresWorkspace && !alreadyProvisioned;
+  const missingDefaults = customerMissingWorkspaceDefaults(customer);
+  const needsWorkspaceSetup = requiresWorkspace && (!alreadyProvisioned || missingDefaults);
 
   const payload = {
     customer_id: customerId,
@@ -4686,7 +4687,8 @@ function readEngagementModalPayload() {
     engagement_code: document.getElementById("engCode")?.value?.trim() || "",
     engagement_name: document.getElementById("engName")?.value?.trim() || "",
     engagement_type: engagementType,
-    status: document.getElementById("engStatus")?.value || "draft",
+
+    // backend now controls acceptance lifecycle, so do not drive it from modal
     governance_mode: document.getElementById("engGovernanceMode")?.value || "",
     reporting_cycle: document.getElementById("engReportingCycle")?.value || "",
     start_date: document.getElementById("engStartDate")?.value || null,
@@ -4698,15 +4700,15 @@ function readEngagementModalPayload() {
     partner_user_id: _parseModalInt(document.getElementById("engPartnerUserId")?.value),
     description: document.getElementById("engDescription")?.value?.trim() || "",
     scope_summary: document.getElementById("engScopeSummary")?.value?.trim() || "",
-    financial_year_start: document.getElementById("engFinancialYearStart")?.value || null
+    financial_year_start: document.getElementById("engFinancialYearStart")?.value?.trim() || null
   };
 
   if (needsWorkspaceSetup) {
     payload.target_company = {
       country: document.getElementById("engCountry")?.value?.trim() || "",
       currency: document.getElementById("engCurrency")?.value?.trim() || "",
-      industry: document.getElementById("engIndustry")?.value || "",
-      subIndustry: document.getElementById("engSubIndustry")?.value || ""
+      industry: document.getElementById("engIndustry")?.value?.trim() || "",
+      sub_industry: document.getElementById("engSubIndustry")?.value?.trim() || ""
     };
   }
 
@@ -4817,6 +4819,86 @@ function customerHasProvisionedWorkspace(customer) {
   return !!companyMasterId || ["provisioned", "linked"].includes(workspaceStatus);
 }
 
+function customerMissingWorkspaceDefaults(customer) {
+  if (!customer) return true;
+
+  const country = String(customer.country || customer.billing_country || "").trim();
+  const finYearStart = String(customer.fin_year_start || "").trim();
+  const currency = String(customer.currency || "").trim();
+  const industry = String(customer.industry || "").trim();
+  const subIndustry = String(customer.sub_industry || "").trim();
+
+  return !(country && finYearStart && currency && industry && subIndustry);
+}
+
+function toggleEngagementWorkspaceSetup() {
+  const block = document.getElementById("engWorkspaceSetupBlock");
+  if (!block) return;
+
+  const type = document.getElementById("engType")?.value || "";
+  const customer = getSelectedEngagementCustomer();
+
+  const requiresWorkspace = engagementTypeRequiresWorkspace(type);
+  const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
+  const missingDefaults = customerMissingWorkspaceDefaults(customer);
+
+  const shouldShow = requiresWorkspace && (!alreadyProvisioned || missingDefaults);
+
+  block.classList.toggle("hidden", !shouldShow);
+
+  const countryEl = document.getElementById("engCountry");
+  const finYearStartEl = document.getElementById("engFinYearStart");
+  const currencyEl = document.getElementById("engCurrency");
+  const industryEl = document.getElementById("engIndustry");
+  const subIndustryEl = document.getElementById("engSubIndustry");
+
+  if (!shouldShow) {
+    if (countryEl) countryEl.value = "";
+    if (finYearStartEl) finYearStartEl.value = "";
+    if (currencyEl) currencyEl.value = "";
+    if (industryEl) industryEl.value = "";
+    if (subIndustryEl) {
+      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
+      subIndustryEl.value = "";
+      subIndustryEl.disabled = true;
+    }
+    return;
+  }
+
+  if (!customer) return;
+
+  if (countryEl && !countryEl.value) {
+    countryEl.value = customer.country || customer.billing_country || "";
+  }
+
+  if (finYearStartEl && !finYearStartEl.value) {
+    finYearStartEl.value = customer.fin_year_start || "";
+  }
+
+  if (currencyEl && !currencyEl.value) {
+    currencyEl.value = customer.currency || "";
+  }
+
+  if (industryEl && !industryEl.value && customer.industry) {
+    industryEl.value = customer.industry;
+    populateSubIndustryOptions(customer.industry);
+  }
+
+  if (subIndustryEl) {
+    if (!industryEl?.value) {
+      subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
+      subIndustryEl.value = "";
+      subIndustryEl.disabled = true;
+    } else if (subIndustryEl.options.length <= 1) {
+      populateSubIndustryOptions(industryEl.value);
+    }
+
+    if (!subIndustryEl.value && customer.sub_industry) {
+      subIndustryEl.value = customer.sub_industry;
+    }
+  }
+}
+
 function updateEngagementWorkspaceSetupVisibility() {
   const block = document.getElementById("engWorkspaceSetupBlock");
   if (!block) return;
@@ -4864,38 +4946,27 @@ function validateEngagementPayload(payload) {
   if (!payload.engagement_name) return "Engagement name is required.";
   if (!payload.engagement_type) return "Engagement type is required.";
 
-  const type = String(payload.engagement_type || "").toLowerCase();
-
-  const requiresWorkspace = [
-    "bookkeeping",
-    "monthly_bookkeeping",
-    "write_up",
-    "management_accounts",
-    "vat",
-    "payroll",
-    "tax",
-    "tax_compliance",
-    "annual_financial_statements",
-    "year_end_financials",
-    "compilation",
-    "review",
-    "audit",
-    "audit_support",
-    "internal_audit",
-    "independent_review",
-    "cleanup",
-    "migration",
-    "outsourced_finance"
-  ].includes(type);
+  const customer = getSelectedEngagementCustomer();
+  const requiresWorkspace = engagementTypeRequiresWorkspace(payload.engagement_type);
+  const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
+  const missingDefaults = customerMissingWorkspaceDefaults(customer);
 
   if (requiresWorkspace) {
     const hasExistingTarget = !!payload.target_company_id;
-    const country = String(payload?.target_company?.country || "").trim();
-    const industry = String(payload?.target_company?.industry || "").trim();
+    const mustCollectWorkspaceFields = !alreadyProvisioned || missingDefaults || !hasExistingTarget;
 
-    if (!hasExistingTarget) {
-      if (!country) return "Country is required to create a workspace for this engagement.";
-      if (!industry) return "Industry is required to create a workspace for this engagement.";
+    if (mustCollectWorkspaceFields) {
+      const country = String(payload?.target_company?.country || "").trim();
+      const currency = String(payload?.target_company?.currency || "").trim();
+      const industry = String(payload?.target_company?.industry || "").trim();
+      const subIndustry = String(payload?.target_company?.sub_industry || "").trim();
+      const finYearStart = String(payload?.financial_year_start || "").trim();
+
+      if (!country) return "Country is required to create or complete workspace setup for this engagement.";
+      if (!finYearStart) return "Financial year start is required to create or complete workspace setup for this engagement.";
+      if (!currency) return "Currency is required to create or complete workspace setup for this engagement.";
+      if (!industry) return "Industry is required to create or complete workspace setup for this engagement.";
+      if (!subIndustry) return "Sub-industry is required to create or complete workspace setup for this engagement.";
     }
   }
 
@@ -4904,8 +4975,31 @@ function validateEngagementPayload(payload) {
 
 async function handleCreateEngagementSubmit() {
   const saveBtn = document.getElementById("engagementModalSave");
+
   try {
     const payload = readEngagementModalPayload();
+
+    const requiresWorkspace = engagementTypeRequiresWorkspace(payload.engagement_type);
+    const workspace = payload.target_company || {};
+
+    if (requiresWorkspace) {
+      const missing = [];
+
+      if (!(workspace.country || "").trim()) missing.push("country");
+      if (!(payload.financial_year_start || "").trim()) missing.push("financial year start");
+      if (!(workspace.currency || "").trim()) missing.push("currency");
+      if (!(workspace.industry || "").trim()) missing.push("industry");
+      if (!(workspace.sub_industry || "").trim()) missing.push("sub-industry");
+
+      if (missing.length) {
+        setEngagementModalMsg(
+          `Please complete: ${missing.join(", ")}.`,
+          "error"
+        );
+        return;
+      }
+    }
+
     const validation = validateEngagementPayload(payload);
     if (validation) {
       setEngagementModalMsg(validation, "error");
@@ -4917,8 +5011,14 @@ async function handleCreateEngagementSubmit() {
 
     const out = await createEngagementApi(payload);
     const row = out?.row || null;
+    const acceptanceId = out?.acceptance_id || null;
 
-    setEngagementModalMsg("Engagement created successfully.", "success");
+    setEngagementModalMsg(
+      acceptanceId
+        ? "Engagement created and sent for acceptance review."
+        : "Engagement created successfully.",
+      "success"
+    );
 
     await refreshAssignmentsScreen();
 
@@ -4933,11 +5033,16 @@ async function handleCreateEngagementSubmit() {
 
     populateTeamEngagementFilter(PR_ASSIGNMENTS_CACHE);
 
-    closeEngagementModal();
-    resetEngagementModalForm();
+    setTimeout(() => {
+      closeEngagementModal();
+      resetEngagementModalForm();
+    }, 500);
   } catch (err) {
     console.error(err);
-    setEngagementModalMsg(err.message || "Failed to create engagement.", "error");
+    setEngagementModalMsg(
+      err.message || "Failed to create engagement.",
+      "error"
+    );
   } finally {
     if (saveBtn) saveBtn.disabled = false;
   }
@@ -4951,11 +5056,12 @@ async function bindEngagementModalEvents() {
       if (!PR_CUSTOMERS_CACHE.length) {
         PR_CUSTOMERS_CACHE = await loadCustomersData({});
       }
-      populateEngagementCustomerSelect(PR_CUSTOMERS_CACHE);
 
+      populateEngagementCustomerSelect(PR_CUSTOMERS_CACHE);
       await bindEngagementAssigneeDropdowns();
 
       openEngagementModal();
+      toggleEngagementWorkspaceSetup();
     } catch (err) {
       console.error(err);
       alert(err.message || "Failed to open engagement form.");
@@ -4986,6 +5092,36 @@ async function bindEngagementModalEvents() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeEngagementModal();
   });
+}
+
+function engagementWorkspaceSetupRequired() {
+  const type = document.getElementById("engType")?.value || "";
+  return engagementTypeRequiresWorkspace(type);
+}
+
+function getEngagementWorkspacePayload() {
+  return {
+    country: document.getElementById("engCountry")?.value?.trim() || "",
+    fin_year_start: document.getElementById("engFinYearStart")?.value?.trim() || "",
+    currency: document.getElementById("engCurrency")?.value?.trim() || "",
+    industry: document.getElementById("engIndustry")?.value?.trim() || "",
+    sub_industry: document.getElementById("engSubIndustry")?.value?.trim() || ""
+  };
+}
+
+function validateEngagementWorkspacePayload(workspace) {
+  if (!engagementWorkspaceSetupRequired()) return;
+
+  const missing = [];
+  if (!workspace.country) missing.push("country");
+  if (!workspace.fin_year_start) missing.push("financial year start");
+  if (!workspace.currency) missing.push("currency");
+  if (!workspace.industry) missing.push("industry");
+  if (!workspace.sub_industry) missing.push("sub-industry");
+
+  if (missing.length) {
+    throw new Error(`Please complete: ${missing.join(", ")}.`);
+  }
 }
 
 async function ensureEngagementModalBound() {
