@@ -18682,7 +18682,7 @@ window.renderMiniTableHtml = window.renderMiniTableHtml || renderMiniTableHtml;
 async function downloadFile(url, filename) {
   const resp = await fetch(url, {
     method: "GET",
-    headers: authHeaders(), // if you use auth
+    headers: AUTH_HEADER(), // if you use auth
   });
 
   if (!resp.ok) throw new Error("Download failed");

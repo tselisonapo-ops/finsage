@@ -1530,6 +1530,11 @@ const PR_NAV = {
 /* ======================================================
   * Helpers
   * ==================================================== */
+function AUTH_HEADER() {
+  const token = window.getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function getAuthToken() {
   return (
     localStorage.getItem("fs_user_token") ||
@@ -17104,7 +17109,7 @@ async function renderRiskIndependenceScreen(me) {
   async function loadRiskItemIntoEditor(acceptanceId) {
     const res = await fetch(
       ENDPOINTS.engagementAcceptance.get(companyId, acceptanceId),
-      { headers: authHeaders() }
+      { headers: AUTH_HEADER() }
     );
     const payload = await res.json();
 
@@ -17148,7 +17153,7 @@ async function renderRiskIndependenceScreen(me) {
         limit: 100,
         offset: 0
       }),
-      { headers: authHeaders() }
+      { headers: AUTH_HEADER() }
     );
 
     const payload = await res.json();
