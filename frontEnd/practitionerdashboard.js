@@ -5423,7 +5423,7 @@ async function bindEngagementModalEvents() {
       populateEngagementTypeCategoryOptions();
       populateEngagementTypeOptions();
 
-      openEngagementModal();
+      openCreateEngagementModal(); 
 
       requestAnimationFrame(() => {
         populateIndustryOptions?.();
@@ -5480,8 +5480,16 @@ function openCreateEngagementModal() {
   populateEngagementTypeCategoryOptions?.();
   populateEngagementTypeOptions?.();
 
-  document.getElementById("engagementModalTitle").textContent = "Create Engagement";
-  document.getElementById("engagementModalSave").textContent = "Create Engagement";
+  const titleEl = document.getElementById("engagementModalTitle");
+  const saveBtn = document.getElementById("engagementModalSave");
+
+  if (titleEl) {
+    titleEl.textContent = "Create Engagement";
+  }
+
+  if (saveBtn) {
+    saveBtn.textContent = "Create Engagement";
+  }
 
   openEngagementModal();
 
@@ -5502,8 +5510,16 @@ function openEditEngagementModal(row) {
   populateEngagementTypeCategoryOptions?.();
   populateEngagementTypeOptions?.("", row.engagement_type || "");
 
-  document.getElementById("engagementModalTitle").textContent = "Update Engagement";
-  document.getElementById("engagementModalSave").textContent = "Save Changes";
+  const titleEl = document.getElementById("engagementModalTitle");
+  const saveBtn = document.getElementById("engagementModalSave");
+
+  if (titleEl) {
+    titleEl.textContent = "Update Engagement";
+  }
+
+  if (saveBtn) {
+    saveBtn.textContent = "Save Changes";
+  }
 
   fillEngagementModalForm(row);
 
