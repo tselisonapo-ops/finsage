@@ -1,6 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Dict, Any
-
+from typing import Dict, Any, Optional, List
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services.utils.industry_utils import slugify
 from BackEnd.Services.coa_service import build_coa_flat
@@ -64,6 +63,7 @@ def seed_company_coa_once(
     print(f"[SEED] already_seeded={already_seeded} (company={company_id})")
 
     inserted = 0
+    source_used = None
     src = (source or "pool").strip().lower()
 
     if src != "pool":
@@ -76,7 +76,7 @@ def seed_company_coa_once(
             """
             SELECT industry, sub_industry, industry_slug, sub_industry_slug
             FROM public.companies
-            WHERE id=%s
+            WHERE id = %s
             """,
             (company_id,),
         ) or {}
@@ -95,6 +95,12 @@ def seed_company_coa_once(
             or (slugify(sub_industry) if sub_industry else None)
         )
 
+        print(
+            f"[SEED] resolved slugs company={company_id} "
+            f"industry_slug={industry_slug!r} sub_slug={sub_slug!r} "
+            f"industry_display={industry_display!r} sub_display={sub_display!r}"
+        )
+
         inserted = sync_company_coa_from_pool(
             db_service,
             company_id=company_id,
@@ -105,9 +111,24 @@ def seed_company_coa_once(
         )
 
         print(f"[SEED] pool inserted={inserted}")
+
+        if inserted > 0:
+            source_used = "pool"
+        else:
+            print("[SEED] pool returned 0, falling back to template build ...")
+            rows = build_coa_flat(industry, sub_industry)
+            if rows:
+                inserted = db_service.insert_coa(company_id, rows)
+                source_used = "template"
+                print(f"[SEED] template inserted={inserted}")
+            else:
+                source_used = "none"
+                print("[SEED] template fallback produced no rows")
+
         assert_reserved_control_integrity(db_service, company_id)
     else:
         print("[SEED] skipping pool seed (already seeded)")
+        source_used = "existing"
 
     print("[SEED] enforcing mandatory controls...")
     db_service.ensure_mandatory_company_accounts(company_id)
@@ -129,16 +150,24 @@ def seed_company_coa_once(
     print("[SEED] company defaults done")
     assert_reserved_control_integrity(db_service, company_id)
 
+    final_seeded = _coa_is_seeded(db_service, company_id)
+
     out = {
-        "seeded": (not already_seeded),
+        "seeded": final_seeded,
         "inserted": inserted,
-        "source_used": "pool",
-        "reason": ("coa_already_seeded" if already_seeded else None),
+        "source_used": source_used or "none",
+        "reason": (
+            "coa_already_seeded"
+            if already_seeded
+            else "pool_seed_returned_zero"
+            if inserted == 0 and not final_seeded
+            else None
+        ),
     }
     print(f"[SEED] done -> {out}")
     return out
 
-from typing import Dict, Any, Optional, List
+
 
 
 def assert_reserved_control_integrity(db_service, company_id: int) -> None:

@@ -5483,6 +5483,7 @@ function getStoredUser() {
     badge.textContent = customerName || "Client";
     badge.classList.remove("hidden");
   }
+  window.updatePostingCompanyBadge = updatePostingCompanyBadge;
 
   function decorateApiHeadersWithDelegatedContext(headers) {
     if (!isDelegatedPostingMode()) return headers;
@@ -9935,8 +9936,8 @@ async function loadDashboard() {
    // renderPostingDashboardContextBanner(companyBadge, me, postingCtx);
   }
 
-  updatePostingCompanyBadge();
-  bindReturnToPractitionerWorkspace();
+  window.updatePostingCompanyBadge();
+  window.bindReturnToPractitionerWorkspace();
 
   // ✅ OPTIONAL: enforce delegated UI mode here
   if (isDelegated) {
