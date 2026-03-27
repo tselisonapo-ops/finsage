@@ -5544,11 +5544,16 @@ function toInputDate(value) {
 }
 
 function fillEngagementModalForm(row) {
-  document.getElementById("engagementId").value = row.id || "";
-  document.getElementById("engCustomerId").value = row.customer_id || "";
-  document.getElementById("engTargetCompanyId").value = row.target_company_id || "";
-  document.getElementById("engCode").value = row.engagement_code || "";
-  document.getElementById("engName").value = row.engagement_name || "";
+  const setValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value ?? "";
+  };
+
+  setValue("engagementId", row.id || "");
+  setValue("engCustomerId", row.customer_id || "");
+  setValue("engTargetCompanyId", row.target_company_id || "");
+  setValue("engCode", row.engagement_code || "");
+  setValue("engName", row.engagement_name || "");
 
   const categoryEl = document.getElementById("engTypeCategory");
   if (categoryEl) {
@@ -5556,38 +5561,26 @@ function fillEngagementModalForm(row) {
   }
 
   populateEngagementTypeOptions(categoryEl?.value || "", row.engagement_type || "");
-  document.getElementById("engType").value = row.engagement_type || "";
+  setValue("engType", row.engagement_type || "");
 
-  document.getElementById("engGovernanceMode").value = row.governance_mode || "";
-  document.getElementById("engReportingCycle").value = row.reporting_cycle || "";
-  document.getElementById("engStartDate").value = toInputDate(row.start_date);
-  document.getElementById("engDueDate").value = toInputDate(row.due_date);
-  document.getElementById("engEndDate").value = toInputDate(row.end_date);
-  document.getElementById("engPriority").value = row.priority || "normal";
-  document.getElementById("engWorkflowStage").value = row.workflow_stage || "planning";
-  document.getElementById("engManagerUserId").value = row.manager_user_id || "";
-  document.getElementById("engPartnerUserId").value = row.partner_user_id || "";
-  document.getElementById("engDescription").value = row.description || "";
-  document.getElementById("engScopeSummary").value = row.scope_summary || "";
+  setValue("engGovernanceMode", row.governance_mode || "");
+  setValue("engReportingCycle", row.reporting_cycle || "");
+  setValue("engStartDate", toInputDate(row.start_date));
+  setValue("engDueDate", toInputDate(row.due_date));
+  setValue("engEndDate", toInputDate(row.end_date));
+  setValue("engPriority", row.priority || "normal");
+  setValue("engWorkflowStage", row.workflow_stage || "planning");
+  setValue("engManagerUserId", row.manager_user_id || "");
+  setValue("engPartnerUserId", row.partner_user_id || "");
+  setValue("engDescription", row.description || "");
+  setValue("engScopeSummary", row.scope_summary || "");
+  setValue("engFinancialYearStart", row.financial_year_start || "");
 
-  if (document.getElementById("engFinancialYearStart")) {
-    document.getElementById("engFinancialYearStart").value =
-      row.financial_year_start || "";
-  }
-
-  if (document.getElementById("engCountry")) {
-    document.getElementById("engCountry").value = row.country || row.billing_country || "";
-  }
-
-  if (document.getElementById("engCurrency")) {
-    document.getElementById("engCurrency").value = row.currency || "";
-  }
+  setValue("engCountry", row.country || row.billing_country || "");
+  setValue("engCurrency", row.currency || "");
 
   populateIndustryOptions?.();
-
-  if (document.getElementById("engIndustry")) {
-    document.getElementById("engIndustry").value = row.industry || "";
-  }
+  setValue("engIndustry", row.industry || "");
 
   populateSubIndustryOptions(row.industry || "", row.sub_industry || "");
 }
