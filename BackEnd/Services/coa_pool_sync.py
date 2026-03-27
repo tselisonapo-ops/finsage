@@ -72,8 +72,8 @@ def sync_company_coa_from_pool(
         "5305",  # PPV control
         "1500",  # Inventory control
         "1000",  # Cash & Bank (optional protect)
-        "1010",  # Petty Cash (optional protect)
-        "1050",  # Bank Clearing (optional protect)
+        
+    
         "8010",  # Sales discount
         "8011",  # Purchases discount
 
@@ -96,8 +96,6 @@ def sync_company_coa_from_pool(
 
         # Banking
         "BS_CA_1000",
-        "BS_CA_1010",
-        "BS_CA_1050",
         "BS_CL_2105",
 
         # AR/AP
@@ -187,7 +185,7 @@ def sync_company_coa_from_pool(
     AND p.template_code_scoped IS NOT NULL
     AND p.template_code::text NOT IN (
         '1410','2310','2300','2105','9002','2200','2325','2350','1730','2360','2215','5305','1500',
-        '1000','1010','1050','8010','8011',
+        '1000','8010','8011',
         '1610','2610','2620','7110','6017','1590', '1000'
     )
     AND (

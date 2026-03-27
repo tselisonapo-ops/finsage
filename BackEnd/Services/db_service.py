@@ -463,8 +463,7 @@ def _normalize_coa_rows_codes(
 
             required_template_by_code = {
                 "BS_CA_1000": "1000",
-                "BS_CA_1010": "1010",
-                "BS_CA_1050": "1050",
+               
                 "BS_CL_2105": "2105",
                 "BS_CA_1410": "1410",
                 "BS_CL_2310": "2310",
@@ -18575,8 +18574,7 @@ class DatabaseService:
             "5305": "BS_PL_5305",
             "1500": "BS_CA_1500",
             "1000": "BS_CA_1000",
-            "1010": "BS_CA_1010",
-            "1050": "BS_CA_1050",
+           
             "8010": "PL_REV_ADJ_8010",
             "8011": "PL_EXP_ADJ_8011",
             "1610": "BS_NCA_1610",
@@ -18624,8 +18622,7 @@ class DatabaseService:
             "BS_CL_2300",
 
             "BS_CA_1000",
-            "BS_CA_1010",
-            "BS_CA_1050",
+           
             "BS_CL_2105",
 
             "BS_CA_9002",
@@ -18733,8 +18730,7 @@ class DatabaseService:
                 'BS_CL_2300',
 
                 'BS_CA_1000',
-                'BS_CA_1010',
-                'BS_CA_1050',
+              
                 'BS_CL_2105',
 
                 'BS_CA_9002',
