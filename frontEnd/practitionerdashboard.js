@@ -3747,6 +3747,11 @@ const WORKSPACE_REQUIRED_ENGAGEMENT_TYPES = new Set([
   "outsourced_finance"
 ]);
 
+const ENGAGEMENT_MODAL_STATE = {
+  mode: "create",   // "create" | "edit"
+  row: null
+};
+
 function populateIndustryOptions() {
   const industryEl = document.getElementById("engIndustry");
   console.log("[populateIndustryOptions] called");
@@ -4146,6 +4151,13 @@ function getEngagementRowActions(row) {
   const supportsReporting = engagementSupportsCapability(row, "reporting");
 
   return [
+
+    {
+      key: "edit",
+      label: "Edit Engagement",
+      enabled: canManage,
+      reason: !canManage ? "Manager or partner access required" : ""
+    },
     {
       key: "posting",
       label: "Start Posting",
@@ -4327,6 +4339,7 @@ function renderAssignmentDetail(row) {
   const title = document.getElementById("assignmentDetailTitle");
   const subtitle = document.getElementById("assignmentDetailSubtitle");
   const body = document.getElementById("assignmentDetailBody");
+  const editBtn = document.getElementById("assignmentEditEngagementBtn");
   const reportingBtn = document.getElementById("assignmentOpenReportingBtn");
   const deliverablesBtn = document.getElementById("assignmentOpenDeliverablesBtn");
 
@@ -4334,12 +4347,49 @@ function renderAssignmentDetail(row) {
 
   if (!row) {
     card.classList.add("hidden");
+
+    if (editBtn) editBtn.onclick = null;
+    if (reportingBtn) reportingBtn.onclick = null;
+    if (deliverablesBtn) deliverablesBtn.onclick = null;
+
     return;
   }
 
+  window.__CURRENT_ASSIGNMENT_ROW__ = row;
+
+  const managerName =
+    row.manager_name ||
+    row.manager_user_name ||
+    row.manager_display_name ||
+    [
+      row.manager_first_name,
+      row.manager_last_name
+    ].filter(Boolean).join(" ").trim() ||
+    "--";
+
+  const partnerName =
+    row.partner_name ||
+    row.partner_user_name ||
+    row.partner_display_name ||
+    [
+      row.partner_first_name,
+      row.partner_last_name
+    ].filter(Boolean).join(" ").trim() ||
+    "--";
+
+  const typeLabel =
+    humanizeRoleKey?.(row.engagement_type) ||
+    row.engagement_type ||
+    "--";
+
+  const statusLabel =
+    humanizeRoleKey?.(row.status) ||
+    row.status ||
+    "--";
+
   card.classList.remove("hidden");
   title.textContent = row.engagement_name || "Engagement Detail";
-  subtitle.textContent = `${row.customer_name || "--"} • ${row.engagement_type || "--"} • ${row.status || "--"}`;
+  subtitle.textContent = `${row.customer_name || "--"} • ${typeLabel} • ${statusLabel}`;
 
   body.innerHTML = `
     <div class="card-soft p-4">
@@ -4359,8 +4409,8 @@ function renderAssignmentDetail(row) {
         <div><span class="font-semibold">Start:</span> ${fmtDate(row.start_date)}</div>
         <div><span class="font-semibold">Due:</span> ${fmtDate(row.due_date)}</div>
         <div><span class="font-semibold">End:</span> ${fmtDate(row.end_date)}</div>
-        <div><span class="font-semibold">Manager:</span> ${esc(row.manager_user_id ? `User #${row.manager_user_id}` : "--")}</div>
-        <div><span class="font-semibold">Partner:</span> ${esc(row.partner_user_id ? `User #${row.partner_user_id}` : "--")}</div>
+        <div><span class="font-semibold">Manager:</span> ${esc(managerName)}</div>
+        <div><span class="font-semibold">Partner:</span> ${esc(partnerName)}</div>
       </div>
     </div>
 
@@ -4369,6 +4419,12 @@ function renderAssignmentDetail(row) {
       <div class="mt-2 text-sm text-slate-700">${esc(row.scope_summary || row.description || "--")}</div>
     </div>
   `;
+
+  if (editBtn) {
+    editBtn.onclick = () => {
+      openEditEngagementModal(row);
+    };
+  }
 
   if (reportingBtn) {
     reportingBtn.onclick = () => {
@@ -4526,6 +4582,12 @@ async function bindAssignmentsScreenEvents(me) {
       window.setPractitionerActiveEngagement?.(row);
 
       PR_SELECTED_ENGAGEMENT = row;
+
+      // ✅ ADD THIS BLOCK
+      if (action === "edit") {
+        openEditEngagementModal(row);
+        return;
+      }
 
       if (action === "open") {
         renderAssignmentDetail(row);
@@ -5200,7 +5262,7 @@ async function handleCreateEngagementSubmit() {
     const payload = readEngagementModalPayload();
 
     const requiresWorkspace = engagementTypeRequiresWorkspace(payload.engagement_type);
-    const workspace = payload.target_company || {};
+    const workspace = payload.target_company_id || {};
 
     if (requiresWorkspace) {
       const missing = [];
@@ -5268,6 +5330,85 @@ async function handleCreateEngagementSubmit() {
   }
 }
 
+async function handleEngagementModalSubmit() {
+  if (ENGAGEMENT_MODAL_STATE.mode === "edit") {
+    return handleUpdateEngagementSubmit();
+  }
+  return handleCreateEngagementSubmit();
+}
+
+async function handleUpdateEngagementSubmit() {
+  const engagementId = Number(document.getElementById("engagementId")?.value || 0);
+  if (!engagementId) {
+    alert("Missing engagement id.");
+    return;
+  }
+
+  const payload = readEngagementModalPayload();
+
+  const companyId =
+    window.currentUser?.company_id ||
+    window.__ME__?.company_id;
+
+  const token =
+    window.getToken?.() ||
+    localStorage.getItem("token") ||
+    "";
+
+  const saveBtn = document.getElementById("engagementModalSave");
+
+  try {
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+    }
+
+    const res = await fetch(
+      `${window.APP_CONFIG.API_BASE}/api/companies/${companyId}/engagements/${engagementId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || data?.message || "Failed to update engagement.");
+    }
+
+    closeEngagementModal();
+
+    await refreshAssignmentsScreen();
+
+    const selectedId =
+      Number(window.__CURRENT_ASSIGNMENT_ROW__?.id || 0) ||
+      engagementId;
+
+    if (selectedId) {
+      const updated = await loadEngagementDetail(selectedId);
+      if (updated) {
+        window.__CURRENT_ASSIGNMENT_ROW__ = updated;
+        PR_SELECTED_ENGAGEMENT = updated;
+        window.setPractitionerActiveEngagement?.(updated);
+        renderAssignmentDetail(updated);
+      }
+    }
+  } catch (err) {
+    console.error("handleUpdateEngagementSubmit failed:", err);
+    alert(err.message || "Failed to update engagement.");
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save Changes";
+    }
+  }
+}
+
 async function bindEngagementModalEvents() {
   document.getElementById("assignmentsCreateBtn")?.addEventListener("click", async () => {
     try {
@@ -5316,7 +5457,7 @@ async function bindEngagementModalEvents() {
   document.getElementById("engagementModalClose")?.addEventListener("click", closeEngagementModal);
   document.getElementById("engagementModalCancel")?.addEventListener("click", closeEngagementModal);
   document.getElementById("engagementModalBackdrop")?.addEventListener("click", closeEngagementModal);
-  document.getElementById("engagementModalSave")?.addEventListener("click", handleCreateEngagementSubmit);
+  document.getElementById("engagementModalSave")?.addEventListener("click", handleEngagementModalSubmit);
 
   document.getElementById("engAddCustomerBtn")?.addEventListener("click", () => {
     window.open("dashboard.html#screen=customers", "_blank");
@@ -5330,6 +5471,110 @@ async function bindEngagementModalEvents() {
 function engagementWorkspaceSetupRequired() {
   const type = document.getElementById("engType")?.value || "";
   return engagementTypeRequiresWorkspace(type);
+}
+
+function openCreateEngagementModal() {
+  ENGAGEMENT_MODAL_STATE.mode = "create";
+  ENGAGEMENT_MODAL_STATE.row = null;
+
+  resetEngagementModalForm();
+  populateEngagementTypeCategoryOptions?.();
+  populateEngagementTypeOptions?.();
+
+  document.getElementById("engagementModalTitle").textContent = "Create Engagement";
+  document.getElementById("engagementModalSave").textContent = "Create Engagement";
+
+  openEngagementModal();
+
+  requestAnimationFrame(() => {
+    populateIndustryOptions?.();
+    toggleEngagementWorkspaceSetup();
+  });
+}
+
+function openEditEngagementModal(row) {
+  if (!row) return;
+
+  ENGAGEMENT_MODAL_STATE.mode = "edit";
+  ENGAGEMENT_MODAL_STATE.row = row;
+
+  resetEngagementModalForm();
+
+  populateEngagementTypeCategoryOptions?.();
+  populateEngagementTypeOptions?.("", row.engagement_type || "");
+
+  document.getElementById("engagementModalTitle").textContent = "Update Engagement";
+  document.getElementById("engagementModalSave").textContent = "Save Changes";
+
+  fillEngagementModalForm(row);
+
+  openEngagementModal();
+
+  requestAnimationFrame(() => {
+    populateIndustryOptions?.();
+    toggleEngagementWorkspaceSetup();
+  });
+}
+
+function toInputDate(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    return String(value).slice(0, 10);
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fillEngagementModalForm(row) {
+  document.getElementById("engagementId").value = row.id || "";
+  document.getElementById("engCustomerId").value = row.customer_id || "";
+  document.getElementById("engTargetCompanyId").value = row.target_company_id || "";
+  document.getElementById("engCode").value = row.engagement_code || "";
+  document.getElementById("engName").value = row.engagement_name || "";
+
+  const categoryEl = document.getElementById("engTypeCategory");
+  if (categoryEl) {
+    categoryEl.value = "";
+  }
+
+  populateEngagementTypeOptions(categoryEl?.value || "", row.engagement_type || "");
+  document.getElementById("engType").value = row.engagement_type || "";
+
+  document.getElementById("engGovernanceMode").value = row.governance_mode || "";
+  document.getElementById("engReportingCycle").value = row.reporting_cycle || "";
+  document.getElementById("engStartDate").value = toInputDate(row.start_date);
+  document.getElementById("engDueDate").value = toInputDate(row.due_date);
+  document.getElementById("engEndDate").value = toInputDate(row.end_date);
+  document.getElementById("engPriority").value = row.priority || "normal";
+  document.getElementById("engWorkflowStage").value = row.workflow_stage || "planning";
+  document.getElementById("engManagerUserId").value = row.manager_user_id || "";
+  document.getElementById("engPartnerUserId").value = row.partner_user_id || "";
+  document.getElementById("engDescription").value = row.description || "";
+  document.getElementById("engScopeSummary").value = row.scope_summary || "";
+
+  if (document.getElementById("engFinancialYearStart")) {
+    document.getElementById("engFinancialYearStart").value =
+      row.financial_year_start || "";
+  }
+
+  if (document.getElementById("engCountry")) {
+    document.getElementById("engCountry").value = row.country || row.billing_country || "";
+  }
+
+  if (document.getElementById("engCurrency")) {
+    document.getElementById("engCurrency").value = row.currency || "";
+  }
+
+  populateIndustryOptions?.();
+
+  if (document.getElementById("engIndustry")) {
+    document.getElementById("engIndustry").value = row.industry || "";
+  }
+
+  populateSubIndustryOptions(row.industry || "", row.sub_industry || "");
 }
 
 function getEngagementWorkspacePayload() {

@@ -469,7 +469,218 @@ def create_engagement_route(cid: int):
     except Exception as e:
         current_app.logger.exception("create_engagement_route failed; body=%r", body)
         return _json_err(str(e), 500)
-    
+
+@engagements_bp.route("/api/companies/<int:cid>/engagements/<int:engagement_id>", methods=["PATCH", "OPTIONS"])
+@require_auth
+def update_engagement_route(cid: int, engagement_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    body = {}
+    try:
+        company_id = int(cid)
+
+        payload = request.jwt_payload or {}
+        deny = _deny_if_wrong_company(
+            payload,
+            int(company_id),
+            db_service=db_service,
+            engagement_id=int(engagement_id),
+        )
+        if deny:
+            return deny
+
+        if not _can_manage_engagements(payload):
+            return _json_err("You do not have permission to update engagements.", 403)
+
+        body = request.get_json(silent=True) or {}
+
+        current_user_id = _parse_int(payload.get("user_id") or payload.get("id"))
+
+        with db_service._conn_cursor() as (conn, cur):
+            before_row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
+            if not before_row:
+                return _json_err("Engagement not found.", 404)
+
+            # ---- resolve incoming values or keep existing ones ----
+            engagement_type = (
+                (body.get("engagement_type") or before_row.get("engagement_type") or "")
+                .strip()
+                .lower()
+            )
+            if not engagement_type:
+                return _json_err("engagement_type is required.", 400)
+
+            customer_id = _parse_int(body.get("customer_id")) or _parse_int(before_row.get("customer_id"))
+            if not customer_id:
+                return _json_err("customer_id is required.", 400)
+
+            financial_year_start = (
+                body.get("financial_year_start")
+                or body.get("financial_year_start_date")
+                or ""
+            )
+            financial_year_start = (financial_year_start or "").strip() or None
+            if financial_year_start:
+                try:
+                    financial_year_start = date.fromisoformat(financial_year_start).isoformat()
+                except ValueError:
+                    return _json_err("Invalid financial_year_start. Expected YYYY-MM-DD.", 400)
+
+            fiscal_year_end = (
+                derive_fiscal_year_end_from_start(financial_year_start)
+                if financial_year_start
+                else body.get("fiscal_year_end")
+            )
+
+            # ---- policy lookup, same as create route ----
+            policy = db_service.get_engagement_service_policy(cur, company_id, engagement_type)
+            if not policy or not policy.get("is_active"):
+                return _json_err("Invalid or inactive engagement_type.", 400)
+
+            requires_workspace = bool(policy.get("requires_workspace"))
+            allows_auto_provision = bool(policy.get("allows_auto_provision"))
+
+            workflow_stage = (
+                body.get("workflow_stage")
+                or before_row.get("workflow_stage")
+                or policy.get("default_workflow_stage")
+                or "planning"
+            ).strip().lower()
+
+            priority = (
+                body.get("priority")
+                or before_row.get("priority")
+                or policy.get("default_priority")
+                or "normal"
+            ).strip().lower()
+
+            # ---- workspace resolution / repair ----
+            target_company_id = (
+                _parse_int(body.get("target_company_id"))
+                or _parse_int(before_row.get("target_company_id"))
+                or None
+            )
+
+            workspace_status = before_row.get("workspace_status") or "not_required"
+            workspace_source = before_row.get("workspace_source")
+            target_company_source = before_row.get("target_company_source")
+
+            if requires_workspace:
+                # Explicit target company provided on update
+                if _parse_int(body.get("target_company_id")):
+                    target_company_id = _parse_int(body.get("target_company_id"))
+                    workspace_status = "linked"
+                    workspace_source = "manual_select"
+                    target_company_source = "manual_select"
+
+                # If still missing, try customer-linked company
+                if not target_company_id:
+                    customer = db_service.get_customer_workspace_link(cur, company_id, customer_id)
+                    if not customer:
+                        return _json_err("Customer not found.", 404)
+
+                    linked_company_id = customer.get("company_master_id")
+                    if linked_company_id:
+                        target_company_id = int(linked_company_id)
+                        workspace_status = "linked"
+                        workspace_source = "customer_link"
+                        target_company_source = "customer_link"
+
+                # If still missing, try auto-provision
+                if not target_company_id:
+                    if not allows_auto_provision:
+                        return _json_err(
+                            "This engagement type requires a linked company workspace.",
+                            400,
+                        )
+
+                    try:
+                        target_company_id, workspace_status, workspace_source = ensure_customer_workspace(
+                            cur=cur,
+                            company_id=company_id,
+                            customer_id=customer_id,
+                            current_user_id=current_user_id,
+                            onboarding_data=body.get("target_company") or {},
+                        )
+                        target_company_source = workspace_source
+                    except ValueError as ve:
+                        msg = ve.args[0]
+                        if isinstance(msg, dict):
+                            return _json_err(msg, 400)
+                        return _json_err(str(msg), 400)
+            else:
+                # non-workspace engagement
+                target_company_id = _parse_int(body.get("target_company_id")) or _parse_int(before_row.get("target_company_id")) or None
+                workspace_status = "not_required"
+                workspace_source = None
+                target_company_source = None
+
+            # ---- update engagement row ----
+            out_id = db_service.update_engagement(
+                cur,
+                company_id,
+                engagement_id=engagement_id,
+                updated_by_user_id=current_user_id,
+                engagement_code=body.get("engagement_code"),
+                engagement_name=body.get("engagement_name"),
+                engagement_type=engagement_type,
+                status=body.get("status"),
+                governance_mode=body.get("governance_mode"),
+                reporting_cycle=body.get("reporting_cycle"),
+                due_date=body.get("due_date"),
+                start_date=body.get("start_date"),
+                end_date=body.get("end_date"),
+                manager_user_id=_parse_int(body.get("manager_user_id")),
+                partner_user_id=_parse_int(body.get("partner_user_id")),
+                target_company_id=target_company_id,
+                description=body.get("description"),
+                scope_summary=body.get("scope_summary"),
+                fiscal_year_end=fiscal_year_end,
+                priority=priority,
+                workflow_stage=workflow_stage,
+                is_active=_parse_bool(body.get("is_active")),
+                requires_workspace=requires_workspace,
+                workspace_status=workspace_status,
+                workspace_source=workspace_source,
+                target_company_source=target_company_source,
+            )
+
+            if not out_id:
+                return _json_err("Engagement not found.", 404)
+
+            if "manager_user_id" in body or "partner_user_id" in body:
+                db_service.assign_manager_and_partner(
+                    cur,
+                    company_id,
+                    engagement_id=engagement_id,
+                    manager_user_id=_parse_int(body.get("manager_user_id")),
+                    partner_user_id=_parse_int(body.get("partner_user_id")),
+                    updated_by_user_id=current_user_id,
+                )
+
+            row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
+
+            _engagement_audit(
+                cur=cur,
+                company_id=company_id,
+                payload=payload,
+                action="update_engagement",
+                entity_type="engagement",
+                entity_id=engagement_id,
+                entity_ref=(row.get("engagement_name") or before_row.get("engagement_name") or f"ENG-{engagement_id}"),
+                before_json=before_row,
+                after_json=row,
+                message=f"Updated engagement {engagement_id}",
+            )
+
+            conn.commit()
+            return _json_ok({"row": row})
+
+    except Exception as e:
+        current_app.logger.exception("update_engagement_route failed; body=%r", body)
+        return _json_err(str(e), 500)
+
 @engagements_bp.route("/api/companies/<int:cid>/engagements", methods=["GET", "OPTIONS"])
 @require_auth
 def list_engagements_route(cid: int):
@@ -553,92 +764,6 @@ def get_engagement_route(cid: int, engagement_id: int):
         current_app.logger.exception("get_engagement_route failed")
         return _json_err(str(e), 500)
 
-
-@engagements_bp.route("/api/companies/<int:cid>/engagements/<int:engagement_id>", methods=["PATCH", "OPTIONS"])
-@require_auth
-def update_engagement_route(cid: int, engagement_id: int):
-    if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
-
-    try:
-        company_id = int(cid)
-
-        payload = request.jwt_payload or {}
-        deny = _deny_if_wrong_company(
-            payload,
-            int(company_id),
-            db_service=db_service,
-            engagement_id=int(engagement_id),
-        )
-        if deny:
-            return deny
-
-        if not _can_manage_engagements(payload):
-            return _json_err("You do not have permission to update engagements.", 403)
-
-        body = request.get_json(silent=True) or {}
-
-        with db_service._conn_cursor() as (conn, cur):
-            before_row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
-            if not before_row:
-                return _json_err("Engagement not found.", 404)
-
-            out_id = db_service.update_engagement(
-                cur,
-                company_id,
-                engagement_id=engagement_id,
-                updated_by_user_id=_parse_int(payload.get("id")),
-                engagement_code=body.get("engagement_code"),
-                engagement_name=body.get("engagement_name"),
-                engagement_type=body.get("engagement_type"),
-                status=body.get("status"),
-                governance_mode=body.get("governance_mode"),
-                reporting_cycle=body.get("reporting_cycle"),
-                due_date=body.get("due_date"),
-                start_date=body.get("start_date"),
-                end_date=body.get("end_date"),
-                manager_user_id=_parse_int(body.get("manager_user_id")),
-                partner_user_id=_parse_int(body.get("partner_user_id")),
-                description=body.get("description"),
-                scope_summary=body.get("scope_summary"),
-                fiscal_year_end=body.get("fiscal_year_end"),
-                priority=body.get("priority"),
-                workflow_stage=body.get("workflow_stage"),
-                is_active=_parse_bool(body.get("is_active")),
-            )
-
-            if not out_id:
-                return _json_err("Engagement not found.", 404)
-
-            if "manager_user_id" in body or "partner_user_id" in body:
-                db_service.assign_manager_and_partner(
-                    cur,
-                    company_id,
-                    engagement_id=engagement_id,
-                    manager_user_id=_parse_int(body.get("manager_user_id")),
-                    partner_user_id=_parse_int(body.get("partner_user_id")),
-                    updated_by_user_id=_parse_int(payload.get("id")),
-                )
-
-            row = db_service.get_engagement(cur, company_id, engagement_id=engagement_id)
-
-            _engagement_audit(
-                cur=cur,
-                company_id=company_id,
-                payload=payload,
-                action="update_engagement",
-                entity_type="engagement",
-                entity_id=engagement_id,
-                entity_ref=(row.get("engagement_name") or before_row.get("engagement_name") or f"ENG-{engagement_id}"),
-                before_json=before_row,
-                after_json=row,
-                message=f"Updated engagement {engagement_id}",
-            )
-            return _json_ok({"row": row})
-
-    except Exception as e:
-        current_app.logger.exception("update_engagement_route failed")
-        return _json_err(str(e), 500)
 
 
 @engagements_bp.route(

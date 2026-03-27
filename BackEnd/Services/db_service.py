@@ -40852,6 +40852,10 @@ class DatabaseService:
         priority: str = None,
         workflow_stage: str = None,
         is_active: bool = None,
+        requires_workspace: bool = None,
+        workspace_status: str = None,
+        workspace_source: str = None,
+        target_company_source: str = None,
     ):
         schema = self.company_schema(company_id)
 
@@ -40876,6 +40880,10 @@ class DatabaseService:
                 priority = COALESCE(NULLIF(BTRIM(%s), ''), priority),
                 workflow_stage = COALESCE(NULLIF(BTRIM(%s), ''), workflow_stage),
                 is_active = COALESCE(%s, is_active),
+                requires_workspace = COALESCE(%s, requires_workspace),
+                workspace_status = COALESCE(NULLIF(BTRIM(%s), ''), workspace_status),
+                workspace_source = COALESCE(NULLIF(BTRIM(%s), ''), workspace_source),
+                target_company_source = COALESCE(NULLIF(BTRIM(%s), ''), target_company_source),
                 updated_by_user_id = %s,
                 updated_at = NOW()
             WHERE company_id = %s
@@ -40901,6 +40909,10 @@ class DatabaseService:
             priority,
             workflow_stage,
             is_active,
+            requires_workspace,
+            workspace_status,
+            workspace_source,
+            target_company_source,
             updated_by_user_id,
             company_id,
             engagement_id,

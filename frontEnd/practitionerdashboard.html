@@ -3914,13 +3914,32 @@ window.safeRedirect = function (url, mode = "href") {
           <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div class="panel-title" id="assignmentDetailTitle">Engagement Detail</div>
-              <div class="panel-subtitle mt-1" id="assignmentDetailSubtitle">Select an engagement to see more detail.</div>
+              <div class="panel-subtitle mt-1" id="assignmentDetailSubtitle">
+                Select an engagement to see more detail.
+              </div>
             </div>
+
             <div class="flex flex-wrap gap-2">
-              <button id="assignmentOpenReportingBtn" class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white">
+              <!-- ⭐ NEW: Edit Engagement -->
+              <button
+                id="assignmentEditEngagementBtn"
+                class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Edit Engagement
+              </button>
+
+              <!-- Existing -->
+              <button
+                id="assignmentOpenReportingBtn"
+                class="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white"
+              >
                 Open Reporting Overview
               </button>
-              <button id="assignmentOpenDeliverablesBtn" class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
+
+              <button
+                id="assignmentOpenDeliverablesBtn"
+                class="rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+              >
                 Pending Deliverables
               </button>
             </div>
@@ -7832,6 +7851,8 @@ window.safeRedirect = function (url, mode = "href") {
           Close
         </button>
       </div>
+
+      <input type="hidden" id="engagementId" />
 
       <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1">
         <div>
