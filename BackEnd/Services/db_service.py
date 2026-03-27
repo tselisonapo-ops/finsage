@@ -16686,100 +16686,7 @@ class DatabaseService:
             RETURN NEW;
         END; $$ LANGUAGE plpgsql;
 
-        -- ==================================================
-        -- LEDGER
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.ledger (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-            journal_id INT REFERENCES {schema}.journal(id),
-            customer_id INT NULL,
-            date DATE NOT NULL,
-            ref TEXT NULL,
-            account TEXT NOT NULL,
-            debit NUMERIC(18,2) NOT NULL DEFAULT 0,
-            credit NUMERIC(18,2) NOT NULL DEFAULT 0,
-            source TEXT NULL,
-            source_id INT NULL,
-            memo TEXT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
 
-        UPDATE {schema}.ledger
-        SET company_id = {company_id}
-        WHERE company_id IS NULL;
-
-        ALTER TABLE {schema}.ledger
-        ALTER COLUMN company_id SET NOT NULL;
-
-        ALTER TABLE {schema}.ledger
-        ALTER COLUMN company_id SET DEFAULT {company_id};
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_id_idx
-        ON {schema}.ledger(company_id);
-
-        ALTER TABLE {schema}.ledger
-        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_vendor_date_idx
-        ON {schema}.ledger(company_id, vendor_id, date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_vendor_idx
-        ON {schema}.ledger(company_id, account, vendor_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_customer_idx
-        ON {schema}.ledger(company_id, account, customer_id);
-
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS company_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS journal_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS customer_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS vendor_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source TEXT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS memo TEXT;
-
-        DO $ledger_fk$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_ledger_customer_fk'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.ledger
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (customer_id)
-                    REFERENCES %I.customers(id)',
-                    '{schema}',
-                    '{schema}_ledger_customer_fk',
-                    '{schema}'
-                );
-            END IF;
-        END $ledger_fk$;
-
-        DO $ledger_vendor_fk$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_ledger_vendor_fk'
-            AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.ledger
-            ADD CONSTRAINT %I
-            FOREIGN KEY (vendor_id)
-            REFERENCES %I.vendors(id)',
-            '{schema}',
-            '{schema}_ledger_vendor_fk',
-            '{schema}'
-            );
-        END IF;
-        END
-        $ledger_vendor_fk$;
 
         -- ==================================================
         -- AUDIT TRAIL
@@ -17248,7 +17155,101 @@ class DatabaseService:
         END IF;
         END $ck_support_valid$;
 
+        -- ==================================================
+        -- LEDGER
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.ledger (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            journal_id INT REFERENCES {schema}.journal(id),
+            customer_id INT NULL,
+            date DATE NOT NULL,
+            ref TEXT NULL,
+            account TEXT NOT NULL,
+            debit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
+        UPDATE {schema}.ledger
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.ledger
+        ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.ledger
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_id_idx
+        ON {schema}.ledger(company_id);
+
+        ALTER TABLE {schema}.ledger
+        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_vendor_date_idx
+        ON {schema}.ledger(company_id, vendor_id, date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_vendor_idx
+        ON {schema}.ledger(company_id, account, vendor_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_customer_idx
+        ON {schema}.ledger(company_id, account, customer_id);
+
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS journal_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS customer_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS vendor_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source TEXT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS memo TEXT;
+
+        DO $ledger_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ledger_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ledger
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)',
+                    '{schema}',
+                    '{schema}_ledger_customer_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $ledger_fk$;
+
+        DO $ledger_vendor_fk$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_ledger_vendor_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.ledger
+            ADD CONSTRAINT %I
+            FOREIGN KEY (vendor_id)
+            REFERENCES %I.vendors(id)',
+            '{schema}',
+            '{schema}_ledger_vendor_fk',
+            '{schema}'
+            );
+        END IF;
+        END
+        $ledger_vendor_fk$;
+        
         """
         ddl_ap = """
         -- ==================================================
