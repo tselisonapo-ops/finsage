@@ -563,26 +563,24 @@ def update_engagement_route(cid: int, engagement_id: int):
             ).strip().lower()
 
             # ---- workspace resolution / repair ----
-            target_company_id = (
-                _parse_int(body.get("target_company_id"))
-                or _parse_int(before_row.get("target_company_id"))
-                or None
-            )
+            before_target_company_id = _parse_int(before_row.get("target_company_id"))
+            incoming_target_company_id = _parse_int(body.get("target_company_id"))
 
+            target_company_id = before_target_company_id
             workspace_status = before_row.get("workspace_status") or "not_required"
             workspace_source = before_row.get("workspace_source")
             target_company_source = before_row.get("target_company_source")
 
             if requires_workspace:
-                # Explicit target company provided on update
-                if _parse_int(body.get("target_company_id")):
-                    target_company_id = _parse_int(body.get("target_company_id"))
+                # Only relink if caller explicitly changed the target company
+                if incoming_target_company_id and incoming_target_company_id != before_target_company_id:
+                    target_company_id = incoming_target_company_id
                     workspace_status = "linked"
                     workspace_source = "manual_select"
                     target_company_source = "manual_select"
 
-                # If still missing, try customer-linked company
-                if not target_company_id:
+                # If no workspace exists at all yet, try customer-linked company
+                elif not target_company_id:
                     customer = db_service.get_customer_workspace_link(cur, company_id, customer_id)
                     if not customer:
                         return _json_err("Customer not found.", 404)
@@ -616,9 +614,9 @@ def update_engagement_route(cid: int, engagement_id: int):
                         if isinstance(msg, dict):
                             return _json_err(msg, 400)
                         return _json_err(str(msg), 400)
+
             else:
-                # non-workspace engagement
-                target_company_id = _parse_int(body.get("target_company_id")) or _parse_int(before_row.get("target_company_id")) or None
+                target_company_id = None
                 workspace_status = "not_required"
                 workspace_source = None
                 target_company_source = None

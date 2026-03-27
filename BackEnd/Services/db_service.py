@@ -40881,7 +40881,10 @@ class DatabaseService:
                 workflow_stage = COALESCE(NULLIF(BTRIM(%s), ''), workflow_stage),
                 is_active = COALESCE(%s, is_active),
                 requires_workspace = COALESCE(%s, requires_workspace),
-                workspace_status = COALESCE(NULLIF(BTRIM(%s), ''), workspace_status),
+                workspace_status = CASE
+                    WHEN NULLIF(BTRIM(%s), '') IS NULL THEN workspace_status
+                    ELSE NULLIF(BTRIM(%s), '')
+                END,                
                 workspace_source = COALESCE(NULLIF(BTRIM(%s), ''), workspace_source),
                 target_company_source = COALESCE(NULLIF(BTRIM(%s), ''), target_company_source),
                 updated_by_user_id = %s,
