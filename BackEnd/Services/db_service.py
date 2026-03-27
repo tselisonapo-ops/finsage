@@ -5529,6 +5529,101 @@ class DatabaseService:
         ON {schema}.journal(company_id, source, source_id);
 
         -- ==================================================
+        -- LEDGER
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.ledger (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            journal_id INT REFERENCES {schema}.journal(id),
+            customer_id INT NULL,
+            date DATE NOT NULL,
+            ref TEXT NULL,
+            account TEXT NOT NULL,
+            debit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        UPDATE {schema}.ledger
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.ledger
+        ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.ledger
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_id_idx
+        ON {schema}.ledger(company_id);
+
+        ALTER TABLE {schema}.ledger
+        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_vendor_date_idx
+        ON {schema}.ledger(company_id, vendor_id, date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_vendor_idx
+        ON {schema}.ledger(company_id, account, vendor_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_customer_idx
+        ON {schema}.ledger(company_id, account, customer_id);
+
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS journal_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS customer_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS vendor_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source TEXT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS memo TEXT;
+
+        DO $ledger_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ledger_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ledger
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)',
+                    '{schema}',
+                    '{schema}_ledger_customer_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $ledger_fk$;
+
+        DO $ledger_vendor_fk$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_ledger_vendor_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.ledger
+            ADD CONSTRAINT %I
+            FOREIGN KEY (vendor_id)
+            REFERENCES %I.vendors(id)',
+            '{schema}',
+            '{schema}_ledger_vendor_fk',
+            '{schema}'
+            );
+        END IF;
+        END
+        $ledger_vendor_fk$;
+
+        -- ==================================================
         -- CUSTOMERS
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.customers (
@@ -6322,8 +6417,7 @@ class DatabaseService:
             updated_by_user_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-
+        );
 
         ALTER TABLE {schema}.review_queue
             ADD COLUMN IF NOT EXISTS company_id INT,
@@ -6345,7 +6439,7 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
             ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
             ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
         UPDATE {schema}.review_queue
         SET company_id = {company_id}
@@ -6389,7 +6483,7 @@ class DatabaseService:
             ALTER COLUMN review_state SET DEFAULT 'pending',
             ALTER COLUMN is_active SET DEFAULT TRUE,
             ALTER COLUMN created_at SET DEFAULT NOW(),
-            ALTER COLUMN updated_at SET DEFAULT NOW()
+            ALTER COLUMN updated_at SET DEFAULT NOW();
 
         ALTER TABLE {schema}.review_queue
             ALTER COLUMN company_id SET NOT NULL,
@@ -6401,28 +6495,25 @@ class DatabaseService:
             ALTER COLUMN review_state SET NOT NULL,
             ALTER COLUMN is_active SET NOT NULL,
             ALTER COLUMN created_at SET NOT NULL,
-            ALTER COLUMN updated_at SET NOT NULL
+            ALTER COLUMN updated_at SET NOT NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_review_queue_company_idx
-            ON {schema}.review_queue(company_id)
+            ON {schema}.review_queue(company_id);
 
         CREATE INDEX IF NOT EXISTS {schema}_review_queue_engagement_idx
-            ON {schema}.review_queue(engagement_id)
+            ON {schema}.review_queue(engagement_id);
 
         CREATE INDEX IF NOT EXISTS {schema}_review_queue_queue_type_idx
-            ON {schema}.review_queue(queue_type)
+            ON {schema}.review_queue(queue_type);
 
         CREATE INDEX IF NOT EXISTS {schema}_review_queue_status_idx
-            ON {schema}.review_queue(status)
-
+            ON {schema}.review_queue(status);
 
         CREATE INDEX IF NOT EXISTS {schema}_review_queue_due_date_idx
-            ON {schema}.review_queue(due_date)
-
+            ON {schema}.review_queue(due_date);
 
         CREATE INDEX IF NOT EXISTS {schema}_review_queue_active_idx
-            ON {schema}.review_queue(is_active)
-
+            ON {schema}.review_queue(is_active);
 
         DO $$
         BEGIN
@@ -6431,7 +6522,7 @@ class DatabaseService:
                 FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
                 WHERE c.conname = '{schema}_review_queue_engagement_fk'
-                    AND n.nspname = '{schema}'
+                AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.review_queue
@@ -6448,7 +6539,7 @@ class DatabaseService:
                 FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
                 WHERE c.conname = '{schema}_review_queue_reviewer_fk'
-                    AND n.nspname = '{schema}'
+                AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.review_queue
@@ -6465,7 +6556,7 @@ class DatabaseService:
                 FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
                 WHERE c.conname = '{schema}_review_queue_manager_fk'
-                    AND n.nspname = '{schema}'
+                AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.review_queue
@@ -16609,84 +16700,6 @@ class DatabaseService:
 
         END $$;
 
-        -- ==================================================
-        -- ✅ STANDARDISE company_id ON TABLES THAT LACK IT
-        --    (legacy compatibility for API queries that filter company_id)
-        -- ==================================================
-
-        DO $$
-        DECLARE
-            cid INT := {company_id};
-            t TEXT;
-            tables TEXT[] := ARRAY[
-                'coa',
-                'customers',
-                'vendors',
-                'journal',
-                'ledger',
-                'notes',
-                'service_items',
-                'inventory_items',
-                'inventory_layers',
-                'pos_summaries',
-                'pos_summary_lines',
-                'trial_balance',
-                'lease_schedule'
-                
-            ];
-        BEGIN
-            FOREACH t IN ARRAY tables LOOP
-                -- add column if missing
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_schema = '{schema}'
-                    AND table_name = t
-                    AND column_name = 'company_id'
-                ) THEN
-                    EXECUTE format('ALTER TABLE %I.%I ADD COLUMN company_id INT', '{schema}', t);
-                END IF;
-
-                -- backfill NULLs
-                EXECUTE format('UPDATE %I.%I SET company_id = $1 WHERE company_id IS NULL', '{schema}', t)
-                USING cid;
-
-                -- set NOT NULL (only if no NULLs remain)
-                IF EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_schema = '{schema}'
-                    AND table_name = t
-                    AND column_name = 'company_id'
-                    AND is_nullable = 'YES'
-                ) THEN
-                    EXECUTE format('ALTER TABLE %I.%I ALTER COLUMN company_id SET NOT NULL', '{schema}', t);
-                END IF;
-
-                -- index for faster filters
-                EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I(company_id)',
-                            '{schema}_' || t || '_company_id_idx',
-                            '{schema}', t);
-            END LOOP;
-        END $$;
-
-        -- ==================================================
-        -- APPROVALS + AUDIT (FULL, UPDATED, SAFE-ADDITIVE)
-        -- Includes: checks, FKs, uniqueness, composite integrity, indexes,
-        -- and optional updated_at triggers (touch function reused).
-        -- ==================================================
-
-        -- ==================================================
-        -- OPTIONAL: shared "touch updated_at" trigger function
-        -- ==================================================
-        CREATE OR REPLACE FUNCTION {schema}.touch_updated_at()
-        RETURNS trigger AS $$
-        BEGIN
-            NEW.updated_at = NOW();
-            RETURN NEW;
-        END; $$ LANGUAGE plpgsql;
-
-
 
         -- ==================================================
         -- AUDIT TRAIL
@@ -17155,101 +17168,83 @@ class DatabaseService:
         END IF;
         END $ck_support_valid$;
 
+       -- ==================================================
+        -- ✅ STANDARDISE company_id ON TABLES THAT LACK IT
+        --    (legacy compatibility for API queries that filter company_id)
         -- ==================================================
-        -- LEDGER
+
+        DO $$
+        DECLARE
+            cid INT := {company_id};
+            t TEXT;
+            tables TEXT[] := ARRAY[
+                'coa',
+                'customers',
+                'vendors',
+                'journal',
+                'ledger',
+                'notes',
+                'service_items',
+                'inventory_items',
+                'inventory_layers',
+                'pos_summaries',
+                'pos_summary_lines',
+                'trial_balance',
+                'lease_schedule'
+                
+            ];
+        BEGIN
+            FOREACH t IN ARRAY tables LOOP
+                -- add column if missing
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = '{schema}'
+                    AND table_name = t
+                    AND column_name = 'company_id'
+                ) THEN
+                    EXECUTE format('ALTER TABLE %I.%I ADD COLUMN company_id INT', '{schema}', t);
+                END IF;
+
+                -- backfill NULLs
+                EXECUTE format('UPDATE %I.%I SET company_id = $1 WHERE company_id IS NULL', '{schema}', t)
+                USING cid;
+
+                -- set NOT NULL (only if no NULLs remain)
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = '{schema}'
+                    AND table_name = t
+                    AND column_name = 'company_id'
+                    AND is_nullable = 'YES'
+                ) THEN
+                    EXECUTE format('ALTER TABLE %I.%I ALTER COLUMN company_id SET NOT NULL', '{schema}', t);
+                END IF;
+
+                -- index for faster filters
+                EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I(company_id)',
+                            '{schema}_' || t || '_company_id_idx',
+                            '{schema}', t);
+            END LOOP;
+        END $$;
+
         -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.ledger (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-            journal_id INT REFERENCES {schema}.journal(id),
-            customer_id INT NULL,
-            date DATE NOT NULL,
-            ref TEXT NULL,
-            account TEXT NOT NULL,
-            debit NUMERIC(18,2) NOT NULL DEFAULT 0,
-            credit NUMERIC(18,2) NOT NULL DEFAULT 0,
-            source TEXT NULL,
-            source_id INT NULL,
-            memo TEXT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
+        -- APPROVALS + AUDIT (FULL, UPDATED, SAFE-ADDITIVE)
+        -- Includes: checks, FKs, uniqueness, composite integrity, indexes,
+        -- and optional updated_at triggers (touch function reused).
+        -- ==================================================
 
-        UPDATE {schema}.ledger
-        SET company_id = {company_id}
-        WHERE company_id IS NULL;
-
-        ALTER TABLE {schema}.ledger
-        ALTER COLUMN company_id SET NOT NULL;
-
-        ALTER TABLE {schema}.ledger
-        ALTER COLUMN company_id SET DEFAULT {company_id};
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_id_idx
-        ON {schema}.ledger(company_id);
-
-        ALTER TABLE {schema}.ledger
-        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_vendor_date_idx
-        ON {schema}.ledger(company_id, vendor_id, date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_vendor_idx
-        ON {schema}.ledger(company_id, account, vendor_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_customer_idx
-        ON {schema}.ledger(company_id, account, customer_id);
-
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS company_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS journal_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS customer_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS vendor_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source TEXT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS memo TEXT;
-
-        DO $ledger_fk$
+        -- ==================================================
+        -- OPTIONAL: shared "touch updated_at" trigger function
+        -- ==================================================
+        CREATE OR REPLACE FUNCTION {schema}.touch_updated_at()
+        RETURNS trigger AS $$
         BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_ledger_customer_fk'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.ledger
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (customer_id)
-                    REFERENCES %I.customers(id)',
-                    '{schema}',
-                    '{schema}_ledger_customer_fk',
-                    '{schema}'
-                );
-            END IF;
-        END $ledger_fk$;
+            NEW.updated_at = NOW();
+            RETURN NEW;
+        END; $$ LANGUAGE plpgsql;
 
-        DO $ledger_vendor_fk$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_ledger_vendor_fk'
-            AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.ledger
-            ADD CONSTRAINT %I
-            FOREIGN KEY (vendor_id)
-            REFERENCES %I.vendors(id)',
-            '{schema}',
-            '{schema}_ledger_vendor_fk',
-            '{schema}'
-            );
-        END IF;
-        END
-        $ledger_vendor_fk$;
-        
         """
         ddl_ap = """
         -- ==================================================
@@ -17812,12 +17807,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v42")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v43")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=42,
+                    migration_version=43,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
