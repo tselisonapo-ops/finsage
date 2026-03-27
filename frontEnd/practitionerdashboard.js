@@ -3009,42 +3009,172 @@ function humanizeScope(scope) {
   return scope || "--";
 }
 
-const POSTING_ENGAGEMENT_TYPES = new Set([
-  "bookkeeping",
-  "monthly_bookkeeping",
-  "write_up",
-  "management_accounts",
-  "vat",
-  "payroll",
-  "tax",
-  "tax_compliance",
-  "cleanup",
-  "migration",
-  "outsourced_finance"
-]);
+function normalizeEngagementTypeKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+}
 
-const WORKING_PAPERS_ENGAGEMENT_TYPES = new Set([
-  "audit",
-  "audit_support",
-  "internal_audit",
-  "review",
-  "independent_review",
-  "compilation",
-  "annual_financial_statements",
-  "year_end_financials",
-  "tax",
-  "bookkeeping"
-]);
+const ENGAGEMENT_TYPE_OPTIONS = [
+  { value: "bookkeeping", label: "Bookkeeping" },
+  { value: "monthly_bookkeeping", label: "Monthly Bookkeeping" },
+  { value: "write_up", label: "Write-up" },
+  { value: "management_accounts", label: "Management Accounts" },
+  { value: "vat", label: "VAT" },
+  { value: "payroll", label: "Payroll" },
+  { value: "tax", label: "Tax" },
+  { value: "tax_compliance", label: "Tax Compliance" },
+  { value: "annual_financial_statements", label: "Annual Financial Statements" },
+  { value: "year_end_financials", label: "Year-end Financials" },
+  { value: "compilation", label: "Compilation" },
+  { value: "review", label: "Review" },
+  { value: "audit", label: "Audit" },
+  { value: "audit_support", label: "Audit Support" },
+  { value: "internal_audit", label: "Internal Audit" },
+  { value: "independent_review", label: "Independent Review" },
+  { value: "advisory", label: "Advisory" },
+  { value: "consulting", label: "Consulting" },
+  { value: "secretarial", label: "Secretarial" },
+  { value: "compliance", label: "Compliance" },
+  { value: "cleanup", label: "Cleanup" },
+  { value: "migration", label: "Migration" },
+  { value: "training", label: "Training" },
+  { value: "outsourced_finance", label: "Outsourced Finance" }
+];
 
-const REPORTING_ENGAGEMENT_TYPES = new Set([
-  "bookkeeping",
-  "management_accounts",
-  "compilation",
-  "annual_financial_statements",
-  "year_end_financials",
-  "review",
-  "audit"
-]);
+const ENGAGEMENT_CAPABILITIES = {
+  bookkeeping: ["posting", "working_papers", "reporting", "workspace"],
+  monthly_bookkeeping: ["posting", "reporting", "workspace"],
+  write_up: ["posting", "reporting", "workspace"],
+  management_accounts: ["posting", "reporting", "workspace"],
+  vat: ["posting", "workspace", "tax"],
+  payroll: ["posting", "workspace", "payroll"],
+  tax: ["posting", "working_papers", "reporting", "workspace", "tax"],
+  tax_compliance: ["posting", "workspace", "tax"],
+  cleanup: ["posting", "workspace"],
+  migration: ["posting", "workspace"],
+  outsourced_finance: ["posting", "reporting", "workspace"],
+
+  annual_financial_statements: ["reporting", "working_papers"],
+  year_end_financials: ["reporting", "working_papers"],
+  compilation: ["reporting", "working_papers"],
+  review: ["reporting", "working_papers"],
+  independent_review: ["reporting", "working_papers"],
+  audit: ["reporting", "working_papers"],
+  audit_support: ["working_papers"],
+  internal_audit: ["working_papers"],
+
+  advisory: ["reporting", "advisory"],
+  consulting: ["reporting", "advisory"],
+  secretarial: [],
+  compliance: [],
+  training: []
+};
+
+function getEngagementCapabilities(input) {
+  const row = input || {};
+
+  const type = normalizeEngagementTypeKey(
+    typeof row === "string" ? row : row.engagement_type
+  );
+
+  const base = Array.isArray(ENGAGEMENT_CAPABILITIES[type])
+    ? ENGAGEMENT_CAPABILITIES[type]
+    : [];
+
+  const extra = Array.isArray(row.capabilities)
+    ? row.capabilities.map(normalizeEngagementTypeKey)
+    : [];
+
+  const inferred = [];
+
+  // ✅ Explicit override (highest priority)
+  if (
+    row.requires_posting === true &&
+    !base.includes("posting") &&
+    !extra.includes("posting")
+  ) {
+    inferred.push("posting");
+  }
+
+  // ✅ Legacy fix for old engagements (THIS is what you needed)
+  if (
+    ["annual_financial_statements", "year_end_financials", "compilation"].includes(type)
+  ) {
+    const workflowStage = String(row.workflow_stage || "").toLowerCase();
+    const scope = String(row.scope_summary || "").toLowerCase();
+
+    // If any signal of actual posting work → allow posting
+    if (
+      ["processing", "bookkeeping", "cleanup", "preparation"].includes(workflowStage) ||
+      /post|capture|bookkeep|cleanup|write[- ]?up|reconstruct/.test(scope)
+    ) {
+      if (!base.includes("posting") && !extra.includes("posting")) {
+        inferred.push("posting");
+      }
+    }
+  }
+
+  return new Set([...base, ...extra, ...inferred]);
+}
+
+function engagementSupportsCapability(input, capability) {
+  return getEngagementCapabilities(input).has(
+    normalizeEngagementTypeKey(capability)
+  );
+}
+
+const ENGAGEMENT_CATEGORY_OPTIONS = [
+  { value: "", label: "All categories" },
+  { value: "posting", label: "Posting" },
+  { value: "reporting", label: "Reporting" },
+  { value: "working_papers", label: "Working Papers" },
+  { value: "tax", label: "Tax" },
+  { value: "payroll", label: "Payroll" },
+  { value: "advisory", label: "Advisory" }
+];
+
+function getTypesForCategory(categoryValue) {
+  const cat = normalizeEngagementTypeKey(categoryValue);
+  if (!cat) return ENGAGEMENT_TYPE_OPTIONS;
+
+  return ENGAGEMENT_TYPE_OPTIONS.filter(opt =>
+    engagementSupportsCapability(opt.value, cat)
+  );
+}
+
+function populateEngagementTypeCategoryOptions() {
+  const el = document.getElementById("engTypeCategory");
+  if (!el) return;
+
+  const current = el.value || "";
+  el.innerHTML = ENGAGEMENT_CATEGORY_OPTIONS
+    .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+    .join("");
+  el.value = current;
+}
+
+function populateEngagementTypeOptions(categoryValue = "", selectedValue = "") {
+  const el = document.getElementById("engType");
+  if (!el) return;
+
+  const items = getTypesForCategory(categoryValue);
+  el.innerHTML =
+    `<option value="">Select type</option>` +
+    items.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join("");
+
+  if (selectedValue && items.some(opt => opt.value === selectedValue)) {
+    el.value = selectedValue;
+  } else {
+    el.value = "";
+  }
+}
+
+function engagementTypeRequiresWorkspace(typeOrRow) {
+  return engagementSupportsCapability(typeOrRow, "workspace");
+}
 
 function normalizeRoleKey(v) {
   return String(v || "")
@@ -4003,20 +4133,17 @@ function getEngagementRowActions(row) {
   const me = window.currentUser || window.__ME__ || {};
   const perms = me?.permissions || {};
 
-  const engagementType = normalizeRoleKey(row.engagement_type || "");
   const status = normalizeRoleKey(row.status || "");
   const closed = ["completed", "cancelled", "archived"].includes(status);
 
-  // ✅ USE your main access resolver
   const access = resolveMyEngagementAccess(row);
-
   const canManage = access.isManagerLike;
   const canWork = access.isOpsWorker || access.isManagerLike;
   const isPreparer = access.isPreparer;
 
-  const supportsPosting = POSTING_ENGAGEMENT_TYPES.has(engagementType);
-  const supportsWorkingPapers = WORKING_PAPERS_ENGAGEMENT_TYPES.has(engagementType);
-  const supportsReporting = REPORTING_ENGAGEMENT_TYPES.has(engagementType);
+  const supportsPosting = engagementSupportsCapability(row, "posting");
+  const supportsWorkingPapers = engagementSupportsCapability(row, "working_papers");
+  const supportsReporting = engagementSupportsCapability(row, "reporting");
 
   return [
     {
@@ -4761,6 +4888,7 @@ function readEngagementModalPayload() {
     null;
 
   const engagementType = document.getElementById("engType")?.value || "";
+  const engagementCategory = document.getElementById("engTypeCategory")?.value || "";
 
   const requiresWorkspace = engagementTypeRequiresWorkspace(engagementType);
   const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
@@ -4775,6 +4903,7 @@ function readEngagementModalPayload() {
     engagement_code: document.getElementById("engCode")?.value?.trim() || "",
     engagement_name: document.getElementById("engName")?.value?.trim() || "",
     engagement_type: engagementType,
+    engagement_category: engagementCategory || null,
     governance_mode: document.getElementById("engGovernanceMode")?.value || "",
     reporting_cycle: document.getElementById("engReportingCycle")?.value || "",
     start_date: document.getElementById("engStartDate")?.value || null,
@@ -4812,6 +4941,8 @@ function readEngagementModalPayload() {
         ""
     };
   }
+
+  payload.capabilities = Array.from(getEngagementCapabilities({ engagement_type: engagementType }));
 
   return payload;
 }
@@ -4886,30 +5017,7 @@ function getSelectedEngagementCustomer() {
   return (PR_CUSTOMERS_CACHE || []).find(c => Number(c.id) === customerId) || null;
 }
 
-function engagementTypeRequiresWorkspace(type) {
-  const v = String(type || "").toLowerCase();
-  return [
-    "bookkeeping",
-    "monthly_bookkeeping",
-    "write_up",
-    "management_accounts",
-    "vat",
-    "payroll",
-    "tax",
-    "tax_compliance",
-    "annual_financial_statements",
-    "year_end_financials",
-    "compilation",
-    "review",
-    "audit",
-    "audit_support",
-    "internal_audit",
-    "independent_review",
-    "cleanup",
-    "migration",
-    "outsourced_finance"
-  ].includes(v);
-}
+
 
 function customerHasProvisionedWorkspace(customer) {
   if (!customer) return false;
@@ -4936,9 +5044,7 @@ function toggleEngagementWorkspaceSetup() {
   const block = document.getElementById("engWorkspaceSetupBlock");
   if (!block) return;
 
-  if (typeof window.populateIndustryOptions === "function") {
-    window.populateIndustryOptions();
-  }
+  populateIndustryOptions?.();
 
   const type = document.getElementById("engType")?.value || "";
   const customer = getSelectedEngagementCustomer();
@@ -4980,9 +5086,8 @@ function toggleEngagementWorkspaceSetup() {
 
     if (industryEl) {
       if (industryEl.options.length <= 1) {
-        window.populateIndustryOptions?.();
+        populateIndustryOptions?.();
       }
-
       if (customer.industry) {
         industryEl.value = customer.industry;
       }
@@ -4990,10 +5095,7 @@ function toggleEngagementWorkspaceSetup() {
 
     if (subIndustryEl) {
       if (industryEl?.value) {
-        populateSubIndustryOptions(
-          industryEl.value,
-          customer.sub_industry || ""
-        );
+        populateSubIndustryOptions(industryEl.value, customer.sub_industry || "");
       } else {
         subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
         subIndustryEl.value = "";
@@ -5178,12 +5280,25 @@ async function bindEngagementModalEvents() {
       populateEngagementCustomerSelect(PR_CUSTOMERS_CACHE);
       await bindEngagementAssigneeDropdowns();
 
+      populateEngagementTypeCategoryOptions();
+      populateEngagementTypeOptions();
+
       openEngagementModal();
-      toggleEngagementWorkspaceSetup();
+
+      requestAnimationFrame(() => {
+        populateIndustryOptions?.();
+        toggleEngagementWorkspaceSetup();
+      });
     } catch (err) {
       console.error(err);
       alert(err.message || "Failed to open engagement form.");
     }
+  });
+
+  document.getElementById("engTypeCategory")?.addEventListener("change", (e) => {
+    const currentType = document.getElementById("engType")?.value || "";
+    populateEngagementTypeOptions(e.target.value, currentType);
+    toggleEngagementWorkspaceSetup();
   });
 
   document.getElementById("engType")?.addEventListener("change", () => {
