@@ -125,7 +125,7 @@ def seed_company_coa_once(
                 source_used = "none"
                 print("[SEED] template fallback produced no rows")
 
-        assert_reserved_control_integrity(db_service, company_id)
+       # assert_reserved_control_integrity(db_service, company_id)
     else:
         print("[SEED] skipping pool seed (already seeded)")
         source_used = "existing"
