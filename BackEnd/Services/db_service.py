@@ -2686,6 +2686,7 @@ class DatabaseService:
             "can_prepare_financials": False,
             "can_manage_fixed_assets": False,
             "can_approve": False,
+            "can_view_control_room": False,
 
             "can_manage_users": False,
             "can_manage_company_setup": False,
@@ -2726,12 +2727,16 @@ class DatabaseService:
             perms["can_prepare_financials"] = True
             perms["can_manage_fixed_assets"] = True
             perms["can_approve"] = True
+            perms["can_manage_company_setup"] = True
+            perms["can_edit_tax_settings"] = True
+            perms["can_view_control_room"] = True
 
         if role in {
             "owner",
             "admin",
             "audit_partner",
             "engagement_partner",
+            "partner",
         }:
             perms["can_manage_ar"] = True
             perms["can_manage_ap"] = True
@@ -2741,6 +2746,10 @@ class DatabaseService:
             perms["can_manage_fixed_assets"] = True
             perms["can_view_reports"] = True
             perms["can_approve"] = True
+            perms["can_manage_company_setup"] = True
+            perms["can_edit_tax_settings"] = True
+            perms["can_lock_periods"] = True
+            perms["can_view_control_room"] = True
 
         bounded_keys = [
             "can_view_dashboard",
@@ -2752,6 +2761,9 @@ class DatabaseService:
             "can_prepare_financials",
             "can_manage_fixed_assets",
             "can_approve",
+            "can_manage_company_setup",
+            "can_edit_tax_settings",
+            "can_lock_periods",
         ]
 
         for key in bounded_keys:
@@ -2767,6 +2779,7 @@ class DatabaseService:
         }
 
         return perms
+    
     def get_delegated_workspace_for_engagement(
         self,
         cur,
