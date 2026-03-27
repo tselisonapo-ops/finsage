@@ -5454,6 +5454,36 @@ function getStoredUser() {
   }
   window.bindReturnToPractitionerWorkspace = bindReturnToPractitionerWorkspace;
 
+  function updatePostingCompanyBadge() {
+    const badge = document.getElementById("companyBadge");
+    if (!badge) return;
+
+    let ctx = {};
+    try {
+      ctx = JSON.parse(localStorage.getItem("fs_posting_context") || "{}");
+    } catch (_) {}
+
+    ctx = {
+      ...ctx,
+      ...(window.__PR_POSTING_CONTEXT__ || {})
+    };
+
+    const customerName =
+      ctx.customerName ||
+      ctx.engagement?.customer_name ||
+      "";
+
+    const companyId = Number(ctx.targetCompanyId || ctx.companyId || 0);
+
+    if (!companyId) {
+      badge.textContent = "Your company";
+      return;
+    }
+
+    badge.textContent = customerName || "Client";
+    badge.classList.remove("hidden");
+  }
+
   function decorateApiHeadersWithDelegatedContext(headers) {
     if (!isDelegatedPostingMode()) return headers;
 
