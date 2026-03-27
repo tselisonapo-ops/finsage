@@ -6296,7 +6296,7 @@ class DatabaseService:
 
         CREATE TABLE IF NOT EXISTS {schema}.review_queue (
             id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT %s,
+            company_id INT NOT NULL DEFAULT {company_id},
             engagement_id INT NOT NULL,
 
             queue_type TEXT NOT NULL DEFAULT 'review', -- review, deliverable, signoff
@@ -6348,7 +6348,7 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
 
         UPDATE {schema}.review_queue
-        SET company_id = %s
+        SET company_id = {company_id}
         WHERE company_id IS NULL
 
         UPDATE {schema}.review_queue
@@ -6380,7 +6380,7 @@ class DatabaseService:
         WHERE updated_at IS NULL
 
         ALTER TABLE {schema}.review_queue
-            ALTER COLUMN company_id SET DEFAULT %s
+            ALTER COLUMN company_id SET DEFAULT {company_id}
 
         ALTER TABLE {schema}.review_queue
             ALTER COLUMN queue_type SET DEFAULT 'review',
@@ -9088,13 +9088,13 @@ class DatabaseService:
 
             -- 2) backfill NULLs
             EXECUTE format(
-                'UPDATE %I.trial_balance SET company_id = %s WHERE company_id IS NULL',
+                'UPDATE %I.trial_balance SET company_id = {company_id} WHERE company_id IS NULL',
                 '{schema}', {company_id}
             );
 
             -- 3) enforce NOT NULL + default
             EXECUTE format(
-                'ALTER TABLE %I.trial_balance ALTER COLUMN company_id SET DEFAULT %s',
+                'ALTER TABLE %I.trial_balance ALTER COLUMN company_id SET DEFAULT {company_id}',
                 '{schema}', {company_id}
             );
             EXECUTE format(
@@ -9138,100 +9138,6 @@ class DatabaseService:
         END
         $tb_evolve$;
 
-        -- ==================================================
-        -- LEDGER
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.ledger (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-            journal_id INT REFERENCES {schema}.journal(id),
-            customer_id INT NULL,
-            date DATE NOT NULL,
-            ref TEXT NULL,
-            account TEXT NOT NULL,
-            debit NUMERIC(18,2) NOT NULL DEFAULT 0,
-            credit NUMERIC(18,2) NOT NULL DEFAULT 0,
-            source TEXT NULL,
-            source_id INT NULL,
-            memo TEXT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        UPDATE {schema}.ledger
-        SET company_id = {company_id}
-        WHERE company_id IS NULL;
-
-        ALTER TABLE {schema}.ledger
-        ALTER COLUMN company_id SET NOT NULL;
-
-        ALTER TABLE {schema}.ledger
-        ALTER COLUMN company_id SET DEFAULT {company_id};
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_id_idx
-        ON {schema}.ledger(company_id);
-
-        ALTER TABLE {schema}.ledger
-        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_vendor_date_idx
-        ON {schema}.ledger(company_id, vendor_id, date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_vendor_idx
-        ON {schema}.ledger(company_id, account, vendor_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_customer_idx
-        ON {schema}.ledger(company_id, account, customer_id);
-
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS company_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS journal_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS customer_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS vendor_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source TEXT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source_id INT;
-        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS memo TEXT;
-
-        DO $ledger_fk$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_ledger_customer_fk'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.ledger
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (customer_id)
-                    REFERENCES %I.customers(id)',
-                    '{schema}',
-                    '{schema}_ledger_customer_fk',
-                    '{schema}'
-                );
-            END IF;
-        END $ledger_fk$;
-
-        DO $ledger_vendor_fk$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_ledger_vendor_fk'
-            AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.ledger
-            ADD CONSTRAINT %I
-            FOREIGN KEY (vendor_id)
-            REFERENCES %I.vendors(id)',
-            '{schema}',
-            '{schema}_ledger_vendor_fk',
-            '{schema}'
-            );
-        END IF;
-        END
-        $ledger_vendor_fk$;
 
         -- ==================================================
         -- COMPANY BANK ACCOUNTS
@@ -16536,9 +16442,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='company_bank_accounts' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.company_bank_accounts ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.company_bank_accounts SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.company_bank_accounts SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.company_bank_accounts ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.company_bank_accounts ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.company_bank_accounts ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- invoices
@@ -16547,9 +16453,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='invoices' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.invoices ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.invoices SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.invoices SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.invoices ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.invoices ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.invoices ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- invoice_lines
@@ -16558,9 +16464,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='invoice_lines' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.invoice_lines ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.invoice_lines SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.invoice_lines SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.invoice_lines ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.invoice_lines ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.invoice_lines ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- invoice_counters
@@ -16569,9 +16475,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='invoice_counters' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.invoice_counters ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.invoice_counters SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.invoice_counters SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.invoice_counters ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.invoice_counters ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.invoice_counters ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- ==================================================
@@ -16584,8 +16490,8 @@ class DatabaseService:
             EXECUTE format('ALTER TABLE %I.receipts ADD COLUMN company_id INT', '{schema}');
         END IF;
 
-        EXECUTE format('UPDATE %I.receipts SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
-        EXECUTE format('ALTER TABLE %I.receipts ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+        EXECUTE format('UPDATE %I.receipts SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
+        EXECUTE format('ALTER TABLE %I.receipts ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         EXECUTE format('ALTER TABLE %I.receipts ALTER COLUMN company_id SET NOT NULL', '{schema}');
 
         -- ==================================================
@@ -16598,8 +16504,8 @@ class DatabaseService:
             EXECUTE format('ALTER TABLE %I.receipt_allocations ADD COLUMN company_id INT', '{schema}');
         END IF;
 
-        EXECUTE format('UPDATE %I.receipt_allocations SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
-        EXECUTE format('ALTER TABLE %I.receipt_allocations ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+        EXECUTE format('UPDATE %I.receipt_allocations SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
+        EXECUTE format('ALTER TABLE %I.receipt_allocations ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         EXECUTE format('ALTER TABLE %I.receipt_allocations ALTER COLUMN company_id SET NOT NULL', '{schema}');
 
         -- bank_statements
@@ -16608,9 +16514,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='bank_statements' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.bank_statements ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.bank_statements SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.bank_statements SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.bank_statements ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.bank_statements ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.bank_statements ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- bank_statement_lines
@@ -16619,9 +16525,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='bank_statement_lines' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.bank_statement_lines ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.bank_statement_lines SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.bank_statement_lines SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.bank_statement_lines ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.bank_statement_lines ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.bank_statement_lines ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- credit_profiles
@@ -16630,9 +16536,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='credit_profiles' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.credit_profiles ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.credit_profiles SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.credit_profiles SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.credit_profiles ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.credit_profiles ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.credit_profiles ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- leases
@@ -16641,9 +16547,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='leases' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.leases ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.leases SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.leases SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.leases ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.leases ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.leases ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- vendors
@@ -16652,9 +16558,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='vendors' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.vendors ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.vendors SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.vendors SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.vendors ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.vendors ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.vendors ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- inventory_items
@@ -16663,9 +16569,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='inventory_items' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.inventory_items ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.inventory_items SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.inventory_items SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.inventory_items ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.inventory_items ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.inventory_items ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- inventory_layers
@@ -16674,9 +16580,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='inventory_layers' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.inventory_layers ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.inventory_layers SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.inventory_layers SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.inventory_layers ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.inventory_layers ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.inventory_layers ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- pos_summaries
@@ -16685,9 +16591,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='pos_summaries' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.pos_summaries ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.pos_summaries SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.pos_summaries SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.pos_summaries ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.pos_summaries ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.pos_summaries ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         -- pos_summary_lines
@@ -16696,9 +16602,9 @@ class DatabaseService:
             WHERE table_schema='{schema}' AND table_name='pos_summary_lines' AND column_name='company_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.pos_summary_lines ADD COLUMN company_id INT', '{schema}');
-            EXECUTE format('UPDATE %I.pos_summary_lines SET company_id = %s WHERE company_id IS NULL', '{schema}', {company_id});
+            EXECUTE format('UPDATE %I.pos_summary_lines SET company_id = {company_id} WHERE company_id IS NULL', '{schema}', {company_id});
             EXECUTE format('ALTER TABLE %I.pos_summary_lines ALTER COLUMN company_id SET NOT NULL', '{schema}');
-            EXECUTE format('ALTER TABLE %I.pos_summary_lines ALTER COLUMN company_id SET DEFAULT %s', '{schema}', {company_id});
+            EXECUTE format('ALTER TABLE %I.pos_summary_lines ALTER COLUMN company_id SET DEFAULT {company_id}', '{schema}', {company_id});
         END IF;
 
         END $$;
@@ -16780,6 +16686,100 @@ class DatabaseService:
             RETURN NEW;
         END; $$ LANGUAGE plpgsql;
 
+        -- ==================================================
+        -- LEDGER
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.ledger (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            journal_id INT REFERENCES {schema}.journal(id),
+            customer_id INT NULL,
+            date DATE NOT NULL,
+            ref TEXT NULL,
+            account TEXT NOT NULL,
+            debit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source TEXT NULL,
+            source_id INT NULL,
+            memo TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        UPDATE {schema}.ledger
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.ledger
+        ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.ledger
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_id_idx
+        ON {schema}.ledger(company_id);
+
+        ALTER TABLE {schema}.ledger
+        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_vendor_date_idx
+        ON {schema}.ledger(company_id, vendor_id, date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_vendor_idx
+        ON {schema}.ledger(company_id, account, vendor_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ledger_company_account_customer_idx
+        ON {schema}.ledger(company_id, account, customer_id);
+
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS journal_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS customer_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS vendor_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source TEXT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS source_id INT;
+        ALTER TABLE {schema}.ledger ADD COLUMN IF NOT EXISTS memo TEXT;
+
+        DO $ledger_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ledger_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ledger
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)',
+                    '{schema}',
+                    '{schema}_ledger_customer_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $ledger_fk$;
+
+        DO $ledger_vendor_fk$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_ledger_vendor_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.ledger
+            ADD CONSTRAINT %I
+            FOREIGN KEY (vendor_id)
+            REFERENCES %I.vendors(id)',
+            '{schema}',
+            '{schema}_ledger_vendor_fk',
+            '{schema}'
+            );
+        END IF;
+        END
+        $ledger_vendor_fk$;
 
         -- ==================================================
         -- AUDIT TRAIL
