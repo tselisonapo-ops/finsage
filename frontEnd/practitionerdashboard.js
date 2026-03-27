@@ -4949,12 +4949,10 @@ function readEngagementModalPayload() {
     null;
 
   const engagementType = document.getElementById("engType")?.value || "";
-  const engagementCategory = document.getElementById("engTypeCategory")?.value || "";
 
   const requiresWorkspace = engagementTypeRequiresWorkspace(engagementType);
   const alreadyProvisioned = customerHasProvisionedWorkspace(customer);
   const missingDefaults = customerMissingWorkspaceDefaults(customer);
-  const needsWorkspaceSetup = requiresWorkspace && (!alreadyProvisioned || missingDefaults);
 
   const customerDefaults = getEffectiveCustomerWorkspaceDefaults(customer);
 
@@ -4964,7 +4962,7 @@ function readEngagementModalPayload() {
     engagement_code: document.getElementById("engCode")?.value?.trim() || "",
     engagement_name: document.getElementById("engName")?.value?.trim() || "",
     engagement_type: engagementType,
-    engagement_category: engagementCategory || null,
+    engagement_category: document.getElementById("engTypeCategory")?.value || "",
     governance_mode: document.getElementById("engGovernanceMode")?.value || "",
     reporting_cycle: document.getElementById("engReportingCycle")?.value || "",
     start_date: document.getElementById("engStartDate")?.value || null,
@@ -4979,7 +4977,10 @@ function readEngagementModalPayload() {
     financial_year_start:
       document.getElementById("engFinancialYearStart")?.value?.trim() ||
       customerDefaults.fin_year_start ||
-      null
+      null,
+
+    // add this from the start so TS knows it exists
+    target_company: null
   };
 
   if (requiresWorkspace) {
@@ -5002,8 +5003,6 @@ function readEngagementModalPayload() {
         ""
     };
   }
-
-  payload.capabilities = Array.from(getEngagementCapabilities({ engagement_type: engagementType }));
 
   return payload;
 }
@@ -5261,7 +5260,7 @@ async function handleCreateEngagementSubmit() {
     const payload = readEngagementModalPayload();
 
     const requiresWorkspace = engagementTypeRequiresWorkspace(payload.engagement_type);
-    const workspace = payload.target_company_id || {};
+    const workspace = payload.target_company || {};
 
     if (requiresWorkspace) {
       const missing = [];
@@ -5273,10 +5272,7 @@ async function handleCreateEngagementSubmit() {
       if (!(workspace.sub_industry || "").trim()) missing.push("sub-industry");
 
       if (missing.length) {
-        setEngagementModalMsg(
-          `Please complete: ${missing.join(", ")}.`,
-          "error"
-        );
+        setEngagementModalMsg(`Please complete: ${missing.join(", ")}.`, "error");
         return;
       }
     }
