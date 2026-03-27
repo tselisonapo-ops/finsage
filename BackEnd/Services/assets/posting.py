@@ -2239,7 +2239,7 @@ def post_disposal(cur, company_id: int, disp_id: int, *, user: dict | None = Non
     if (r.get("bank_account_code") or "").strip():
         proceeds_acct = get_bank_ledger_account(cur, schema, company_id, r["bank_account_code"]) or r["bank_account_code"]
     else:
-        proceeds_acct = "BS_CA_1010"  # fallback cash
+        proceeds_acct = "BS_CA_1000"  # fallback cash
 
     # ------------------------------------------------------------
     # Create journal

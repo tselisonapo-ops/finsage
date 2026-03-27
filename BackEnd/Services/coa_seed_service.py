@@ -179,14 +179,6 @@ def assert_reserved_control_integrity(db_service, company_id: int) -> None:
             "template_code_scoped": None,
             "name_like_any": ["cash", "bank"],
         },
-        "BS_CA_1010": {
-            "template_code": "1010",
-            "template_code_scoped": None,
-        },
-        "BS_CA_1050": {
-            "template_code": "1050",
-            "template_code_scoped": None,
-        },
         "BS_CL_2105": {
             "template_code": "2105",
             "template_code_scoped": None,
