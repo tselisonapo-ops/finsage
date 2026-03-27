@@ -133,13 +133,13 @@ def seed_company_coa_once(
     print("[SEED] enforcing mandatory controls...")
     db_service.ensure_mandatory_company_accounts(company_id)
     print("[SEED] mandatory controls enforced")
-    assert_reserved_control_integrity(db_service, company_id)
 
     if hasattr(db_service, "ensure_required_control_accounts"):
         print("[SEED] enforcing required control accounts...")
         db_service.ensure_required_control_accounts(company_id)
         print("[SEED] required control accounts enforced")
-        assert_reserved_control_integrity(db_service, company_id)
+
+    assert_reserved_control_integrity(db_service, company_id)
 
     print("[SEED] applying account settings defaults...")
     db_service.ensure_company_account_settings_defaults(company_id)
