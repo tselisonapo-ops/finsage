@@ -487,9 +487,9 @@ def sync_company_coa_from_pool(
             "template_code": tc,
             "template_code_scoped": tcs,
             "name": name,
-            "code": tc,              # or None / ""
+            "code": None,
             "code_family": family,
-            "code_numeric": None,    # let normalizer allocate
+            "code_numeric": None,
             "section": section or None,
             "category": category or None,
             "subcategory": subcat or None,
