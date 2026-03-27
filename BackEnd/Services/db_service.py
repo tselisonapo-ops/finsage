@@ -6349,38 +6349,38 @@ class DatabaseService:
 
         UPDATE {schema}.review_queue
         SET company_id = {company_id}
-        WHERE company_id IS NULL
+        WHERE company_id IS NULL;
 
         UPDATE {schema}.review_queue
         SET queue_type = 'review'
-        WHERE queue_type IS NULL OR BTRIM(queue_type) = ''
+        WHERE queue_type IS NULL OR BTRIM(queue_type) = '';
 
         UPDATE {schema}.review_queue
         SET status = 'pending'
-        WHERE status IS NULL OR BTRIM(status) = ''
+        WHERE status IS NULL OR BTRIM(status) = '';
 
         UPDATE {schema}.review_queue
         SET priority = 'normal'
-        WHERE priority IS NULL OR BTRIM(priority) = ''
+        WHERE priority IS NULL OR BTRIM(priority) = '';
 
         UPDATE {schema}.review_queue
         SET review_state = 'pending'
-        WHERE review_state IS NULL OR BTRIM(review_state) = ''
+        WHERE review_state IS NULL OR BTRIM(review_state) = '';
 
         UPDATE {schema}.review_queue
         SET is_active = TRUE
-        WHERE is_active IS NULL
+        WHERE is_active IS NULL;
 
         UPDATE {schema}.review_queue
         SET created_at = NOW()
-        WHERE created_at IS NULL
+        WHERE created_at IS NULL;
 
         UPDATE {schema}.review_queue
         SET updated_at = NOW()
-        WHERE updated_at IS NULL
+        WHERE updated_at IS NULL;
 
         ALTER TABLE {schema}.review_queue
-            ALTER COLUMN company_id SET DEFAULT {company_id}
+            ALTER COLUMN company_id SET DEFAULT {company_id};
 
         ALTER TABLE {schema}.review_queue
             ALTER COLUMN queue_type SET DEFAULT 'review',
