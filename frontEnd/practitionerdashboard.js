@@ -4420,8 +4420,8 @@ function renderAssignmentDetail(row) {
   `;
 
   if (editBtn) {
-    editBtn.onclick = () => {
-      openEditEngagementModal(row);
+    editBtn.onclick = async () => {
+      await openEditEngagementModal(row);
     };
   }
 
@@ -4584,7 +4584,7 @@ async function bindAssignmentsScreenEvents(me) {
 
       // ✅ ADD THIS BLOCK
       if (action === "edit") {
-        openEditEngagementModal(row);
+        await openEditEngagementModal(row);
         return;
       }
 
@@ -5499,13 +5499,20 @@ function openCreateEngagementModal() {
   });
 }
 
-function openEditEngagementModal(row) {
+async function openEditEngagementModal(row) {
   if (!row) return;
 
   ENGAGEMENT_MODAL_STATE.mode = "edit";
   ENGAGEMENT_MODAL_STATE.row = row;
 
   resetEngagementModalForm();
+
+  if (!PR_CUSTOMERS_CACHE.length) {
+    PR_CUSTOMERS_CACHE = await loadCustomersData({});
+  }
+
+  populateEngagementCustomerSelect(PR_CUSTOMERS_CACHE);
+  await bindEngagementAssigneeDropdowns();
 
   populateEngagementTypeCategoryOptions?.();
   populateEngagementTypeOptions?.("", row.engagement_type || "");
@@ -5550,10 +5557,14 @@ function fillEngagementModalForm(row) {
   };
 
   setValue("engagementId", row.id || "");
-  setValue("engCustomerId", row.customer_id || "");
   setValue("engTargetCompanyId", row.target_company_id || "");
   setValue("engCode", row.engagement_code || "");
   setValue("engName", row.engagement_name || "");
+
+  const customerEl = document.getElementById("engCustomerId");
+  if (customerEl) {
+    customerEl.value = String(row.customer_id || "");
+  }
 
   const categoryEl = document.getElementById("engTypeCategory");
   if (categoryEl) {
@@ -5570,8 +5581,17 @@ function fillEngagementModalForm(row) {
   setValue("engEndDate", toInputDate(row.end_date));
   setValue("engPriority", row.priority || "normal");
   setValue("engWorkflowStage", row.workflow_stage || "planning");
-  setValue("engManagerUserId", row.manager_user_id || "");
-  setValue("engPartnerUserId", row.partner_user_id || "");
+
+  const managerEl = document.getElementById("engManagerUserId");
+  if (managerEl) {
+    managerEl.value = String(row.manager_user_id || "");
+  }
+
+  const partnerEl = document.getElementById("engPartnerUserId");
+  if (partnerEl) {
+    partnerEl.value = String(row.partner_user_id || "");
+  }
+
   setValue("engDescription", row.description || "");
   setValue("engScopeSummary", row.scope_summary || "");
   setValue("engFinancialYearStart", row.financial_year_start || "");
@@ -5581,7 +5601,6 @@ function fillEngagementModalForm(row) {
 
   populateIndustryOptions?.();
   setValue("engIndustry", row.industry || "");
-
   populateSubIndustryOptions(row.industry || "", row.sub_industry || "");
 }
 
