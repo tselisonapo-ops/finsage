@@ -1627,14 +1627,19 @@ function getStoredUser() {
 async function apiFetch(url, options = {}) {
   const token = getAuthToken();
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    }
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      }
+    });
+  } catch (err) {
+    throw new Error(err?.message || "Network request failed");
+  }
 
   const text = await res.text();
   let json = null;
@@ -1646,7 +1651,14 @@ async function apiFetch(url, options = {}) {
   }
 
   if (!res.ok) {
-    throw new Error(json?.error || json?.message || text || "Request failed");
+    const detail =
+      json?.error ||
+      json?.message ||
+      text ||
+      `${res.status} ${res.statusText}` ||
+      "Request failed";
+
+    throw new Error(detail);
   }
 
   return json;

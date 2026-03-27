@@ -279,6 +279,7 @@ def create_engagement_route(cid: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
+    body = {}
     try:
         company_id = int(cid)
 
@@ -387,6 +388,7 @@ def create_engagement_route(cid: int):
                 return _json_err(str(msg), 400)
 
         with db_service._conn_cursor() as (conn3, cur3):
+            current_app.logger.warning("create_engagement_route: before create_engagement")
             engagement_id = db_service.create_engagement(
                 cur3,
                 company_id,
@@ -415,6 +417,7 @@ def create_engagement_route(cid: int):
                 target_company_source=target_company_source,
             )
 
+            current_app.logger.warning("create_engagement_route: before create_engagement_acceptance")
             acceptance_id = db_service.create_engagement_acceptance(
                 cur3,
                 company_id,
@@ -436,8 +439,10 @@ def create_engagement_route(cid: int):
                 actor_user_id=current_user_id,
             )
 
+            current_app.logger.warning("create_engagement_route: before get_engagement")
             row = db_service.get_engagement(cur3, company_id, engagement_id=engagement_id)
 
+            current_app.logger.warning("create_engagement_route: before _engagement_audit")
             _engagement_audit(
                 cur=cur3,
                 company_id=company_id,
@@ -457,6 +462,8 @@ def create_engagement_route(cid: int):
                 },
                 message=f"Created engagement {engagement_id} pending acceptance",
             )
+
+            current_app.logger.warning("create_engagement_route: before commit")
 
             conn3.commit()
 
