@@ -3017,6 +3017,18 @@ function normalizeEngagementTypeKey(value) {
     .replace(/-/g, "_");
 }
 
+function humanizeKey(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "--";
+
+  return raw
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 const ENGAGEMENT_TYPE_OPTIONS = [
   { value: "bookkeeping", label: "Bookkeeping" },
   { value: "monthly_bookkeeping", label: "Monthly Bookkeeping" },
@@ -4361,31 +4373,18 @@ function renderAssignmentDetail(row) {
     row.manager_name ||
     row.manager_user_name ||
     row.manager_display_name ||
-    [
-      row.manager_first_name,
-      row.manager_last_name
-    ].filter(Boolean).join(" ").trim() ||
+    [row.manager_first_name, row.manager_last_name].filter(Boolean).join(" ").trim() ||
     "--";
 
   const partnerName =
     row.partner_name ||
     row.partner_user_name ||
     row.partner_display_name ||
-    [
-      row.partner_first_name,
-      row.partner_last_name
-    ].filter(Boolean).join(" ").trim() ||
+    [row.partner_first_name, row.partner_last_name].filter(Boolean).join(" ").trim() ||
     "--";
 
-  const typeLabel =
-    humanizeRoleKey?.(row.engagement_type) ||
-    row.engagement_type ||
-    "--";
-
-  const statusLabel =
-    humanizeRoleKey?.(row.status) ||
-    row.status ||
-    "--";
+  const typeLabel = humanizeKey(row.engagement_type);
+  const statusLabel = humanizeKey(row.status);
 
   card.classList.remove("hidden");
   title.textContent = row.engagement_name || "Engagement Detail";
