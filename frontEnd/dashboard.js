@@ -13035,6 +13035,43 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
 
 window.openModuleNudgeModal = openModuleNudgeModal;
 
+async function redirectToModule({ moduleKey, account, side, meta = {} }) {
+  if (moduleKey === "ppe") {
+    await window.switchScreen?.("fixed-assets-register");
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      accountCode: account?.code,
+      accountName: account?.name,
+      journalSide: side,
+      txDate: meta.date || null,
+    });
+    return;
+  }
+
+  if (moduleKey === "lease") {
+    await window.switchScreen?.("ifrs16-lease-wizard");
+    window.openLeaseWizard?.({
+      side,
+      account,
+      accountCode: account?.code,
+      standard: "IFRS 16",
+      cf_bucket: account?.cf_bucket || meta.cf_bucket || null,
+      journal: {
+        date: meta.date || meta.tx_date || null,
+        amount: meta.amount || null,
+        currency: meta.currency || null,
+      },
+    });
+    return;
+  }
+
+  if (moduleKey === "revenue") {
+    await window.switchScreen?.("revenue-desk");
+    return;
+  }
+}
+
 async function handleModuleAwareGuard({
   hint,
   acct,
