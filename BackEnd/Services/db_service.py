@@ -20114,69 +20114,7 @@ class DatabaseService:
             return int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
 
         return int(self.execute_sql(sql, params) or 0)
-
-    def post_journal_with_overdraft(self, company_id: int, entry: Dict[str, Any]) -> int:
-        schema = self.company_schema(company_id)
-        bank_code = "1000"
-        od_code   = "2105"
-
-        tx_date = date.fromisoformat(str(entry.get("date"))[:10])
-        module = "gl"
-
-        # ✅ hard lock gate (use a parsable error token)
-        if self.is_date_locked(company_id, tx_date=tx_date, module=module):
-            raise ValueError(f"PERIOD_LOCKED|{module}|{tx_date.isoformat()}")
-
-        je_date = tx_date.isoformat()
-        ref = (entry.get("ref") or "").strip() or None
-
-        # ✅ avoid recursion: if this is already the auto overdraft journal, just post it normally
-        if ref and str(ref).startswith("AUTO-OD-"):
-            with self._conn_cursor() as (conn, cur):
-                journal_id = self.insert_journal(company_id, entry, cur=cur)
-
-                entry["lines"] = self._rewrite_lines_guarding_ar(company_id, entry.get("lines", []))
-
-                for line in entry.get("lines", []):
-                    self.insert_ledger(company_id, journal_id, je_date, line, ref=ref, cur=cur)  # ✅ add cur=cur
-                    self.update_trial_balance(company_id, line)
-
-                conn.commit()
-                return journal_id
-
-        with self._conn_cursor() as (conn, cur):
-            journal_id = self.insert_journal(company_id, entry, cur=cur)
-
-            entry["lines"] = self._rewrite_lines_guarding_ar(company_id, entry.get("lines", []))
-
-            for line in entry.get("lines", []):
-                self.insert_ledger(company_id, journal_id, je_date, line, ref=ref, cur=cur)  # ✅ add cur=cur
-                self.update_trial_balance(company_id, line)
-
-            bank_balance = self.get_account_balance_from_tb(company_id, bank_code)
-
-            if bank_balance < 0:
-                amt = abs(float(bank_balance))
-
-                od_entry = {
-                    "date": tx_date.isoformat(),   # ✅ keep same date
-                    "ref": f"AUTO-OD-{journal_id}",
-                    "description": "Auto: Bank credit balance reclassified to overdraft",
-                    "lines": [
-                        {"account_code": bank_code, "debit": amt, "credit": 0.0, "memo": "Auto overdraft reclass"},
-                        {"account_code": od_code,   "debit": 0.0, "credit": amt, "memo": "Auto overdraft reclass"},
-                    ],
-                }
-
-                od_journal_id = self.insert_journal(company_id, od_entry, cur=cur)
-                for l in od_entry["lines"]:
-                    self.insert_ledger(company_id, od_journal_id, je_date, l, ref=od_entry["ref"], cur=cur)  # ✅ add cur=cur
-                    self.update_trial_balance(company_id, l)
-
-            conn.commit()
-            return journal_id
-
-
+    
     def post_journal(self, company_id: int, entry: Dict[str, Any], *, cur=None, conn=None) -> int:
         """
         Posts a journal in ONE transaction.
@@ -20200,7 +20138,6 @@ class DatabaseService:
         if not isinstance(lines, list) or not lines:
             raise ValueError("Journal must include at least one line")
 
-        # Optional: guard/rewrite AR postings if you have it
         if hasattr(self, "_rewrite_lines_guarding_ar"):
             entry["lines"] = self._rewrite_lines_guarding_ar(company_id, lines)
             lines = entry["lines"]
@@ -20209,13 +20146,10 @@ class DatabaseService:
         entry_source_id = entry.get("source_id")
 
         def _run(cursor):
-            # 1) Insert header (MUST support cur)
             journal_id = self.insert_journal(company_id, entry, cur=cursor)
 
-            # 2) Insert lines + 3) Update trial balance + 4) Optional notes
             line_no = 1
             for line in lines:
-                # ✅ 1) insert into journal_lines (for UI / journal detail)
                 self.insert_journal_line(
                     company_id,
                     journal_id,
@@ -20226,7 +20160,6 @@ class DatabaseService:
                     cur=cursor,
                 )
 
-                # ✅ 2) insert into ledger (for TB / reporting)
                 self.insert_ledger(
                     company_id,
                     journal_id,
@@ -20238,27 +20171,24 @@ class DatabaseService:
                     cur=cursor,
                 )
 
-                # ✅ 3) update TB (as you already do)
                 self.update_trial_balance(company_id, line, cur=cursor)
 
-                # optional notes hook
                 if hasattr(self, "requires_notes") and callable(getattr(self, "requires_notes")):
                     acct = (line.get("account_code") or line.get("account") or "").strip()
                     if acct and self.requires_notes(acct):
                         if hasattr(self, "insert_note") and callable(getattr(self, "insert_note")):
-                            # make insert_note cursor-safe if you can
                             try:
                                 self.insert_note(company_id, journal_id, acct, desc, cur=cursor)
                             except TypeError:
                                 self.insert_note(company_id, journal_id, acct, desc)
 
+                line_no += 1
+
             return int(journal_id)
 
-        # ---------- Case A: called inside an existing transaction ----------
         if cur is not None:
             return _run(cur)
 
-        # ---------- Case B: standalone posting ----------
         with self._conn_cursor() as (conn2, cur2):
             try:
                 jid = _run(cur2)
@@ -20266,6 +20196,82 @@ class DatabaseService:
                 return int(jid)
             except Exception:
                 conn2.rollback()
+                raise
+
+
+    def post_journal_with_overdraft(self, company_id: int, entry: Dict[str, Any]) -> int:
+        """
+        Posts the user journal first using the normal posting pipeline.
+        Then checks whether bank account 1000 went negative and, if so,
+        posts an automatic overdraft reclassification journal.
+
+        Important:
+        - uses ONE transaction
+        - delegates actual journal posting to post_journal()
+        """
+        bank_code = "1000"
+        od_code = "2105"
+
+        tx_date = date.fromisoformat(str(entry.get("date"))[:10])
+        module = "gl"
+
+        if self.is_date_locked(company_id, tx_date=tx_date, module=module):
+            raise ValueError(f"PERIOD_LOCKED|{module}|{tx_date.isoformat()}")
+
+        ref = (entry.get("ref") or "").strip() or None
+
+        lines = entry.get("lines") or []
+        if not isinstance(lines, list) or not lines:
+            raise ValueError("Journal must include at least one line")
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                # 1) Post the main journal through the REAL posting pipeline
+                journal_id = self.post_journal(company_id, entry, cur=cur, conn=conn)
+
+                # 2) Avoid recursion if somehow the incoming entry is already an auto-OD journal
+                if ref and ref.startswith("AUTO-OD-"):
+                    conn.commit()
+                    return int(journal_id)
+
+                # 3) Check bank balance after posting
+                bank_balance = self.get_account_balance_from_tb(company_id, bank_code, cur=cur)
+                if bank_balance is None:
+                    bank_balance = 0.0
+
+                # 4) If bank is credit/negative, reclass to overdraft
+                if float(bank_balance) < 0:
+                    amt = abs(float(bank_balance))
+
+                    od_entry = {
+                        "date": tx_date.isoformat(),
+                        "ref": f"AUTO-OD-{journal_id}",
+                        "description": "Auto: Bank credit balance reclassified to overdraft",
+                        "source": "system",
+                        "source_id": int(journal_id),
+                        "lines": [
+                            {
+                                "account_code": bank_code,
+                                "debit": amt,
+                                "credit": 0.0,
+                                "memo": "Auto overdraft reclass",
+                            },
+                            {
+                                "account_code": od_code,
+                                "debit": 0.0,
+                                "credit": amt,
+                                "memo": "Auto overdraft reclass",
+                            },
+                        ],
+                    }
+
+                    self.post_journal(company_id, od_entry, cur=cur, conn=conn)
+
+                conn.commit()
+                return int(journal_id)
+
+            except Exception:
+                conn.rollback()
                 raise
 
     def list_recent_journals(self, company_id: int, limit: int = 50, date_from=None, date_to=None, q: str = ""):
@@ -20504,14 +20510,23 @@ class DatabaseService:
             conn.commit()
             return reversal_journal_id
     
-    def get_account_balance_from_tb(self, company_id: int, code: str) -> float:
+    def get_account_balance_from_tb(self, company_id: int, code: str, *, cur=None) -> float:
         schema = self.company_schema(company_id)
-        row = self.fetch_one(
-            f"SELECT debit_total, credit_total FROM {schema}.trial_balance WHERE account = %s",
-            (code,)
-        )
+
+        sql = f"""
+            SELECT debit_total, credit_total
+            FROM {schema}.trial_balance
+            WHERE account = %s
+        """
+
+        if cur is not None:
+            row = self.fetch_one(sql, (code,), cur=cur)
+        else:
+            row = self.fetch_one(sql, (code,))
+
         d = float(row.get("debit_total") or 0.0) if row else 0.0
         c = float(row.get("credit_total") or 0.0) if row else 0.0
+
         return d - c
 
    # ---------------------------
