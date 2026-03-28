@@ -12918,6 +12918,8 @@ async function enforceJournalAccountGuard({ side, code }) {
 window.enforceJournalAccountGuard = enforceJournalAccountGuard;
 
 async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
+  console.log("[NUDGE] enter", { moduleKey, account, side, meta });
+
   const msg = getJournalGuardMessage?.(moduleKey, account) || {
     title: "Use workflow instead?",
     body: "This account has a specialist workflow.",
@@ -12925,102 +12927,153 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     moduleLabel: "Open Workflow",
   };
 
+  console.log("[NUDGE] message", msg);
+
   return new Promise((resolve) => {
-    let modal = document.getElementById("moduleNudgeModal");
+    try {
+      console.log("[NUDGE] promise start");
 
-    if (!modal) {
-      modal = document.createElement("div");
-      modal.id = "moduleNudgeModal";
-      modal.className = "modal hidden";
-      modal.setAttribute("aria-hidden", "true");
+      let modal = document.getElementById("moduleNudgeModal");
 
-      modal.innerHTML = `
-        <div class="modal-backdrop"></div>
-        <div class="modal-dialog modal-sm">
-          <div class="modal-card">
-            <div class="modal-header">
-              <div>
-                <h3 id="moduleNudgeTitle">Workflow suggestion</h3>
-                <p class="muted">Specialist workflow recommended for this account.</p>
+      if (!modal) {
+        console.log("[NUDGE] creating modal");
+
+        modal = document.createElement("div");
+        modal.id = "moduleNudgeModal";
+        modal.className = "modal hidden";
+        modal.setAttribute("aria-hidden", "true");
+
+        modal.innerHTML = `
+          <div class="modal-backdrop"></div>
+          <div class="modal-dialog modal-sm">
+            <div class="modal-card">
+              <div class="modal-header">
+                <div>
+                  <h3 id="moduleNudgeTitle">Workflow suggestion</h3>
+                  <p class="muted">Specialist workflow recommended for this account.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" id="moduleNudgeClose">Close</button>
               </div>
-              <button type="button" class="btn btn-secondary" id="moduleNudgeClose">Close</button>
-            </div>
-            <div class="modal-body">
-              <p id="moduleNudgeBody" style="white-space: pre-line;"></p>
-            </div>
-            <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end;">
-              <button type="button" class="btn btn-secondary" id="moduleNudgeCancel">Cancel</button>
-              <button type="button" class="btn btn-secondary" id="moduleNudgeJournal">Continue in Journal</button>
-              <button type="button" class="btn btn-primary" id="moduleNudgeModule">Open Workflow</button>
+              <div class="modal-body">
+                <p id="moduleNudgeBody" style="white-space: pre-line;"></p>
+              </div>
+              <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" id="moduleNudgeCancel">Cancel</button>
+                <button type="button" class="btn btn-secondary" id="moduleNudgeJournal">Continue in Journal</button>
+                <button type="button" class="btn btn-primary" id="moduleNudgeModule">Open Workflow</button>
+              </div>
             </div>
           </div>
-        </div>
-      `;
+        `;
 
-      document.body.appendChild(modal);
-    }
+        document.body.appendChild(modal);
+      } else {
+        console.log("[NUDGE] reusing existing modal");
+      }
 
-    const titleEl = modal.querySelector("#moduleNudgeTitle");
-    const bodyEl = modal.querySelector("#moduleNudgeBody");
-    const btnClose = modal.querySelector("#moduleNudgeClose");
-    const btnCancel = modal.querySelector("#moduleNudgeCancel");
-    const btnJournal = modal.querySelector("#moduleNudgeJournal");
-    const btnModule = modal.querySelector("#moduleNudgeModule");
-    const backdrop = modal.querySelector(".modal-backdrop");
+      const titleEl = modal.querySelector("#moduleNudgeTitle");
+      const bodyEl = modal.querySelector("#moduleNudgeBody");
+      const btnClose = modal.querySelector("#moduleNudgeClose");
+      const btnCancel = modal.querySelector("#moduleNudgeCancel");
+      const btnJournal = modal.querySelector("#moduleNudgeJournal");
+      const btnModule = modal.querySelector("#moduleNudgeModule");
+      const backdrop = modal.querySelector(".modal-backdrop");
 
-    titleEl.textContent = msg.title || "Workflow suggestion";
-    bodyEl.textContent = msg.body || "";
-    btnJournal.textContent = msg.continueLabel || "Continue in Journal";
-    btnModule.textContent = msg.moduleLabel || "Open Workflow";
+      console.log("[NUDGE] elements", {
+        titleEl: !!titleEl,
+        bodyEl: !!bodyEl,
+        btnClose: !!btnClose,
+        btnCancel: !!btnCancel,
+        btnJournal: !!btnJournal,
+        btnModule: !!btnModule,
+        backdrop: !!backdrop,
+      });
 
-    const cleanup = () => {
-      modal.classList.add("hidden");
-      modal.classList.remove("open");
-      modal.setAttribute("aria-hidden", "true");
+      if (!titleEl || !bodyEl || !btnClose || !btnCancel || !btnJournal || !btnModule || !backdrop) {
+        console.error("[NUDGE] modal element missing");
+        resolve("journal");
+        return;
+      }
 
-      btnClose.onclick = null;
-      btnCancel.onclick = null;
-      btnJournal.onclick = null;
-      btnModule.onclick = null;
-      backdrop.onclick = null;
-      document.onkeydown = null;
-    };
+      titleEl.textContent = msg.title || "Workflow suggestion";
+      bodyEl.textContent = msg.body || "";
+      btnJournal.textContent = msg.continueLabel || "Continue in Journal";
+      btnModule.textContent = msg.moduleLabel || "Open Workflow";
 
-    btnClose.onclick = () => {
-      cleanup();
-      resolve("cancel");
-    };
+      const cleanup = () => {
+        console.log("[NUDGE] cleanup");
+        modal.classList.add("hidden");
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+        modal.style.display = "";
+        modal.style.position = "";
+        modal.style.inset = "";
+        modal.style.zIndex = "";
 
-    btnCancel.onclick = () => {
-      cleanup();
-      resolve("cancel");
-    };
+        btnClose.onclick = null;
+        btnCancel.onclick = null;
+        btnJournal.onclick = null;
+        btnModule.onclick = null;
+        backdrop.onclick = null;
+        document.onkeydown = null;
+      };
 
-    btnJournal.onclick = () => {
-      cleanup();
-      resolve("journal");
-    };
-
-    btnModule.onclick = () => {
-      cleanup();
-      resolve("module");
-    };
-
-    backdrop.onclick = () => {
-      cleanup();
-      resolve("cancel");
-    };
-
-    document.onkeydown = (e) => {
-      if (e.key === "Escape") {
+      btnClose.onclick = () => {
+        console.log("[NUDGE] resolve cancel via close");
         cleanup();
         resolve("cancel");
-      }
-    };
+      };
 
-    modal.classList.remove("hidden");
-    modal.classList.add("open");
-    modal.setAttribute("aria-hidden", "false");
+      btnCancel.onclick = () => {
+        console.log("[NUDGE] resolve cancel via cancel");
+        cleanup();
+        resolve("cancel");
+      };
+
+      btnJournal.onclick = () => {
+        console.log("[NUDGE] resolve journal");
+        cleanup();
+        resolve("journal");
+      };
+
+      btnModule.onclick = () => {
+        console.log("[NUDGE] resolve module");
+        cleanup();
+        resolve("module");
+      };
+
+      backdrop.onclick = () => {
+        console.log("[NUDGE] resolve cancel via backdrop");
+        cleanup();
+        resolve("cancel");
+      };
+
+      document.onkeydown = (e) => {
+        if (e.key === "Escape") {
+          console.log("[NUDGE] resolve cancel via escape");
+          cleanup();
+          resolve("cancel");
+        }
+      };
+
+      modal.classList.remove("hidden");
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden", "false");
+
+      // force visible for debug in case CSS is the problem
+      modal.style.display = "block";
+      modal.style.position = "fixed";
+      modal.style.inset = "0";
+      modal.style.zIndex = "999999";
+
+      console.log("[NUDGE] shown", {
+        className: modal.className,
+        ariaHidden: modal.getAttribute("aria-hidden"),
+      });
+    } catch (err) {
+      console.error("[NUDGE] failed", err);
+      resolve("journal");
+    }
   });
 }
 
