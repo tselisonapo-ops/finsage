@@ -11907,7 +11907,7 @@ function wireJournalAccountCombo(cfg) {
 
       console.log("[JRNL] option clicked", { hiddenId, code: btn.dataset.code });
 
-      // ✅ guard / redirect rules first
+      // AR/AP local hard redirects
       if (isARAccount(btn)) {
         menu.classList.add("hidden");
         await handleARRedirectFromJournalLocal(btn, { side: hiddenId });
@@ -11919,31 +11919,31 @@ function wireJournalAccountCombo(cfg) {
         return;
       }
 
-      // ✅ normal selection
       const accountCode = (btn.dataset.code || "").trim();
+      const side = (hiddenId === "jrnlAccountCr") ? "cr" : "dr";
+
+      // ✅ specialist guard here
+      const guard = await window.enforceJournalAccountGuard?.({
+        side,
+        code: accountCode,
+      });
+
+      if (guard && guard.ok === false) {
+        menu.classList.add("hidden");
+        return;
+      }
+
+      // ✅ normal selection only if allowed / continued
       hiddenInput.value = accountCode;
       labelSpan.textContent = (btn.dataset.label || btn.textContent || "").trim();
-
-      // ✅ 🔥 IMPORTANT: trigger change event for hidden input (VAT guards rely on this)
       hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
 
-      // ✅ IFRS hook (soft)
       try {
-        const side = (hiddenId === "jrnlAccountCr") ? "cr" : "dr";
-
-        console.log("[JRNL] calling handleJournalAccountSelected", { side, accountCode, meta: {
-          standard: btn.dataset.standard || "",
-          cf_bucket: btn.dataset.cfBucket || "",
-          cf_section: btn.dataset.cfSection || "",
-        }});
-
         window.handleJournalAccountSelected?.(side, accountCode, {
           standard: btn.dataset.standard || "",
           cf_bucket: btn.dataset.cfBucket || "",
           cf_section: btn.dataset.cfSection || "",
         });
-
-        console.log("[JRNL] handleJournalAccountSelected returned");
       } catch (err) {
         console.warn("[JRNL] handleJournalAccountSelected failed:", err);
       }
