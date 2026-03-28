@@ -63,6 +63,9 @@ type SourceDocType = "invoice" | "grn";
 type JournalLine = { account_code: string; account_name?: string; debit: number; credit: number; memo?: string };
 type UopUsageMode = "DELTA" | "READING";
 
+type AssetEntryMode = "acquisition" | "opening_balance";
+
+
 type CoaRow = {
   code: string;
   name?: string;
@@ -86,6 +89,8 @@ type CoaRow = {
 type DepreciationMethod = "SL" | "RB" | "UOP";
 
 type CreateAssetPayload = {
+  entry_mode?: AssetEntryMode;
+
   asset_code: string;
   asset_name: string;
   asset_class: string;
@@ -95,18 +100,23 @@ type CreateAssetPayload = {
   serial_no?: string | null;
   notes?: string | null;
 
-  acquisition_date: string; // YYYY-MM-DD
+  acquisition_date: string;
   available_for_use_date?: string | null;
 
   cost: number;
   residual_value: number;
 
+  opening_as_at?: string | null;
+  opening_cost?: number | null;
+  opening_accum_dep?: number | null;
+  opening_impairment?: number | null;
+
   depreciation_method: DepreciationMethod;
   useful_life_months: number;
 
   rb_rate_percent?: number | null;
-  uop_usage_mode?: UopUsageMode | null;   // ✅ NEW
-  uop_opening_reading?: number | null; // opening odometer at available-for-use
+  uop_usage_mode?: UopUsageMode | null;
+  uop_opening_reading?: number | null;
   uop_total_units?: number | null;
   uop_unit_name?: string | null;
 
@@ -116,14 +126,11 @@ type CreateAssetPayload = {
   disposal_gain_account_code?: string | null;
   disposal_loss_account_code?: string | null;
 
-  // optional traceability fields
   bank_account_id?: number | string | null;
-
   funding_source?: FundingSource;
   supplier_id?: number | string | null;
   vendor_invoice_no?: string | null;
   grn_no?: string | null;
-
   other_credit_account_code?: string | null;
 };
 
@@ -255,6 +262,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
   const [otherCreditAccountCode, setOtherCreditAccountCode] = useState("");
 
+  // Entry mode
+  const [entryMode, setEntryMode] = useState<AssetEntryMode>("acquisition");
+  const isOpeningBalance = entryMode === "opening_balance";
+
   // 2-step flow
   const [step, setStep] = useState<1 | 2>(1);
   const [createdAssetId, setCreatedAssetId] = useState<string>("");
@@ -270,6 +281,8 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
   const [posting, setPosting] = useState(false);
 
   const [form, setForm] = useState<CreateAssetPayload>(() => ({
+    entry_mode: "acquisition",
+
     asset_code: "",
     asset_name: "",
     asset_class: "",
@@ -284,6 +297,11 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     cost: 0,
     residual_value: 0,
+
+    opening_as_at: "",
+    opening_cost: null,
+    opening_accum_dep: null,
+    opening_impairment: null,
 
     depreciation_method: "SL",
     useful_life_months: 60,
@@ -300,6 +318,13 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     disposal_gain_account_code: "",
     disposal_loss_account_code: "",
   }));
+
+  const carryingAmount = useMemo(() => {
+    const cost = Number(form.cost || 0);
+    const accum = Number(form.opening_accum_dep || 0);
+    const impairment = Number(form.opening_impairment || 0);
+    return Math.max(0, cost - accum - impairment);
+  }, [form.cost, form.opening_accum_dep, form.opening_impairment]);
 
   /** -----------------------------
    *  Build acquisition payload
@@ -482,103 +507,81 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     setErr("");
 
-    // Validation
     if (!form.asset_code.trim()) return setErr("Asset code is required.");
     if (!form.asset_name.trim()) return setErr("Asset name is required.");
     if (!form.asset_class.trim()) return setErr("Asset class is required.");
     if (!form.acquisition_date) return setErr("Acquisition date is required.");
-    
-    function isFutureISODate(iso: string) {
-      // expects YYYY-MM-DD
-      const d = new Date(iso + "T00:00:00");
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      return d.getTime() > today.getTime();
+
+    if (Number(form.cost) <= 0) return setErr(isOpeningBalance ? "Historical cost must be greater than 0." : "Cost must be greater than 0.");
+
+    if (isOpeningBalance) {
+      if (!String(form.opening_as_at || "").trim()) return setErr("Opening as at is required.");
+      if (Number(form.opening_accum_dep || 0) < 0) return setErr("Accumulated depreciation cannot be negative.");
+      if (Number(form.opening_impairment || 0) < 0) return setErr("Opening impairment cannot be negative.");
+      if (Number(form.opening_accum_dep || 0) > Number(form.cost || 0))
+        return setErr("Accumulated depreciation cannot exceed historical cost.");
+    } else {
+      if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !selectedVendorId)
+        return setErr("Select a vendor.");
+
+      if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !sourceDocRef.trim())
+        return setErr(fundingSource === "vendor_credit" ? "Invoice number is required." : "GRN / receipt reference is required.");
+
+      if ((fundingSource === "bank" || fundingSource === "cash") && !selectedBankId)
+        return setErr("Select a bank account.");
+
+      if (fundingSource === "other" && !otherCreditAccountCode.trim())
+        return setErr("Credit account code is required for Other.");
     }
-
-    function isBeforeISODate(a: string, b: string) {
-      // true if a < b
-      return new Date(a + "T00:00:00").getTime() < new Date(b + "T00:00:00").getTime();
-    }
-
-    // after acquisition_date required check:
-    if (form.acquisition_date && isFutureISODate(form.acquisition_date))
-      return setErr("Acquisition date cannot be in the future.");
-
-    if (form.available_for_use_date?.trim()) {
-      const afu = form.available_for_use_date.trim();
-      if (isFutureISODate(afu)) return setErr("Available for use date cannot be in the future.");
-      if (form.acquisition_date && isBeforeISODate(afu, form.acquisition_date))
-        return setErr("Available for use date cannot be earlier than acquisition date.");
-    }
-
-    if (!form.asset_account_code) return setErr("Select a Non-current asset (PPE) account.");
-    if (Number(form.cost) <= 0) return setErr("Cost must be greater than 0.");
-
-    if (form.depreciation_method === "SL" && form.useful_life_months <= 0)
-      return setErr("Useful life (months) must be greater than 0.");
-
-    if (form.depreciation_method === "RB" && (!form.rb_rate_percent || form.rb_rate_percent <= 0))
-      return setErr("Depreciation rate (% p.a.) must be greater than 0.");
-
-    if (form.depreciation_method === "UOP" && (!form.uop_total_units || form.uop_total_units <= 0))
-      return setErr("Total units (lifetime) must be greater than 0.");
-
-    if (form.depreciation_method === "UOP") {
-      if (!form.uop_total_units || form.uop_total_units <= 0)
-        return setErr("Total units (lifetime) must be greater than 0.");
-
-      const mode = (form.uop_usage_mode || "DELTA") as "DELTA" | "READING";
-      if (mode === "READING") {
-        if (form.uop_opening_reading == null || form.uop_opening_reading < 0)
-          return setErr("Opening meter reading is required for Meter Reading mode.");
-      }
-    }
-
-    if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !selectedVendorId)
-      return setErr("Select a vendor.");
-
-    if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !sourceDocRef.trim())
-      return setErr(fundingSource === "vendor_credit" ? "Invoice number is required." : "GRN / receipt reference is required.");
-
-    if ((fundingSource === "bank" || fundingSource === "cash") && !selectedBankId)
-      return setErr("Select a bank account.");
-
-    if (fundingSource === "other" && !otherCreditAccountCode.trim())
-      return setErr("Credit account code is required for Other.");
 
     setSaving(true);
 
     try {
       const companyId = args.companyId;
 
-      const acqDate = String(form.acquisition_date || "").trim();
-      if (!acqDate) return setErr("Acquisition date is required.");
-      // 1) Create asset
       const payload: CreateAssetPayload = {
         ...form,
-        acquisition_date: acqDate,
+        entry_mode: entryMode,
         category: form.category?.trim() ? form.category.trim() : null,
         location: form.location?.trim() ? form.location.trim() : null,
         serial_no: form.serial_no?.trim() ? form.serial_no.trim() : null,
         notes: form.notes?.trim() ? form.notes.trim() : null,
         available_for_use_date: form.available_for_use_date?.trim() ? form.available_for_use_date.trim() : null,
 
-        funding_source: fundingSource,
-        supplier_id: fundingSource === "vendor_credit" || fundingSource === "grni" ? (selectedVendorId || null) : null,
-        vendor_invoice_no: fundingSource === "vendor_credit" ? sourceDocRef.trim() : null,
-        grn_no: fundingSource === "grni" ? sourceDocRef.trim() : null,
-        bank_account_id: fundingSource === "bank" || fundingSource === "cash" ? (selectedBankId || null) : null,
-        other_credit_account_code: fundingSource === "other" ? otherCreditAccountCode.trim() : null,
+        opening_as_at: isOpeningBalance ? (form.opening_as_at?.trim() || null) : null,
+        opening_cost: isOpeningBalance ? Number(form.opening_cost ?? form.cost ?? 0) : null,
+        opening_accum_dep: isOpeningBalance ? Number(form.opening_accum_dep ?? 0) : null,
+        opening_impairment: isOpeningBalance ? Number(form.opening_impairment ?? 0) : null,
+
+        funding_source: !isOpeningBalance ? fundingSource : undefined,
+        supplier_id: !isOpeningBalance && (fundingSource === "vendor_credit" || fundingSource === "grni") ? (selectedVendorId || null) : null,
+        vendor_invoice_no: !isOpeningBalance && fundingSource === "vendor_credit" ? sourceDocRef.trim() : null,
+        grn_no: !isOpeningBalance && fundingSource === "grni" ? sourceDocRef.trim() : null,
+        bank_account_id: !isOpeningBalance && (fundingSource === "bank" || fundingSource === "cash") ? (selectedBankId || null) : null,
+        other_credit_account_code: !isOpeningBalance && fundingSource === "other" ? otherCreditAccountCode.trim() : null,
       };
 
-      const res = await apiFetchFn(assetsCreateUrl(companyId), { method: "POST", body: JSON.stringify(payload) });
+      const res = await apiFetchFn(assetsCreateUrl(companyId), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
-      const created = res as { id?: number | string; asset_id?: number | string; data?: { id?: number | string; asset_id?: number | string } };
+      const created = res as {
+        id?: number | string;
+        asset_id?: number | string;
+        opening_journal_id?: number | string;
+        data?: { id?: number | string; asset_id?: number | string; opening_journal_id?: number | string };
+      };
+
       const assetId = created.id ?? created.asset_id ?? created.data?.id ?? created.data?.asset_id;
       if (assetId == null) throw new Error("Asset created but response did not include id.");
 
-      // 2) Create acquisition draft
+      if (isOpeningBalance) {
+        onResolve({ action: "create_asset", assetId });
+        onClose();
+        return;
+      }
+
       const acqPayload = buildAcqPayload(assetId);
       const acqRes = await apiFetchFn(assetAcqCreateUrl(companyId, assetId), {
         method: "POST",
@@ -593,10 +596,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       setCreatedAcqId(String(acqId));
       setStep(2);
 
-      // 3) Preview (only after draft)
       await loadJournalPreview(String(companyId), String(acqId));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed to create draft");
+      setErr(e instanceof Error ? e.message : "Failed to create asset");
     } finally {
       setSaving(false);
     }
@@ -663,36 +665,129 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       )}
 
       {/* CREATE ASSET */}
+      <div
+        style={{
+          border: "1px solid rgba(0,0,0,0.08)",
+          borderRadius: 12,
+          padding: 12,
+          background: "rgba(0,0,0,0.02)",
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Entry type</div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              border: "1px solid rgba(0,0,0,0.12)",
+              borderRadius: 10,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="radio"
+              name="entry_mode"
+              checked={entryMode === "acquisition"}
+              onChange={() => {
+                setEntryMode("acquisition");
+                setForm((p) => ({
+                  ...p,
+                  entry_mode: "acquisition",
+                  opening_as_at: "",
+                  opening_cost: null,
+                  opening_accum_dep: null,
+                  opening_impairment: null,
+                }));
+              }}
+            />
+            <span>New Asset / Acquisition</span>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              border: "1px solid rgba(0,0,0,0.12)",
+              borderRadius: 10,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="radio"
+              name="entry_mode"
+              checked={entryMode === "opening_balance"}
+              onChange={() => {
+                setEntryMode("opening_balance");
+                setForm((p) => ({
+                  ...p,
+                  entry_mode: "opening_balance",
+                  opening_cost: Number(p.cost || 0),
+                  opening_as_at: p.opening_as_at || new Date().toISOString().slice(0, 10),
+                  opening_accum_dep: p.opening_accum_dep ?? 0,
+                  opening_impairment: p.opening_impairment ?? 0,
+                }));
+              }}
+            />
+            <span>Existing Asset / Opening Balance</span>
+          </label>
+        </div>
+
+        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>
+          {isOpeningBalance
+            ? "Capture an asset already owned before system adoption. Enter historical cost and accumulated depreciation."
+            : "Capture a newly acquired asset and continue to acquisition draft + posting."}
+        </div>
+      </div>
       <div style={{ border: "1px solid rgba(0,0,0,0.08)", borderRadius: 12, padding: 12 }}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>Create Asset</div>
 
         {err ? <div style={{ color: "#b91c1c", fontSize: 12, marginBottom: 8 }}>{err}</div> : null}
 
-        {/* Step badge */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {/* Step badge / mode note */}
+        {!isOpeningBalance ? (
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 900,
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: step === 1 ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.03)",
+              }}
+            >
+              1) Draft
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 900,
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: step === 2 ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.03)",
+              }}
+            >
+              2) Review + Post
+            </div>
+          </div>
+        ) : (
           <div
             style={{
               fontSize: 12,
-              fontWeight: 900,
-              padding: "6px 10px",
-              borderRadius: 999,
-              background: step === 1 ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.03)",
+              fontWeight: 700,
+              marginBottom: 10,
+              padding: "8px 10px",
+              borderRadius: 10,
+              background: "rgba(0,0,0,0.04)",
             }}
           >
-            1) Draft
+            Opening balance mode: asset will be created and opening journal posted immediately.
           </div>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 900,
-              padding: "6px 10px",
-              borderRadius: 999,
-              background: step === 2 ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.03)",
-            }}
-          >
-            2) Review + Post
-          </div>
-        </div>
+        )}
 
         <div style={{ display: "grid", gap: 10 }}>
           {/* Asset code / class */}
@@ -783,7 +878,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Cost *</div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>
+                {isOpeningBalance ? "Historical cost *" : "Cost *"}
+              </div>
               <input
                 value={String(form.cost)}
                 onChange={(e) => setForm((p) => ({ ...p, cost: toNum(e.target.value) }))}
@@ -801,7 +898,69 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               />
             </div>
           </div>
+          {isOpeningBalance ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening as at *</div>
+                  <input
+                    type="date"
+                    value={form.opening_as_at || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, opening_as_at: e.target.value }))}
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  />
+                </div>
 
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening cost</div>
+                  <input
+                    value={String(form.opening_cost ?? form.cost ?? 0)}
+                    onChange={(e) => setForm((p) => ({ ...p, opening_cost: toNum(e.target.value) }))}
+                    placeholder="0.00"
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Accumulated depreciation *</div>
+                  <input
+                    value={String(form.opening_accum_dep ?? 0)}
+                    onChange={(e) => setForm((p) => ({ ...p, opening_accum_dep: toNum(e.target.value) }))}
+                    placeholder="0.00"
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening impairment</div>
+                  <input
+                    value={String(form.opening_impairment ?? 0)}
+                    onChange={(e) => setForm((p) => ({ ...p, opening_impairment: toNum(e.target.value) }))}
+                    placeholder="0.00"
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Carrying amount</div>
+                  <input
+                    value={String(carryingAmount)}
+                    readOnly
+                    style={{
+                      width: "100%",
+                      border: "1px solid rgba(0,0,0,0.15)",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      background: "rgba(0,0,0,0.04)",
+                      fontWeight: 700,
+                    }}
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
           {/* Depreciation inputs */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
@@ -1032,144 +1191,143 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             This controls which account gets credited when you post the acquisition.
           </div>
 
-          {(fundingSource === "vendor_credit" || fundingSource === "grni") ? (
-            <div style={{ display: "grid", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Vendor *</div>
-                <select
-                  disabled={vendorsLoading}
-                  value={selectedVendorId}
-                  onChange={(e) => setSelectedVendorId(e.target.value)}
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                >
-                  <option value="">{vendorsLoading ? "Loading..." : "Select vendor..."}</option>
-                  {vendors.map((v) => (
-                    <option key={String(v.id)} value={String(v.id)}>
-                      {v.name || v.vendor_name || `Vendor ${v.id}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <div style={{ fontSize: 12 }}>Source document</div>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowSourceDocNote((s) => !s)}
-                    title="Help"
-                    style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 999,
-                      border: "1px solid rgba(0,0,0,0.25)",
-                      background: "white",
-                      fontSize: 12,
-                      fontWeight: 900,
-                      lineHeight: "16px",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    ?
-                  </button>
-                </div>
-
-                {showSourceDocNote ? (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: 10,
-                      borderRadius: 10,
-                      background: "rgba(255, 243, 199, 0.9)",
-                      border: "1px solid rgba(0,0,0,0.12)",
-                      fontSize: 12,
-                    }}
-                  >
-                    {fundingSource === "vendor_credit" ? (
-                      <>
-                        <b>Vendor / Credit (AP)</b> is locked to <b>Invoice</b> because the posting credits the <b>AP control</b>.
-                        If you only have a GRN, choose <b>GRNI</b>.
-                      </>
-                    ) : (
-                      <>
-                        <b>GRNI</b> uses a <b>GRN / Goods Receipt</b> reference because the posting credits the <b>GRNI control</b>.
-                        Later the supplier invoice clears GRNI to AP.
-                      </>
-                    )}
+          {!isOpeningBalance ? (
+            <>
+              {(fundingSource === "vendor_credit" || fundingSource === "grni") ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Vendor *</div>
+                    <select
+                      disabled={vendorsLoading}
+                      value={selectedVendorId}
+                      onChange={(e) => setSelectedVendorId(e.target.value)}
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    >
+                      <option value="">{vendorsLoading ? "Loading..." : "Select vendor..."}</option>
+                      {vendors.map((v) => (
+                        <option key={String(v.id)} value={String(v.id)}>
+                          {v.name || v.vendor_name || `Vendor ${v.id}`}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                ) : null}
 
-                <select
-                  value={sourceDocType}
-                  onChange={(e) => setSourceDocType(e.target.value as SourceDocType)}
-                  disabled={fundingSource === "vendor_credit"}
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                >
-                  <option value="invoice">Invoice</option>
-                  <option value="grn">GRN / Goods Receipt</option>
-                </select>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <div style={{ fontSize: 12 }}>Source document</div>
 
-                <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                  {fundingSource === "vendor_credit"
-                    ? "Vendor/Credit posts to AP control; reference the supplier invoice."
-                    : "GRNI posts to GRNI control; reference the goods receipt (GRN)."}
+                      <button
+                        type="button"
+                        onClick={() => setShowSourceDocNote((s) => !s)}
+                        title="Help"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                          border: "1px solid rgba(0,0,0,0.25)",
+                          background: "white",
+                          fontSize: 12,
+                          fontWeight: 900,
+                          lineHeight: "16px",
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        ?
+                      </button>
+                    </div>
+
+                    {showSourceDocNote ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: 10,
+                          borderRadius: 10,
+                          background: "rgba(255, 243, 199, 0.9)",
+                          border: "1px solid rgba(0,0,0,0.12)",
+                          fontSize: 12,
+                        }}
+                      >
+                        {fundingSource === "vendor_credit" ? (
+                          <>
+                            <b>Vendor / Credit (AP)</b> is locked to <b>Invoice</b>.
+                          </>
+                        ) : (
+                          <>
+                            <b>GRNI</b> uses a <b>GRN / Goods Receipt</b> reference.
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+
+                    <select
+                      value={sourceDocType}
+                      onChange={(e) => setSourceDocType(e.target.value as SourceDocType)}
+                      disabled={fundingSource === "vendor_credit"}
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    >
+                      <option value="invoice">Invoice</option>
+                      <option value="grn">GRN / Goods Receipt</option>
+                    </select>
+
+                    <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
+                      {fundingSource === "vendor_credit"
+                        ? "Reference supplier invoice."
+                        : "Reference GRN."}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>
+                      {sourceDocType === "invoice" ? "Invoice number *" : "GRN / Receipt reference *"}
+                    </div>
+                    <input
+                      value={sourceDocRef}
+                      onChange={(e) => setSourceDocRef(e.target.value)}
+                      placeholder={sourceDocType === "invoice" ? "e.g. INV-12345" : "e.g. GRN-009812"}
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>
-                  {sourceDocType === "invoice" ? "Invoice number *" : "GRN / Receipt reference *"}
+              {(fundingSource === "bank" || fundingSource === "cash") ? (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Bank account *</div>
+                  <select
+                    disabled={banksLoading}
+                    value={selectedBankId}
+                    onChange={(e) => setSelectedBankId(e.target.value)}
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  >
+                    <option value="">{banksLoading ? "Loading..." : "Select bank account..."}</option>
+                    {banks.map((b) => {
+                      const label = [b.bank_name, b.account_name, b.account_number].filter(Boolean).join(" • ");
+                      const code = (b.ledger_account_code || "").trim();
+                      const missing = !code;
+
+                      return (
+                        <option key={String(b.id)} value={String(b.id)} disabled={missing}>
+                          {label || `Bank ${b.id}`}{missing ? " (Missing ledger code)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
-                <input
-                  value={sourceDocRef}
-                  onChange={(e) => setSourceDocRef(e.target.value)}
-                  placeholder={sourceDocType === "invoice" ? "e.g. INV-12345" : "e.g. GRN-009812"}
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                />
-              </div>
-            </div>
-          ) : null}
+              ) : null}
 
-          {(fundingSource === "bank" || fundingSource === "cash") ? (
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Bank account *</div>
-              <select
-                disabled={banksLoading}
-                value={selectedBankId}
-                onChange={(e) => setSelectedBankId(e.target.value)}
-                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              >
-                <option value="">{banksLoading ? "Loading..." : "Select bank account..."}</option>
-                {banks.map((b) => {
-                  const label = [b.bank_name, b.account_name, b.account_number].filter(Boolean).join(" • ");
-                  const code = (b.ledger_account_code || "").trim();
-                  const missing = !code;
-
-                  return (
-                    <option key={String(b.id)} value={String(b.id)} disabled={missing}>
-                      {label || `Bank ${b.id}`}{missing ? " (Missing ledger code)" : ""}
-                    </option>
-                  );
-                })}
-              </select>
-              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                Make sure each bank row has <b>ledger_account_code</b> set, because posting uses it.
-              </div>
-            </div>
-          ) : null}
-
-          {fundingSource === "other" ? (
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Credit account code *</div>
-              <input
-                value={otherCreditAccountCode}
-                onChange={(e) => setOtherCreditAccountCode(e.target.value)}
-                placeholder="e.g. BS_CL_2000 (suspense) or a clearing account"
-                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              />
-            </div>
+              {fundingSource === "other" ? (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Credit account code *</div>
+                  <input
+                    value={otherCreditAccountCode}
+                    onChange={(e) => setOtherCreditAccountCode(e.target.value)}
+                    placeholder="e.g. BS_CL_2000"
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  />
+                </div>
+              ) : null}
+            </>
           ) : null}
 
           {/* ✅ Journal Preview appears ONLY after draft (step 2) */}
@@ -1249,7 +1407,25 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           ) : null}
 
           {/* ✅ Buttons */}
-          {step === 1 ? (
+          {isOpeningBalance ? (
+            <button
+              type="button"
+              onClick={submitCreateDraft}
+              disabled={saving}
+              style={{
+                border: 0,
+                borderRadius: 12,
+                padding: "12px 14px",
+                background: "black",
+                color: "white",
+                cursor: saving ? "not-allowed" : "pointer",
+                fontWeight: 900,
+                marginTop: 6,
+              }}
+            >
+              {saving ? "Saving..." : "Create Opening Balance"}
+            </button>
+          ) : step === 1 ? (
             <button
               type="button"
               onClick={submitCreateDraft}

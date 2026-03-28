@@ -580,8 +580,16 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
     return fetchall(cur)
 
+
 def create_asset(cur, company_id, payload):
     schema = company_schema(company_id)
+
+    # ----------------------------
+    # Entry mode
+    # ----------------------------
+    entry_mode = (payload.get("entry_mode") or "acquisition").strip().lower()
+    if entry_mode not in ("acquisition", "opening_balance"):
+        raise Exception("Invalid entry_mode. Use 'acquisition' or 'opening_balance'.")
 
     # ----------------------------
     # Depreciation validation
@@ -593,17 +601,17 @@ def create_asset(cur, company_id, payload):
             raise Exception("useful_life_months required for Straight-line")
 
     elif m == "RB":
-        if Decimal(payload.get("rb_rate_percent") or 0) <= 0:
+        if Decimal(str(payload.get("rb_rate_percent") or 0)) <= 0:
             raise Exception("rb_rate_percent required for Reducing balance")
 
     elif m == "UOP":
-        if Decimal(payload.get("uop_total_units") or 0) <= 0:
+        if Decimal(str(payload.get("uop_total_units") or 0)) <= 0:
             raise Exception("uop_total_units required for Units of Production")
     else:
         raise Exception("Invalid depreciation_method")
 
     # ----------------------------
-    # ✅ NEW: UOP usage config (DELTA vs READING)
+    # UOP usage config
     # ----------------------------
     uop_usage_mode = (payload.get("uop_usage_mode") or "DELTA").upper()
     if uop_usage_mode not in ("DELTA", "READING"):
@@ -617,28 +625,88 @@ def create_asset(cur, company_id, payload):
         if uop_opening_reading < 0:
             raise Exception("uop_opening_reading must be 0 or more.")
 
-    # Only meaningful for UOP assets
     if m != "UOP":
         uop_usage_mode = None
         uop_opening_reading = None
     else:
-        # If using READING mode, opening baseline is required
         if uop_usage_mode == "READING" and uop_opening_reading is None:
             raise Exception("uop_opening_reading is required when uop_usage_mode is READING.")
+
+    # ----------------------------
+    # Opening balance fields
+    # ----------------------------
+    cost = Decimal(str(payload.get("cost") or 0))
+    residual_value = Decimal(str(payload.get("residual_value") or 0))
+
+    opening_as_at = payload.get("opening_as_at") or None
+
+    opening_cost = payload.get("opening_cost", None)
+    if opening_cost in ("", None):
+        opening_cost = None
+    else:
+        opening_cost = Decimal(str(opening_cost))
+
+    opening_accum_dep = payload.get("opening_accum_dep", None)
+    if opening_accum_dep in ("", None):
+        opening_accum_dep = None
+    else:
+        opening_accum_dep = Decimal(str(opening_accum_dep))
+
+    opening_impairment = payload.get("opening_impairment", None)
+    if opening_impairment in ("", None):
+        opening_impairment = None
+    else:
+        opening_impairment = Decimal(str(opening_impairment))
+
+    if cost < 0:
+        raise Exception("cost cannot be negative")
+    if residual_value < 0:
+        raise Exception("residual_value cannot be negative")
+    if residual_value > cost:
+        raise Exception("residual_value cannot exceed cost")
+
+    if entry_mode == "opening_balance":
+        if not opening_as_at:
+            raise Exception("opening_as_at is required for opening balance assets")
+
+        if opening_accum_dep is None:
+            raise Exception("opening_accum_dep is required for opening balance assets")
+
+        if opening_accum_dep < 0:
+            raise Exception("opening_accum_dep cannot be negative")
+
+        if opening_accum_dep > cost:
+            raise Exception("opening_accum_dep cannot exceed historical cost")
+
+        if opening_impairment is not None and opening_impairment < 0:
+            raise Exception("opening_impairment cannot be negative")
+
+        if opening_cost is None:
+            opening_cost = cost
+
+    else:
+        # normal acquisition asset
+        opening_as_at = None
+        opening_cost = None
+        opening_accum_dep = None
+        opening_impairment = None
 
     # ----------------------------
     # INSERT
     # ----------------------------
     cur.execute(_q(schema, """
       INSERT INTO {schema}.assets(
-        company_id, asset_code, asset_name, asset_class, category, location, serial_no, notes,
+        company_id,
+        asset_code, asset_name, asset_class, category, location, serial_no, notes,
+
         acquisition_date, available_for_use_date, cost, residual_value,
         depreciation_method, useful_life_months,
         rb_rate_percent,
         uop_total_units, uop_unit_name,
-
-        -- ✅ NEW
         uop_usage_mode, uop_opening_reading,
+
+        -- opening-balance fields
+        opening_as_at, opening_cost, opening_accum_dep, opening_impairment,
 
         status,
         supplier_id, acquisition_ref,
@@ -650,14 +718,16 @@ def create_asset(cur, company_id, payload):
         held_for_sale_account_code
       )
       VALUES (
-        %s,%s,%s,%s,%s,%s,%s,%s,
+        %s,
+        %s,%s,%s,%s,%s,%s,%s,
+
         %s,%s,%s,%s,
         %s,%s,
         %s,
         %s,%s,
-
-        -- ✅ NEW
         %s,%s,
+
+        %s,%s,%s,%s,
 
         %s,
         %s,%s,
@@ -672,15 +742,16 @@ def create_asset(cur, company_id, payload):
       company_id,
       payload["asset_code"], payload["asset_name"], payload["asset_class"],
       payload.get("category"), payload.get("location"), payload.get("serial_no"), payload.get("notes"),
+
       payload["acquisition_date"], payload.get("available_for_use_date"),
-      payload.get("cost", 0), payload.get("residual_value", 0),
+      cost, residual_value,
       payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
 
       payload.get("rb_rate_percent"),
       payload.get("uop_total_units"), payload.get("uop_unit_name"),
-
-      # ✅ NEW
       uop_usage_mode, uop_opening_reading,
+
+      opening_as_at, opening_cost, opening_accum_dep, opening_impairment,
 
       payload.get("status", "active"),
       payload.get("supplier_id"), payload.get("acquisition_ref"),

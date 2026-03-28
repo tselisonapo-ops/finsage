@@ -232,6 +232,7 @@ def asset_class_key(asset_row: dict, policy: dict) -> str:
 
     return direct or "unknown"
 
+
 def asset_standard_and_model(asset_row: dict, policy: dict) -> tuple[str, str]:
     # standard (ias16 / ias40 / ias38)
     std = (asset_row.get("accounting_standard") or "").strip().lower()
@@ -1880,6 +1881,155 @@ def post_acquisition(
       SET status='posted', posted_journal_id=%s, posted_at=NOW()
       WHERE company_id=%s AND id=%s
     """), (jid, company_id, acq_id))
+
+    return jid
+
+
+def post_opening_balance(
+    cur,
+    company_id: int,
+    asset_id: int,
+    *,
+    user: dict | None = None,
+    approved_via: str | None = None
+) -> int:
+    enforce_ppe_post_policy(
+        company_id=company_id,
+        user=user,
+        action="post_opening_balance",
+        approved_via=approved_via,
+    )
+
+    schema = company_schema(company_id)
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id=%s AND id=%s
+        FOR UPDATE
+    """), (company_id, asset_id))
+    asset = fetchone(cur)
+    if not asset:
+        raise Exception("asset not found")
+
+    asset_account_code = (asset.get("asset_account_code") or "").strip()
+    accum_dep_account_code = (asset.get("accum_dep_account_code") or "").strip()
+
+    if not asset_account_code:
+        raise Exception("asset missing asset_account_code")
+    if not accum_dep_account_code:
+        raise Exception("asset missing accum_dep_account_code")
+
+    cost = Decimal(str(asset.get("cost") or 0))
+    opening_accum_dep = Decimal(str(asset.get("opening_accum_dep") or 0))
+    opening_impairment = Decimal(str(asset.get("opening_impairment") or 0))
+    opening_as_at = asset.get("opening_as_at") or asset.get("available_for_use_date") or asset.get("acquisition_date")
+
+    if not opening_as_at:
+        raise Exception("opening_as_at or asset start date is required")
+
+    if cost <= 0:
+        raise Exception("opening asset cost must be > 0")
+    if opening_accum_dep < 0:
+        raise Exception("opening_accum_dep cannot be negative")
+    if opening_impairment < 0:
+        raise Exception("opening_impairment cannot be negative")
+    if opening_accum_dep > cost:
+        raise Exception("opening_accum_dep cannot exceed cost")
+
+    carrying = cost - opening_accum_dep - opening_impairment
+    if carrying < 0:
+        raise Exception("invalid opening values: carrying amount cannot be negative")
+
+    ccy = get_company_currency(cur, company_id)
+
+    cur.execute(_q(schema, """
+        SELECT code
+        FROM {schema}.coa
+        WHERE company_id=%s
+          AND template_code_scoped = 'G::3105'
+        LIMIT 1
+    """), (company_id,))
+    row = cur.fetchone()
+
+    if not row or not row.get("code"):
+        raise Exception("Opening Balance Equity account (G::3105) not found in company COA")
+
+    opening_equity_code = (row.get("code") or "").strip()
+
+    impairment_account_code = (
+        (asset.get("accum_impairment_account_code") or "").strip()
+        or (asset.get("impairment_loss_account_code") or "").strip()
+    )
+
+    ref = f"OB-ASSET-{asset['id']}"
+
+    jid = create_journal(
+        cur,
+        schema,
+        company_id,
+        opening_as_at,
+        ref,
+        f"Asset opening balance: {asset['asset_code']} - {asset['asset_name']}",
+        ccy,
+        "asset_opening_balance",
+        asset["id"],
+    )
+
+    add_line(
+        cur, schema, company_id, jid,
+        asset_account_code,
+        "Opening PPE cost",
+        float(_q2(cost)), 0,
+        "asset_opening_balance", asset["id"]
+    )
+
+    if opening_accum_dep > 0:
+        add_line(
+            cur, schema, company_id, jid,
+            accum_dep_account_code,
+            "Opening accumulated depreciation",
+            0, float(_q2(opening_accum_dep)),
+            "asset_opening_balance", asset["id"]
+        )
+
+    if opening_impairment > 0:
+        if not impairment_account_code:
+            raise Exception("opening_impairment provided but no impairment account configured")
+
+        add_line(
+            cur, schema, company_id, jid,
+            impairment_account_code,
+            "Opening accumulated impairment",
+            0, float(_q2(opening_impairment)),
+            "asset_opening_balance", asset["id"]
+        )
+
+    if carrying > 0:
+        add_line(
+            cur, schema, company_id, jid,
+            opening_equity_code,
+            "Opening balance equity",
+            0, float(_q2(carrying)),
+            "asset_opening_balance", asset["id"]
+        )
+
+    finalize_journal(cur, schema, company_id, jid)
+
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=opening_as_at,
+        ref=ref,
+    )
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.assets
+        SET updated_at = NOW()
+        WHERE company_id=%s AND id=%s
+    """), (company_id, asset_id))
 
     return jid
 

@@ -11324,6 +11324,19 @@ class DatabaseService:
             OR uop_usage_mode IS NOT NULL
         );
 
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS entry_mode TEXT NOT NULL DEFAULT 'acquisition';
+
+        ALTER TABLE {schema}.assets
+        DROP CONSTRAINT IF EXISTS ck_assets_entry_mode;
+
+        ALTER TABLE {schema}.assets
+        ADD CONSTRAINT ck_assets_entry_mode
+        CHECK (entry_mode IN ('acquisition','opening_balance'));
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS opening_posted_journal_id INT NULL;
+
         -- ==================================================
         -- ASSETS: Opening balances (migration / bring-forward)
         -- ==================================================
@@ -11681,6 +11694,227 @@ class DatabaseService:
         END $$;
 
         -- ==================================================
+        -- ASSET DEPRECIATION RUNS (posted movements)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.asset_depreciation (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            asset_id INT NOT NULL,
+
+            period_start DATE NOT NULL,
+            period_end   DATE NOT NULL,
+
+            depreciation_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            -- snapshot balances after posting (helps disclosures)
+            accumulated_depreciation NUMERIC(18,2) NOT NULL DEFAULT 0,
+            carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',     -- draft|posted|reversed|void
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- ==================================================
+        -- ASSET DEPRECIATION: Basis snapshot fields (safe-add)
+        -- ==================================================
+        DO $asset_dep_add_basis_snapshot$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='cost_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN cost_basis NUMERIC(18,2) NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='residual_value_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN residual_value_basis NUMERIC(18,2) NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='useful_life_months_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN useful_life_months_basis INT NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='depreciation_method_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN depreciation_method_basis TEXT NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='measurement_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN measurement_basis TEXT NULL', '{schema}');
+        END IF;
+        END
+        $asset_dep_add_basis_snapshot$;
+
+        -- Optional check (safe)
+        DO $fix_ck_asset_dep_basis_valid$
+        BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_asset_dep_basis_valid' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation DROP CONSTRAINT ck_asset_dep_basis_valid', '{schema}');
+        END IF;
+
+        EXECUTE format(
+            'ALTER TABLE %I.asset_depreciation
+            ADD CONSTRAINT ck_asset_dep_basis_valid
+            CHECK (
+            cost_basis IS NULL OR cost_basis >= 0
+            AND residual_value_basis IS NULL OR residual_value_basis >= 0
+            AND useful_life_months_basis IS NULL OR useful_life_months_basis >= 0
+            AND depreciation_method_basis IS NULL OR depreciation_method_basis IN (''SL'',''RB'',''UOP'')
+            AND measurement_basis IS NULL OR measurement_basis IN (''cost'',''revaluation'')
+            )',
+            '{schema}'
+        );
+        END
+        $fix_ck_asset_dep_basis_valid$;
+
+        DO $asset_dep_add_method_basis$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='rb_rate_percent_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN rb_rate_percent_basis NUMERIC(8,4) NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='uop_total_units_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN uop_total_units_basis NUMERIC(18,4) NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='uop_units_used_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN uop_units_used_basis NUMERIC(18,4) NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='uop_unit_name_basis'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN uop_unit_name_basis TEXT NULL', '{schema}');
+        END IF;
+        END
+        $asset_dep_add_method_basis$;
+
+        -- FKs
+        DO $fk_asset_dep_asset$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_asset_dep_asset' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.asset_depreciation
+            ADD CONSTRAINT fk_asset_dep_asset
+            FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_asset_dep_asset$;
+
+        DO $fk_asset_dep_journal$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_asset_dep_journal' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.asset_depreciation
+            ADD CONSTRAINT fk_asset_dep_journal
+            FOREIGN KEY (posted_journal_id) REFERENCES %I.journal(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_asset_dep_journal$;
+
+        DO $fk_asset_dep_approval$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_asset_dep_approval' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.asset_depreciation
+            ADD CONSTRAINT fk_asset_dep_approval
+            FOREIGN KEY (approval_id) REFERENCES %I.approval_requests(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_asset_dep_approval$;
+
+        -- Anti-duplicate: one dep row per asset per period (non-void)
+        DO $uq_asset_dep_asset_period$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname='{schema}' AND indexname='uq_asset_dep_asset_period'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_asset_dep_asset_period
+            ON %I.asset_depreciation(asset_id, period_start, period_end)
+            WHERE status <> ''void''',
+            '{schema}'
+            );
+        END IF;
+        END $uq_asset_dep_asset_period$;
+
+        -- Checks
+        DO $ck_asset_dep_valid$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_asset_dep_valid' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.asset_depreciation
+            ADD CONSTRAINT ck_asset_dep_valid
+            CHECK (
+                period_end >= period_start
+                AND depreciation_amount >= 0
+                AND accumulated_depreciation >= 0
+                AND carrying_amount >= 0
+                AND status IN (''draft'',''pending_review'',''posted'',''reversed'',''void'')
+            )',
+            '{schema}'
+            );
+        END IF;
+        END $ck_asset_dep_valid$;
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_company_idx
+        ON {schema}.asset_depreciation(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_asset_idx
+        ON {schema}.asset_depreciation(asset_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_period_end_idx
+        ON {schema}.asset_depreciation(period_end);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_status_idx
+        ON {schema}.asset_depreciation(status);
+
+        -- ==================================================
         -- ASSET ESTIMATE CHANGES (IAS 16) - useful life / residual / method
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.asset_estimate_changes (
@@ -11986,228 +12220,6 @@ class DatabaseService:
         END IF;
         END
         $fk_asset_revaluations_journal$;
-
-
-        -- ==================================================
-        -- ASSET DEPRECIATION RUNS (posted movements)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.asset_depreciation (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            asset_id INT NOT NULL,
-
-            period_start DATE NOT NULL,
-            period_end   DATE NOT NULL,
-
-            depreciation_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            -- snapshot balances after posting (helps disclosures)
-            accumulated_depreciation NUMERIC(18,2) NOT NULL DEFAULT 0,
-            carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            status TEXT NOT NULL DEFAULT 'draft',     -- draft|posted|reversed|void
-            posted_journal_id INT NULL,
-            posted_at TIMESTAMPTZ NULL,
-
-            created_by INT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        -- ==================================================
-        -- ASSET DEPRECIATION: Basis snapshot fields (safe-add)
-        -- ==================================================
-        DO $asset_dep_add_basis_snapshot$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='cost_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN cost_basis NUMERIC(18,2) NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='residual_value_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN residual_value_basis NUMERIC(18,2) NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='useful_life_months_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN useful_life_months_basis INT NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='depreciation_method_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN depreciation_method_basis TEXT NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='measurement_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN measurement_basis TEXT NULL', '{schema}');
-        END IF;
-        END
-        $asset_dep_add_basis_snapshot$;
-
-        -- Optional check (safe)
-        DO $fix_ck_asset_dep_basis_valid$
-        BEGIN
-        IF EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_asset_dep_basis_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation DROP CONSTRAINT ck_asset_dep_basis_valid', '{schema}');
-        END IF;
-
-        EXECUTE format(
-            'ALTER TABLE %I.asset_depreciation
-            ADD CONSTRAINT ck_asset_dep_basis_valid
-            CHECK (
-            cost_basis IS NULL OR cost_basis >= 0
-            AND residual_value_basis IS NULL OR residual_value_basis >= 0
-            AND useful_life_months_basis IS NULL OR useful_life_months_basis >= 0
-            AND depreciation_method_basis IS NULL OR depreciation_method_basis IN (''SL'',''RB'',''UOP'')
-            AND measurement_basis IS NULL OR measurement_basis IN (''cost'',''revaluation'')
-            )',
-            '{schema}'
-        );
-        END
-        $fix_ck_asset_dep_basis_valid$;
-
-        DO $asset_dep_add_method_basis$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='rb_rate_percent_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN rb_rate_percent_basis NUMERIC(8,4) NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='uop_total_units_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN uop_total_units_basis NUMERIC(18,4) NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='uop_units_used_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN uop_units_used_basis NUMERIC(18,4) NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='asset_depreciation' AND column_name='uop_unit_name_basis'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.asset_depreciation ADD COLUMN uop_unit_name_basis TEXT NULL', '{schema}');
-        END IF;
-        END
-        $asset_dep_add_method_basis$;
-
-        -- FKs
-        DO $fk_asset_dep_asset$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_asset_dep_asset' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_depreciation
-            ADD CONSTRAINT fk_asset_dep_asset
-            FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_asset_dep_asset$;
-
-        DO $fk_asset_dep_journal$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_asset_dep_journal' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_depreciation
-            ADD CONSTRAINT fk_asset_dep_journal
-            FOREIGN KEY (posted_journal_id) REFERENCES %I.journal(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_asset_dep_journal$;
-
-        DO $fk_asset_dep_approval$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_asset_dep_approval' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_depreciation
-            ADD CONSTRAINT fk_asset_dep_approval
-            FOREIGN KEY (approval_id) REFERENCES %I.approval_requests(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_asset_dep_approval$;
-
-        -- Anti-duplicate: one dep row per asset per period (non-void)
-        DO $uq_asset_dep_asset_period$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_asset_dep_asset_period'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_asset_dep_asset_period
-            ON %I.asset_depreciation(asset_id, period_start, period_end)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END $uq_asset_dep_asset_period$;
-
-        -- Checks
-        DO $ck_asset_dep_valid$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_asset_dep_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_depreciation
-            ADD CONSTRAINT ck_asset_dep_valid
-            CHECK (
-                period_end >= period_start
-                AND depreciation_amount >= 0
-                AND accumulated_depreciation >= 0
-                AND carrying_amount >= 0
-                AND status IN (''draft'',''pending_review'',''posted'',''reversed'',''void'')
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_asset_dep_valid$;
-
-        -- Indexes
-        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_company_idx
-        ON {schema}.asset_depreciation(company_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_asset_idx
-        ON {schema}.asset_depreciation(asset_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_period_end_idx
-        ON {schema}.asset_depreciation(period_end);
-
-        CREATE INDEX IF NOT EXISTS {schema}_asset_dep_status_idx
-        ON {schema}.asset_depreciation(status);
 
         -- ==================================================
         -- ASSET DISPOSALS

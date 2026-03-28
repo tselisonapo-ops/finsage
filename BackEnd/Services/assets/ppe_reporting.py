@@ -386,9 +386,6 @@ def acquisition_journal_preview(company_id, acq_id):
 # -------------------------
 # ASSETS
 # ------------------------
-from datetime import date
-import psycopg2.extras
-
 @ppe_bp.route("/api/companies/<int:company_id>/assets", methods=["GET", "POST", "OPTIONS"])
 @require_auth
 def assets_list_or_create(company_id: int):
@@ -415,7 +412,6 @@ def assets_list_or_create(company_id: int):
         limit = _int_arg("limit", 50)
         offset = _int_arg("offset", 0)
 
-        # ✅ NEW: as_at support (defaults to month-end so posted month-end depreciation shows)
         try:
             as_at = _parse_date_arg("as_at") or _end_of_month(date.today())
         except Exception as e:
@@ -431,7 +427,7 @@ def assets_list_or_create(company_id: int):
                     q=q,
                     limit=limit,
                     offset=offset,
-                    as_at=as_at,  # ✅ pass through
+                    as_at=as_at,
                 )
                 return jsonify({"ok": True, "data": rows, "as_at": as_at.isoformat()})
 
@@ -441,7 +437,13 @@ def assets_list_or_create(company_id: int):
     payload_in = request.get_json(force=True) or {}
 
     try:
-        # ✅ Validate dates (BLOCK FUTURE)
+        entry_mode = (payload_in.get("entry_mode") or "acquisition").strip().lower()
+        if entry_mode not in ("acquisition", "opening_balance"):
+            raise ValueError("Invalid entry_mode. Use 'acquisition' or 'opening_balance'.")
+
+        # -------------------------
+        # Date validation
+        # -------------------------
         acq = _parse_optional_date(payload_in, "acquisition_date")
         afu = _parse_optional_date(payload_in, "available_for_use_date")
 
@@ -451,11 +453,31 @@ def assets_list_or_create(company_id: int):
         if acq and afu and afu < acq:
             raise ValueError("Available for use date cannot be earlier than acquisition date.")
 
+        opening_as_at = None
+        if entry_mode == "opening_balance":
+            opening_as_at = _parse_optional_date(payload_in, "opening_as_at")
+            if not opening_as_at:
+                raise ValueError("opening_as_at is required for opening balance assets")
+
+            _must_not_be_future(opening_as_at, "Opening as at")
+
+            if acq and opening_as_at < acq:
+                raise ValueError("Opening as at cannot be earlier than acquisition date.")
+
         with get_conn(company_id) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 new_id = service.create_asset(cur, company_id, payload_in)
 
-                # ✅ AUDIT
+                opening_journal_id = None
+                if entry_mode == "opening_balance":
+                    opening_journal_id = posting.post_opening_balance(
+                        cur,
+                        company_id,
+                        int(new_id),
+                        user=payload,
+                        approved_via="asset_create",
+                    )
+
                 _audit_safe(
                     company_id=company_id,
                     payload=payload,
@@ -469,13 +491,27 @@ def assets_list_or_create(company_id: int):
                         or f"ASSET-{new_id}"
                     ),
                     before_json={"request": payload_in},
-                    after_json={"asset_id": int(new_id)},
-                    message=f"Created asset {new_id}",
+                    after_json={
+                        "asset_id": int(new_id),
+                        "entry_mode": entry_mode,
+                        "opening_journal_id": int(opening_journal_id) if opening_journal_id else None,
+                    },
+                    message=(
+                        f"Created opening-balance asset {new_id}"
+                        if entry_mode == "opening_balance"
+                        else f"Created asset {new_id}"
+                    ),
                     cur=cur,
                 )
 
                 conn.commit()
-                return jsonify({"ok": True, "id": int(new_id)}), 201
+
+                return jsonify({
+                    "ok": True,
+                    "id": int(new_id),
+                    "entry_mode": entry_mode,
+                    "opening_journal_id": int(opening_journal_id) if opening_journal_id else None,
+                }), 201
 
     except Exception as e:
         current_app.logger.exception("create_asset failed")
