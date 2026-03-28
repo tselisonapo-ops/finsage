@@ -12933,6 +12933,7 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
       modal.id = "moduleNudgeModal";
       modal.className = "modal hidden";
       modal.setAttribute("aria-hidden", "true");
+      modal.style.display = "flex";
 
       modal.innerHTML = `
         <div class="modal-backdrop" id="moduleNudgeBackdrop"></div>

@@ -470,11 +470,92 @@
     width:100%;
   }
 
-  .modal {
-    position: fixed;
-    inset: 0;
-    z-index: 3000;
-  }
+#moduleNudgeModal {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#moduleNudgeModal.hidden {
+  display: none !important;
+}
+
+#moduleNudgeModal .modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+#moduleNudgeModal .modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+#moduleNudgeModal .modal-sm {
+  width: min(520px, calc(100vw - 32px));
+}
+
+#moduleNudgeModal .modal-md {
+  width: min(680px, calc(100vw - 32px));
+}
+
+#moduleNudgeModal .modal-lg {
+  width: min(960px, calc(100vw - 32px));
+}
+
+#moduleNudgeModal .modal-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+#moduleNudgeModal .modal-header,
+#moduleNudgeModal .modal-body,
+#moduleNudgeModal .modal-footer {
+  position: relative;
+  z-index: 1;
+}
+
+#moduleNudgeModal .modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#moduleNudgeModal .modal-header h3 {
+  margin: 0;
+}
+
+#moduleNudgeModal .modal-header .muted {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+#moduleNudgeModal .modal-body {
+  padding: 18px 20px;
+}
+
+#moduleNudgeModal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
   /* Force widgets into one horizontal line */
   .ar-widgets-row{
     display: grid;
