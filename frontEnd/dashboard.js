@@ -12907,6 +12907,88 @@ async function enforceJournalAccountGuard({ side, code }) {
 
 window.enforceJournalAccountGuard = enforceJournalAccountGuard;
 
+async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
+  const msg = getJournalGuardMessage?.(moduleKey, account) || {
+    title: "Use workflow instead?",
+    body: "This account has a specialist workflow.",
+    continueLabel: "Continue in Journal",
+    moduleLabel: "Open Workflow",
+  };
+
+  return new Promise((resolve) => {
+    let modal = document.getElementById("moduleNudgeModal");
+
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "moduleNudgeModal";
+      modal.className = "modal";
+      modal.innerHTML = `
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog modal-sm">
+          <div class="modal-card">
+            <div class="modal-header">
+              <h3 id="moduleNudgeTitle">Workflow suggestion</h3>
+            </div>
+            <div class="modal-body">
+              <p id="moduleNudgeBody" style="white-space: pre-line;"></p>
+            </div>
+            <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end;">
+              <button type="button" class="btn btn-secondary" id="moduleNudgeCancel">Cancel</button>
+              <button type="button" class="btn btn-secondary" id="moduleNudgeJournal">Continue in Journal</button>
+              <button type="button" class="btn btn-primary" id="moduleNudgeModule">Open Workflow</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    const titleEl = modal.querySelector("#moduleNudgeTitle");
+    const bodyEl = modal.querySelector("#moduleNudgeBody");
+    const btnCancel = modal.querySelector("#moduleNudgeCancel");
+    const btnJournal = modal.querySelector("#moduleNudgeJournal");
+    const btnModule = modal.querySelector("#moduleNudgeModule");
+    const backdrop = modal.querySelector(".modal-backdrop");
+
+    titleEl.textContent = msg.title || "Workflow suggestion";
+    bodyEl.textContent = msg.body || "";
+    btnJournal.textContent = msg.continueLabel || "Continue in Journal";
+    btnModule.textContent = msg.moduleLabel || "Open Workflow";
+
+    const cleanup = () => {
+      modal.classList.remove("open");
+      btnCancel.onclick = null;
+      btnJournal.onclick = null;
+      btnModule.onclick = null;
+      backdrop.onclick = null;
+    };
+
+    btnCancel.onclick = () => {
+      cleanup();
+      resolve("cancel");
+    };
+
+    btnJournal.onclick = () => {
+      cleanup();
+      resolve("journal");
+    };
+
+    btnModule.onclick = () => {
+      cleanup();
+      resolve("module");
+    };
+
+    backdrop.onclick = () => {
+      cleanup();
+      resolve("cancel");
+    };
+
+    modal.classList.add("open");
+  });
+}
+
+window.openModuleNudgeModal = openModuleNudgeModal;
+
 async function handleModuleAwareGuard({
   hint,
   acct,
