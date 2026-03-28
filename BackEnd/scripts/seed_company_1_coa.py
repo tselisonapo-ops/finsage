@@ -60,20 +60,23 @@ def main():
     for r in pool_rows:
         row = dict(r)
 
-        if not row.get("template_code"):
+        original_template_code = (row.get("template_code") or "").strip()
+        numeric_code = (row.get("code") or "").strip()
+
+        if not numeric_code:
+            raise ValueError(f"Missing code in row: {row}")
+
+        if not original_template_code:
             raise ValueError(f"Missing template_code in row: {row}")
+
+        row["template_code"] = numeric_code
+        row["template_code_scoped"] = original_template_code
 
         if row.get("industry") is None:
             row["industry"] = industry
 
         if row.get("sub_industry") is None:
             row["sub_industry"] = sub_industry
-
-        row["template_code_scoped"] = build_template_code_scoped(
-            row,
-            industry,
-            sub_industry,
-        )
 
         normalized_rows.append(row)
 
@@ -91,7 +94,6 @@ def main():
     print("\n✅ DONE")
     print(f"   Pool rows upserted : {pool_count}")
     print(f"   Company rows added : {company_count}")
-
 
 if __name__ == "__main__":
     main()
