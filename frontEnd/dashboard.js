@@ -11923,10 +11923,14 @@ function wireJournalAccountCombo(cfg) {
       const side = (hiddenId === "jrnlAccountCr") ? "cr" : "dr";
 
       // ✅ specialist guard here
+      console.log("[JRNL] before guard", { side, accountCode });
+
       const guard = await window.enforceJournalAccountGuard?.({
         side,
         code: accountCode,
       });
+
+      console.log("[JRNL] after guard", guard);
 
       if (guard && guard.ok === false) {
         menu.classList.add("hidden");
@@ -12892,9 +12896,12 @@ async function enforceJournalAccountGuard({ side, code }) {
   }
 
   // Delegate specialist workflow handling
-  const hint = detectFutureModuleHint?.(acct);
+  console.log("[GUARD] start", { side, code, acct });
 
-  return await handleModuleAwareGuard({
+  const hint = detectFutureModuleHint?.(acct);
+  console.log("[GUARD] hint", hint);
+
+  const result = await handleModuleAwareGuard({
     hint,
     acct,
     side,
@@ -12903,6 +12910,9 @@ async function enforceJournalAccountGuard({ side, code }) {
       date: document.getElementById("jrnlDate")?.value || null,
     },
   });
+
+  console.log("[GUARD] result", result);
+  return result;
 }
 
 window.enforceJournalAccountGuard = enforceJournalAccountGuard;
@@ -12999,19 +13009,25 @@ async function handleModuleAwareGuard({
   if (!hint) return { ok: true };
 
   const toast = (msg, type = "info") => window.showToast?.(msg, type);
+  console.log("[MODGUARD] start", { hint, acct });
+
   const mode = getPostingMode(hint, meta);
+  console.log("[MODGUARD] mode", mode);
 
   if (mode === "free") {
     return { ok: true };
   }
 
   if (mode === "guided") {
+    console.log("[MODGUARD] opening nudge modal");
     const proceed = await openModuleNudgeModal({
       moduleKey: hint,
       account: acct,
       side,
       meta,
     });
+    console.log("[MODGUARD] modal resolved", proceed);
+
 
     if (proceed === "module") {
       resetSelection?.();
