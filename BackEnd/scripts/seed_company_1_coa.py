@@ -15,7 +15,10 @@ import sys
 import os
 
 # Ensure project root is on PYTHONPATH
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 from BackEnd.Services.db_service import db_service
