@@ -12931,13 +12931,19 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     if (!modal) {
       modal = document.createElement("div");
       modal.id = "moduleNudgeModal";
-      modal.className = "modal";
+      modal.className = "modal hidden";
+      modal.setAttribute("aria-hidden", "true");
+
       modal.innerHTML = `
         <div class="modal-backdrop"></div>
         <div class="modal-dialog modal-sm">
           <div class="modal-card">
             <div class="modal-header">
-              <h3 id="moduleNudgeTitle">Workflow suggestion</h3>
+              <div>
+                <h3 id="moduleNudgeTitle">Workflow suggestion</h3>
+                <p class="muted">Specialist workflow recommended for this account.</p>
+              </div>
+              <button type="button" class="btn btn-secondary" id="moduleNudgeClose">Close</button>
             </div>
             <div class="modal-body">
               <p id="moduleNudgeBody" style="white-space: pre-line;"></p>
@@ -12950,11 +12956,13 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
           </div>
         </div>
       `;
+
       document.body.appendChild(modal);
     }
 
     const titleEl = modal.querySelector("#moduleNudgeTitle");
     const bodyEl = modal.querySelector("#moduleNudgeBody");
+    const btnClose = modal.querySelector("#moduleNudgeClose");
     const btnCancel = modal.querySelector("#moduleNudgeCancel");
     const btnJournal = modal.querySelector("#moduleNudgeJournal");
     const btnModule = modal.querySelector("#moduleNudgeModule");
@@ -12966,11 +12974,21 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     btnModule.textContent = msg.moduleLabel || "Open Workflow";
 
     const cleanup = () => {
+      modal.classList.add("hidden");
       modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+
+      btnClose.onclick = null;
       btnCancel.onclick = null;
       btnJournal.onclick = null;
       btnModule.onclick = null;
       backdrop.onclick = null;
+      document.onkeydown = null;
+    };
+
+    btnClose.onclick = () => {
+      cleanup();
+      resolve("cancel");
     };
 
     btnCancel.onclick = () => {
@@ -12993,7 +13011,16 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
       resolve("cancel");
     };
 
+    document.onkeydown = (e) => {
+      if (e.key === "Escape") {
+        cleanup();
+        resolve("cancel");
+      }
+    };
+
+    modal.classList.remove("hidden");
     modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
   });
 }
 
