@@ -6247,10 +6247,11 @@ async function switchScreen(name) {
   }
 
   // ✅ Fixed Assets screen (Option A): show stub screen but auto-open React drawer
-  if (name === "fixedassets") {
+  if (name === "fixed-assets") {
     try {
-      if (typeof ensureCompanyDataLoaded === "function")
+      if (typeof ensureCompanyDataLoaded === "function") {
         await ensureCompanyDataLoaded();
+      }
     } catch (e) {}
 
     await window.bindFixedAssetsScreen?.();
@@ -13037,40 +13038,42 @@ window.openModuleNudgeModal = openModuleNudgeModal;
 
 async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   if (moduleKey === "ppe") {
-    await window.switchScreen?.("fixed-assets-register");
-    window.openFixedAssetModal?.({
+    return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
-      source: "journal_guard",
       accountCode: account?.code,
       accountName: account?.name,
-      journalSide: side,
-      txDate: meta.date || null,
+      defaults: {
+        acquisitionDate: meta?.date || null,
+        source: "journal_guard",
+        journalSide: side,
+      },
     });
-    return;
   }
 
   if (moduleKey === "lease") {
-    await window.switchScreen?.("ifrs16-lease-wizard");
-    window.openLeaseWizard?.({
-      side,
-      account,
-      accountCode: account?.code,
-      standard: "IFRS 16",
-      cf_bucket: account?.cf_bucket || meta.cf_bucket || null,
-      journal: {
-        date: meta.date || meta.tx_date || null,
-        amount: meta.amount || null,
-        currency: meta.currency || null,
-      },
-    });
-    return;
+    return await window.switchScreen?.("lease-register");
   }
 
   if (moduleKey === "revenue") {
-    await window.switchScreen?.("revenue-desk");
-    return;
+    return await window.switchScreen?.("revenue-desk");
   }
+
+  if (moduleKey === "amort") {
+    return await window.openFixedAssetsDrawer?.({
+      mode: "acquire",
+      accountCode: account?.code,
+      accountName: account?.name,
+      defaults: {
+        acquisitionDate: meta?.date || null,
+        source: "journal_guard",
+        journalSide: side,
+      },
+    });
+  }
+
+  return null;
 }
+window.redirectToModule = redirectToModule;
 
 async function handleModuleAwareGuard({
   hint,
