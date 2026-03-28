@@ -12692,13 +12692,172 @@ function detectFutureModuleHint(acct) {
   return null;
 }
 
-async function enforceJournalAccountGuard({ side, code }) {
-  const acct = getCoaByCode?.(code) || getCoaByCode?.(String(code || "").trim()) || null;
+function getPostingMode(moduleKey, ctx = {}) {
+  const companyId =
+    ctx.companyId ||
+    window.currentUser?.company_id ||
+    window.__FS_POSTING_CONTEXT__?.target_company_id ||
+    window.__FS_POSTING_CONTEXT__?.company_id ||
+    null;
 
-  // ✅ Always call toast safely (prevents ReferenceError)
+  const defaults = {
+    ar: "enforced",
+    ap: "enforced",
+    ppe: "guided",
+    lease: "guided",
+    revenue: "guided",
+    repayment_schedule: "guided",
+    insurance_schedule: "guided",
+    advertising_schedule: "guided",
+    tax: "guided",
+  };
+
+  // company-level overrides if you later inject them from backend
+  const companyModes =
+    window.COMPANY_POSTING_MODES?.[companyId] ||
+    window.COMPANY_POSTING_MODES?.default ||
+    {};
+
+  const mode = companyModes[moduleKey] || defaults[moduleKey] || "guided";
+
+  return ["free", "guided", "enforced"].includes(mode) ? mode : "guided";
+}
+window.getPostingMode = getPostingMode;
+
+function getJournalGuardMessage(hint, acct) {
+  const name = acct?.name || "This account";
+
+  if (hint === "ppe") {
+    return {
+      title: "Use Asset Register instead?",
+      body:
+        `${name} is usually managed through the Fixed Assets Register.\n\n` +
+        `If you continue in Journal, asset onboarding, depreciation, subsequent costs, impairments, revaluations, held-for-sale tracking, and PPE note support will need to be handled manually.`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Asset Capture",
+      screen: "fixed-assets-register",
+      reasonPrefix: "ppe",
+    };
+  }
+
+  if (hint === "lease") {
+    return {
+      title: "Use Lease Wizard instead?",
+      body:
+        `${name} is usually managed through the Lease module.\n\n` +
+        `If you continue in Journal, lease schedules, interest unwind, ROU amortisation, remeasurements, and lease disclosures will need to be handled manually.`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Lease Wizard",
+      screen: "ifrs16-lease-wizard",
+      reasonPrefix: "lease",
+    };
+  }
+
+  if (hint === "amort") {
+    return {
+      title: "Use Intangibles workflow instead?",
+      body:
+        `${name} is usually better managed through an intangibles workflow.\n\n` +
+        `If you continue in Journal, amortisation schedules and disclosure support will need to be maintained manually.`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Intangibles Flow",
+      screen: "fixed-assets-register",
+      reasonPrefix: "amort",
+    };
+  }
+
+  if (hint === "revenue") {
+    return {
+      title: "Use Revenue workflow instead?",
+      body:
+        `${name} is usually better raised through invoices / revenue workflow.\n\n` +
+        `If you continue in Journal, customer trail, billing linkage, and revenue support schedules may need manual handling.`,
+      continueLabel: "Continue in Journal",
+      moduleLabel: "Open Revenue Desk",
+      screen: "revenue-desk",
+      reasonPrefix: "revenue",
+    };
+  }
+
+  return {
+    title: "Use workflow instead?",
+    body:
+      `${name} has a specialist workflow.\n\n` +
+      `If you continue in Journal, schedules and disclosures may need to be maintained manually.`,
+    continueLabel: "Continue in Journal",
+    moduleLabel: "Open Workflow",
+    screen: null,
+    reasonPrefix: "workflow",
+  };
+}
+window.getJournalGuardMessage = getJournalGuardMessage;
+
+async function openJournalModulePrompt({ hint, acct }) {
+  const msg = getJournalGuardMessage(hint, acct);
+
+  const answer = window.prompt(
+    `${msg.title}\n\n${msg.body}\n\n` +
+    `Type:\n` +
+    `J = ${msg.continueLabel}\n` +
+    `M = ${msg.moduleLabel}\n` +
+    `C = Cancel`,
+    "J"
+  );
+
+  const v = String(answer || "").trim().toLowerCase();
+
+  if (v === "m") return "module";
+  if (v === "c") return "cancel";
+  return "journal";
+}
+window.openJournalModulePrompt = openJournalModulePrompt;
+
+async function redirectJournalGuardToModule({ hint, acct, side }) {
+  if (hint === "ppe") {
+    await window.switchScreen?.("fixed-assets-register");
+    window.openFixedAssetModal?.({
+      mode: "acquire",
+      source: "journal_guard",
+      journalSide: side,
+      accountCode: acct?.code || "",
+      accountName: acct?.name || "",
+    });
+    return;
+  }
+
+  if (hint === "lease") {
+    await window.switchScreen?.("ifrs16-lease-wizard");
+    window.openLeaseWizard?.({
+      side,
+      account: acct,
+      accountCode: acct?.code || "",
+      standard: "IFRS 16",
+      cf_bucket: acct?.cf_bucket || "",
+      cf_section: acct?.cf_section || "",
+    });
+    return;
+  }
+
+  if (hint === "revenue") {
+    await window.switchScreen?.("revenue-desk");
+    return;
+  }
+
+  if (hint === "amort") {
+    await window.switchScreen?.("fixed-assets-register");
+    return;
+  }
+}
+window.redirectJournalGuardToModule = redirectJournalGuardToModule;
+
+async function enforceJournalAccountGuard({ side, code }) {
+  const acct =
+    getCoaByCode?.(code) ||
+    getCoaByCode?.(String(code || "").trim()) ||
+    null;
+
   const toast = (msg, type = "info") => window.showToast?.(msg, type);
 
-  // ✅ reset helper
   const resetSelection = () => {
     if (side === "dr") {
       const h = document.getElementById("jrnlAccount");
@@ -12713,14 +12872,14 @@ async function enforceJournalAccountGuard({ side, code }) {
     }
   };
 
-  // ✅ HARD BLOCK for AR/AP
+  if (!acct) return { ok: true };
+
+  // HARD BLOCK: AR / AP
   const t = detectSubledgerType?.(acct);
 
   if (t === "ar") {
     toast("Receivables must be posted via AR invoices (customer-linked).", "info");
     resetSelection();
-
-    // route
     await window.switchScreen?.("ar-invoices");
     return { ok: false, reason: "ar_block" };
   }
@@ -12728,30 +12887,84 @@ async function enforceJournalAccountGuard({ side, code }) {
   if (t === "ap") {
     toast("Payables must be posted via AP bills (vendor-linked).", "info");
     resetSelection();
-
-    // ✅ use the correct AP screen
     await window.switchScreen?.("ap-bills");
     return { ok: false, reason: "ap_block" };
   }
 
-  // 🟡 SOFT hints (no blocking)
+  // Delegate specialist workflow handling
   const hint = detectFutureModuleHint?.(acct);
 
-  if (hint === "ppe") {
-    toast("Tip: PPE should ideally be captured via Asset Register (coming soon).", "info");
-  } else if (hint === "lease") {
-    // (you can later open the lease wizard here if you want)
-    toast("Tip: Lease entries should run via Lease module (coming soon).", "info");
-  } else if (hint === "amort") {
-    toast("Tip: Amortisation should be managed via Intangibles module (coming soon).", "info");
-  } else if (hint === "revenue") {
-    toast("Tip: Revenue is best raised via Invoices / Sales flow for audit trail.", "info");
+  return await handleModuleAwareGuard({
+    hint,
+    acct,
+    side,
+    resetSelection,
+    meta: {
+      date: document.getElementById("jrnlDate")?.value || null,
+    },
+  });
+}
+
+window.enforceJournalAccountGuard = enforceJournalAccountGuard;
+
+async function handleModuleAwareGuard({
+  hint,
+  acct,
+  side,
+  resetSelection,
+  meta = {},
+}) {
+  if (!hint) return { ok: true };
+
+  const toast = (msg, type = "info") => window.showToast?.(msg, type);
+  const mode = getPostingMode(hint, meta);
+
+  if (mode === "free") {
+    return { ok: true };
+  }
+
+  if (mode === "guided") {
+    const proceed = await openModuleNudgeModal({
+      moduleKey: hint,
+      account: acct,
+      side,
+      meta,
+    });
+
+    if (proceed === "module") {
+      resetSelection?.();
+      await redirectToModule({ moduleKey: hint, account: acct, side, meta });
+      return { ok: false, reason: `${hint}_redirect_guided` };
+    }
+
+    if (proceed === "cancel") {
+      resetSelection?.();
+      return { ok: false, reason: `${hint}_cancelled` };
+    }
+
+    // user chose manual journal
+    toast(
+      `Manual posting selected for ${acct?.name || "this account"}. Related schedules, calculations, and disclosures may need to be maintained outside the system.`,
+      "warning"
+    );
+
+    return { ok: true, reason: `${hint}_manual_guided` };
+  }
+
+  if (mode === "enforced") {
+    toast(
+      `${acct?.name || "This account"} must be posted via the ${hint} workflow.`,
+      "info"
+    );
+    resetSelection?.();
+    await redirectToModule({ moduleKey: hint, account: acct, side, meta });
+    return { ok: false, reason: `${hint}_blocked` };
   }
 
   return { ok: true };
 }
 
-window.enforceJournalAccountGuard = enforceJournalAccountGuard;
+window.handleModuleAwareGuard = handleModuleAwareGuard;
 
 function watchHiddenInput(id, cb) {
   const el = document.getElementById(id);
