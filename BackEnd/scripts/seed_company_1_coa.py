@@ -14,10 +14,6 @@ Target company:
 import sys
 import os
 
-# Ensure project root is on PYTHONPATH
-import sys
-import os
-
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
@@ -27,6 +23,18 @@ from BackEnd.Services.coa_pool_service import (
     build_pool_rows_from_templates,
     sync_company_coa_from_pool,
 )
+
+
+def build_template_code_scoped(row: dict, industry: str, sub_industry: str) -> str:
+    template_code = (row.get("template_code") or "").strip()
+    row_industry = (row.get("industry") or industry or "").strip()
+    row_sub_industry = (row.get("sub_industry") or sub_industry or "").strip()
+
+    if row_sub_industry:
+        return f"{template_code}::{row_industry}::{row_sub_industry}"
+    if row_industry:
+        return f"{template_code}::{row_industry}"
+    return template_code
 
 
 def main():
@@ -46,11 +54,31 @@ def main():
         INDUSTRY_TEMPLATES=cs.INDUSTRY_TEMPLATES,
         SUBINDUSTRY_TEMPLATES=cs.SUBINDUSTRY_TEMPLATES,
     )
-
     print(f"   → {len(pool_rows)} pool rows prepared")
 
+    normalized_rows = []
+    for r in pool_rows:
+        row = dict(r)
+
+        if not row.get("template_code"):
+            raise ValueError(f"Missing template_code in row: {row}")
+
+        if row.get("industry") is None:
+            row["industry"] = industry
+
+        if row.get("sub_industry") is None:
+            row["sub_industry"] = sub_industry
+
+        row["template_code_scoped"] = build_template_code_scoped(
+            row,
+            industry,
+            sub_industry,
+        )
+
+        normalized_rows.append(row)
+
     print("🔹 Seeding / updating COA pool...")
-    pool_count = db_service.upsert_coa_pool(pool_rows)
+    pool_count = db_service.upsert_coa_pool(normalized_rows)
 
     print("🔹 Syncing company COA from pool...")
     company_count = sync_company_coa_from_pool(
