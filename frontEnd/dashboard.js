@@ -6247,7 +6247,7 @@ async function switchScreen(name) {
   }
 
   // ✅ Fixed Assets screen (Option A): show stub screen but auto-open React drawer
-  if (name === "fixed-assets") {
+  if (name === "fixedassets") {
     try {
       if (typeof ensureCompanyDataLoaded === "function") {
         await ensureCompanyDataLoaded();
