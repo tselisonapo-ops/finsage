@@ -461,6 +461,14 @@ def assets_list_or_create(company_id: int):
 
             _must_not_be_future(opening_as_at, "Opening as at")
 
+        posting_date = _parse_optional_date(payload_in, "posting_date")
+
+        if entry_mode == "opening_balance":
+            if not posting_date:
+                raise ValueError("posting_date is required for opening balance posting")
+
+            _must_not_be_future(posting_date, "Posting date")
+            
             if acq and opening_as_at < acq:
                 raise ValueError("Opening as at cannot be earlier than acquisition date.")
 
@@ -474,6 +482,7 @@ def assets_list_or_create(company_id: int):
                         cur,
                         company_id,
                         int(new_id),
+                        posting_date=posting_date,   # ✅ ADD THIS
                         user=payload,
                         approved_via="asset_create",
                     )
@@ -641,6 +650,15 @@ def acquisitions_list_or_create(company_id, asset_id):
     if funding == "cash":
         funding = "bank_cash"
     payload_in["funding_source"] = funding
+
+    posting_date = _parse_optional_date(payload_in, "posting_date")
+
+    if not posting_date:
+        return _json_error("posting_date is required for acquisition", 400)
+
+    _must_not_be_future(posting_date, "Posting date")
+
+    payload_in["posting_date"] = posting_date
 
     if isinstance(payload_in.get("acquisition_date"), str):
         payload_in["acquisition_date"] = _iso_date(payload_in["acquisition_date"])

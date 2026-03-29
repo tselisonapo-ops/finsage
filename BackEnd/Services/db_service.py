@@ -11613,24 +11613,22 @@ class DatabaseService:
             asset_id INT NOT NULL,
 
             acquisition_date DATE NOT NULL,
+            posting_date DATE NULL,                         -- ✅ NEW
             amount NUMERIC(18,2) NOT NULL,
 
-            funding_source TEXT NOT NULL DEFAULT 'cash', -- cash|bank|ap|other
-            bank_account_code TEXT NULL,                -- if cash/bank
+            funding_source TEXT NOT NULL DEFAULT 'cash',   -- cash|bank|ap|other
+            bank_account_code TEXT NULL,                   -- if cash/bank
 
-            credit_account_code TEXT NULL,              -- if other/ap suspense
+            credit_account_code TEXT NULL,                 -- if other/ap suspense
             reference TEXT NULL,
             notes TEXT NULL,
 
-            -- ✅ NEW: vendor/GRNI traceability (your service.py is inserting these)
             supplier_id INT NULL,
             vendor_invoice_no TEXT NULL,
             grn_no TEXT NULL,
-
-            -- ✅ NEW: if backend requires id for bank_cash
             bank_account_id INT NULL,
 
-            status TEXT NOT NULL DEFAULT 'draft',        -- draft|posted|reversed|void
+            status TEXT NOT NULL DEFAULT 'draft',          -- draft|posted|reversed|void
             posted_journal_id INT NULL,
             posted_at TIMESTAMPTZ NULL,
 
@@ -11639,12 +11637,11 @@ class DatabaseService:
 
         DO $$
         BEGIN
-        -- ✅ Add missing columns safely for old databases/schemas
         IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = '{schema}'
-            AND table_name = 'asset_acquisitions'
-            AND column_name = 'supplier_id'
+                AND table_name = 'asset_acquisitions'
+                AND column_name = 'supplier_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.asset_acquisitions ADD COLUMN supplier_id INT NULL', '{schema}');
         END IF;
@@ -11652,8 +11649,8 @@ class DatabaseService:
         IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = '{schema}'
-            AND table_name = 'asset_acquisitions'
-            AND column_name = 'vendor_invoice_no'
+                AND table_name = 'asset_acquisitions'
+                AND column_name = 'vendor_invoice_no'
         ) THEN
             EXECUTE format('ALTER TABLE %I.asset_acquisitions ADD COLUMN vendor_invoice_no TEXT NULL', '{schema}');
         END IF;
@@ -11661,8 +11658,8 @@ class DatabaseService:
         IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = '{schema}'
-            AND table_name = 'asset_acquisitions'
-            AND column_name = 'grn_no'
+                AND table_name = 'asset_acquisitions'
+                AND column_name = 'grn_no'
         ) THEN
             EXECUTE format('ALTER TABLE %I.asset_acquisitions ADD COLUMN grn_no TEXT NULL', '{schema}');
         END IF;
@@ -11670,26 +11667,48 @@ class DatabaseService:
         IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = '{schema}'
-            AND table_name = 'asset_acquisitions'
-            AND column_name = 'bank_account_id'
+                AND table_name = 'asset_acquisitions'
+                AND column_name = 'bank_account_id'
         ) THEN
             EXECUTE format('ALTER TABLE %I.asset_acquisitions ADD COLUMN bank_account_id INT NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = '{schema}'
+                AND table_name = 'asset_acquisitions'
+                AND column_name = 'posting_date'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.asset_acquisitions ADD COLUMN posting_date DATE NULL', '{schema}');
         END IF;
         END $$;
 
         DO $$
         BEGIN
-        IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint c
-        JOIN pg_namespace n ON n.oid=c.connamespace
-        WHERE c.conname='fk_asset_acq_asset' AND n.nspname='{schema}'
-        ) THEN
+        -- ✅ backfill old rows so posting can work immediately
         EXECUTE format(
-            'ALTER TABLE %I.asset_acquisitions
-            ADD CONSTRAINT fk_asset_acq_asset
-            FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
-            '{schema}','{schema}'
+            'UPDATE %I.asset_acquisitions
+                SET posting_date = acquisition_date
+            WHERE posting_date IS NULL',
+            '{schema}'
         );
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = 'fk_asset_acq_asset'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.asset_acquisitions
+                ADD CONSTRAINT fk_asset_acq_asset
+                FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
+            '{schema}', '{schema}'
+            );
         END IF;
         END $$;
 

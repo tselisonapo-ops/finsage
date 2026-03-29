@@ -1785,6 +1785,10 @@ def post_acquisition(
     if not asset or not asset.get("asset_account_code"):
         raise Exception("asset missing asset_account_code")
 
+    posting_date = acq.get("posting_date")
+    if not posting_date:
+        raise Exception("posting_date is required before posting acquisition")
+
     amount = _D(acq.get("amount"))
     if amount <= 0:
         raise Exception("amount must be > 0")
@@ -1831,7 +1835,7 @@ def post_acquisition(
 
     jid = create_journal(
         cur, schema, company_id,
-        acq["acquisition_date"],
+        posting_date,
         acq.get("reference"),
         f"Asset acquisition: {asset['asset_code']} - {asset['asset_name']}",
         ccy, "asset_acquisition", acq["id"]
@@ -1873,8 +1877,14 @@ def post_acquisition(
 
     finalize_journal(cur, schema, company_id, jid)
 
-    # ✅ Use your shared posting helper instead of inline ledger/TB loop
-    _post_journal_to_ledger_and_tb(cur, schema, company_id, jid, je_date=acq["acquisition_date"], ref=acq.get("reference"))
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=posting_date,
+        ref=acq.get("reference")
+    )
 
     cur.execute(_q(schema, """
       UPDATE {schema}.asset_acquisitions
@@ -1890,6 +1900,7 @@ def post_opening_balance(
     company_id: int,
     asset_id: int,
     *,
+    posting_date,   # ✅ ADD
     user: dict | None = None,
     approved_via: str | None = None
 ) -> int:
@@ -1968,7 +1979,7 @@ def post_opening_balance(
         cur,
         schema,
         company_id,
-        opening_as_at,
+        posting_date,   # ✅ USE THIS
         ref,
         f"Asset opening balance: {asset['asset_code']} - {asset['asset_name']}",
         ccy,
@@ -2021,7 +2032,7 @@ def post_opening_balance(
         schema,
         company_id,
         jid,
-        je_date=opening_as_at,
+        je_date=posting_date,   # ✅ USE THIS
         ref=ref,
     )
 
