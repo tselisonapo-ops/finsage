@@ -14353,6 +14353,43 @@ class DatabaseService:
             WHERE COALESCE(ac.status,'draft') IN ('posted')
         ),
 
+        fallback_acquisition_rows AS (
+            SELECT
+                a.company_id,
+                a.id AS asset_id,
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.category,
+                COALESCE(a.available_for_use_date, a.acquisition_date, CURRENT_DATE)::date AS event_date,
+
+                'addition'::text AS movement_type,
+                'assets_fallback'::text AS source_table,
+                a.id::bigint AS source_id,
+
+                a.measurement_basis,
+                'Auto-generated from asset master'::text AS narrative,
+
+                a.current_cost::numeric(18,2) AS cost_delta,
+                0::numeric(18,2) AS accum_dep_delta,
+                0::numeric(18,2) AS impairment_delta,
+                0::numeric(18,2) AS revaluation_reserve_delta,
+                a.current_cost::numeric(18,2) AS carrying_delta
+            FROM asset_base a
+            WHERE a.current_cost <> 0
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.asset_acquisitions ac
+                WHERE ac.asset_id = a.asset_id
+                    AND COALESCE(ac.status,'draft') IN ('posted')
+            )
+            AND NOT (
+                a.opening_cost <> 0
+                OR a.opening_accum_dep <> 0
+                OR a.opening_impairment <> 0
+            )
+        ),
+
         -- ---------------------------------------------------------
         -- SUBSEQUENT MEASUREMENTS
         -- add_cost / impairment / revaluation / transfer / HFS
@@ -14753,6 +14790,8 @@ class DatabaseService:
         SELECT * FROM opening_rows
         UNION ALL
         SELECT * FROM acquisition_rows
+        UNION ALL
+        SELECT * FROM fallback_acquisition_rows
         UNION ALL
         SELECT * FROM subseq_rows
         UNION ALL

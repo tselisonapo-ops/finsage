@@ -8,6 +8,21 @@ export type FixedAssetsDrawerMode = "acquire" | "dispose";
  *  ----------------------------- */
 type ApiFetch = (url: string, opts?: RequestInit) => Promise<unknown>;
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function readPostingDateFromArgs(args: FixedAssetsDrawerOpenArgs | null): string {
+  const d = args?.defaults || {};
+  return String(
+    d.postingDate ||
+    d.acquisitionDate ||
+    (window as unknown as { __FS_POSTING_CONTEXT__?: { posting_date?: string } })
+      .__FS_POSTING_CONTEXT__?.posting_date ||
+    ""
+  ).trim();
+}
+
 function getApiFetch(): ApiFetch | undefined {
   return (window as unknown as { apiFetch?: ApiFetch }).apiFetch;
 }
@@ -90,6 +105,7 @@ type DepreciationMethod = "SL" | "RB" | "UOP";
 
 type CreateAssetPayload = {
   entry_mode?: AssetEntryMode;
+  posting_date?: string | null;
 
   asset_code: string;
   asset_name: string;
@@ -331,6 +347,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
    *  ----------------------------- */
   function buildAcqPayload(assetId: number | string) {
     const amount = Number(form.cost || 0);
+    const postingDate = readPostingDateFromArgs(args);
 
     const funding =
       fundingSource === "bank" || fundingSource === "cash"
@@ -343,6 +360,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     const payload: Record<string, unknown> = {
       acquisition_date: form.acquisition_date,
+      posting_date: postingDate || form.acquisition_date,
       amount,
       funding_source: funding,
       reference: sourceDocRef?.trim() ? sourceDocRef.trim() : `ASSET-${String(assetId)}`,
@@ -419,6 +437,60 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     })();
   }, [open, args]);
 
+  useEffect(() => {
+    if (!open || !args) return;
+
+    const postingDate = readPostingDateFromArgs(args);
+    const defaults = args.defaults || {};
+
+    setEntryMode("acquisition");
+    setSelectedVendorId("");
+    setSelectedBankId("");
+    setFundingSource("bank");
+    setSourceDocType("invoice");
+    setSourceDocRef("");
+    setOtherCreditAccountCode("");
+    setShowSourceDocNote(false);
+
+    setForm({
+      entry_mode: "acquisition",
+
+      asset_code: String(defaults.assetCode || ""),
+      asset_name: String(defaults.assetName || ""),
+      asset_class: String(defaults.assetClass || ""),
+      category: String(defaults.category || ""),
+
+      location: String(defaults.location || ""),
+      serial_no: String(defaults.serialNo || ""),
+      notes: String(defaults.notes || ""),
+
+      acquisition_date: String(defaults.acquisitionDate || postingDate || todayIso()),
+      available_for_use_date: String(defaults.availableForUseDate || ""),
+
+      cost: Number(defaults.cost || 0),
+      residual_value: Number(defaults.residualValue || 0),
+
+      opening_as_at: String(defaults.openingAsAt || postingDate || ""),
+      opening_cost: defaults.openingCost == null ? null : Number(defaults.openingCost),
+      opening_accum_dep: defaults.openingAccumDep == null ? null : Number(defaults.openingAccumDep),
+      opening_impairment: defaults.openingImpairment == null ? null : Number(defaults.openingImpairment),
+
+      depreciation_method: (String(defaults.depreciationMethod || "SL") as DepreciationMethod),
+      useful_life_months: Number(defaults.usefulLifeMonths || 60),
+
+      rb_rate_percent: defaults.rbRatePercent == null ? null : Number(defaults.rbRatePercent),
+      uop_usage_mode: ((defaults.uopUsageMode as UopUsageMode) || "DELTA"),
+      uop_opening_reading: defaults.uopOpeningReading == null ? null : Number(defaults.uopOpeningReading),
+      uop_total_units: defaults.uopTotalUnits == null ? null : Number(defaults.uopTotalUnits),
+      uop_unit_name: String(defaults.uopUnitName || ""),
+
+      asset_account_code: String(args.accountCode || defaults.asset_account_code || ""),
+      accum_dep_account_code: String(defaults.accum_dep_account_code || ""),
+      dep_expense_account_code: String(defaults.dep_expense_account_code || ""),
+      disposal_gain_account_code: String(defaults.disposal_gain_account_code || ""),
+      disposal_loss_account_code: String(defaults.disposal_loss_account_code || ""),
+    });
+  }, [open, args]);
   /** -----------------------------
    *  Lazy-load vendors / banks
    *  ----------------------------- */
@@ -538,10 +610,12 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     try {
       const companyId = args.companyId;
+      const postingDate = readPostingDateFromArgs(args);
 
       const payload: CreateAssetPayload = {
         ...form,
         entry_mode: entryMode,
+        posting_date: postingDate || null,
         category: form.category?.trim() ? form.category.trim() : null,
         location: form.location?.trim() ? form.location.trim() : null,
         serial_no: form.serial_no?.trim() ? form.serial_no.trim() : null,
@@ -652,14 +726,20 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           <div>
             <b>Company:</b> {args.companyName?.trim() ? args.companyName : `Company ${String(args.companyId)}`}
           </div>
-          {args.accountCode ? (
+
+          {args.accountName ? (
             <div>
-              <b>Account:</b> {args.accountCode}
-              {args.accountName ? ` • ${args.accountName}` : ""}
+              <b>Account:</b> {args.accountName}
             </div>
           ) : null}
+
           <div>
             <b>Mode:</b> {args.mode}
+          </div>
+
+          {/* ✅ ADD THIS */}
+          <div>
+            <b>Posting date:</b> {readPostingDateFromArgs(args) || "—"}
           </div>
         </div>
       )}
@@ -722,12 +802,14 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               name="entry_mode"
               checked={entryMode === "opening_balance"}
               onChange={() => {
+                const postingDate = readPostingDateFromArgs(args);
+
                 setEntryMode("opening_balance");
                 setForm((p) => ({
                   ...p,
                   entry_mode: "opening_balance",
                   opening_cost: Number(p.cost || 0),
-                  opening_as_at: p.opening_as_at || new Date().toISOString().slice(0, 10),
+                  opening_as_at: p.opening_as_at || postingDate || p.acquisition_date || "",
                   opening_accum_dep: p.opening_accum_dep ?? 0,
                   opening_impairment: p.opening_impairment ?? 0,
                 }));

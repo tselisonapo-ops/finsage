@@ -10910,6 +10910,104 @@ function splitVatGross(gross, rate) {
   return { net, vat };
 }
 
+function getJournalDateForModuleRedirect() {
+  const elDate = document.getElementById("jrnlDate");
+  const v = String(elDate?.value || "").trim();
+  return v || "";
+}
+
+function setPostingContextDate(postingDate, extra = {}) {
+  window.__FS_POSTING_CONTEXT__ = {
+    ...(window.__FS_POSTING_CONTEXT__ || {}),
+    ...extra,
+    posting_date: postingDate || null,
+  };
+}
+
+async function requirePostingDateModal(initialDate = "") {
+  return new Promise((resolve) => {
+    let modal = document.getElementById("postingDateRequiredModal");
+
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "postingDateRequiredModal";
+      modal.className = "modal hidden";
+      modal.setAttribute("aria-hidden", "true");
+      modal.style.display = "flex";
+
+      modal.innerHTML = `
+        <div class="modal-backdrop" id="postingDateRequiredBackdrop"></div>
+        <div class="modal-dialog modal-sm">
+          <div class="modal-card">
+            <div class="modal-header">
+              <div>
+                <h3>Select journal date</h3>
+                <p class="muted">Choose the posting date to carry into the asset workflow.</p>
+              </div>
+              <button type="button" class="btn btn-secondary" id="postingDateRequiredClose">Close</button>
+            </div>
+            <div class="modal-body">
+              <label for="postingDateRequiredInput">Journal date</label>
+              <input type="date" id="postingDateRequiredInput" class="input" />
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" id="postingDateRequiredCancel">Cancel</button>
+              <button type="button" class="btn btn-primary" id="postingDateRequiredConfirm">Continue</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+    }
+
+    const input = modal.querySelector("#postingDateRequiredInput");
+    const btnClose = modal.querySelector("#postingDateRequiredClose");
+    const btnCancel = modal.querySelector("#postingDateRequiredCancel");
+    const btnConfirm = modal.querySelector("#postingDateRequiredConfirm");
+    const backdrop = modal.querySelector("#postingDateRequiredBackdrop");
+
+    input.value = initialDate || "";
+
+    const cleanup = () => {
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+      btnClose.onclick = null;
+      btnCancel.onclick = null;
+      btnConfirm.onclick = null;
+      backdrop.onclick = null;
+      document.removeEventListener("keydown", escHandler);
+    };
+
+    const escHandler = (e) => {
+      if (e.key === "Escape") {
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    btnClose.onclick = btnCancel.onclick = backdrop.onclick = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    btnConfirm.onclick = () => {
+      const v = String(input.value || "").trim();
+      if (!v) {
+        input.focus();
+        return;
+      }
+      cleanup();
+      resolve(v);
+    };
+
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+    document.addEventListener("keydown", escHandler);
+    setTimeout(() => input.focus(), 0);
+  });
+}
+
 // Add journal entry from input fields
 function addJournalFromInput() {
   console.log("[JRNL] addJournalFromInput fired");
@@ -13018,7 +13116,23 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
       resolve("journal");
     };
 
-    btnModule.onclick = () => {
+    btnModule.onclick = async () => {
+      let postingDate = getPreferredJournalDate();
+
+      if (!postingDate) {
+        postingDate = await requirePostingDateModal("");
+        if (!postingDate) return;
+      }
+
+      setPostingContextDate(postingDate, {
+        source: "journal-module-nudge",
+        module_key: moduleKey,
+        account_code: account?.code || account?.account_code || "",
+        account_name: account?.name || "",
+        side: side || "",
+        meta: meta || {},
+      });
+
       cleanup();
       resolve("module");
     };
@@ -13036,14 +13150,42 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
 
 window.openModuleNudgeModal = openModuleNudgeModal;
 
+function getJournalDateForModuleRedirect() {
+  const elDate = document.getElementById("jrnlDate");
+  const v = String(elDate?.value || "").trim();
+  return v || "";
+}
+
+function setPostingContextDate(postingDate, extra = {}) {
+  window.__FS_POSTING_CONTEXT__ = {
+    ...(window.__FS_POSTING_CONTEXT__ || {}),
+    ...extra,
+    posting_date: postingDate || null,
+  };
+}
+
 async function redirectToModule({ moduleKey, account, side, meta = {} }) {
+  const journalDate = getJournalDateForModuleRedirect() || meta?.date || "";
+
+  if (journalDate) {
+    setPostingContextDate(journalDate, {
+      source: "journal_guard",
+      module_key: moduleKey,
+      journalSide: side,
+      account_code: account?.code || "",
+      account_name: account?.name || "",
+    });
+  }
+
   if (moduleKey === "ppe") {
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
       accountCode: account?.code,
       accountName: account?.name,
       defaults: {
-        acquisitionDate: meta?.date || null,
+        acquisitionDate: journalDate || null,
+        openingAsAt: journalDate || null,
+        postingDate: journalDate || null,
         source: "journal_guard",
         journalSide: side,
       },
@@ -13064,7 +13206,9 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       accountCode: account?.code,
       accountName: account?.name,
       defaults: {
-        acquisitionDate: meta?.date || null,
+        acquisitionDate: journalDate || null,
+        openingAsAt: journalDate || null,
+        postingDate: journalDate || null,
         source: "journal_guard",
         journalSide: side,
       },
