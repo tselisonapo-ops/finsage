@@ -23,6 +23,16 @@ function readPostingDateFromArgs(args: FixedAssetsDrawerOpenArgs | null): string
   ).trim();
 }
 
+function readJournalRefFromArgs(args: FixedAssetsDrawerOpenArgs | null): string {
+  const d = args?.defaults || {};
+  return String(
+    d.reference ||
+    (window as unknown as { __FS_POSTING_CONTEXT__?: { journal_ref?: string } })
+      .__FS_POSTING_CONTEXT__?.journal_ref ||
+    ""
+  ).trim();
+}
+
 function getApiFetch(): ApiFetch | undefined {
   return (window as unknown as { apiFetch?: ApiFetch }).apiFetch;
 }
@@ -106,6 +116,7 @@ type DepreciationMethod = "SL" | "RB" | "UOP";
 type CreateAssetPayload = {
   entry_mode?: AssetEntryMode;
   posting_date?: string | null;
+  reference?: string | null;
 
   asset_code: string;
   asset_name: string;
@@ -348,6 +359,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
   function buildAcqPayload(assetId: number | string) {
     const amount = Number(form.cost || 0);
     const postingDate = readPostingDateFromArgs(args);
+    const journalRef = readJournalRefFromArgs(args);
 
     const funding =
       fundingSource === "bank" || fundingSource === "cash"
@@ -363,7 +375,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       posting_date: postingDate || form.acquisition_date,
       amount,
       funding_source: funding,
-      reference: sourceDocRef?.trim() ? sourceDocRef.trim() : `ASSET-${String(assetId)}`,
+      reference: sourceDocRef?.trim() || journalRef || `ASSET-${String(assetId)}`,
       notes: form.notes?.trim() || null,
       status: "draft",
     };
@@ -611,11 +623,13 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     try {
       const companyId = args.companyId;
       const postingDate = readPostingDateFromArgs(args);
+      const journalRef = readJournalRefFromArgs(args);
 
       const payload: CreateAssetPayload = {
         ...form,
         entry_mode: entryMode,
         posting_date: postingDate || null,
+        reference: journalRef || null,
         category: form.category?.trim() ? form.category.trim() : null,
         location: form.location?.trim() ? form.location.trim() : null,
         serial_no: form.serial_no?.trim() ? form.serial_no.trim() : null,
@@ -740,6 +754,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           {/* ✅ ADD THIS */}
           <div>
             <b>Posting date:</b> {readPostingDateFromArgs(args) || "—"}
+          </div>
+          <div>
+            <b>Reference:</b> {readJournalRefFromArgs(args) || "—"}
           </div>
         </div>
       )}

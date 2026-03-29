@@ -10921,7 +10921,14 @@ function setPostingContextDate(postingDate, extra = {}) {
     ...(window.__FS_POSTING_CONTEXT__ || {}),
     ...extra,
     posting_date: postingDate || null,
+    journal_ref: extra?.journal_ref || window.__FS_POSTING_CONTEXT__?.journal_ref || null,
   };
+}
+
+function getPreferredJournalRef() {
+  const el = document.getElementById("jrnlRef");
+  const v = String(el?.value || "").trim();
+  return v || String(window.__FS_POSTING_CONTEXT__?.journal_ref || "").trim();
 }
 
 async function requirePostingDateModal(initialDate = "") {
@@ -13159,6 +13166,7 @@ function getJournalDateForModuleRedirect() {
 
 async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   const journalDate = getJournalDateForModuleRedirect() || meta?.date || "";
+  const journalRef  = getPreferredJournalRef() || "";
 
   if (journalDate) {
     setPostingContextDate(journalDate, {
@@ -13167,6 +13175,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       journalSide: side,
       account_code: account?.code || "",
       account_name: account?.name || "",
+      journal_ref: journalRef,   // ✅ NEW
     });
   }
 
@@ -13179,6 +13188,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         acquisitionDate: journalDate || null,
         openingAsAt: journalDate || null,
         postingDate: journalDate || null,
+        reference: journalRef || null,   // ✅ NEW
         source: "journal_guard",
         journalSide: side,
       },
