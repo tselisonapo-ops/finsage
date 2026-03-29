@@ -10910,10 +10910,10 @@ function splitVatGross(gross, rate) {
   return { net, vat };
 }
 
-function getJournalDateForModuleRedirect() {
+function getPreferredJournalDate() {
   const elDate = document.getElementById("jrnlDate");
   const v = String(elDate?.value || "").trim();
-  return v || "";
+  return v || String(window.__FS_POSTING_CONTEXT__?.posting_date || "").trim();
 }
 
 function setPostingContextDate(postingDate, extra = {}) {
@@ -13156,13 +13156,6 @@ function getJournalDateForModuleRedirect() {
   return v || "";
 }
 
-function setPostingContextDate(postingDate, extra = {}) {
-  window.__FS_POSTING_CONTEXT__ = {
-    ...(window.__FS_POSTING_CONTEXT__ || {}),
-    ...extra,
-    posting_date: postingDate || null,
-  };
-}
 
 async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   const journalDate = getJournalDateForModuleRedirect() || meta?.date || "";
