@@ -653,6 +653,11 @@ def acquisitions_list_or_create(company_id, asset_id):
 
     posting_date = _parse_optional_date(payload_in, "posting_date")
 
+    reference = (payload_in.get("reference") or "").strip()
+    payload_in["reference"] = reference or None
+    if not payload_in["reference"]:
+        return _json_error("reference is required for acquisition", 400)
+
     if not posting_date:
         return _json_error("posting_date is required for acquisition", 400)
 

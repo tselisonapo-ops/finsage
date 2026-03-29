@@ -74,6 +74,163 @@ def _pick_coa_by_keywords(cur, schema: str, keywords: list[str], default_code: s
 def _money(x: Decimal) -> float:
     return float(x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
+def resolve_impairment_accounts(
+    cur,
+    schema: str,
+    company_id: int,
+    asset: dict,
+) -> tuple[str | None, str | None]:
+    """
+    Resolve impairment accounts for an asset.
+
+    Returns:
+        (impairment_loss_account_code, accum_impairment_account_code)
+
+    Priority:
+    1) Asset-specific overrides
+    2) Role-based defaults (PPE vs ROU split)
+    3) Name-based fallback
+    4) Safe final fallback for P&L only
+
+    Notes:
+    - The accumulated impairment account should be a BALANCE SHEET contra-asset.
+    - The impairment loss account should be a P&L expense account.
+    - Never use impairment reversal as the opening accumulated impairment account.
+    """
+
+    # -------------------------
+    # 1) Asset overrides
+    # -------------------------
+    loss_code = (asset.get("impairment_loss_account_code") or "").strip() or None
+    accum_code = (asset.get("accum_impairment_account_code") or "").strip() or None
+
+    if loss_code and not coa_exists(cur, schema, company_id, loss_code):
+        loss_code = None
+    if accum_code and not coa_exists(cur, schema, company_id, accum_code):
+        accum_code = None
+
+    rou = is_rou_asset_record(asset)
+
+    # -------------------------
+    # 2) Role-based defaults
+    # -------------------------
+    if not loss_code:
+        if rou:
+            loss_code = (
+                coa_first_by_role(cur, schema, company_id, "impairment_loss_rou")
+                or coa_first_by_role(cur, schema, company_id, "impairment_loss")
+            )
+        else:
+            loss_code = (
+                coa_first_by_role(cur, schema, company_id, "impairment_loss_ppe")
+                or coa_first_by_role(cur, schema, company_id, "impairment_loss")
+            )
+
+    if not accum_code:
+        if rou:
+            accum_code = (
+                coa_first_by_role(cur, schema, company_id, "accumulated_impairment_rou")
+                or coa_first_by_role(cur, schema, company_id, "accumulated_impairment")
+            )
+        else:
+            accum_code = (
+                coa_first_by_role(cur, schema, company_id, "accumulated_impairment_ppe")
+                or coa_first_by_role(cur, schema, company_id, "accumulated_impairment")
+            )
+
+    # -------------------------
+    # 3) Name-based fallback
+    # -------------------------
+    if not loss_code:
+        loss_code = coa_first_by_name_ilike(
+            cur, schema, company_id,
+            [
+                "%impairment loss%",
+                "%asset impairment%",
+                "%loss on impairment%",
+            ],
+            exclude_patterns=[
+                "%reversal%",
+                "%accumulated%",
+                "%allowance%",
+            ],
+        )
+
+    if not accum_code:
+        accum_code = coa_first_by_name_ilike(
+            cur, schema, company_id,
+            [
+                "%accumulated impairment%",
+                "%impairment allowance%",
+                "%allowance for impairment%",
+            ],
+            exclude_patterns=[
+                "%reversal%",
+                "%loss%",
+            ],
+        )
+
+    # -------------------------
+    # 4) Safe final fallback
+    # -------------------------
+    # P&L fallback is allowed.
+    # BS contra fallback is NOT allowed unless explicitly found.
+    if not loss_code:
+        # Optional last-chance lookup from known codes/names
+        loss_code = coa_first_by_name_ilike(
+            cur, schema, company_id,
+            ["%impairment%"],
+            exclude_patterns=[
+                "%reversal%",
+                "%accumulated%",
+                "%allowance%",
+            ],
+        )
+
+    return loss_code, accum_code
+
+def coa_first_by_name_ilike(
+    cur,
+    schema: str,
+    company_id: int,
+    include_patterns: list[str],
+    exclude_patterns: list[str] | None = None,
+) -> str | None:
+    exclude_patterns = exclude_patterns or []
+
+    where_parts = ["company_id = %s"]
+    params: list = [company_id]
+
+    include_sql = []
+    for p in include_patterns:
+        include_sql.append("(name ILIKE %s OR description ILIKE %s OR category ILIKE %s OR subcategory ILIKE %s)")
+        params.extend([p, p, p, p])
+
+    where_parts.append("(" + " OR ".join(include_sql) + ")")
+
+    for p in exclude_patterns:
+        where_parts.append("""
+            COALESCE(name, '') NOT ILIKE %s
+            AND COALESCE(description, '') NOT ILIKE %s
+            AND COALESCE(category, '') NOT ILIKE %s
+            AND COALESCE(subcategory, '') NOT ILIKE %s
+        """)
+        params.extend([p, p, p, p])
+
+    sql = f"""
+        SELECT code
+        FROM {schema}.coa
+        WHERE {' AND '.join(where_parts)}
+        ORDER BY
+            CASE WHEN COALESCE(role, '') <> '' THEN 0 ELSE 1 END,
+            CASE WHEN COALESCE(is_contra, FALSE) = TRUE THEN 0 ELSE 1 END,
+            code
+        LIMIT 1
+    """
+    cur.execute(sql, tuple(params))
+    row = cur.fetchone()
+    return (row.get("code") or "").strip() if row and row.get("code") else None
+
 def post_subsequent_measurement(
     cur,
     company_id: int,
@@ -1900,7 +2057,7 @@ def post_opening_balance(
     company_id: int,
     asset_id: int,
     *,
-    posting_date,   # ✅ ADD
+    posting_date,
     user: dict | None = None,
     approved_via: str | None = None
 ) -> int:
@@ -1924,17 +2081,33 @@ def post_opening_balance(
         raise Exception("asset not found")
 
     asset_account_code = (asset.get("asset_account_code") or "").strip()
-    accum_dep_account_code = (asset.get("accum_dep_account_code") or "").strip()
+
+    # Resolve depreciation accounts
+    resolved_dep_exp_code, resolved_accum_dep_code = resolve_depreciation_accounts(
+        cur, schema, company_id, asset
+    )
+
+    # Resolve impairment accounts
+    resolved_impairment_loss_code, resolved_accum_impairment_code = resolve_impairment_accounts(
+        cur, schema, company_id, asset
+    )
+
+    accum_dep_account_code = (resolved_accum_dep_code or "").strip()
+    accum_impairment_account_code = (resolved_accum_impairment_code or "").strip()
 
     if not asset_account_code:
         raise Exception("asset missing asset_account_code")
     if not accum_dep_account_code:
-        raise Exception("asset missing accum_dep_account_code")
+        raise Exception("asset missing accum_dep_account_code (could not resolve from asset or COA defaults)")
 
     cost = Decimal(str(asset.get("cost") or 0))
     opening_accum_dep = Decimal(str(asset.get("opening_accum_dep") or 0))
     opening_impairment = Decimal(str(asset.get("opening_impairment") or 0))
-    opening_as_at = asset.get("opening_as_at") or asset.get("available_for_use_date") or asset.get("acquisition_date")
+    opening_as_at = (
+        asset.get("opening_as_at")
+        or asset.get("available_for_use_date")
+        or asset.get("acquisition_date")
+    )
 
     if not opening_as_at:
         raise Exception("opening_as_at or asset start date is required")
@@ -1958,20 +2131,16 @@ def post_opening_balance(
         SELECT code
         FROM {schema}.coa
         WHERE company_id=%s
-          AND template_code_scoped = 'G::3105'
+          AND template_code_scoped IN ('G::3105', 'G::BS_EQ_3105')
+        ORDER BY code
         LIMIT 1
     """), (company_id,))
     row = cur.fetchone()
 
     if not row or not row.get("code"):
-        raise Exception("Opening Balance Equity account (G::3105) not found in company COA")
+        raise Exception("Opening Balance Equity account (G::3105 / G::BS_EQ_3105) not found in company COA")
 
     opening_equity_code = (row.get("code") or "").strip()
-
-    impairment_account_code = (
-        (asset.get("accum_impairment_account_code") or "").strip()
-        or (asset.get("impairment_loss_account_code") or "").strip()
-    )
 
     ref = f"OB-ASSET-{asset['id']}"
 
@@ -1979,7 +2148,7 @@ def post_opening_balance(
         cur,
         schema,
         company_id,
-        posting_date,   # ✅ USE THIS
+        posting_date,
         ref,
         f"Asset opening balance: {asset['asset_code']} - {asset['asset_name']}",
         ccy,
@@ -2005,12 +2174,14 @@ def post_opening_balance(
         )
 
     if opening_impairment > 0:
-        if not impairment_account_code:
-            raise Exception("opening_impairment provided but no impairment account configured")
+        if not accum_impairment_account_code:
+            raise Exception(
+                "opening_impairment provided but no accumulated impairment contra account configured"
+            )
 
         add_line(
             cur, schema, company_id, jid,
-            impairment_account_code,
+            accum_impairment_account_code,
             "Opening accumulated impairment",
             0, float(_q2(opening_impairment)),
             "asset_opening_balance", asset["id"]
@@ -2032,18 +2203,30 @@ def post_opening_balance(
         schema,
         company_id,
         jid,
-        je_date=posting_date,   # ✅ USE THIS
+        je_date=posting_date,
         ref=ref,
     )
 
+    # Persist resolved account codes back to asset where blank
     cur.execute(_q(schema, """
         UPDATE {schema}.assets
-        SET updated_at = NOW()
+        SET
+            accum_dep_account_code = COALESCE(NULLIF(accum_dep_account_code, ''), %s),
+            dep_expense_account_code = COALESCE(NULLIF(dep_expense_account_code, ''), %s),
+            accum_impairment_account_code = COALESCE(NULLIF(accum_impairment_account_code, ''), %s),
+            impairment_loss_account_code = COALESCE(NULLIF(impairment_loss_account_code, ''), %s),
+            updated_at = NOW()
         WHERE company_id=%s AND id=%s
-    """), (company_id, asset_id))
+    """), (
+        resolved_accum_dep_code,
+        resolved_dep_exp_code,
+        resolved_accum_impairment_code,
+        resolved_impairment_loss_code,
+        company_id,
+        asset_id,
+    ))
 
     return jid
-
 # ----------------------------
 # Posting: Revaluation
 # ----------------------------
