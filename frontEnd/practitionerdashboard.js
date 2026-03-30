@@ -8875,7 +8875,17 @@ function formatDateTime(value) {
 }
 
 function getSelectedPractitionerEngagementId() {
-  return PR_SELECTED_ENGAGEMENT?.id || PR_SELECTED_ENGAGEMENT?.engagement_id || null;
+  return (
+    PR_SELECTED_ENGAGEMENT?.id ||
+    PR_SELECTED_ENGAGEMENT?.engagement_id ||
+    window.__PR_POSTING_CONTEXT__?.engagementId ||
+    window.__PR_POSTING_CONTEXT__?.engagement_id ||
+    window.__PR_CONTEXT__?.engagementId ||
+    window.__PR_CONTEXT__?.engagement_id ||
+    window.__PR_CONTEXT__?.engagement?.id ||
+    window.__PR_CONTEXT__?.engagement?.engagement_id ||
+    null
+  );
 }
 
 function getSelectedPractitionerEngagementName() {
@@ -9024,7 +9034,6 @@ function renderPractitionerPostingRows(prefix, rows, total, cache, config) {
   const pageFrom = total > 0 ? offset + 1 : 0;
   const pageTo = Math.min(offset + (rows?.length || 0), total || 0);
   const currentPage = Math.floor(offset / limit) + 1;
-  const currency = row?.currency_code || getActiveCurrency(me);
 
   if (pageFromEl) pageFromEl.textContent = String(pageFrom);
   if (pageToEl) pageToEl.textContent = String(pageTo);
@@ -9047,6 +9056,7 @@ function renderPractitionerPostingRows(prefix, rows, total, cache, config) {
   if (emptyStateEl) emptyStateEl.classList.add("hidden");
 
   tbody.innerHTML = rows.map((row) => {
+    const currency = row?.currency_code || getActiveCurrency(window.currentUser || {});
     const sourceLabel = row?.source_table
       ? `${row.source_table}${row?.source_id ? ` #${row.source_id}` : ""}`
       : "--";
