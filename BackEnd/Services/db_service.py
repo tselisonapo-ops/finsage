@@ -217,6 +217,24 @@ def _apply_cf_metadata(row: Dict[str, Any]) -> None:
     derived = _derive_cf_section_from_bucket(b)
     row["cf_section"] = derived
 
+def _resolve_role(row: Dict[str, Any]) -> str:
+    existing_role = (
+        " ".join(str(row.get("role") or "").split())
+        .strip()
+        .lower()
+        .replace(" ", "_")
+    )
+
+    if existing_role:
+        return existing_role
+
+    return ac._coa_role_from_text(
+        row.get("name", ""),
+        row.get("section", ""),
+        row.get("category", ""),
+        row.get("subcategory", ""),
+        row.get("standard", ""),
+    )
 
 def _normalize_coa_rows_codes(
     rows: List[Any],
@@ -493,17 +511,7 @@ def _normalize_coa_rows_codes(
 
             existing_codes.add(src_code)
 
-            existing_role = (row.get("role") or "").strip()
-            if not existing_role:
-                row["role"] = ac._coa_role_from_text(
-                    row.get("name", ""),
-                    row.get("section", ""),
-                    row.get("category", ""),
-                    row.get("subcategory", ""),
-                    row.get("standard", ""),
-                )
-            else:
-                row["role"] = existing_role
+            row["role"] = _resolve_role(row)
 
             out.append(row)
             continue
@@ -590,17 +598,7 @@ def _normalize_coa_rows_codes(
         row["allow_opposite"] = bool(ac.ALLOW_OPPOSITE_BY_FAMILY.get(bucket, False))
 
         # ✅ preserve explicit role; otherwise derive from text
-        existing_role = (row.get("role") or "").strip()
-        if not existing_role:
-            row["role"] = ac._coa_role_from_text(
-                row.get("name", ""),
-                row.get("section", ""),
-                row.get("category", ""),
-                row.get("subcategory", ""),
-                row.get("standard", ""),
-            )
-        else:
-            row["role"] = existing_role
+        row["role"] = _resolve_role(row)
 
         out.append(row)
 

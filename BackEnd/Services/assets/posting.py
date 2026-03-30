@@ -3980,20 +3980,13 @@ def resolve_depreciation_accounts(
     Resolves depreciation/amortisation expense + accumulated depreciation accounts.
 
     Priority:
-    1) Asset-specific overrides (asset fields)
-    2) Role-based defaults (PPE vs ROU split)
-    3) Name-based best-effort (with ROU exclusions when PPE)
-
-    Notes:
-    - PPE must NEVER “accidentally” pick the ROU accumulated depreciation account.
-    - If you keep multiple COA rows with the same role (e.g. accumulated_depreciation_ppe),
-      role-based selection will pick the lowest code (ORDER BY code). Prefer a single “control”
-      account for that role, or set asset.accum_dep_account_code explicitly.
+    1) Asset-specific overrides
+    2) ROU-specific role defaults (if ROU)
+    3) PPE-specific account/name mapping from asset account / class / name
+    4) Generic role fallback
+    5) Generic name fallback
     """
 
-    # -------------------------
-    # 1) Asset-specific overrides (best)
-    # -------------------------
     dep_exp = (asset.get("dep_expense_account_code") or "").strip() or None
     acc_dep = (asset.get("accum_dep_account_code") or "").strip() or None
 
@@ -4002,53 +3995,16 @@ def resolve_depreciation_accounts(
 
     rou = is_rou_asset_record(asset)
 
-    # -------------------------
-    # 2) Role-based defaults (PPE vs ROU split)
-    # -------------------------
-    if rou:
-        if not dep_exp_code:
-            dep_exp_code = (
-                coa_first_by_role(cur, schema, company_id, "amortisation_expense_rou")
-                or coa_first_by_role(cur, schema, company_id, "depreciation_expense_rou")
-                or coa_first_by_role(cur, schema, company_id, "lease_amortization")  # legacy
-            )
-
-        if not acc_dep_code:
-            acc_dep_code = (
-                coa_first_by_role(cur, schema, company_id, "accumulated_depreciation_rou")
-                or coa_first_by_role(cur, schema, company_id, "accumulated_amortization_rou")  # legacy
-            )
-    else:
-        if not dep_exp_code:
-            dep_exp_code = (
-                coa_first_by_role(cur, schema, company_id, "depreciation_expense_ppe")
-                or coa_first_by_role(cur, schema, company_id, "depreciation_expense")  # generic
-            )
-
-        if not acc_dep_code:
-            acc_dep_code = coa_first_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")
-
-    # -------------------------
-    # 3) Name-based fallback (avoid PPE picking ROU acc dep)
-    # -------------------------
-    ROU_EXCLUDES = ["%right-of-use%", "%right of use%", "%rou%"]
-
-    def coa_first_by_name_excluding(
-        *,
-        patterns: list[str],
-        exclude_patterns: list[str] | None,
-        section: str | None,
-        is_contra: bool | None,
-    ) -> str | None:
+    def first_code_by_name(patterns, *, section=None, is_contra=None, exclude_patterns=None):
         patterns = [p for p in (patterns or []) if (p or "").strip()]
         if not patterns:
             return None
 
         where = ["company_id=%s", "posting IS TRUE"]
-        params: list = [company_id]
+        params = [company_id]
 
         if section:
-            where.append("LOWER(COALESCE(section,''))=LOWER(%s)")
+            where.append("LOWER(COALESCE(section,'')) = LOWER(%s)")
             params.append(section)
 
         if is_contra is not None:
@@ -4056,14 +4012,13 @@ def resolve_depreciation_accounts(
             params.append(is_contra)
 
         like_sql = " OR ".join(["name ILIKE %s"] * len(patterns))
-        params.extend(patterns)
         where.append(f"({like_sql})")
+        params.extend(patterns)
 
-        if exclude_patterns:
-            ex = [p for p in (exclude_patterns or []) if (p or "").strip()]
-            if ex:
-                where.extend(["name NOT ILIKE %s"] * len(ex))
-                params.extend(ex)
+        ex = [p for p in (exclude_patterns or []) if (p or "").strip()]
+        for p in ex:
+            where.append("name NOT ILIKE %s")
+            params.append(p)
 
         cur.execute(
             _q(
@@ -4074,73 +4029,57 @@ def resolve_depreciation_accounts(
                 WHERE {" AND ".join(where)}
                 ORDER BY code
                 LIMIT 1
-                """,
+                """
             ),
             tuple(params),
         )
-        r = cur.fetchone()
-        return r["code"] if r else None
+        row = cur.fetchone()
+        return row["code"] if row else None
 
-    # ---- accumulated depreciation fallback
-    if not acc_dep_code:
-        if rou:
-            # Prefer explicit ROU accumulated dep
-            acc_dep_code = coa_first_by_name(
-                cur,
+    def get_asset_text():
+        return " ".join([
+            str(asset.get("asset_class") or ""),
+            str(asset.get("asset_category") or ""),
+            str(asset.get("asset_name") or ""),
+            str(asset.get("name") or ""),
+            str(asset.get("asset_account_code") or ""),
+        ]).strip().lower()
+
+    def get_asset_account_name():
+        code = (asset.get("asset_account_code") or "").strip()
+        if not code:
+            return ""
+        cur.execute(
+            _q(
                 schema,
-                company_id,
-                patterns=[
-                    "%accum%depr%right-of-use%",
-                    "%accum%depr%right of use%",
-                    "%accum%depr%rou%",
-                    "%accumulated depreciation%right-of-use%",
-                    "%accumulated depreciation%rou%",
-                ],
-                section="Asset",
-                is_contra=True,
-            )
+                """
+                SELECT name
+                FROM {schema}.coa
+                WHERE company_id=%s AND code=%s
+                LIMIT 1
+                """
+            ),
+            (company_id, code),
+        )
+        row = cur.fetchone()
+        return (row.get("name") or "") if row else ""
 
-            # last resort: any accumulated dep (still fine for ROU)
-            if not acc_dep_code:
-                acc_dep_code = coa_first_by_name(
-                    cur,
-                    schema,
-                    company_id,
-                    patterns=["%accum%depr%", "%accumulated depreciation%"],
-                    section="Asset",
-                    is_contra=True,
-                )
+    asset_text = get_asset_text()
+    asset_account_name = get_asset_account_name().lower()
 
-        else:
-            # PPE: try match by asset name first, exclude ROU
-            asset_nm = (asset.get("name") or "").strip()
-            if asset_nm:
-                # keep this broad enough to match your seeded names
-                acc_dep_code = coa_first_by_name_excluding(
-                    patterns=[f"%accum%depr%{asset_nm}%"],
-                    exclude_patterns=ROU_EXCLUDES,
-                    section="Asset",
-                    is_contra=True,
-                )
+    ROU_EXCLUDES = ["%right-of-use%", "%right of use%", "%rou%"]
 
-            # then any accumulated depreciation, but exclude ROU
-            if not acc_dep_code:
-                acc_dep_code = coa_first_by_name_excluding(
-                    patterns=["%accum%depr%", "%accumulated depreciation%"],
-                    exclude_patterns=ROU_EXCLUDES,
-                    section="Asset",
-                    is_contra=True,
-                )
-
-    # ---- depreciation/amortisation expense fallback
-    if not dep_exp_code:
-        if rou:
+    # -------------------------
+    # 1) ROU branch
+    # -------------------------
+    if rou:
+        if not dep_exp_code:
             dep_exp_code = (
-                coa_first_by_name(
-                    cur,
-                    schema,
-                    company_id,
-                    patterns=[
+                coa_first_by_role(cur, schema, company_id, "amortisation_expense_rou")
+                or coa_first_by_role(cur, schema, company_id, "depreciation_expense_rou")
+                or coa_first_by_role(cur, schema, company_id, "lease_amortization")
+                or first_code_by_name(
+                    [
                         "%lease amort%",
                         "%lease amortis%",
                         "%rou amort%",
@@ -4151,24 +4090,109 @@ def resolve_depreciation_accounts(
                     section="Expense",
                     is_contra=False,
                 )
-                or coa_first_by_name(
-                    cur,
-                    schema,
-                    company_id,
-                    patterns=["%depreciation%"],
-                    section="Expense",
-                    is_contra=False,
+            )
+
+        if not acc_dep_code:
+            acc_dep_code = (
+                coa_first_by_role(cur, schema, company_id, "accumulated_depreciation_rou")
+                or coa_first_by_role(cur, schema, company_id, "accumulated_amortization_rou")
+                or first_code_by_name(
+                    [
+                        "%accum%depr%right-of-use%",
+                        "%accum%depr%right of use%",
+                        "%accum%depr%rou%",
+                        "%accumulated depreciation%right-of-use%",
+                        "%accumulated depreciation%rou%",
+                    ],
+                    section="Asset",
+                    is_contra=True,
+                )
+                or first_code_by_name(
+                    ["%accum%depr%", "%accumulated depreciation%"],
+                    section="Asset",
+                    is_contra=True,
                 )
             )
-        else:
-            dep_exp_code = coa_first_by_name(
-                cur,
-                schema,
-                company_id,
-                patterns=["%depreciation%"],
+
+        return dep_exp_code, acc_dep_code
+
+    # -------------------------
+    # 2) PPE-specific matching BEFORE generic PPE role
+    # -------------------------
+    # Build targeted patterns from the underlying asset account / class / name
+    specific_patterns = []
+
+    # Use asset account name first: most reliable
+    if "motor vehicle" in asset_account_name or "vehicle" in asset_text or "hilux" in asset_text:
+        specific_patterns += [
+            "%accum%depr%motor vehicle%",
+            "%accumulated depreciation%motor vehicle%",
+            "%accum%depr%vehicle%",
+        ]
+
+    if "computer equipment" in asset_account_name or "server" in asset_text or "laptop" in asset_text or "computer" in asset_text:
+        specific_patterns += [
+            "%accum%depr%computer equipment%",
+            "%accumulated depreciation%computer equipment%",
+            "%accum%depr%it hardware%",
+            "%accum%depr%computer%",
+        ]
+
+    if "office furniture" in asset_account_name or "furniture" in asset_text:
+        specific_patterns += [
+            "%accum%depr%office furniture%",
+            "%accumulated depreciation%office furniture%",
+            "%accum%depr%furniture%",
+            "%accum%depr%fixtures%",
+        ]
+
+    if "construction equipment" in asset_account_name or "equipment" in asset_text or "excavator" in asset_text or "crane" in asset_text:
+        specific_patterns += [
+            "%accum%depr%equipment%",
+            "%accumulated depreciation%equipment%",
+            "%accum%depr%machinery%",
+            "%accum%depr%tools%",
+        ]
+
+    if "building" in asset_account_name or "building" in asset_text:
+        specific_patterns += [
+            "%accum%depr%building%",
+            "%accumulated depreciation%building%",
+        ]
+
+    # Specific accumulated dep first
+    if not acc_dep_code and specific_patterns:
+        acc_dep_code = first_code_by_name(
+            specific_patterns,
+            section="Asset",
+            is_contra=True,
+            exclude_patterns=ROU_EXCLUDES,
+        )
+
+    # Generic PPE role only after specific matching
+    if not acc_dep_code:
+        acc_dep_code = coa_first_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")
+
+    # Then generic name fallback excluding ROU
+    if not acc_dep_code:
+        acc_dep_code = first_code_by_name(
+            ["%accum%depr%", "%accumulated depreciation%"],
+            section="Asset",
+            is_contra=True,
+            exclude_patterns=ROU_EXCLUDES,
+        )
+
+    # Depreciation expense
+    if not dep_exp_code:
+        dep_exp_code = (
+            coa_first_by_role(cur, schema, company_id, "depreciation_expense_ppe")
+            or coa_first_by_role(cur, schema, company_id, "depreciation_expense")
+            or first_code_by_name(
+                ["%depreciation%"],
                 section="Expense",
                 is_contra=False,
             )
+        )
 
     return dep_exp_code, acc_dep_code
 

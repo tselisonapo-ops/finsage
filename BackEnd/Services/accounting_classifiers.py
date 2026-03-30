@@ -921,7 +921,17 @@ def _coa_role_from_text(
     subcategory: str | None,
     standard: str | None,
 ) -> str:
-    text = " ".join([(name or ""), (section or ""), (category or ""), (subcategory or ""), (standard or "")]).lower()
+    text = " ".join([
+        (name or ""),
+        (section or ""),
+        (category or ""),
+        (subcategory or ""),
+        (standard or ""),
+    ]).lower()
+
+    sec = (section or "").lower()
+    cat = (category or "").lower()
+    sub = (subcategory or "").lower()
 
     # --- AR / cash / bank / VAT ---
     if any(k in text for k in ("accounts receivable", "trade receivable", "debtors")):
@@ -936,40 +946,92 @@ def _coa_role_from_text(
         return "vat_in"
 
     # ----------------------------
-    # ✅ Depreciation / amortisation roles
+    # helpers
     # ----------------------------
-    is_expense = ("expense" in (section or "").lower()) or ("depreciation" in text) or ("amort" in text)
-    is_asset   = ("asset" in (section or "").lower()) or ("accum" in text) or ("contra" in text)
+    is_expense = ("expense" in sec) or ("depreciation" in text) or ("amort" in text)
+    is_asset = ("asset" in sec) or ("accum" in text) or ("contra" in text)
 
-    is_rou = any(k in text for k in ("right-of-use", "right of use", "rou", "ifrs 16", "lease amort"))
-    is_accum = any(k in text for k in ("accumulated depreciation", "accum depreciation", "accum dep", "accumulated amort", "accum amort"))
+    is_rou = any(k in text for k in (
+        "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
+    ))
 
+    is_accum = any(k in text for k in (
+        "accumulated depreciation",
+        "accum depreciation",
+        "accum dep",
+        "accumulated amort",
+        "accum amort",
+    ))
+
+    def has_any(*terms: str) -> bool:
+        return any(t in text for t in terms if t)
+
+    # ----------------------------
+    # asset-class detection
+    # ----------------------------
+    is_buildings = has_any("building", "buildings")
+    is_furniture = has_any("office furniture", "furniture", "fixtures", "fixtures & fittings")
+    is_computers = has_any("computer equipment", "computer", "server", "laptop", "it hardware")
+    is_vehicles = has_any("motor vehicle", "motor vehicles", "vehicle", "vehicles", "fleet")
+    is_equipment = has_any("construction equipment", "equipment", "machinery", "machine", "tools")
+    is_intangible = has_any("intangible", "software", "license", "licence", "trademark")
+
+    # ----------------------------
     # Expense side
+    # ----------------------------
     if is_expense:
         if "lease interest" in text:
             return "lease_interest_expense"
 
+        # ROU expense roles
         if ("depreciation" in text or "depr" in text) and is_rou:
-            # if you treat ROU as "amortisation", keep this name anyway
             return "depreciation_expense_rou"
-
-        if ("depreciation" in text or "depr" in text):
-            return "depreciation_expense_ppe"
 
         if ("amort" in text) and is_rou:
             return "amortisation_expense_rou"
 
+        # Intangibles
+        if "amort" in text and is_intangible:
+            return "amortisation_expense"
+
+        # PPE depreciation expense roles
+        if "depreciation" in text or "depr" in text:
+            if is_buildings:
+                return "depreciation_expense_buildings"
+            if is_furniture:
+                return "depreciation_expense_office_furniture"
+            if is_computers:
+                return "depreciation_expense_computer_equipment"
+            if is_vehicles:
+                return "depreciation_expense_motor_vehicles"
+            if is_equipment:
+                return "depreciation_expense_equipment"
+            return "depreciation_expense_ppe"
+
         if "amort" in text:
             return "amortisation_expense"
 
-        if is_asset and any(k in text for k in ("accumulated amortization", "accumulated amortisation", "accum amort")):
-            return "accumulated_amortization"
-
+    # ----------------------------
     # Asset contra side
+    # ----------------------------
     if is_asset and is_accum:
         if is_rou:
             return "accumulated_depreciation_rou"
+
+        if is_intangible:
+            return "accumulated_amortization"
+
+        if is_buildings:
+            return "accumulated_depreciation_buildings"
+        if is_furniture:
+            return "accumulated_depreciation_office_furniture"
+        if is_computers:
+            return "accumulated_depreciation_computer_equipment"
+        if is_vehicles:
+            return "accumulated_depreciation_motor_vehicles"
+        if is_equipment:
+            return "accumulated_depreciation_equipment"
+
         return "accumulated_depreciation_ppe"
 
     return ""
-
