@@ -9,17 +9,24 @@ practitioner_dashboard_bp = Blueprint("practitioner_dashboard", __name__)
 
 
 def _parse_engagement_id():
-    raw = (request.args.get("engagementId") or "").strip()
+    raw = (
+        request.args.get("engagement_id")
+        or request.args.get("engagementId")
+        or ""
+    ).strip()
+
     if not raw:
         raise ValueError("engagementId is required")
+
     try:
         val = int(raw)
     except Exception:
         raise ValueError("engagementId must be a valid integer")
+
     if val <= 0:
         raise ValueError("engagementId must be greater than zero")
-    return val
 
+    return val
 
 def _parse_optional_int_arg(name: str):
     raw = (request.args.get(name) or "").strip()
@@ -118,7 +125,7 @@ def list_practitioner_posting_module_activity_route(cid: int):
 
         engagement_id = _parse_engagement_id()
         module_name = _parse_module_name()
-        
+
         deny = _deny_if_wrong_company(
             payload,
             int(company_id),
