@@ -13216,14 +13216,19 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   }
 
   if (moduleKey === "lease") {
+    if (!journalDate) {
+      window.showToast?.("Select or enter a journal date first for existing lease opening balances.", "error");
+      return null;
+    }
+
     return await window.openLeaseWizard?.({
-      mode: "existing", // opening balance / already-existing lease
+      mode: "existing",
       accountCode: account?.code || "",
       accountName: account?.name || "",
       defaults: {
-        goLiveDate: journalDate || null,
-        openingAsAt: journalDate || null,
-        postingDate: journalDate || null,
+        goLiveDate: journalDate,
+        openingAsAt: journalDate,
+        postingDate: journalDate,
         reference: journalRef || null,
         source: "journal_guard",
         journalSide: side,
@@ -13234,7 +13239,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         account_name: account?.name || "",
         journal_side: side || "",
         journal_ref: journalRef || "",
-        journal_date: journalDate || "",
+        journal_date: journalDate,
       },
     });
   }

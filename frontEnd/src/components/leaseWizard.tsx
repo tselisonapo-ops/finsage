@@ -131,6 +131,20 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     direct_costs_offset_account: defaultDirectCostOffsetAccount ?? null,
   });
 
+  useEffect(() => {
+    setForm((f) => ({
+      ...f,
+      wizard_mode: mode,
+      go_live_date:
+        mode === "existing"
+          ? (f.go_live_date || "")
+          : null,
+    }));
+    setPreview(null);
+    setResult(null);
+    setStep(1);
+  }, [mode]);
+
   // 1) Receive token + companyId from parent (postMessage)
   useEffect(() => {
     function onMsg(ev: MessageEvent) {
@@ -267,6 +281,11 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
   const onPreview = async () => {
     setError(null);
 
+    if (isExisting && !form.go_live_date) {
+      setError("Go-live date is required for an existing lease.");
+      return;
+    }
+
     if (!form.lessor_id) {
       setError("Select a lessor before previewing.");
       return;
@@ -288,6 +307,11 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
 
   const onSave = async () => {
     if (!preview) return;
+
+    if (isExisting && !form.go_live_date) {
+      setError("Go-live date is required for an existing lease.");
+      return;
+    }
 
     if (!form.lessor_id) {
       setError("Select a lessor before saving.");
@@ -359,6 +383,18 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
           <label>End date</label>
           <input type="date" name="end_date" value={form.end_date} onChange={handleChange} />
         </div>
+
+        {isExisting && (
+          <div className="field-row">
+            <label>Go-live date</label>
+            <input
+              type="date"
+              name="go_live_date"
+              value={form.go_live_date || ""}
+              onChange={handleChange}
+            />
+          </div>
+        )}
 
         <div className="field-row">
           <label>Lease term (months)</label>
