@@ -2152,7 +2152,7 @@ def post_opening_balance(
         ref,
         f"Asset opening balance: {asset['asset_code']} - {asset['asset_name']}",
         ccy,
-        "asset_opening_balance",
+        "opening_balance",
         asset["id"],
     )
 
@@ -2161,7 +2161,7 @@ def post_opening_balance(
         asset_account_code,
         "Opening PPE cost",
         float(_q2(cost)), 0,
-        "asset_opening_balance", asset["id"]
+        "opening_balance", asset["id"]
     )
 
     if opening_accum_dep > 0:
@@ -2170,7 +2170,7 @@ def post_opening_balance(
             accum_dep_account_code,
             "Opening accumulated depreciation",
             0, float(_q2(opening_accum_dep)),
-            "asset_opening_balance", asset["id"]
+            "opening_balance", asset["id"]
         )
 
     if opening_impairment > 0:
@@ -2184,7 +2184,7 @@ def post_opening_balance(
             accum_impairment_account_code,
             "Opening accumulated impairment",
             0, float(_q2(opening_impairment)),
-            "asset_opening_balance", asset["id"]
+            "opening_balance", asset["id"]
         )
 
     if carrying > 0:
@@ -2193,7 +2193,7 @@ def post_opening_balance(
             opening_equity_code,
             "Opening balance equity",
             0, float(_q2(carrying)),
-            "asset_opening_balance", asset["id"]
+            "opening_balance", asset["id"]
         )
 
     finalize_journal(cur, schema, company_id, jid)
