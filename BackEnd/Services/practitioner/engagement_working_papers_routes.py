@@ -82,7 +82,6 @@ def engagement_working_papers_route(cid: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny

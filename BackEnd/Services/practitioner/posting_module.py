@@ -71,6 +71,9 @@ def get_practitioner_posting_module_summary_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
+        engagement_id = _parse_engagement_id()
+        module_name = _parse_module_name()
+
         deny = _deny_if_wrong_company(
             payload,
             int(company_id),
@@ -82,8 +85,6 @@ def get_practitioner_posting_module_summary_route(cid: int):
         if not _can_view_engagements(payload):
             return _json_err("You do not have permission to view posting module summaries.", 403)
 
-        engagement_id = _parse_engagement_id()
-        module_name = _parse_module_name()
 
         with db_service._conn_cursor() as (conn, cur):
             row = db_service.get_practitioner_posting_module_summary(
@@ -115,6 +116,9 @@ def list_practitioner_posting_module_activity_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
+        engagement_id = _parse_engagement_id()
+        module_name = _parse_module_name()
+        
         deny = _deny_if_wrong_company(
             payload,
             int(company_id),
@@ -127,8 +131,6 @@ def list_practitioner_posting_module_activity_route(cid: int):
         if not _can_view_engagements(payload):
             return _json_err("You do not have permission to view posting module activity.", 403)
 
-        engagement_id = _parse_engagement_id()
-        module_name = _parse_module_name()
 
         status = (request.args.get("status") or "").strip().lower()
         event_type = (request.args.get("eventType") or "").strip().lower()
@@ -204,9 +206,12 @@ def list_practitioner_posting_module_filter_options_route(cid: int):
         company_id = int(cid)
         payload = request.jwt_payload or {}
 
+        engagement_id = _parse_engagement_id()
+        module_name = _parse_module_name()
+
         deny = _deny_if_wrong_company(
             payload,
-            int(company_id),
+            company_id,
             db_service=db_service,
             engagement_id=int(engagement_id),
         )
@@ -215,9 +220,6 @@ def list_practitioner_posting_module_filter_options_route(cid: int):
 
         if not _can_view_engagements(payload):
             return _json_err("You do not have permission to view posting module filters.", 403)
-
-        engagement_id = _parse_engagement_id()
-        module_name = _parse_module_name()
 
         with db_service._conn_cursor() as (conn, cur):
             row = db_service.list_practitioner_posting_module_filter_options(

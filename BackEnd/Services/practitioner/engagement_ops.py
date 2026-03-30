@@ -402,7 +402,6 @@ def engagement_deliverables_collection_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -627,7 +626,6 @@ def engagement_posting_activity_collection_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -871,7 +869,6 @@ def engagement_monthly_close_tasks_collection_route(cid: int, engagement_id: int
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -1098,7 +1095,6 @@ def engagement_year_end_tasks_collection_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -1326,7 +1322,6 @@ def engagement_signoff_steps_collection_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny

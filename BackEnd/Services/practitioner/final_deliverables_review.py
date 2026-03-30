@@ -127,7 +127,6 @@ def final_deliverables_review_detail_route(cid: int, engagement_id: int):
             payload,
             company_id,
             db_service=db_service,
-            engagement_id=engagement_id,
         )
         if deny:
             return deny

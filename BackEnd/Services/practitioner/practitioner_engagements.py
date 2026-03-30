@@ -492,7 +492,6 @@ def update_engagement_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -751,7 +750,6 @@ def get_engagement_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -788,7 +786,6 @@ def set_engagement_status_route(cid: int, engagement_id: int):
             payload,
             company_id,
             db_service=db_service,
-            engagement_id=engagement_id,
         )
         if deny:
             return deny
@@ -889,7 +886,6 @@ def add_engagement_team_member_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
@@ -965,7 +961,6 @@ def list_engagement_team_route(cid: int, engagement_id: int):
             payload,
             int(company_id),
             db_service=db_service,
-            engagement_id=int(engagement_id),
         )
         if deny:
             return deny
