@@ -59,9 +59,10 @@ function App() {
       // ✅ put it exactly here
       if (ctx?.mode === "existing") {
         setActiveTool("ifrs16_existing");
-      } else {
+      } else if (ctx?.mode === "inception") {
         setActiveTool("ifrs16_new");
       }
+      // 🔥 DO NOTHING if mode is missing
 
       const { token, companyId } = data;
 
