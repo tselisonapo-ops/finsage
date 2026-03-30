@@ -54,6 +54,15 @@ function App() {
       const data = event.data || {};
       if (data.type !== "lease_wizard_context") return;
 
+      const ctx = data.ctx || {};
+
+      // ✅ put it exactly here
+      if (ctx?.mode === "existing") {
+        setActiveTool("ifrs16_existing");
+      } else {
+        setActiveTool("ifrs16_new");
+      }
+
       const { token, companyId } = data;
 
       if (!token || !companyId) return;
