@@ -42,7 +42,13 @@ def _parse_optional_int_arg(name: str):
 
 
 def _parse_module_name():
-    val = (request.args.get("module") or "").strip().lower()
+    val = (
+        request.args.get("module_name")
+        or request.args.get("moduleName")
+        or request.args.get("module")
+        or ""
+    ).strip().lower()
+
     allowed = {
         "journal_entries",
         "accounts_receivable",
@@ -50,10 +56,13 @@ def _parse_module_name():
         "leases",
         "ppe",
     }
+
     if not val:
-        raise ValueError("module is required")
+        raise ValueError("module_name is required")
+
     if val not in allowed:
-        raise ValueError("Invalid module")
+        raise ValueError(f"Invalid module_name: {val}")
+
     return val
 
 def _parse_limit(default: int = 100, max_limit: int = 500) -> int:
