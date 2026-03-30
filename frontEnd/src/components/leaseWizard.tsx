@@ -88,6 +88,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
 }) => {
   type LeaseWizardPayloadWithLessor = LeaseWizardPayload & {
     lessor_id: number | null;
+    reference?: string | null; // ✅ ADD THIS
   };
 
   const [step, setStep] = useState<Step>(1);
@@ -134,6 +135,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
   useEffect(() => {
     function onMsg(ev: MessageEvent) {
       const data = ev.data || {};
+
       if (!data?.token || !data?.companyId) return;
 
       localStorage.setItem("auth_token", String(data.token));
@@ -142,6 +144,31 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
         token: String(data.token),
         companyId: Number(data.companyId),
       });
+
+      // ✅ NEW: extract ctx safely
+      const ctx = data.ctx as {
+        mode?: "inception" | "existing";
+        defaults?: {
+          goLiveDate?: string | null;
+          openingAsAt?: string | null;
+          postingDate?: string | null;
+          reference?: string | null;
+        };
+      } | undefined;
+
+      if (!ctx) return;
+
+      const defaults = ctx.defaults || {};
+
+      setForm((f) => ({
+        ...f,
+        wizard_mode: ctx.mode || f.wizard_mode,
+        go_live_date:
+          ctx.mode === "existing"
+            ? defaults.goLiveDate || f.go_live_date
+            : f.go_live_date,
+        reference: defaults.reference || f.reference || "",
+      }));
     }
 
     window.addEventListener("message", onMsg);

@@ -6752,7 +6752,27 @@ function openLeaseWizard(ctx = {}) {
     companyId,
     role,
     source: "journal",
-    ctx
+    ctx: {
+      mode: ctx?.mode || "existing", // existing lease / opening balance path
+      accountCode: ctx?.accountCode || "",
+      accountName: ctx?.accountName || "",
+      defaults: {
+        goLiveDate: ctx?.defaults?.goLiveDate || null,
+        openingAsAt: ctx?.defaults?.openingAsAt || null,
+        postingDate: ctx?.defaults?.postingDate || null,
+        reference: ctx?.defaults?.reference || null,
+        source: ctx?.defaults?.source || "journal_guard",
+        journalSide: ctx?.defaults?.journalSide || null,
+        moduleKey: ctx?.defaults?.moduleKey || "lease",
+      },
+      meta: {
+        account_code: ctx?.meta?.account_code || "",
+        account_name: ctx?.meta?.account_name || "",
+        journal_side: ctx?.meta?.journal_side || "",
+        journal_ref: ctx?.meta?.journal_ref || "",
+        journal_date: ctx?.meta?.journal_date || "",
+      },
+    },
   };
 
   const sendContext = () => {
@@ -13175,7 +13195,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       journalSide: side,
       account_code: account?.code || "",
       account_name: account?.name || "",
-      journal_ref: journalRef,   // ✅ NEW
+      journal_ref: journalRef,
     });
   }
 
@@ -13188,7 +13208,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
         acquisitionDate: journalDate || null,
         openingAsAt: journalDate || null,
         postingDate: journalDate || null,
-        reference: journalRef || null,   // ✅ NEW
+        reference: journalRef || null,
         source: "journal_guard",
         journalSide: side,
       },
@@ -13196,7 +13216,27 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   }
 
   if (moduleKey === "lease") {
-    return await window.switchScreen?.("lease-register");
+    return await window.openLeaseWizard?.({
+      mode: "existing", // opening balance / already-existing lease
+      accountCode: account?.code || "",
+      accountName: account?.name || "",
+      defaults: {
+        goLiveDate: journalDate || null,
+        openingAsAt: journalDate || null,
+        postingDate: journalDate || null,
+        reference: journalRef || null,
+        source: "journal_guard",
+        journalSide: side,
+        moduleKey,
+      },
+      meta: {
+        account_code: account?.code || "",
+        account_name: account?.name || "",
+        journal_side: side || "",
+        journal_ref: journalRef || "",
+        journal_date: journalDate || "",
+      },
+    });
   }
 
   if (moduleKey === "revenue") {
