@@ -14,6 +14,7 @@ from api.journal_flow import JournalFlow
 from api.invoice_flow import InvoiceFlow
 from api.bill_flow import BillFlow
 from api.vendor_flow import VendorFlow
+from api.bank_flow import BankAccountFlow
 # from api.bank_recon_flow import BankReconFlow
 from api.asset_flow import AssetFlow
 from api.asset_acquisition_flow import AssetAcquisitionFlow
@@ -74,6 +75,7 @@ def main() -> None:
                 "invoice_flow",
                 "vendor_flow",
                 "bill_flow",
+                "bank_account_flow",
                 "bank_recon_flow",
                 "asset_flow",
                 "asset_acquisition_flow",
@@ -124,16 +126,35 @@ def main() -> None:
                 company_id=settings.company_id,
                 vendor_id=int(vendor_id),
             )
-            bill_flow.state["vendor_id"] = vendor_id
+            bill_flow.state["vendor_id"] = int(vendor_id)
             bill_result = bill_flow.execute()
             _append_step(report, "bill_flow", True, bill_result)
 
-            # 5) Bank reconciliation
-            #bank_recon_flow = BankReconFlow(client=client, db=db, company_id=settings.company_id)
-            #bank_recon_result = bank_recon_flow.execute()
-            #_append_step(report, "bank_recon_flow", True, bank_recon_result)
+            # 5) Bank account
+            bank_account_flow = BankAccountFlow(client=client, db=db, company_id=settings.company_id)
+            bank_account_result = bank_account_flow.execute()
+            _append_step(report, "bank_account_flow", True, bank_account_result)
 
-            # 6) Asset
+            bank_account_id = bank_account_result.get("bank_account_id")
+            if not bank_account_id:
+                raise AssertionError(
+                    f"BankAccountFlow did not return bank_account_id: {bank_account_result}"
+                )
+
+            # 6) Bank reconciliation
+            # Deliberately skipped because uniqueness by period can collide in repeated smoke runs.
+            # bank_recon_flow = BankReconFlow(client=client, db=db, company_id=settings.company_id)
+            # bank_recon_flow.state["bank_account_id"] = int(bank_account_id)
+            # bank_recon_result = bank_recon_flow.execute()
+            # _append_step(report, "bank_recon_flow", True, bank_recon_result)
+            _append_step(
+                report,
+                "bank_recon_flow",
+                True,
+                {"skipped": True, "reason": "Deliberately disabled: uniqueness conflict on same period"},
+            )
+
+            # 7) Asset
             asset_flow = AssetFlow(client=client, db=db, company_id=settings.company_id)
             asset_result = asset_flow.execute()
             _append_step(report, "asset_flow", True, asset_result)
@@ -142,9 +163,10 @@ def main() -> None:
             if not asset_id:
                 raise AssertionError(f"Asset flow did not return asset_id: {asset_result}")
 
-            # 7) Asset acquisition
+            # 8) Asset acquisition
             acq_flow = AssetAcquisitionFlow(client=client, db=db, company_id=settings.company_id)
-            acq_flow.state["asset_id"] = asset_id
+            acq_flow.state["asset_id"] = int(asset_id)
+            acq_flow.state["bank_account_id"] = int(bank_account_id)
             acq_result = acq_flow.execute()
             _append_step(report, "asset_acquisition_flow", True, acq_result)
 
@@ -152,13 +174,13 @@ def main() -> None:
             if not acq_id:
                 raise AssertionError(f"Asset acquisition flow did not return acq_id: {acq_result}")
 
-            # 8) Post acquisition
+            # 9) Post acquisition
             acq_post_flow = AssetAcquisitionPostFlow(client=client, db=db, company_id=settings.company_id)
-            acq_post_flow.state["acq_id"] = acq_id
+            acq_post_flow.state["acq_id"] = int(acq_id)
             acq_post_result = acq_post_flow.execute()
             _append_step(report, "asset_acquisition_post_flow", True, acq_post_result)
 
-            # 9) Depreciation run
+            # 10) Depreciation run
             dep_run_flow = DepreciationRunFlow(client=client, db=db, company_id=settings.company_id)
             dep_run_result = dep_run_flow.execute()
             _append_step(report, "depreciation_run_flow", True, dep_run_result)
@@ -166,7 +188,7 @@ def main() -> None:
             dep_id = dep_run_result.get("dep_id")
             if dep_id:
                 dep_post_flow = DepreciationPostFlow(client=client, db=db, company_id=settings.company_id)
-                dep_post_flow.state["dep_id"] = dep_id
+                dep_post_flow.state["dep_id"] = int(dep_id)
                 dep_post_result = dep_post_flow.execute()
                 _append_step(report, "depreciation_post_flow", True, dep_post_result)
             else:

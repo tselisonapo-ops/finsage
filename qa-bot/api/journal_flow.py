@@ -24,7 +24,7 @@ class JournalFlow(BaseFlow):
         payload = {
             "date": date.today().isoformat(),
             "ref": ref,
-            "description": "QA bot smoke journal",
+            "description": "QA bot smoke journal - multi expense shape",
             "source": "manual",
             "source_id": None,
             "gross_amount": 100000.00,
@@ -33,14 +33,38 @@ class JournalFlow(BaseFlow):
             "currency": settings.default_currency,
             "lines": [
                 {
-                    "account_code": "BS_CA_1000",
-                    "description": "QA bot debit line",
-                    "debit": 100000.00,
+                    "account_code": "PL_OPEX_6200",
+                    "description": "QA bot salaries expense",
+                    "debit": 45000.00,
                     "credit": 0.00,
                 },
                 {
-                    "account_code": "PL_REV_4100",
-                    "description": "QA bot credit line",
+                    "account_code": "PL_OPEX_6300",
+                    "description": "QA bot utilities expense",
+                    "debit": 15000.00,
+                    "credit": 0.00,
+                },
+                {
+                    "account_code": "PL_OPEX_6710",
+                    "description": "QA bot professional fees expense",
+                    "debit": 18000.00,
+                    "credit": 0.00,
+                },
+                {
+                    "account_code": "PL_OPEX_6720",
+                    "description": "QA bot office supplies expense",
+                    "debit": 12000.00,
+                    "credit": 0.00,
+                },
+                {
+                    "account_code": "PL_OPEX_6105",
+                    "description": "QA bot bank charges expense",
+                    "debit": 10000.00,
+                    "credit": 0.00,
+                },
+                {
+                    "account_code": "BS_CA_1000",
+                    "description": "QA bot cash/bank credit line",
                     "debit": 0.00,
                     "credit": 100000.00,
                 },
