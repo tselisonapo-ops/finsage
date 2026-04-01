@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
+from pathlib import Path
 
 from api.base_flow import BaseFlow
 from config.routes import ROUTES
@@ -13,6 +15,44 @@ class BankReconFlow(BaseFlow):
     def name(self) -> str:
         return "bank_recon_flow"
 
+    def _state_file(self) -> Path:
+        return Path(__file__).resolve().parents[1] / "reports" / "bank_recon_state.json"
+
+    def _load_last_period(self) -> tuple[str | None, str | None]:
+        path = self._state_file()
+        if not path.exists():
+            return None, None
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data.get("period_start"), data.get("period_end")
+        except Exception:
+            return None, None
+
+    def _save_last_period(self, period_start: str, period_end: str) -> None:
+        path = self._state_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "period_start": period_start,
+            "period_end": period_end,
+            "saved_at": date.today().isoformat(),
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _next_period(self) -> tuple[str, str]:
+        last_start, last_end = self._load_last_period()
+
+        if last_end:
+            prev_end = date.fromisoformat(last_end)
+            next_start = prev_end + timedelta(days=1)
+            next_end = next_start
+            return next_start.isoformat(), next_end.isoformat()
+
+        today = date.today()
+        start = today - timedelta(days=1)
+        end = today
+        return start.isoformat(), end.isoformat()
+
     def _build_payload(self) -> dict:
         today = date.today()
 
@@ -24,9 +64,11 @@ class BankReconFlow(BaseFlow):
 
         statement_date = self.state.get("statement_date") or today.isoformat()
 
-        # make the test period unique enough for repeated smoke runs
-        period_end = self.state.get("period_end") or today.isoformat()
-        period_start = self.state.get("period_start") or (today - timedelta(days=1)).isoformat()
+        period_start = self.state.get("period_start")
+        period_end = self.state.get("period_end")
+
+        if not period_start or not period_end:
+            period_start, period_end = self._next_period()
 
         return {
             "statement_date": statement_date,
@@ -57,6 +99,10 @@ class BankReconFlow(BaseFlow):
             or (data.get("data") or {}).get("id")
             or (data.get("data") or {}).get("reconciliation_id")
         )
+
+        assert_true(bool(recon_id), f"Bank recon did not return reconciliation id. Response: {data}")
+
+        self._save_last_period(payload["period_start"], payload["period_end"])
 
         self.state["recon_id"] = recon_id
         self.state["response"] = data
