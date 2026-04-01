@@ -520,18 +520,31 @@ def api_bills(company_id: int):
     if request.method != "POST":
         return jsonify({"ok": False, "error": f"Method {request.method} not allowed"}), 405
 
-    # --------------------------
-    # POST (create)
-    # --------------------------
     data = request.get_json(silent=True) or {}
-    header = data.get("header") or {}
-    lines  = data.get("lines") or []
+
+    # Accept both shapes:
+    # 1) {"header": {...}, "lines": [...]}
+    # 2) {"vendor_id": ..., "bill_date": ..., "lines": [...]}
+    raw_header = data.get("header")
+    if isinstance(raw_header, dict) and raw_header:
+        header = dict(raw_header)
+    else:
+        header = {
+            "vendor_id": data.get("vendor_id"),
+            "bill_date": data.get("bill_date"),
+            "due_date": data.get("due_date"),
+            "currency": data.get("currency"),
+            "notes": data.get("notes"),
+            "status": data.get("status"),
+            "number": data.get("number"),
+            "other_amount": data.get("other_amount"),
+            "discount_amount": data.get("discount_amount"),
+            "discount_rate": data.get("discount_rate"),
+        }
+
+    lines = data.get("lines") or []
     grni_links = data.get("grni_links") or []
 
-    # ============================
-    # ✅ NORMALIZE UI FIELD NAMES
-    # ============================
-    # UI sends other_amount; backend uses other_amount in DB, but your math uses "other"
     if "other_amount" in header and "other" not in header:
         header["other"] = header.get("other_amount")
 
@@ -548,34 +561,34 @@ def api_bills(company_id: int):
     header["discount_amount"] = _to_float(header.get("discount_amount"), 0.0)
     header["discount_rate"] = _to_float(header.get("discount_rate"), 0.0)
 
-    # --------------------------
-    # Validation
-    # --------------------------
-    if not header.get("vendor_id"):
+    vendor_id = header.get("vendor_id")
+    if vendor_id is None or vendor_id == "":
         return jsonify({"ok": False, "error": "vendor_id is required"}), 400
     if not header.get("bill_date"):
         return jsonify({"ok": False, "error": "bill_date is required"}), 400
     if not isinstance(lines, list) or not lines:
         return jsonify({"ok": False, "error": "At least one bill line is required"}), 400
 
+    try:
+        header["vendor_id"] = int(vendor_id)
+    except Exception:
+        return jsonify({"ok": False, "error": f"vendor_id must be an integer, got {vendor_id!r}"}), 400
+
     number = (header.get("number") or "").strip()
     bill_status = (header.get("status") or "draft").strip().lower()
 
-    # ✅ allow blank only for draft
     if bill_status != "draft" and not number:
         return jsonify({"ok": False, "error": "Vendor invoice number is required before approving/posting"}), 400
 
-    # ✅ DUPLICATE CHECK (NEW BILL) — DO NOT exclude anything on create
     dup = db_service.find_duplicate_vendor_bill_number(
         company_id=company_id,
-        vendor_id=int(header["vendor_id"]),
+        vendor_id=header["vendor_id"],
         number=number,
-        exclude_bill_id=None,   # ✅ create has no bill_id yet
+        exclude_bill_id=None,
     )
 
     if dup:
         dup_status = (dup.get("status") or "").strip().lower()
-        # allow duplicates if the existing one is draft/void/written_off
         if dup_status not in ("draft", "void", "written_off"):
             return jsonify({
                 "ok": False,
@@ -584,7 +597,6 @@ def api_bills(company_id: int):
                 "duplicate_status": dup_status,
             }), 409
 
-    bill_status = (header.get("status") or "draft").strip().lower()
     explicit_draft = (bill_status == "draft")
 
     pol = company_policy(company_id)
@@ -602,11 +614,6 @@ def api_bills(company_id: int):
         db_service.ensure_bill_grni_link_table(company_id)
         db_service.replace_bill_grni_links(company_id, bid, grni_links)
 
-        # if draft, just return it
-        if explicit_draft:
-            out = db_service.get_bill_full(company_id, bid) or {}
-    
-        # ✅ AUDIT: bill created
         try:
             actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
             after_bill = db_service.get_bill_full(company_id, bid) or {}
@@ -627,9 +634,10 @@ def api_bills(company_id: int):
         except Exception:
             current_app.logger.exception("audit_log failed in api_bills (POST)")
 
+        if explicit_draft:
+            out = db_service.get_bill_full(company_id, bid) or {}
             return jsonify({"ok": True, "data": out}), 201
 
-        # if owner mode auto-post, post now
         if should_auto_post_bill(mode, policy):
             user = getattr(g, "current_user", {}) or {}
             if not can_post_bills(user, company_profile, mode):
@@ -641,7 +649,7 @@ def api_bills(company_id: int):
 
             out = db_service.get_bill_full(company_id, bid) or {}
             out["_posted_journal_id"] = jid
-            # ✅ AUDIT: bill posted (auto)
+
             try:
                 actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
                 db_service.audit_log(
@@ -669,7 +677,7 @@ def api_bills(company_id: int):
     except Exception as ex:
         current_app.logger.exception("create bill failed")
         return jsonify({"ok": False, "error": str(ex)}), 400
-
+    
 @ap_bp.route("/api/companies/<int:company_id>/bills/<int:bill_id>/post", methods=["POST","OPTIONS"])
 @require_auth
 def api_bill_post(company_id: int, bill_id: int):
