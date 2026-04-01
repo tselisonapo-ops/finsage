@@ -22,7 +22,7 @@ class InvoiceFlow(BaseFlow):
         ref = f"{settings.test_prefix}-INV-{date.today().isoformat()}-{uuid4().hex[:6].upper()}"
 
         payload = {
-            "customer_id": 1,  # replace with a real test customer id
+            "customer_id": 4,  # replace with a real test customer id
             "invoice_date": date.today().isoformat(),
             "due_date": date.today().isoformat(),
             "currency": settings.default_currency,
