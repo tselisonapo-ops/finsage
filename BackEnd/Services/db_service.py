@@ -5906,40 +5906,43 @@ class DatabaseService:
                 );
             END IF;
 
-            -- recreate with expanded list
-            EXECUTE format(
-            'ALTER TABLE %I.journal
-             ADD CONSTRAINT %I
-             CHECK (
-                 source IS NULL
-                 OR source = ANY (ARRAY[
-                     ''manual'',
-                     ''invoice'',
-                     ''bill'',
-                     ''payment'',
-                     ''receipt'',
-                     ''credit_note'',
-                     ''debit_note'',
-                     ''inventory'',
-                     ''asset'',
-                     ''asset_acquisition'',
-                     ''asset_depreciation'',
-                     ''asset_revaluation'',
-                     ''asset_impairment'',
-                     ''asset_disposal'',
-                     ''asset_hfs'',
-                     ''lease_payment'',
-                     ''lease_modification'',
-                     ''bank'',
-                     ''adjustment'',
-                     ''opening_balance'',
-                     ''year_end''
-                 ]::text[])
-             )',
-            '{schema}', '{schema}_journal_source_check'
-            );
+        -- recreate with expanded list
+        EXECUTE format(
+        'ALTER TABLE %I.journal
+        ADD CONSTRAINT %I
+        CHECK (
+            source IS NULL
+            OR source = ANY (ARRAY[
+                ''manual'',
+                ''invoice'',
+                ''bill'',
+                ''payment'',
+                ''receipt'',
+                ''credit_note'',
+                ''debit_note'',
+                ''inventory'',
+                ''asset'',
+                ''asset_acquisition'',
+                ''asset_depreciation'',
+                ''asset_revaluation'',
+                ''asset_impairment'',
+                ''asset_disposal'',
+                ''asset_hfs'',
+                ''lease_inception'',
+                ''lease_monthly'',
+                ''lease_payment'',
+                ''lease_modification'',
+                ''lease_termination'',
+                ''bank'',
+                ''adjustment'',
+                ''opening_balance'',
+                ''year_end''
+            ]::text[])
+        )',
+        '{schema}', '{schema}_journal_source_check'
+        );
         END $$;
-        
+                
         DO $$
         BEGIN
         IF NOT EXISTS (
@@ -18306,12 +18309,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v44")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v45")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=44,
+                    migration_version=45,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
