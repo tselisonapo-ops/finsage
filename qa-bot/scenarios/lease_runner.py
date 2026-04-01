@@ -1,124 +1,81 @@
 from __future__ import annotations
 
-import json
-from decimal import Decimal
-from pathlib import Path
+from datetime import date
 
-from api.lease_flow import LeaseFlow
-from api.lease_monthly_due_flow import LeaseMonthlyDueFlow
-from api.lease_post_month_flow import LeasePostMonthFlow
-from checks.lease_check import (
-    run_lease_check,
-    run_lease_monthly_due_check,
-    run_lease_post_month_check,
-)
-from config.settings import settings
-from core.auth import login_api
-from core.client import ApiClient
-from core.db import DB
+from api.base_flow import BaseFlow
+from config.routes import ROUTES
+from core.assertions import assert_http_ok, assert_true
+from core.logger import logger
 
 
-def _json_default(obj):
-    if isinstance(obj, Decimal):
-        return float(obj)
-    if hasattr(obj, "isoformat"):
-        try:
-            return obj.isoformat()
-        except Exception:
-            pass
-    return str(obj)
+class LeasePaymentFlow(BaseFlow):
+    @property
+    def name(self) -> str:
+        return "lease_payment_flow"
 
+    def run(self) -> dict:
+        lease_id = self.state.get("lease_id")
+        schedule_id = self.state.get("schedule_id")
+        bank_account_id = self.state.get("bank_account_id")
 
-def main() -> None:
-    settings.assert_valid()
-    client = ApiClient()
-    db = DB()
+        assert_true(bool(lease_id), "lease_id missing. Run LeaseFlow first.")
+        assert_true(bool(schedule_id), "schedule_id missing. Run LeaseMonthlyDueFlow first.")
+        assert_true(bool(bank_account_id), "bank_account_id missing. Run BankAccountFlow first.")
 
-    report = {
-        "ok": True,
-        "scenario": "lease",
-        "run_mode": settings.run_mode,
-        "company_id": settings.company_id,
-        "steps": [],
-    }
+        payload = {
+            "amount": 25000.0,
+            "payment_date": date.today().isoformat(),
+            "bank_account_id": int(bank_account_id),
+            "schedule_id": int(schedule_id),
+            "reference": f"LEASE-PAY-{lease_id}-{schedule_id}",
+            "description": f"QA lease payment for lease {lease_id} schedule {schedule_id}",
+        }
 
-    try:
-        login_data = login_api(client)
-        report["steps"].append({
-            "step": "login_api",
-            "ok": True,
-            "details": {"keys": list(login_data.keys()) if isinstance(login_data, dict) else []},
-        })
+        logger.info("[%s] posting lease payment payload=%s", self.name, payload)
 
-        lease_result = LeaseFlow(client=client, db=db, company_id=settings.company_id).execute()
-        report["steps"].append({
-            "step": "lease_flow",
-            "ok": True,
-            "details": lease_result,
-        })
+        res = self.client.post(
+            ROUTES["lease_payments"].format(lease_id=int(lease_id)),
+            json=payload,
+        )
+        assert_http_ok(res.status_code, res.text)
 
-        lease_check = run_lease_check(lease_result)
-        report["steps"].append({
-            "step": "lease_check",
-            "ok": True,
-            "details": lease_check,
-        })
+        data = self.client.safe_json(res) or {}
+        assert_true(
+            isinstance(data, dict),
+            f"Lease payment response was not JSON. Body: {res.text[:500]}"
+        )
+        assert_true(
+            data.get("ok") is True,
+            f"Lease payment failed. Response: {data}"
+        )
 
-        lease_id = lease_result.get("lease_id")
-        if not lease_id:
-            raise AssertionError(f"Lease flow did not return lease_id: {lease_result}")
+        journal_id = data.get("journal_id") or (data.get("data") or {}).get("journal_id")
+        assert_true(
+            bool(journal_id),
+            f"Lease payment did not return journal_id. Response: {data}"
+        )
 
-        lease_due_flow = LeaseMonthlyDueFlow(client=client, db=db, company_id=settings.company_id)
-        lease_due_flow.state["lease_id"] = int(lease_id)
-        lease_due_result = lease_due_flow.execute()
-        report["steps"].append({
-            "step": "lease_monthly_due_flow",
-            "ok": True,
-            "details": lease_due_result,
-        })
+        self.state["lease_id"] = int(lease_id)
+        self.state["schedule_id"] = int(schedule_id)
+        self.state["lease_payment_journal_id"] = int(journal_id)
+        self.state["lease_payment_response"] = data
 
-        lease_due_check = run_lease_monthly_due_check(lease_due_result)
-        report["steps"].append({
-            "step": "lease_monthly_due_check",
-            "ok": True,
-            "details": lease_due_check,
-        })
+        logger.info(
+            "[%s] lease_id=%s schedule_id=%s journal_id=%s",
+            self.name,
+            lease_id,
+            schedule_id,
+            journal_id,
+        )
 
-        period_no = lease_due_result.get("period_no")
-        if not period_no:
-            raise AssertionError(f"Lease monthly due flow did not return period_no: {lease_due_result}")
+        return {
+            "lease_id": int(lease_id),
+            "schedule_id": int(schedule_id),
+            "journal_id": int(journal_id),
+            "response": data,
+        }
 
-        lease_post_month_flow = LeasePostMonthFlow(client=client, db=db, company_id=settings.company_id)
-        lease_post_month_flow.state["lease_id"] = int(lease_id)
-        lease_post_month_flow.state["period_no"] = int(period_no)
-        lease_post_month_result = lease_post_month_flow.execute()
-        report["steps"].append({
-            "step": "lease_post_month_flow",
-            "ok": True,
-            "details": lease_post_month_result,
-        })
-
-        lease_post_month_check = run_lease_post_month_check(lease_post_month_result)
-        report["steps"].append({
-            "step": "lease_post_month_check",
-            "ok": True,
-            "details": lease_post_month_check,
-        })
-
-    except Exception as exc:
-        report["ok"] = False
-        report["error"] = str(exc)
-    finally:
-        db.close()
-
-    out_dir = Path(__file__).resolve().parents[1] / "reports"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "lease_report.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, default=_json_default),
-        encoding="utf-8",
-    )
-    print(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default))
-
-
-if __name__ == "__main__":
-    main()
+    def verify(self) -> None:
+        super().verify()
+        assert_true(bool(self.state.get("lease_payment_journal_id")), "lease_payment_journal_id missing after payment.")
+        
