@@ -53,6 +53,7 @@ class BankReconFlow(BaseFlow):
         recon_id = (
             data.get("id")
             or data.get("recon_id")
+            or data.get("reconciliation_id")   # ✅ ADD THIS
             or (data.get("data") or {}).get("id")
             or (data.get("data") or {}).get("recon_id")
         )
