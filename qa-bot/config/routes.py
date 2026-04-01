@@ -12,6 +12,7 @@ CID = settings.company_id
 ROUTES = {
     "login": settings.login_url,
 
+    "bank_accounts": "/api/companies/{company_id}/bank_accounts",
     # GL
     "journals": _join(f"/api/companies/{CID}/journal"),
 

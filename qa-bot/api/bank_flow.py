@@ -34,7 +34,10 @@ class BankAccountFlow(BaseFlow):
 
         logger.info("[%s] creating bank account payload=%s", self.name, payload)
 
-        res = self.client.post(ROUTES["bank_accounts"], json=payload)
+        res = self.client.post(
+            ROUTES["bank_accounts"].format(company_id=self.company_id),
+            json=payload,
+        )
         assert_http_ok(res.status_code, res.text)
 
         data = self.client.safe_json(res) or {}

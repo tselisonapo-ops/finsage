@@ -35,7 +35,7 @@ class JournalFlow(BaseFlow):
                 {
                     "account_code": "PL_OPEX_6200",
                     "description": "QA bot salaries expense",
-                    "debit": 45000.00,
+                    "debit": 540000.00,
                     "credit": 0.00,
                 },
                 {
@@ -47,7 +47,7 @@ class JournalFlow(BaseFlow):
                 {
                     "account_code": "PL_OPEX_6710",
                     "description": "QA bot professional fees expense",
-                    "debit": 18000.00,
+                    "debit": 180000.00,
                     "credit": 0.00,
                 },
                 {
