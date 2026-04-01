@@ -27,8 +27,8 @@ class JournalFlow(BaseFlow):
             "description": "QA bot smoke journal - multi expense shape",
             "source": "manual",
             "source_id": None,
-            "gross_amount": 100000.00,
-            "net_amount": 100000.00,
+            "gross_amount": 800000.00,
+            "net_amount": 800000.00,
             "vat_amount": 0.00,
             "currency": settings.default_currency,
             "lines": [
@@ -53,7 +53,7 @@ class JournalFlow(BaseFlow):
                 {
                     "account_code": "PL_OPEX_6720",
                     "description": "QA bot office supplies expense",
-                    "debit": 12000.00,
+                    "debit": 55000.00,
                     "credit": 0.00,
                 },
                 {
@@ -66,7 +66,7 @@ class JournalFlow(BaseFlow):
                     "account_code": "BS_CA_1000",
                     "description": "QA bot cash/bank credit line",
                     "debit": 0.00,
-                    "credit": 100000.00,
+                    "credit": 800000.00,
                 },
             ],
         }
