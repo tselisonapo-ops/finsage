@@ -35,7 +35,6 @@ class AssetFlow(BaseFlow):
             "depreciation_method": "SL",
             "useful_life_months": 60,
             "currency": settings.default_currency,
-
             "asset_account_code": "BS_NCA_1105",
             "accumulated_dep_account_code": "BS_NCA_1524",
             "depreciation_expense_account_code": "PL_OPEX_6018",

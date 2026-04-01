@@ -20,33 +20,39 @@ class AssetAcquisitionFlow(BaseFlow):
             raise RuntimeError("AssetAcquisitionFlow cannot run in readonly mode.")
 
         asset_id = self.state.get("asset_id")
-        assert_true(bool(asset_id), "AssetAcquisitionFlow requires asset_id in state.")
+        assert_true(bool(asset_id), "asset_id missing from state. Run AssetFlow first.")
 
         ref = f"{settings.test_prefix}-ACQ-{date.today().isoformat()}-{uuid4().hex[:6].upper()}"
 
         payload = {
             "reference": ref,
-            "posting_date": date.today().isoformat(),
             "acquisition_date": date.today().isoformat(),
+            "posting_date": date.today().isoformat(),
+            "available_for_use_date": date.today().isoformat(),
             "funding_source": "bank_cash",
-            "bank_account_id": 1,   # replace if your real bank account id differs
-            "amount": 1000.00,
+            "bank_account_id": settings.test_bank_account_id,
+            "cost": 1000000.00,
+            "amount": 1000000.00,
+            "currency": settings.default_currency,
+            "notes": f"QA bot acquisition {ref}",
         }
 
+        logger.info("[%s] posting acquisition payload=%s", self.name, payload)
+
         res = self.client.post(
-            ROUTES["asset_acquisitions"].format(asset_id=asset_id),
+            ROUTES["asset_acquisitions"].format(asset_id=int(asset_id)),
             json=payload,
         )
         assert_http_ok(res.status_code, res.text)
 
         data = self.client.safe_json(res) or {}
-        assert_true(isinstance(data, dict), f"Acquisition create response was not JSON. Body: {res.text[:500]}")
+        assert_true(isinstance(data, dict), f"Asset acquisition create response was not JSON. Body: {res.text[:500]}")
 
-        acq_id = data.get("id") or data.get("acquisition_id")
-        assert_true(bool(acq_id), f"Acquisition create did not return id. Response: {data}")
+        acq_id = data.get("id") or data.get("acq_id") or data.get("acquisition_id")
+        assert_true(bool(acq_id), f"Asset acquisition create did not return acquisition id. Response: {data}")
 
         self.state["acq_id"] = int(acq_id)
-        self.state["response"] = data
+        self.state["acq_response"] = data
 
         logger.info("[%s] acq_id=%s asset_id=%s", self.name, acq_id, asset_id)
         return {"acq_id": int(acq_id), "response": data}
