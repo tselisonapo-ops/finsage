@@ -79,8 +79,7 @@ class Settings:
 settings = Settings(
     base_url=os.getenv("BASE_URL", "").strip(),
     api_base_url=os.getenv("API_BASE_URL", "").strip(),
-    login_path=os.getenv("LOGIN_PATH", "/api/auth/login").strip(),
-
+    login_path=os.getenv("LOGIN_PATH", "/auth/login").strip(),
     test_email=os.getenv("TEST_EMAIL", "").strip(),
     test_password=os.getenv("TEST_PASSWORD", "").strip(),
     company_id=_get_int("COMPANY_ID", 0),
