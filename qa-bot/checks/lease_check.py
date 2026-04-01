@@ -23,6 +23,7 @@ def run_lease_monthly_due_check(flow_result: dict) -> dict:
     lease_id = flow_result.get("lease_id")
     period_no = flow_result.get("period_no")
     due_row = flow_result.get("due_row") or {}
+    amounts = due_row.get("amounts") or {}
 
     assert_true(
         response.get("ok") is True,
@@ -39,6 +40,22 @@ def run_lease_monthly_due_check(flow_result: dict) -> dict:
     assert_true(
         isinstance(due_row, dict) and bool(due_row),
         f"Lease monthly due did not return a due_row. Response: {response}"
+    )
+    assert_true(
+        int(due_row.get("lease_id") or 0) == int(lease_id),
+        f"Lease monthly due returned wrong lease row. due_row={due_row}"
+    )
+    assert_true(
+        int(due_row.get("period_no") or 0) == int(period_no),
+        f"Lease monthly due returned mismatched period. due_row={due_row}"
+    )
+    assert_true(
+        isinstance(amounts, dict) and bool(amounts),
+        f"Lease monthly due row missing amounts. due_row={due_row}"
+    )
+    assert_true(
+        float(amounts.get("payment") or 0) >= 0,
+        f"Lease monthly due row has invalid payment amount. due_row={due_row}"
     )
 
     return {
@@ -75,6 +92,14 @@ def run_lease_post_month_check(flow_result: dict) -> dict:
     assert_true(
         bool(schedule_id),
         f"Lease post month did not return schedule_id. Response: {response}"
+    )
+    assert_true(
+        int(journal_id) > 0,
+        f"Lease post month returned invalid journal_id. Response: {response}"
+    )
+    assert_true(
+        int(schedule_id) > 0,
+        f"Lease post month returned invalid schedule_id. Response: {response}"
     )
 
     return {
