@@ -23,6 +23,7 @@ class BillFlow(BaseFlow):
 
         payload = {
             "vendor_id": settings.test_vendor_id,
+            "supplier_id": settings.test_vendor_id,
             "bill_date": date.today().isoformat(),
             "due_date": date.today().isoformat(),
             "currency": settings.default_currency,
