@@ -21,7 +21,9 @@ from api.asset_acquisition_flow import AssetAcquisitionFlow
 from api.asset_acquisition_post_flow import AssetAcquisitionPostFlow
 from api.depreciation_run_flow import DepreciationRunFlow
 from api.depreciation_post_flow import DepreciationPostFlow
-
+from api.lease_flow import LeaseFlow
+from api.lease_monthly_due_flow import LeaseMonthlyDueFlow
+from api.lease_post_month_flow import LeasePostMonthFlow
 from checks.journal_integrity_check import run_journal_integrity_check
 from checks.posting_consistency_check import run_posting_consistency_check
 from checks.trial_balance_check import run_trial_balance_check
@@ -77,6 +79,9 @@ def main() -> None:
                 "bill_flow",
                 "bank_account_flow",
                 "bank_recon_flow",
+                "lease_flow",
+                "lease_monthly_due_flow",
+                "lease_post_month_flow",
                 "asset_flow",
                 "asset_acquisition_flow",
                 "asset_acquisition_post_flow",
@@ -153,6 +158,32 @@ def main() -> None:
                 True,
                 {"skipped": True, "reason": "Deliberately disabled: uniqueness conflict on same period"},
             )
+
+            # 7) Lease inception
+            lease_flow = LeaseFlow(client=client, db=db, company_id=settings.company_id)
+            lease_result = lease_flow.execute()
+            _append_step(report, "lease_flow", True, lease_result)
+
+            lease_id = lease_result.get("lease_id")
+            if not lease_id:
+                raise AssertionError(f"Lease flow did not return lease_id: {lease_result}")
+
+            # 8) Lease monthly due
+            lease_due_flow = LeaseMonthlyDueFlow(client=client, db=db, company_id=settings.company_id)
+            lease_due_flow.state["lease_id"] = int(lease_id)
+            lease_due_result = lease_due_flow.execute()
+            _append_step(report, "lease_monthly_due_flow", True, lease_due_result)
+
+            period_no = lease_due_result.get("period_no")
+            if not period_no:
+                raise AssertionError(f"Lease monthly due flow did not return period_no: {lease_due_result}")
+
+            # 9) Lease post month
+            lease_post_month_flow = LeasePostMonthFlow(client=client, db=db, company_id=settings.company_id)
+            lease_post_month_flow.state["lease_id"] = int(lease_id)
+            lease_post_month_flow.state["period_no"] = int(period_no)
+            lease_post_month_result = lease_post_month_flow.execute()
+            _append_step(report, "lease_post_month_flow", True, lease_post_month_result)
 
             # 7) Asset
             asset_flow = AssetFlow(client=client, db=db, company_id=settings.company_id)
