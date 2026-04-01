@@ -53,6 +53,19 @@ class Settings:
 
     test_prefix: str
     default_currency: str
+    test_customer_id: int
+    test_vendor_id: int
+
+    bank_account_code: str
+    ar_control_code: str
+    ap_control_code: str
+    vat_output_code: str
+    revenue_account_code: str
+    expense_account_code: str
+    ppe_asset_account_code: str
+    ppe_accum_depr_account_code: str
+    ppe_depr_expense_account_code: str
+    ppe_asset_category: str
 
     @property
     def login_url(self) -> str:
@@ -75,6 +88,15 @@ class Settings:
         if missing:
             raise ValueError(f"Missing required environment values: {', '.join(missing)}")
 
+        extra_required = {
+            "TEST_CUSTOMER_ID": self.test_customer_id,
+            "TEST_VENDOR_ID": self.test_vendor_id,
+            "BANK_ACCOUNT_CODE": self.bank_account_code,
+        }
+        missing_extra = [k for k, v in extra_required.items() if v in ("", None, 0)]
+        if missing_extra:
+            raise ValueError(f"Missing required environment values: {', '.join(missing_extra)}")
+        
 
 settings = Settings(
     base_url=os.getenv("BASE_URL", "").strip(),
@@ -97,4 +119,13 @@ settings = Settings(
 
     test_prefix=os.getenv("TEST_PREFIX", "BOT-TEST").strip(),
     default_currency=os.getenv("DEFAULT_CURRENCY", "ZAR").strip(),
+    test_customer_id=_get_int("TEST_CUSTOMER_ID", 0),
+    test_vendor_id=_get_int("TEST_VENDOR_ID", 0),
+
+    bank_account_code=os.getenv("BANK_ACCOUNT_CODE", "").strip(),
+    ar_control_code=os.getenv("AR_CONTROL_CODE", "").strip(),
+    ap_control_code=os.getenv("AP_CONTROL_CODE", "").strip(),
+    vat_output_code=os.getenv("VAT_OUTPUT_CODE", "").strip(),
+    revenue_account_code=os.getenv("REVENUE_ACCOUNT_CODE", "").strip(),
+    expense_account_code=os.getenv("EXPENSE_ACCOUNT_CODE", "").strip(),
 )

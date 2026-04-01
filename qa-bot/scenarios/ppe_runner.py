@@ -4,8 +4,8 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-from api.bank_recon_flow import BankReconFlow
-from checks.bank_recon_check import run_bank_recon_check
+from api.asset_flow import AssetFlow
+from api.depreciation_flow import DepreciationFlow
 from config.settings import settings
 from core.auth import login_api
 from core.client import ApiClient
@@ -30,7 +30,7 @@ def main() -> None:
 
     report = {
         "ok": True,
-        "scenario": "banking",
+        "scenario": "ppe",
         "run_mode": settings.run_mode,
         "company_id": settings.company_id,
         "steps": [],
@@ -38,13 +38,20 @@ def main() -> None:
 
     try:
         login_data = login_api(client)
-        report["steps"].append({"step": "login_api", "ok": True, "details": {"keys": list(login_data.keys()) if isinstance(login_data, dict) else []}})
+        report["steps"].append({
+            "step": "login_api",
+            "ok": True,
+            "details": {"keys": list(login_data.keys()) if isinstance(login_data, dict) else []},
+        })
 
-        recon_result = BankReconFlow(client=client, db=db, company_id=settings.company_id).execute()
-        report["steps"].append({"step": "bank_recon_flow", "ok": True, "details": recon_result})
+        asset_flow = AssetFlow(client=client, db=db, company_id=settings.company_id)
+        asset_result = asset_flow.execute()
+        report["steps"].append({"step": "asset_flow", "ok": True, "details": asset_result})
 
-        recon_check = run_bank_recon_check(recon_result)
-        report["steps"].append({"step": "bank_recon_check", "ok": True, "details": recon_check})
+        dep_flow = DepreciationFlow(client=client, db=db, company_id=settings.company_id)
+        dep_flow.state["asset_id"] = asset_result["asset_id"]
+        dep_result = dep_flow.execute()
+        report["steps"].append({"step": "depreciation_flow", "ok": True, "details": dep_result})
 
     except Exception as exc:
         report["ok"] = False
@@ -54,7 +61,7 @@ def main() -> None:
 
     out_dir = Path(__file__).resolve().parents[1] / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "banking_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default), encoding="utf-8")
+    (out_dir / "ppe_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default))
 
 

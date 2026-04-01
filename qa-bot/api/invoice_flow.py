@@ -34,7 +34,7 @@ class InvoiceFlow(BaseFlow):
                     "description": "QA bot invoice line",
                     "account_code": "PL_REV_4100",  # replace with a valid revenue/income account
                     "quantity": 1,
-                    "unit_price": 100.00,
+                    "unit_price": 120000.00,
                     "discount_amount": 0.00,
                     "vat_code": "STANDARD",  # use ZERO for no VAT, STANDARD for output VAT
                 }
