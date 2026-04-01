@@ -12,7 +12,19 @@ CID = settings.company_id
 ROUTES = {
     "login": settings.login_url,
 
-    "bank_accounts": "/api/companies/{company_id}/bank_accounts",
+    # Banking
+    "bank_accounts": _join(f"/api/companies/{CID}/bank_accounts"),
+    "bank_statement_preview": _join(f"/api/companies/{CID}/bank_statements/preview"),
+    "bank_statement_import": _join(f"/api/companies/{CID}/bank_statements/import"),
+    "bank_statements": _join(f"/api/companies/{CID}/bank_statements"),
+    "bank_reconciliations": _join(f"/api/companies/{CID}/bank_reconciliations"),
+    "bank_reconciliation_items": _join(f"/api/companies/{CID}/bank_reconciliations/{{recon_id}}/items"),
+    "bank_recon_exclude_item": _join(f"/api/companies/{CID}/bank_reconciliations/items/{{recon_item_id}}/exclude"),
+    "bank_recon_attach_journal": _join(f"/api/companies/{CID}/bank_reconciliations/items/{{recon_item_id}}/attach_journal"),
+    "bank_recon_match_item": _join(f"/api/companies/{CID}/bank_reconciliations/{{recon_id}}/items/{{item_id}}/match"),
+    "bank_import_create_reconciliation": _join(f"/api/companies/{CID}/bank_statements/{{import_id}}/create_reconciliation"),
+    "bank_recon_auto_match": _join(f"/api/companies/{CID}/bank_reconciliations/{{recon_id}}/auto_match"),
+
     # GL
     "journals": _join(f"/api/companies/{CID}/journal"),
 
@@ -31,18 +43,6 @@ ROUTES = {
     "vendor_payment_create": _join(f"/api/companies/{CID}/vendors/payments"),
     "vendor_payment_approve": _join(f"/api/companies/{CID}/vendors/payments/{{payment_id}}/approve"),
 
-    # Banking
-    "bank_statement_preview": _join(f"/api/companies/{CID}/bank_statements/preview"),
-    "bank_statement_import": _join(f"/api/companies/{CID}/bank_statements/import"),
-    "bank_statements": _join(f"/api/companies/{CID}/bank_statements"),
-    "bank_reconciliations": _join(f"/api/companies/{CID}/bank_reconciliations"),
-    "bank_reconciliation_items": _join(f"/api/companies/{CID}/bank_reconciliations/{{recon_id}}/items"),
-    "bank_recon_exclude_item": _join(f"/api/companies/{CID}/bank_reconciliations/items/{{recon_item_id}}/exclude"),
-    "bank_recon_attach_journal": _join(f"/api/companies/{CID}/bank_reconciliations/items/{{recon_item_id}}/attach_journal"),
-    "bank_recon_match_item": _join(f"/api/companies/{CID}/bank_reconciliations/{{recon_id}}/items/{{item_id}}/match"),
-    "bank_import_create_reconciliation": _join(f"/api/companies/{CID}/bank_statements/{{import_id}}/create_reconciliation"),
-    "bank_recon_auto_match": _join(f"/api/companies/{CID}/bank_reconciliations/{{recon_id}}/auto_match"),
-
     # Leases
     "leases": _join(f"/api/companies/{CID}/leases"),
     "lease_detail": _join(f"/api/companies/{CID}/leases/{{lease_id}}"),
@@ -55,15 +55,11 @@ ROUTES = {
     "lease_terminations": _join(f"/api/companies/{CID}/leases/{{lease_id}}/terminations"),
     "lease_termination_post": _join(f"/api/companies/{CID}/leases/terminations/{{term_id}}/post"),
 
-    # Approvals
+    # Approvals / Assets
     "approvals": _join(f"/api/companies/{CID}/approvals"),
     "assets": _join(f"/api/companies/{CID}/assets"),
-
     "asset_acquisitions": _join(f"/api/companies/{CID}/assets/{{asset_id}}/acquisitions"),
-
     "post_acquisition": _join(f"/api/companies/{CID}/asset-acquisitions/{{acq_id}}/post"),
-
     "depreciation_run": _join(f"/api/companies/{CID}/depreciation/run"),
-
     "depreciation_post": _join(f"/api/companies/{CID}/depreciation/{{dep_id}}/post"),
-    }
+}
