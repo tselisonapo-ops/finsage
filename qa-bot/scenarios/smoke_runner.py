@@ -14,7 +14,7 @@ from api.journal_flow import JournalFlow
 from api.invoice_flow import InvoiceFlow
 from api.bill_flow import BillFlow
 from api.vendor_flow import VendorFlow
-from api.bank_recon_flow import BankReconFlow
+# from api.bank_recon_flow import BankReconFlow
 from api.asset_flow import AssetFlow
 from api.asset_acquisition_flow import AssetAcquisitionFlow
 from api.asset_acquisition_post_flow import AssetAcquisitionPostFlow
@@ -129,9 +129,9 @@ def main() -> None:
             _append_step(report, "bill_flow", True, bill_result)
 
             # 5) Bank reconciliation
-            bank_recon_flow = BankReconFlow(client=client, db=db, company_id=settings.company_id)
-            bank_recon_result = bank_recon_flow.execute()
-            _append_step(report, "bank_recon_flow", True, bank_recon_result)
+            #bank_recon_flow = BankReconFlow(client=client, db=db, company_id=settings.company_id)
+            #bank_recon_result = bank_recon_flow.execute()
+            #_append_step(report, "bank_recon_flow", True, bank_recon_result)
 
             # 6) Asset
             asset_flow = AssetFlow(client=client, db=db, company_id=settings.company_id)
