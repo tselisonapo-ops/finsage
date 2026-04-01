@@ -32979,7 +32979,7 @@ class DatabaseService:
             bank_id = _to_int(inv.get("bank_account_id"))
             if bank_id:
                 cur.execute(
-                    f"SELECT * FROM {schema}.bank_accounts WHERE company_id=%s AND id=%s LIMIT 1;",
+                    f"SELECT * FROM {schema}.company_bank_accounts WHERE company_id=%s AND id=%s LIMIT 1;",
                     (int(company_id), int(bank_id)),
                 )
                 b = cur.fetchone()

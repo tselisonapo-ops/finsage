@@ -978,11 +978,11 @@ def create_acquisition(cur, company_id, asset_id, payload):
             raise Exception("bank_account_id required for bank_cash funding_source")
 
         # ✅ IMPORTANT: fix table name to match your system
-        # If your actual table is {schema}.bank_accounts, use that (most consistent with your UI).
+        # If your actual table is FROM {schema}.company_bank_accounts, use that (most consistent with your UI).
         if not bank_account_code:
             cur.execute(_q(schema, """
               SELECT ledger_account_code
-              FROM {schema}.bank_accounts
+              FROM {schema}.company_bank_accounts
               WHERE id=%s
               LIMIT 1
             """), (bank_account_id,))
