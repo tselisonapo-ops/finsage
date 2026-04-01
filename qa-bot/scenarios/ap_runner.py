@@ -46,23 +46,76 @@ def main() -> None:
         report["steps"].append({
             "step": "login_api",
             "ok": True,
-            "details": {"keys": list(login_data.keys()) if isinstance(login_data, dict) else []},
+            "details": {
+                "keys": list(login_data.keys()) if isinstance(login_data, dict) else []
+            },
         })
 
-        vendor_result = VendorFlow(client=client, db=db, company_id=settings.company_id).execute()
-        report["steps"].append({"step": "vendor_flow", "ok": True, "details": vendor_result})
+        vendor_flow = VendorFlow(client=client, db=db, company_id=settings.company_id)
+        vendor_result = vendor_flow.execute()
+        report["steps"].append({
+            "step": "vendor_flow",
+            "ok": True,
+            "details": vendor_result,
+        })
 
-        bill_result = BillFlow(client=client, db=db, company_id=settings.company_id).execute()
-        report["steps"].append({"step": "bill_flow", "ok": True, "details": bill_result})
+        vendor_id = (
+            vendor_result.get("vendor_id")
+            or vendor_result.get("id")
+            or (vendor_result.get("data") or {}).get("vendor_id")
+            or (vendor_result.get("data") or {}).get("id")
+        )
+
+        if not vendor_id:
+            raise AssertionError(f"Vendor flow did not return a usable vendor_id. Result: {vendor_result}")
+
+        bill_flow = BillFlow(
+            client=client,
+            db=db,
+            company_id=settings.company_id,
+            vendor_id=vendor_id,
+        )
+        bill_result = bill_flow.execute()
+        report["steps"].append({
+            "step": "bill_flow",
+            "ok": True,
+            "details": bill_result,
+        })
 
         bill_check = run_bill_check(bill_result)
-        report["steps"].append({"step": "bill_check", "ok": True, "details": bill_check})
+        report["steps"].append({
+            "step": "bill_check",
+            "ok": True,
+            "details": bill_check,
+        })
 
-        payment_result = VendorPaymentFlow(client=client, db=db, company_id=settings.company_id).execute()
-        report["steps"].append({"step": "vendor_payment_flow", "ok": True, "details": payment_result})
+        bill_id = (
+            bill_result.get("bill_id")
+            or bill_result.get("id")
+            or (bill_result.get("data") or {}).get("bill_id")
+            or (bill_result.get("data") or {}).get("id")
+        )
+
+        payment_flow = VendorPaymentFlow(
+            client=client,
+            db=db,
+            company_id=settings.company_id,
+            vendor_id=vendor_id,
+            bill_id=bill_id,
+        )
+        payment_result = payment_flow.execute()
+        report["steps"].append({
+            "step": "vendor_payment_flow",
+            "ok": True,
+            "details": payment_result,
+        })
 
         payment_check = run_vendor_payment_check(payment_result)
-        report["steps"].append({"step": "vendor_payment_check", "ok": True, "details": payment_check})
+        report["steps"].append({
+            "step": "vendor_payment_check",
+            "ok": True,
+            "details": payment_check,
+        })
 
     except Exception as exc:
         logger.exception("AP runner failed.")
@@ -75,7 +128,10 @@ def main() -> None:
 
     out_dir = Path(__file__).resolve().parents[1] / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "ap_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default), encoding="utf-8")
+    (out_dir / "ap_report.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, default=_json_default),
+        encoding="utf-8",
+    )
 
     print(json.dumps(report, indent=2, ensure_ascii=False, default=_json_default))
 
