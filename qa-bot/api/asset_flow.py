@@ -22,17 +22,24 @@ class AssetFlow(BaseFlow):
         ref = f"{settings.test_prefix}-ASSET-{date.today().isoformat()}-{uuid4().hex[:6].upper()}"
 
         payload = {
+            "asset_code": f"QA-ASSET-{ref}",   # ✅ ADD THIS
+
             "name": f"QA PPE Asset {ref}",
             "asset_name": f"QA PPE Asset {ref}",
+
             "entry_mode": "acquisition",
             "asset_class": "IT",
             "category": "Equipment",
+
             "acquisition_date": date.today().isoformat(),
             "available_for_use_date": date.today().isoformat(),
+
             "cost": 1000.00,
             "residual_value": 0.00,
+
             "depreciation_method": "SL",
             "useful_life_months": 60,
+
             "currency": settings.default_currency,
         }
 
