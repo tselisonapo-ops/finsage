@@ -27,22 +27,22 @@ class JournalFlow(BaseFlow):
             "description": "QA bot smoke journal",
             "source": "manual",
             "source_id": None,
-            "gross_amount": 100.00,
-            "net_amount": 100.00,
+            "gross_amount": 100000.00,
+            "net_amount": 100000.00,
             "vat_amount": 0.00,
             "currency": settings.default_currency,
             "lines": [
                 {
-                    "account_code": "1000",
+                    "account_code": "BS_CA_1000",
                     "description": "QA bot debit line",
-                    "debit": 100.00,
+                    "debit": 100000.00,
                     "credit": 0.00,
                 },
                 {
-                    "account_code": "4000",
+                    "account_code": "PL_REV_4100",
                     "description": "QA bot credit line",
                     "debit": 0.00,
-                    "credit": 100.00,
+                    "credit": 100000.00,
                 },
             ],
         }
