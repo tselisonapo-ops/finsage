@@ -20,7 +20,10 @@ class AssetAcquisitionFlow(BaseFlow):
             raise RuntimeError("AssetAcquisitionFlow cannot run in readonly mode.")
 
         asset_id = self.state.get("asset_id")
-        assert_true(bool(asset_id), "asset_id missing from state. Run AssetFlow first.")
+        assert_true(asset_id, "asset_id missing. Run AssetFlow first.")
+
+        bank_account_id = self.state.get("bank_account_id")
+        assert_true(bank_account_id, "bank_account_id missing. Run BankAccountFlow first.")
 
         ref = f"{settings.test_prefix}-ACQ-{date.today().isoformat()}-{uuid4().hex[:6].upper()}"
 
@@ -29,15 +32,18 @@ class AssetAcquisitionFlow(BaseFlow):
             "acquisition_date": date.today().isoformat(),
             "posting_date": date.today().isoformat(),
             "available_for_use_date": date.today().isoformat(),
+
+            # ✅ CORRECT: use created bank account
             "funding_source": "bank_cash",
-            "bank_account_id": settings.test_bank_account_id,
+            "bank_account_id": int(bank_account_id),
+
             "cost": 1000000.00,
             "amount": 1000000.00,
             "currency": settings.default_currency,
             "notes": f"QA bot acquisition {ref}",
         }
 
-        logger.info("[%s] posting acquisition payload=%s", self.name, payload)
+        logger.info("[%s] payload=%s", self.name, payload)
 
         res = self.client.post(
             ROUTES["asset_acquisitions"].format(asset_id=int(asset_id)),
@@ -46,10 +52,9 @@ class AssetAcquisitionFlow(BaseFlow):
         assert_http_ok(res.status_code, res.text)
 
         data = self.client.safe_json(res) or {}
-        assert_true(isinstance(data, dict), f"Asset acquisition create response was not JSON. Body: {res.text[:500]}")
+        acq_id = data.get("id")
 
-        acq_id = data.get("id") or data.get("acq_id") or data.get("acquisition_id")
-        assert_true(bool(acq_id), f"Asset acquisition create did not return acquisition id. Response: {data}")
+        assert_true(acq_id, f"Acquisition create failed. Response: {data}")
 
         self.state["acq_id"] = int(acq_id)
         self.state["acq_response"] = data
@@ -59,4 +64,4 @@ class AssetAcquisitionFlow(BaseFlow):
 
     def verify(self) -> None:
         super().verify()
-        assert_true(bool(self.state.get("acq_id")), "Acquisition id missing after creation.")
+        assert_true(self.state.get("acq_id"), "Acquisition id missing after creation.")
