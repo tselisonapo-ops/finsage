@@ -22,7 +22,7 @@ class BillFlow(BaseFlow):
         ref = f"{settings.test_prefix}-BILL-{date.today().isoformat()}-{uuid4().hex[:6].upper()}"
 
         payload = {
-            "vendor_id": 1,  # replace with real vendor id
+            "vendor_id": settings.test_vendor_id,
             "bill_date": date.today().isoformat(),
             "due_date": date.today().isoformat(),
             "currency": settings.default_currency,
@@ -31,7 +31,7 @@ class BillFlow(BaseFlow):
             "lines": [
                 {
                     "description": "QA bot bill line",
-                    "account_code": " PL_OPEX_6500",
+                    "account_code": "PL_OPEX_6500",
                     "quantity": 1,
                     "unit_price": 110000.00,
                     "discount_amount": 0.00,
