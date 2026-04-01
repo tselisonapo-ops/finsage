@@ -1961,7 +1961,9 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS company_invites_company_idx ON public.company_invites(company_id);
         CREATE INDEX IF NOT EXISTS company_invites_email_idx   ON public.company_invites(lower(email));
-        """
+       
+
+         """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
 
         with self._conn_cursor() as (_c, cur):
@@ -1978,7 +1980,7 @@ class DatabaseService:
                     raise
 
             print("[MASTER-DDL] base tables done, calling initialize_public_schema()")
-            # self.initialize_public_schema()
+            self.initialize_public_schema()
             print("[MASTER-DDL] initialize_public_schema() done")
 
 
@@ -2221,6 +2223,503 @@ class DatabaseService:
         self.execute_ddl("""
         CREATE INDEX IF NOT EXISTS coa_pool_scope_idx
         ON public.coa_pool(industry, sub_industry, is_general);
+        """)
+
+        self.execute_ddl("""
+                                 -- ==================================================
+        -- BANK RECONCILIATIONS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS public.bank_reconciliations (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            bank_account_id INT NOT NULL,
+
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',   -- draft | in_progress | completed | cancelled
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE public.bank_reconciliations
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS bank_account_id INT,
+            ADD COLUMN IF NOT EXISTS period_start DATE,
+            ADD COLUMN IF NOT EXISTS period_end DATE,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS created_by INT,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE public.bank_reconciliations
+        SET status = COALESCE(NULLIF(status, ''), 'draft')
+        WHERE status IS NULL OR status = '';
+
+        UPDATE public.bank_reconciliations
+        SET created_at = COALESCE(created_at, NOW())
+        WHERE created_at IS NULL;
+
+        UPDATE public.bank_reconciliations
+        SET updated_at = COALESCE(updated_at, NOW())
+        WHERE updated_at IS NULL;
+
+        ALTER TABLE public.bank_reconciliations
+            ALTER COLUMN status SET NOT NULL,
+            ALTER COLUMN status SET DEFAULT 'draft',
+            ALTER COLUMN created_at SET NOT NULL,
+            ALTER COLUMN created_at SET DEFAULT NOW(),
+            ALTER COLUMN updated_at SET NOT NULL,
+            ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_reconciliations_status_ck'
+            ) THEN
+                ALTER TABLE public.bank_reconciliations
+                ADD CONSTRAINT bank_reconciliations_status_ck
+                CHECK (status IN ('draft', 'in_progress', 'completed', 'cancelled'));
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_reconciliations_period_ck'
+            ) THEN
+                ALTER TABLE public.bank_reconciliations
+                ADD CONSTRAINT bank_reconciliations_period_ck
+                CHECK (period_end >= period_start);
+            END IF;
+        END $$;
+
+        -- one reconciliation per company/bank/period
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_reconciliations_company_bank_period_uq
+        ON public.bank_reconciliations(company_id, bank_account_id, period_start, period_end);
+
+        -- supports composite FKs if needed later
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_reconciliations_id_company_uq
+        ON public.bank_reconciliations(id, company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_reconciliations_company_idx
+        ON public.bank_reconciliations(company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_reconciliations_bank_idx
+        ON public.bank_reconciliations(bank_account_id);
+
+        CREATE INDEX IF NOT EXISTS bank_reconciliations_company_status_idx
+        ON public.bank_reconciliations(company_id, status, period_start DESC, period_end DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'bank_reconciliations_created_by_fk'
+            ) THEN
+                ALTER TABLE public.bank_reconciliations
+                ADD CONSTRAINT bank_reconciliations_created_by_fk
+                FOREIGN KEY (created_by)
+                REFERENCES public.users(id)
+                ON DELETE SET NULL;
+            END IF;
+        END $$;
+
+
+        -- ==================================================
+        -- BANK STATEMENT IMPORTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS public.bank_statement_imports (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            bank_account_id INT NOT NULL,
+
+            file_name TEXT,
+            file_ext TEXT,
+
+            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            statement_start_date DATE NULL,
+            statement_end_date DATE NULL,
+
+            currency TEXT,
+            status TEXT NOT NULL DEFAULT 'uploaded',   -- uploaded | parsed | failed
+            error TEXT NULL
+        );
+
+        ALTER TABLE public.bank_statement_imports
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS bank_account_id INT,
+            ADD COLUMN IF NOT EXISTS file_name TEXT,
+            ADD COLUMN IF NOT EXISTS file_ext TEXT,
+            ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS statement_start_date DATE,
+            ADD COLUMN IF NOT EXISTS statement_end_date DATE,
+            ADD COLUMN IF NOT EXISTS currency TEXT,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS error TEXT;
+
+        UPDATE public.bank_statement_imports
+        SET status = COALESCE(NULLIF(status, ''), 'uploaded')
+        WHERE status IS NULL OR status = '';
+
+        UPDATE public.bank_statement_imports
+        SET uploaded_at = COALESCE(uploaded_at, NOW())
+        WHERE uploaded_at IS NULL;
+
+        ALTER TABLE public.bank_statement_imports
+            ALTER COLUMN status SET NOT NULL,
+            ALTER COLUMN status SET DEFAULT 'uploaded',
+            ALTER COLUMN uploaded_at SET NOT NULL,
+            ALTER COLUMN uploaded_at SET DEFAULT NOW();
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_statement_imports_status_ck'
+            ) THEN
+                ALTER TABLE public.bank_statement_imports
+                ADD CONSTRAINT bank_statement_imports_status_ck
+                CHECK (status IN ('uploaded', 'parsed', 'failed'));
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_statement_imports_period_ck'
+            ) THEN
+                ALTER TABLE public.bank_statement_imports
+                ADD CONSTRAINT bank_statement_imports_period_ck
+                CHECK (
+                    statement_start_date IS NULL
+                    OR statement_end_date IS NULL
+                    OR statement_end_date >= statement_start_date
+                );
+            END IF;
+        END $$;
+
+        -- helps dedupe obvious re-imports
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_imports_company_bank_file_uploaded_uq
+        ON public.bank_statement_imports(company_id, bank_account_id, file_name, uploaded_at);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_imports_id_company_uq
+        ON public.bank_statement_imports(id, company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_statement_imports_company_idx
+        ON public.bank_statement_imports(company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_statement_imports_bank_idx
+        ON public.bank_statement_imports(company_id, bank_account_id, uploaded_at DESC);
+
+        CREATE INDEX IF NOT EXISTS bank_statement_imports_status_idx
+        ON public.bank_statement_imports(company_id, status, uploaded_at DESC);
+
+
+        -- ==================================================
+        -- BANK STATEMENT LINES
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS public.bank_statement_lines (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            import_id BIGINT NOT NULL REFERENCES public.bank_statement_imports(id) ON DELETE CASCADE,
+
+            line_date DATE,
+            value_date DATE,
+
+            amount NUMERIC(18,2),
+            currency TEXT,
+
+            description TEXT,
+            reference TEXT,
+            counterparty TEXT,
+
+            running_balance NUMERIC(18,2)
+        );
+
+        ALTER TABLE public.bank_statement_lines
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS import_id BIGINT,
+            ADD COLUMN IF NOT EXISTS line_date DATE,
+            ADD COLUMN IF NOT EXISTS value_date DATE,
+            ADD COLUMN IF NOT EXISTS amount NUMERIC(18,2),
+            ADD COLUMN IF NOT EXISTS currency TEXT,
+            ADD COLUMN IF NOT EXISTS description TEXT,
+            ADD COLUMN IF NOT EXISTS reference TEXT,
+            ADD COLUMN IF NOT EXISTS counterparty TEXT,
+            ADD COLUMN IF NOT EXISTS running_balance NUMERIC(18,2);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_lines_id_company_uq
+        ON public.bank_statement_lines(id, company_id);
+
+        -- dedupe likely duplicate parsed lines within the same import
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statement_lines_import_line_uq
+        ON public.bank_statement_lines(
+            import_id,
+            COALESCE(line_date, DATE '1900-01-01'),
+            COALESCE(amount, 0),
+            COALESCE(reference, ''),
+            COALESCE(description, '')
+        );
+
+        CREATE INDEX IF NOT EXISTS bank_statement_lines_import_idx
+        ON public.bank_statement_lines(import_id);
+
+        CREATE INDEX IF NOT EXISTS bank_statement_lines_company_import_idx
+        ON public.bank_statement_lines(company_id, import_id);
+
+        CREATE INDEX IF NOT EXISTS bank_statement_lines_company_date_idx
+        ON public.bank_statement_lines(company_id, line_date, value_date);
+
+
+        -- ==================================================
+        -- BANK RECON ITEMS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS public.bank_recon_items (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            reconciliation_id BIGINT NOT NULL REFERENCES public.bank_reconciliations(id) ON DELETE CASCADE,
+
+            statement_line_id BIGINT NOT NULL REFERENCES public.bank_statement_lines(id) ON DELETE CASCADE,
+
+            match_status TEXT NOT NULL DEFAULT 'unmatched',  -- unmatched | matched | partial | excluded
+            match_type TEXT NULL,
+
+            matched_object_type TEXT NULL,   -- journal | invoice | payment | etc
+            matched_object_id INT NULL,
+
+            created_journal_id INT NULL,
+
+            excluded_reason TEXT NULL,
+
+            prepared_by INT NULL,
+            prepared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            reviewed_by INT NULL,
+            reviewed_at TIMESTAMPTZ NULL,
+
+            matched_by INT NULL,
+            matched_at TIMESTAMPTZ NULL
+        );
+
+        ALTER TABLE public.bank_recon_items
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS reconciliation_id BIGINT,
+            ADD COLUMN IF NOT EXISTS statement_line_id BIGINT,
+            ADD COLUMN IF NOT EXISTS match_status TEXT,
+            ADD COLUMN IF NOT EXISTS match_type TEXT,
+            ADD COLUMN IF NOT EXISTS matched_object_type TEXT,
+            ADD COLUMN IF NOT EXISTS matched_object_id INT,
+            ADD COLUMN IF NOT EXISTS created_journal_id INT,
+            ADD COLUMN IF NOT EXISTS excluded_reason TEXT,
+            ADD COLUMN IF NOT EXISTS prepared_by INT,
+            ADD COLUMN IF NOT EXISTS prepared_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reviewed_by INT,
+            ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS matched_by INT,
+            ADD COLUMN IF NOT EXISTS matched_at TIMESTAMPTZ;
+
+        UPDATE public.bank_recon_items
+        SET match_status = COALESCE(NULLIF(match_status, ''), 'unmatched')
+        WHERE match_status IS NULL OR match_status = '';
+
+        UPDATE public.bank_recon_items
+        SET prepared_at = COALESCE(prepared_at, NOW())
+        WHERE prepared_at IS NULL;
+
+        ALTER TABLE public.bank_recon_items
+            ALTER COLUMN match_status SET NOT NULL,
+            ALTER COLUMN match_status SET DEFAULT 'unmatched',
+            ALTER COLUMN prepared_at SET NOT NULL,
+            ALTER COLUMN prepared_at SET DEFAULT NOW();
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_recon_items_match_status_ck'
+            ) THEN
+                ALTER TABLE public.bank_recon_items
+                ADD CONSTRAINT bank_recon_items_match_status_ck
+                CHECK (match_status IN ('unmatched', 'matched', 'partial', 'excluded'));
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_recon_items_excluded_reason_ck'
+            ) THEN
+                ALTER TABLE public.bank_recon_items
+                ADD CONSTRAINT bank_recon_items_excluded_reason_ck
+                CHECK (
+                    match_status <> 'excluded'
+                    OR NULLIF(btrim(COALESCE(excluded_reason, '')), '') IS NOT NULL
+                );
+            END IF;
+        END $$;
+
+        -- your original important uniqueness rule
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_recon_items_recon_line_uq
+        ON public.bank_recon_items(reconciliation_id, statement_line_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_recon_items_id_company_uq
+        ON public.bank_recon_items(id, company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_recon_items_company_idx
+        ON public.bank_recon_items(company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_recon_items_recon_idx
+        ON public.bank_recon_items(company_id, reconciliation_id);
+
+        CREATE INDEX IF NOT EXISTS bank_recon_items_status_idx
+        ON public.bank_recon_items(company_id, reconciliation_id, match_status);
+
+        CREATE INDEX IF NOT EXISTS bank_recon_items_statement_line_idx
+        ON public.bank_recon_items(statement_line_id);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'bank_recon_items_prepared_by_fk'
+            ) THEN
+                ALTER TABLE public.bank_recon_items
+                ADD CONSTRAINT bank_recon_items_prepared_by_fk
+                FOREIGN KEY (prepared_by)
+                REFERENCES public.users(id)
+                ON DELETE SET NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'bank_recon_items_reviewed_by_fk'
+            ) THEN
+                ALTER TABLE public.bank_recon_items
+                ADD CONSTRAINT bank_recon_items_reviewed_by_fk
+                FOREIGN KEY (reviewed_by)
+                REFERENCES public.users(id)
+                ON DELETE SET NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'bank_recon_items_matched_by_fk'
+            ) THEN
+                ALTER TABLE public.bank_recon_items
+                ADD CONSTRAINT bank_recon_items_matched_by_fk
+                FOREIGN KEY (matched_by)
+                REFERENCES public.users(id)
+                ON DELETE SET NULL;
+            END IF;
+        END $$;
+
+
+        -- ==================================================
+        -- BANK STATEMENTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS public.bank_statements (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            bank_account_id INT NOT NULL,
+
+            file_name TEXT,
+            currency TEXT,
+
+            status TEXT NOT NULL DEFAULT 'imported',
+
+            uploaded_by INT NULL,
+            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            inserted_count INT NOT NULL DEFAULT 0,
+            skipped_count INT NOT NULL DEFAULT 0,
+            error_count INT NOT NULL DEFAULT 0,
+
+            updated_at TIMESTAMPTZ NULL
+        );
+
+        ALTER TABLE public.bank_statements
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS bank_account_id INT,
+            ADD COLUMN IF NOT EXISTS file_name TEXT,
+            ADD COLUMN IF NOT EXISTS currency TEXT,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS uploaded_by INT,
+            ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS inserted_count INT,
+            ADD COLUMN IF NOT EXISTS skipped_count INT,
+            ADD COLUMN IF NOT EXISTS error_count INT,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE public.bank_statements
+        SET status = COALESCE(NULLIF(status, ''), 'imported')
+        WHERE status IS NULL OR status = '';
+
+        UPDATE public.bank_statements
+        SET uploaded_at = COALESCE(uploaded_at, NOW())
+        WHERE uploaded_at IS NULL;
+
+        UPDATE public.bank_statements
+        SET inserted_count = COALESCE(inserted_count, 0),
+            skipped_count = COALESCE(skipped_count, 0),
+            error_count = COALESCE(error_count, 0)
+        WHERE inserted_count IS NULL
+        OR skipped_count IS NULL
+        OR error_count IS NULL;
+
+        ALTER TABLE public.bank_statements
+            ALTER COLUMN status SET NOT NULL,
+            ALTER COLUMN status SET DEFAULT 'imported',
+            ALTER COLUMN uploaded_at SET NOT NULL,
+            ALTER COLUMN uploaded_at SET DEFAULT NOW(),
+            ALTER COLUMN inserted_count SET NOT NULL,
+            ALTER COLUMN inserted_count SET DEFAULT 0,
+            ALTER COLUMN skipped_count SET NOT NULL,
+            ALTER COLUMN skipped_count SET DEFAULT 0,
+            ALTER COLUMN error_count SET NOT NULL,
+            ALTER COLUMN error_count SET DEFAULT 0;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_statements_status_ck'
+            ) THEN
+                ALTER TABLE public.bank_statements
+                ADD CONSTRAINT bank_statements_status_ck
+                CHECK (status IN ('imported', 'parsed', 'failed'));
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'bank_statements_counts_ck'
+            ) THEN
+                ALTER TABLE public.bank_statements
+                ADD CONSTRAINT bank_statements_counts_ck
+                CHECK (inserted_count >= 0 AND skipped_count >= 0 AND error_count >= 0);
+            END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_statements_id_company_uq
+        ON public.bank_statements(id, company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_statements_company_idx
+        ON public.bank_statements(company_id);
+
+        CREATE INDEX IF NOT EXISTS bank_statements_company_bank_idx
+        ON public.bank_statements(company_id, bank_account_id, uploaded_at DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'bank_statements_uploaded_by_fk'
+            ) THEN
+                ALTER TABLE public.bank_statements
+                ADD CONSTRAINT bank_statements_uploaded_by_fk
+                FOREIGN KEY (uploaded_by)
+                REFERENCES public.users(id)
+                ON DELETE SET NULL;
+            END IF;
+        END $$;
         """)
 
     def create_company_relationship(
