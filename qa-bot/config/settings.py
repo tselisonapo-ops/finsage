@@ -101,10 +101,26 @@ class Settings:
 settings = Settings(
     base_url=os.getenv("BASE_URL", "").strip(),
     api_base_url=os.getenv("API_BASE_URL", "").strip(),
-    login_path=os.getenv("LOGIN_PATH", "/auth/login").strip(),
+    login_path=os.getenv("LOGIN_PATH", "/api/auth/signin").strip(),
+
     test_email=os.getenv("TEST_EMAIL", "").strip(),
     test_password=os.getenv("TEST_PASSWORD", "").strip(),
     company_id=_get_int("COMPANY_ID", 0),
+
+    test_customer_id=_get_int("TEST_CUSTOMER_ID", 0),
+    test_vendor_id=_get_int("TEST_VENDOR_ID", 0),
+
+    bank_account_code=os.getenv("BANK_ACCOUNT_CODE", "").strip(),
+    ar_control_code=os.getenv("AR_CONTROL_CODE", "").strip(),
+    ap_control_code=os.getenv("AP_CONTROL_CODE", "").strip(),
+    vat_output_code=os.getenv("VAT_OUTPUT_CODE", "").strip(),
+    revenue_account_code=os.getenv("REVENUE_ACCOUNT_CODE", "").strip(),
+    expense_account_code=os.getenv("EXPENSE_ACCOUNT_CODE", "").strip(),
+
+    ppe_asset_account_code=os.getenv("PPE_ASSET_ACCOUNT_CODE", "").strip(),
+    ppe_accum_depr_account_code=os.getenv("PPE_ACCUM_DEPR_ACCOUNT_CODE", "").strip(),
+    ppe_depr_expense_account_code=os.getenv("PPE_DEPR_EXPENSE_ACCOUNT_CODE", "").strip(),
+    ppe_asset_category=os.getenv("PPE_ASSET_CATEGORY", "").strip(),
 
     db_host=os.getenv("DB_HOST", "127.0.0.1").strip(),
     db_port=_get_int("DB_PORT", 5432),
@@ -119,13 +135,4 @@ settings = Settings(
 
     test_prefix=os.getenv("TEST_PREFIX", "BOT-TEST").strip(),
     default_currency=os.getenv("DEFAULT_CURRENCY", "ZAR").strip(),
-    test_customer_id=_get_int("TEST_CUSTOMER_ID", 0),
-    test_vendor_id=_get_int("TEST_VENDOR_ID", 0),
-
-    bank_account_code=os.getenv("BANK_ACCOUNT_CODE", "").strip(),
-    ar_control_code=os.getenv("AR_CONTROL_CODE", "").strip(),
-    ap_control_code=os.getenv("AP_CONTROL_CODE", "").strip(),
-    vat_output_code=os.getenv("VAT_OUTPUT_CODE", "").strip(),
-    revenue_account_code=os.getenv("REVENUE_ACCOUNT_CODE", "").strip(),
-    expense_account_code=os.getenv("EXPENSE_ACCOUNT_CODE", "").strip(),
 )
