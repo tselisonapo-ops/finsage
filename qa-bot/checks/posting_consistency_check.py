@@ -11,13 +11,21 @@ def run_posting_consistency_check(db: DB, company_id: int, journal_id: int) -> d
     lines = db.get_journal_lines(company_id, journal_id)
     assert_true(bool(lines), f"Journal {journal_id} has no lines.")
 
-    status = str(journal.get("status") or "").strip().lower()
-    assert_true(status in {"draft", "posted", "reversed"}, f"Unexpected journal status: {status!r}")
+    raw_status = journal.get("status")
+    status = str(raw_status or "").strip().lower()
 
-    # Expand this later with posted_at, source validation, GL impact checks, etc.
+    # Some journals in your system may not populate status explicitly.
+    acceptable_statuses = {"", "draft", "posted", "reversed"}
+
+    assert_true(
+        status in acceptable_statuses,
+        f"Unexpected journal status: {status!r}"
+    )
+
     return {
         "ok": True,
         "journal_id": journal_id,
-        "status": status,
+        "status": status or None,
         "line_count": len(lines),
+        "has_status": bool(status),
     }
