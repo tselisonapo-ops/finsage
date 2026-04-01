@@ -24,6 +24,15 @@ class AssetFlow(BaseFlow):
         payload = {
             "name": f"QA PPE Asset {ref}",
             "entry_mode": "acquisition",
+
+            # REQUIRED accounting fields
+            "asset_class": "general",
+            "depreciation_method": "straight_line",
+            "useful_life_months": 60,   # 5 years
+            "residual_value": 0.0,
+
+            # optional but good practice
+            "currency": settings.default_currency,
         }
 
         res = self.client.post(ROUTES["assets"], json=payload)
