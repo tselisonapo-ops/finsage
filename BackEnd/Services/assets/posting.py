@@ -236,7 +236,9 @@ def post_subsequent_measurement(
     company_id: int,
     measurement_id: int,
     *,
-    posted_by=None
+    posted_by=None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ):
     schema = company_schema(company_id)
 
@@ -347,6 +349,37 @@ def post_subsequent_measurement(
         FROM {schema}.asset_subsequent_measurements
         WHERE id=%s
     """), (measurement_id,))
+
+    if engagement_company_id and engagement_id:
+        currency_code = (
+            (row.get("currency_code") or "").strip()
+            or (row.get("currency") or "").strip()
+            or "ZAR"
+        )
+
+        amount_val = Decimal(str(row.get("amount") or 0))
+        event_type_norm = (row.get("event_type") or "posted").strip().lower()
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=row["event_date"],
+            module_name="ppe",
+            event_type=event_type_norm,
+            reference_no=f"ASM-{measurement_id}",
+            description=f"PPE subsequent measurement posted ({event_type_norm})",
+            prepared_by_user_id=posted_by,
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(amount_val),
+            currency_code=currency_code,
+            source_table="asset_subsequent_measurements",
+            source_id=int(measurement_id),
+            notes=f"PPE event posted to journal {posted_journal_id}" if posted_journal_id else "PPE event posted without journal",
+            created_by_user_id=posted_by,
+            updated_by_user_id=posted_by,
+        )
 
     return cur.fetchone()
 
@@ -1019,7 +1052,7 @@ def create_estimate_change_from_sm(cur, company_id: int, sm: dict, asset: dict) 
     ))
     return int(cur.fetchone()["id"])
 
-def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, approved_via=None) -> int:
+def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, approved_via=None, engagement_company_id: int | None = None, engagement_id: int | None = None) -> int:
     schema = company_schema(company_id)
 
     cur.execute(_q(schema, """
@@ -1043,15 +1076,40 @@ def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, 
     # 1) route
     if et == "add_cost":
         # your existing SM add_cost posting logic (journal with debit/credit)
-        jid = post_sm_add_cost(cur, company_id, sm, asset, user=user, approved_via=approved_via)
+        jid = post_sm_add_cost(
+            cur,
+            company_id,
+            sm,
+            asset,
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
 
     elif et in ("impairment_loss", "impairment_reversal"):
         imp_id = create_impairment_from_sm(cur, company_id, sm, asset)
-        jid = post_impairment(cur, company_id, imp_id, user=user, approved_via=approved_via)
+        jid = post_impairment(
+            cur,
+            company_id,
+            imp_id,
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
 
     elif et == "revaluation":
         reval_id = create_revaluation_from_sm(cur, company_id, sm, asset)
-        jid = post_revaluation(cur, company_id, reval_id, user=user, approved_via=approved_via)
+        jid = post_revaluation(
+            cur,
+            company_id,
+            reval_id,
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
 
     elif et == "held_for_sale_classify":
         hfs_id = create_hfs_from_sm(cur, company_id, sm, asset)
@@ -1063,7 +1121,16 @@ def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, 
         # - finds active HFS row
         # - journals reverse (Dr PPE / Cr HFS)
         # - marks HFS status='reversed' and asset status back to 'active'
-        jid = post_hfs_unclassify(cur, company_id, sm["asset_id"], sm["event_date"], user=user, approved_via=approved_via)
+        jid = post_hfs_unclassify(
+            cur,
+            company_id,
+            sm["asset_id"],
+            sm["event_date"],
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
 
     elif et == "change_estimate":
         chg_id = create_estimate_change_from_sm(cur, company_id, sm, asset)
@@ -1093,7 +1160,9 @@ def post_sm_add_cost(
     asset: dict,
     *,
     user=None,
-    approved_via=None
+    approved_via=None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ) -> int:
 
     schema = company_schema(company_id)
@@ -1165,6 +1234,27 @@ def post_sm_add_cost(
         created_by=None
     )
 
+    if engagement_company_id and engagement_id:
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=sm["event_date"],
+            module_name="ppe",
+            event_type="add_cost",
+            reference_no=f"ASM-COST-{sm['id']}",
+            description=f"PPE add-cost posted for asset {asset['asset_code']}",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(amt),
+            currency_code=ccy,
+            source_table="asset_subsequent_measurements",
+            source_id=int(sm["id"]),
+            notes=f"PPE add-cost posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
 def post_hfs_unclassify(
@@ -1174,7 +1264,9 @@ def post_hfs_unclassify(
     event_date,
     *,
     user=None,
-    approved_via=None
+    approved_via=None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ) -> int:
 
     schema = company_schema(company_id)
@@ -1272,6 +1364,27 @@ def post_hfs_unclassify(
         WHERE company_id=%s AND id=%s
     """), (company_id, asset_id))
 
+    if engagement_company_id and engagement_id:
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=event_date,
+            module_name="ppe",
+            event_type="held_for_sale_unclassify",
+            reference_no=f"HFS-REV-{r['id']}",
+            description=f"Held-for-sale reversal posted for asset {asset['asset_code']}",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(amt),
+            currency_code=ccy,
+            source_table="asset_held_for_sale",
+            source_id=int(r["id"]),
+            notes=f"HFS reversal posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
 def _preview_add_cost(asset_row, payload, policy, ca_before, cur=None):
@@ -1922,7 +2035,9 @@ def post_acquisition(
     acq_id: int,
     *,
     user: dict | None = None,
-    approved_via: str | None = None
+    approved_via: str | None = None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ) -> int:
     enforce_ppe_post_policy(company_id=company_id, user=user, action="post_acquisition", approved_via=approved_via)
 
@@ -2049,6 +2164,27 @@ def post_acquisition(
       WHERE company_id=%s AND id=%s
     """), (jid, company_id, acq_id))
 
+    if engagement_company_id and engagement_id:
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=posting_date,
+            module_name="ppe",
+            event_type="acquisition",
+            reference_no=(acq.get("reference") or f"ACQ-{acq_id}"),
+            description=f"Asset acquisition posted: {asset['asset_code']} - {asset['asset_name']}",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(_q2(amount)),
+            currency_code=ccy,
+            source_table="asset_acquisitions",
+            source_id=int(acq_id),
+            notes=f"PPE acquisition posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
 
@@ -2236,7 +2372,9 @@ def post_revaluation(
     reval_id: int,
     *,
     user: dict | None = None,
-    approved_via: str | None = None
+    approved_via: str | None = None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ) -> int:
     enforce_ppe_post_policy(company_id=company_id, user=user, action="post_revaluation", approved_via=approved_via)
 
@@ -2314,6 +2452,30 @@ def post_revaluation(
         source_event="revaluation",
         created_by=None
     )
+
+    if engagement_company_id and engagement_id:
+        amount_val = float(abs(delta))
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=r["revaluation_date"],
+            module_name="ppe",
+            event_type="revaluation",
+            reference_no=f"REVAL-{r['id']}",
+            description=f"PPE revaluation posted for asset {asset['asset_code']}",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=amount_val,
+            currency_code=ccy,
+            source_table="asset_revaluations",
+            source_id=int(reval_id),
+            notes=f"PPE revaluation posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
 # ----------------------------
@@ -2325,7 +2487,9 @@ def post_impairment(
     imp_id: int,
     *,
     user: dict | None = None,
-    approved_via: str | None = None
+    approved_via: str | None = None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ) -> int:
     enforce_ppe_post_policy(company_id=company_id, user=user, action="post_impairment", approved_via=approved_via)
 
@@ -2390,6 +2554,31 @@ def post_impairment(
         source_event="impairment",
         created_by=None
     )
+
+    if engagement_company_id and engagement_id:
+        amount_val = float(imp if imp > 0 else rev)
+        event_type_norm = "impairment_loss" if imp > 0 else "impairment_reversal"
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=r["impairment_date"],
+            module_name="ppe",
+            event_type=event_type_norm,
+            reference_no=f"IMP-{r['id']}",
+            description=f"PPE impairment posted ({event_type_norm})",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=amount_val,
+            currency_code=ccy,
+            source_table="asset_impairments",
+            source_id=int(imp_id),
+            notes=f"PPE impairment posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
 # ----------------------------
@@ -2401,7 +2590,9 @@ def post_hfs(
     hfs_id: int,
     *,
     user: dict | None = None,
-    approved_via: str | None = None
+    approved_via: str | None = None,
+    engagement_company_id: int | None = None, 
+    engagement_id: int | None = None,
 ) -> int:
     enforce_ppe_post_policy(company_id=company_id, user=user, action="post_hfs", approved_via=approved_via)
 
@@ -2462,13 +2653,51 @@ def post_hfs(
         WHERE company_id=%s AND id=%s
     """), (company_id, r["asset_id"]))
 
+    if engagement_company_id and engagement_id:
+        company_profile = db_service.get_company_profile(company_id) or {}
+        currency_code = (
+            (asset.get("currency_code") or "").strip()
+            or (asset.get("currency") or "").strip()
+            or (company_profile.get("currency") or "").strip()
+            or "ZAR"
+        )
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=r["classification_date"],
+            module_name="ppe",
+            event_type="held_for_sale_classify",
+            reference_no=f"HFS-{r['id']}",
+            description=f"Asset classified as held for sale: {asset.get('asset_code') or r['asset_id']}",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(r.get("fair_value_less_cost_to_sell") or r.get("amount") or 0.0),
+            currency_code=currency_code,
+            source_table="asset_held_for_sale",
+            source_id=int(hfs_id),
+            notes=f"Held-for-sale posting journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
 # ----------------------------
 # Posting: Disposal
 # ----------------------------
 
-def post_disposal(cur, company_id: int, disp_id: int, *, user: dict | None = None, approved_via: str | None = None) -> int:
+def post_disposal(
+    cur,
+    company_id: int,
+    disp_id: int,
+    *,
+    user: dict | None = None,
+    approved_via: str | None = None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
+) -> int:
     """
     Posts an asset disposal (creates journal, posts to ledger/TB, marks asset disposed).
     IMPORTANT: Enforces PPE review policy when enabled.
@@ -2641,9 +2870,42 @@ def post_disposal(cur, company_id: int, disp_id: int, *, user: dict | None = Non
         WHERE company_id=%s AND id=%s
     """), (r["disposal_date"], company_id, r["asset_id"]))
 
+    if engagement_company_id and engagement_id:
+        company_profile = db_service.get_company_profile(company_id) or {}
+        currency_code = (
+            (asset.get("currency_code") or "").strip()
+            or (asset.get("currency") or "").strip()
+            or (company_profile.get("currency") or "").strip()
+            or "ZAR"
+        )
+
+        disposal_amount = float(abs(gainloss) if gainloss is not None else 0.0)
+        proceeds_amount = float(proceeds or 0.0)
+        activity_amount = proceeds_amount if proceeds_amount > 0 else disposal_amount
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=r["disposal_date"],
+            module_name="ppe",
+            event_type="disposal",
+            reference_no=f"DISP-{r['id']}",
+            description=f"Asset disposal posted: {asset.get('asset_code') or r['asset_id']} - {asset.get('asset_name') or ''}".strip(),
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=activity_amount,
+            currency_code=currency_code,
+            source_table="asset_disposals",
+            source_id=int(disp_id),
+            notes=f"Disposal posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=(user or {}).get("id") if user else None,
+        )
     return jid
 
-from decimal import Decimal, ROUND_HALF_UP
+
 
 def D(x) -> Decimal:
     try:
@@ -2759,8 +3021,6 @@ def calc_monthly_dep(asset, cost_basis: Decimal, residual: Decimal) -> Decimal:
 # Posting: Depreciation
 # ----------------------------
 
-from decimal import Decimal
-
 def post_depreciation(
     cur,
     company_id: int,
@@ -2770,6 +3030,8 @@ def post_depreciation(
     approved_via: str | None = None,
     approved_by_user_id: int | None = None,
     approval_note: str | None = None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
 ) -> int:
     enforce_ppe_post_policy(
         company_id=company_id,
@@ -2844,6 +3106,29 @@ def post_depreciation(
         source_event="depreciation",
         created_by=None
     )
+
+    if engagement_company_id and engagement_id:
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=dep["period_end"],
+            module_name="ppe",
+            event_type="depreciation",
+            reference_no=f"DEP-{dep['id']}",
+            description=f"PPE depreciation posted: {asset.get('asset_code')} {dep.get('period_start')}..{dep.get('period_end')}",
+            prepared_by_user_id=(user or {}).get("id") if user else None,
+            reviewer_user_id=approved_by_user_id,
+            status="posted",
+            amount=float(amt),
+            currency_code=ccy,
+            source_table="asset_depreciation",
+            source_id=int(dep_id),
+            notes=approval_note or f"PPE depreciation posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id") if user else None,
+            updated_by_user_id=approved_by_user_id or ((user or {}).get("id") if user else None),
+        )
+
     return jid
 
 def ensure_col_exists(cur, schema: str, table: str, col: str, col_type: str = "text") -> bool:

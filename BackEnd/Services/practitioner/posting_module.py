@@ -137,7 +137,7 @@ def list_practitioner_posting_module_activity_route(cid: int):
 
         deny = _deny_if_wrong_company(
             payload,
-            int(company_id),
+            company_id,
             db_service=db_service,
             engagement_id=int(engagement_id),
         )
@@ -147,15 +147,42 @@ def list_practitioner_posting_module_activity_route(cid: int):
         if not _can_view_engagements(payload):
             return _json_err("You do not have permission to view posting module activity.", 403)
 
-
         status = (request.args.get("status") or "").strip().lower()
-        event_type = (request.args.get("eventType") or "").strip().lower()
-        prepared_by_user_id = _parse_optional_int_arg("preparedByUserId")
-        reviewer_user_id = _parse_optional_int_arg("reviewerUserId")
-        date_from = (request.args.get("dateFrom") or "").strip()
-        date_to = (request.args.get("dateTo") or "").strip()
+        event_type = (
+            request.args.get("event_type")
+            or request.args.get("eventType")
+            or ""
+        ).strip().lower()
+
+        prepared_by_user_id = (
+            _parse_optional_int_arg("prepared_by_user_id")
+            or _parse_optional_int_arg("preparedByUserId")
+        )
+        reviewer_user_id = (
+            _parse_optional_int_arg("reviewer_user_id")
+            or _parse_optional_int_arg("reviewerUserId")
+        )
+
+        date_from = (
+            request.args.get("date_from")
+            or request.args.get("dateFrom")
+            or ""
+        ).strip()
+
+        date_to = (
+            request.args.get("date_to")
+            or request.args.get("dateTo")
+            or ""
+        ).strip()
+
         q = (request.args.get("q") or "").strip()
-        mine_only = str(request.args.get("mineOnly") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+
+        mine_only = str(
+            request.args.get("mine_only")
+            or request.args.get("mineOnly")
+            or ""
+        ).strip().lower() in ("1", "true", "yes", "y", "on")
+
         limit = _parse_limit(default=100)
         offset = _parse_offset()
         current_user_id = payload.get("user_id")
@@ -207,7 +234,6 @@ def list_practitioner_posting_module_activity_route(cid: int):
     except Exception as e:
         current_app.logger.exception("list_practitioner_posting_module_activity_route failed")
         return _json_err(str(e), 500)
-
 
 @practitioner_dashboard_bp.route(
     "/api/companies/<int:cid>/practitioner-dashboard/posting-modules/filter-options",

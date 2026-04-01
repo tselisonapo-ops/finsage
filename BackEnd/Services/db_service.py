@@ -20252,6 +20252,46 @@ class DatabaseService:
 
                 line_no += 1
 
+            # publish engagement posting activity only when this journal is engagement-linked
+            engagement_company_id = entry.get("engagement_company_id")
+            engagement_id = entry.get("engagement_id")
+
+            if engagement_company_id and engagement_id:
+                gross_amount = entry.get("gross_amount")
+                if gross_amount is None:
+                    total_debits = 0.0
+                    for ln in lines:
+                        try:
+                            total_debits += float(ln.get("debit") or 0.0)
+                        except Exception:
+                            pass
+                    gross_amount = total_debits
+
+                currency_code = (entry.get("currency") or "ZAR").strip() or "ZAR"
+
+                self.upsert_engagement_posting_activity(
+                    cursor,
+                    company_id=int(engagement_company_id),
+                    engagement_id=int(engagement_id),
+                    posting_date=je_date,
+                    module_name="journal_entries",
+                    event_type="posted",
+                    reference_no=ref,
+                    description=desc or f"Journal {ref or journal_id}",
+                    prepared_by_user_id=entry.get("prepared_by_user_id"),
+                    reviewer_user_id=entry.get("reviewer_user_id"),
+                    status="posted",
+                    amount=gross_amount,
+                    currency_code=currency_code,
+                    source_table="journal",
+                    source_id=int(journal_id),
+                    notes=f"Journal posted from source={entry_source or 'manual'} source_id={entry_source_id}",
+                    created_by_user_id=entry.get("created_by_user_id"),
+                    updated_by_user_id=entry.get("updated_by_user_id"),
+                )
+
+                print("[post_journal] engagement activity recorded", flush=True)
+
             return int(journal_id)
 
         if cur is not None:
@@ -21774,6 +21814,9 @@ class DatabaseService:
         result: "LeaseScheduleResult",
         *,
         lessor_id: int,
+        engagement_company_id: int | None = None,
+        engagement_id: int | None = None,
+        created_by_user_id: int | None = None,
     ) -> int:
         """
         Persist lease master + schedule into company_{id}.leases and company_{id}.lease_schedule.
@@ -21908,6 +21951,28 @@ class DatabaseService:
                     },
                 )
 
+            if engagement_company_id and engagement_id:
+                self.upsert_engagement_posting_activity(
+                    cur,
+                    company_id=int(engagement_company_id),
+                    engagement_id=int(engagement_id),
+                    posting_date=lease.start_date,
+                    module_name="leases",
+                    event_type="draft",
+                    reference_no=f"LEASE-{lease_id}",
+                    description=f"Lease created - {lease.lease_name}",
+                    prepared_by_user_id=created_by_user_id,
+                    reviewer_user_id=None,
+                    status="draft",
+                    amount=float(result.opening_lease_liability or 0.0),
+                    currency_code="ZAR",
+                    source_table="leases",
+                    source_id=int(lease_id),
+                    notes="Lease master and initial schedule created",
+                    created_by_user_id=created_by_user_id,
+                    updated_by_user_id=created_by_user_id,
+                )
+                
             return lease_id
 
 
@@ -22830,6 +22895,8 @@ class DatabaseService:
         reference: str | None,
         description: str | None,
         user_id: int | None,
+        engagement_company_id: int | None = None,
+        engagement_id: int | None = None,
         schedule_id: int | None = None,
     ) -> dict:
         """
@@ -23058,7 +23125,39 @@ class DatabaseService:
             # 9) Mark payment posted (ONLY the payment table)
             self.set_lease_payment_posted(company_id, int(pay_id), journal_id, cur=cur, conn=conn)
 
-            # 10) DO NOT touch lease_schedule.posted_journal_id here
+            # 10) publish engagement posting activity (INSIDE transaction)
+            if engagement_company_id and engagement_id:
+                currency_code = (
+                    (lease.get("currency_code") or "").strip()
+                    or (lease.get("currency") or "").strip()
+                    or (self.get_company_profile(company_id).get("currency") if self.get_company_profile(company_id) else "")
+                    or "ZAR"
+                )
+
+                self.upsert_engagement_posting_activity(
+                    cur,
+                    company_id=int(engagement_company_id),
+                    engagement_id=int(engagement_id),
+                    posting_date=payment_date,
+                    module_name="leases",
+                    event_type="payment",
+                    reference_no=(reference or f"LEASEPAY-{pay_id}"),
+                    description=(description or f"Lease payment posted for lease {lease_id}"),
+                    prepared_by_user_id=user_id,
+                    reviewer_user_id=None,
+                    status="posted",
+                    amount=float(alloc),
+                    currency_code=currency_code,
+                    source_table="lease_payments",
+                    source_id=int(pay_id),
+                    notes=f"Lease payment posted to journal {journal_id}",
+                    created_by_user_id=user_id,
+                    updated_by_user_id=user_id,
+                )
+
+                print("[post_lease_payment] engagement activity recorded", flush=True)
+
+            # 11) DO NOT touch lease_schedule.posted_journal_id here
             fully_paid = (gross_expected > money("0")) and (alloc + TOL >= gross_expected)
 
             conn.commit()
@@ -29245,6 +29344,36 @@ class DatabaseService:
             (journal_id, int(bill_id)),
         )
         _ = cur.fetchone()
+
+        # publish engagement posting activity (TEMP hardcoded bridge for validation)
+        engagement_company_id = 8
+        engagement_id = 14
+
+        currency_code = (bill.get("currency") or "ZAR").strip() or "ZAR"
+
+        self.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=bdate,
+            module_name="accounts_payable",
+            event_type="posted",
+            reference_no=ref,
+            description=desc,
+            prepared_by_user_id=None,
+            reviewer_user_id=None,
+            status="posted",
+            amount=bill_total,
+            currency_code=currency_code,
+            source_table="bills",
+            source_id=int(bill_id),
+            notes=f"Bill posted to journal {journal_id}",
+            created_by_user_id=None,
+            updated_by_user_id=None,
+        )
+
+        print("[_post_bill_to_gl_cur] engagement activity recorded", flush=True)
+
         return journal_id
 
     def validate_invoice_stock_before_post(
@@ -32584,6 +32713,42 @@ class DatabaseService:
             )
             if not _cur.fetchone():
                 return int(journal_id)
+
+            # 10) publish engagement posting activity (CRITICAL BRIDGE)
+            try:
+                # 🔹 TEMP: replace this with real resolver later
+                # For now hardcode to validate pipeline
+                engagement_company_id = 8
+                engagement_id = 14
+
+                total_amount = money(inv.get("total_amount") or inv.get("total") or 0.0)
+                currency_code = (inv.get("currency") or "ZAR").strip() or "ZAR"
+
+                self.upsert_engagement_posting_activity(
+                    _cur,
+                    company_id=int(engagement_company_id),
+                    engagement_id=int(engagement_id),
+                    posting_date=inv_date,
+                    module_name="accounts_receivable",
+                    event_type="posted",
+                    reference_no=inv_no,
+                    description=desc,
+                    prepared_by_user_id=None,
+                    reviewer_user_id=None,
+                    status="posted",
+                    amount=total_amount,
+                    currency_code=currency_code,
+                    source_table="invoices",
+                    source_id=int(invoice_id),
+                    notes=f"Invoice posted to journal {journal_id}",
+                    created_by_user_id=None,
+                    updated_by_user_id=None,
+                )
+
+                print("[post_invoice_to_gl] engagement activity recorded", flush=True)
+
+            except Exception as e:
+                print("[post_invoice_to_gl] engagement activity failed:", str(e), flush=True)
 
             return int(journal_id)
 
@@ -42404,17 +42569,17 @@ class DatabaseService:
     def upsert_engagement_posting_activity(
         self,
         cur,
-        company_id: int,
         *,
+        company_id: int,
         engagement_id: int,
-        posting_date=None,
+        posting_date,
         module_name: str,
         event_type: str,
         description: str,
         reference_no: str = None,
         prepared_by_user_id: int = None,
         reviewer_user_id: int = None,
-        status: str = "draft",
+        status: str = "posted",
         amount=None,
         currency_code: str = "ZAR",
         source_table: str = None,
@@ -42445,51 +42610,68 @@ class DatabaseService:
                 created_by_user_id,
                 updated_by_user_id
             )
-            VALUES (
-                %s, %s, COALESCE(%s, CURRENT_DATE), %s, %s, NULLIF(BTRIM(%s), ''),
-                NULLIF(BTRIM(%s), ''), %s, %s, %s, %s, %s,
-                NULLIF(BTRIM(%s), ''), %s, NULLIF(BTRIM(%s), ''), %s, %s
-            )
-
-
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (company_id, engagement_id, module_name, source_table, source_id, event_type)
-            DO UPDATE
-            SET
+            DO UPDATE SET
                 posting_date = EXCLUDED.posting_date,
-                reference_no = COALESCE(EXCLUDED.reference_no, {schema}.engagement_posting_activity.reference_no),
+                reference_no = EXCLUDED.reference_no,
                 description = EXCLUDED.description,
-                prepared_by_user_id = COALESCE(EXCLUDED.prepared_by_user_id, {schema}.engagement_posting_activity.prepared_by_user_id),
-                reviewer_user_id = COALESCE(EXCLUDED.reviewer_user_id, {schema}.engagement_posting_activity.reviewer_user_id),
+                prepared_by_user_id = EXCLUDED.prepared_by_user_id,
+                reviewer_user_id = EXCLUDED.reviewer_user_id,
                 status = EXCLUDED.status,
-                amount = COALESCE(EXCLUDED.amount, {schema}.engagement_posting_activity.amount),
-                currency_code = COALESCE(EXCLUDED.currency_code, {schema}.engagement_posting_activity.currency_code),
-                notes = COALESCE(EXCLUDED.notes, {schema}.engagement_posting_activity.notes),
-                is_active = TRUE,
+                amount = EXCLUDED.amount,
+                currency_code = EXCLUDED.currency_code,
+                notes = EXCLUDED.notes,
                 updated_by_user_id = EXCLUDED.updated_by_user_id,
-                updated_at = NOW()
-            RETURNING id
+                updated_at = NOW(),
+                is_active = TRUE
         """
-        cur.execute(sql, (
-            company_id,
-            engagement_id,
-            posting_date,
-            module_name,
-            event_type,
-            reference_no,
-            description,
-            prepared_by_user_id,
-            reviewer_user_id,
-            status or "draft",
-            amount,
-            currency_code or "ZAR",
-            source_table,
-            source_id,
-            notes,
-            created_by_user_id,
-            updated_by_user_id or created_by_user_id,
-        ))
-        row = cur.fetchone()
-        return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+        cur.execute(
+            sql,
+            (
+                int(company_id),
+                int(engagement_id),
+                posting_date,
+                module_name,
+                event_type,
+                reference_no,
+                description,
+                prepared_by_user_id,
+                reviewer_user_id,
+                status,
+                amount,
+                currency_code,
+                source_table,
+                int(source_id) if source_id is not None else None,
+                notes,
+                created_by_user_id,
+                updated_by_user_id,
+            ),
+        )
+        
+    def get_source_engagement_link_for_company(self, company_id: int, *, cur):
+        """
+        Returns delegated/source-company engagement context for the current transaction company,
+        if one exists. Replace this query with your real mapping table/fields.
+        """
+        schema = self.company_schema(company_id)
+
+        # EXAMPLE ONLY:
+        # change this to your actual workspace/delegation link source
+        cur.execute(
+            f"""
+            SELECT
+                source_company_id AS engagement_company_id,
+                engagement_id
+            FROM public.company_workspace_links
+            WHERE target_company_id = %s
+            AND engagement_id IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (int(company_id),),
+        )
+        return cur.fetchone() or None
 
     def list_engagement_monthly_close_tasks(
         self,
@@ -46083,6 +46265,74 @@ class DatabaseService:
         }
         return mapping.get(qt)
 
+    def upsert_engagement_posting_activity(
+        self,
+        cur,
+        *,
+        company_id: int,
+        engagement_id: int,
+        module_name: str,
+        event_type: str,
+        posting_date,
+        description: str,
+        reference_no: str = None,
+        amount=None,
+        currency_code: str = "ZAR",
+        source_table: str = None,
+        source_id: int = None,
+        prepared_by_user_id: int = None,
+        reviewer_user_id: int = None,
+        status: str = "posted",
+        created_by_user_id: int = None,
+    ):
+        schema = f"company_{company_id}"
+
+        cur.execute(f"""
+            INSERT INTO {schema}.engagement_posting_activity (
+                company_id,
+                engagement_id,
+                posting_date,
+                module_name,
+                event_type,
+                reference_no,
+                description,
+                prepared_by_user_id,
+                reviewer_user_id,
+                status,
+                amount,
+                currency_code,
+                source_table,
+                source_id,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (company_id, engagement_id, module_name, source_table, source_id, event_type)
+            DO UPDATE SET
+                description = EXCLUDED.description,
+                amount = EXCLUDED.amount,
+                status = EXCLUDED.status,
+                updated_at = NOW(),
+                updated_by_user_id = EXCLUDED.updated_by_user_id
+        """, (
+            company_id,
+            engagement_id,
+            posting_date,
+            module_name,
+            event_type,
+            reference_no,
+            description,
+            prepared_by_user_id,
+            reviewer_user_id,
+            status,
+            amount,
+            currency_code,
+            source_table,
+            source_id,
+            created_by_user_id,
+            created_by_user_id,
+        ))
+        
     def get_review_queue_item_detail(
         self,
         cur,
