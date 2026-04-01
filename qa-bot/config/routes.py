@@ -48,7 +48,7 @@ ROUTES = {
     "lease_detail": _join(f"/api/companies/{CID}/leases/{{lease_id}}"),
     "lease_schedule": _join(f"/api/companies/{CID}/leases/{{lease_id}}/schedule"),
     "lease_monthly_due": _join(f"/api/companies/{CID}/leases/monthly_due"),
-    "lease_post_month": _join(f"/api/companies/{CID}/leases/{{lease_id}}/months/{{period_no}}/post"),
+    "lease_post_month": _join(f"/api/companies/{CID}/leases/{{lease_id}}/period/{{period_no}}/post"),
     "lease_payments": _join(f"/api/companies/{CID}/leases/{{lease_id}}/payments"),
     "lease_modifications": _join(f"/api/companies/{CID}/leases/{{lease_id}}/modifications"),
     "lease_modification_post": _join(f"/api/companies/{CID}/leases/modifications/{{mod_id}}/post"),
