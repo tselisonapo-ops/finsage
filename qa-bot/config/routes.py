@@ -56,13 +56,13 @@ ROUTES = {
 
     # Approvals
     "approvals": _join(f"/api/companies/{CID}/approvals"),
-    "assets": f"/api/companies/{CID}/assets",
+    "assets": _join(f"/api/companies/{CID}/assets"),
 
-    "asset_acquisitions": f"/api/companies/{CID}/assets/{{asset_id}}/acquisitions",
+    "asset_acquisitions": _join(f"/api/companies/{CID}/assets/{{asset_id}}/acquisitions"),
 
-    "post_acquisition": f"/api/companies/{CID}/asset-acquisitions/{{acq_id}}/post",
+    "post_acquisition": _join(f"/api/companies/{CID}/asset-acquisitions/{{acq_id}}/post"),
 
-    "depreciation_run": f"/api/companies/{CID}/depreciation/run",
+    "depreciation_run": _join(f"/api/companies/{CID}/depreciation/run"),
 
-    "depreciation_post": f"/api/companies/{CID}/depreciation/{{dep_id}}/post",
-}
+    "depreciation_post": _join(f"/api/companies/{CID}/depreciation/{{dep_id}}/post"),
+    }

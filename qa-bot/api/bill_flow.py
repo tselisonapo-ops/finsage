@@ -23,7 +23,7 @@ class BillFlow(BaseFlow):
         if settings.run_mode == "readonly":
             raise RuntimeError("BillFlow cannot run in readonly mode.")
 
-        vendor_id = self.vendor_id or settings.test_vendor_id
+        vendor_id = self.vendor_id or self.state.get("vendor_id") or settings.test_vendor_id
         assert_true(
             vendor_id not in (None, "", 0),
             f"No usable vendor_id for bill flow. vendor_id={vendor_id!r}"

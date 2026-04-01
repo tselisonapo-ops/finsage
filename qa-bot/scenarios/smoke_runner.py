@@ -118,7 +118,12 @@ def main() -> None:
                 raise AssertionError(f"Vendor flow did not return vendor_id: {vendor_result}")
 
             # 4) Bill
-            bill_flow = BillFlow(client=client, db=db, company_id=settings.company_id)
+            bill_flow = BillFlow(
+                client=client,
+                db=db,
+                company_id=settings.company_id,
+                vendor_id=int(vendor_id),
+            )
             bill_flow.state["vendor_id"] = vendor_id
             bill_result = bill_flow.execute()
             _append_step(report, "bill_flow", True, bill_result)
