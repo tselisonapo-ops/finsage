@@ -15,7 +15,7 @@ class BankReconFlow(BaseFlow):
     def run(self) -> dict:
         payload = {
             "statement_date": date.today().isoformat(),
-            "bank_account_code": "BS_CA_1000",
+            "bank_account_id": 1,  # ✅ FIXED
             "notes": "QA bot bank reconciliation",
         }
 
@@ -29,17 +29,13 @@ class BankReconFlow(BaseFlow):
             data.get("id")
             or data.get("recon_id")
             or (data.get("data") or {}).get("id")
-            or (data.get("data") or {}).get("recon_id")
         )
 
         self.state["recon_id"] = recon_id
         self.state["response"] = data
 
-        return {
-            "recon_id": recon_id,
-            "response": data,
-        }
-
+        return {"recon_id": recon_id, "response": data}
+    
     def verify(self) -> None:
         super().verify()
         recon_id = self.state.get("recon_id")
