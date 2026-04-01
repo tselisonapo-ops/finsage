@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from uuid import uuid4
 
 from api.base_flow import BaseFlow
@@ -20,12 +20,11 @@ class LeaseFlow(BaseFlow):
             raise RuntimeError("LeaseFlow cannot run in readonly mode.")
 
         start_date = date.today()
-        end_date = start_date + timedelta(days=365 * 3)
+        end_date = date(start_date.year + 3, start_date.month, start_date.day)
 
         ref = f"{settings.test_prefix}-LEASE-{start_date.isoformat()}-{uuid4().hex[:6].upper()}"
 
         payload = {
-            # core lease fields
             "lease_name": f"QA Lease Inception {ref}",
             "role": "lessee",
             "wizard_mode": "inception",
@@ -38,7 +37,9 @@ class LeaseFlow(BaseFlow):
             "payment_amount": 25000.00,
             "payment_frequency": "monthly",
             "payment_timing": "arrears",
-            "annual_rate": 12.0,
+
+            # IMPORTANT: decimal, not percentage literal
+            "annual_rate": 0.12,
 
             # optional economics
             "initial_direct_costs": 0.0,
@@ -54,14 +55,14 @@ class LeaseFlow(BaseFlow):
 
             # reference / parties
             "reference": ref,
-            "lessor_id": 1,  # existing lessor supplied by you
+            "lessor_id": 1,
             "notes": f"QA bot lease inception {ref}",
         }
 
         logger.info("[%s] creating lease payload=%s", self.name, payload)
 
         response = self.client.post(
-            ROUTES["leases"].format(company_id=self.company_id),
+            ROUTES["leases"],
             json=payload,
         )
         assert_http_ok(response.status_code, response.text)

@@ -22,7 +22,6 @@ class LeasePostMonthFlow(BaseFlow):
 
         res = self.client.post(
             ROUTES["lease_post_month"].format(
-                company_id=self.company_id,
                 lease_id=int(lease_id),
                 period_no=int(period_no),
             ),
@@ -31,15 +30,29 @@ class LeasePostMonthFlow(BaseFlow):
         assert_http_ok(res.status_code, res.text)
 
         data = self.client.safe_json(res) or {}
-        assert_true(isinstance(data, dict), f"Lease post month response was not JSON. Body: {res.text[:500]}")
-        assert_true(data.get("ok") is True, f"Lease post month failed. Response: {data}")
+        assert_true(
+            isinstance(data, dict),
+            f"Lease post month response was not JSON. Body: {res.text[:500]}"
+        )
+        assert_true(
+            data.get("ok") is True,
+            f"Lease post month failed. Response: {data}"
+        )
 
-        journal_id = data.get("journal_id")
-        schedule_id = data.get("schedule_id")
+        journal_id = (
+            data.get("journal_id")
+            or (data.get("data") or {}).get("journal_id")
+        )
+        schedule_id = (
+            data.get("schedule_id")
+            or (data.get("data") or {}).get("schedule_id")
+        )
 
         assert_true(bool(journal_id), f"Lease post month did not return journal_id. Response: {data}")
         assert_true(bool(schedule_id), f"Lease post month did not return schedule_id. Response: {data}")
 
+        self.state["lease_id"] = int(lease_id)
+        self.state["period_no"] = int(period_no)
         self.state["lease_monthly_journal_id"] = int(journal_id)
         self.state["lease_schedule_id"] = int(schedule_id)
         self.state["lease_post_month_response"] = data
@@ -62,4 +75,7 @@ class LeasePostMonthFlow(BaseFlow):
 
     def verify(self) -> None:
         super().verify()
+        assert_true(bool(self.state.get("lease_id")), "lease_id missing after posting.")
+        assert_true(bool(self.state.get("period_no")), "period_no missing after posting.")
         assert_true(bool(self.state.get("lease_monthly_journal_id")), "lease_monthly_journal_id missing after posting.")
+        assert_true(bool(self.state.get("lease_schedule_id")), "lease_schedule_id missing after posting.")
