@@ -20788,7 +20788,7 @@ async function renderDashboardScreen(me, { force = false } = {}) {
   window.__PR_ME__ = me;
 
   applyDashboardVisibility(me);
-  renderDashboardPlaceholders(me);
+  applyDashboardData(me);
   bindDashboardActions(me);
 
   const companyId = getActiveCompanyId();
