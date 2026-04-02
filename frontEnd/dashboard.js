@@ -17423,6 +17423,17 @@ function collectStmtOpts() {
     renderTBMini(CURRENT_PERIOD_KEY);
     if (window.renderCashFlow) window.renderCashFlow(CURRENT_PERIOD_KEY);
 
+    // ADD THESE:
+    if (window.renderCashTrendChart) window.renderCashTrendChart(CURRENT_PERIOD_KEY);
+    if (window.renderDashboardInsights) window.renderDashboardInsights(CURRENT_PERIOD_KEY);
+    if (window.renderAnalysisWidget) window.renderAnalysisWidget(CURRENT_PERIOD_KEY);
+
+    // add these if they are not already in loadDashboard-only flow:
+    if (window.renderMonthEndClose) window.renderMonthEndClose(CURRENT_PERIOD_KEY);
+    if (window.renderARAgingSnapshot) window.renderARAgingSnapshot(CURRENT_PERIOD_KEY);
+    if (window.renderFixedAssetsSnapshot) window.renderFixedAssetsSnapshot(CURRENT_PERIOD_KEY);
+    if (window.renderInventorySnapshot) window.renderInventorySnapshot(CURRENT_PERIOD_KEY);
+    if (window.renderHealthComplianceCard) window.renderHealthComplianceCard(CURRENT_PERIOD_KEY);
     if (window.renderDashboardByRoleAndPeriod) {
       window.renderDashboardByRoleAndPeriod();
     }    
