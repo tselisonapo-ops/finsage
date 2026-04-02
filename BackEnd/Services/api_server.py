@@ -4836,87 +4836,330 @@ def api_vat_settings(company_id: int):
 @require_auth
 def api_dashboard_snapshot(company_id: int):
     current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
+    if not current_user or int(current_user.get("company_id") or 0) != int(company_id):
         return jsonify({"error": "Not authorised for this company"}), 403
 
-    # ✅ ensure schema + new tables/columns exist for this company
     db_service.ensure_company_schema(company_id)
 
-    flags = _get_industry_flags(company_id)
-    tb_rows = db_service.get_trial_balance_with_meta(company_id)
+    # -----------------------------------------
+    # 1) Resolve dashboard period from preset/from/to
+    # -----------------------------------------
+    date_from, date_to, meta = resolve_company_period(
+        db_service, company_id, request, mode="range"
+    )
+    if not date_from or not date_to:
+        return jsonify({"error": "from/to required (or preset)"}), 400
 
-    flags = _get_industry_flags(company_id)
-    tb_rows = db_service.get_trial_balance_with_meta(company_id)
+    as_at = date_to
 
-    # Reuse same logic as P&L for KPIs
-    revenue = 0.0
-    cogs = 0.0
-    expenses = 0.0
+    # -----------------------------------------
+    # 2) Base services
+    # -----------------------------------------
+    flags = _get_industry_flags(company_id) or {}
 
-    for r in tb_rows:
-        bal = float(r.get("closing_balance") or 0)
-        sec = (r.get("section") or "").lower()
-        cat = (r.get("category") or "").lower()
+    tb_rows = db_service.get_trial_balance_with_meta(
+        company_id,
+        date_from=date_from,
+        date_to=date_to,
+    ) or []
 
-        if any(k in sec for k in ["income", "revenue", "sales"]):
-            revenue += -bal
-        elif flags.get("uses_cogs") and (
-            "cost of sales" in sec or "cogs" in sec or "cost of sales" in cat
-        ):
-            cogs += bal
-        elif "expense" in sec:
-            expenses += bal
+    pnl_rows = db_service.get_pnl_mini(
+        company_id,
+        date_from=date_from,
+        date_to=date_to,
+    ) or []
 
-    revenue = round(revenue, 2)
-    cogs = round(cogs, 2)
-    expenses = round(expenses, 2)
-    gross_profit = round(revenue - cogs, 2)
-    net_profit = round(gross_profit - expenses, 2)
+    cf_rows = db_service.get_cashflow_mini(
+        company_id,
+        date_from=date_from,
+        date_to=date_to,
+        method=(request.args.get("method") or "direct"),
+        compare="none",
+    ) or []
 
-    # BS mini totals
-    assets = liabilities = equity = 0.0
-    for r in tb_rows:
-        bal = float(r.get("closing_balance") or 0)
-        sec = (r.get("section") or "").lower()
-        if "asset" in sec:
-            assets += bal
-        elif "liabil" in sec:
-            liabilities += -bal
-        elif "equity" in sec or "capital" in sec:
-            equity += -bal
+    bs_rows = db_service.get_bs_mini(
+        company_id,
+        as_of=as_at,
+        use_meta_when_no_date=False,
+    ) or []
 
-    assets = round(assets, 2)
-    liabilities = round(liabilities, 2)
-    equity = round(equity, 2)
+    ar_aging = db_service.get_ar_aging_report(
+        company_id,
+        as_at=as_at,
+    ) or {}
+
+    ap_aging = db_service.get_ap_aging_report(
+        company_id,
+        as_at=as_at,
+    ) or {}
 
     customer_count = db_service.count_customers(company_id)
     vendor_count = db_service.count_vendors(company_id)
 
-    current_app.logger.info(
-        "dashboard_snapshot: company_id=%s customers=%s vendors=%s",
-        company_id, customer_count, vendor_count
-    )
+    # -----------------------------------------
+    # 3) KPI derivation from TB + mini outputs
+    # -----------------------------------------
+    def _f(v):
+        try:
+            return float(v or 0.0)
+        except Exception:
+            return 0.0
+
+    def _txt(*parts):
+        return " ".join([str(x or "") for x in parts]).strip().lower()
+
+    cash = 0.0
+    ar_total = 0.0
+    ap_total = 0.0
+
+    for r in tb_rows:
+        name = _txt(r.get("name"), r.get("section"), r.get("category"), r.get("standard"))
+        closing = _f(r.get("closing_balance"))
+
+        if any(k in name for k in ["cash", "bank", "petty cash"]):
+            cash += closing
+        elif any(k in name for k in ["receivable", "trade receivable", "accounts receivable", "debtors"]):
+            ar_total += closing
+        elif any(k in name for k in ["payable", "trade payable", "accounts payable", "creditors"]):
+            ap_total += abs(closing)
+
+    revenue = cogs = gross_profit = expenses = net_profit = 0.0
+    for r in pnl_rows:
+        label = _txt(r.get("label"))
+        amt = _f(r.get("amount"))
+        if "revenue" in label or label == "income":
+            revenue = amt
+        elif "cost of sales" in label:
+            cogs = amt
+        elif "gross profit" in label:
+            gross_profit = amt
+        elif "operating expenses" in label:
+            expenses = amt
+        elif "net profit" in label or "surplus" in label or "deficit" in label:
+            net_profit = amt
+
+    assets = liabilities = equity = bs_check = 0.0
+    for r in bs_rows:
+        label = _txt(r.get("label"), r.get("section"))
+        amt = _f(r.get("amount"))
+        if "total assets" in label:
+            assets = amt
+        elif "total liabilities" in label:
+            liabilities = amt
+        elif "total equity" in label:
+            equity = amt
+        elif "assets - (liabilities + equity)" in label:
+            bs_check = amt
+
+    cf_operating = cf_investing = cf_financing = 0.0
+    for r in cf_rows:
+        sec = _txt(r.get("section"), r.get("label"))
+        amt = _f(r.get("amount"))
+        if "operating" in sec:
+            cf_operating = amt
+        elif "investing" in sec:
+            cf_investing = amt
+        elif "financing" in sec:
+            cf_financing = amt
+
+    gross_margin_pct = round((gross_profit / revenue) * 100, 2) if revenue else 0.0
+    net_margin_pct = round((net_profit / revenue) * 100, 2) if revenue else 0.0
+
+    # -----------------------------------------
+    # 4) VAT summary for period
+    # -----------------------------------------
+    vat_input_total = 0.0
+    vat_output_total = 0.0
+    vat_net = 0.0
+    try:
+        from vat_utils import _get_vat_accounts  # adjust import to your project
+        schema = db_service.company_schema(company_id)
+
+        input_codes, output_codes = _get_vat_accounts(company_id)
+        vat_codes = list(set(input_codes) | set(output_codes))
+
+        if vat_codes:
+            placeholders = ",".join(["%s"] * len(vat_codes))
+            sql = f"""
+                SELECT account, debit, credit
+                FROM {schema}.ledger
+                WHERE company_id = %s
+                  AND date >= %s
+                  AND date <= %s
+                  AND account IN ({placeholders})
+            """
+            rows = db_service.fetch_all(
+                sql,
+                (int(company_id), date_from, date_to, *vat_codes),
+            ) or []
+
+            for row in rows:
+                code = str(row.get("account") or "")
+                dr = _f(row.get("debit"))
+                cr = _f(row.get("credit"))
+                bal = dr - cr
+
+                if code in input_codes:
+                    vat_input_total += bal
+                elif code in output_codes:
+                    vat_output_total += (-bal)
+
+            vat_net = round(vat_output_total - vat_input_total, 2)
+    except Exception:
+        vat_input_total = 0.0
+        vat_output_total = 0.0
+        vat_net = 0.0
+
+    # -----------------------------------------
+    # 5) Trends (simple first version)
+    # -----------------------------------------
+    def month_end_series(end_date, months=6):
+        out = []
+        cur = end_date.replace(day=1)
+        for i in range(months - 1, -1, -1):
+            y = cur.year
+            m = cur.month - i
+            while m <= 0:
+                y -= 1
+                m += 12
+            while m > 12:
+                y += 1
+                m -= 12
+
+            start = date(y, m, 1)
+            if m == 12:
+                nxt = date(y + 1, 1, 1)
+            else:
+                nxt = date(y, m + 1, 1)
+            end = nxt - timedelta(days=1)
+
+            out.append((start, min(end, end_date)))
+        return out
+
+    revenue_trend = []
+    profit_trend = []
+    cash_trend = []
+
+    try:
+        for start, end in month_end_series(date_to, months=6):
+            month_pnl = db_service.get_pnl_mini(company_id, start, end) or []
+            month_tb = db_service.get_trial_balance_with_meta(company_id, start, end) or []
+
+            month_revenue = 0.0
+            month_profit = 0.0
+            month_cash = 0.0
+
+            for r in month_pnl:
+                label = _txt(r.get("label"))
+                amt = _f(r.get("amount"))
+                if "revenue" in label or label == "income":
+                    month_revenue = amt
+                elif "net profit" in label or "surplus" in label or "deficit" in label:
+                    month_profit = amt
+
+            for r in month_tb:
+                name = _txt(r.get("name"), r.get("section"), r.get("category"))
+                closing = _f(r.get("closing_balance"))
+                if any(k in name for k in ["cash", "bank", "petty cash"]):
+                    month_cash += closing
+
+            label = end.strftime("%b %y")
+            period_key = end.strftime("%Y-%m")
+
+            revenue_trend.append({"period": period_key, "label": label, "value": round(month_revenue, 2)})
+            profit_trend.append({"period": period_key, "label": label, "value": round(month_profit, 2)})
+            cash_trend.append({"period": period_key, "label": label, "value": round(month_cash, 2)})
+    except Exception:
+        revenue_trend = []
+        profit_trend = []
+        cash_trend = []
+
+    # -----------------------------------------
+    # 6) Insights
+    # -----------------------------------------
+    insights = []
+
+    if revenue > 0:
+        insights.append(f"Revenue for the selected period is {revenue:,.2f}.")
+    else:
+        insights.append("No revenue has been recognised for the selected period.")
+
+    if net_profit > 0:
+        insights.append(f"Net profit is {net_profit:,.2f} with a margin of {net_margin_pct:.1f}%.")
+    elif net_profit < 0:
+        insights.append(f"The period shows a net loss of {abs(net_profit):,.2f}.")
+    else:
+        insights.append("The period is currently at break-even.")
+
+    if abs(bs_check) <= 1:
+        insights.append("Balance sheet is in balance.")
+    else:
+        insights.append(f"Balance sheet check difference is {bs_check:,.2f} and should be reviewed.")
+
+    if _f(ar_aging.get("totals", {}).get("total")) > 0:
+        insights.append(
+            f"Outstanding receivables total {_f(ar_aging.get('totals', {}).get('total')):,.2f}."
+        )
+
+    if _f(ap_aging.get("totals", {}).get("total")) > 0:
+        insights.append(
+            f"Outstanding payables total {_f(ap_aging.get('totals', {}).get('total')):,.2f}."
+        )
+
     payload = {
-        "industry": flags["industry"],
+        "meta": {
+            **(meta or {}),
+            "from": date_from.isoformat(),
+            "to": date_to.isoformat(),
+            "as_of": as_at.isoformat(),
+        },
+        "industry": flags.get("industry"),
+        "kpis": {
+            "cash": round(cash, 2),
+            "ar": round(ar_total, 2),
+            "ap": round(ap_total, 2),
+            "netProfit": round(net_profit, 2),
+            "vat": round(vat_net, 2),
+        },
         "pnl": {
-            "revenueYtd": revenue,
-            "cogsYtd": cogs,
-            "grossProfitYtd": gross_profit,
-            "expensesYtd": expenses,
-            "netProfitYtd": net_profit,
+            "revenue": round(revenue, 2),
+            "cogs": round(cogs, 2),
+            "grossProfit": round(gross_profit, 2),
+            "expenses": round(expenses, 2),
+            "netProfit": round(net_profit, 2),
+            "grossMarginPct": gross_margin_pct,
+            "netMarginPct": net_margin_pct,
         },
         "balanceSheet": {
-            "assets": assets,
-            "liabilities": liabilities,
-            "equity": equity,
-            "check": round(assets - (liabilities + equity), 2),
+            "assets": round(assets, 2),
+            "liabilities": round(liabilities, 2),
+            "equity": round(equity, 2),
+            "check": round(bs_check, 2),
         },
-        "customers": {
-            "countActive": customer_count,
+        "cashflow": {
+            "operating": round(cf_operating, 2),
+            "investing": round(cf_investing, 2),
+            "financing": round(cf_financing, 2),
         },
-        "vendors": {
-            "countActive": vendor_count,
+        "aging": {
+            "ar": ar_aging.get("totals", {}),
+            "ap": ap_aging.get("totals", {}),
         },
+        "counts": {
+            "customers": int(customer_count or 0),
+            "vendors": int(vendor_count or 0),
+        },
+        "vat": {
+            "input": round(vat_input_total, 2),
+            "output": round(vat_output_total, 2),
+            "net": round(vat_net, 2),
+        },
+        "trends": {
+            "revenue": revenue_trend,
+            "profit": profit_trend,
+            "cash": cash_trend,
+        },
+        "insights": insights,
     }
 
     return jsonify(payload), 200

@@ -491,7 +491,7 @@ window.resolveCompanyProfile = resolveCompanyProfile
   // ==========================================================
 
 const ENDPOINTS = {
-  // --- Auth / users / invites ---
+
   invites: `${API_BASE}/api/invites`,
 
   // keep older + add "user(id)" from newer
@@ -581,6 +581,17 @@ const ENDPOINTS = {
       const qs = params.toString();
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/audit${qs ? `?${qs}` : ""}`;
     },
+  },
+
+  dashboardSnapshot: (companyId, opts = {}) => {
+    const params = new URLSearchParams();
+    if (opts.preset) params.append("preset", opts.preset);
+    if (opts.from) params.append("from", opts.from);
+    if (opts.to) params.append("to", opts.to);
+    if (opts.method) params.append("method", opts.method);
+
+    const qs = params.toString();
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/dashboard_snapshot${qs ? `?${qs}` : ""}`;
   },
 
   // --- COA / metadata ---
@@ -741,6 +752,17 @@ const ENDPOINTS = {
     if (format) params.append("format", format);
     const qs = params.toString();
     return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/trial_balance${qs ? `?${qs}` : ""}`;
+  },
+
+  trialBalanceMini: (companyId, { preset, from, to, format = "json" } = {}) => {
+    const params = new URLSearchParams();
+    if (preset) params.append("preset", preset);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    if (format) params.append("format", format);
+
+    const qs = params.toString();
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/trial_balance_mini${qs ? `?${qs}` : ""}`;
   },
 
   notes: (companyId, from, to, format = "html") => {
@@ -10030,6 +10052,193 @@ function selectCoaAccount(acc) {
 // Somewhere globally (top of file), make sure we have a default:
 window.CURRENT_PERIOD_KEY = window.CURRENT_PERIOD_KEY || "this_month";
 
+function destroyFsChart(key) {
+  if (window[key] && typeof window[key].destroy === "function") {
+    window[key].destroy();
+  }
+  window[key] = null;
+}
+
+function fmtShortMonthLabel(value) {
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value || "");
+    return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  } catch {
+    return String(value || "");
+  }
+}
+
+
+async function renderCashTrendChart(periodKey = "this_month") {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const canvas = document.getElementById("cashChart");
+  if (!cid || !canvas || typeof Chart !== "function") return;
+
+  try {
+    const snap = await apiFetch(
+      ENDPOINTS.dashboardSnapshot(cid, { preset: periodKey, method: "direct" })
+    );
+
+    const rows = Array.isArray(snap?.trends?.cash) ? snap.trends.cash : [];
+    const labels = rows.map(r => r.label || r.period || "");
+    const values = rows.map(r => Number(r.value || 0));
+
+    destroyFsChart("__fsCashChart");
+
+    window.__fsCashChart = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Cash Trend",
+            data: values,
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label(ctx) {
+                const v = Number(ctx.raw || 0);
+                return typeof money === "function" ? money(v) : String(v);
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            ticks: {
+              callback(value) {
+                return typeof money === "function" ? money(Number(value || 0)) : value;
+              },
+            },
+          },
+        },
+      },
+    });
+  } catch (e) {
+    console.error("renderCashTrendChart error:", e);
+  }
+}
+
+window.renderCashTrendChart = renderCashTrendChart;
+
+async function renderDashboardInsights(periodKey = "this_month") {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const host = document.getElementById("insights");
+  if (!cid || !host) return;
+
+  try {
+    const snap = await apiFetch(
+      ENDPOINTS.dashboardSnapshot(cid, { preset: periodKey, method: "direct" })
+    );
+
+    const meta = snap?.meta || {};
+    const pnl = snap?.pnl || {};
+    const bs = snap?.balanceSheet || {};
+    const counts = snap?.counts || {};
+    const aging = snap?.aging || {};
+    const vat = snap?.vat || {};
+
+    const revenue = Number(pnl.revenue || 0);
+    const cogs = Number(pnl.cogs || 0);
+    const grossProfit = Number(pnl.grossProfit || 0);
+    const expenses = Number(pnl.expenses || 0);
+    const netProfit = Number(pnl.netProfit || 0);
+
+    const grossMargin = Number(pnl.grossMarginPct || 0);
+    const netMargin = Number(pnl.netMarginPct || 0);
+
+    const assets = Number(bs.assets || 0);
+    const liabilities = Number(bs.liabilities || 0);
+    const equity = Number(bs.equity || 0);
+    const bsCheck = Number(bs.check || 0);
+
+    const customerCount = Number(counts.customers || 0);
+    const vendorCount = Number(counts.vendors || 0);
+
+    const arTotal = Number(aging?.ar?.total || 0);
+    const apTotal = Number(aging?.ap?.total || 0);
+
+    const vatNet = Number(vat.net || 0);
+
+    const debtRatio = assets ? (liabilities / assets) * 100 : 0;
+
+    const label =
+      meta.label ||
+      (meta.from && meta.to ? `${meta.from} to ${meta.to}` : periodKey);
+
+    const items = [];
+
+    items.push(`<strong>Period:</strong> ${label}`);
+
+    if (revenue > 0) {
+      items.push(`Revenue for the selected period is ${money(revenue)}.`);
+    } else {
+      items.push(`No revenue has been recognised for the selected period yet.`);
+    }
+
+    if (cogs !== 0) {
+      items.push(`Cost of sales is ${money(cogs)}.`);
+    }
+
+    if (grossProfit !== 0) {
+      items.push(`Gross profit is ${money(grossProfit)} at a gross margin of ${grossMargin.toFixed(1)}%.`);
+    }
+
+    if (netProfit > 0) {
+      items.push(`Net profit is ${money(netProfit)} with a margin of ${netMargin.toFixed(1)}%.`);
+    } else if (netProfit < 0) {
+      items.push(`The period shows a net loss of ${money(Math.abs(netProfit))}.`);
+    } else {
+      items.push(`The period is currently at break-even.`);
+    }
+
+    if (expenses > Math.abs(grossProfit) && revenue > 0) {
+      items.push(`Operating expenses are heavier than gross profit contribution, which is putting pressure on earnings.`);
+    }
+
+    if (assets > 0) {
+      items.push(`Assets are ${money(assets)}, liabilities are ${money(liabilities)}, and equity is ${money(equity)}.`);
+      items.push(`Liabilities represent ${debtRatio.toFixed(1)}% of assets.`);
+    }
+
+    if (Math.abs(bsCheck) > 1) {
+      items.push(`Balance sheet check is off by ${money(bsCheck)} and should be reviewed.`);
+    } else {
+      items.push(`Balance sheet is in balance.`);
+    }
+
+    if (arTotal > 0) {
+      items.push(`Outstanding receivables total ${money(arTotal)}.`);
+    }
+
+    if (apTotal > 0) {
+      items.push(`Outstanding payables total ${money(apTotal)}.`);
+    }
+
+    if (vatNet !== 0) {
+      items.push(`Net VAT position for the selected period is ${money(vatNet)}.`);
+    }
+
+    items.push(`${customerCount} active customer(s) and ${vendorCount} active vendor(s) are on file.`);
+
+    host.innerHTML = items.map(x => `<li>${x}</li>`).join("");
+  } catch (e) {
+    console.error("renderDashboardInsights error:", e);
+    host.innerHTML = `<li>Unable to load financial insights right now.</li>`;
+  }
+}
+
+window.renderDashboardInsights = renderDashboardInsights;
+
 async function loadDashboard() {
   const postingCtx =
     window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
@@ -10038,33 +10247,16 @@ async function loadDashboard() {
 
   const isDelegated = !!postingCtx;
 
-  const me =
-    window.currentUser ||
-    JSON.parse(localStorage.getItem("fs_user") || "null") ||
-    {};
-
-  const companyBadge = document.getElementById("companyBadge");
-
-  if (companyBadge) {
-    // ✅ Use postingCtx if present
-   // renderPostingDashboardContextBanner(companyBadge, me, postingCtx);
-  }
-
-  window.updatePostingCompanyBadge();
-  window.bindReturnToPractitionerWorkspace();
-
-  // ✅ OPTIONAL: enforce delegated UI mode here
   if (isDelegated) {
     document.body.classList.add("delegated-workspace");
-
     console.log("[Dashboard] Delegated workspace active", {
       engagementId: postingCtx?.engagementId,
       companyId: postingCtx?.targetCompanyId,
     });
   }
-  console.log("loadDashboard(): rendering dashboard widgets…");
-  console.log("[loadDashboard] pnlMini exists?", !!document.getElementById("pnlMini"));
-  console.log("[loadDashboard] renderPnLMini type:", typeof window.renderPnLMini);
+
+  window.updatePostingCompanyBadge?.();
+  window.bindReturnToPractitionerWorkspace?.();
 
   async function safeWidget(label, fn, ...args) {
     if (typeof fn !== "function") {
@@ -10079,51 +10271,38 @@ async function loadDashboard() {
     }
   }
 
-  const custQuotesPane = document.getElementById("arCustomerQuotesPane");
-  if (custQuotesPane && custQuotesPane.dataset.stopprop !== "1") {
-    custQuotesPane.dataset.stopprop = "1";
-    custQuotesPane.addEventListener("click", (e) => e.stopPropagation());
-  }
-
-  const quoteViewerModal = document.getElementById("quoteViewerModal");
-  if (quoteViewerModal && quoteViewerModal.dataset.stopprop !== "1") {
-    quoteViewerModal.dataset.stopprop = "1";
-    quoteViewerModal.addEventListener("click", (e) => e.stopPropagation());
-  }
-
-  const custQuoteList = document.getElementById("custQuoteList");
-  if (custQuoteList && custQuoteList.dataset.stopprop !== "1") {
-    custQuoteList.dataset.stopprop = "1";
-    custQuoteList.addEventListener("click", (e) => e.stopPropagation());
-  }
-
   const periodSel = document.getElementById("fsPeriodFilter");
-  if (periodSel) {
-    periodSel.value = CURRENT_PERIOD_KEY;
+  if (periodSel && !periodSel.dataset.bound) {
+    periodSel.dataset.bound = "1";
+    periodSel.value = CURRENT_PERIOD_KEY || "this_month";
 
     periodSel.addEventListener("change", async () => {
       CURRENT_PERIOD_KEY = periodSel.value || "this_month";
-
-      await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
-      await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
-      await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
-      await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
+      await refreshDashboardByPeriod();
     });
   }
 
-  await safeWidget("Main KPIs", window.renderDashboardKPIs);
-  await safeWidget("Month-end close", window.renderMonthEndClose);
-  await safeWidget("AR aging snapshot", window.renderARAgingSnapshot);
-  await safeWidget("AP aging snapshot", window.renderAPAgingSnapshot);
-  await safeWidget("Fixed assets snapshot", window.renderFixedAssetsSnapshot);
-  await safeWidget("Inventory snapshot", window.renderInventorySnapshot);
-  await safeWidget("Tax compliance card", window.renderTaxComplianceCard);
-  await safeWidget("Setup checklist card", window.renderSetupChecklistCard);
-  await safeWidget("Health compliance card", window.renderHealthComplianceCard);
-  await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
-  await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
-  await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
-  await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
+  await refreshDashboardByPeriod();
+
+  async function refreshDashboardByPeriod() {
+    await safeWidget("Main KPIs", window.renderDashboardKPIs, CURRENT_PERIOD_KEY);
+    await safeWidget("Month-end close", window.renderMonthEndClose);
+    await safeWidget("AR aging snapshot", window.renderARAgingSnapshot, CURRENT_PERIOD_KEY);
+    await safeWidget("AP aging snapshot", window.renderAPAgingSnapshot, CURRENT_PERIOD_KEY);
+    await safeWidget("Fixed assets snapshot", window.renderFixedAssetsSnapshot, CURRENT_PERIOD_KEY);
+    await safeWidget("Inventory snapshot", window.renderInventorySnapshot, CURRENT_PERIOD_KEY);
+    await safeWidget("Tax compliance card", window.renderTaxComplianceCard, CURRENT_PERIOD_KEY);
+    await safeWidget("Setup checklist card", window.renderSetupChecklistCard);
+    await safeWidget("Health compliance card", window.renderHealthComplianceCard, CURRENT_PERIOD_KEY);
+
+    await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
+    await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
+    await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
+    await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
+
+    await safeWidget("Cash trend chart", window.renderCashTrendChart, CURRENT_PERIOD_KEY);
+    await safeWidget("Insight banner", window.renderDashboardInsights, CURRENT_PERIOD_KEY);
+  }
 
   console.log("loadDashboard(): done.");
 }
@@ -16897,6 +17076,10 @@ function collectStmtOpts() {
     renderBSMini(CURRENT_PERIOD_KEY);
     renderTBMini(CURRENT_PERIOD_KEY);
     if (window.renderCashFlow) window.renderCashFlow(CURRENT_PERIOD_KEY);
+
+    // ADD THESE:
+    if (window.renderCashTrendChart) window.renderCashTrendChart(CURRENT_PERIOD_KEY);
+    if (window.renderDashboardInsights) window.renderDashboardInsights(CURRENT_PERIOD_KEY);
 
     // ✅ Keep Statement Viewer period in sync with Financial Statements period filter
     const stmtPresetSel = document.getElementById("stmtPreset");
@@ -50791,27 +50974,59 @@ window.renderAPAging = renderAPAging;
   /* ==============================
    * Dashboard render helpers
    * ============================== */
-  async function renderDashboardKPIs() {
-    const elCash = $("#kpiCash");
-    if (!elCash) return;
+async function renderDashboardKPIs(periodKey = "this_month") {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
 
-    try {
-      const kpis = await apiFetch(ENDPOINTS.dashboard(companyId())) || {};
-      const cash = Number(kpis.cash) || 0;
-      const ar = Number(kpis.ar) || 0;
-      const ap = Number(kpis.ap) || 0;
-      const np = Number(kpis.np) || 0;
-      const vat = Number(kpis.vat) || 0;
+  const elCash = document.getElementById("kpiCash");
+  if (!elCash) return;
 
-      $("#kpiCash").textContent = money(cash);
-      $("#kpiAR").textContent = money(ar);
-      $("#kpiAP").textContent = money(ap);
-      $("#kpiNP").textContent = money(np);
-      $("#kpiVAT").textContent = money(vat);
-    } catch (e) {
-      console.error("renderDashboardKPIs error:", e);
-    }
+  try {
+    const [tbMini, pnlMini, vatSummary] = await Promise.all([
+      apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
+      apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
+      typeof ENDPOINTS.vatSummary === "function"
+        ? apiFetch(ENDPOINTS.vatSummary(cid))
+        : Promise.resolve(null),
+    ]);
+
+    const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
+    const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
+
+    const cash = tbRows
+      .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
+
+    const ar = tbRows
+      .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
+
+    const ap = tbRows
+      .filter(r => /payable|creditor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => sum + Math.abs(Number(r.closing_balance ?? 0)), 0);
+
+    const np = pnlRows
+      .filter(r => /net profit|profit for the year|profit for period|net income/i.test(String(r.label || r.name || "")))
+      .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
+
+    const vat = Number(
+      vatSummary?.net_vat ??
+      vatSummary?.vat_payable ??
+      vatSummary?.amount ??
+      0
+    );
+
+    document.getElementById("kpiCash").textContent = money(cash);
+    document.getElementById("kpiAR").textContent = money(ar);
+    document.getElementById("kpiAP").textContent = money(ap);
+    document.getElementById("kpiNP").textContent = money(np);
+    document.getElementById("kpiVAT").textContent = money(vat);
+  } catch (e) {
+    console.error("renderDashboardKPIs error:", e);
   }
+}
+
+window.renderDashboardKPIs = renderDashboardKPIs;
 
   function renderMonthEndClose() {
     const tag = $("#closeStatusTag");
