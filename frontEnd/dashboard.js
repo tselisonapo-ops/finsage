@@ -914,7 +914,6 @@ const ENDPOINTS = {
     },
   },
 
-  // inside const ENDPOINTS = { ... }
   ifrs16: {
     disclosure: (companyId, { from = "", to = "", as_of = "", include_terminated = "1" } = {}) => {
       const params = new URLSearchParams();
@@ -5239,6 +5238,100 @@ function getStoredUser() {
   } catch (_) {
     return {};
   }
+}
+
+function getDashboardRole() {
+  const me = window.currentUser || {};
+  const role = String(window.getCurrentRole?.() || me.role || "viewer").toLowerCase();
+
+  if (["cfo", "partner", "director", "manager", "senior"].includes(role)) return "executive";
+  if (["assistant", "junior", "accountant"].includes(role)) return "manager";
+  return "operator";
+}
+
+const DASHBOARD_WIDGETS = {
+  executive: [
+    "renderDashboardKPIs",
+    "renderRevenueTrendChart",
+    "renderProfitTrendChart",
+    "renderMarginTrendChart",
+    "renderRevenueExpenseVariance",
+    "renderCashFlowTrendChart",
+    "renderInsightBanner",
+    "renderMonthEndClose",
+    "renderARAgingSnapshot",
+    "renderAPAgingSnapshot",
+  ],
+  manager: [
+    "renderDashboardKPIs",
+    "renderRevenueTrendChart",
+    "renderCashFlowTrendChart",
+    "renderActionRequired",
+    "renderMonthEndClose",
+    "renderARAgingSnapshot",
+    "renderAPAgingSnapshot",
+    "renderInventorySnapshot",
+    "renderFixedAssetsSnapshot",
+  ],
+  operator: [
+    "renderDashboardKPIs",
+    "renderActionRequired",
+    "renderMonthEndClose",
+    "renderARAgingSnapshot",
+    "renderAPAgingSnapshot",
+    "renderTaxComplianceCard",
+    "renderSetupChecklistCard",
+    "renderHealthComplianceCard",
+  ],
+};
+
+function destroyChart(name) {
+  if (window[name] && typeof window[name].destroy === "function") {
+    window[name].destroy();
+  }
+  window[name] = null;
+}
+
+function makeLineChart(canvasId, chartKey, labels, data, label) {
+  const el = document.getElementById(canvasId);
+  if (!el) return null;
+
+  destroyChart(chartKey);
+
+  window[chartKey] = new Chart(el, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{ label, data, tension: 0.35 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true } }
+    }
+  });
+
+  return window[chartKey];
+}
+
+function renderInsightBanner(data) {
+  const host = document.getElementById("insights");
+  if (!host) return;
+
+  const revenueGrowth = Number(data?.revenueGrowthPct || 0);
+  const margin = Number(data?.netMarginPct || 0);
+  const ar90 = Number(data?.ar90Plus || 0);
+
+  const items = [];
+
+  if (revenueGrowth > 0) items.push(`Revenue increased by ${revenueGrowth.toFixed(1)}% this period.`);
+  if (revenueGrowth < 0) items.push(`Revenue declined by ${Math.abs(revenueGrowth).toFixed(1)}% this period.`);
+  if (margin < 10) items.push(`Net margin is low at ${margin.toFixed(1)}%.`);
+  if (ar90 > 0) items.push(`${money(ar90)} is overdue beyond 90 days.`);
+
+  if (!items.length) items.push("No major financial exceptions detected for this period.");
+
+  host.innerHTML = items.map(x => `<li>${x}</li>`).join("");
 }
 
 (function () {

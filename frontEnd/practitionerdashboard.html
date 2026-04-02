@@ -3811,32 +3811,254 @@ window.safeRedirect = function (url, mode = "href") {
     </div>
 
     <main class="px-6 py-6">
-      <section id="screen-dashboard" class="screen active space-y-6">
-        <section class="kpi-grid">
+    <section id="screen-dashboard" class="screen active space-y-6">
+      <!-- KPI ROW -->
+      <section class="kpi-grid">
+        <div class="card p-5">
+          <div class="panel-subtitle">Active Engagements</div>
+          <div class="mt-2 metric-number" data-bind="kpis.active_assignments.value">--</div>
+          <div class="mt-2 text-sm text-slate-600" data-bind="kpis.active_assignments.subtext">--</div>
+        </div>
+
+        <div class="card p-5">
+          <div class="panel-subtitle">Upcoming Deadlines</div>
+          <div class="mt-2 metric-number" data-bind="kpis.upcoming_deadlines.value">--</div>
+          <div class="mt-2 text-sm text-slate-600" data-bind="kpis.upcoming_deadlines.subtext">--</div>
+        </div>
+
+        <div class="card p-5">
+          <div class="panel-subtitle">Blocked Items</div>
+          <div class="mt-2 metric-number" data-bind="kpis.blocked_items.value">--</div>
+          <div class="mt-2 text-sm text-slate-600" data-bind="kpis.blocked_items.subtext">--</div>
+        </div>
+
+        <div class="card p-5">
+          <div class="panel-subtitle">Approval Queue</div>
+          <div class="mt-2 metric-number" data-bind="kpis.approval_queue.value">--</div>
+          <div class="mt-2 text-sm text-slate-600" data-bind="kpis.approval_queue.subtext">--</div>
+        </div>
+
+        <div class="card p-5" data-dashboard-role="manager partner">
+          <div class="panel-subtitle">Escalations Open</div>
+          <div class="mt-2 metric-number" data-bind="kpis.escalations_open.value">--</div>
+          <div class="mt-2 text-sm text-slate-600" data-bind="kpis.escalations_open.subtext">--</div>
+        </div>
+
+        <div class="card p-5">
+          <div class="panel-subtitle">Sign-off Readiness</div>
+          <div class="mt-2 metric-number" data-bind="kpis.signoff_readiness.value">--</div>
+          <div class="mt-2 text-sm text-slate-600" data-bind="kpis.signoff_readiness.subtext">--</div>
+        </div>
+      </section>
+
+      <!-- MAIN GRID -->
+      <section class="grid grid-cols-1 xl:grid-cols-[1.7fr_1fr] gap-6">
+        <!-- LEFT -->
+        <div class="space-y-6">
           <div class="card p-5">
-            <div class="panel-subtitle">Active Engagements</div>
-            <div class="mt-2 metric-number" data-bind="kpis.active_assignments.value">--</div>
-            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.active_assignments.subtext">--</div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="panel-title">My Work Queue</div>
+                <div class="panel-subtitle mt-1">Open work, due items, and review pressure.</div>
+              </div>
+              <button
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                data-dashboard-nav="assignments"
+              >
+                Open Queue
+              </button>
+            </div>
+
+            <div class="mt-4 overflow-x-auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="text-left py-2 text-xs uppercase text-slate-500">Item</th>
+                    <th class="text-left py-2 text-xs uppercase text-slate-500">Client</th>
+                    <th class="text-left py-2 text-xs uppercase text-slate-500">Status</th>
+                    <th class="text-left py-2 text-xs uppercase text-slate-500">Due</th>
+                    <th class="text-left py-2 text-xs uppercase text-slate-500">Priority</th>
+                    <th class="text-left py-2 text-xs uppercase text-slate-500">Action</th>
+                  </tr>
+                </thead>
+                <tbody data-bind="tables.engagement_work_queue">
+                  <tr><td colspan="6" class="py-4 text-sm text-slate-500">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div class="card p-5">
-            <div class="panel-subtitle">Upcoming Deadlines</div>
-            <div class="mt-2 metric-number" data-bind="kpis.upcoming_deadlines.value">--</div>
-            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.upcoming_deadlines.subtext">--</div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="panel-title">Cycle Timeline</div>
+                <div class="panel-subtitle mt-1">Day-to-day, monthly close, and year-end progress.</div>
+              </div>
+              <div class="badge badge-slate" data-bind="cycle_timeline.badge">--</div>
+            </div>
+
+            <div class="mt-5 space-y-5">
+              <div>
+                <div class="flex items-center justify-between text-sm">
+                  <div class="font-semibold text-slate-800">Day-to-day</div>
+                  <div class="text-slate-500" data-bind="cycle_timeline.day_to_day.label">--</div>
+                </div>
+                <div class="mt-2 mini-chart"><span data-bind-width="cycle_timeline.day_to_day.percent"></span></div>
+                <div class="mt-2 text-sm text-slate-600" data-bind="cycle_timeline.day_to_day.description">--</div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between text-sm">
+                  <div class="font-semibold text-slate-800">Monthly close</div>
+                  <div class="text-slate-500" data-bind="cycle_timeline.monthly_close.label">--</div>
+                </div>
+                <div class="mt-2 mini-chart"><span data-bind-width="cycle_timeline.monthly_close.percent"></span></div>
+                <div class="mt-2 text-sm text-slate-600" data-bind="cycle_timeline.monthly_close.description">--</div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between text-sm">
+                  <div class="font-semibold text-slate-800">Year-end</div>
+                  <div class="text-slate-500" data-bind="cycle_timeline.year_end.label">--</div>
+                </div>
+                <div class="mt-2 mini-chart"><span data-bind-width="cycle_timeline.year_end.percent"></span></div>
+                <div class="mt-2 text-sm text-slate-600" data-bind="cycle_timeline.year_end.description">--</div>
+              </div>
+            </div>
           </div>
 
           <div class="card p-5">
-            <div class="panel-subtitle">Trial Balance Snapshot</div>
-            <div class="mt-2 metric-number" data-bind="kpis.trial_balance_snapshot.value">--</div>
-            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.trial_balance_snapshot.subtext">--</div>
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="panel-title">Posting Status Tracker</div>
+                <div class="panel-subtitle mt-1">Operational pulse across posting modules.</div>
+              </div>
+              <button
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                data-dashboard-nav="day-to-day-postings"
+              >
+                Open Operations
+              </button>
+            </div>
+
+            <div class="mt-4 grid gap-3" data-bind="lists.posting_status_tracker">
+              <div class="text-sm text-slate-500">Loading…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT -->
+        <div class="space-y-6">
+          <div class="card p-5">
+            <div class="panel-title">Reporting Overview</div>
+            <div class="panel-subtitle mt-1" data-bind="reporting_overview.label">Reporting Overview</div>
+
+            <div class="mt-4 space-y-3">
+              <div class="text-base font-semibold text-slate-900" data-bind="reporting_overview.title">--</div>
+              <div class="text-sm text-slate-600" data-bind="reporting_overview.description">--</div>
+
+              <div class="grid grid-cols-1 gap-3">
+                <div class="card-soft p-3">
+                  <div class="text-xs uppercase text-slate-500">Cycle</div>
+                  <div class="mt-1 text-sm font-semibold text-slate-800" data-bind="reporting_overview.cycle">--</div>
+                </div>
+                <div class="card-soft p-3">
+                  <div class="text-xs uppercase text-slate-500">Deadline</div>
+                  <div class="mt-1 text-sm font-semibold text-slate-800" data-bind="reporting_overview.deadline">--</div>
+                </div>
+                <div class="card-soft p-3">
+                  <div class="text-xs uppercase text-slate-500">Readiness</div>
+                  <div class="mt-1 text-sm font-semibold text-slate-800" data-bind="reporting_overview.readiness_badge">--</div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="card p-5">
-            <div class="panel-subtitle">Approval Queue</div>
-            <div class="mt-2 metric-number" data-bind="kpis.approval_queue.value">--</div>
-            <div class="mt-2 text-sm text-slate-600" data-bind="kpis.approval_queue.subtext">--</div>
+            <div class="panel-title">Engagement Metrics</div>
+            <div class="mt-4 grid grid-cols-1 gap-3">
+              <div class="card-soft p-3">
+                <div class="text-xs uppercase text-slate-500">Deliverables progress</div>
+                <div class="mt-1 text-xl font-bold text-slate-900" data-bind="engagement_metrics.deliverables_progress.value">--</div>
+                <div class="mt-1 text-sm text-slate-600" data-bind="engagement_metrics.deliverables_progress.subtext">--</div>
+              </div>
+
+              <div class="card-soft p-3">
+                <div class="text-xs uppercase text-slate-500">Posting modules cleared</div>
+                <div class="mt-1 text-xl font-bold text-slate-900" data-bind="engagement_metrics.posting_modules_cleared.value">--</div>
+                <div class="mt-1 text-sm text-slate-600" data-bind="engagement_metrics.posting_modules_cleared.subtext">--</div>
+              </div>
+
+              <div class="card-soft p-3">
+                <div class="text-xs uppercase text-slate-500">Sign-off readiness</div>
+                <div class="mt-1 text-xl font-bold text-slate-900" data-bind="engagement_metrics.signoff_readiness.value">--</div>
+                <div class="mt-1 text-sm text-slate-600" data-bind="engagement_metrics.signoff_readiness.subtext">--</div>
+              </div>
+            </div>
           </div>
-        </section>
+
+          <div class="card p-5">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="panel-title">Action Center</div>
+                <div class="panel-subtitle mt-1">Items needing attention now.</div>
+              </div>
+              <button
+                class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                data-dashboard-nav="action-center"
+              >
+                Open Actions
+              </button>
+            </div>
+
+            <div class="mt-4 grid gap-3" data-bind="lists.action_center">
+              <div class="text-sm text-slate-500">Loading…</div>
+            </div>
+          </div>
+
+          <div class="card p-5" data-dashboard-role="manager partner">
+            <div class="panel-title">Risk Alerts</div>
+            <div class="panel-subtitle mt-1">Escalations, blockers, and exception signals.</div>
+
+            <div class="mt-4 grid gap-3" data-bind="lists.risk_alerts">
+              <div class="text-sm text-slate-500">Loading…</div>
+            </div>
+          </div>
+
+          <div class="card p-5" data-dashboard-role="manager partner">
+            <div class="panel-title">Team Capacity</div>
+            <div class="panel-subtitle mt-1">Reviewer pressure and workload balance.</div>
+
+            <div class="mt-4 grid gap-3" data-bind="lists.staff_utilization">
+              <div class="text-sm text-slate-500">Loading…</div>
+            </div>
+          </div>
+
+          <div class="card p-5" data-dashboard-role="partner">
+            <div class="panel-title">Partner Analytics</div>
+            <div class="mt-4 space-y-4">
+              <div>
+                <div class="flex items-center justify-between text-sm">
+                  <div class="font-semibold text-slate-800">Engagement profitability</div>
+                  <div class="text-slate-500" data-bind="partner_analytics.engagement_profitability.value">--</div>
+                </div>
+                <div class="mt-2 mini-chart"><span data-bind-width="partner_analytics.engagement_profitability.percent"></span></div>
+                <div class="mt-2 text-sm text-slate-600" data-bind="partner_analytics.engagement_profitability.subtext">--</div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between text-sm">
+                  <div class="font-semibold text-slate-800">Client service trends</div>
+                  <div class="text-slate-500" data-bind="partner_analytics.client_service_trends.value">--</div>
+                </div>
+                <div class="mt-2 mini-chart"><span data-bind-width="partner_analytics.client_service_trends.percent"></span></div>
+                <div class="mt-2 text-sm text-slate-600" data-bind="partner_analytics.client_service_trends.subtext">--</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
       </section>
 
       <!-- ASSIGNMENTS -->

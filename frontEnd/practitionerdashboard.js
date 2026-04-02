@@ -1553,6 +1553,19 @@ let PR_ENGAGEMENT_ACCEPTANCE_CACHE = {
 
 let PR_ENGAGEMENT_ACCEPTANCE_EVENTS_BOUND = false;
 
+let PR_DASHBOARD_CACHE = {
+  loaded: false,
+  summary: null,
+  queue: [],
+  actionSummary: null,
+  actionQueue: [],
+  capacitySummary: null,
+  riskRows: [],
+  analyticsRisk: null
+};
+
+let PR_DASHBOARD_EVENTS_BOUND = false;
+
 const PR_NAV = {
   dashboard: "dashboard",
   assignments: "assignments",
@@ -3852,7 +3865,7 @@ async function runPractitionerScreenBinder(screen, me) {
 
   switch (screen) {
     case PR_NAV.dashboard:
-      await renderDashboardHome?.(me);
+      await renderDashboardScreen?.(me);
       break;
 
     case PR_NAV.assignments:
@@ -3977,7 +3990,7 @@ async function runPractitionerScreenBinder(screen, me) {
       break;
 
     default:
-      await renderDashboardHome?.(me);
+      await renderClientsScreen?.(me);
       break;
   }
 
@@ -8072,33 +8085,89 @@ function bindClientOverviewEvents(me) {
   if (PR_CLIENT_OVERVIEW_EVENTS_BOUND) return;
   PR_CLIENT_OVERVIEW_EVENTS_BOUND = true;
 
-  // 🔥 CLIENT CHANGE
-  document.getElementById("clientOverviewCustomerSelect")?.addEventListener("change", async () => {
-    resetClientOverviewCache();
-    await loadClientOverviewScreen(me, { force: true });
+  const customerSelect = document.getElementById("clientOverviewCustomerSelect");
+  const refreshBtn = document.getElementById("clientOverviewRefreshBtn");
+  const statusFilter = document.getElementById("clientOverviewStatusFilter");
+  const typeFilter = document.getElementById("clientOverviewTypeFilter");
+
+  const viewEngagementsBtn = document.getElementById("clientOverviewViewEngagementsBtn");
+  const viewReportingBtn  = document.getElementById("clientOverviewViewReportingBtn");
+  const viewOperationsBtn = document.getElementById("clientOverviewViewOperationsBtn");
+  const viewCloseBtn      = document.getElementById("clientOverviewViewCloseBtn");
+  const viewRiskBtn       = document.getElementById("clientOverviewViewRiskBtn");
+
+  function canAccessScreen(screenKey) {
+    try {
+      const resolved = resolvePractitionerScreenName(screenKey);
+
+      if (!canOpenPractitionerScreen(resolved)) return false;
+
+      const access = guardPractitionerScreenAccess(resolved, me);
+      return !!access?.ok;
+    } catch (err) {
+      console.warn("Screen access check failed for:", screenKey, err);
+      return false;
+    }
+  }
+
+  function setButtonAccess(buttonEl, allowed) {
+    if (!buttonEl) return;
+    buttonEl.style.display = allowed ? "" : "none";
+    buttonEl.disabled = !allowed;
+    buttonEl.setAttribute("aria-hidden", allowed ? "false" : "true");
+  }
+
+  function applyClientOverviewActionAccess() {
+    setButtonAccess(viewEngagementsBtn, canAccessScreen(PR_NAV.assignments));
+    setButtonAccess(viewReportingBtn,  canAccessScreen(PR_NAV.reportingOverview));
+    setButtonAccess(viewOperationsBtn, canAccessScreen(PR_NAV.dayToDayPostings));
+    setButtonAccess(viewCloseBtn,      canAccessScreen(PR_NAV.monthlyCloseRoutines));
+    setButtonAccess(viewRiskBtn,       canAccessScreen(PR_NAV.actionCenter));
+  }
+
+  async function refreshClientOverview({ reloadCustomers = false, force = true } = {}) {
+    try {
+      if (reloadCustomers) {
+        if (typeof loadCustomersData === "function") {
+          PR_CUSTOMERS_CACHE = await loadCustomersData({});
+        } else if (typeof loadCustomers === "function") {
+          await loadCustomers(me);
+        }
+
+        if (typeof populateClientOverviewCustomerSelect === "function") {
+          populateClientOverviewCustomerSelect();
+        }
+      }
+
+      resetClientOverviewCache();
+      await loadClientOverviewScreen(me, { force });
+    } catch (err) {
+      console.error("Client overview refresh failed:", err);
+      alert(err?.message || "Failed to refresh client overview.");
+    }
+  }
+
+  applyClientOverviewActionAccess();
+
+  customerSelect?.addEventListener("change", async () => {
+    await refreshClientOverview({ reloadCustomers: false, force: true });
   });
 
-  document.getElementById("clientOverviewRefreshBtn")?.addEventListener("click", async () => {
-    PR_CLIENT_OVERVIEW_CACHE = {
-      summary: null,
-      engagements: [],
-      reportingDeliverables: null,
-      operations: null,
-      closeFinalisation: null,
-      riskAlerts: null
-    };
-    await loadClientOverviewScreen(me, { force: true });
+  refreshBtn?.addEventListener("click", async () => {
+    await refreshClientOverview({ reloadCustomers: true, force: true });
   });
 
-  document.getElementById("clientOverviewStatusFilter")?.addEventListener("change", async () => {
-    await loadClientOverviewScreen(me, { force: true });
+  statusFilter?.addEventListener("change", async () => {
+    await refreshClientOverview({ reloadCustomers: false, force: true });
   });
 
-  document.getElementById("clientOverviewTypeFilter")?.addEventListener("change", async () => {
-    await loadClientOverviewScreen(me, { force: true });
+  typeFilter?.addEventListener("change", async () => {
+    await refreshClientOverview({ reloadCustomers: false, force: true });
   });
 
-  document.getElementById("clientOverviewViewEngagementsBtn")?.addEventListener("click", async () => {
+  viewEngagementsBtn?.addEventListener("click", async () => {
+    if (!canAccessScreen(PR_NAV.assignments)) return;
+
     const { customerId, customerName } = getSelectedClientOverviewContext();
     if (!customerId) return alert("Select a client first.");
 
@@ -8113,7 +8182,9 @@ function bindClientOverviewEvents(me) {
     await switchPractitionerScreen(PR_NAV.assignments, me);
   });
 
-  document.getElementById("clientOverviewViewReportingBtn")?.addEventListener("click", async () => {
+  viewReportingBtn?.addEventListener("click", async () => {
+    if (!canAccessScreen(PR_NAV.reportingOverview)) return;
+
     const { customerId, customerName } = getSelectedClientOverviewContext();
     if (!customerId) return alert("Select a client first.");
 
@@ -8128,7 +8199,9 @@ function bindClientOverviewEvents(me) {
     await switchPractitionerScreen(PR_NAV.reportingOverview, me);
   });
 
-  document.getElementById("clientOverviewViewOperationsBtn")?.addEventListener("click", async () => {
+  viewOperationsBtn?.addEventListener("click", async () => {
+    if (!canAccessScreen(PR_NAV.dayToDayPostings)) return;
+
     const { customerId, customerName } = getSelectedClientOverviewContext();
     if (!customerId) return alert("Select a client first.");
 
@@ -8143,7 +8216,9 @@ function bindClientOverviewEvents(me) {
     await switchPractitionerScreen(PR_NAV.dayToDayPostings, me);
   });
 
-  document.getElementById("clientOverviewViewCloseBtn")?.addEventListener("click", async () => {
+  viewCloseBtn?.addEventListener("click", async () => {
+    if (!canAccessScreen(PR_NAV.monthlyCloseRoutines)) return;
+
     const { customerId, customerName } = getSelectedClientOverviewContext();
     if (!customerId) return alert("Select a client first.");
 
@@ -8158,7 +8233,9 @@ function bindClientOverviewEvents(me) {
     await switchPractitionerScreen(PR_NAV.monthlyCloseRoutines, me);
   });
 
-  document.getElementById("clientOverviewViewRiskBtn")?.addEventListener("click", async () => {
+  viewRiskBtn?.addEventListener("click", async () => {
+    if (!canAccessScreen(PR_NAV.actionCenter)) return;
+
     const { customerId, customerName } = getSelectedClientOverviewContext();
     if (!customerId) return alert("Select a client first.");
 
@@ -8173,7 +8250,6 @@ function bindClientOverviewEvents(me) {
     await switchPractitionerScreen(PR_NAV.actionCenter, me);
   });
 }
-
 async function fetchActionCenterSummary(me, params = {}) {
   const companyId = practitionerCompanyIdFromMe(me);
 
@@ -14704,10 +14780,22 @@ function getPractitionerCompanyId(me) {
 }
 
 function formatDateSafe(value) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString();
+  if (!value) return "--";
+
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString();
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function pct(numerator, denominator) {
+  const num = Number(numerator || 0);
+  const den = Number(denominator || 0);
+  if (!den) return 0;
+  return Math.max(0, Math.min(100, Math.round((num / den) * 100)));
 }
 
 function formatNumberSafe(value) {
@@ -20342,20 +20430,490 @@ function safePrettyJson(value) {
 function renderSettingsScreen(me, screen) {
   console.log("Settings screen:", screen);
 }
-function renderDashboardHome(me) {}
 
-async function renderClientsScreen(me) {
-  // ensure customers are loaded (you may already do this elsewhere)
-  if (!Array.isArray(PR_CUSTOMERS_CACHE) || PR_CUSTOMERS_CACHE.length === 0) {
-    // if you have an existing loader, call it here
-    // await loadCustomers(me);
+
+function bindDashboardActions(me) {
+  if (PR_DASHBOARD_EVENTS_BOUND) return;
+  PR_DASHBOARD_EVENTS_BOUND = true;
+
+  document.querySelectorAll("[data-dashboard-nav]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const screen = btn.getAttribute("data-dashboard-nav");
+      if (!screen) return;
+      if (!canAccessDashboardTarget(screen, me)) return;
+
+      await switchPractitionerScreen(screen, me);
+    });
+  });
+}
+
+function renderDashboardWorkQueue(rows) {
+  const tbody = document.querySelector('[data-bind="tables.engagement_work_queue"]');
+  if (!tbody) return;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return renderEmptyState('[data-bind="tables.engagement_work_queue"]', 6, "No work queue items yet");
   }
 
-  populateClientOverviewCustomerSelect();
+  tbody.innerHTML = rows.slice(0, 6).map((row) => `
+    <tr class="border-t border-slate-100">
+      <td class="py-3 text-sm text-slate-800">${escapeHtml(row.engagement_name || row.title || "--")}</td>
+      <td class="py-3 text-sm text-slate-600">${escapeHtml(row.customer_name || "--")}</td>
+      <td class="py-3 text-sm text-slate-600">${escapeHtml(row.status || "--")}</td>
+      <td class="py-3 text-sm text-slate-600">${escapeHtml(formatDateSafe(row.due_date))}</td>
+      <td class="py-3 text-sm text-slate-600">${escapeHtml(row.priority || "--")}</td>
+      <td class="py-3 text-sm text-slate-600">Open</td>
+    </tr>
+  `).join("");
+}
 
-  bindClientOverviewEvents(me);
+function renderDashboardPostingTracker(summary) {
+  const el = document.querySelector('[data-bind="lists.posting_status_tracker"]');
+  if (!el) return;
 
-  await loadClientOverviewScreen(me, { force: false });
+  const items = [
+    { label: "Journal entries", value: summary.journal_open ?? 0 },
+    { label: "Accounts receivable", value: summary.ar_open ?? 0 },
+    { label: "Accounts payable", value: summary.ap_open ?? 0 },
+    { label: "Leases", value: summary.leases_open ?? 0 },
+    { label: "PPE", value: summary.ppe_open ?? 0 }
+  ];
+
+  el.innerHTML = items.map((item) => `
+    <div class="card-soft p-3 flex items-center justify-between gap-3">
+      <div class="text-sm font-semibold text-slate-800">${escapeHtml(item.label)}</div>
+      <div class="text-sm text-slate-600">${escapeHtml(String(item.value))} open</div>
+    </div>
+  `).join("");
+}
+
+function renderDashboardActionCenter(rows) {
+  const el = document.querySelector('[data-bind="lists.action_center"]');
+  if (!el) return;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return renderListEmpty('[data-bind="lists.action_center"]', "No action items yet");
+  }
+
+  el.innerHTML = rows.slice(0, 5).map((row) => `
+    <div class="card-soft p-3">
+      <div class="flex items-center justify-between gap-3">
+        <div class="text-sm font-semibold text-slate-800">${escapeHtml(row.title || row.item_name || "--")}</div>
+        <div class="text-xs text-slate-500">${escapeHtml(row.status || "--")}</div>
+      </div>
+      <div class="mt-1 text-sm text-slate-600">${escapeHtml(row.customer_name || row.engagement_name || "--")}</div>
+    </div>
+  `).join("");
+}
+
+function renderDashboardRiskAlerts(risk, actionSummary) {
+  const el = document.querySelector('[data-bind="lists.risk_alerts"]');
+  if (!el) return;
+
+  const items = [
+    { label: "Overdue engagements", value: risk.overdue_engagements ?? 0 },
+    { label: "Blocked workflow", value: risk.blocked_items ?? actionSummary.blocked_items ?? 0 },
+    { label: "Outstanding deliverables", value: risk.outstanding_deliverables ?? 0 },
+    { label: "Pending sign-offs", value: risk.pending_signoffs ?? 0 },
+    { label: "Escalations open", value: risk.open_escalations ?? actionSummary.open_escalations ?? 0 }
+  ];
+
+  el.innerHTML = items.map((item) => `
+    <div class="card-soft p-3 flex items-center justify-between gap-3">
+      <div class="text-sm font-semibold text-slate-800">${escapeHtml(item.label)}</div>
+      <div class="text-sm ${Number(item.value) > 0 ? "text-amber-700 font-bold" : "text-slate-600"}">${escapeHtml(String(item.value))}</div>
+    </div>
+  `).join("");
+}
+
+function renderDashboardStaffUtilization(summary) {
+  const el = document.querySelector('[data-bind="lists.staff_utilization"]');
+  if (!el) return;
+
+  const items = [
+    { label: "Available users", value: summary.available_users ?? 0 },
+    { label: "Overloaded users", value: summary.overloaded_users ?? 0 },
+    { label: "Coverage gaps", value: summary.coverage_gaps ?? 0 },
+    { label: "Upcoming peaks", value: summary.upcoming_peaks ?? 0 }
+  ];
+
+  el.innerHTML = items.map((item) => `
+    <div class="card-soft p-3 flex items-center justify-between gap-3">
+      <div class="text-sm font-semibold text-slate-800">${escapeHtml(item.label)}</div>
+      <div class="text-sm text-slate-600">${escapeHtml(String(item.value))}</div>
+    </div>
+  `).join("");
+}
+
+function applyDashboardData(me, cache) {
+  const engagements = Array.isArray(cache.engagements) ? cache.engagements : [];
+  const portfolioSummary = cache.portfolioSummary || {};
+  const portfolioRows = Array.isArray(cache.portfolioRows) ? cache.portfolioRows : [];
+  const actionSummary = cache.actionSummary || {};
+  const actionQueue = Array.isArray(cache.actionQueue) ? cache.actionQueue : [];
+  const capacitySummary = cache.capacitySummary || {};
+  const riskSummary = cache.riskSummary || {};
+
+  const topEngagement = engagements[0] || portfolioRows[0] || {};
+
+  const totalEngagements =
+    engagements.length ||
+    Number(portfolioSummary.active_engagements || 0);
+
+  const upcomingDeadlines =
+    Number(portfolioSummary.upcoming_due_dates || riskSummary.upcoming_due_dates || 0);
+
+  const blockedItems =
+    Number(riskSummary.blocked_items || actionSummary.blocked_items || 0);
+
+  const approvalQueue =
+    Number(actionSummary.awaiting_review || actionSummary.pending_approvals || 0);
+
+  const escalationsOpen =
+    Number(riskSummary.open_escalations || portfolioSummary.open_escalations || 0);
+
+  const deliverablesCompleted = Number(portfolioSummary.completed_deliverables || 0);
+  const deliverablesTotal = Number(portfolioSummary.total_deliverables || 0);
+  const deliverablesPercent =
+    Number(portfolioSummary.deliverables_progress_percent || pct(deliverablesCompleted, deliverablesTotal));
+
+  const signoffReadiness =
+    Number(
+      portfolioSummary.signoff_readiness_percent ||
+      portfolioSummary.readiness_percent ||
+      pct(deliverablesCompleted, deliverablesTotal)
+    );
+
+  bindText("kpis.active_assignments.value", totalEngagements);
+  bindText("kpis.active_assignments.subtext", "Open engagements in current scope");
+
+  bindText("kpis.upcoming_deadlines.value", upcomingDeadlines);
+  bindText("kpis.upcoming_deadlines.subtext", "Due soon across active engagements");
+
+  bindText("kpis.blocked_items.value", blockedItems);
+  bindText("kpis.blocked_items.subtext", "Workflow items currently blocked");
+
+  bindText("kpis.approval_queue.value", approvalQueue);
+  bindText("kpis.approval_queue.subtext", "Awaiting review or approval");
+
+  bindText("kpis.escalations_open.value", escalationsOpen);
+  bindText("kpis.escalations_open.subtext", "Exceptions needing attention");
+
+  bindText("kpis.signoff_readiness.value", `${signoffReadiness}%`);
+  bindText("kpis.signoff_readiness.subtext", "Current sign-off readiness");
+
+  bindText("cycle_timeline.badge", portfolioSummary.cycle_status || "Live");
+
+  bindText("cycle_timeline.day_to_day.label", `${portfolioSummary.day_to_day_open ?? 0} open`);
+  bindText("cycle_timeline.day_to_day.description", "Daily posting and workflow activity");
+  bindWidth("cycle_timeline.day_to_day.percent", portfolioSummary.day_to_day_percent ?? 0);
+
+  bindText("cycle_timeline.monthly_close.label", `${portfolioSummary.monthly_close_open ?? 0} open`);
+  bindText("cycle_timeline.monthly_close.description", "Monthly close routines and completion");
+  bindWidth("cycle_timeline.monthly_close.percent", portfolioSummary.monthly_close_percent ?? 0);
+
+  bindText("cycle_timeline.year_end.label", `${portfolioSummary.year_end_open ?? 0} open`);
+  bindText("cycle_timeline.year_end.description", "Year-end reporting and finalisation");
+  bindWidth("cycle_timeline.year_end.percent", portfolioSummary.year_end_percent ?? 0);
+
+  bindText("reporting_overview.title", topEngagement.engagement_name || topEngagement.title || "--");
+  bindText(
+    "reporting_overview.description",
+    topEngagement.customer_name
+      ? `Primary engagement in focus for ${topEngagement.customer_name}.`
+      : "Engagement summary, deadlines, and readiness."
+  );
+  bindText("reporting_overview.cycle", topEngagement.engagement_type || topEngagement.cycle || "--");
+  bindText("reporting_overview.deadline", formatDateSafe(topEngagement.due_date));
+  bindText("reporting_overview.readiness_badge", `${signoffReadiness}% ready`);
+
+  bindText("engagement_metrics.deliverables_progress.value", `${deliverablesPercent}%`);
+  bindText(
+    "engagement_metrics.deliverables_progress.subtext",
+    `${deliverablesCompleted}/${deliverablesTotal} deliverables completed`
+  );
+
+  bindText(
+    "engagement_metrics.posting_modules_cleared.value",
+    portfolioSummary.posting_modules_cleared ?? 0
+  );
+  bindText(
+    "engagement_metrics.posting_modules_cleared.subtext",
+    "Posting modules currently cleared"
+  );
+
+  bindText("engagement_metrics.signoff_readiness.value", `${signoffReadiness}%`);
+  bindText(
+    "engagement_metrics.signoff_readiness.subtext",
+    "Readiness based on completion and blockers"
+  );
+
+  bindText(
+    "partner_analytics.engagement_profitability.value",
+    portfolioSummary.healthy_count ?? 0
+  );
+  bindText(
+    "partner_analytics.engagement_profitability.subtext",
+    "Healthy engagements in active portfolio"
+  );
+  bindWidth(
+    "partner_analytics.engagement_profitability.percent",
+    pct(portfolioSummary.healthy_count || 0, portfolioSummary.portfolio_total || 0)
+  );
+
+  bindText(
+    "partner_analytics.client_service_trends.value",
+    portfolioSummary.active_clients ?? portfolioSummary.clients_served ?? 0
+  );
+  bindText(
+    "partner_analytics.client_service_trends.subtext",
+    "Clients currently served in active scope"
+  );
+  bindWidth(
+    "partner_analytics.client_service_trends.percent",
+    portfolioSummary.service_trend_percent ?? 0
+  );
+
+  bindText("engagement_scope.permissions_badge", permissionBadge(me?.role));
+
+  renderDashboardWorkQueue(engagements);
+  renderDashboardPostingTracker(portfolioSummary);
+  renderDashboardActionCenter(actionQueue);
+  renderDashboardRiskAlerts(riskSummary, actionSummary);
+  renderDashboardStaffUtilization(capacitySummary);
+}
+
+
+function dashboardRoleKey(me) {
+  const raw = String(me?.role || "").toLowerCase();
+
+  if (
+    raw.includes("partner") ||
+    raw.includes("director") ||
+    raw.includes("owner")
+  ) return "partner";
+
+  if (
+    raw.includes("manager") ||
+    raw.includes("reviewer") ||
+    raw.includes("supervisor") ||
+    raw.includes("senior")
+  ) return "manager";
+
+  return "staff";
+}
+
+function canAccessDashboardTarget(screenKey, me) {
+  try {
+    const resolved = resolvePractitionerScreenName(screenKey);
+
+    if (!canOpenPractitionerScreen(resolved)) return false;
+
+    const access = guardPractitionerScreenAccess(resolved, me);
+    return !!access?.ok;
+
+  } catch (err) {
+    console.warn("Dashboard access check failed:", screenKey, err);
+    return false;
+  }
+}
+
+function applyDashboardVisibility(me) {
+  const role = dashboardRoleKey(me);
+
+  document.querySelectorAll("[data-dashboard-role]").forEach((el) => {
+    const allowedRoles = String(el.getAttribute("data-dashboard-role") || "")
+      .split(/\s+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    const allowed = allowedRoles.length === 0 || allowedRoles.includes(role);
+    el.style.display = allowed ? "" : "none";
+  });
+
+  document.querySelectorAll("[data-dashboard-nav]").forEach((btn) => {
+    const target = btn.getAttribute("data-dashboard-nav");
+    const allowed = target ? canAccessDashboardTarget(target, me) : true;
+    btn.style.display = allowed ? "" : "none";
+    btn.disabled = !allowed;
+  });
+}
+
+function formatDateSafe(value) {
+  if (!value) return "--";
+  try {
+    return new Date(value).toLocaleDateString();
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function renderListEmpty(selector, text) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  el.innerHTML = `<div class="text-sm text-slate-500">${text}</div>`;
+}
+
+function renderEmptyState(selector, colspan, text) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  el.innerHTML = `
+    <tr>
+      <td colspan="${colspan}" class="py-5 text-center text-sm text-slate-500">${text}</td>
+    </tr>
+  `;
+}
+
+function permissionBadge(role) {
+  const r = String(role || "").toLowerCase();
+  if (r.includes("partner")) return "Partner Access";
+  if (r.includes("manager") || r.includes("reviewer")) return "Manager Access";
+  return "Practitioner Access";
+}
+
+function resetDashboardCache() {
+  PR_DASHBOARD_CACHE = {
+    loaded: false,
+    engagements: [],
+    portfolioSummary: {},
+    portfolioRows: [],
+    actionSummary: {},
+    actionQueue: [],
+    capacitySummary: {},
+    riskSummary: {}
+  };
+}
+
+async function renderDashboardScreen(me, { force = false } = {}) {
+  window.__PR_ME__ = me;
+
+  applyDashboardVisibility(me);
+  renderDashboardPlaceholders(me);
+  bindDashboardActions(me);
+
+  const companyId = getActiveCompanyId();
+  if (!companyId) {
+    console.warn("renderDashboardScreen: no active company id");
+    return;
+  }
+
+  if (PR_DASHBOARD_CACHE.loaded && !force) {
+    applyDashboardData(me, PR_DASHBOARD_CACHE);
+    return;
+  }
+
+  try {
+    const context = window.__PR_CONTEXT__ || {};
+    const customerId = Number(context.customerId || 0) || "";
+    const engagementId =
+      Number(context.engagementId || window.getPractitionerActiveEngagementId?.() || 0) || "";
+
+    const requests = [
+      apiFetch(
+        ENDPOINTS.engagements.list(companyId, {
+          customer_id: customerId || "",
+          status: "active",
+          limit: 12,
+          offset: 0
+        })
+      ).catch(() => ({ rows: [] })),
+
+      apiFetch(
+        ENDPOINTS.portfolioReviewSummary(companyId, {
+          customer_id: customerId || "",
+          active_only: true
+        })
+      ).catch(() => ({ row: {} })),
+
+      apiFetch(
+        ENDPOINTS.portfolioReviewDashboard(companyId, {
+          customer_id: customerId || "",
+          active_only: true,
+          limit: 12,
+          offset: 0
+        })
+      ).catch(() => ({ rows: [] })),
+
+      apiFetch(
+        ENDPOINTS.actionCenter.summary(companyId, {
+          customer_id: customerId || ""
+        })
+      ).catch(() => ({ row: {} })),
+
+      apiFetch(
+        ENDPOINTS.actionCenter.queue(companyId, {
+          customer_id: customerId || "",
+          limit: 8,
+          offset: 0
+        })
+      ).catch(() => ({ rows: [] }))
+    ];
+
+    if (dashboardRoleKey(me) !== "staff" && ENDPOINTS.engagements.capacitySummary) {
+      requests.push(
+        apiFetch(
+          ENDPOINTS.engagements.capacitySummary(companyId, {
+            active_only: true
+          })
+        ).catch(() => ({ row: {} }))
+      );
+    } else {
+      requests.push(Promise.resolve({ row: {} }));
+    }
+
+    if (engagementId && ENDPOINTS.workingPapers?.summary) {
+      requests.push(
+        apiFetch(
+          ENDPOINTS.workingPapers.summary(companyId, {
+            engagement_id: engagementId
+          })
+        ).catch(() => ({ row: {} }))
+      );
+    } else {
+      requests.push(Promise.resolve({ row: {} }));
+    }
+
+    const [
+      engagementsRes,
+      portfolioSummaryRes,
+      portfolioDashboardRes,
+      actionSummaryRes,
+      actionQueueRes,
+      capacitySummaryRes,
+      riskSummaryRes
+    ] = await Promise.all(requests);
+
+    PR_DASHBOARD_CACHE = {
+      loaded: true,
+      engagements: engagementsRes?.rows || [],
+      portfolioSummary: portfolioSummaryRes?.row || {},
+      portfolioRows: portfolioDashboardRes?.rows || [],
+      actionSummary: actionSummaryRes?.row || {},
+      actionQueue: actionQueueRes?.rows || [],
+      capacitySummary: capacitySummaryRes?.row || {},
+      riskSummary: riskSummaryRes?.row || {}
+    };
+
+    applyDashboardData(me, PR_DASHBOARD_CACHE);
+  } catch (err) {
+    console.error("renderDashboardScreen failed:", err);
+    alert(err?.message || "Failed to load dashboard.");
+  }
+}
+
+async function renderClientsScreen(me) {
+  try {
+    if (!Array.isArray(PR_CUSTOMERS_CACHE) || PR_CUSTOMERS_CACHE.length === 0) {
+      PR_CUSTOMERS_CACHE = await loadCustomersData({});
+    }
+
+    populateClientOverviewCustomerSelect();
+    bindClientOverviewEvents(me);
+    await loadClientOverviewScreen(me, { force: false });
+  } catch (err) {
+    console.error("renderClientsScreen failed:", err);
+    alert(err.message || "Failed to load clients screen.");
+  }
 }
 
 /* ======================================================
@@ -20416,7 +20974,7 @@ async function bootstrapPractitionerApp(me) {
   restorePractitionerReturnContext();
 
   const firstScreen = resolvePractitionerScreenName(getHashScreen() || PR_NAV.dashboard);
-  switchPractitionerScreen(firstScreen, me, { updateHash: false });
+  await switchPractitionerScreen(firstScreen, me, { updateHash: false });
 
   initPractitionerDashboardModeSwitcher(companies, me, "practitioner");
   attachEvents(companies, me);
