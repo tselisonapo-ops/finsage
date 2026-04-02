@@ -5297,32 +5297,6 @@ function getDashboardRole() {
   return "operator";
 }
 
-const role = getDashboardRole();
-const widgets = DASHBOARD_WIDGETS[role] || DASHBOARD_WIDGETS.operator;
-
-const widgetMap = {
-  renderDashboardKPIs: window.renderDashboardKPIs,
-  renderRevenueTrendChart: window.renderRevenueTrendChart,
-  renderProfitTrendChart: window.renderProfitTrendChart,
-  renderMarginTrendChart: window.renderMarginTrendChart,
-  renderRevenueExpenseVariance: window.renderRevenueExpenseVariance,
-  renderCashFlowTrendChart: window.renderCashTrendChart,
-  renderInsightBanner: window.renderDashboardInsights,
-  renderMonthEndClose: window.renderMonthEndClose,
-  renderARAgingSnapshot: window.renderARAgingSnapshot,
-  renderAPAgingSnapshot: window.renderAPAgingSnapshot,
-  renderInventorySnapshot: window.renderInventorySnapshot,
-  renderFixedAssetsSnapshot: window.renderFixedAssetsSnapshot,
-  renderTaxComplianceCard: window.renderTaxComplianceCard,
-  renderSetupChecklistCard: window.renderSetupChecklistCard,
-  renderHealthComplianceCard: window.renderHealthComplianceCard,
-};
-
-for (const key of widgets) {
-  const fn = widgetMap[key];
-  await safeWidget(key, fn, CURRENT_PERIOD_KEY);
-}
-
 const DASHBOARD_WIDGETS = {
   executive: [
     "renderDashboardKPIs",
@@ -5358,6 +5332,36 @@ const DASHBOARD_WIDGETS = {
     "renderHealthComplianceCard",
   ],
 };
+
+async function renderDashboardByRoleAndPeriod() {
+  const role = getDashboardRole();
+  const widgets = DASHBOARD_WIDGETS[role] || DASHBOARD_WIDGETS.operator;
+
+  const widgetMap = {
+    renderDashboardKPIs: window.renderDashboardKPIs,
+    renderAnalysisWidget: window.renderAnalysisWidget,
+    renderMonthEndClose: window.renderMonthEndClose,
+    renderARAgingSnapshot: window.renderARAgingSnapshot,
+    renderAPAgingSnapshot: window.renderAPAgingSnapshot,
+    renderInventorySnapshot: window.renderInventorySnapshot,
+    renderFixedAssetsSnapshot: window.renderFixedAssetsSnapshot,
+    renderTaxComplianceCard: window.renderTaxComplianceCard,
+    renderSetupChecklistCard: window.renderSetupChecklistCard,
+    renderHealthComplianceCard: window.renderHealthComplianceCard,
+  };
+
+  // 🔹 ROLE-BASED WIDGETS
+  for (const key of widgets) {
+    const fn = widgetMap[key];
+    await safeWidget(key, fn, CURRENT_PERIOD_KEY);
+  }
+
+  // 🔹 ALWAYS SHOW THESE (financial core)
+  await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
+  await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
+  await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
+  await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
+}
 
 function destroyChart(name) {
   if (window[name] && typeof window[name].destroy === "function") {
@@ -10622,7 +10626,7 @@ async function loadDashboard() {
     });
   }
 
-  await refreshDashboardByPeriod();
+  renderDashboardByRoleAndPeriod();  // ONLY ONE — role-based
 
   async function refreshDashboardByPeriod() {
     await safeWidget("Main KPIs", window.renderDashboardKPIs, CURRENT_PERIOD_KEY);
@@ -10640,8 +10644,7 @@ async function loadDashboard() {
     await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
     await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
     await safeWidget("Analysis widget", window.renderAnalysisWidget, CURRENT_PERIOD_KEY);
-    await safeWidget("Cash trend chart", window.renderCashTrendChart, CURRENT_PERIOD_KEY);
-    await safeWidget("Insight banner", window.renderDashboardInsights, CURRENT_PERIOD_KEY);
+
   }
 
   console.log("loadDashboard(): done.");
@@ -17420,17 +17423,9 @@ function collectStmtOpts() {
     renderTBMini(CURRENT_PERIOD_KEY);
     if (window.renderCashFlow) window.renderCashFlow(CURRENT_PERIOD_KEY);
 
-    // ADD THESE:
-    if (window.renderCashTrendChart) window.renderCashTrendChart(CURRENT_PERIOD_KEY);
-    if (window.renderDashboardInsights) window.renderDashboardInsights(CURRENT_PERIOD_KEY);
-    if (window.renderAnalysisWidget) window.renderAnalysisWidget(CURRENT_PERIOD_KEY);
-
-    // add these if they are not already in loadDashboard-only flow:
-    if (window.renderMonthEndClose) window.renderMonthEndClose(CURRENT_PERIOD_KEY);
-    if (window.renderARAgingSnapshot) window.renderARAgingSnapshot(CURRENT_PERIOD_KEY);
-    if (window.renderFixedAssetsSnapshot) window.renderFixedAssetsSnapshot(CURRENT_PERIOD_KEY);
-    if (window.renderInventorySnapshot) window.renderInventorySnapshot(CURRENT_PERIOD_KEY);
-    if (window.renderHealthComplianceCard) window.renderHealthComplianceCard(CURRENT_PERIOD_KEY);
+    if (window.renderDashboardByRoleAndPeriod) {
+      window.renderDashboardByRoleAndPeriod();
+    }    
     // ✅ Keep Statement Viewer period in sync with Financial Statements period filter
     const stmtPresetSel = document.getElementById("stmtPreset");
     const stmtTypeSel   = document.getElementById("stmtType");
