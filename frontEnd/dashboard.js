@@ -3985,6 +3985,32 @@ function renderNavTree(items) {
   });
 }
 
+window.__FS_DASHBOARD_CACHE__ = window.__FS_DASHBOARD_CACHE__ || null;
+window.__FS_DASHBOARD_CACHE_KEY__ = window.__FS_DASHBOARD_CACHE_KEY__ || "";
+
+async function getDashboardData(periodKey = "this_month", { force = false } = {}) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return null;
+
+  const cacheKey = `${cid}::${periodKey}`;
+
+  if (!force && window.__FS_DASHBOARD_CACHE__ && window.__FS_DASHBOARD_CACHE_KEY__ === cacheKey) {
+    return window.__FS_DASHBOARD_CACHE__;
+  }
+
+  const snap = await apiFetch(
+    ENDPOINTS.dashboardSnapshot(cid, {
+      preset: periodKey,
+      method: "direct",
+    })
+  );
+
+  window.__FS_DASHBOARD_CACHE__ = snap || null;
+  window.__FS_DASHBOARD_CACHE_KEY__ = cacheKey;
+
+  return window.__FS_DASHBOARD_CACHE__;
+}
+
   // ==========================================================
   // 14) NAV MENU + INVITE HELPERS (exactly as your block)
   // ==========================================================
@@ -5269,6 +5295,32 @@ function getDashboardRole() {
   if (["cfo", "partner", "director", "manager", "senior"].includes(role)) return "executive";
   if (["assistant", "junior", "accountant"].includes(role)) return "manager";
   return "operator";
+}
+
+const role = getDashboardRole();
+const widgets = DASHBOARD_WIDGETS[role] || DASHBOARD_WIDGETS.operator;
+
+const widgetMap = {
+  renderDashboardKPIs: window.renderDashboardKPIs,
+  renderRevenueTrendChart: window.renderRevenueTrendChart,
+  renderProfitTrendChart: window.renderProfitTrendChart,
+  renderMarginTrendChart: window.renderMarginTrendChart,
+  renderRevenueExpenseVariance: window.renderRevenueExpenseVariance,
+  renderCashFlowTrendChart: window.renderCashTrendChart,
+  renderInsightBanner: window.renderDashboardInsights,
+  renderMonthEndClose: window.renderMonthEndClose,
+  renderARAgingSnapshot: window.renderARAgingSnapshot,
+  renderAPAgingSnapshot: window.renderAPAgingSnapshot,
+  renderInventorySnapshot: window.renderInventorySnapshot,
+  renderFixedAssetsSnapshot: window.renderFixedAssetsSnapshot,
+  renderTaxComplianceCard: window.renderTaxComplianceCard,
+  renderSetupChecklistCard: window.renderSetupChecklistCard,
+  renderHealthComplianceCard: window.renderHealthComplianceCard,
+};
+
+for (const key of widgets) {
+  const fn = widgetMap[key];
+  await safeWidget(key, fn, CURRENT_PERIOD_KEY);
 }
 
 const DASHBOARD_WIDGETS = {
@@ -10070,65 +10122,353 @@ function fmtShortMonthLabel(value) {
 }
 
 
-async function renderCashTrendChart(periodKey = "this_month") {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  const canvas = document.getElementById("cashChart");
-  if (!cid || !canvas || typeof Chart !== "function") return;
+window.__FS_ANALYSIS_VIEW__ = window.__FS_ANALYSIS_VIEW__ || "cash";
 
-  try {
-    const snap = await apiFetch(
-      ENDPOINTS.dashboardSnapshot(cid, { preset: periodKey, method: "direct" })
-    );
+function destroyFsChart(key) {
+  if (window[key] && typeof window[key].destroy === "function") {
+    window[key].destroy();
+  }
+  window[key] = null;
+}
 
-    const rows = Array.isArray(snap?.trends?.cash) ? snap.trends.cash : [];
-    const labels = rows.map(r => r.label || r.period || "");
-    const values = rows.map(r => Number(r.value || 0));
+function setAnalysisTabState(activeView) {
+  document.querySelectorAll("[data-analysis-view]").forEach((btn) => {
+    const isActive = btn.dataset.analysisView === activeView;
+    btn.classList.toggle("btn-highlight", isActive);
+  });
+}
 
-    destroyFsChart("__fsCashChart");
+function showAnalysisChartMode({ title, subtitle = "" }) {
+  const titleEl = document.getElementById("analysisChartTitle");
+  const subEl = document.getElementById("analysisChartSubtitle");
+  const chartWrap = document.getElementById("analysisChartWrap");
+  const textPanel = document.getElementById("analysisTextPanel");
 
-    window.__fsCashChart = new Chart(canvas, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Cash Trend",
-            data: values,
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true },
-          tooltip: {
-            callbacks: {
-              label(ctx) {
-                const v = Number(ctx.raw || 0);
-                return typeof money === "function" ? money(v) : String(v);
-              },
-            },
-          },
-        },
-        scales: {
-          y: {
-            ticks: {
-              callback(value) {
-                return typeof money === "function" ? money(Number(value || 0)) : value;
-              },
-            },
-          },
-        },
-      },
-    });
-  } catch (e) {
-    console.error("renderCashTrendChart error:", e);
+  if (titleEl) titleEl.textContent = title;
+  if (subEl) subEl.textContent = subtitle;
+  if (chartWrap) chartWrap.classList.remove("hidden");
+  if (textPanel) {
+    textPanel.classList.add("hidden");
+    textPanel.innerHTML = "";
   }
 }
 
+function showAnalysisTextMode({ title, subtitle = "", html = "" }) {
+  const titleEl = document.getElementById("analysisChartTitle");
+  const subEl = document.getElementById("analysisChartSubtitle");
+  const chartWrap = document.getElementById("analysisChartWrap");
+  const textPanel = document.getElementById("analysisTextPanel");
+
+  if (titleEl) titleEl.textContent = title;
+  if (subEl) subEl.textContent = subtitle;
+  if (chartWrap) chartWrap.classList.add("hidden");
+  if (textPanel) {
+    textPanel.classList.remove("hidden");
+    textPanel.innerHTML = html;
+  }
+}
+
+function bindAnalysisWidgetTabs() {
+  document.querySelectorAll("[data-analysis-view]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+
+    btn.addEventListener("click", async () => {
+      window.__FS_ANALYSIS_VIEW__ = btn.dataset.analysisView || "cash";
+      await renderAnalysisWidget(CURRENT_PERIOD_KEY || "this_month");
+    });
+  });
+
+  setAnalysisTabState(window.__FS_ANALYSIS_VIEW__ || "cash");
+}
+
+async function getDashboardSnapshot(periodKey = "this_month") {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return null;
+
+  return await apiFetch(
+    ENDPOINTS.dashboardSnapshot(cid, {
+      preset: periodKey,
+      method: "direct",
+    })
+  );
+}
+
+async function renderRevenueExpenseChart(periodKey = "this_month") {
+  const canvas = document.getElementById("cashChart");
+  if (!canvas || typeof Chart !== "function") return;
+
+  const snap = await getDashboardSnapshot(periodKey);
+  if (!snap) return;
+
+  const pnl = snap.pnl || {};
+  const revenue = Number(pnl.revenue || 0);
+  const cogs = Math.abs(Number(pnl.cogs || 0));
+  const expenses = Math.abs(Number(pnl.expenses || 0));
+
+  showAnalysisChartMode({
+    title: "Revenue vs Expenses",
+    subtitle: snap?.meta?.label || "Selected period",
+  });
+
+  destroyFsChart("__fsAnalysisChart");
+
+  window.__fsAnalysisChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: ["Revenue", "Cost of Sales", "Operating Expenses"],
+      datasets: [
+        {
+          label: "Amount",
+          data: [revenue, cogs, expenses],
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = Number(ctx.raw || 0);
+              return typeof money === "function" ? money(v) : String(v);
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback(value) {
+              return typeof money === "function" ? money(Number(value || 0)) : value;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function renderProfitTrendChart(periodKey = "this_month") {
+  const canvas = document.getElementById("cashChart");
+  if (!canvas || typeof Chart !== "function") return;
+
+  const snap = await getDashboardSnapshot(periodKey);
+  if (!snap) return;
+
+  const rows = Array.isArray(snap?.trends?.profit) ? snap.trends.profit : [];
+  const labels = rows.map(r => r.label || r.period || "");
+  const values = rows.map(r => Number(r.value || 0));
+
+  showAnalysisChartMode({
+    title: "Profit Trend",
+    subtitle: "Recent monthly trend",
+  });
+
+  destroyFsChart("__fsAnalysisChart");
+
+  window.__fsAnalysisChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Profit",
+          data: values,
+          tension: 0.35,
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = Number(ctx.raw || 0);
+              return typeof money === "function" ? money(v) : String(v);
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback(value) {
+              return typeof money === "function" ? money(Number(value || 0)) : value;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function renderMarginTrendChart(periodKey = "this_month") {
+  const canvas = document.getElementById("cashChart");
+  if (!canvas || typeof Chart !== "function") return;
+
+  const snap = await getDashboardSnapshot(periodKey);
+  if (!snap) return;
+
+  const revenueRows = Array.isArray(snap?.trends?.revenue) ? snap.trends.revenue : [];
+  const profitRows = Array.isArray(snap?.trends?.profit) ? snap.trends.profit : [];
+
+  const labels = revenueRows.map(r => r.label || r.period || "");
+  const marginValues = revenueRows.map((r, i) => {
+    const revenue = Number(r.value || 0);
+    const profit = Number(profitRows[i]?.value || 0);
+    return revenue ? Number(((profit / revenue) * 100).toFixed(2)) : 0;
+  });
+
+  showAnalysisChartMode({
+    title: "Net Margin Trend",
+    subtitle: "Profit as a percentage of revenue",
+  });
+
+  destroyFsChart("__fsAnalysisChart");
+
+  window.__fsAnalysisChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Net Margin %",
+          data: marginValues,
+          tension: 0.35,
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              return `${Number(ctx.raw || 0).toFixed(2)}%`;
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback(value) {
+              return `${value}%`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function renderCashTrendChart(periodKey = "this_month") {
+  const canvas = document.getElementById("cashChart");
+  if (!canvas || typeof Chart !== "function") return;
+
+  const snap = await getDashboardSnapshot(periodKey);
+  if (!snap) return;
+
+  const rows = Array.isArray(snap?.trends?.cash) ? snap.trends.cash : [];
+  const labels = rows.map(r => r.label || r.period || "");
+  const values = rows.map(r => Number(r.value || 0));
+
+  showAnalysisChartMode({
+    title: "Cash Trend",
+    subtitle: snap?.meta?.label || "Selected period",
+  });
+
+  destroyFsChart("__fsAnalysisChart");
+
+  window.__fsAnalysisChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Cash",
+          data: values,
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = Number(ctx.raw || 0);
+              return typeof money === "function" ? money(v) : String(v);
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback(value) {
+              return typeof money === "function" ? money(Number(value || 0)) : value;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function renderAnalysisSummaryPanel(periodKey = "this_month") {
+  const snap = await getDashboardSnapshot(periodKey);
+  if (!snap) return;
+
+  const items = Array.isArray(snap?.insights) ? snap.insights : [];
+  const html = items.length
+    ? `<ul class="list-disc ml-4 space-y-2 text-slate-600">${items.map(x => `<li>${x}</li>`).join("")}</ul>`
+    : `<div class="text-slate-500">No analysis available yet.</div>`;
+
+  showAnalysisTextMode({
+    title: "Brief Financial Analysis",
+    subtitle: snap?.meta?.label || "Selected period",
+    html,
+  });
+}
+
+async function renderAnalysisWidget(periodKey = "this_month") {
+  bindAnalysisWidgetTabs();
+
+  const view = window.__FS_ANALYSIS_VIEW__ || "cash";
+  setAnalysisTabState(view);
+
+  if (view === "cash") return await renderCashTrendChart(periodKey);
+  if (view === "revexp") return await renderRevenueExpenseChart(periodKey);
+  if (view === "profit") return await renderProfitTrendChart(periodKey);
+  if (view === "margin") return await renderMarginTrendChart(periodKey);
+  if (view === "analysis") return await renderAnalysisSummaryPanel(periodKey);
+
+  return await renderCashTrendChart(periodKey);
+}
+
+window.bindAnalysisWidgetTabs = bindAnalysisWidgetTabs;
+window.renderAnalysisWidget = renderAnalysisWidget;
 window.renderCashTrendChart = renderCashTrendChart;
+window.renderRevenueExpenseChart = renderRevenueExpenseChart;
+window.renderProfitTrendChart = renderProfitTrendChart;
+window.renderMarginTrendChart = renderMarginTrendChart;
+window.renderAnalysisSummaryPanel = renderAnalysisSummaryPanel;
+
 
 async function renderDashboardInsights(periodKey = "this_month") {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -10299,7 +10639,7 @@ async function loadDashboard() {
     await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
     await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
     await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
-
+    await safeWidget("Analysis widget", window.renderAnalysisWidget, CURRENT_PERIOD_KEY);
     await safeWidget("Cash trend chart", window.renderCashTrendChart, CURRENT_PERIOD_KEY);
     await safeWidget("Insight banner", window.renderDashboardInsights, CURRENT_PERIOD_KEY);
   }
@@ -17068,6 +17408,9 @@ function collectStmtOpts() {
 
     CURRENT_PERIOD_KEY = pk;
 
+    window.__FS_DASHBOARD_CACHE__ = null;
+    window.__FS_DASHBOARD_CACHE_KEY__ = "";    
+
     const { label } = buildPeriodParams(CURRENT_PERIOD_KEY);
     if (periodLbl) periodLbl.textContent = label || "";
 
@@ -17080,7 +17423,14 @@ function collectStmtOpts() {
     // ADD THESE:
     if (window.renderCashTrendChart) window.renderCashTrendChart(CURRENT_PERIOD_KEY);
     if (window.renderDashboardInsights) window.renderDashboardInsights(CURRENT_PERIOD_KEY);
+    if (window.renderAnalysisWidget) window.renderAnalysisWidget(CURRENT_PERIOD_KEY);
 
+    // add these if they are not already in loadDashboard-only flow:
+    if (window.renderMonthEndClose) window.renderMonthEndClose(CURRENT_PERIOD_KEY);
+    if (window.renderARAgingSnapshot) window.renderARAgingSnapshot(CURRENT_PERIOD_KEY);
+    if (window.renderFixedAssetsSnapshot) window.renderFixedAssetsSnapshot(CURRENT_PERIOD_KEY);
+    if (window.renderInventorySnapshot) window.renderInventorySnapshot(CURRENT_PERIOD_KEY);
+    if (window.renderHealthComplianceCard) window.renderHealthComplianceCard(CURRENT_PERIOD_KEY);
     // ✅ Keep Statement Viewer period in sync with Financial Statements period filter
     const stmtPresetSel = document.getElementById("stmtPreset");
     const stmtTypeSel   = document.getElementById("stmtType");
@@ -51028,116 +51378,163 @@ async function renderDashboardKPIs(periodKey = "this_month") {
 
 window.renderDashboardKPIs = renderDashboardKPIs;
 
-  function renderMonthEndClose() {
-    const tag = $("#closeStatusTag");
-    const bar = $("#closeProgress");
-    const list = $("#closeChecklist");
-    if (!tag || !bar || !list) return;
+async function renderMonthEndClose(periodKey = "this_month") {
+  const tag = $("#closeStatusTag");
+  const bar = $("#closeProgress");
+  const list = $("#closeChecklist");
+  if (!tag || !bar || !list) return;
 
-    const closeCfg = store.get(K.MONTH_CLOSE, {}) || {};
+  try {
+    const snap = await getDashboardData(periodKey);
+    const aging = snap?.aging || {};
+    const bs = snap?.balanceSheet || {};
+    const counts = snap?.counts || {};
+
+    const arTotal = Number(aging?.ar?.total || 0);
+    const apTotal = Number(aging?.ap?.total || 0);
+    const bsCheck = Number(bs?.check || 0);
+    const customers = Number(counts?.customers || 0);
+    const vendors = Number(counts?.vendors || 0);
+
     const steps = [
-      { key: "bankReconciled", label: "Bank accounts reconciled" },
-      { key: "docsCaptured", label: "All invoices & bills captured" },
-      { key: "deprPosted", label: "Depreciation posted" },
-      { key: "reportsReviewed", label: "P&L & Balance Sheet reviewed" },
-      { key: "periodLocked", label: "Period locked" },
+      { label: "Customers loaded", done: customers > 0 },
+      { label: "Vendors loaded", done: vendors > 0 },
+      { label: "Receivables reviewed", done: arTotal >= 0 },
+      { label: "Payables reviewed", done: apTotal >= 0 },
+      { label: "Balance Sheet reviewed", done: Math.abs(bsCheck) <= 1 },
     ];
 
     const total = steps.length;
-    const done = steps.filter((s) => !!closeCfg[s.key]).length;
+    const done = steps.filter(s => s.done).length;
     const pct = total ? Math.round((done / total) * 100) : 0;
 
-    tag.textContent = pct === 100 ? "Closed" : "In Progress";
-    bar.style.width = pct + "%";
+    tag.textContent = pct === 100 ? "Closed" : (pct >= 60 ? "In Progress" : "Not started");
+    bar.style.width = `${pct}%`;
 
     list.innerHTML = steps
-      .map((s) => {
-        const isDone = !!closeCfg[s.key];
-        const box = isDone ? "☑" : "☐";
-        return `<li>${box} ${s.label}</li>`;
-      })
+      .map(s => `<li>${s.done ? "☑" : "☐"} ${s.label}</li>`)
       .join("");
+  } catch (e) {
+    console.error("renderMonthEndClose error:", e);
   }
+}
+window.renderMonthEndClose = renderMonthEndClose;
 
-  function renderARAgingSnapshot() {
-    const hostAR = $("#agingAR");
-    const hostAP = $("#agingAP");
-    if (!hostAR || !hostAP) return;
+async function renderARAgingSnapshot(periodKey = "this_month") {
+  const hostAR = $("#agingAR");
+  const hostAP = $("#agingAP");
+  if (!hostAR || !hostAP) return;
 
-    const arCfg = store.get(K.AGING_AR, {}) || {};
-    const apCfg = store.get(K.AGING_AP, {}) || {};
+  try {
+    const snap = await getDashboardData(periodKey);
+    const ar = snap?.aging?.ar || {};
+    const ap = snap?.aging?.ap || {};
 
-    const defaultBuckets = ["current", "1-30", "31-60", "61-90", "90+"];
-    function buildBucketObject(cfg) {
-      const obj = {};
-      defaultBuckets.forEach((b) => {
-        obj[b] = Number(cfg[b]) || 0;
-      });
-      return obj;
-    }
-    const bucketsAR = buildBucketObject(arCfg);
-    const bucketsAP = buildBucketObject(apCfg);
+    const arBuckets = {
+      "0-30": Number(ar["0_30"] || 0),
+      "31-60": Number(ar["31_60"] || 0),
+      "61-90": Number(ar["61_90"] || 0),
+      "91-120": Number(ar["91_120"] || 0),
+      "121+": Number(ar["121_plus"] || 0),
+    };
+
+    const apBuckets = {
+      "Current": Number(ap["current"] || 0),
+      "1-30": Number(ap["1_30"] || 0),
+      "31-60": Number(ap["31_60"] || 0),
+      "61-90": Number(ap["61_90"] || 0),
+      "91+": Number(ap["91_plus"] || 0),
+    };
 
     function renderAgingRows(host, buckets) {
       const max = Math.max(...Object.values(buckets), 0);
+
       host.innerHTML = Object.entries(buckets)
         .map(([bucket, value]) => {
           const width = max ? Math.max(8, (value / max) * 100) : 0;
           return `
-        <div class="flex items-center gap-2">
-          <span class="w-16">${bucket}</span>
-          <div class="flex-1 h-1.5 bg-slate-100 rounded">
-            <div class="h-1.5 rounded bg-[var(--fs-teal)]" style="width:${width}%"></div>
-          </div>
-          <span class="w-24 text-right">${money(value)}</span>
-        </div>
-      `;
+            <div class="flex items-center gap-2">
+              <span class="w-16">${bucket}</span>
+              <div class="flex-1 h-1.5 bg-slate-100 rounded">
+                <div class="h-1.5 rounded bg-[var(--fs-teal)]" style="width:${width}%"></div>
+              </div>
+              <span class="w-24 text-right">${money(value)}</span>
+            </div>
+          `;
         })
         .join("");
     }
 
-    renderAgingRows(hostAR, bucketsAR);
-    renderAgingRows(hostAP, bucketsAP);
+    renderAgingRows(hostAR, arBuckets);
+    renderAgingRows(hostAP, apBuckets);
+  } catch (e) {
+    console.error("renderARAgingSnapshot error:", e);
+    hostAR.innerHTML = `<div>No receivables yet.</div>`;
+    hostAP.innerHTML = `<div>No payables yet.</div>`;
   }
+}
+window.renderARAgingSnapshot = renderARAgingSnapshot;
+window.renderAPAgingSnapshot = renderARAgingSnapshot;
 
-  function renderFixedAssetsSnapshot() {
-    const elBook = $("#faBookValue");
-    const elDep = $("#faDep");
-    const elNet = $("#faNet");
-    const elPend = $("#faPending");
-    if (!elBook || !elDep || !elNet || !elPend) return;
+async function renderFixedAssetsSnapshot(periodKey = "this_month") {
+  const elBook = $("#faBookValue");
+  const elDep = $("#faDep");
+  const elNet = $("#faNet");
+  const elPend = $("#faPending");
+  if (!elBook || !elDep || !elNet || !elPend) return;
 
-    const fa = store.get(K.FIXED_ASSETS, {}) || {};
-    const book = Number(fa.bookValue) || 0;
-    const dep = Number(fa.accumDep) || 0;
-    const net = book - dep;
-    const pending = Number(fa.pendingCount) || 0;
+  try {
+    const snap = await getDashboardData(periodKey);
+    const fa = snap?.fixedAssets || {};
+
+    const book = Number(fa.bookValue || 0);
+    const dep = Number(fa.accumDep || 0);
+    const net = Number(fa.netBookValue != null ? fa.netBookValue : (book - dep));
+    const pending = Number(fa.pendingCount || 0);
 
     elBook.textContent = money(book);
     elDep.textContent = money(dep);
     elNet.textContent = money(net);
     elPend.textContent = String(pending);
+  } catch (e) {
+    console.error("renderFixedAssetsSnapshot error:", e);
+    elBook.textContent = money(0);
+    elDep.textContent = money(0);
+    elNet.textContent = money(0);
+    elPend.textContent = "0";
   }
+}
+window.renderFixedAssetsSnapshot = renderFixedAssetsSnapshot;
 
-  function renderInventorySnapshot() {
-    const v = $("#invValue");
-    const s = $("#invSkus");
-    const d = $("#invDays");
-    const a = $("#invAlerts");
-    if (!v || !s || !d || !a) return;
+async function renderInventorySnapshot(periodKey = "this_month") {
+  const v = $("#invValue");
+  const s = $("#invSkus");
+  const d = $("#invDays");
+  const a = $("#invAlerts");
+  if (!v || !s || !d || !a) return;
 
-    const inv = store.get(K.INVENTORY, {}) || {};
-    const value = Number(inv.value) || 0;
-    const skus = Number(inv.skus) || 0;
-    const days = Number(inv.days) || 0;
-    const alerts = Number(inv.alerts) || 0;
+  try {
+    const snap = await getDashboardData(periodKey);
+    const inv = snap?.inventory || {};
+
+    const value = Number(inv.value || 0);
+    const skus = Number(inv.skus || 0);
+    const days = Number(inv.days || 0);
+    const alerts = Number(inv.alerts || 0);
 
     v.textContent = money(value);
     s.textContent = String(skus);
     d.textContent = String(days);
     a.textContent = String(alerts);
+  } catch (e) {
+    console.error("renderInventorySnapshot error:", e);
+    v.textContent = money(0);
+    s.textContent = "0";
+    d.textContent = "0";
+    a.textContent = "0";
   }
-
+}
+window.renderInventorySnapshot = renderInventorySnapshot;
   // ==============================
   // VAT Period Helpers
   // ==============================
@@ -51494,41 +51891,58 @@ async function renderTaxComplianceCard() {
   }
 }
 
-  function renderSetupChecklistCard() {
-    const list = $("#setupChecklist");
-    if (!list) return;
+async function renderSetupChecklistCard(periodKey = "this_month") {
+  const list = $("#setupChecklist");
+  if (!list) return;
 
-    const cfg = store.get(K.SETUP_STEPS, {}) || {};
+  try {
+    const snap = await getDashboardData(periodKey);
+    const customers = Number(snap?.customers?.countActive || 0);
+    const vendors = Number(snap?.vendors?.countActive || 0);
+    const revenue = Number(snap?.pnl?.revenueYtd || 0);
+    const assets = Number(snap?.balanceSheet?.assets || 0);
+
     const steps = [
-      { key: "companyProfile", label: "Complete company profile" },
-      { key: "coaImport", label: "Review/import Chart of Accounts" },
-      { key: "integrations", label: "Configure bank feeds / integrations" },
-      { key: "industry", label: "Select industry profile" },
-      { key: "rolesPerms", label: "Configure roles & permissions" },
+      { label: "Company profile configured", done: !!CURRENT_COMPANY },
+      { label: "Chart of Accounts active", done: assets !== 0 || revenue !== 0 },
+      { label: "Customers created", done: customers > 0 },
+      { label: "Vendors created", done: vendors > 0 },
+      { label: "Transactions captured", done: revenue !== 0 },
     ];
 
     list.innerHTML = steps
-      .map((s) => {
-        const done = !!cfg[s.key];
-        const box = done ? "☑" : "☐";
-        return `<li>${box} ${s.label}</li>`;
-      })
+      .map(s => `<li>${s.done ? "☑" : "☐"} ${s.label}</li>`)
       .join("");
+  } catch (e) {
+    console.error("renderSetupChecklistCard error:", e);
+    list.innerHTML = `<li>Unable to load setup checklist.</li>`;
   }
+}
+window.renderSetupChecklistCard = renderSetupChecklistCard;
 
-  function renderHealthComplianceCard() {
-    const vat = $("#hcVatStatus");
-    const bank = $("#hcBankStatus");
-    const backup = $("#hcBackup");
-    const suspense = $("#hcSuspense");
-    if (!vat || !bank || !backup || !suspense) return;
+async function renderHealthComplianceCard(periodKey = "this_month") {
+  const vat = $("#hcVatStatus");
+  const bank = $("#hcBankStatus");
+  const backup = $("#hcBackup");
+  const suspense = $("#hcSuspense");
+  if (!vat || !bank || !backup || !suspense) return;
 
-    const hc = store.get(K.HEALTH, {}) || {};
-    vat.textContent = hc.vatStatus || "Not prepared";
-    bank.textContent = hc.bankStatus || "Unknown";
-    backup.textContent = hc.lastBackup || "—";
-    suspense.textContent = money(Number(hc.suspenseBalance) || 0);
+  try {
+    const snap = await getDashboardData(periodKey);
+
+    vat.textContent = Number(snap?.vat?.net || 0) !== 0 ? "Prepared" : "Not prepared";
+    bank.textContent = "OK";
+    backup.textContent = "—";
+    suspense.textContent = money(Math.abs(Number(snap?.balanceSheet?.check || 0)));
+  } catch (e) {
+    console.error("renderHealthComplianceCard error:", e);
+    vat.textContent = "Not prepared";
+    bank.textContent = "Unknown";
+    backup.textContent = "—";
+    suspense.textContent = money(0);
   }
+}
+window.renderHealthComplianceCard = renderHealthComplianceCard;
  
   function renderFixedAssets() {
     console.log("[FixedAssets] Render placeholder — no UI yet");
@@ -51543,7 +51957,7 @@ async function renderTaxComplianceCard() {
     }
   }
 
-  function renderVendors() {
+function renderVendors() {
   console.log("renderVendors() stub called");
 }
 
