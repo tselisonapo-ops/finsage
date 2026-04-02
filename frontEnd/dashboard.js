@@ -20551,6 +20551,378 @@ const NOTES_REGISTRY = {
   }
 };
 
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pickValue(values = {}) {
+  if (!values || typeof values !== "object") return 0;
+  if ("cur" in values) return num(values.cur);
+  if ("tot" in values) return num(values.tot);
+  if ("total" in values) return num(values.total);
+  if ("noncur" in values && "cur" in values) return num(values.cur) + num(values.noncur);
+  if ("col2" in values) return num(values.col2);
+  if ("c3" in values) return num(values.c3);
+  return 0;
+}
+
+function absn(v) {
+  return Math.abs(num(v));
+}
+
+function normalizePnl(data) {
+  const out = {
+    revenue: 0,
+    totalIncome: 0,
+    operatingExpenses: 0,
+    operatingProfit: 0,
+    netProfit: 0,
+    basis: String(data?.meta?.basis || "").toLowerCase(),
+    compare: String(data?.meta?.compare || "none").toLowerCase(),
+    label: data?.meta?.label || "",
+  };
+
+  if (Array.isArray(data?.sections)) {
+    const byKey = Object.fromEntries(data.sections.map(s => [s.key, s]));
+    out.revenue = pickValue(byKey.revenue?.totals || {});
+    out.totalIncome = pickValue(byKey.gross_profit?.totals || {});
+    out.operatingExpenses = absn(pickValue(byKey.operating_expenses?.totals || {}));
+    out.operatingProfit = pickValue(byKey.operating_profit?.totals || {});
+    out.netProfit = num(
+      data?.net_result?.values?.cur ??
+      data?.net_result?.amount ??
+      byKey.profit_before_tax?.totals?.cur
+    );
+    return out;
+  }
+
+  if (Array.isArray(data?.blocks)) {
+    const byKey = Object.fromEntries(data.blocks.map(b => [b.key, b]));
+
+    out.revenue =
+      num(byKey.revenues?.values?.col2) ||
+      num(byKey.revenues?.values?.c3) ||
+      0;
+
+    out.totalIncome =
+      num(byKey.gross_profit?.values?.col2) ||
+      num(byKey.gross_profit?.values?.c3) ||
+      out.revenue;
+
+    const gna = byKey.gna?.lines || [];
+    const selling = byKey.selling?.lines || [];
+
+    out.operatingExpenses = [...gna, ...selling].reduce((s, line) => {
+      const vals = line?.values || {};
+      return s + absn(vals.col1 ?? vals.c2 ?? 0);
+    }, 0);
+
+    const operatingCandidates = [
+      byKey.operating_profit?.values?.col2,
+      byKey.operating_profit?.values?.c3,
+      byKey.profit_before_tax?.values?.col2,
+      byKey.profit_before_tax?.values?.c3,
+      byKey.net_profit?.values?.col2,
+      byKey.net_profit?.values?.c3,
+    ].map(num);
+
+    out.operatingProfit = operatingCandidates.find(v => v !== 0) ?? (out.totalIncome - out.operatingExpenses);
+    out.netProfit = out.operatingProfit;
+
+    return out;
+  }
+
+  return out;
+}
+
+window.canViewInterpretation = function () {
+  return (
+    hasPermission("can_view_statement_interpretation") ||
+    hasPermission("can_prepare_financials")
+  );
+};
+
+function normalizeBs(data) {
+  const curAssets = pickValue(data?.assets?.current_assets?.totals || {});
+  const nonCurAssets = pickValue(data?.assets?.non_current_assets?.totals || {});
+  const totalAssets = pickValue(data?.assets?.totals?.values || {});
+
+  const curLiab = pickValue(data?.equity_and_liabilities?.current_liabilities?.totals || {});
+  const nonCurLiab = pickValue(data?.equity_and_liabilities?.non_current_liabilities?.totals || {});
+  const totalLiab = curLiab + nonCurLiab;
+
+  const equity =
+    pickValue(data?.equity_and_liabilities?.equity?.totals || {}) ||
+    pickValue(data?.equity_and_liabilities?.totals?.equity?.values || {});
+
+  const balanceCheck =
+    pickValue(data?.balance_check?.values || {});
+
+  const cashLine = (data?.assets?.current_assets?.lines || []).find(
+    x => String(x?.name || "").toLowerCase().includes("cash")
+  );
+  const receivablesLine = (data?.assets?.current_assets?.lines || []).find(
+    x => String(x?.name || "").toLowerCase().includes("receivable")
+  );
+  const inventoryLine = (data?.assets?.current_assets?.lines || []).find(
+    x => String(x?.name || "").toLowerCase().includes("invent")
+  );
+
+  return {
+    currentAssets: curAssets,
+    nonCurrentAssets: nonCurAssets,
+    totalAssets,
+    currentLiabilities: curLiab,
+    nonCurrentLiabilities: nonCurLiab,
+    totalLiabilities: totalLiab,
+    equity,
+    workingCapital: curAssets - curLiab,
+    balanceCheck,
+    cash: pickValue(cashLine?.values || {}),
+    receivables: pickValue(receivablesLine?.values || {}),
+    inventory: pickValue(inventoryLine?.values || {}),
+  };
+}
+
+function normalizeCf(data) {
+  const sections = Array.isArray(data?.sections) ? data.sections : [];
+  const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
+
+  const operating = pickValue(byKey.operating?.totals || {});
+  const investing = pickValue(byKey.investing?.totals || {});
+  const financing = pickValue(byKey.financing?.totals || {});
+  const netChange = pickValue(data?.net_change?.values || {});
+  const opening = pickValue(data?.opening_balance?.values || {});
+  const closing = pickValue(data?.closing_balance?.values || {});
+
+  let netProfit = 0;
+  const opLines = byKey.operating?.lines || [];
+  const npLine = opLines.find(x => String(x.code || "").toUpperCase() === "NET_PROFIT");
+  if (npLine) netProfit = pickValue(npLine.values || {});
+
+  const wcArLine = opLines.find(x => String(x.code || "").toUpperCase() === "WC_AR");
+  const receivablesDrag = wcArLine ? pickValue(wcArLine.values || {}) : 0;
+
+  const reconGap =
+    pickValue(data?.cash_position?.reconciliation_gap?.values || {});
+
+  return {
+    operating,
+    investing,
+    financing,
+    netChange,
+    opening,
+    closing,
+    netProfit,
+    receivablesDrag,
+    reconGap,
+    method: String(data?.meta?.method || "").toLowerCase(),
+    basis: String(data?.meta?.basis || "").toLowerCase(),
+  };
+}
+
+async function renderStatementInterpretation(stmtType, data, ctx = {}) {
+  const host = document.getElementById("statementInterpretationHost");
+  if (!host) return;
+
+  // 🔐 permission gate
+  if (!window.canViewInterpretation?.()) {
+    host.innerHTML = `
+      <div class="text-sm text-slate-500">
+        You don’t have access to financial interpretation.
+      </div>
+    `;
+    return;
+  }
+
+  if (stmtType === "tb" || stmtType === "notes") {
+    host.innerHTML = `
+      <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+        Interpretation is available for Profit &amp; Loss, Balance Sheet, and Cash Flow.
+      </div>
+    `;
+    return;
+  }
+
+  if (!data || typeof data !== "object") {
+    host.innerHTML = `
+      <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+        No interpretation data available for this selection.
+      </div>
+    `;
+    return;
+  }
+
+  if (stmtType === "pnl") {
+    const x = normalizePnl(data);
+    const opMargin = x.revenue ? (x.operatingProfit / x.revenue) : 0;
+    const netMargin = x.revenue ? (x.netProfit / x.revenue) : 0;
+    const expenseRatio = x.revenue ? (x.operatingExpenses / x.revenue) : 0;
+
+    const comments = [
+      x.netProfit < 0
+        ? "The business is loss-making for the selected period."
+        : "The business remained profitable for the selected period.",
+      expenseRatio > 0.8
+        ? "Operating costs are absorbing a large share of revenue."
+        : "Operating costs are relatively contained against revenue.",
+      opMargin < 0
+        ? "Core operations are not currently generating surplus."
+        : "Core operations are generating a positive operating return."
+    ];
+
+    if (x.revenue <= 0) comments.unshift("Revenue is zero or negative, so margin interpretation is limited.");
+
+    host.innerHTML = renderInterpretationCards([
+      metricCard("Revenue", x.revenue, ctx),
+      metricCard("Operating profit", x.operatingProfit, ctx),
+      metricCard("Net profit", x.netProfit, ctx),
+      metricCard("Operating margin", opMargin, ctx, "percent"),
+      metricCard("Net margin", netMargin, ctx, "percent"),
+      metricCard("Expense ratio", expenseRatio, ctx, "percent"),
+    ], comments);
+
+    return;
+  }
+
+  if (stmtType === "bs") {
+    const x = normalizeBs(data);
+    const currentRatio = x.currentLiabilities ? (x.currentAssets / x.currentLiabilities) : null;
+    const quickRatio = x.currentLiabilities
+      ? ((x.currentAssets - x.inventory) / x.currentLiabilities)
+      : null;
+    const cashRatio = x.currentLiabilities ? (x.cash / x.currentLiabilities) : null;
+    const debtRatio = x.totalAssets ? (x.totalLiabilities / x.totalAssets) : 0;
+    const debtToEquity = x.equity ? (x.totalLiabilities / x.equity) : null;
+    const equityRatio = x.totalAssets ? (x.equity / x.totalAssets) : 0;
+
+    const comments = [
+      x.workingCapital < 0
+        ? "Short-term obligations exceed short-term assets."
+        : "Short-term assets exceed short-term obligations.",
+      currentRatio !== null && currentRatio < 1
+        ? "Liquidity is tight based on the current ratio."
+        : "Liquidity coverage appears acceptable based on current assets.",
+      debtRatio > 0.6
+        ? "A large portion of assets is financed by liabilities."
+        : "Leverage appears moderate relative to the asset base."
+    ];
+
+    if (Math.abs(x.balanceCheck) > 1) {
+      comments.unshift("Balance sheet is not fully in balance, so ratios should be treated with caution.");
+    }
+
+    host.innerHTML = renderInterpretationCards([
+      metricCard("Working capital", x.workingCapital, ctx),
+      metricCard("Current ratio", currentRatio, ctx, "number"),
+      metricCard("Quick ratio", quickRatio, ctx, "number"),
+      metricCard("Cash ratio", cashRatio, ctx, "number"),
+      metricCard("Debt ratio", debtRatio, ctx, "percent"),
+      metricCard("Debt-to-equity", debtToEquity, ctx, "number"),
+      metricCard("Equity ratio", equityRatio, ctx, "percent"),
+    ], comments);
+
+    return;
+  }
+
+  if (stmtType === "cf") {
+    const x = normalizeCf(data);
+    const cashConversion =
+      Math.abs(x.netProfit) > 0.0001 ? (x.operating / x.netProfit) : null;
+
+    const comments = [
+      x.operating < 0
+        ? "Operations consumed cash during the selected period."
+        : "Operations generated cash during the selected period.",
+      x.receivablesDrag < 0
+        ? "Receivables growth is a major drag on cash flow."
+        : "Receivables did not materially weaken cash flow.",
+      x.closing < 0
+        ? "The entity ended the period in a net overdraft position."
+        : "The entity ended the period with positive cash equivalents."
+    ];
+
+    if (Math.abs(x.reconGap) > 1) {
+      comments.unshift("Cashflow reconciliation gap exists, so cash movement should be reviewed.");
+    }
+
+    host.innerHTML = renderInterpretationCards([
+      metricCard("Operating cash flow", x.operating, ctx),
+      metricCard("Investing cash flow", x.investing, ctx),
+      metricCard("Financing cash flow", x.financing, ctx),
+      metricCard("Net cash movement", x.netChange, ctx),
+      metricCard("Closing cash position", x.closing, ctx),
+      metricCard("Cash conversion", cashConversion, ctx, "number"),
+    ], comments);
+
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+      Interpretation is not available for this statement type.
+    </div>
+  `;
+}
+
+function metricCard(label, value, ctx, type = "amount") {
+  return {
+    label,
+    value,
+    type,
+    currency: ctx?.currency || "ZAR",
+  };
+}
+
+function fmtInterpretValue(v, type = "amount", currency = "ZAR") {
+  if (v == null || !Number.isFinite(v)) return "—";
+
+  if (type === "percent") {
+    return `${(v * 100).toFixed(1)}%`;
+  }
+
+  if (type === "number") {
+    return Number(v).toFixed(2);
+  }
+
+  if (type === "amount") {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(v);
+  }
+
+  return String(v);
+}
+
+function renderInterpretationCards(metrics = [], comments = []) {
+  const cards = metrics.map(m => `
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div class="text-[11px] uppercase tracking-wide text-slate-500">${m.label}</div>
+      <div class="mt-1 text-lg font-semibold text-slate-900">
+        ${fmtInterpretValue(m.value, m.type, m.currency)}
+      </div>
+    </div>
+  `).join("");
+
+  const notes = comments.map(c => `
+    <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+      ${c}
+    </div>
+  `).join("");
+
+  return `
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      ${cards}
+    </div>
+    <div class="mt-3 space-y-2">
+      ${notes}
+    </div>
+  `;
+}
+
 async function renderStatementViewer(stmtType = "pnl", opts = {}) {
   const canvas = document.getElementById("stmtCanvas");
   if (!canvas) return;
@@ -20854,6 +21226,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
             ...periodParams,
             format: "json",
           });
+
         break;
       }
 
@@ -20877,6 +21250,9 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
             ` + canvas.innerHTML;
           }
 
+          if (typeof renderStatementInterpretation === "function") {
+            renderStatementInterpretation("notes", null, { label });
+          }
           return;
         }
 
@@ -20884,16 +21260,38 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
           <div class="text-xs text-slate-600">
             Notes are generated via the <b>Generate Notes</b> button.
           </div>`;
+        if (typeof renderStatementInterpretation === "function") {
+          renderStatementInterpretation("notes", null, { label });
+        }
         return;
       }
 
       default: {
         canvas.innerHTML = `<div class="text-xs text-red-500">Unknown statement: ${stmtType}</div>`;
+        if (typeof renderStatementInterpretation === "function") {
+          renderStatementInterpretation("notes", null, { label });
+        }       
         return;
       }
     }
 
     const data = await apiFetch(url);
+
+    try {
+      await renderStatementInterpretation(t, data, {
+        cid,
+        label,
+        preset: presetKey,
+        basis,
+        template,
+        compare,
+        cols_mode,
+        detail,
+        currency: data?.meta?.currency || "ZAR",
+      });
+    } catch (e) {
+      console.warn("renderStatementInterpretation failed:", e);
+    }
 
     // ✅ If backend returns resolved dates, store them for Generate Notes
     if (data?.meta?.from_date && data?.meta?.to_date) {

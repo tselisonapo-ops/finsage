@@ -1683,14 +1683,17 @@
 
           <!-- Top row: summaries + notes -->
           <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div class="card p-4">
-              <h3 class="font-bold">Profit &amp; Loss (summary)</h3>
-              <div id="pnlSummary" class="mt-2 text-sm"></div>
-            </div>
+            <div class="card p-4 xl:col-span-2">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <h3 class="font-bold">Financial Statement Interpretation</h3>
+                  <p class="text-sm text-slate-600 mt-1">
+                    Ratios, trends and interpretation for the selected statement and period.
+                  </p>
+                </div>
+              </div>
 
-            <div class="card p-4">
-              <h3 class="font-bold">Balance Sheet (summary)</h3>
-              <div id="bsSummary" class="mt-2 text-sm"></div>
+              <div id="statementInterpretationHost" class="mt-3"></div>
             </div>
 
             <div class="card p-4">

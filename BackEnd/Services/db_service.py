@@ -3172,6 +3172,63 @@ class DatabaseService:
         incoming = base_payload.get("permissions") or {}
         role = normalize_role(role)
 
+        # local dashboard-role sets to avoid circular imports
+        enterprise_roles = {
+            "owner",
+            "admin",
+            "cfo",
+            "manager",
+            "senior",
+            "accountant",
+            "clerk",
+        }
+
+        practitioner_roles = {
+            "bookkeeper",
+            "fs_compiler",
+            "audit_staff",
+            "senior_associate",
+            "audit_manager",
+            "client_service_manager",
+            "reviewer",
+            "audit_partner",
+            "engagement_partner",
+            "quality_control_reviewer",
+        }
+
+        dual_dashboard_roles = {
+            "owner",
+            "audit_partner",
+            "engagement_partner",
+            "audit_manager",
+            "client_service_manager",
+        }
+
+        preparer_roles = {
+            "bookkeeper",
+            "accountant",
+            "clerk",
+            "fs_compiler",
+            "audit_staff",
+            "senior_associate",
+            "reviewer",
+            "quality_control_reviewer",
+        }
+
+        manager_roles = {
+            "manager",
+            "audit_manager",
+            "client_service_manager",
+            "cfo",
+        }
+
+        executive_roles = {
+            "owner",
+            "admin",
+            "audit_partner",
+            "engagement_partner",
+        }
+
         perms = {
             "can_view_dashboard": True,
             "can_view_reports": True,
@@ -3189,33 +3246,37 @@ class DatabaseService:
             "can_edit_tax_settings": False,
             "can_lock_periods": False,
 
-            # delegated posting shell
-            "can_access_enterprise_dashboard": True,
+            # new engagement / interpretation permissions
+            "can_view_engagements": False,
+            "can_manage_engagements": False,
+            "can_view_statement_interpretation": False,
+
+            # delegated workspace shell
+            "can_access_enterprise_dashboard": False,
             "can_access_practitioner_dashboard": False,
             "can_access_delegated_posting_workspace": True,
         }
 
-        if role in {
-            "bookkeeper",
-            "accountant",
-            "clerk",
-            "fs_compiler",
-            "audit_staff",
-            "senior_associate",
-            "reviewer",
-        }:
+        # dashboard access model for delegated workspace
+        if role in dual_dashboard_roles:
+            perms["can_access_enterprise_dashboard"] = True
+            perms["can_access_practitioner_dashboard"] = True
+        else:
+            perms["can_access_enterprise_dashboard"] = role in enterprise_roles
+            perms["can_access_practitioner_dashboard"] = role in practitioner_roles
+
+        # preparers / reviewers
+        if role in preparer_roles:
             perms["can_manage_ar"] = True
             perms["can_manage_ap"] = True
             perms["can_post_journals"] = True
             perms["can_prepare_financials"] = True
             perms["can_manage_fixed_assets"] = True
+            perms["can_view_engagements"] = True
+            perms["can_view_statement_interpretation"] = True
 
-        if role in {
-            "manager",
-            "audit_manager",
-            "client_service_manager",
-            "cfo",
-        }:
+        # managers / controllers
+        if role in manager_roles:
             perms["can_manage_ar"] = True
             perms["can_manage_ap"] = True
             perms["can_manage_banking"] = True
@@ -3226,14 +3287,12 @@ class DatabaseService:
             perms["can_manage_company_setup"] = True
             perms["can_edit_tax_settings"] = True
             perms["can_view_control_room"] = True
+            perms["can_view_engagements"] = True
+            perms["can_manage_engagements"] = True
+            perms["can_view_statement_interpretation"] = True
 
-        if role in {
-            "owner",
-            "admin",
-            "audit_partner",
-            "engagement_partner",
-            "partner",
-        }:
+        # executive / partner level
+        if role in executive_roles:
             perms["can_manage_ar"] = True
             perms["can_manage_ap"] = True
             perms["can_manage_banking"] = True
@@ -3246,6 +3305,19 @@ class DatabaseService:
             perms["can_edit_tax_settings"] = True
             perms["can_lock_periods"] = True
             perms["can_view_control_room"] = True
+            perms["can_view_engagements"] = True
+            perms["can_manage_engagements"] = True
+            perms["can_view_statement_interpretation"] = True
+
+        # dual-dashboard roles should behave like enterprise executives in delegated workspace
+        if role in dual_dashboard_roles:
+            perms["can_view_statement_interpretation"] = True
+            perms["can_view_reports"] = True
+            perms["can_prepare_financials"] = True
+
+        # safety: anyone who can prepare or approve can view interpretation
+        if perms["can_prepare_financials"] or perms["can_approve"]:
+            perms["can_view_statement_interpretation"] = True
 
         bounded_keys = [
             "can_view_dashboard",
@@ -3257,9 +3329,17 @@ class DatabaseService:
             "can_prepare_financials",
             "can_manage_fixed_assets",
             "can_approve",
+            "can_view_control_room",
+            "can_manage_users",
             "can_manage_company_setup",
             "can_edit_tax_settings",
             "can_lock_periods",
+            "can_view_engagements",
+            "can_manage_engagements",
+            "can_view_statement_interpretation",
+            "can_access_enterprise_dashboard",
+            "can_access_practitioner_dashboard",
+            "can_access_delegated_posting_workspace",
         ]
 
         for key in bounded_keys:
@@ -3272,6 +3352,10 @@ class DatabaseService:
             "target_company_id": int(target_company_id),
             "engagement_id": int(engagement_id),
             "role": role,
+            "dashboard_access": {
+                "enterprise": bool(perms["can_access_enterprise_dashboard"]),
+                "practitioner": bool(perms["can_access_practitioner_dashboard"]),
+            },
         }
 
         return perms
