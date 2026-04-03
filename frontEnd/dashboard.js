@@ -31411,12 +31411,12 @@ function renderPaymentsRows(payments, currency = null) {
     });
   }
 
-  function isApprovalRequiredResponse(res, json) {
-    return (
-      Number(res?.status) === 202 &&
-      String(json?.error || "").toUpperCase() === "APPROVAL_REQUIRED"
-    );
-  }
+function isApprovalRequiredResponse(res, json) {
+  return (
+    Number(res?.status) === 202 &&
+    String(json?.error || "").toUpperCase() === "APPROVAL_REQUIRED"
+  );
+}
 
   function loanWorkflowStatusLabel(status) {
     const s = String(status || "").toLowerCase();
@@ -31536,23 +31536,20 @@ async function saveLoan() {
   if (!(Number(payload.term_count) > 0)) return alert("Term must be greater than zero.");
 
   try {
-    let res;
+    let json;
     if (LOANS_STATE.currentLoanId) {
-      res = await window.apiFetch(ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId), {
+      json = await window.apiFetch(ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId), {
         method: "PUT",
         body: JSON.stringify(payload),
       });
     } else {
-      res = await window.apiFetch(ENDPOINTS.loans.create(cid), {
+      json = await window.apiFetch(ENDPOINTS.loans.create(cid), {
         method: "POST",
         body: JSON.stringify(payload),
       });
     }
 
-    
-
-    // approval-required is a valid workflow result, not an error
-    if (isApprovalRequiredResponse(res, json)) {
+    if (isApprovalRequiredResponse(json)) {
       await handleLoanApprovalRequired(json, {
         successMessage: "Loan request submitted for approval.",
         keepModalOpen: true,
@@ -31564,7 +31561,7 @@ async function saveLoan() {
       return;
     }
 
-    if (!res.ok || json?.ok === false) {
+    if (json?.ok === false) {
       throw new Error(json?.error || "Failed to save loan");
     }
 
@@ -31589,53 +31586,53 @@ async function saveLoan() {
   }
 }
 
-  async function recalculateLoanSchedule() {
-    const cid = getCid();
-    const loanId = LOANS_STATE.currentLoanId;
-    if (!cid || !loanId) return alert("Select a loan first.");
+async function recalculateLoanSchedule() {
+  const cid = getCid();
+  const loanId = LOANS_STATE.currentLoanId;
+  if (!cid || !loanId) return alert("Select a loan first.");
 
-    try {
-      const res = await window.apiFetch(ENDPOINTS.loans.recalculate(cid, loanId), {
-        method: "POST",
-      });
+  try {
+    const json = await window.apiFetch(ENDPOINTS.loans.recalculate(cid, loanId), {
+      method: "POST",
+    });
 
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Failed to recalculate schedule");
-      }
-
-      await loadLoanDetail(loanId);
-      setLoanTab("loan-schedule");
-      alert("Schedule recalculated.");
-    } catch (e) {
-      console.error("[Loans] recalculateLoanSchedule failed", e);
-      alert(String(e.message || e));
+    if (json?.ok === false) {
+      throw new Error(json?.error || "Failed to recalculate schedule");
     }
+
+    await loadLoanDetail(loanId);
+    setLoanTab("loan-schedule");
+    alert("Schedule recalculated.");
+  } catch (e) {
+    console.error("[Loans] recalculateLoanSchedule failed", e);
+    alert(String(e.message || e));
   }
+}
 
-  async function reclassifyLoan() {
-    const cid = getCid();
-    const loanId = LOANS_STATE.currentLoanId;
-    if (!cid || !loanId) return alert("Select a loan first.");
+async function reclassifyLoan() {
+  const cid = getCid();
+  const loanId = LOANS_STATE.currentLoanId;
+  if (!cid || !loanId) return alert("Select a loan first.");
 
-    try {
-      const res = await window.apiFetch(ENDPOINTS.loans.reclassify(cid, loanId), {
-        method: "POST",
-        body: JSON.stringify({
-          as_of_date: new Date().toISOString().slice(0, 10),
-        }),
-      });
+  try {
+    const json = await window.apiFetch(ENDPOINTS.loans.reclassify(cid, loanId), {
+      method: "POST",
+      body: JSON.stringify({
+        as_of_date: new Date().toISOString().slice(0, 10),
+      }),
+    });
 
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Failed to post reclassification");
-      }
-
-      await loadLoanDetail(loanId);
-      alert("Loan reclassification posted.");
-    } catch (e) {
-      console.error("[Loans] reclassifyLoan failed", e);
-      alert(String(e.message || e));
+    if (json?.ok === false) {
+      throw new Error(json?.error || "Failed to post reclassification");
     }
+
+    await loadLoanDetail(loanId);
+    alert("Loan reclassification posted.");
+  } catch (e) {
+    console.error("[Loans] reclassifyLoan failed", e);
+    alert(String(e.message || e));
   }
+}
 
   function openLoanPaymentModal() {
     const loan = LOANS_STATE.loanDetail?.loan;
@@ -31685,14 +31682,12 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
   if (!payload.bank_account_id) return alert("Bank account is required.");
 
   try {
-    const res = await window.apiFetch(ENDPOINTS.loans.paymentsCreate(cid, loanId), {
+    const json = await window.apiFetch(ENDPOINTS.loans.paymentsCreate(cid, loanId), {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
-
-    // ✅ approval-required is NOT an error
-    if (isApprovalRequiredResponse(res, json)) {
+    if (isApprovalRequiredResponse(json)) {
       LOANS_STATE.lastPaymentDraft = null;
 
       await handleLoanApprovalRequired(json, {
@@ -31706,7 +31701,7 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
       };
     }
 
-    if (!res.ok || json?.ok === false) {
+    if (json?.ok === false) {
       throw new Error(json?.error || "Failed to create loan payment");
     }
 
@@ -31717,7 +31712,10 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
     const preview = LOANS_STATE.lastPaymentDraft?.journal_preview || null;
 
     fillPaymentCards(p);
-    renderPaymentModalAllocations([], resolveLoanCurrency(loan.currency));
+    renderPaymentModalAllocations(
+      allocs,
+      resolveLoanCurrency(LOANS_STATE.loanDetail?.loan?.currency)
+    );
     renderPaymentModalJournal(preview);
 
     if (autoPost && p?.id) {
@@ -31816,12 +31814,11 @@ async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
   if (!cid || !paymentId) return;
 
   try {
-    const res = await window.apiFetch(ENDPOINTS.loans.paymentPost(cid, paymentId), {
+    const json = await window.apiFetch(ENDPOINTS.loans.paymentPost(cid, paymentId), {
       method: "POST",
     });
 
-    // ✅ approval-required is NOT an error
-    if (isApprovalRequiredResponse(res, json)) {
+    if (isApprovalRequiredResponse(json)) {
       await handleLoanApprovalRequired(json, {
         successMessage: "Loan payment posting submitted for approval.",
         keepModalOpen,
@@ -31829,7 +31826,7 @@ async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
       return;
     }
 
-    if (!res.ok || json?.ok === false) {
+    if (json?.ok === false) {
       throw new Error(json?.error || "Failed to post payment");
     }
 
@@ -31845,25 +31842,25 @@ async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
   }
 }
 
-  async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = {}) {
-    const cid = getCid();
-    if (!cid || !paymentId) return;
+async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = {}) {
+  const cid = getCid();
+  if (!cid || !paymentId) return;
 
-    try {
-      const res = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
+  try {
+    const json = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
 
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Failed to preview payment journal");
-      }
-
-      const entry = json?.data || null;
-      renderMainJournalPreview(entry);
-      if (pushToMainTab) setLoanTab("loan-journal");
-    } catch (e) {
-      console.error("[Loans] previewLoanPaymentJournal failed", e);
-      alert(String(e.message || e));
+    if (json?.ok === false) {
+      throw new Error(json?.error || "Failed to preview payment journal");
     }
+
+    const entry = json?.data || null;
+    renderMainJournalPreview(entry);
+    if (pushToMainTab) setLoanTab("loan-journal");
+  } catch (e) {
+    console.error("[Loans] previewLoanPaymentJournal failed", e);
+    alert(String(e.message || e));
   }
+}
 
   function createNewLoan() {
     LOANS_STATE.currentLoanId = null;
