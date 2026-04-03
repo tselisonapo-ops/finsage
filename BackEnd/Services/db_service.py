@@ -33594,37 +33594,35 @@ class DatabaseService:
         return profile_id
 
     def list_pending_credit_profiles(self, company_id: int) -> List[Dict[str, Any]]:
-        """
-        List credit profiles in any 'pending*' state for the current company
-        (pending, pending_senior, pending_cfo, etc.).
-        Used by /api/credit/pending and the approvals list.
-        """
         schema = self.company_schema(company_id)
 
-        # Make sure schema / table exists
         sql = f"""
         SELECT
             cp.id,
             cp.customer_id,
-            c.name   AS customer_name,
-            c.email  AS customer_email,
+            c.name AS customer_name,
+            c.email AS customer_email,
             cp.requested_limit,
             cp.requested_terms,
             cp.risk_band,
             cp.status,
             cp.created_at,
-            (cp.payload ->> 'createdBy') AS created_by,
+            NULL::text AS created_by,
             co.currency
         FROM {schema}.credit_profiles cp
         JOIN {schema}.customers c ON cp.customer_id = c.id
-        JOIN public.companies co   ON co.id = %s
+        JOIN public.companies co ON co.id = %s
         WHERE cp.status LIKE 'pending%%'
-        ORDER BY cp.created_at DESC;
+        ORDER BY cp.created_at DESC
         """
 
-        rows = self.fetch_all(sql, (company_id,))
-        items: List[Dict[str, Any]] = []
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(sql, (company_id,))
+            rows = cur.fetchall() or []
 
+        current_app.logger.warning("list_pending_credit_profiles company=%s rows=%s", company_id, len(rows))
+
+        items = []
         for r in rows:
             items.append({
                 "id": r["id"],
@@ -33641,7 +33639,6 @@ class DatabaseService:
             })
 
         return items
-
     
     def get_credit_profile(self, company_id: int, profile_id: int) -> Optional[Dict[str, Any]]:
         """

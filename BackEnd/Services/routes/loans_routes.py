@@ -43,18 +43,20 @@ def api_list_loans(company_id: int):
         q = (request.args.get("q") or "").strip()
         limit = int(request.args.get("limit") or 200)
 
-        conn = db_service.get_conn()
-        try:
-            out = db_service.list_loans(conn, int(company_id), status=status, q=q, limit=limit)
-        finally:
-            conn.close()
+        with db_service._conn_cursor() as (conn, cur):
+            out = db_service.list_loans(
+                conn,
+                int(company_id),
+                status=status,
+                q=q,
+                limit=limit,
+            )
 
         return jsonify({"ok": True, "data": out}), 200
 
     except Exception as e:
         current_app.logger.exception("❌ api_list_loans failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @loans_bp.route("/api/companies/<int:company_id>/loans", methods=["POST", "OPTIONS"])
 @require_auth
@@ -131,11 +133,13 @@ def api_create_loan(company_id: int):
             )
             return jsonify({"ok": False, "error": "APPROVAL_REQUIRED", "approval_request": req}), 202
 
-        conn = db_service.get_conn()
-        try:
-            out = db_service.create_loan(conn, int(company_id), data=raw, user_id=int(user_id))
-        finally:
-            conn.close()
+        with db_service._conn_cursor() as (conn, cur):
+            out = db_service.create_loan(
+                conn,
+                int(company_id),
+                data=raw,
+                user_id=int(user_id),
+            )
 
         try:
             db_service.audit_log(
@@ -190,8 +194,7 @@ def api_update_loan(company_id: int, loan_id: int):
         user_id = user.get("id") or payload.get("sub")
         user_id = int(user_id) if user_id is not None else None
 
-        conn = db_service.get_conn()
-        try:
+        with db_service._conn_cursor() as (conn, cur):
             out = db_service.update_loan(
                 conn,
                 int(company_id),
@@ -199,8 +202,6 @@ def api_update_loan(company_id: int, loan_id: int):
                 data=data,
                 user_id=user_id,
             )
-        finally:
-            conn.close()
 
         return jsonify({"ok": True, "data": out}), 200
 
@@ -221,11 +222,8 @@ def api_get_loan(company_id: int, loan_id: int):
         return deny
 
     try:
-        conn = db_service.get_conn()
-        try:
+        with db_service._conn_cursor() as (conn, cur):
             out = db_service.get_loan_full(conn, int(company_id), int(loan_id))
-        finally:
-            conn.close()
 
         if not out:
             return jsonify({"ok": False, "error": "loan not found"}), 404
@@ -261,11 +259,13 @@ def api_recalculate_loan_schedule(company_id: int, loan_id: int):
         user_id = user.get("id") or payload.get("sub")
         user_id = int(user_id) if user_id is not None else None
 
-        conn = db_service.get_conn()
-        try:
-            out = db_service.generate_loan_schedule(conn, int(company_id), loan_id=int(loan_id), user_id=user_id)
-        finally:
-            conn.close()
+        with db_service._conn_cursor() as (conn, cur):
+            out = db_service.generate_loan_schedule(
+                conn,
+                int(company_id),
+                loan_id=int(loan_id),
+                user_id=user_id,
+            )
 
         return jsonify({"ok": True, "data": out}), 200
 
@@ -341,12 +341,15 @@ def api_create_loan_payment(company_id: int, loan_id: int):
         role_norm = normalize_role(user.get("user_role") or user.get("company_role") or user.get("role") or "")
         is_cfo = role_norm in {"cfo", "admin", "owner"} or is_owner
 
-        loan_row = db_service.get_loan_by_id(db_service.get_conn(), int(company_id), int(loan_id))
+        with db_service._conn_cursor() as (conn, cur):
+            loan_row = db_service.get_loan_by_id(conn, int(company_id), int(loan_id))
+
         currency = (
             str((loan_row or {}).get("currency") or "").strip().upper()
             or str((company_profile or {}).get("currency") or "").strip().upper()
             or "USD"
         )
+
         review_required = (mode == "controlled") or (
             mode == "assisted" and loan_action_review_required(pol, "payment", user=user) and not is_owner
         )
@@ -388,8 +391,7 @@ def api_create_loan_payment(company_id: int, loan_id: int):
 
             return jsonify({"ok": False, "error": "APPROVAL_REQUIRED", "approval_request": req}), 202
 
-        conn = db_service.get_conn()
-        try:
+        with db_service._conn_cursor() as (conn, cur):
             draft = db_service.create_loan_payment(
                 conn,
                 int(company_id),
@@ -397,8 +399,6 @@ def api_create_loan_payment(company_id: int, loan_id: int):
                 data=raw,
                 user_id=int(user_id),
             )
-        finally:
-            conn.close()
 
         try:
             db_service.audit_log(
@@ -438,18 +438,18 @@ def api_preview_loan_payment_journal(company_id: int, payment_id: int):
         return deny
 
     try:
-        conn = db_service.get_conn()
-        try:
-            out = db_service.preview_loan_payment_journal(conn, int(company_id), payment_id=int(payment_id))
-        finally:
-            conn.close()
+        with db_service._conn_cursor() as (conn, cur):
+            out = db_service.preview_loan_payment_journal(
+                conn,
+                int(company_id),
+                payment_id=int(payment_id),
+            )
 
         return jsonify({"ok": True, "data": out}), 200
 
     except Exception as e:
         current_app.logger.exception("❌ api_preview_loan_payment_journal failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @loans_bp.route("/api/companies/<int:company_id>/loans/payments/<int:payment_id>/post", methods=["POST", "OPTIONS"])
 @require_auth
@@ -494,16 +494,13 @@ def api_post_loan_payment(company_id: int, payment_id: int):
                 "message": "Only CFO/admin/owner can release loan payments in controlled mode."
             }), 403
 
-        conn = db_service.get_conn()
-        try:
+        with db_service._conn_cursor() as (conn, cur):
             out = db_service.post_loan_payment(
                 conn,
                 int(company_id),
                 payment_id=int(payment_id),
                 user_id=int(user_id),
             )
-        finally:
-            conn.close()
 
         try:
             db_service.audit_log(
@@ -555,8 +552,7 @@ def api_post_loan_reclassification(company_id: int, loan_id: int):
         user_id = user.get("id") or payload.get("sub")
         user_id = int(user_id) if user_id is not None else None
 
-        conn = db_service.get_conn()
-        try:
+        with db_service._conn_cursor() as (conn, cur):
             out = db_service.post_loan_reclassification(
                 conn,
                 int(company_id),
@@ -564,8 +560,6 @@ def api_post_loan_reclassification(company_id: int, loan_id: int):
                 as_of_date=data.get("as_of_date"),
                 user_id=user_id,
             )
-        finally:
-            conn.close()
 
         return jsonify({"ok": True, "data": out}), 200
 
