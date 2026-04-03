@@ -31377,27 +31377,27 @@ function renderPaymentsRows(payments, currency = null) {
     $("#loanStatOutstanding").textContent = window.money(totalOutstanding, getCurrency());
   }
 
-  async function loadBankAccounts() {
-    const cid = getCid();
-    if (!cid) return [];
+async function loadBankAccounts() {
+  const cid = getCid();
+  if (!cid) return [];
 
-    if (typeof ENDPOINTS?.bankAccounts !== "function") {
-      LOANS_STATE.bankAccounts = [];
-      fillBankAccountSelects([]);
-      return [];
-    }
-
-    try {
-      const res = await window.apiFetch(ENDPOINTS.bankAccounts(cid));
-      LOANS_STATE.bankAccounts = json?.data || json || [];
-    } catch (e) {
-      console.warn("[Loans] bank accounts endpoint unavailable", e);
-      LOANS_STATE.bankAccounts = [];
-    }
-
-    fillBankAccountSelects(LOANS_STATE.bankAccounts);
-    return LOANS_STATE.bankAccounts;
+  if (typeof ENDPOINTS?.bankAccounts !== "function") {
+    LOANS_STATE.bankAccounts = [];
+    fillBankAccountSelects([]);
+    return [];
   }
+
+  try {
+    const json = await window.apiFetch(ENDPOINTS.bankAccounts(cid));
+    LOANS_STATE.bankAccounts = json?.data || json || [];
+  } catch (e) {
+    console.warn("[Loans] bank accounts endpoint unavailable", e);
+    LOANS_STATE.bankAccounts = [];
+  }
+
+  fillBankAccountSelects(LOANS_STATE.bankAccounts);
+  return LOANS_STATE.bankAccounts;
+}
 
   function fillBankAccountSelects(rows) {
     const options = [
