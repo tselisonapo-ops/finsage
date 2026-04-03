@@ -43,6 +43,23 @@ def company_policy(company_id: int) -> dict:
     require_kyc = bool(policy.get("require_kyc", False))
     require_vendor_kyc_on_release = bool(policy.get("require_vendor_kyc_on_release", False))
 
+    loan_review_enabled = bool(
+        (policy.get("loans") or {}).get("review_enabled")
+        or policy.get("loan_review_enabled")
+        or policy.get("require_loan_review")
+    )
+
+    require_loan_create_review = bool(
+        (policy.get("loans") or {}).get("require_create_review")
+        or policy.get("require_loan_create_review")
+    )
+
+    require_loan_payment_review = bool(
+        (policy.get("loans") or {}).get("require_payment_review")
+        or policy.get("require_loan_payment_review")
+        or policy.get("payment_workflow_enabled")
+        or policy.get("require_payment_approval")
+    )
     return {
         "mode": mode,
 
@@ -62,6 +79,10 @@ def company_policy(company_id: int) -> dict:
         # KYC
         "require_kyc": require_kyc,
         "require_vendor_kyc_on_release": require_vendor_kyc_on_release,
+
+        "loan_review_enabled": loan_review_enabled,
+        "require_loan_create_review": require_loan_create_review,
+        "require_loan_payment_review": require_loan_payment_review,
 
         # diagnostics
         "_warnings": warnings,
@@ -238,3 +259,4 @@ def recommend_mode_after_invite(company_profile: dict, invited_role: str) -> str
     if mode == "owner_managed":
         return "assisted"
     return None
+

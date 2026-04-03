@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
 from flask import current_app
 
+from dateutil.relativedelta import relativedelta
 from psycopg2 import errorcodes
 import psycopg2
 import psycopg2.extras
@@ -235,6 +236,16 @@ def _resolve_role(row: Dict[str, Any]) -> str:
         row.get("subcategory", ""),
         row.get("standard", ""),
     )
+
+def _money(x) -> Decimal:
+    return Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+def _safe_date(x):
+    if x is None or x == "":
+        return None
+    if isinstance(x, date):
+        return x
+    return datetime.strptime(str(x), "%Y-%m-%d").date()
 
 def _normalize_coa_rows_codes(
     rows: List[Any],
@@ -6017,6 +6028,12 @@ class DatabaseService:
                 ''lease_payment'',
                 ''lease_modification'',
                 ''lease_termination'',
+                ''loan_origination'',
+                ''loan_payment'',
+                ''loan_reclassification'',
+                ''loan_accrual'',
+                ''loan_restructure'',
+                ''loan_settlement'',
                 ''bank'',
                 ''adjustment'',
                 ''opening_balance'',
@@ -15438,6 +15455,739 @@ class DatabaseService:
             m.movement_type;
 
         -- ==================================================
+        -- LOANS & FINANCING
+        -- ==================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.loans (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            loan_name TEXT NOT NULL,
+            loan_reference TEXT NULL,
+            lender_name TEXT NOT NULL,
+            lender_id INT NULL,
+
+            loan_type TEXT NOT NULL DEFAULT 'term_loan', -- term_loan|vehicle|mortgage|overdraft|director_loan|other
+
+            start_date DATE NOT NULL,
+            first_payment_date DATE NOT NULL,
+            maturity_date DATE NULL,
+
+            principal_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            annual_interest_rate NUMERIC(12,6) NOT NULL DEFAULT 0,
+            interest_method TEXT NOT NULL DEFAULT 'amortised_fixed_payment',
+            -- amortised_fixed_payment|straight_line_interest|interest_only|manual
+
+            term_count INT NOT NULL DEFAULT 0,
+            payment_frequency TEXT NOT NULL DEFAULT 'monthly', -- weekly|monthly|quarterly|annually
+            balloon_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fees_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accrued_interest_opening NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            repayment_holiday_count INT NOT NULL DEFAULT 0,
+            variable_rate BOOLEAN NOT NULL DEFAULT FALSE,
+            rate_review_rule TEXT NULL,
+
+            bank_account_id INT NULL,
+
+            interest_expense_account_code TEXT NOT NULL,
+            accrued_interest_account_code TEXT NULL,
+            loan_payable_current_account_code TEXT NOT NULL,
+            loan_payable_noncurrent_account_code TEXT NOT NULL,
+            fees_asset_account_code TEXT NULL,
+            fees_expense_account_code TEXT NULL,
+
+            currency TEXT NOT NULL DEFAULT 'ZAR',
+
+            payment_amount NUMERIC(18,2) NULL,
+            total_interest_projected NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_repayment_projected NUMERIC(18,2) NOT NULL DEFAULT 0,
+            next_due_date DATE NULL,
+
+            outstanding_principal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            outstanding_interest NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|active|closed|restructured|void
+            schedule_version INT NOT NULL DEFAULT 1,
+
+            originated_journal_id INT NULL,
+            last_reclass_journal_id INT NULL,
+
+            last_payment_date DATE NULL,
+            closed_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,
+            agreement_reference TEXT NULL,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- Safe additive evolution (loans)
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS loan_name TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS loan_reference TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS lender_name TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS lender_id INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS loan_type TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS start_date DATE;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS first_payment_date DATE;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS maturity_date DATE;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS principal_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS annual_interest_rate NUMERIC(12,6);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS interest_method TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS term_count INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS payment_frequency TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS balloon_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS fees_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS accrued_interest_opening NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS repayment_holiday_count INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS variable_rate BOOLEAN;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS rate_review_rule TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS bank_account_id INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS interest_expense_account_code TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS accrued_interest_account_code TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS loan_payable_current_account_code TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS loan_payable_noncurrent_account_code TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS fees_asset_account_code TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS fees_expense_account_code TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS currency TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS payment_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS total_interest_projected NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS total_repayment_projected NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS next_due_date DATE;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS outstanding_principal NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS outstanding_interest NUMERIC(18,2);
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS status TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS schedule_version INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS originated_journal_id INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS last_reclass_journal_id INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS last_payment_date DATE;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS agreement_reference TEXT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS meta_json JSONB;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS created_by INT;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.loans
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.loans
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        UPDATE {schema}.loans
+        SET variable_rate = COALESCE(variable_rate, FALSE)
+        WHERE variable_rate IS NULL;
+
+        UPDATE {schema}.loans
+        SET status = COALESCE(NULLIF(status,''), 'draft')
+        WHERE status IS NULL OR status = '';
+
+        UPDATE {schema}.loans
+        SET schedule_version = COALESCE(schedule_version, 1)
+        WHERE schedule_version IS NULL;
+
+        UPDATE {schema}.loans
+        SET principal_amount = COALESCE(principal_amount, 0),
+            annual_interest_rate = COALESCE(annual_interest_rate, 0),
+            balloon_amount = COALESCE(balloon_amount, 0),
+            fees_amount = COALESCE(fees_amount, 0),
+            accrued_interest_opening = COALESCE(accrued_interest_opening, 0),
+            repayment_holiday_count = COALESCE(repayment_holiday_count, 0),
+            total_interest_projected = COALESCE(total_interest_projected, 0),
+            total_repayment_projected = COALESCE(total_repayment_projected, 0),
+            outstanding_principal = COALESCE(outstanding_principal, principal_amount, 0),
+            outstanding_interest = COALESCE(outstanding_interest, accrued_interest_opening, 0)
+        WHERE principal_amount IS NULL
+           OR annual_interest_rate IS NULL
+           OR balloon_amount IS NULL
+           OR fees_amount IS NULL
+           OR accrued_interest_opening IS NULL
+           OR repayment_holiday_count IS NULL
+           OR total_interest_projected IS NULL
+           OR total_repayment_projected IS NULL
+           OR outstanding_principal IS NULL
+           OR outstanding_interest IS NULL;
+
+        UPDATE {schema}.loans
+        SET meta_json = COALESCE(meta_json, '{{}}'::jsonb)
+        WHERE meta_json IS NULL;
+
+        UPDATE {schema}.loans
+        SET created_at = COALESCE(created_at, NOW())
+        WHERE created_at IS NULL;
+
+        UPDATE {schema}.loans
+        SET updated_at = COALESCE(updated_at, NOW())
+        WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.loans
+        ALTER COLUMN variable_rate SET NOT NULL,
+        ALTER COLUMN variable_rate SET DEFAULT FALSE,
+        ALTER COLUMN status SET NOT NULL,
+        ALTER COLUMN status SET DEFAULT 'draft',
+        ALTER COLUMN schedule_version SET NOT NULL,
+        ALTER COLUMN schedule_version SET DEFAULT 1,
+        ALTER COLUMN meta_json SET NOT NULL,
+        ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb,
+        ALTER COLUMN created_at SET NOT NULL,
+        ALTER COLUMN created_at SET DEFAULT NOW(),
+        ALTER COLUMN updated_at SET NOT NULL,
+        ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        DO $ck_loans$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loans_valid_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loans DROP CONSTRAINT %I',
+                    '{schema}', '{schema}_loans_valid_ck'
+                );
+            END IF;
+
+            EXECUTE format(
+                'ALTER TABLE %I.loans
+                 ADD CONSTRAINT %I
+                 CHECK (
+                    principal_amount >= 0
+                    AND annual_interest_rate >= 0
+                    AND balloon_amount >= 0
+                    AND fees_amount >= 0
+                    AND accrued_interest_opening >= 0
+                    AND repayment_holiday_count >= 0
+                    AND term_count > 0
+                    AND outstanding_principal >= 0
+                    AND outstanding_interest >= 0
+                    AND payment_frequency IN (''weekly'',''monthly'',''quarterly'',''annually'')
+                    AND interest_method IN (''amortised_fixed_payment'',''straight_line_interest'',''interest_only'',''manual'')
+                    AND loan_type IN (''term_loan'',''vehicle'',''mortgage'',''overdraft'',''director_loan'',''other'')
+                    AND status IN (''draft'',''active'',''closed'',''restructured'',''void'')
+                 )',
+                '{schema}', '{schema}_loans_valid_ck'
+            );
+        END $ck_loans$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_loans_reference_uq
+        ON {schema}.loans(company_id, lower(trim(loan_reference)))
+        WHERE loan_reference IS NOT NULL AND trim(loan_reference) <> '';
+
+        CREATE INDEX IF NOT EXISTS {schema}_loans_status_idx
+        ON {schema}.loans(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loans_lender_idx
+        ON {schema}.loans(company_id, lender_name);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loans_due_idx
+        ON {schema}.loans(company_id, next_due_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loans_bank_idx
+        ON {schema}.loans(company_id, bank_account_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.loan_schedules (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            loan_id INT NOT NULL,
+
+            schedule_version INT NOT NULL DEFAULT 1,
+            period_no INT NOT NULL,
+
+            due_date DATE NOT NULL,
+            opening_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            scheduled_payment NUMERIC(18,2) NOT NULL DEFAULT 0,
+            scheduled_interest NUMERIC(18,2) NOT NULL DEFAULT 0,
+            scheduled_principal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            current_portion_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            noncurrent_portion_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            payment_status TEXT NOT NULL DEFAULT 'open', -- open|partial|paid|skipped|capitalised
+            paid_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            paid_interest NUMERIC(18,2) NOT NULL DEFAULT 0,
+            paid_principal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            last_payment_date DATE NULL,
+
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS loan_id INT;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS schedule_version INT;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS period_no INT;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS due_date DATE;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS opening_balance NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS scheduled_payment NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS scheduled_interest NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS scheduled_principal NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS closing_balance NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS current_portion_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS noncurrent_portion_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS payment_status TEXT;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS paid_interest NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS paid_principal NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS last_payment_date DATE;
+        ALTER TABLE {schema}.loan_schedules ADD COLUMN IF NOT EXISTS meta_json JSONB;
+
+        UPDATE {schema}.loan_schedules
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.loan_schedules
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        UPDATE {schema}.loan_schedules
+        SET schedule_version = COALESCE(schedule_version, 1),
+            opening_balance = COALESCE(opening_balance, 0),
+            scheduled_payment = COALESCE(scheduled_payment, 0),
+            scheduled_interest = COALESCE(scheduled_interest, 0),
+            scheduled_principal = COALESCE(scheduled_principal, 0),
+            closing_balance = COALESCE(closing_balance, 0),
+            current_portion_amount = COALESCE(current_portion_amount, 0),
+            noncurrent_portion_amount = COALESCE(noncurrent_portion_amount, 0),
+            paid_amount = COALESCE(paid_amount, 0),
+            paid_interest = COALESCE(paid_interest, 0),
+            paid_principal = COALESCE(paid_principal, 0),
+            payment_status = COALESCE(NULLIF(payment_status,''), 'open'),
+            meta_json = COALESCE(meta_json, '{{}}'::jsonb);
+
+        ALTER TABLE {schema}.loan_schedules
+        ALTER COLUMN schedule_version SET NOT NULL,
+        ALTER COLUMN schedule_version SET DEFAULT 1,
+        ALTER COLUMN payment_status SET NOT NULL,
+        ALTER COLUMN payment_status SET DEFAULT 'open',
+        ALTER COLUMN meta_json SET NOT NULL,
+        ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb;
+
+        DO $ck_loan_schedules$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_schedules_valid_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_schedules DROP CONSTRAINT %I',
+                    '{schema}', '{schema}_loan_schedules_valid_ck'
+                );
+            END IF;
+
+            EXECUTE format(
+                'ALTER TABLE %I.loan_schedules
+                 ADD CONSTRAINT %I
+                 CHECK (
+                    period_no > 0
+                    AND opening_balance >= 0
+                    AND scheduled_payment >= 0
+                    AND scheduled_interest >= 0
+                    AND scheduled_principal >= 0
+                    AND closing_balance >= 0
+                    AND current_portion_amount >= 0
+                    AND noncurrent_portion_amount >= 0
+                    AND paid_amount >= 0
+                    AND paid_interest >= 0
+                    AND paid_principal >= 0
+                    AND payment_status IN (''open'',''partial'',''paid'',''skipped'',''capitalised'')
+                 )',
+                '{schema}', '{schema}_loan_schedules_valid_ck'
+            );
+        END $ck_loan_schedules$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_loan_sched_ver_period_uq
+        ON {schema}.loan_schedules(company_id, loan_id, schedule_version, period_no);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_sched_due_idx
+        ON {schema}.loan_schedules(company_id, loan_id, due_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_sched_status_idx
+        ON {schema}.loan_schedules(company_id, payment_status);
+
+        CREATE TABLE IF NOT EXISTS {schema}.loan_payments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            loan_id INT NOT NULL,
+
+            payment_date DATE NOT NULL,
+            amount_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            bank_account_id INT NOT NULL,
+            reference TEXT NULL,
+            description TEXT NULL,
+
+            auto_calculate_split BOOLEAN NOT NULL DEFAULT TRUE,
+
+            principal_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            interest_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accrued_interest_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fees_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            penalties_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            allocation_method TEXT NOT NULL DEFAULT 'schedule_order', -- schedule_order|manual
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|approved|posted|void|reversed
+
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            notes TEXT NULL,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS loan_id INT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS payment_date DATE;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS bank_account_id INT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS reference TEXT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS auto_calculate_split BOOLEAN;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS principal_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS interest_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS accrued_interest_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS fees_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS penalties_amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS allocation_method TEXT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS status TEXT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS posted_journal_id INT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS approved_by INT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS created_by INT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS meta_json JSONB;
+
+        UPDATE {schema}.loan_payments
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.loan_payments
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+        UPDATE {schema}.loan_payments
+        SET updated_at = COALESCE(updated_at, NOW())
+        WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.loan_payments
+        ALTER COLUMN updated_at SET NOT NULL,
+        ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        UPDATE {schema}.loan_payments
+        SET auto_calculate_split = COALESCE(auto_calculate_split, TRUE),
+            principal_amount = COALESCE(principal_amount, 0),
+            interest_amount = COALESCE(interest_amount, 0),
+            accrued_interest_amount = COALESCE(accrued_interest_amount, 0),
+            fees_amount = COALESCE(fees_amount, 0),
+            penalties_amount = COALESCE(penalties_amount, 0),
+            allocation_method = COALESCE(NULLIF(allocation_method,''), 'schedule_order'),
+            status = COALESCE(NULLIF(status,''), 'draft'),
+            created_at = COALESCE(created_at, NOW()),
+            meta_json = COALESCE(meta_json, '{{}}'::jsonb);
+
+        ALTER TABLE {schema}.loan_payments
+        ALTER COLUMN auto_calculate_split SET NOT NULL,
+        ALTER COLUMN auto_calculate_split SET DEFAULT TRUE,
+        ALTER COLUMN allocation_method SET NOT NULL,
+        ALTER COLUMN allocation_method SET DEFAULT 'schedule_order',
+        ALTER COLUMN status SET NOT NULL,
+        ALTER COLUMN status SET DEFAULT 'draft',
+        ALTER COLUMN created_at SET NOT NULL,
+        ALTER COLUMN created_at SET DEFAULT NOW(),
+        ALTER COLUMN meta_json SET NOT NULL,
+        ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb;
+
+        DO $ck_loan_payments$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_payments_valid_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payments DROP CONSTRAINT %I',
+                    '{schema}', '{schema}_loan_payments_valid_ck'
+                );
+            END IF;
+
+            EXECUTE format(
+                'ALTER TABLE %I.loan_payments
+                 ADD CONSTRAINT %I
+                 CHECK (
+                    amount_paid > 0
+                    AND principal_amount >= 0
+                    AND interest_amount >= 0
+                    AND accrued_interest_amount >= 0
+                    AND fees_amount >= 0
+                    AND penalties_amount >= 0
+                    AND allocation_method IN (''schedule_order'',''manual'')
+                    AND status IN (''draft'',''approved'',''posted'',''void'',''reversed'')
+                 )',
+                '{schema}', '{schema}_loan_payments_valid_ck'
+            );
+        END $ck_loan_payments$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_payments_loan_date_idx
+        ON {schema}.loan_payments(company_id, loan_id, payment_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_payments_status_idx
+        ON {schema}.loan_payments(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_payments_posted_journal_idx
+        ON {schema}.loan_payments(posted_journal_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.loan_payment_allocations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            payment_id INT NOT NULL,
+            loan_id INT NOT NULL,
+            loan_schedule_id INT NULL,
+
+            allocation_type TEXT NOT NULL, -- interest|principal|accrued_interest|fees|penalty
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allocation_order INT NOT NULL DEFAULT 1,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS company_id INT;
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS payment_id INT;
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS loan_id INT;
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS loan_schedule_id INT;
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS allocation_type TEXT;
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS amount NUMERIC(18,2);
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS allocation_order INT;
+        ALTER TABLE {schema}.loan_payment_allocations ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+
+        UPDATE {schema}.loan_payment_allocations
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.loan_payment_allocations
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        UPDATE {schema}.loan_payment_allocations
+        SET amount = COALESCE(amount, 0),
+            allocation_order = COALESCE(allocation_order, 1),
+            created_at = COALESCE(created_at, NOW());
+
+        ALTER TABLE {schema}.loan_payment_allocations
+        ALTER COLUMN allocation_order SET NOT NULL,
+        ALTER COLUMN allocation_order SET DEFAULT 1,
+        ALTER COLUMN created_at SET NOT NULL,
+        ALTER COLUMN created_at SET DEFAULT NOW();
+
+        DO $ck_loan_alloc$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_payment_alloc_valid_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payment_allocations DROP CONSTRAINT %I',
+                    '{schema}', '{schema}_loan_payment_alloc_valid_ck'
+                );
+            END IF;
+
+            EXECUTE format(
+                'ALTER TABLE %I.loan_payment_allocations
+                 ADD CONSTRAINT %I
+                 CHECK (
+                    amount > 0
+                    AND allocation_order > 0
+                    AND allocation_type IN (''interest'',''principal'',''accrued_interest'',''fees'',''penalty'')
+                 )',
+                '{schema}', '{schema}_loan_payment_alloc_valid_ck'
+            );
+        END $ck_loan_alloc$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_alloc_payment_idx
+        ON {schema}.loan_payment_allocations(company_id, payment_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_loan_alloc_schedule_idx
+        ON {schema}.loan_payment_allocations(company_id, loan_schedule_id);
+
+        -- --------------------------------------------------
+        -- FKs
+        -- --------------------------------------------------
+        DO $loan_fks$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loans_originated_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loans
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (originated_journal_id)
+                     REFERENCES %I.journal(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_loans_originated_journal_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loans_last_reclass_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loans
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (last_reclass_journal_id)
+                     REFERENCES %I.journal(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_loans_last_reclass_journal_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_sched_loan_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_schedules
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (loan_id)
+                     REFERENCES %I.loans(id)
+                     ON DELETE CASCADE',
+                    '{schema}', '{schema}_loan_sched_loan_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_payment_loan_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payments
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (loan_id)
+                     REFERENCES %I.loans(id)
+                     ON DELETE CASCADE',
+                    '{schema}', '{schema}_loan_payment_loan_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_payment_posted_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payments
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (posted_journal_id)
+                     REFERENCES %I.journal(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_loan_payment_posted_journal_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_alloc_payment_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payment_allocations
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (payment_id)
+                     REFERENCES %I.loan_payments(id)
+                     ON DELETE CASCADE',
+                    '{schema}', '{schema}_loan_alloc_payment_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_alloc_loan_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payment_allocations
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (loan_id)
+                     REFERENCES %I.loans(id)
+                     ON DELETE CASCADE',
+                    '{schema}', '{schema}_loan_alloc_loan_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_alloc_sched_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payment_allocations
+                     ADD CONSTRAINT %I
+                     FOREIGN KEY (loan_schedule_id)
+                     REFERENCES %I.loan_schedules(id)
+                     ON DELETE SET NULL',
+                    '{schema}', '{schema}_loan_alloc_sched_fk', '{schema}'
+                );
+            END IF;
+        END $loan_fks$;
+
+        -- --------------------------------------------------
+        -- Optional updated_at trigger on loans
+        -- --------------------------------------------------
+        DO $loan_touch$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = '{schema}_loans_touch'
+            ) THEN
+                EXECUTE format(
+                    'CREATE TRIGGER %I
+                     BEFORE UPDATE ON %I.loans
+                     FOR EACH ROW
+                     EXECUTE PROCEDURE %I.touch_updated_at()',
+                    '{schema}_loans_touch',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END $loan_touch$;
+
+        -- ==================================================
         -- SERVICE ITEMS  (FULL + SAFE EVOLVE)
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.service_items (
@@ -18393,12 +19143,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v45")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v46")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=45,
+                    migration_version=46,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -28320,7 +29070,1155 @@ class DatabaseService:
                                 cur=cur,
                             )
                             self.update_trial_balance(company_id, {"account_code": inv_code, "debit": 0.0, "credit": float(alloc_consumed)}, cur=cur)
-                            
+
+
+
+    def list_loans(
+        self,
+        conn,
+        company_id: int,
+        *,
+        status: str | None = None,
+        q: str = "",
+        limit: int = 200,
+    ):
+        schema = self.company_schema(company_id)
+        with conn.cursor() as cur:
+            sql = f"""
+                SELECT
+                    id,
+                    loan_name,
+                    loan_reference,
+                    lender_name,
+                    loan_type,
+                    start_date,
+                    first_payment_date,
+                    maturity_date,
+                    principal_amount,
+                    annual_interest_rate,
+                    payment_amount,
+                    outstanding_principal,
+                    outstanding_interest,
+                    next_due_date,
+                    status,
+                    created_at,
+                    updated_at
+                FROM {schema}.loans
+                WHERE company_id = %s
+            """
+            params = [company_id]
+
+            if status:
+                sql += " AND status = %s"
+                params.append(status)
+
+            if q:
+                sql += """
+                    AND (
+                        loan_name ILIKE %s
+                        OR COALESCE(loan_reference,'') ILIKE %s
+                        OR lender_name ILIKE %s
+                    )
+                """
+                like = f"%{q}%"
+                params.extend([like, like, like])
+
+            sql += " ORDER BY created_at DESC, id DESC LIMIT %s"
+            params.append(limit)
+
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall() or []
+            return [dict(x) for x in rows]
+
+    def get_loan_by_id(self, conn, company_id: int, loan_id: int):
+        schema = self.company_schema(company_id)
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loans
+                WHERE company_id = %s AND id = %s
+                LIMIT 1
+            """, (company_id, loan_id))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def get_loan_full(self, conn, company_id: int, loan_id: int):
+        schema = self.company_schema(company_id)
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loans
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+            """, (company_id, loan_id))
+            loan = cur.fetchone()
+            if not loan:
+                return None
+
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_schedules
+                WHERE company_id=%s AND loan_id=%s
+                ORDER BY schedule_version DESC, period_no ASC
+            """, (company_id, loan_id))
+            schedule = [dict(x) for x in (cur.fetchall() or [])]
+
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_payments
+                WHERE company_id=%s AND loan_id=%s
+                ORDER BY payment_date DESC, id DESC
+            """, (company_id, loan_id))
+            payments = [dict(x) for x in (cur.fetchall() or [])]
+
+            cur.execute(f"""
+                SELECT
+                    j.id,
+                    j.date,
+                    j.ref,
+                    j.description,
+                    j.gross_amount,
+                    j.net_amount,
+                    j.vat_amount,
+                    j.source,
+                    j.source_id,
+                    j.created_at
+                FROM {schema}.journal j
+                WHERE j.company_id=%s
+                AND (
+                        (j.source = 'loan_origination'     AND j.source_id = %s)
+                    OR (j.source = 'loan_reclassification' AND j.source_id = %s)
+                    OR (j.source = 'loan_payment' AND j.source_id IN (
+                            SELECT id
+                            FROM {schema}.loan_payments
+                            WHERE company_id=%s AND loan_id=%s
+                        ))
+                )
+                ORDER BY j.date DESC, j.id DESC
+            """, (company_id, loan_id, loan_id, company_id, loan_id))
+            journals = [dict(x) for x in (cur.fetchall() or [])]
+
+            return {
+                "loan": dict(loan),
+                "schedule": schedule,
+                "payments": payments,
+                "journals": journals,
+            }
+
+    def _period_delta_for_frequency(self, frequency: str):
+        f = (frequency or "monthly").strip().lower()
+        if f == "weekly":
+            return relativedelta(weeks=1), Decimal("52")
+        if f == "quarterly":
+            return relativedelta(months=3), Decimal("4")
+        if f == "annually":
+            return relativedelta(years=1), Decimal("1")
+        return relativedelta(months=1), Decimal("12")
+
+    def _compute_level_payment(
+        self,
+        principal: Decimal,
+        annual_rate: Decimal,
+        periods: int,
+        payments_per_year: Decimal,
+        balloon: Decimal = Decimal("0.00"),
+    ) -> Decimal:
+        if periods <= 0:
+            return Decimal("0.00")
+
+        r = (annual_rate / Decimal("100")) / payments_per_year
+        if r == 0:
+            return _money((principal - balloon) / Decimal(periods))
+
+        pv_balloon = balloon / ((Decimal("1") + r) ** periods)
+        base = principal - pv_balloon
+        pmt = base * (r / (Decimal("1") - ((Decimal("1") + r) ** Decimal(-periods))))
+        return _money(pmt)
+
+    def _build_loan_amortisation_rows(self, loan_row: dict) -> list[dict]:
+        principal = _money(loan_row.get("principal_amount"))
+        annual_rate = Decimal(str(loan_row.get("annual_interest_rate") or 0))
+        periods = int(loan_row.get("term_count") or 0)
+        method = (loan_row.get("interest_method") or "amortised_fixed_payment").strip().lower()
+        first_payment_date = _safe_date(loan_row.get("first_payment_date"))
+        balloon = _money(loan_row.get("balloon_amount"))
+        holiday_count = int(loan_row.get("repayment_holiday_count") or 0)
+
+        delta, per_year = self._period_delta_for_frequency(loan_row.get("payment_frequency"))
+        rows: list[dict] = []
+        opening = principal
+
+        if method == "amortised_fixed_payment":
+            payment_amount = self._compute_level_payment(principal, annual_rate, periods, per_year, balloon)
+        else:
+            payment_amount = _money(loan_row.get("payment_amount"))
+
+        due = first_payment_date
+        periodic_rate = (annual_rate / Decimal("100")) / per_year if per_year else Decimal("0")
+
+        for i in range(1, periods + 1):
+            interest = _money(opening * periodic_rate)
+
+            if i <= holiday_count:
+                payment = Decimal("0.00")
+                principal_component = Decimal("0.00")
+                closing = _money(opening + interest) if method != "manual" else opening
+                status = "skipped"
+            else:
+                if method == "interest_only":
+                    principal_component = Decimal("0.00")
+                    if i == periods:
+                        principal_component = opening - balloon
+                    payment = _money(interest + principal_component)
+                elif method == "straight_line_interest":
+                    principal_component = _money((principal - balloon) / Decimal(periods))
+                    if i == periods:
+                        principal_component = _money(opening - balloon)
+                    payment = _money(interest + principal_component)
+                elif method == "manual":
+                    payment = _money(loan_row.get("payment_amount"))
+                    principal_component = _money(max(Decimal("0.00"), payment - interest))
+                else:
+                    payment = payment_amount
+                    principal_component = _money(max(Decimal("0.00"), payment - interest))
+                    if i == periods:
+                        principal_component = _money(opening - balloon)
+                        payment = _money(interest + principal_component)
+
+                closing = _money(opening - principal_component)
+                status = "open"
+
+            current_portion = closing if i <= 12 else Decimal("0.00")
+            noncurrent_portion = Decimal("0.00") if i <= 12 else closing
+
+            rows.append({
+                "period_no": i,
+                "due_date": due,
+                "opening_balance": opening,
+                "scheduled_payment": payment,
+                "scheduled_interest": interest,
+                "scheduled_principal": principal_component,
+                "closing_balance": closing,
+                "current_portion_amount": _money(current_portion),
+                "noncurrent_portion_amount": _money(noncurrent_portion),
+                "payment_status": status,
+            })
+
+            opening = closing
+            due = due + delta
+
+        return rows
+
+    def generate_loan_schedule(self, conn, company_id: int, *, loan_id: int, user_id=None):
+        schema = self.company_schema(company_id)
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loans
+                WHERE company_id=%s AND id=%s
+                FOR UPDATE
+            """, (company_id, loan_id))
+            loan = cur.fetchone()
+            if not loan:
+                raise ValueError("loan not found")
+
+            loan = dict(loan)
+            version = int(loan.get("schedule_version") or 1)
+
+            rows = self._build_loan_amortisation_rows(loan)
+
+            cur.execute(f"""
+                DELETE FROM {schema}.loan_schedules
+                WHERE company_id=%s AND loan_id=%s AND schedule_version=%s
+            """, (company_id, loan_id, version))
+
+            total_interest = Decimal("0.00")
+            total_payment = Decimal("0.00")
+            next_due = None
+
+            for row in rows:
+                total_interest += _money(row["scheduled_interest"])
+                total_payment += _money(row["scheduled_payment"])
+                if next_due is None and row["payment_status"] in {"open", "partial"}:
+                    next_due = row["due_date"]
+
+                cur.execute(f"""
+                    INSERT INTO {schema}.loan_schedules (
+                        company_id,
+                        loan_id,
+                        schedule_version,
+                        period_no,
+                        due_date,
+                        opening_balance,
+                        scheduled_payment,
+                        scheduled_interest,
+                        scheduled_principal,
+                        closing_balance,
+                        current_portion_amount,
+                        noncurrent_portion_amount,
+                        payment_status
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    company_id,
+                    loan_id,
+                    version,
+                    row["period_no"],
+                    row["due_date"],
+                    row["opening_balance"],
+                    row["scheduled_payment"],
+                    row["scheduled_interest"],
+                    row["scheduled_principal"],
+                    row["closing_balance"],
+                    row["current_portion_amount"],
+                    row["noncurrent_portion_amount"],
+                    row["payment_status"],
+                ))
+
+            first_payment_amount = rows[0]["scheduled_payment"] if rows else Decimal("0.00")
+
+            cur.execute(f"""
+                UPDATE {schema}.loans
+                SET
+                    payment_amount = %s,
+                    total_interest_projected = %s,
+                    total_repayment_projected = %s,
+                    next_due_date = %s,
+                    outstanding_principal = %s,
+                    outstanding_interest = COALESCE(accrued_interest_opening, 0),
+                    updated_at = NOW()
+                WHERE company_id=%s AND id=%s
+            """, (
+                first_payment_amount,
+                _money(total_interest),
+                _money(total_payment),
+                next_due,
+                _money(loan.get("principal_amount")),
+                company_id,
+                loan_id,
+            ))
+
+        conn.commit()
+        return self.get_loan_full(conn, company_id, loan_id)
+
+    def create_loan(self, conn, company_id: int, *, data: dict, user_id=None):
+        schema = self.company_schema(company_id)
+
+        loan_name = (data.get("loan_name") or "").strip()
+        lender_name = (data.get("lender_name") or "").strip()
+        start_date = _safe_date(data.get("start_date"))
+        first_payment_date = _safe_date(data.get("first_payment_date"))
+
+        if not loan_name:
+            raise ValueError("loan_name is required")
+        if not lender_name:
+            raise ValueError("lender_name is required")
+        if not start_date:
+            raise ValueError("start_date is required")
+        if not first_payment_date:
+            raise ValueError("first_payment_date is required")
+
+        principal_amount = _money(data.get("principal_amount"))
+        if principal_amount <= 0:
+            raise ValueError("principal_amount must be > 0")
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                INSERT INTO {schema}.loans (
+                    company_id,
+                    loan_name,
+                    loan_reference,
+                    lender_name,
+                    lender_id,
+                    loan_type,
+                    start_date,
+                    first_payment_date,
+                    maturity_date,
+                    principal_amount,
+                    annual_interest_rate,
+                    interest_method,
+                    term_count,
+                    payment_frequency,
+                    balloon_amount,
+                    fees_amount,
+                    accrued_interest_opening,
+                    repayment_holiday_count,
+                    variable_rate,
+                    rate_review_rule,
+                    bank_account_id,
+                    interest_expense_account_code,
+                    accrued_interest_account_code,
+                    loan_payable_current_account_code,
+                    loan_payable_noncurrent_account_code,
+                    fees_asset_account_code,
+                    fees_expense_account_code,
+                    currency,
+                    outstanding_principal,
+                    outstanding_interest,
+                    status,
+                    notes,
+                    agreement_reference,
+                    meta_json,
+                    created_by
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s
+                )
+                RETURNING id
+            """, (
+                company_id,
+                loan_name,
+                (data.get("loan_reference") or "").strip() or None,
+                lender_name,
+                data.get("lender_id"),
+                (data.get("loan_type") or "term_loan").strip(),
+                start_date,
+                first_payment_date,
+                _safe_date(data.get("maturity_date")),
+                principal_amount,
+                Decimal(str(data.get("annual_interest_rate") or 0)),
+                (data.get("interest_method") or "amortised_fixed_payment").strip(),
+                int(data.get("term_count") or 0),
+                (data.get("payment_frequency") or "monthly").strip(),
+                _money(data.get("balloon_amount")),
+                _money(data.get("fees_amount")),
+                _money(data.get("accrued_interest_opening")),
+                int(data.get("repayment_holiday_count") or 0),
+                bool(data.get("variable_rate") or False),
+                (data.get("rate_review_rule") or "").strip() or None,
+                data.get("bank_account_id"),
+                (data.get("interest_expense_account_code") or "").strip(),
+                (data.get("accrued_interest_account_code") or "").strip() or None,
+                (data.get("loan_payable_current_account_code") or "").strip(),
+                (data.get("loan_payable_noncurrent_account_code") or "").strip(),
+                (data.get("fees_asset_account_code") or "").strip() or None,
+                (data.get("fees_expense_account_code") or "").strip() or None,
+                (data.get("currency") or "ZAR").strip(),
+                principal_amount,
+                _money(data.get("accrued_interest_opening")),
+                "active" if bool(data.get("activate_on_create", True)) else "draft",
+                (data.get("notes") or "").strip() or None,
+                (data.get("agreement_reference") or "").strip() or None,
+                data.get("meta_json") or {},
+                user_id,
+            ))
+            loan_id = cur.fetchone()["id"]
+
+        conn.commit()
+        return self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)        
+
+    def update_loan(self, conn, company_id: int, loan_id: int, *, data: dict, user_id: int | None):
+        schema = self.company_schema(company_id)
+
+        loan_name = (data.get("loan_name") or "").strip()
+        lender_name = (data.get("lender_name") or "").strip()
+        start_date = _safe_date(data.get("start_date"))
+        first_payment_date = _safe_date(data.get("first_payment_date"))
+
+        if not loan_name:
+            raise ValueError("loan_name is required")
+        if not lender_name:
+            raise ValueError("lender_name is required")
+        if not start_date:
+            raise ValueError("start_date is required")
+        if not first_payment_date:
+            raise ValueError("first_payment_date is required")
+
+        principal_amount = _money(data.get("principal_amount"))
+        if principal_amount <= 0:
+            raise ValueError("principal_amount must be > 0")
+
+        annual_interest_rate = Decimal(str(data.get("annual_interest_rate") or 0))
+        term_count = int(data.get("term_count") or 0)
+        if term_count <= 0:
+            raise ValueError("term_count must be > 0")
+
+        loan_type = (data.get("loan_type") or "term_loan").strip()
+        if loan_type not in {"term_loan", "vehicle", "mortgage", "overdraft", "director_loan", "other"}:
+            raise ValueError("invalid loan_type")
+
+        interest_method = (data.get("interest_method") or "amortised_fixed_payment").strip()
+        if interest_method not in {
+            "amortised_fixed_payment",
+            "straight_line_interest",
+            "interest_only",
+            "manual",
+        }:
+            raise ValueError("invalid interest_method")
+
+        payment_frequency = (data.get("payment_frequency") or "monthly").strip()
+        if payment_frequency not in {"weekly", "monthly", "quarterly", "annually"}:
+            raise ValueError("invalid payment_frequency")
+
+        status = (data.get("status") or "").strip().lower() or None
+        if status and status not in {"draft", "active", "closed", "restructured", "void"}:
+            raise ValueError("invalid status")
+
+        balloon_amount = _money(data.get("balloon_amount"))
+        fees_amount = _money(data.get("fees_amount"))
+        accrued_interest_opening = _money(data.get("accrued_interest_opening"))
+        repayment_holiday_count = int(data.get("repayment_holiday_count") or 0)
+
+        if balloon_amount < 0:
+            raise ValueError("balloon_amount cannot be negative")
+        if fees_amount < 0:
+            raise ValueError("fees_amount cannot be negative")
+        if accrued_interest_opening < 0:
+            raise ValueError("accrued_interest_opening cannot be negative")
+        if repayment_holiday_count < 0:
+            raise ValueError("repayment_holiday_count cannot be negative")
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loans
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (company_id, loan_id))
+            existing = cur.fetchone()
+            if not existing:
+                raise ValueError("loan not found")
+
+            existing = dict(existing)
+
+            # Keep actual live balances unless caller explicitly forces them.
+            outstanding_principal = _money(
+                data["outstanding_principal"]
+            ) if "outstanding_principal" in data else _money(
+                existing.get("outstanding_principal", existing.get("principal_amount"))
+            )
+
+            outstanding_interest = _money(
+                data["outstanding_interest"]
+            ) if "outstanding_interest" in data else _money(
+                existing.get("outstanding_interest", existing.get("accrued_interest_opening"))
+            )
+
+            # Optional manual status override; otherwise keep current
+            final_status = status or (existing.get("status") or "draft")
+
+            # Optional schedule version bump when terms affecting schedule changed
+            schedule_sensitive_fields = {
+                "start_date",
+                "first_payment_date",
+                "principal_amount",
+                "annual_interest_rate",
+                "interest_method",
+                "term_count",
+                "payment_frequency",
+                "balloon_amount",
+                "repayment_holiday_count",
+            }
+            needs_schedule_refresh = any(k in data for k in schedule_sensitive_fields)
+            schedule_version = int(existing.get("schedule_version") or 1)
+            if needs_schedule_refresh:
+                schedule_version += 1
+
+            cur.execute(f"""
+                UPDATE {schema}.loans
+                SET
+                    loan_name = %s,
+                    loan_reference = %s,
+                    lender_name = %s,
+                    lender_id = %s,
+                    loan_type = %s,
+                    start_date = %s,
+                    first_payment_date = %s,
+                    maturity_date = %s,
+                    principal_amount = %s,
+                    annual_interest_rate = %s,
+                    interest_method = %s,
+                    term_count = %s,
+                    payment_frequency = %s,
+                    balloon_amount = %s,
+                    fees_amount = %s,
+                    accrued_interest_opening = %s,
+                    repayment_holiday_count = %s,
+                    variable_rate = %s,
+                    rate_review_rule = %s,
+                    bank_account_id = %s,
+                    interest_expense_account_code = %s,
+                    accrued_interest_account_code = %s,
+                    loan_payable_current_account_code = %s,
+                    loan_payable_noncurrent_account_code = %s,
+                    fees_asset_account_code = %s,
+                    fees_expense_account_code = %s,
+                    currency = %s,
+                    outstanding_principal = %s,
+                    outstanding_interest = %s,
+                    status = %s,
+                    schedule_version = %s,
+                    notes = %s,
+                    agreement_reference = %s,
+                    meta_json = %s,
+                    closed_at = CASE
+                        WHEN %s = 'closed' AND closed_at IS NULL THEN NOW()
+                        WHEN %s <> 'closed' THEN NULL
+                        ELSE closed_at
+                    END,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+            """, (
+                loan_name,
+                (data.get("loan_reference") or "").strip() or None,
+                lender_name,
+                data.get("lender_id"),
+                loan_type,
+                start_date,
+                first_payment_date,
+                _safe_date(data.get("maturity_date")),
+                principal_amount,
+                annual_interest_rate,
+                interest_method,
+                term_count,
+                payment_frequency,
+                balloon_amount,
+                fees_amount,
+                accrued_interest_opening,
+                repayment_holiday_count,
+                bool(data.get("variable_rate") or False),
+                (data.get("rate_review_rule") or "").strip() or None,
+                data.get("bank_account_id"),
+                (data.get("interest_expense_account_code") or "").strip(),
+                (data.get("accrued_interest_account_code") or "").strip() or None,
+                (data.get("loan_payable_current_account_code") or "").strip(),
+                (data.get("loan_payable_noncurrent_account_code") or "").strip(),
+                (data.get("fees_asset_account_code") or "").strip() or None,
+                (data.get("fees_expense_account_code") or "").strip() or None,
+                (data.get("currency") or "ZAR").strip(),
+                outstanding_principal,
+                outstanding_interest,
+                final_status,
+                schedule_version,
+                (data.get("notes") or "").strip() or None,
+                (data.get("agreement_reference") or "").strip() or None,
+                data.get("meta_json") if "meta_json" in data else (existing.get("meta_json") or {}),
+                final_status,
+                final_status,
+                company_id,
+                loan_id,
+            ))
+
+        conn.commit()
+        return self.get_loan_full(conn, company_id, loan_id)
+
+    def _allocate_loan_payment(self, cur, company_id: int, *, payment_id: int):
+        schema = self.company_schema(company_id)
+
+        cur.execute(f"""
+            SELECT p.*, l.accrued_interest_opening, l.outstanding_interest
+            FROM {schema}.loan_payments p
+            JOIN {schema}.loans l
+            ON l.company_id = p.company_id AND l.id = p.loan_id
+            WHERE p.company_id=%s AND p.id=%s
+            FOR UPDATE
+        """, (company_id, payment_id))
+        p = cur.fetchone()
+        if not p:
+            raise ValueError("payment not found")
+
+        p = dict(p)
+        loan_id = p["loan_id"]
+        amount_left = _money(p["amount_paid"])
+
+        cur.execute(f"""
+            DELETE FROM {schema}.loan_payment_allocations
+            WHERE company_id=%s AND payment_id=%s
+        """, (company_id, payment_id))
+
+        principal_total = Decimal("0.00")
+        interest_total = Decimal("0.00")
+        accrued_interest_total = Decimal("0.00")
+        fees_total = Decimal("0.00")
+        penalty_total = Decimal("0.00")
+        ord_no = 1
+
+        outstanding_interest = _money(p.get("outstanding_interest"))
+        if outstanding_interest > 0 and amount_left > 0:
+            alloc = min(amount_left, outstanding_interest)
+            cur.execute(f"""
+                INSERT INTO {schema}.loan_payment_allocations (
+                    company_id, payment_id, loan_id, loan_schedule_id,
+                    allocation_type, amount, allocation_order
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """, (company_id, payment_id, loan_id, None, "accrued_interest", alloc, ord_no))
+            accrued_interest_total += alloc
+            amount_left -= alloc
+            ord_no += 1
+
+        cur.execute(f"""
+            SELECT *
+            FROM {schema}.loan_schedules
+            WHERE company_id=%s
+            AND loan_id=%s
+            AND payment_status IN ('open','partial')
+            ORDER BY due_date ASC, period_no ASC
+            FOR UPDATE
+        """, (company_id, loan_id))
+        schedule_rows = [dict(x) for x in (cur.fetchall() or [])]
+
+        for row in schedule_rows:
+            if amount_left <= 0:
+                break
+
+            interest_due = _money(row["scheduled_interest"]) - _money(row["paid_interest"])
+            if interest_due > 0 and amount_left > 0:
+                alloc = min(amount_left, interest_due)
+                cur.execute(f"""
+                    INSERT INTO {schema}.loan_payment_allocations (
+                        company_id, payment_id, loan_id, loan_schedule_id,
+                        allocation_type, amount, allocation_order
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """, (company_id, payment_id, loan_id, row["id"], "interest", alloc, ord_no))
+                interest_total += alloc
+                amount_left -= alloc
+                ord_no += 1
+
+            principal_due = _money(row["scheduled_principal"]) - _money(row["paid_principal"])
+            if principal_due > 0 and amount_left > 0:
+                alloc = min(amount_left, principal_due)
+                cur.execute(f"""
+                    INSERT INTO {schema}.loan_payment_allocations (
+                        company_id, payment_id, loan_id, loan_schedule_id,
+                        allocation_type, amount, allocation_order
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """, (company_id, payment_id, loan_id, row["id"], "principal", alloc, ord_no))
+                principal_total += alloc
+                amount_left -= alloc
+                ord_no += 1
+
+        if amount_left > 0:
+            cur.execute(f"""
+                INSERT INTO {schema}.loan_payment_allocations (
+                    company_id, payment_id, loan_id, loan_schedule_id,
+                    allocation_type, amount, allocation_order
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """, (company_id, payment_id, loan_id, None, "principal", amount_left, ord_no))
+            principal_total += amount_left
+            amount_left = Decimal("0.00")
+
+        cur.execute(f"""
+            UPDATE {schema}.loan_payments
+            SET
+                principal_amount=%s,
+                interest_amount=%s,
+                accrued_interest_amount=%s,
+                fees_amount=%s,
+                penalties_amount=%s,
+                updated_at = NOW()
+            WHERE company_id=%s AND id=%s
+        """, (
+            _money(principal_total),
+            _money(interest_total),
+            _money(accrued_interest_total),
+            _money(fees_total),
+            _money(penalty_total),
+            company_id,
+            payment_id,
+        ))
+
+        return {
+            "principal_amount": _money(principal_total),
+            "interest_amount": _money(interest_total),
+            "accrued_interest_amount": _money(accrued_interest_total),
+            "fees_amount": _money(fees_total),
+            "penalties_amount": _money(penalty_total),
+        }
+
+    def create_loan_payment(self, conn, company_id: int, *, loan_id: int, data: dict, user_id=None):
+        schema = self.company_schema(company_id)
+
+        payment_date = _safe_date(data.get("payment_date"))
+        if not payment_date:
+            raise ValueError("payment_date is required")
+
+        amount_paid = _money(data.get("amount_paid"))
+        if amount_paid <= 0:
+            raise ValueError("amount_paid must be > 0")
+
+        bank_account_id = int(data.get("bank_account_id") or 0)
+        if bank_account_id <= 0:
+            raise ValueError("bank_account_id is required")
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                INSERT INTO {schema}.loan_payments (
+                    company_id,
+                    loan_id,
+                    payment_date,
+                    amount_paid,
+                    bank_account_id,
+                    reference,
+                    description,
+                    auto_calculate_split,
+                    allocation_method,
+                    status,
+                    created_by,
+                    notes,
+                    meta_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                company_id,
+                loan_id,
+                payment_date,
+                amount_paid,
+                bank_account_id,
+                (data.get("reference") or "").strip() or None,
+                (data.get("description") or "").strip() or None,
+                bool(data.get("auto_calculate_split", True)),
+                "schedule_order" if bool(data.get("auto_calculate_split", True)) else "manual",
+                "draft",
+                user_id,
+                (data.get("notes") or "").strip() or None,
+                data.get("meta_json") or {},
+            ))
+            payment_id = cur.fetchone()["id"]
+
+            if bool(data.get("auto_calculate_split", True)):
+                self._allocate_loan_payment(cur, company_id, payment_id=payment_id)
+
+        conn.commit()
+        return self.get_loan_payment_full(conn, company_id, payment_id)
+
+def preview_loan_payment_journal(self, conn, company_id: int, *, payment_id: int):
+    schema = self.company_schema(company_id)
+
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT
+                p.*,
+                l.loan_name,
+                l.loan_reference,
+                l.currency AS loan_currency,
+                l.interest_expense_account_code,
+                l.accrued_interest_account_code,
+                l.loan_payable_current_account_code,
+                l.loan_payable_noncurrent_account_code
+            FROM {schema}.loan_payments p
+            JOIN {schema}.loans l
+              ON l.company_id = p.company_id
+             AND l.id = p.loan_id
+            WHERE p.company_id = %s
+              AND p.id = %s
+            LIMIT 1
+        """, (company_id, payment_id))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("payment not found")
+
+        row = dict(row)
+
+        bank_row = self.get_company_bank_account(company_id, row["bank_account_id"])
+        if not bank_row:
+            raise ValueError("bank account not found")
+
+        bank_account_code = (bank_row.get("ledger_account_code") or "").strip()
+        if not bank_account_code:
+            raise ValueError("bank account missing ledger_account_code")
+
+        principal = _money(row.get("principal_amount"))
+        interest = _money(row.get("interest_amount"))
+        accrued_interest = _money(row.get("accrued_interest_amount"))
+        fees = _money(row.get("fees_amount"))
+        penalties = _money(row.get("penalties_amount"))
+        total = _money(row.get("amount_paid"))
+
+        lines = []
+
+        if principal > 0:
+            lines.append({
+                "account_code": (row.get("loan_payable_current_account_code") or "").strip(),
+                "description": f"Loan principal settlement - {row['loan_name']}",
+                "debit": float(principal),
+                "credit": 0.0,
+            })
+
+        if interest > 0:
+            lines.append({
+                "account_code": (row.get("interest_expense_account_code") or "").strip(),
+                "description": f"Loan interest expense - {row['loan_name']}",
+                "debit": float(interest),
+                "credit": 0.0,
+            })
+
+        if accrued_interest > 0:
+            accrued_code = (row.get("accrued_interest_account_code") or "").strip()
+            if not accrued_code:
+                raise ValueError("accrued_interest_account_code required when accrued interest exists")
+            lines.append({
+                "account_code": accrued_code,
+                "description": f"Accrued interest settlement - {row['loan_name']}",
+                "debit": float(accrued_interest),
+                "credit": 0.0,
+            })
+
+        if fees > 0:
+            raise ValueError("fees posting not yet enabled in MVP")
+
+        if penalties > 0:
+            raise ValueError("penalties posting not yet enabled in MVP")
+
+        lines.append({
+            "account_code": bank_account_code,
+            "description": f"Loan payment cash out - {row['loan_name']}",
+            "debit": 0.0,
+            "credit": float(total),
+        })
+
+        dr = _money(sum(Decimal(str(x.get("debit") or 0)) for x in lines))
+        cr = _money(sum(Decimal(str(x.get("credit") or 0)) for x in lines))
+        if dr != cr:
+            raise ValueError(f"Loan payment journal out of balance: debit={dr} credit={cr}")
+
+        return {
+            "date": str(row["payment_date"]),
+            "ref": row.get("reference") or f"LOAN-PAY-{payment_id}",
+            "description": f"Loan payment - {row['loan_name']}",
+            "gross_amount": float(total),
+            "net_amount": float(total),
+            "vat_amount": 0.0,
+            "currency": (row.get("loan_currency") or bank_row.get("currency") or "ZAR"),
+            "source": "loan_payment",
+            "source_id": int(payment_id),
+            "lines": lines,
+        }
+
+
+    def post_loan_payment(self, conn, company_id: int, *, payment_id: int, user_id=None):
+        schema = self.company_schema(company_id)
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_payments
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (company_id, payment_id))
+            payment = cur.fetchone()
+            if not payment:
+                raise ValueError("payment not found")
+
+            payment = dict(payment)
+
+            if payment["status"] == "posted" and payment.get("posted_journal_id"):
+                return {
+                    "payment_id": payment_id,
+                    "posted_journal_id": payment["posted_journal_id"],
+                    "status": "posted",
+                }
+
+            if payment["status"] not in {"draft", "approved"}:
+                raise ValueError(f"cannot post payment in status '{payment['status']}'")
+
+            # ensure allocation is rebuilt inside same txn
+            self._allocate_loan_payment(cur, company_id, payment_id=payment_id)
+
+        preview_entry = self.preview_loan_payment_journal(conn, company_id, payment_id=payment_id)
+
+        with conn.cursor() as cur:
+            journal_id = self.post_journal(company_id, preview_entry, cur=cur)
+
+            cur.execute(f"""
+                UPDATE {schema}.loan_payments
+                SET
+                    status = 'posted',
+                    posted_journal_id = %s,
+                    posted_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+            """, (journal_id, company_id, payment_id))
+
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_payment_allocations
+                WHERE company_id = %s
+                AND payment_id = %s
+                ORDER BY allocation_order ASC, id ASC
+            """, (company_id, payment_id))
+            allocs = [dict(x) for x in (cur.fetchall() or [])]
+
+            for a in allocs:
+                sched_id = a.get("loan_schedule_id")
+                if not sched_id:
+                    continue
+
+                if a["allocation_type"] == "interest":
+                    cur.execute(f"""
+                        UPDATE {schema}.loan_schedules
+                        SET
+                            paid_interest = COALESCE(paid_interest, 0) + %s,
+                            paid_amount = COALESCE(paid_amount, 0) + %s,
+                            last_payment_date = (
+                                SELECT payment_date
+                                FROM {schema}.loan_payments
+                                WHERE company_id = %s
+                                AND id = %s
+                            )
+                        WHERE company_id = %s
+                        AND id = %s
+                    """, (a["amount"], a["amount"], company_id, payment_id, company_id, sched_id))
+
+                elif a["allocation_type"] == "principal":
+                    cur.execute(f"""
+                        UPDATE {schema}.loan_schedules
+                        SET
+                            paid_principal = COALESCE(paid_principal, 0) + %s,
+                            paid_amount = COALESCE(paid_amount, 0) + %s,
+                            last_payment_date = (
+                                SELECT payment_date
+                                FROM {schema}.loan_payments
+                                WHERE company_id = %s
+                                AND id = %s
+                            )
+                        WHERE company_id = %s
+                        AND id = %s
+                    """, (a["amount"], a["amount"], company_id, payment_id, company_id, sched_id))
+
+            cur.execute(f"""
+                UPDATE {schema}.loan_schedules
+                SET payment_status = CASE
+                    WHEN COALESCE(paid_principal,0) >= COALESCE(scheduled_principal,0)
+                    AND COALESCE(paid_interest,0) >= COALESCE(scheduled_interest,0)
+                        THEN 'paid'
+                    WHEN COALESCE(paid_amount,0) > 0
+                        THEN 'partial'
+                    ELSE payment_status
+                END
+                WHERE company_id = %s
+                AND loan_id = (
+                    SELECT loan_id
+                    FROM {schema}.loan_payments
+                    WHERE company_id = %s
+                        AND id = %s
+                )
+            """, (company_id, company_id, payment_id))
+
+            cur.execute(f"""
+                UPDATE {schema}.loans l
+                SET
+                    outstanding_principal = GREATEST(
+                        0,
+                        COALESCE(l.outstanding_principal,0) - COALESCE(p.principal_amount,0)
+                    ),
+                    outstanding_interest = GREATEST(
+                        0,
+                        COALESCE(l.outstanding_interest,0) - COALESCE(p.accrued_interest_amount,0)
+                    ),
+                    last_payment_date = p.payment_date,
+                    next_due_date = (
+                        SELECT MIN(s.due_date)
+                        FROM {schema}.loan_schedules s
+                        WHERE s.company_id = l.company_id
+                        AND s.loan_id = l.id
+                        AND s.payment_status IN ('open','partial')
+                    ),
+                    updated_at = NOW()
+                FROM {schema}.loan_payments p
+                WHERE p.company_id = l.company_id
+                AND p.id = %s
+                AND l.company_id = %s
+                AND l.id = p.loan_id
+            """, (payment_id, company_id))
+
+        conn.commit()
+        return {
+            "payment_id": payment_id,
+            "posted_journal_id": journal_id,
+            "status": "posted",
+        }
+
+    def compute_loan_current_noncurrent_split(self, conn, company_id: int, *, loan_id: int, as_of_date=None):
+        schema = self.company_schema(company_id)
+        as_of_date = _safe_date(as_of_date) or date.today()
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT
+                    COALESCE(SUM(
+                        CASE WHEN due_date <= %s + INTERVAL '12 months'
+                            THEN GREATEST(0, scheduled_principal - paid_principal)
+                            ELSE 0 END
+                    ), 0) AS current_portion,
+                    COALESCE(SUM(
+                        CASE WHEN due_date > %s + INTERVAL '12 months'
+                            THEN GREATEST(0, scheduled_principal - paid_principal)
+                            ELSE 0 END
+                    ), 0) AS noncurrent_portion
+                FROM {schema}.loan_schedules
+                WHERE company_id=%s AND loan_id=%s
+            """, (as_of_date, as_of_date, company_id, loan_id))
+            row = cur.fetchone() or {}
+            return {
+                "as_of_date": str(as_of_date),
+                "current_portion": float(_money(row.get("current_portion"))),
+                "noncurrent_portion": float(_money(row.get("noncurrent_portion"))),
+            }
+
+    def post_loan_reclassification(self, conn, company_id: int, *, loan_id: int, as_of_date=None, user_id=None):
+        schema = self.company_schema(company_id)
+        split = self.compute_loan_current_noncurrent_split(conn, company_id, loan_id=loan_id, as_of_date=as_of_date)
+
+        loan = self.get_loan_by_id(conn, company_id, loan_id)
+        if not loan:
+            raise ValueError("loan not found")
+
+        current_code = (loan.get("loan_payable_current_account_code") or "").strip()
+        noncurrent_code = (loan.get("loan_payable_noncurrent_account_code") or "").strip()
+
+        amt = _money(split["current_portion"])
+        if amt <= 0:
+            return {"ok": True, "message": "no current portion to reclassify", "amount": 0}
+
+        header = {
+            "date": split["as_of_date"],
+            "ref": f"LOAN-RECLASS-{loan_id}",
+            "description": f"Loan current/non-current reclassification - {loan['loan_name']}",
+            "gross_amount": float(amt),
+            "net_amount": float(amt),
+            "vat_amount": 0.0,
+            "source": "loan_reclassification",
+            "source_id": loan_id,
+        }
+        lines = [
+            {
+                "account_code": noncurrent_code,
+                "description": f"Reclass to current - {loan['loan_name']}",
+                "debit": float(amt),
+                "credit": 0.0,
+            },
+            {
+                "account_code": current_code,
+                "description": f"Reclass to current - {loan['loan_name']}",
+                "debit": 0.0,
+                "credit": float(amt),
+            },
+        ]
+
+        with conn.cursor() as cur:
+            jid = self._insert_journal_and_lines(cur, company_id, header=header, lines=lines)
+            cur.execute(f"""
+                UPDATE {schema}.loans
+                SET last_reclass_journal_id=%s, updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+            """, (jid, company_id, loan_id))
+
+        conn.commit()
+        return {"loan_id": loan_id, "posted_journal_id": jid, "split": split}
+
+
     # ---------------------------
     # CUSTOMERS (per-company)
     # ---------------------------

@@ -2,7 +2,7 @@ from datetime import datetime, date
 import psycopg2.extras
 from flask import Blueprint, jsonify, request, g, current_app
 from BackEnd.Services.db_service import db_service
-from BackEnd.Services.credit_policy import can_decide_request, must_approve_customer_before_invoicing, can_release_funds, ppe_review_required  # or can_decide_approvals
+from BackEnd.Services.credit_policy import can_decide_request, must_approve_customer_before_invoicing, can_release_funds, ppe_review_required, can_release_loan_funds  # or can_decide_approvals
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company  # wherever you placed it
 from BackEnd.Services.company import company_policy
@@ -284,6 +284,81 @@ def api_decide_approval(company_id: int, request_id: int):
                 )
                 return {"ok": True, "lease_id": lease_id0, "result": out}
 
+            def _exec_loan_payment(req_row, loan_id_str, *, company_id, user_id):
+                pj = req_row.get("payload_json") or {}
+                pol2 = company_policy(company_id) or {}
+                mode2 = (pol2.get("mode") or "owner_managed").strip().lower()
+
+                loan_id0 = int(loan_id_str)
+                amt0 = pj.get("amount_paid")
+                pdate0 = str(pj.get("payment_date") or "")[:10]
+                bank_id0 = int(pj.get("bank_account_id"))
+                ref0 = pj.get("reference")
+                desc0 = pj.get("description")
+                notes0 = pj.get("notes")
+                auto0 = bool(pj.get("auto_calculate_split", True))
+
+                if mode2 == "controlled":
+                    dedupe2 = (
+                        f"{company_id}:loans:release_loan_payment:loan:{loan_id0}:"
+                        f"dt:{pdate0}:amt:{amt0}:bank:{bank_id0}"
+                    )
+                    req2 = db_service.create_approval_request(
+                        company_id,
+                        entity_type="loan",
+                        entity_id=str(loan_id0),
+                        entity_ref=req_row.get("entity_ref") or f"LOAN-{loan_id0}",
+                        module="loans",
+                        action="release_loan_payment",
+                        requested_by_user_id=int(user_id),
+                        amount=float(amt0 or 0.0),
+                        currency=(req_row.get("currency") or pj.get("currency") or "ZAR"),
+                        risk_level="high",
+                        dedupe_key=dedupe2,
+                        payload_json=pj,
+                    )
+                    return {
+                        "ok": True,
+                        "approved": True,
+                        "executed": False,
+                        "next": "cfo_release_required",
+                        "release_approval_request": req2,
+                    }
+
+                conn = db_service.get_conn()
+                try:
+                    draft = db_service.create_loan_payment(
+                        conn,
+                        int(company_id),
+                        loan_id=loan_id0,
+                        data={
+                            "payment_date": pdate0,
+                            "amount_paid": amt0,
+                            "bank_account_id": bank_id0,
+                            "reference": ref0,
+                            "description": desc0,
+                            "notes": notes0,
+                            "auto_calculate_split": auto0,
+                        },
+                        user_id=int(user_id),
+                    )
+                    payment_id0 = int((draft.get("payment") or {}).get("id"))
+                    out = db_service.post_loan_payment(
+                        conn,
+                        int(company_id),
+                        payment_id=payment_id0,
+                        user_id=int(user_id),
+                    )
+                finally:
+                    conn.close()
+
+                return {
+                    "ok": True,
+                    "approved": True,
+                    "executed": True,
+                    "loan_id": loan_id0,
+                    "result": out,
+                }
             try:
                 # ========= AR =========
                 if module == "ar" and action == "approve_customer" and entity_type == "customer":
@@ -851,6 +926,90 @@ def api_decide_approval(company_id: int, request_id: int):
                         actor=u
                     )
                     exec_result = {"ok": True, "termination_id": term_id, "result": out}
+
+                elif module == "loans" and action == "create_loan" and entity_type == "loan":
+                    pj = req.get("payload_json") or {}
+
+                    conn = db_service.get_conn()
+                    try:
+                        out = db_service.create_loan(
+                            conn,
+                            int(company_id),
+                            data=pj,
+                            user_id=int(user_id),
+                        )
+                    finally:
+                        conn.close()
+
+                    exec_result = {
+                        "ok": True,
+                        "executed": True,
+                        "result": out,
+                    }
+
+                # ========= LOAN PAYMENT =========
+                elif module == "loans" and action == "post_loan_payment" and entity_type == "loan":
+                    exec_result = _exec_loan_payment(
+                        req,
+                        entity_id,
+                        company_id=company_id,
+                        user_id=user_id,
+                    )
+
+                # ========= LOAN RELEASE =========
+                elif module == "loans" and action == "release_loan_payment" and entity_type == "loan":
+                    pol2 = company_policy(company_id) or {}
+                    mode2 = (pol2.get("mode") or "owner_managed").strip().lower()
+                    company_profile2 = pol2.get("company") or {}
+
+                    if mode2 == "controlled" and not can_release_loan_funds(u, company_profile2):
+                        exec_result = {
+                            "ok": True,
+                            "loan_id": int(entity_id),
+                            "approved": True,
+                            "executed": False,
+                            "next": "cfo_release_required",
+                            "message": "Approved. CFO must release loan payment in controlled mode."
+                        }
+
+        
+                    else:
+                        pj = req.get("payload_json") or {}
+                        loan_id0 = int(entity_id)
+
+                        conn = db_service.get_conn()
+                        try:
+                            draft = db_service.create_loan_payment(
+                                conn,
+                                int(company_id),
+                                loan_id=loan_id0,
+                                data={
+                                    "payment_date": str(pj.get("payment_date") or "")[:10],
+                                    "amount_paid": pj.get("amount_paid"),
+                                    "bank_account_id": int(pj.get("bank_account_id")),
+                                    "reference": pj.get("reference"),
+                                    "description": pj.get("description"),
+                                    "notes": pj.get("notes"),
+                                    "auto_calculate_split": bool(pj.get("auto_calculate_split", True)),
+                                },
+                                user_id=int(user_id),
+                            )
+                            payment_id0 = int((draft.get("payment") or {}).get("id"))
+                            out = db_service.post_loan_payment(
+                                conn,
+                                int(company_id),
+                                payment_id=payment_id0,
+                                user_id=int(user_id),
+                            )
+                        finally:
+                            conn.close()
+
+                        exec_result = {
+                            "ok": True,
+                            "loan_id": loan_id0,
+                            "executed": True,
+                            "result": out,
+                        }
 
                 # ========= FALLBACK =========
                 else:

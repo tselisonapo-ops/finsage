@@ -166,6 +166,46 @@ def normalize_policy(policy: dict) -> dict:
     leases.setdefault("require_lease_termination_review", bool(leases.get("require_termination_review", True)))
 
     p["leases"] = leases
+
+    loans = p.get("loans") if isinstance(p.get("loans"), dict) else {}
+    loans_in = set(loans.keys())
+
+    loans.setdefault("review_enabled", False)
+    loans.setdefault("require_create_review", False)
+    loans.setdefault("require_payment_review", True)
+    loans.setdefault("require_reclassification_review", True)
+    loans.setdefault("require_modification_review", True)
+    loans.setdefault("require_settlement_review", True)
+
+    if "loan_review_enabled" in p_in and "review_enabled" not in loans_in:
+        loans["review_enabled"] = bool(p.get("loan_review_enabled"))
+    if "require_loan_review" in p_in and "review_enabled" not in loans_in:
+        loans["review_enabled"] = bool(p.get("require_loan_review"))
+
+    if "require_loan_create_review" in p_in and "require_create_review" not in loans_in:
+        loans["require_create_review"] = bool(p.get("require_loan_create_review"))
+
+    if "require_loan_payment_review" in p_in and "require_payment_review" not in loans_in:
+        loans["require_payment_review"] = bool(p.get("require_loan_payment_review"))
+
+    if "require_loan_reclassification_review" in p_in and "require_reclassification_review" not in loans_in:
+        loans["require_reclassification_review"] = bool(p.get("require_loan_reclassification_review"))
+
+    if "require_loan_modification_review" in p_in and "require_modification_review" not in loans_in:
+        loans["require_modification_review"] = bool(p.get("require_loan_modification_review"))
+
+    if "require_loan_settlement_review" in p_in and "require_settlement_review" not in loans_in:
+        loans["require_settlement_review"] = bool(p.get("require_loan_settlement_review"))
+
+    p.setdefault("loan_review_enabled", bool(loans.get("review_enabled", False)))
+    p.setdefault("require_loan_review", bool(loans.get("review_enabled", False)))
+    p.setdefault("require_loan_create_review", bool(loans.get("require_create_review", False)))
+    p.setdefault("require_loan_payment_review", bool(loans.get("require_payment_review", True)))
+    p.setdefault("require_loan_reclassification_review", bool(loans.get("require_reclassification_review", True)))
+    p.setdefault("require_loan_modification_review", bool(loans.get("require_modification_review", True)))
+    p.setdefault("require_loan_settlement_review", bool(loans.get("require_settlement_review", True)))
+
+    p["loans"] = loans
     return p
 
 def is_company_owner(user: dict, company_profile: dict) -> bool:
@@ -430,6 +470,26 @@ def can_decide_request(user: dict, company_profile: dict, mode: str, module: str
     if module == "gl" and action in {"reverse_journal"}:
         return can_decide_approvals(user, company_profile, mode)
 
+    if module == "loans" and action in {
+        "create_loan",
+        "post_loan_payment",
+        "release_loan_payment",
+        "post_loan_reclassification",
+        "post_loan_modification",
+        "post_loan_settlement",
+    }:
+        return can_decide_approvals(user, company_profile, mode)
+
+    if module == "loans" and action in {
+        "create_loan",
+        "post_loan_payment",
+        "release_loan_payment",
+        "post_loan_reclassification",
+        "post_loan_modification",
+        "post_loan_settlement",
+    }:
+        return can_decide_approvals(user, company_profile, mode)
+    
     return can_decide_approvals(user, company_profile, mode)
 
 def _bool(x) -> bool:
@@ -730,3 +790,154 @@ def is_engagement_execution_role(user: dict) -> bool:
 
 def is_assignment_execution_context(user: dict) -> bool:
     return is_assignment_scope(user) and is_engagement_execution_role(user)
+
+def loan_review_enabled(pol: dict, user: dict | None = None) -> bool:
+    user = user or {}
+    if is_assignment_execution_context(user):
+        return False
+
+    policy = (pol or {}).get("policy") or {}
+    if not isinstance(policy, dict):
+        return False
+
+    loans = policy.get("loans") if isinstance(policy.get("loans"), dict) else {}
+
+    master = bool(
+        _bool(loans.get("review_enabled"))
+        or _bool(policy.get("loan_review_enabled"))
+        or _bool(policy.get("require_loan_review"))
+    )
+    if master:
+        return True
+
+    granular = bool(
+        _bool(loans.get("require_create_review"))
+        or _bool(loans.get("require_payment_review"))
+        or _bool(loans.get("require_reclassification_review"))
+        or _bool(loans.get("require_modification_review"))
+        or _bool(loans.get("require_settlement_review"))
+        or _bool(policy.get("require_loan_create_review"))
+        or _bool(policy.get("require_loan_payment_review"))
+        or _bool(policy.get("require_loan_reclassification_review"))
+        or _bool(policy.get("require_loan_modification_review"))
+        or _bool(policy.get("require_loan_settlement_review"))
+    )
+    return granular
+
+
+def loan_action_review_required(pol: dict, action: str, user: dict | None = None) -> bool:
+    user = user or {}
+    if is_assignment_execution_context(user):
+        return False
+
+    policy = (pol or {}).get("policy") or {}
+    if not isinstance(policy, dict):
+        return False
+
+    loans = policy.get("loans") if isinstance(policy.get("loans"), dict) else {}
+
+    master = bool(
+        _bool(loans.get("review_enabled"))
+        or _bool(policy.get("loan_review_enabled"))
+        or _bool(policy.get("require_loan_review"))
+    )
+    if master:
+        return True
+
+    action = (action or "").strip().lower()
+
+    if action == "create":
+        return bool(
+            loans.get("require_create_review", False)
+            or policy.get("require_loan_create_review", False)
+        )
+
+    if action == "payment":
+        return bool(
+            loans.get("require_payment_review", False)
+            or policy.get("require_loan_payment_review", False)
+            or policy.get("payment_workflow_enabled", False)
+            or policy.get("require_payment_approval", False)
+        )
+
+    if action == "reclassification":
+        return bool(
+            loans.get("require_reclassification_review", False)
+            or policy.get("require_loan_reclassification_review", False)
+        )
+
+    if action == "modification":
+        return bool(
+            loans.get("require_modification_review", False)
+            or policy.get("require_loan_modification_review", False)
+        )
+
+    if action == "settlement":
+        return bool(
+            loans.get("require_settlement_review", False)
+            or policy.get("require_loan_settlement_review", False)
+        )
+
+    return False
+
+
+def loan_policy_flags(pol: dict) -> dict:
+    policy = (pol or {}).get("policy") or {}
+    loans = policy.get("loans") if isinstance(policy.get("loans"), dict) else {}
+
+    return {
+        "review_enabled": bool(
+            loans.get("review_enabled")
+            or policy.get("loan_review_enabled")
+            or policy.get("require_loan_review")
+        ),
+        "create_review": bool(
+            loans.get("require_create_review")
+            or policy.get("require_loan_create_review")
+        ),
+        "payment_review": bool(
+            loans.get("require_payment_review")
+            or policy.get("require_loan_payment_review")
+            or policy.get("payment_workflow_enabled")
+            or policy.get("require_payment_approval")
+        ),
+        "reclassification_review": bool(
+            loans.get("require_reclassification_review")
+            or policy.get("require_loan_reclassification_review")
+        ),
+        "modification_review": bool(
+            loans.get("require_modification_review")
+            or policy.get("require_loan_modification_review")
+        ),
+        "settlement_review": bool(
+            loans.get("require_settlement_review")
+            or policy.get("require_loan_settlement_review")
+        ),
+    }
+
+
+def can_manage_loans(user: dict, company_profile: dict, mode: str) -> bool:
+    if is_assignment_execution_context(user):
+        role = normalize_role(user.get("user_role") or user.get("role") or user.get("system_role") or "")
+        return role in {
+            "owner", "admin", "reviewer", "audit_manager",
+            "client_service_manager", "engagement_partner",
+            "quality_control_reviewer"
+        }
+
+    mode = normalize_policy_mode(mode)
+    role = company_role(user)
+
+    if mode == "owner_managed":
+        return is_company_owner(user, company_profile) or role in {
+            "admin", "cfo", "manager", "senior", "accountant", "clerk"
+        }
+
+    return is_company_owner(user, company_profile) or role in {
+        "admin", "cfo", "manager", "senior", "accountant", "clerk"
+    }
+
+
+def can_release_loan_funds(user: dict, company_profile: dict) -> bool:
+    role = company_role(user)
+    return is_company_owner(user, company_profile) or role in {"cfo", "admin"}

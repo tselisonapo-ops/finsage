@@ -1826,6 +1826,41 @@ const ENDPOINTS = {
     bankReconAttachJournal: (companyId, reconItemId) =>
      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations/items/${encodeURIComponent(reconItemId)}/attach_journal`,
 
+  loans: {
+    list: (companyId, { status = "", q = "", limit = 200 } = {}) => {
+      const params = new URLSearchParams();
+      if (status) params.append("status", String(status));
+      if (q) params.append("q", String(q));
+      params.append("limit", String(limit ?? 200));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans${qs ? `?${qs}` : ""}`;
+    },
+
+    create: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans`,
+
+    get: (companyId, loanId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}`,
+
+    update: (companyId, loanId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}`,
+
+    recalculate: (companyId, loanId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/schedule/recalculate`,
+
+    paymentsCreate: (companyId, loanId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/payments`,
+
+    paymentPreview: (companyId, paymentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/payments/${encodeURIComponent(paymentId)}/preview_journal`,
+
+    paymentPost: (companyId, paymentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/payments/${encodeURIComponent(paymentId)}/post`,
+
+    reclassify: (companyId, loanId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/reclassify`,
+  },
+
   supportUser: {
     // List tickets for the logged-in user
     list: (companyId) => 
@@ -2735,6 +2770,16 @@ FS.control.syncFromCompany = function syncFromCompany(company) {
     // optional auto-post toggles (if you use them)
     lease_auto_post_monthly_when_review_off: (leases?.auto_post_monthly_when_review_off !== false),
     lease_auto_post_payments_when_review_off: (leases?.auto_post_payments_when_review_off !== false),
+
+    // Loans (master + granular)
+    loan_review_enabled: !!loans?.review_enabled,
+    loan_require_create_review: !!loans?.require_create_review,
+    loan_require_payment_review: !!loans?.require_payment_review,
+    loan_require_post_review: !!loans?.require_post_review,
+    loan_require_reclassification_review: !!loans?.require_reclassification_review,
+    loan_require_modification_review: !!loans?.require_modification_review,
+    loan_require_settlement_review: !!loans?.require_settlement_review,
+    loan_auto_post_payments_when_review_off: (loans?.auto_post_payments_when_review_off !== false),
   };
 
   console.log("[ControlMode] synced from company", {
@@ -3278,6 +3323,68 @@ FS.policy.ppeReviewRequired = function (cid, action) {
   return !!pol.ppe_review_enabled;
 };
 
+FS.policy.canCreateLoanDraft = function (rawRole, cid) {
+  const role = FS.role.normalize(rawRole);
+  const mode = FS.control.get(cid);
+
+  if (mode === FS.control.MODES.OWNER) return true;
+
+  return ["assistant","junior","senior","accountant","manager","cfo","owner","admin"].includes(role);
+};
+
+FS.policy.canApproveLoan = function (rawRole, cid) {
+  const role = FS.role.normalize(rawRole);
+  const mode = FS.control.get(cid);
+
+  if (mode === FS.control.MODES.OWNER) return true;
+
+  if (mode === FS.control.MODES.ASSISTED) {
+    return ["owner","admin","cfo","manager"].includes(role);
+  }
+
+  // controlled
+  return ["owner","admin","cfo"].includes(role);
+};
+
+FS.policy.loanCreateReviewRequired = function (cid) {
+  const pol = FS.policy.companyPolicy?.[cid] || {};
+  const mode = FS.control.get(cid);
+
+  if (mode === FS.control.MODES.OWNER) return false;
+  if (mode === FS.control.MODES.CONTROLLED) return true;
+
+  return !!pol.loan_require_create_review;
+};
+
+FS.policy.loanPaymentReviewRequired = function (cid) {
+  const pol = FS.policy.companyPolicy?.[cid] || {};
+  const mode = FS.control.get(cid);
+
+  if (mode === FS.control.MODES.OWNER) return false;
+  if (mode === FS.control.MODES.CONTROLLED) return true;
+
+  return !!pol.loan_require_payment_review;
+};
+
+FS.policy.loanPostReviewRequired = function (cid) {
+  const pol = FS.policy.companyPolicy?.[cid] || {};
+  const mode = FS.control.get(cid);
+
+  if (mode === FS.control.MODES.OWNER) return false;
+  if (mode === FS.control.MODES.CONTROLLED) return true;
+
+  return !!pol.loan_require_post_review;
+};
+
+FS.policy.loanReclassReviewRequired = function (cid) {
+  const pol = FS.policy.companyPolicy?.[cid] || {};
+  const mode = FS.control.get(cid);
+
+  if (mode === FS.control.MODES.OWNER) return false;
+  if (mode === FS.control.MODES.CONTROLLED) return true;
+
+  return !!pol.loan_require_reclassification_review;
+};
 
 FS.ui.promptReviewChoice = function (cid) {
   const id = FS.control.resolveCid(cid);
@@ -3464,6 +3571,7 @@ function resolveCurrency(currency) {
     "USD" // ultimate fallback (choose USD as safest global default)
   );
 }
+window.resolveCurrency = resolveCurrency;
 
 // 3) Main formatter (use everywhere)
 window.money = function money(n, currency) {
@@ -4111,6 +4219,17 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Bank Setup", screen: "bank-setup", icon: "⚙️", minRole: "clerk", permission: "can_manage_banking" },
         { name: "Cashbook", screen: "banking", icon: "💳", minRole: "assistant", permission: "can_manage_banking" },
         { name: "Bank Reconciliation", screen: "bank-recon", icon: "🧮", minRole: "assistant", permission: "can_manage_banking" },
+      ],
+    },
+
+    {
+      name: "Loans & Financing",
+      icon: "🏦",
+      isParent: true,
+      minRole: "clerk",
+      permission: "can_manage_banking",
+      children: [
+        { name: "Loan Register", screen: "loans", icon: "📘", minRole: "clerk", permission: "can_manage_banking" }
       ],
     },
 
@@ -6351,6 +6470,7 @@ async function switchScreen(name) {
   else if (name === "banking") base = "banking";
   else if (name === "bank-setup") base = "bank-setup";
   else if (name === "bank-recon") base = "bank-recon";
+  else if (name === "loans") base = "loans";
   else if (name.startsWith("lease-")) base = "leases";
   else if (name === "lease-register" || name.startsWith("lease-")) base = "leases";
   else if (name === "account-settings") base = "account-settings";
@@ -6500,6 +6620,19 @@ async function switchScreen(name) {
     renderCOATable?.(COA);
     populateAccountSelects?.();
     bindCoaScreen?.();
+  }
+
+  if (base === "loans") {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      }
+    } catch (e) {
+      console.warn("[Loans] ensureCompanyDataLoaded failed:", e);
+    }
+
+    await window.bindLoansScreen?.();
+    await window.renderLoanRegister?.();
   }
 
   // ✅ AR Workflow screens live in screen-ar
@@ -11094,11 +11227,13 @@ function ensureVatScreen() {
 
 async function renderVatDashboard() {
   // ✅ Always derive currency from company profile (set by resolveCompanyProfile)
-  const cur = String(
-    window.CURRENT_COMPANY?.currency ||
-    window.CURRENT_CURRENCY ||
-    "ZAR"
-  ).toUpperCase();
+  const cur = (typeof window.resolveCurrency === "function")
+    ? window.resolveCurrency()
+    : String(
+        window.CURRENT_COMPANY?.currency ||
+        window.CURRENT_CURRENCY ||
+        "USD"
+      ).toUpperCase();
 
   // ✅ safe html helper (some of your code uses escapeHtml)
   const esc = (s) => String(s ?? "")
@@ -30071,16 +30206,6 @@ async function saveEditModal() {
 })();
 
 
-function getPpeAssetEndpoints() {
-  const EP = window.ENDPOINTS || window.endpoints; // support both
-  const A  = EP?.assets || {};
-  return {
-    assetsList: A.list,
-    docs: A.assetDocs || EP?.assetDocs,   // fallback if you ever move it out
-    ver:  A.assetVer  || EP?.assetVer,
-  };
-}
-
 function bindAssetDocsAndVerificationsPanel({ cid, assetId }) {
   const $ = (id) => document.getElementById(id);
 
@@ -30852,6 +30977,1016 @@ function bindAssetRecordsPickerModal({ cid }) {
     close: hide,
   };
 }
+
+(function () {
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  const LOANS_STATE = {
+    bound: false,
+    loading: false,
+    currentLoanId: null,
+    loans: [],
+    loanDetail: null,
+    bankAccounts: [],
+    lastPaymentDraft: null,
+  };
+
+  function getCid() {
+    return (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null)
+      || window.CURRENT_COMPANY_ID
+      || window.CURRENT_COMPANY?.id
+      || null;
+  }
+
+function getCurrency(currency) {
+  return window.resolveCurrency
+    ? window.resolveCurrency(currency)
+    : (
+        String(currency || "").trim().toUpperCase() ||
+        String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
+        String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
+        "USD"
+      );
+}
+
+function resolveLoanCurrency(currency) {
+  return (typeof window.resolveCurrency === "function")
+    ? window.resolveCurrency(currency)
+    : (
+        String(currency || "").trim().toUpperCase() ||
+        String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
+        String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
+        "USD"
+      );
+}
+
+  function n2(v) {
+    const n = Number(v || 0);
+    return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+  }
+
+  function fmtDate(v) {
+    if (!v) return "—";
+    try {
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return String(v);
+      return d.toLocaleDateString("en-ZA");
+    } catch {
+      return String(v);
+    }
+  }
+
+  function debounce(fn, wait = 250) {
+    let t = null;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function setLoanTab(name) {
+    $$("[data-loan-tab]").forEach((btn) => {
+      const active = btn.getAttribute("data-loan-tab") === name;
+      btn.classList.toggle("bg-[var(--fs-teal)]", active);
+      btn.classList.toggle("text-white", active);
+      btn.classList.toggle("border", !active);
+      btn.classList.toggle("bg-white", !active);
+    });
+
+    $$("[data-loan-pane]").forEach((pane) => {
+      pane.classList.toggle("hidden", pane.getAttribute("data-loan-pane") !== name);
+    });
+  }
+
+function normalizeLoanStatus(rawStatus, r = {}) {
+  const s = String(rawStatus || "draft").toLowerCase();
+
+  // approval layer override
+  if (r?.approval_status === "pending") return "pending_approval";
+
+  return s;
+}
+
+  function newLoanTemplate() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    const start = `${yyyy}-${mm}-${dd}`;
+
+    const next = new Date(today);
+    next.setMonth(next.getMonth() + 1);
+    const nextStr = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+
+    return {
+      status: "draft",
+      loan_type: "term_loan",
+      start_date: start,
+      first_payment_date: nextStr,
+      payment_frequency: "monthly",
+      interest_method: "amortised_fixed_payment",
+      currency: getCurrency(),
+      variable_rate: false,
+      balloon_amount: 0,
+      fees_amount: 0,
+      accrued_interest_opening: 0,
+      repayment_holiday_count: 0,
+    };
+  }
+
+  function getLoanFormPayload() {
+    return {
+      loan_name: ($("#loanName")?.value || "").trim(),
+      loan_reference: ($("#loanReference")?.value || "").trim(),
+      lender_name: ($("#loanLender")?.value || "").trim(),
+      loan_type: ($("#loanType")?.value || "term_loan").trim(),
+      start_date: $("#loanStartDate")?.value || null,
+      first_payment_date: $("#loanFirstPaymentDate")?.value || null,
+      principal_amount: Number($("#loanPrincipalAmount")?.value || 0),
+      annual_interest_rate: Number($("#loanInterestRate")?.value || 0),
+      interest_method: ($("#loanInterestMethod")?.value || "amortised_fixed_payment").trim(),
+      term_count: Number($("#loanTermCount")?.value || 0),
+      payment_frequency: ($("#loanPaymentFrequency")?.value || "monthly").trim(),
+      balloon_amount: Number($("#loanBalloonAmount")?.value || 0),
+      fees_amount: Number($("#loanFeesAmount")?.value || 0),
+      accrued_interest_opening: Number($("#loanAccruedOpening")?.value || 0),
+      repayment_holiday_count: Number($("#loanRepaymentHolidayCount")?.value || 0),
+      variable_rate: !!$("#loanVariableRate")?.checked,
+      currency: resolveLoanCurrency($("#loanCurrency")?.value),
+      bank_account_id: Number($("#loanBankAccountId")?.value || 0) || null,
+      interest_expense_account_code: ($("#loanInterestExpenseAccountCode")?.value || "").trim(),
+      accrued_interest_account_code: ($("#loanAccruedInterestAccountCode")?.value || "").trim(),
+      loan_payable_current_account_code: ($("#loanPayableCurrentAccountCode")?.value || "").trim(),
+      loan_payable_noncurrent_account_code: ($("#loanPayableNonCurrentAccountCode")?.value || "").trim(),
+      fees_asset_account_code: ($("#loanFeesAssetAccountCode")?.value || "").trim() || null,
+      fees_expense_account_code: ($("#loanFeesExpenseAccountCode")?.value || "").trim() || null,
+      agreement_reference: ($("#loanAgreementReference")?.value || "").trim() || null,
+      notes: ($("#loanNotes")?.value || "").trim() || null,
+    };
+  }
+
+  function fillLoanForm(loan) {
+    loan = loan || {};
+
+    $("#loanName").value = loan.loan_name || "";
+    $("#loanReference").value = loan.loan_reference || "";
+    $("#loanLender").value = loan.lender_name || "";
+    $("#loanType").value = loan.loan_type || "term_loan";
+    $("#loanStartDate").value = loan.start_date || "";
+    $("#loanFirstPaymentDate").value = loan.first_payment_date || "";
+    $("#loanPrincipalAmount").value = loan.principal_amount ?? "";
+    $("#loanInterestRate").value = loan.annual_interest_rate ?? "";
+    $("#loanInterestMethod").value = loan.interest_method || "amortised_fixed_payment";
+    $("#loanTermCount").value = loan.term_count ?? "";
+    $("#loanPaymentFrequency").value = loan.payment_frequency || "monthly";
+    $("#loanBalloonAmount").value = loan.balloon_amount ?? 0;
+    $("#loanFeesAmount").value = loan.fees_amount ?? 0;
+    $("#loanAccruedOpening").value = loan.accrued_interest_opening ?? 0;
+    $("#loanRepaymentHolidayCount").value = loan.repayment_holiday_count ?? 0;
+    $("#loanVariableRate").checked = !!loan.variable_rate;
+    $("#loanCurrency").value = loan.currency || "ZAR";
+    $("#loanBankAccountId").value = loan.bank_account_id || "";
+    $("#loanInterestExpenseAccountCode").value = loan.interest_expense_account_code || "";
+    $("#loanAccruedInterestAccountCode").value = loan.accrued_interest_account_code || "";
+    $("#loanPayableCurrentAccountCode").value = loan.loan_payable_current_account_code || "";
+    $("#loanPayableNonCurrentAccountCode").value = loan.loan_payable_noncurrent_account_code || "";
+    $("#loanFeesAssetAccountCode").value = loan.fees_asset_account_code || "";
+    $("#loanFeesExpenseAccountCode").value = loan.fees_expense_account_code || "";
+    $("#loanAgreementReference").value = loan.agreement_reference || "";
+    $("#loanNotes").value = loan.notes || "";
+
+    $("#loanStatusPill").textContent = loan.status || "New";
+    $("#loanRefPill").textContent = loan.loan_reference || "";
+    $("#loanRefPill").classList.toggle("hidden", !loan.loan_reference);
+  }
+
+  function fillLoanCards(loan) {
+    loan = loan || {};
+    const ccy = getCurrency(loan.currency);
+    $("#loanCardPrincipal").textContent = window.money(loan.principal_amount || 0, ccy);
+    $("#loanCardOutstanding").textContent = money(loan.outstanding_principal || 0, ccy);
+    $("#loanCardInterest").textContent = money(loan.total_interest_projected || 0, ccy);
+    $("#loanCardInstalment").textContent = money(loan.payment_amount || 0, ccy);
+    $("#loanCardNextDue").textContent = loan.next_due_date ? fmtDate(loan.next_due_date) : "—";
+  }
+
+  function renderLoanList(loans) {
+    const host = $("#loanList");
+    if (!host) return;
+
+    if (!Array.isArray(loans) || !loans.length) {
+      host.innerHTML = `
+        <div class="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">
+          No loans found.
+        </div>
+      `;
+      return;
+    }
+
+    host.innerHTML = loans.map((loan) => {
+      const active = Number(LOANS_STATE.currentLoanId) === Number(loan.id);
+      return `
+        <button
+          type="button"
+          data-loan-id="${loan.id}"
+          class="w-full text-left rounded-xl border px-3 py-3 hover:border-[var(--fs-teal)] ${active ? 'border-[var(--fs-teal)] bg-cyan-50' : 'bg-white'}"
+        >
+          <div class="flex items-center gap-2">
+            <div class="font-semibold text-slate-800 truncate">${escapeHtml(loan.loan_name || "Untitled Loan")}</div>
+            <div class="ml-auto">${renderStatusPill(loan.status, loan)}</div>
+          </div>
+          <div class="mt-1 text-xs text-slate-500">${escapeHtml(loan.lender_name || "—")}</div>
+          <div class="mt-2 flex items-center justify-between text-xs">
+            <span class="text-slate-500">${escapeHtml(loan.loan_reference || "")}</span>
+            <span class="font-semibold text-slate-700">${money(loan.outstanding_principal || 0, loan.currency || "ZAR")}</span>
+          </div>
+        </button>
+      `;
+    }).join("");
+
+    $$("[data-loan-id]", host).forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const loanId = Number(btn.getAttribute("data-loan-id") || 0);
+        if (loanId > 0) await loadLoanDetail(loanId);
+      });
+    });
+  }
+
+  function renderScheduleRows(schedule, currency = null) {
+    currency = getCurrency(currency);    const host = $("#loanScheduleRows");
+    if (!host) return;
+
+    if (!Array.isArray(schedule) || !schedule.length) {
+      host.innerHTML = `<tr><td colspan="8" class="px-3 py-6 text-center text-slate-400">No schedule available.</td></tr>`;
+      return;
+    }
+
+    host.innerHTML = schedule.map((r) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${r.period_no ?? ""}</td>
+        <td class="px-3 py-2">${fmtDate(r.due_date)}</td>
+        <td class="px-3 py-2 text-right">${money(r.opening_balance || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(r.scheduled_payment || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(r.scheduled_interest || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(r.scheduled_principal || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(r.closing_balance || 0, currency)}</td>
+        <td class="px-3 py-2"><span class="pill">${escapeHtml(r.payment_status || "open")}</span></td>
+      </tr>
+    `).join("");
+  }
+
+function renderPaymentsRows(payments, currency = null) {
+  currency = getCurrency(currency);  const host = $("#loanPaymentsRows");
+  if (!host) return;
+
+  if (!Array.isArray(payments) || !payments.length) {
+    host.innerHTML = `<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400">No payments yet.</td></tr>`;
+    return;
+  }
+
+  host.innerHTML = payments.map((p) => `
+    <tr class="border-t">
+      <td class="px-3 py-2">${fmtDate(p.payment_date)}</td>
+      <td class="px-3 py-2">${escapeHtml(p.reference || "")}</td>
+      <td class="px-3 py-2 text-right">${money(p.amount_paid || 0, currency)}</td>
+      <td class="px-3 py-2 text-right">${money(p.principal_amount || 0, currency)}</td>
+      <td class="px-3 py-2 text-right">${money(p.interest_amount || 0, currency)}</td>
+      <td class="px-3 py-2 text-right">${money(p.accrued_interest_amount || 0, currency)}</td>
+      <td class="px-3 py-2"><td>${renderStatusPill(p.status, p)}</td>
+      <td class="px-3 py-2 text-xs text-slate-600">${escapeHtml(paymentWorkflowText(p))}</td>
+      <td class="px-3 py-2">
+        <div class="flex gap-2 flex-wrap">
+          <button class="btn" data-payment-preview="${p.id}">Preview</button>
+          ${String(p.status || "").toLowerCase() !== "posted"
+            ? `<button class="btn-highlight" data-payment-post="${p.id}">Post</button>`
+            : `<button class="btn" disabled>Posted</button>`
+          }
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  $$("[data-payment-preview]", host).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const paymentId = Number(btn.getAttribute("data-payment-preview") || 0);
+      if (paymentId > 0) await previewLoanPaymentJournal(paymentId, { pushToMainTab: true });
+    });
+  });
+
+  $$("[data-payment-post]", host).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const paymentId = Number(btn.getAttribute("data-payment-post") || 0);
+      if (paymentId > 0) await postLoanPayment(paymentId);
+    });
+  });
+}
+
+  function renderMainJournalPreview(entry) {
+    const host = $("#loanJournalPreviewRows");
+    if (!host) return;
+
+    const lines = entry?.lines || [];
+    if (!lines.length) {
+      host.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td></tr>`;
+      return;
+    }
+
+    host.innerHTML = lines.map((ln) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${escapeHtml(ln.account_code || "")}</td>
+        <td class="px-3 py-2">${escapeHtml(ln.description || "")}</td>
+        <td class="px-3 py-2 text-right">${n2(ln.debit || 0)}</td>
+        <td class="px-3 py-2 text-right">${n2(ln.credit || 0)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderPaymentModalAllocations(allocations, currency = null) {
+    currency = getCurrency(currency);    const host = $("#loanPaymentAllocRows");
+    if (!host) return;
+
+    if (!Array.isArray(allocations) || !allocations.length) {
+      host.innerHTML = `<tr><td colspan="3" class="px-3 py-6 text-center text-slate-400">No allocations yet.</td></tr>`;
+      return;
+    }
+
+    host.innerHTML = allocations.map((a) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${escapeHtml(a.allocation_type || "")}</td>
+        <td class="px-3 py-2">${a.loan_schedule_id ? `Schedule #${a.loan_schedule_id}` : "General"}</td>
+        <td class="px-3 py-2 text-right">${money(a.amount || 0, currency)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderPaymentModalJournal(entry) {
+    const host = $("#loanPaymentJournalRows");
+    if (!host) return;
+
+    const lines = entry?.lines || [];
+    if (!lines.length) {
+      host.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">Journal preview will appear here.</td></tr>`;
+      return;
+    }
+
+    host.innerHTML = lines.map((ln) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${escapeHtml(ln.account_code || "")}</td>
+        <td class="px-3 py-2">${escapeHtml(ln.description || "")}</td>
+        <td class="px-3 py-2 text-right">${n2(ln.debit || 0)}</td>
+        <td class="px-3 py-2 text-right">${n2(ln.credit || 0)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function fillPaymentCards(payment) {
+    payment = payment || {};
+    $("#loanPaymentPrincipalCard").textContent = n2(payment.principal_amount || 0);
+    $("#loanPaymentInterestCard").textContent = n2(payment.interest_amount || 0);
+    $("#loanPaymentAccruedCard").textContent = n2(payment.accrued_interest_amount || 0);
+
+    const total = Number(payment.amount_paid || 0);
+    const used =
+      Number(payment.principal_amount || 0) +
+      Number(payment.interest_amount || 0) +
+      Number(payment.accrued_interest_amount || 0) +
+      Number(payment.fees_amount || 0) +
+      Number(payment.penalties_amount || 0);
+
+    $("#loanPaymentRemainingCard").textContent = n2(total - used);
+  }
+
+  function computeLoanStats(loans) {
+    const activeCount = (loans || []).filter((x) => String(x.status || "").toLowerCase() === "active").length;
+    const totalOutstanding = (loans || []).reduce((acc, x) => acc + Number(x.outstanding_principal || 0), 0);
+    $("#loanStatActive").textContent = String(activeCount);
+    $("#loanStatOutstanding").textContent = window.money(totalOutstanding, getCurrency());
+  }
+
+  async function loadBankAccounts() {
+    const cid = getCid();
+    if (!cid) return [];
+
+    if (typeof ENDPOINTS?.bankAccounts !== "function") {
+      LOANS_STATE.bankAccounts = [];
+      fillBankAccountSelects([]);
+      return [];
+    }
+
+    try {
+      const res = await window.apiFetch(ENDPOINTS.bankAccounts(cid));
+      const json = await res.json();
+      LOANS_STATE.bankAccounts = json?.data || json || [];
+    } catch (e) {
+      console.warn("[Loans] bank accounts endpoint unavailable", e);
+      LOANS_STATE.bankAccounts = [];
+    }
+
+    fillBankAccountSelects(LOANS_STATE.bankAccounts);
+    return LOANS_STATE.bankAccounts;
+  }
+
+  function fillBankAccountSelects(rows) {
+    const options = [
+      `<option value="">Select bank account</option>`,
+      ...(rows || []).map((r) => `<option value="${r.id}">${escapeHtml(r.name || r.account_name || `Bank ${r.id}`)}</option>`)
+    ].join("");
+
+    ["loanBankAccountId", "loanPaymentBankAccountId"].forEach((id) => {
+      const el = $("#" + id);
+      if (el) el.innerHTML = options;
+    });
+  }
+
+  function isApprovalRequiredResponse(res, json) {
+    return (
+      Number(res?.status) === 202 &&
+      String(json?.error || "").toUpperCase() === "APPROVAL_REQUIRED"
+    );
+  }
+
+  function loanWorkflowStatusLabel(status) {
+    const s = String(status || "").toLowerCase();
+    if (s === "pending_approval") return "Pending approval";
+    if (s === "approved") return "Approved";
+    if (s === "posted") return "Posted";
+    if (s === "draft") return "Draft";
+    if (s === "active") return "Active";
+    if (s === "rejected") return "Rejected";
+    if (s === "cancelled") return "Cancelled";
+    return status || "—";
+  }
+
+  async function handleLoanApprovalRequired(json, {
+    successMessage = "Submitted for approval.",
+    keepModalOpen = true,
+  } = {}) {
+    const req = json?.approval_request || null;
+    const requestId = Number(req?.id || 0) || null;
+
+    try {
+      if (requestId) {
+        store?.set?.("fs_last_approval_request_id", requestId);
+        store?.set?.("fs_last_approval_module", "loans");
+      }
+    } catch (_) {}
+
+    if (LOANS_STATE.currentLoanId) {
+      try { await loadLoanDetail(LOANS_STATE.currentLoanId); } catch (_) {}
+    }
+
+    try { await renderLoanRegister(); } catch (_) {}
+    setLoanTab("loan-payments");
+
+    if (!keepModalOpen) {
+      try { closeLoanPaymentModal(); } catch (_) {}
+    }
+
+    alert(successMessage);
+    return { approvalRequired: true, approvalRequest: req };
+  }
+
+  async function renderLoanRegister() {
+    const cid = getCid();
+    if (!cid) return;
+
+    const status = ($("#loanFilterStatus")?.value || "active").trim();
+    const q = ($("#loanSearch")?.value || "").trim();
+    const effectiveStatus = status === "all" ? "" : status;
+
+    LOANS_STATE.loading = true;
+    try {
+      const res = await window.apiFetch(ENDPOINTS.loans.list(cid, { status: effectiveStatus, q, limit: 200 }));
+      const json = await res.json();
+      LOANS_STATE.loans = json?.data || [];
+      renderLoanList(LOANS_STATE.loans);
+      computeLoanStats(LOANS_STATE.loans);
+      applyLoanButtonsByMode();   // ← ADD THIS
+
+      if (!LOANS_STATE.currentLoanId && LOANS_STATE.loans.length) {
+        await loadLoanDetail(LOANS_STATE.loans[0].id);
+      } else if (LOANS_STATE.currentLoanId) {
+        const stillExists = LOANS_STATE.loans.some((x) => Number(x.id) === Number(LOANS_STATE.currentLoanId));
+        if (!stillExists && LOANS_STATE.loans.length) {
+          await loadLoanDetail(LOANS_STATE.loans[0].id);
+        } else {
+          renderLoanList(LOANS_STATE.loans);
+        }
+      }
+    } catch (e) {
+      console.error("[Loans] renderLoanRegister failed", e);
+      $("#loanList").innerHTML = `
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          Failed to load loans.
+        </div>
+      `;
+    } finally {
+      LOANS_STATE.loading = false;
+    }
+  }
+
+  async function loadLoanDetail(loanId) {
+    const cid = getCid();
+    if (!cid || !loanId) return;
+
+    try {
+      const res = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));
+      const json = await res.json();
+      const data = json?.data || null;
+      if (!data) return;
+
+      LOANS_STATE.currentLoanId = Number(loanId);
+      LOANS_STATE.loanDetail = data;
+
+      fillLoanForm(data.loan || {});
+      fillLoanCards(data.loan || {});
+      renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
+      renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));      renderMainJournalPreview(null);
+      renderLoanList(LOANS_STATE.loans);
+      setLoanTab("loan-overview");
+
+      applyLoanButtonsByMode();   // ← ADD THIS
+    } catch (e) {
+      console.error("[Loans] loadLoanDetail failed", e);
+      alert("Failed to load loan detail.");
+    }
+  }
+
+async function saveLoan() {
+  const cid = getCid();
+  if (!cid) return;
+
+  const payload = getLoanFormPayload();
+  if (!payload.loan_name) return alert("Loan name is required.");
+  if (!payload.lender_name) return alert("Lender / loan holder is required.");
+  if (!payload.start_date) return alert("Start date is required.");
+  if (!payload.first_payment_date) return alert("First payment date is required.");
+  if (!(Number(payload.principal_amount) > 0)) return alert("Principal amount must be greater than zero.");
+  if (!(Number(payload.term_count) > 0)) return alert("Term must be greater than zero.");
+
+  try {
+    let res;
+    if (LOANS_STATE.currentLoanId) {
+      res = await window.apiFetch(ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId), {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    } else {
+      res = await window.apiFetch(ENDPOINTS.loans.create(cid), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+
+    const json = await res.json();
+
+    // approval-required is a valid workflow result, not an error
+    if (isApprovalRequiredResponse(res, json)) {
+      await handleLoanApprovalRequired(json, {
+        successMessage: "Loan request submitted for approval.",
+        keepModalOpen: true,
+      });
+
+      await renderLoanRegister();
+      setLoanTab("loan-overview");
+      applyLoanButtonsByMode();
+      return;
+    }
+
+    if (!res.ok || json?.ok === false) {
+      throw new Error(json?.error || "Failed to save loan");
+    }
+
+    const newLoanId =
+      json?.data?.loan?.id ||
+      json?.data?.loan_id ||
+      LOANS_STATE.currentLoanId;
+
+    await renderLoanRegister();
+
+    if (newLoanId) {
+      await loadLoanDetail(newLoanId);
+    } else {
+      applyLoanButtonsByMode();
+    }
+
+    setLoanTab("loan-overview");
+    alert("Loan saved.");
+  } catch (e) {
+    console.error("[Loans] saveLoan failed", e);
+    alert(String(e.message || e));
+  }
+}
+
+  async function recalculateLoanSchedule() {
+    const cid = getCid();
+    const loanId = LOANS_STATE.currentLoanId;
+    if (!cid || !loanId) return alert("Select a loan first.");
+
+    try {
+      const res = await window.apiFetch(ENDPOINTS.loans.recalculate(cid, loanId), {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "Failed to recalculate schedule");
+      }
+
+      await loadLoanDetail(loanId);
+      setLoanTab("loan-schedule");
+      alert("Schedule recalculated.");
+    } catch (e) {
+      console.error("[Loans] recalculateLoanSchedule failed", e);
+      alert(String(e.message || e));
+    }
+  }
+
+  async function reclassifyLoan() {
+    const cid = getCid();
+    const loanId = LOANS_STATE.currentLoanId;
+    if (!cid || !loanId) return alert("Select a loan first.");
+
+    try {
+      const res = await window.apiFetch(ENDPOINTS.loans.reclassify(cid, loanId), {
+        method: "POST",
+        body: JSON.stringify({
+          as_of_date: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "Failed to post reclassification");
+      }
+
+      await loadLoanDetail(loanId);
+      alert("Loan reclassification posted.");
+    } catch (e) {
+      console.error("[Loans] reclassifyLoan failed", e);
+      alert(String(e.message || e));
+    }
+  }
+
+  function openLoanPaymentModal() {
+    const loan = LOANS_STATE.loanDetail?.loan;
+    if (!loan?.id) return alert("Select a loan first.");
+
+    $("#loanPaymentLoanName").value = loan.loan_name || "";
+    $("#loanPaymentDate").value = new Date().toISOString().slice(0, 10);
+    $("#loanPaymentAmount").value = loan.payment_amount || "";
+    $("#loanPaymentBankAccountId").value = loan.bank_account_id || "";
+    $("#loanPaymentReference").value = "";
+    $("#loanPaymentDescription").value = `Loan payment - ${loan.loan_name || ""}`;
+    $("#loanPaymentAutoSplit").checked = true;
+    $("#loanPaymentNotes").value = "";
+
+    fillPaymentCards({});
+    renderPaymentModalAllocations([], getCurrency(loan.currency));
+    renderPaymentModalJournal(null);
+
+    const modal = $("#loanPaymentModal");
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+
+  function closeLoanPaymentModal() {
+    const modal = $("#loanPaymentModal");
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+
+async function saveLoanPaymentDraft({ autoPost = false } = {}) {
+  const cid = getCid();
+  const loanId = LOANS_STATE.currentLoanId;
+  if (!cid || !loanId) return alert("Select a loan first.");
+
+  const payload = {
+    payment_date: $("#loanPaymentDate")?.value || null,
+    amount_paid: Number($("#loanPaymentAmount")?.value || 0),
+    bank_account_id: Number($("#loanPaymentBankAccountId")?.value || 0) || null,
+    reference: ($("#loanPaymentReference")?.value || "").trim(),
+    description: ($("#loanPaymentDescription")?.value || "").trim(),
+    auto_calculate_split: !!$("#loanPaymentAutoSplit")?.checked,
+    notes: ($("#loanPaymentNotes")?.value || "").trim() || null,
+  };
+
+  if (!payload.payment_date) return alert("Payment date is required.");
+  if (!(payload.amount_paid > 0)) return alert("Amount paid must be greater than zero.");
+  if (!payload.bank_account_id) return alert("Bank account is required.");
+
+  try {
+    const res = await window.apiFetch(ENDPOINTS.loans.paymentsCreate(cid, loanId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json();
+
+    // ✅ approval-required is NOT an error
+    if (isApprovalRequiredResponse(res, json)) {
+      LOANS_STATE.lastPaymentDraft = null;
+
+      await handleLoanApprovalRequired(json, {
+        successMessage: "Loan payment submitted for approval.",
+        keepModalOpen: true,
+      });
+
+      return {
+        approval_required: true,
+        approval_request: json?.approval_request || null,
+      };
+    }
+
+    if (!res.ok || json?.ok === false) {
+      throw new Error(json?.error || "Failed to create loan payment");
+    }
+
+    LOANS_STATE.lastPaymentDraft = json?.data || null;
+
+    const p = LOANS_STATE.lastPaymentDraft?.payment || {};
+    const allocs = LOANS_STATE.lastPaymentDraft?.allocations || [];
+    const preview = LOANS_STATE.lastPaymentDraft?.journal_preview || null;
+
+    fillPaymentCards(p);
+    renderPaymentModalAllocations([], resolveLoanCurrency(loan.currency));
+    renderPaymentModalJournal(preview);
+
+    if (autoPost && p?.id) {
+      await postLoanPayment(p.id, { keepModalOpen: true });
+    }
+
+    return LOANS_STATE.lastPaymentDraft;
+  } catch (e) {
+    console.error("[Loans] saveLoanPaymentDraft failed", e);
+    alert(String(e.message || e));
+    return null;
+  }
+}
+
+  function applyLoanButtonsByMode() {
+    const cid = getCid();
+    if (!cid) return;
+
+    const role =
+      window.currentUser?.company_role ||
+      window.currentUser?.user_role ||
+      window.currentUser?.role ||
+      "viewer";
+
+    const mode = FS.control.get(cid);
+    const canApprove = FS.policy.canApproveLoan(role, cid);
+    const canDraft = FS.policy.canCreateLoanDraft(role, cid);
+
+    const saveBtn = $("#loanSaveBtn");
+    const paymentBtn = $("#loanPaymentBtn");
+    const reclassBtn = $("#loanReclassBtn");
+
+    const createNeedsReview = FS.policy.loanCreateReviewRequired(cid);
+    const paymentNeedsReview = FS.policy.loanPaymentReviewRequired(cid);
+    const reclassNeedsReview = FS.policy.loanReclassReviewRequired(cid);
+
+    if (saveBtn) {
+      saveBtn.disabled = !canDraft;
+      saveBtn.textContent = createNeedsReview && !canApprove ? "Request Approval" : "Save Loan";
+    }
+
+    if (paymentBtn) {
+      paymentBtn.disabled = !canDraft;
+      paymentBtn.textContent = paymentNeedsReview && !canApprove ? "Request Payment Approval" : "Add Payment";
+    }
+
+    if (reclassBtn) {
+      reclassBtn.disabled = !canDraft && !canApprove;
+      reclassBtn.textContent = reclassNeedsReview && !canApprove ? "Request Reclass Approval" : "Post Reclass";
+    }
+
+    const modeEl = document.getElementById("loanModeHint");
+    if (modeEl) {
+      modeEl.textContent =
+        mode === "owner_managed"
+          ? "Owner-managed: direct processing allowed."
+          : mode === "assisted"
+          ? "Assisted: non-owner users prepare and request approval."
+          : "Controlled: separation of duties is enforced.";
+    }
+  }
+
+  async function applyLoanApprovalHandoff() {
+    const requestId = Number(store?.get?.("fs_loan_approval_request_id") || 0) || null;
+    const loanId = Number(store?.get?.("fs_loan_approval_loan_id") || 0) || null;
+    const action = String(store?.get?.("fs_loan_approval_action") || "");
+
+    if (!requestId) return;
+
+    if (loanId) {
+      await loadLoanDetail(loanId);
+    } else {
+      createNewLoan();
+    }
+
+    if (action === "create_loan") {
+      setLoanTab("loan-overview");
+    } else if (["create_loan_payment", "post_loan_payment", "release_loan_payment"].includes(action)) {
+      setLoanTab("loan-payments");
+    } else {
+      setLoanTab("loan-journal");
+    }
+  }
+
+  function paymentWorkflowText(r) {
+    const s = String(r.status || "").toLowerCase();
+    if (s === "pending_approval") return "Awaiting approval";
+    if (s === "posted") return `Journal ${r.journal_id || r.posted_journal_id || "posted"}`;
+    if (s === "draft") return "Draft not submitted";
+    if (s === "rejected") return "Review rejected";
+    return "—";
+  }
+
+async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
+  const cid = getCid();
+  if (!cid || !paymentId) return;
+
+  try {
+    const res = await window.apiFetch(ENDPOINTS.loans.paymentPost(cid, paymentId), {
+      method: "POST",
+    });
+
+    const json = await res.json();
+
+    // ✅ approval-required is NOT an error
+    if (isApprovalRequiredResponse(res, json)) {
+      await handleLoanApprovalRequired(json, {
+        successMessage: "Loan payment posting submitted for approval.",
+        keepModalOpen,
+      });
+      return;
+    }
+
+    if (!res.ok || json?.ok === false) {
+      throw new Error(json?.error || "Failed to post payment");
+    }
+
+    await loadLoanDetail(LOANS_STATE.currentLoanId);
+    await renderLoanRegister();
+    setLoanTab("loan-payments");
+
+    if (!keepModalOpen) closeLoanPaymentModal();
+    alert("Loan payment posted.");
+  } catch (e) {
+    console.error("[Loans] postLoanPayment failed", e);
+    alert(String(e.message || e));
+  }
+}
+
+  async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = {}) {
+    const cid = getCid();
+    if (!cid || !paymentId) return;
+
+    try {
+      const res = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
+      const json = await res.json();
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "Failed to preview payment journal");
+      }
+
+      const entry = json?.data || null;
+      renderMainJournalPreview(entry);
+      if (pushToMainTab) setLoanTab("loan-journal");
+    } catch (e) {
+      console.error("[Loans] previewLoanPaymentJournal failed", e);
+      alert(String(e.message || e));
+    }
+  }
+
+  function createNewLoan() {
+    LOANS_STATE.currentLoanId = null;
+    LOANS_STATE.loanDetail = {
+      loan: newLoanTemplate(),
+      schedule: [],
+      payments: [],
+      journals: [],
+    };
+    fillLoanForm(LOANS_STATE.loanDetail.loan);
+    fillLoanCards(LOANS_STATE.loanDetail.loan);
+    renderScheduleRows([], resolveLoanCurrency());
+    renderPaymentsRows([], resolveLoanCurrency());
+    renderMainJournalPreview(null);
+    setLoanTab("loan-overview");
+    applyLoanButtonsByMode();
+  }
+
+  async function bindLoansScreen() {
+    if (LOANS_STATE.bound) return;
+    LOANS_STATE.bound = true;
+
+    await loadBankAccounts();
+    await renderLoanRegister();
+    await applyLoanApprovalHandoff();
+    applyLoanButtonsByMode();
+
+    $("#loanNewBtn")?.addEventListener("click", createNewLoan);
+    $("#loanSaveBtn")?.addEventListener("click", saveLoan);
+    $("#loanRecalcBtn")?.addEventListener("click", recalculateLoanSchedule);
+    $("#loanReclassBtn")?.addEventListener("click", reclassifyLoan);
+    $("#loanPaymentBtn")?.addEventListener("click", openLoanPaymentModal);
+
+    $("#loanFilterStatus")?.addEventListener("change", renderLoanRegister);
+    $("#loanSearch")?.addEventListener("input", debounce(renderLoanRegister, 250));
+
+    $$("[data-loan-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setLoanTab(btn.getAttribute("data-loan-tab"));
+      });
+    });
+
+    $("#loanPreviewLastPaymentBtn")?.addEventListener("click", async () => {
+      const payments = LOANS_STATE.loanDetail?.payments || [];
+      if (!payments.length) return alert("No payments found.");
+      await previewLoanPaymentJournal(payments[0].id, { pushToMainTab: false });
+    });
+
+    $("#loanPreviewReclassBtn")?.addEventListener("click", async () => {
+      const loan = LOANS_STATE.loanDetail?.loan;
+      if (!loan?.id) return alert("Select a loan first.");
+      renderMainJournalPreview({
+        lines: [
+          {
+            account_code: loan.loan_payable_noncurrent_account_code || "",
+            description: `Reclass to current - ${loan.loan_name || ""}`,
+            debit: Number(loan.outstanding_principal || 0),
+            credit: 0,
+          },
+          {
+            account_code: loan.loan_payable_current_account_code || "",
+            description: `Reclass to current - ${loan.loan_name || ""}`,
+            debit: 0,
+            credit: Number(loan.outstanding_principal || 0),
+          },
+        ],
+      });
+      setLoanTab("loan-journal");
+    });
+
+    $("#loanPaymentsRefreshBtn")?.addEventListener("click", async () => {
+      if (LOANS_STATE.currentLoanId) await loadLoanDetail(LOANS_STATE.currentLoanId);
+    });
+
+    $("#loanPaymentModalCloseBtn")?.addEventListener("click", closeLoanPaymentModal);
+
+    $("#loanPaymentSaveBtn")?.addEventListener("click", async () => {
+      await saveLoanPaymentDraft({ autoPost: false });
+    });
+
+    $("#loanPaymentPostBtn")?.addEventListener("click", async () => {
+      const draft = await saveLoanPaymentDraft({ autoPost: false });
+      const paymentId = draft?.payment?.id;
+      if (paymentId) {
+        await postLoanPayment(paymentId);
+        closeLoanPaymentModal();
+      }
+    });
+
+    setLoanTab("loan-overview");
+  }
+
+function renderStatusPill(status, r = {}) {
+  const s = normalizeLoanStatus(status, r);
+
+  const cls =
+    s === "posted" || s === "active"
+      ? "bg-emerald-100 text-emerald-700"
+      : s === "pending_approval"
+      ? "bg-amber-100 text-amber-700"
+      : s === "draft"
+      ? "bg-slate-100 text-slate-700"
+      : s === "rejected"
+      ? "bg-rose-100 text-rose-700"
+      : s === "cancelled" || s === "void"
+      ? "bg-slate-200 text-slate-700"
+      : "bg-slate-100 text-slate-700";
+
+  return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}">
+    ${escapeHtml(loanWorkflowStatusLabel(s))}
+  </span>`;
+}
+
+  window.bindLoansScreen = bindLoansScreen;
+  window.renderLoanRegister = renderLoanRegister;
+  window.loadLoanDetail = loadLoanDetail;
+  window.setLoanTab = setLoanTab;
+  window.openLoanPaymentModal = openLoanPaymentModal;
+  window.closeLoanPaymentModal = closeLoanPaymentModal;
+})();
+
 // IAS 16 PPE acquisition
 async function postPpeAcquisitionJournal(ppe) {
   // ppe: { date, ref, assetAccount, cost, supplierAccount, vatEnabled, vatMode, vatRate }
@@ -42890,6 +44025,7 @@ async function renderApprovalsScreen(meta = {}) {
             <option value="leases">Leases</option>
             <option value="ppe">PPE</option>
             <option value="control_room">Control Room</option>
+            <option value="loans">Loans</option>
           </select>
         <button id="apprReload" class="px-3 py-1.5 text-xs rounded border">Reload</button>
       </div>
@@ -43030,6 +44166,31 @@ async function renderApprovalsScreen(meta = {}) {
 
     const isPpeTransferApproval =
       mod === "ppe" && act.includes("transfer");
+
+    const isLoanCreateApproval =
+      mod === "loans" &&
+      act === "create_loan" &&
+      et === "loan";
+
+    const isLoanPaymentApproval =
+      mod === "loans" &&
+      ["post_loan_payment", "release_loan_payment", "create_loan_payment"].includes(act) &&
+      et === "loan_payment";
+
+    const isLoanReclassApproval =
+      mod === "loans" &&
+      act === "post_loan_reclassification" &&
+      et === "loan";
+
+    const isLoanModificationApproval =
+      mod === "loans" &&
+      act === "post_loan_modification" &&
+      et === "loan";
+
+    const isLoanSettlementApproval =
+      mod === "loans" &&
+      act === "post_loan_settlement" &&
+      et === "loan";
       
       // ✅ decide which primary action button to show
       let actionBtn = `<button class="apprDecideBtn px-3 py-1.5 text-xs rounded border" data-id="${esc(rid)}">Decide</button>`;
@@ -43127,6 +44288,23 @@ async function renderApprovalsScreen(meta = {}) {
         `;
       }
 
+      else if (
+        isLoanCreateApproval ||
+        isLoanPaymentApproval ||
+        isLoanReclassApproval ||
+        isLoanModificationApproval ||
+        isLoanSettlementApproval
+      ) {
+        actionBtn = `
+          <button class="apprOpenLoanReview px-3 py-1.5 text-xs rounded bg-[var(--fs-navy)] text-white"
+            data-id="${esc(rid)}"
+            data-loan-id="${esc(String(r.entity_id || ""))}"
+            data-action="${esc(String(r.action || ""))}"
+            data-ref="${esc(String(r.entity_ref || ""))}"
+          >Review</button>
+        `;
+      }
+
       return `
         <div class="border rounded-lg p-3">
           <div class="flex items-start justify-between gap-3">
@@ -43153,7 +44331,56 @@ async function renderApprovalsScreen(meta = {}) {
 
     // Normal decide flow
     listEl.querySelectorAll(".apprDecideBtn").forEach(btn => {
-      btn.addEventListener("click", async () => openDecideModal(Number(btn.dataset.id)));
+      btn.addEventListener("click", async () => {
+        const requestId = Number(btn.dataset.id || 0) || null;
+        if (!requestId) return;
+
+        const data = await apiFetch(ENDPOINTS.approvals.get(cid, requestId));
+        const r = data?.item || {};
+
+        const mod = String(r.module || "").toLowerCase();
+        const act = String(r.action || "").toLowerCase();
+
+        bodyEl.innerHTML = `
+          <div class="space-y-1">
+            <div><b>Module:</b> ${esc(String(r.module || ""))}</div>
+            <div><b>Action:</b> ${esc(String(r.action || ""))}</div>
+            <div><b>Entity:</b> ${esc(String(r.entity_ref || r.entity_id || ""))}</div>
+            <div><b>Status:</b> ${esc(String(r.status || ""))}</div>
+          </div>
+        `;
+
+        // ✅ ADD LOAN DETAILS RIGHT HERE
+        if (
+          mod === "loans" &&
+          [
+            "create_loan",
+            "post_loan_payment",
+            "release_loan_payment",
+            "post_loan_reclassification",
+            "post_loan_modification",
+            "post_loan_settlement"
+          ].includes(act)
+        ) {
+          const pj = r.payload_json || {};
+          bodyEl.innerHTML += `
+            <div class="mt-2 border rounded p-2 bg-white">
+              <div class="text-xs font-semibold">Loan workflow details</div>
+              <div class="mt-1 text-slate-600">
+                <div><b>Loan:</b> ${esc(String(pj.loan_name || r.entity_ref || r.entity_id || ""))}</div>
+                <div><b>Reference:</b> ${esc(String(pj.loan_reference || ""))}</div>
+                <div><b>Lender:</b> ${esc(String(pj.lender_name || ""))}</div>
+                <div><b>Amount:</b> ${esc(String(pj.principal_amount || pj.amount_paid || r.amount || ""))} ${esc(String(pj.currency || r.currency || ""))}</div>
+                <div><b>Date:</b> ${esc(String(pj.start_date || pj.payment_date || pj.as_of_date || ""))}</div>
+                <div><b>Bank:</b> ${esc(String(pj.bank_account_id || ""))}</div>
+              </div>
+            </div>
+          `;
+        }
+
+        activeRequestId = requestId;
+        showModal();
+      });
     });
 
     // Customer review flow -> cust approvals screen
@@ -43353,6 +44580,44 @@ async function renderApprovalsScreen(meta = {}) {
           await window.openDepreciationBatchModal?.(requestId, depIds, periodEnd);
         } catch (e) {
           console.error("Depreciation modal not available:", e);
+        }
+      });
+    });
+
+    listEl.querySelectorAll(".apprOpenLoanReview").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const requestId = Number(btn.dataset.id || 0) || null;
+        const loanId = Number(btn.dataset.loanId || 0) || null;
+        const action = String(btn.dataset.action || "");
+
+        store?.set?.("fs_loan_approval_request_id", requestId);
+        store?.set?.("fs_loan_approval_loan_id", loanId);
+        store?.set?.("fs_loan_approval_action", action);
+
+        await switchScreen?.("loans");
+
+        try {
+          await window.ensureLoansScreenReady?.();
+        } catch (_) {}
+
+        if (loanId) {
+          try { await window.loadLoanDetail?.(loanId); } catch (e) {
+            console.error("[Approval] Failed to load loan detail", e);
+          }
+        } else {
+          try { window.createNewLoan?.(); } catch (_) {}
+        }
+
+        // optional: route to exact tab by action
+        if (action === "create_loan") {
+          window.setLoanTab?.("loan-overview");
+        } else if (["create_loan_payment", "post_loan_payment", "release_loan_payment"].includes(action)) {
+          window.setLoanTab?.("loan-payments");
+          if (window.openLoanPaymentModal) {
+            setTimeout(() => window.openLoanPaymentModal(), 80);
+          }
+        } else {
+          window.setLoanTab?.("loan-journal");
         }
       });
     });

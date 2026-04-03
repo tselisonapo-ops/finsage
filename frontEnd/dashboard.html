@@ -3680,6 +3680,448 @@
           </div><!-- /apGrid -->
         </section><!-- /screen-ap -->
         
+        <section id="screen-loans" class="screen hidden">
+          <div class="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-4">
+            <aside class="card p-4 shadow-sage h-[78vh] overflow-auto">
+              <div class="flex items-center justify-between mb-2 gap-2">
+                <h3 class="text-sm font-semibold text-slate-700">Loans & Financing</h3>
+
+                <div class="flex items-center gap-2">
+                  <select id="loanFilterStatus" class="text-[11px] border rounded px-1.5 py-1 bg-white">
+                    <option value="active">Active</option>
+                    <option value="draft">Draft</option>
+                    <option value="closed">Closed</option>
+                    <option value="all">All</option>
+                  </select>
+
+                  <button
+                    id="loanNewBtn"
+                    class="px-2.5 py-1 rounded text-xs font-semibold bg-[var(--fs-teal)] text-white hover:bg-[#00b3b3]"
+                  >
+                    + New
+                  </button>
+                </div>
+              </div>
+
+              <input
+                id="loanSearch"
+                class="mt-3 w-full border rounded px-3 py-2"
+                placeholder="Search loans, lender, reference"
+              >
+
+              <div class="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div class="rounded border bg-slate-50 px-2 py-2">
+                  <div class="text-slate-500">Active Loans</div>
+                  <div id="loanStatActive" class="text-sm font-bold text-slate-800">0</div>
+                </div>
+                <div class="rounded border bg-slate-50 px-2 py-2">
+                  <div class="text-slate-500">Outstanding</div>
+                  <div id="loanStatOutstanding" class="text-sm font-bold text-slate-800">0.00</div>
+                </div>
+              </div>
+
+              <div id="loanList" class="mt-3 space-y-2"></div>
+            </aside>
+
+            <section class="card p-4 shadow-sage min-h-[78vh] overflow-hidden flex flex-col">
+              <div class="flex items-center gap-3 flex-wrap">
+                <h3 class="font-bold">Loan Detail</h3>
+                <span id="loanStatusPill" class="pill">New</span>
+                <span id="loanRefPill" class="pill border bg-white hidden"></span>
+
+                <div class="ml-auto flex gap-2 flex-wrap">
+                  <button id="loanRecalcBtn" class="btn">Recalculate Schedule</button>
+                  <button id="loanReclassBtn" class="btn">Reclassify</button>
+                  <button id="loanPaymentBtn" class="btn">Record Payment</button>
+                  <button id="loanSaveBtn" class="btn-highlight">Save Loan</button>
+                </div>
+              </div>
+
+              <div class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                <div class="rounded-xl border bg-slate-50 p-3">
+                  <div class="text-[11px] text-slate-500">Principal</div>
+                  <div id="loanCardPrincipal" class="text-lg font-bold">0.00</div>
+                </div>
+                <div class="rounded-xl border bg-slate-50 p-3">
+                  <div class="text-[11px] text-slate-500">Outstanding Principal</div>
+                  <div id="loanCardOutstanding" class="text-lg font-bold">0.00</div>
+                </div>
+                <div class="rounded-xl border bg-slate-50 p-3">
+                  <div class="text-[11px] text-slate-500">Projected Interest</div>
+                  <div id="loanCardInterest" class="text-lg font-bold">0.00</div>
+                </div>
+                <div class="rounded-xl border bg-slate-50 p-3">
+                  <div class="text-[11px] text-slate-500">Instalment</div>
+                  <div id="loanCardInstalment" class="text-lg font-bold">0.00</div>
+                </div>
+                <div class="rounded-xl border bg-slate-50 p-3">
+                  <div class="text-[11px] text-slate-500">Next Due</div>
+                  <div id="loanCardNextDue" class="text-lg font-bold">—</div>
+                </div>
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button data-loan-tab="loan-overview" class="pill border bg-white">Overview</button>
+                <button data-loan-tab="loan-schedule" class="pill border bg-white">Schedule</button>
+                <button data-loan-tab="loan-journal" class="pill border bg-white">Journal Preview</button>
+                <button data-loan-tab="loan-payments" class="pill border bg-white">Payments</button>
+                <button data-loan-tab="loan-docs" class="pill border bg-white">Documents</button>
+              </div>
+
+              <div id="loanDetailHost" class="mt-3 grow overflow-auto">
+                <div data-loan-pane="loan-overview" class="space-y-4">
+                  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <label class="text-xs text-slate-600">Loan Name *</label>
+                      <input id="loanName" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Loan Reference</label>
+                      <input id="loanReference" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Lender / Loan Holder *</label>
+                      <input id="loanLender" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Loan Type</label>
+                      <select id="loanType" class="w-full border rounded px-3 py-2">
+                        <option value="term_loan">Term Loan</option>
+                        <option value="vehicle">Vehicle</option>
+                        <option value="mortgage">Mortgage</option>
+                        <option value="overdraft">Overdraft</option>
+                        <option value="director_loan">Director Loan</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Start Date *</label>
+                      <input id="loanStartDate" type="date" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">First Payment Date *</label>
+                      <input id="loanFirstPaymentDate" type="date" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Principal Amount *</label>
+                      <input id="loanPrincipalAmount" type="number" step="0.01" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Annual Interest Rate (%)</label>
+                      <input id="loanInterestRate" type="number" step="0.000001" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Interest Method</label>
+                      <select id="loanInterestMethod" class="w-full border rounded px-3 py-2">
+                        <option value="amortised_fixed_payment">Amortised Fixed Payment</option>
+                        <option value="straight_line_interest">Straight-line Interest</option>
+                        <option value="interest_only">Interest Only</option>
+                        <option value="manual">Manual</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Term</label>
+                      <input id="loanTermCount" type="number" min="1" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Payment Frequency</label>
+                      <select id="loanPaymentFrequency" class="w-full border rounded px-3 py-2">
+                        <option value="monthly">Monthly</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="annually">Annually</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Balloon / Residual Amount</label>
+                      <input id="loanBalloonAmount" type="number" step="0.01" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Fees / Initiation Costs</label>
+                      <input id="loanFeesAmount" type="number" step="0.01" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Opening Accrued Interest</label>
+                      <input id="loanAccruedOpening" type="number" step="0.01" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Repayment Holiday Count</label>
+                      <input id="loanRepaymentHolidayCount" type="number" min="0" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div class="flex items-end">
+                      <label class="inline-flex items-center gap-2 text-sm">
+                        <input id="loanVariableRate" type="checkbox">
+                        <span>Variable Rate</span>
+                      </label>
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Currency</label>
+                      <input id="loanCurrency" class="w-full border rounded px-3 py-2" value="ZAR">
+                    </div>
+                  </div>
+
+                  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <label class="text-xs text-slate-600">Linked Bank Account</label>
+                      <select id="loanBankAccountId" class="w-full border rounded px-3 py-2"></select>
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Interest Expense Account</label>
+                      <input id="loanInterestExpenseAccountCode" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Accrued Interest Account</label>
+                      <input id="loanAccruedInterestAccountCode" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Loan Payable – Current</label>
+                      <input id="loanPayableCurrentAccountCode" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Loan Payable – Non-Current</label>
+                      <input id="loanPayableNonCurrentAccountCode" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Fees Asset / Deferred Cost Account</label>
+                      <input id="loanFeesAssetAccountCode" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Fees Expense Account</label>
+                      <input id="loanFeesExpenseAccountCode" class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
+                      <label class="text-xs text-slate-600">Agreement Reference</label>
+                      <input id="loanAgreementReference" class="w-full border rounded px-3 py-2">
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Notes</label>
+                    <textarea id="loanNotes" class="w-full border rounded px-3 py-2 min-h-[100px]"></textarea>
+                  </div>
+                </div>
+
+                <div data-loan-pane="loan-schedule" class="hidden">
+                  <div class="overflow-auto border rounded-xl">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th class="text-left px-3 py-2">Period</th>
+                          <th class="text-left px-3 py-2">Due Date</th>
+                          <th class="text-right px-3 py-2">Opening</th>
+                          <th class="text-right px-3 py-2">Payment</th>
+                          <th class="text-right px-3 py-2">Interest</th>
+                          <th class="text-right px-3 py-2">Principal</th>
+                          <th class="text-right px-3 py-2">Closing</th>
+                          <th class="text-left px-3 py-2">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody id="loanScheduleRows"></tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div data-loan-pane="loan-journal" class="hidden">
+                  <div class="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-3">
+                    <div class="rounded-xl border p-3 bg-slate-50">
+                      <div class="text-xs font-semibold text-slate-600 mb-2">Preview Source</div>
+                      <div class="space-y-2 text-sm">
+                        <button id="loanPreviewLastPaymentBtn" class="btn w-full">Preview Last Payment</button>
+                        <button id="loanPreviewReclassBtn" class="btn w-full">Preview Reclass Info</button>
+                      </div>
+                    </div>
+
+                    <div class="rounded-xl border overflow-auto">
+                      <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600">
+                          <tr>
+                            <th class="text-left px-3 py-2">Account</th>
+                            <th class="text-left px-3 py-2">Description</th>
+                            <th class="text-right px-3 py-2">Debit</th>
+                            <th class="text-right px-3 py-2">Credit</th>
+                          </tr>
+                        </thead>
+                        <tbody id="loanJournalPreviewRows">
+                          <tr>
+                            <td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div data-loan-pane="loan-payments" class="hidden">
+                  <div class="flex items-center justify-between mb-3">
+                    <div class="text-sm font-semibold text-slate-700">Payment History</div>
+                    <button id="loanPaymentsRefreshBtn" class="btn">Refresh</button>
+                  </div>
+
+                  <div class="overflow-auto border rounded-xl">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th class="text-left px-3 py-2">Date</th>
+                          <th class="text-left px-3 py-2">Reference</th>
+                          <th class="text-right px-3 py-2">Amount</th>
+                          <th class="text-right px-3 py-2">Principal</th>
+                          <th class="text-right px-3 py-2">Interest</th>
+                          <th class="text-right px-3 py-2">Accrued Interest</th>
+                          <th class="text-left px-3 py-2">Status</th>
+                          <th class="text-left px-3 py-2">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="loanPaymentsRows"></tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div data-loan-pane="loan-docs" class="hidden">
+                  <div class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
+                    Documents support can plug in later. Keep this tab for agreement uploads / scans / facility letters.
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div id="loanPaymentModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-2xl w-[95vw] max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div class="px-4 py-3 border-b flex items-center gap-3">
+                <h3 class="font-bold">Record Loan Payment</h3>
+                <div class="ml-auto flex gap-2">
+                  <button id="loanPaymentModalCloseBtn" class="btn">Close</button>
+                  <button id="loanPaymentSaveBtn" class="btn-highlight">Save Draft Payment</button>
+                  <button id="loanPaymentPostBtn" class="btn-highlight">Post Payment</button>
+                </div>
+              </div>
+
+              <div class="p-4 overflow-auto grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4">
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-xs text-slate-600">Loan</label>
+                    <input id="loanPaymentLoanName" class="w-full border rounded px-3 py-2 bg-slate-50" readonly>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Payment Date *</label>
+                    <input id="loanPaymentDate" type="date" class="w-full border rounded px-3 py-2">
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Amount Paid *</label>
+                    <input id="loanPaymentAmount" type="number" step="0.01" class="w-full border rounded px-3 py-2">
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Bank Account *</label>
+                    <select id="loanPaymentBankAccountId" class="w-full border rounded px-3 py-2"></select>
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Reference</label>
+                    <input id="loanPaymentReference" class="w-full border rounded px-3 py-2">
+                  </div>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Description</label>
+                    <input id="loanPaymentDescription" class="w-full border rounded px-3 py-2">
+                  </div>
+
+                  <label class="inline-flex items-center gap-2 text-sm">
+                    <input id="loanPaymentAutoSplit" type="checkbox" checked>
+                    <span>Auto-calculate split</span>
+                  </label>
+
+                  <div>
+                    <label class="text-xs text-slate-600">Notes</label>
+                    <textarea id="loanPaymentNotes" class="w-full border rounded px-3 py-2 min-h-[90px]"></textarea>
+                  </div>
+                </div>
+
+                <div class="space-y-4">
+                  <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                      <div class="text-[11px] text-slate-500">Principal</div>
+                      <div id="loanPaymentPrincipalCard" class="text-lg font-bold">0.00</div>
+                    </div>
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                      <div class="text-[11px] text-slate-500">Interest</div>
+                      <div id="loanPaymentInterestCard" class="text-lg font-bold">0.00</div>
+                    </div>
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                      <div class="text-[11px] text-slate-500">Accrued Interest</div>
+                      <div id="loanPaymentAccruedCard" class="text-lg font-bold">0.00</div>
+                    </div>
+                    <div class="rounded-xl border bg-slate-50 p-3">
+                      <div class="text-[11px] text-slate-500">Remaining Input</div>
+                      <div id="loanPaymentRemainingCard" class="text-lg font-bold">0.00</div>
+                    </div>
+                  </div>
+
+                  <div class="rounded-xl border overflow-auto">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th class="text-left px-3 py-2">Type</th>
+                          <th class="text-left px-3 py-2">Schedule Ref</th>
+                          <th class="text-right px-3 py-2">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody id="loanPaymentAllocRows">
+                        <tr>
+                          <td colspan="3" class="px-3 py-6 text-center text-slate-400">No allocations yet.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="rounded-xl border overflow-auto">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th class="text-left px-3 py-2">Account</th>
+                          <th class="text-left px-3 py-2">Description</th>
+                          <th class="text-right px-3 py-2">Debit</th>
+                          <th class="text-right px-3 py-2">Credit</th>
+                        </tr>
+                      </thead>
+                      <tbody id="loanPaymentJournalRows">
+                        <tr>
+                          <td colspan="4" class="px-3 py-6 text-center text-slate-400">Journal preview will appear here.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- ==================================================
             CATALOG STUDIO (Inventory sub-screens)
             Base screen: inventory
