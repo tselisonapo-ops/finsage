@@ -31459,43 +31459,50 @@ function isApprovalRequiredResponse(res, json) {
     return { approvalRequired: true, approvalRequest: req };
   }
 
-  async function renderLoanRegister() {
-    const cid = getCid();
-    if (!cid) return;
+async function renderLoanRegister() {
+  const cid = getCid();
+  if (!cid) return;
 
-    const status = ($("#loanFilterStatus")?.value || "active").trim();
-    const q = ($("#loanSearch")?.value || "").trim();
-    const effectiveStatus = status === "all" ? "" : status;
+  const status = ($("#loanFilterStatus")?.value || "active").trim();
+  const q = ($("#loanSearch")?.value || "").trim();
+  const effectiveStatus = status === "all" ? "" : status;
 
-    LOANS_STATE.loading = true;
-    try {
-      const res = await window.apiFetch(ENDPOINTS.loans.list(cid, { status: effectiveStatus, q, limit: 200 }));
-      LOANS_STATE.loans = json?.data || [];
-      renderLoanList(LOANS_STATE.loans);
-      computeLoanStats(LOANS_STATE.loans);
-      applyLoanButtonsByMode();   // ← ADD THIS
+  LOANS_STATE.loading = true;
 
-      if (!LOANS_STATE.currentLoanId && LOANS_STATE.loans.length) {
+  try {
+    const json = await window.apiFetch(
+      ENDPOINTS.loans.list(cid, { status: effectiveStatus, q, limit: 200 })
+    );
+
+    LOANS_STATE.loans = json?.data || [];
+    renderLoanList(LOANS_STATE.loans);
+    computeLoanStats(LOANS_STATE.loans);
+    applyLoanButtonsByMode();
+
+    if (!LOANS_STATE.currentLoanId && LOANS_STATE.loans.length) {
+      await loadLoanDetail(LOANS_STATE.loans[0].id);
+    } else if (LOANS_STATE.currentLoanId) {
+      const stillExists = LOANS_STATE.loans.some(
+        (x) => Number(x.id) === Number(LOANS_STATE.currentLoanId)
+      );
+
+      if (!stillExists && LOANS_STATE.loans.length) {
         await loadLoanDetail(LOANS_STATE.loans[0].id);
-      } else if (LOANS_STATE.currentLoanId) {
-        const stillExists = LOANS_STATE.loans.some((x) => Number(x.id) === Number(LOANS_STATE.currentLoanId));
-        if (!stillExists && LOANS_STATE.loans.length) {
-          await loadLoanDetail(LOANS_STATE.loans[0].id);
-        } else {
-          renderLoanList(LOANS_STATE.loans);
-        }
+      } else {
+        renderLoanList(LOANS_STATE.loans);
       }
-    } catch (e) {
-      console.error("[Loans] renderLoanRegister failed", e);
-      $("#loanList").innerHTML = `
-        <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load loans.
-        </div>
-      `;
-    } finally {
-      LOANS_STATE.loading = false;
     }
+  } catch (e) {
+    console.error("[Loans] renderLoanRegister failed", e);
+    $("#loanList").innerHTML = `
+      <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        Failed to load loans.
+      </div>
+    `;
+  } finally {
+    LOANS_STATE.loading = false;
   }
+}
 
   async function loadLoanDetail(loanId) {
     const cid = getCid();
