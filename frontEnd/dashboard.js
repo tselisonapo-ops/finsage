@@ -2732,6 +2732,7 @@ FS.control.syncFromCompany = function syncFromCompany(company) {
   // ---- nested blocks (safe) ----
   const ppe = (cp?.ppe && typeof cp.ppe === "object") ? cp.ppe : {};
   const leases = (cp?.leases && typeof cp.leases === "object") ? cp.leases : {};
+  const loans = (cp?.loans && typeof cp.loans === "object") ? cp.loans : {};
 
   // ✅ optional: keep a fast in-memory cache (used by JS routes)
   FS.policy.companyPolicy = FS.policy.companyPolicy || {};
@@ -2789,6 +2790,7 @@ FS.control.syncFromCompany = function syncFromCompany(company) {
     ap_review_enabled: !!cp?.ap_review_enabled,
     ppe_review_enabled: !!ppe?.review_enabled,
     lease_review_enabled: !!leases?.review_enabled,
+    loan_review_enabled: !!loans?.review_enabled,
   });
 };
 
@@ -31387,7 +31389,6 @@ function renderPaymentsRows(payments, currency = null) {
 
     try {
       const res = await window.apiFetch(ENDPOINTS.bankAccounts(cid));
-      const json = await res.json();
       LOANS_STATE.bankAccounts = json?.data || json || [];
     } catch (e) {
       console.warn("[Loans] bank accounts endpoint unavailable", e);
@@ -31469,7 +31470,6 @@ function renderPaymentsRows(payments, currency = null) {
     LOANS_STATE.loading = true;
     try {
       const res = await window.apiFetch(ENDPOINTS.loans.list(cid, { status: effectiveStatus, q, limit: 200 }));
-      const json = await res.json();
       LOANS_STATE.loans = json?.data || [];
       renderLoanList(LOANS_STATE.loans);
       computeLoanStats(LOANS_STATE.loans);
@@ -31502,8 +31502,7 @@ function renderPaymentsRows(payments, currency = null) {
     if (!cid || !loanId) return;
 
     try {
-      const res = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));
-      const json = await res.json();
+      const res = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));   
       const data = json?.data || null;
       if (!data) return;
 
@@ -31550,7 +31549,7 @@ async function saveLoan() {
       });
     }
 
-    const json = await res.json();
+    
 
     // approval-required is a valid workflow result, not an error
     if (isApprovalRequiredResponse(res, json)) {
@@ -31599,7 +31598,7 @@ async function saveLoan() {
       const res = await window.apiFetch(ENDPOINTS.loans.recalculate(cid, loanId), {
         method: "POST",
       });
-      const json = await res.json();
+
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error || "Failed to recalculate schedule");
       }
@@ -31625,7 +31624,7 @@ async function saveLoan() {
           as_of_date: new Date().toISOString().slice(0, 10),
         }),
       });
-      const json = await res.json();
+
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error || "Failed to post reclassification");
       }
@@ -31691,7 +31690,6 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
       body: JSON.stringify(payload),
     });
 
-    const json = await res.json();
 
     // ✅ approval-required is NOT an error
     if (isApprovalRequiredResponse(res, json)) {
@@ -31822,8 +31820,6 @@ async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
       method: "POST",
     });
 
-    const json = await res.json();
-
     // ✅ approval-required is NOT an error
     if (isApprovalRequiredResponse(res, json)) {
       await handleLoanApprovalRequired(json, {
@@ -31855,7 +31851,7 @@ async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
 
     try {
       const res = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
-      const json = await res.json();
+
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error || "Failed to preview payment journal");
       }
