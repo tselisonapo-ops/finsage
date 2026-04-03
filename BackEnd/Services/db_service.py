@@ -29892,108 +29892,108 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_payment_full(conn, company_id, payment_id)
 
-def preview_loan_payment_journal(self, conn, company_id: int, *, payment_id: int):
-    schema = self.company_schema(company_id)
+    def preview_loan_payment_journal(self, conn, company_id: int, *, payment_id: int):
+        schema = self.company_schema(company_id)
 
-    with conn.cursor() as cur:
-        cur.execute(f"""
-            SELECT
-                p.*,
-                l.loan_name,
-                l.loan_reference,
-                l.currency AS loan_currency,
-                l.interest_expense_account_code,
-                l.accrued_interest_account_code,
-                l.loan_payable_current_account_code,
-                l.loan_payable_noncurrent_account_code
-            FROM {schema}.loan_payments p
-            JOIN {schema}.loans l
-              ON l.company_id = p.company_id
-             AND l.id = p.loan_id
-            WHERE p.company_id = %s
-              AND p.id = %s
-            LIMIT 1
-        """, (company_id, payment_id))
-        row = cur.fetchone()
-        if not row:
-            raise ValueError("payment not found")
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT
+                    p.*,
+                    l.loan_name,
+                    l.loan_reference,
+                    l.currency AS loan_currency,
+                    l.interest_expense_account_code,
+                    l.accrued_interest_account_code,
+                    l.loan_payable_current_account_code,
+                    l.loan_payable_noncurrent_account_code
+                FROM {schema}.loan_payments p
+                JOIN {schema}.loans l
+                ON l.company_id = p.company_id
+                AND l.id = p.loan_id
+                WHERE p.company_id = %s
+                AND p.id = %s
+                LIMIT 1
+            """, (company_id, payment_id))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("payment not found")
 
-        row = dict(row)
+            row = dict(row)
 
-        bank_row = self.get_company_bank_account(company_id, row["bank_account_id"])
-        if not bank_row:
-            raise ValueError("bank account not found")
+            bank_row = self.get_company_bank_account(company_id, row["bank_account_id"])
+            if not bank_row:
+                raise ValueError("bank account not found")
 
-        bank_account_code = (bank_row.get("ledger_account_code") or "").strip()
-        if not bank_account_code:
-            raise ValueError("bank account missing ledger_account_code")
+            bank_account_code = (bank_row.get("ledger_account_code") or "").strip()
+            if not bank_account_code:
+                raise ValueError("bank account missing ledger_account_code")
 
-        principal = _money(row.get("principal_amount"))
-        interest = _money(row.get("interest_amount"))
-        accrued_interest = _money(row.get("accrued_interest_amount"))
-        fees = _money(row.get("fees_amount"))
-        penalties = _money(row.get("penalties_amount"))
-        total = _money(row.get("amount_paid"))
+            principal = _money(row.get("principal_amount"))
+            interest = _money(row.get("interest_amount"))
+            accrued_interest = _money(row.get("accrued_interest_amount"))
+            fees = _money(row.get("fees_amount"))
+            penalties = _money(row.get("penalties_amount"))
+            total = _money(row.get("amount_paid"))
 
-        lines = []
+            lines = []
 
-        if principal > 0:
+            if principal > 0:
+                lines.append({
+                    "account_code": (row.get("loan_payable_current_account_code") or "").strip(),
+                    "description": f"Loan principal settlement - {row['loan_name']}",
+                    "debit": float(principal),
+                    "credit": 0.0,
+                })
+
+            if interest > 0:
+                lines.append({
+                    "account_code": (row.get("interest_expense_account_code") or "").strip(),
+                    "description": f"Loan interest expense - {row['loan_name']}",
+                    "debit": float(interest),
+                    "credit": 0.0,
+                })
+
+            if accrued_interest > 0:
+                accrued_code = (row.get("accrued_interest_account_code") or "").strip()
+                if not accrued_code:
+                    raise ValueError("accrued_interest_account_code required when accrued interest exists")
+                lines.append({
+                    "account_code": accrued_code,
+                    "description": f"Accrued interest settlement - {row['loan_name']}",
+                    "debit": float(accrued_interest),
+                    "credit": 0.0,
+                })
+
+            if fees > 0:
+                raise ValueError("fees posting not yet enabled in MVP")
+
+            if penalties > 0:
+                raise ValueError("penalties posting not yet enabled in MVP")
+
             lines.append({
-                "account_code": (row.get("loan_payable_current_account_code") or "").strip(),
-                "description": f"Loan principal settlement - {row['loan_name']}",
-                "debit": float(principal),
-                "credit": 0.0,
+                "account_code": bank_account_code,
+                "description": f"Loan payment cash out - {row['loan_name']}",
+                "debit": 0.0,
+                "credit": float(total),
             })
 
-        if interest > 0:
-            lines.append({
-                "account_code": (row.get("interest_expense_account_code") or "").strip(),
-                "description": f"Loan interest expense - {row['loan_name']}",
-                "debit": float(interest),
-                "credit": 0.0,
-            })
+            dr = _money(sum(Decimal(str(x.get("debit") or 0)) for x in lines))
+            cr = _money(sum(Decimal(str(x.get("credit") or 0)) for x in lines))
+            if dr != cr:
+                raise ValueError(f"Loan payment journal out of balance: debit={dr} credit={cr}")
 
-        if accrued_interest > 0:
-            accrued_code = (row.get("accrued_interest_account_code") or "").strip()
-            if not accrued_code:
-                raise ValueError("accrued_interest_account_code required when accrued interest exists")
-            lines.append({
-                "account_code": accrued_code,
-                "description": f"Accrued interest settlement - {row['loan_name']}",
-                "debit": float(accrued_interest),
-                "credit": 0.0,
-            })
-
-        if fees > 0:
-            raise ValueError("fees posting not yet enabled in MVP")
-
-        if penalties > 0:
-            raise ValueError("penalties posting not yet enabled in MVP")
-
-        lines.append({
-            "account_code": bank_account_code,
-            "description": f"Loan payment cash out - {row['loan_name']}",
-            "debit": 0.0,
-            "credit": float(total),
-        })
-
-        dr = _money(sum(Decimal(str(x.get("debit") or 0)) for x in lines))
-        cr = _money(sum(Decimal(str(x.get("credit") or 0)) for x in lines))
-        if dr != cr:
-            raise ValueError(f"Loan payment journal out of balance: debit={dr} credit={cr}")
-
-        return {
-            "date": str(row["payment_date"]),
-            "ref": row.get("reference") or f"LOAN-PAY-{payment_id}",
-            "description": f"Loan payment - {row['loan_name']}",
-            "gross_amount": float(total),
-            "net_amount": float(total),
-            "vat_amount": 0.0,
-            "currency": (row.get("loan_currency") or bank_row.get("currency") or "ZAR"),
-            "source": "loan_payment",
-            "source_id": int(payment_id),
-            "lines": lines,
-        }
+            return {
+                "date": str(row["payment_date"]),
+                "ref": row.get("reference") or f"LOAN-PAY-{payment_id}",
+                "description": f"Loan payment - {row['loan_name']}",
+                "gross_amount": float(total),
+                "net_amount": float(total),
+                "vat_amount": 0.0,
+                "currency": (row.get("loan_currency") or bank_row.get("currency") or "ZAR"),
+                "source": "loan_payment",
+                "source_id": int(payment_id),
+                "lines": lines,
+            }
 
 
     def post_loan_payment(self, conn, company_id: int, *, payment_id: int, user_id=None):
