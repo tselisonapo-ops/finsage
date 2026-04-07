@@ -11261,7 +11261,7 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     const vatFrom = vatPeriod?.start ? fmtLocalDate(vatPeriod.start) : null;
     const vatTo = vatPeriod?.end ? fmtLocalDate(vatPeriod.end) : null;
 
-    const [tbMini, pnlMini, vatSummary] = await Promise.all([
+    const [tbMiniRes, pnlMiniRes, vatSummaryRes] = await Promise.allSettled([
       apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
       apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
       (typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
@@ -11269,23 +11269,48 @@ async function renderDashboardKPIs(periodKey = "this_month") {
         : Promise.resolve(null),
     ]);
 
+    if (tbMiniRes.status === "rejected") {
+      console.error("trialBalanceMini failed:", tbMiniRes.reason);
+    }
+    if (pnlMiniRes.status === "rejected") {
+      console.error("pnlMini failed:", pnlMiniRes.reason);
+    }
+    if (vatSummaryRes.status === "rejected") {
+      console.error("vatSummary failed:", vatSummaryRes.reason);
+    }
+
+    const tbMini = tbMiniRes.status === "fulfilled" ? tbMiniRes.value : { rows: [] };
+    const pnlMini = pnlMiniRes.status === "fulfilled" ? pnlMiniRes.value : { rows: [] };
+    const vatSummary = vatSummaryRes.status === "fulfilled" ? vatSummaryRes.value : null;
+
     const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
     const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
 
     const cash = tbRows
       .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
+      .reduce((sum, r) => {
+        const raw = r.closing_balance_raw ?? r.closing_balance;
+        if (raw != null) return sum + Number(raw || 0);
+        return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
+      }, 0);
 
     const ar = tbRows
       .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
+      .reduce((sum, r) => {
+        const raw = r.closing_balance_raw ?? r.closing_balance;
+        if (raw != null) return sum + Number(raw || 0);
+        return sum + Number(r.debit ?? 0) - Number(r.credit ?? 0);
+      }, 0);
 
     const ap = tbRows
       .filter(r => /payable|creditor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => sum + Math.abs(Number(r.closing_balance ?? 0)), 0);
+      .reduce((sum, r) => {
+        const raw = r.closing_balance_raw ?? r.closing_balance;
+        return sum + Math.abs(Number(raw || 0));
+      }, 0);
 
     const np = pnlRows
-      .filter(r => /net profit|profit for the year|profit for period|net income/i.test(String(r.label || r.name || "")))
+      .filter(r => /net profit|profit for the year|profit for period|net income|net loss|loss for the period/i.test(String(r.label || r.name || "")))
       .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
 
     const vat = Number(
@@ -11302,6 +11327,12 @@ async function renderDashboardKPIs(periodKey = "this_month") {
     document.getElementById("kpiVAT").textContent = money(vat);
   } catch (e) {
     console.error("renderDashboardKPIs error:", e);
+
+    document.getElementById("kpiCash").textContent = money(0);
+    document.getElementById("kpiAR").textContent = money(0);
+    document.getElementById("kpiAP").textContent = money(0);
+    document.getElementById("kpiNP").textContent = money(0);
+    document.getElementById("kpiVAT").textContent = money(0);
   }
 }
 window.renderDashboardKPIs = renderDashboardKPIs;

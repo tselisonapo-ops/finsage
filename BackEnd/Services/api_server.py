@@ -7577,6 +7577,10 @@ def api_pnl_mini(company_id: int):
     if not current_user or current_user.get("company_id") != company_id:
         return jsonify({"error": "Not authorised for this company"}), 403
 
+    company = db_service.get_company(company_id)
+    if not company:
+        return jsonify({"error": "Company not found"}), 404
+
     date_from, date_to, meta = resolve_company_period(
         db_service, company_id, request, mode="range"
     )
@@ -7584,14 +7588,16 @@ def api_pnl_mini(company_id: int):
         return jsonify({"error": "from/to required (or preset)"}), 400
 
     try:
-        # ✅ Use the service-layer implementation (single source of truth)
         rows = db_service.get_pnl_mini(company_id, date_from, date_to) or []
         return jsonify({"meta": meta, "rows": rows}), 200
 
     except Exception as e:
-        current_app.logger.exception("api_pnl_mini failed")
+        current_app.logger.exception(
+            "api_pnl_mini failed for company_id=%s from=%s to=%s",
+            company_id, date_from, date_to
+        )
         return jsonify({"error": "Server error", "detail": str(e)}), 500
-
+    
 @app.route("/api/companies/<int:company_id>/cashflow_mini", methods=["GET"])
 @require_auth
 def api_cashflow_mini(company_id: int):

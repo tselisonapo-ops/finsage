@@ -23408,19 +23408,16 @@ class DatabaseService:
         date_to: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Returns a compact P&L summary, e.g.:
-        [
-            {"label": "Revenue", "amount": 100000},
-            {"label": "Cost of Sales", "amount": -40000},
-            {"label": "Gross Profit", "amount": 60000},
-            {"label": "Operating Expenses", "amount": -30000},
-            {"label": "Net Profit", "amount": 30000},
-        ]
+        Returns a compact P&L summary.
         """
-        flags = self._get_company_industry_flags(company_id)
+        company = self.get_company(company_id)
+        if not company:
+            raise ValueError(f"Company {company_id} not found")
+
+        flags = self._get_company_industry_flags(company_id) or {}
         uses_cogs = bool(flags.get("uses_cogs", False))
 
-        tb_rows = self.get_trial_balance(company_id, date_from, date_to)
+        tb_rows = self.get_trial_balance(company_id, date_from, date_to) or []
 
         revenue = 0.0
         cogs = 0.0
@@ -23428,9 +23425,14 @@ class DatabaseService:
         other_income = 0.0
 
         for r in tb_rows:
-            kind = ac._classify_tb_row(r) # ✅
+            kind = ac._classify_tb_row(r)
+
             dr = float(r.get("debit_total") or 0.0)
             cr = float(r.get("credit_total") or 0.0)
+
+            # P&L display sign:
+            # revenue/other income positive
+            # cogs/expenses negative
             amount = cr - dr
 
             if kind == "revenue":
@@ -23439,30 +23441,32 @@ class DatabaseService:
                 cogs += amount
             elif kind == "expense":
                 expenses += amount
-            elif kind == "other_income":
+            elif kind == "other":
                 other_income += amount
 
         rows: List[Dict[str, Any]] = []
 
-        # different wording for NPOs
-        is_npo = "npo" in (flags.get("industry") or "").lower()
+        is_npo = "npo" in str(flags.get("industry") or "").lower()
+        total_income = revenue + other_income
 
-        if revenue != 0:
-            rows.append({"label": "Revenue" if not is_npo else "Income", "amount": revenue})
+        if total_income != 0:
+            rows.append({
+                "label": "Revenue" if not is_npo else "Income",
+                "amount": total_income
+            })
 
         if uses_cogs and cogs != 0:
             rows.append({"label": "Cost of Sales", "amount": cogs})
-            gross = revenue + cogs  # cogs negative → Rev - |COGS|
+            gross = total_income + cogs
             rows.append({"label": "Gross Profit", "amount": gross})
         else:
-            gross = revenue
+            gross = total_income
 
         if expenses != 0:
             rows.append({"label": "Operating Expenses", "amount": expenses})
 
         operating_profit = gross + expenses
         label_profit = "Net Profit" if not is_npo else "Surplus / (Deficit)"
-
         rows.append({"label": label_profit, "amount": operating_profit})
 
         return rows
