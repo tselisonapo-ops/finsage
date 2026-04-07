@@ -29901,8 +29901,8 @@ class DatabaseService:
                 VALUES (
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s
                 )
                 RETURNING id
             """, (
@@ -29942,7 +29942,8 @@ class DatabaseService:
                 Json(data.get("meta_json") or {}),
                 user_id,
             ))
-            loan_id = cur.fetchone()["id"]
+            row = cur.fetchone()
+            loan_id = row["id"] if isinstance(row, dict) else row[0]
 
         conn.commit()
         return self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)
