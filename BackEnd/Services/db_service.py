@@ -21520,18 +21520,6 @@ class DatabaseService:
         return int(self.execute_sql(sql, params) or 0)
     
     def post_journal(self, company_id: int, entry: Dict[str, Any], *, cur=None, conn=None) -> int:
-        """
-        Posts a journal in ONE transaction.
-
-        If cur is provided:
-        - uses that cursor
-        - does NOT open a new connection
-        - does NOT commit (caller controls commit)
-
-        If cur is not provided:
-        - opens its own connection/cursor
-        - commits/rolls back internally
-        """
         schema = self.company_schema(company_id)
 
         je_date = entry.get("date") or date.today().isoformat()
@@ -21545,6 +21533,17 @@ class DatabaseService:
         if hasattr(self, "_rewrite_lines_guarding_ar"):
             entry["lines"] = self._rewrite_lines_guarding_ar(company_id, lines)
             lines = entry["lines"]
+
+        total_debit = 0.0
+        total_credit = 0.0
+        for line in lines:
+            total_debit += float(line.get("debit") or 0.0)
+            total_credit += float(line.get("credit") or 0.0)
+
+        if round(total_debit, 2) != round(total_credit, 2):
+            raise ValueError(
+                f"Unbalanced journal: debits={total_debit:.2f} credits={total_credit:.2f} ref={ref or ''}"
+            )
 
         entry_source = entry.get("source")
         entry_source_id = entry.get("source_id")
@@ -23481,6 +23480,8 @@ class DatabaseService:
         Canonical:
         - ac._classify_tb_row
         - ac._bs_signed_amount
+
+        Includes current-year profit/loss in equity when P&L has not yet been closed.
         """
 
         if as_of:
@@ -23491,24 +23492,41 @@ class DatabaseService:
             else:
                 tb_rows = self.get_trial_balance(company_id, None, None) or []
 
-        # ✅ critical: move cash credit balances to overdraft
+        # BS presentation only
         tb_rows = split_cash_and_overdraft(tb_rows)
 
-        assets = liabilities = equity = 0.0
+        assets = 0.0
+        liabilities = 0.0
+        equity = 0.0
+        current_year_pnl = 0.0
 
         for r in tb_rows:
             kind = ac._classify_tb_row(r)
-            if kind not in ("asset", "liability", "equity"):
+
+            if kind in ("asset", "liability", "equity"):
+                amt = float(ac._bs_signed_amount(kind, r))
+
+                if kind == "asset":
+                    assets += amt
+                elif kind == "liability":
+                    liabilities += amt
+                else:
+                    equity += amt
                 continue
 
-            amt = float(ac._bs_signed_amount(kind, r))
+            if kind in ("revenue", "cogs", "expense", "other"):
+                raw = float(
+                    r.get("closing_balance_raw")
+                    if r.get("closing_balance_raw") is not None
+                    else r.get("closing_balance")
+                    or 0.0
+                )
+                # TB convention = debit - credit
+                # positive => loss, negative => profit
+                current_year_pnl += raw
 
-            if kind == "asset":
-                assets += amt
-            elif kind == "liability":
-                liabilities += amt
-            else:
-                equity += amt
+        # net loss reduces equity; net profit increases equity
+        equity -= current_year_pnl
 
         assets = round(assets, 2)
         liabilities = round(liabilities, 2)
@@ -23518,9 +23536,12 @@ class DatabaseService:
             {"section": "asset", "label": "Total Assets", "amount": assets},
             {"section": "liability", "label": "Total Liabilities", "amount": liabilities},
             {"section": "equity", "label": "Total Equity", "amount": equity},
-            {"section": "check", "label": "Assets - (Liabilities + Equity)", "amount": round(assets - (liabilities + equity), 2)},
+            {
+                "section": "check",
+                "label": "Assets - (Liabilities + Equity)",
+                "amount": round(assets - (liabilities + equity), 2),
+            },
         ]
-
 
     def requires_notes(self, account_code: str) -> bool:
         """

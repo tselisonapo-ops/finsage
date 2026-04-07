@@ -7429,19 +7429,26 @@ def api_trial_balance_mini(company_id: int):
 
         debit_total  = _num(r.get("debit_total")  if r.get("debit_total")  is not None else r.get("debit"))
         credit_total = _num(r.get("credit_total") if r.get("credit_total") is not None else r.get("credit"))
-        closing = _num(r.get("closing_balance")) if r.get("closing_balance") is not None else (debit_total - credit_total)
+        raw = _num(r.get("closing_balance")) if r.get("closing_balance") is not None else (debit_total - credit_total)
+
+        dr_bal = float(raw) if raw > 0 else 0.0
+        cr_bal = float(-raw) if raw < 0 else 0.0
 
         out.append({
             "code": code,
             "name": r.get("name") or code,
             "section": r.get("section") or "",
             "category": r.get("category") or "",
-            "debit": float(debit_total),
-            "credit": float(credit_total),
-            "closing_balance": float(closing),
-        })
 
-    out = split_cash_and_overdraft(out)
+            "debit": float(dr_bal),
+            "credit": float(cr_bal),
+
+            "debit_movement": float(debit_total),
+            "credit_movement": float(credit_total),
+
+            "closing_balance_raw": float(raw),
+            "closing_balance": float(raw),
+        })
 
     return jsonify({
         "meta": {"period": {"from": str(period["from"]), "to": str(period["to"])}, "label": period["label"]},
@@ -7487,18 +7494,15 @@ def api_trial_balance(company_id: int):
         dr_mov = _num(r.get("debit_total")  if r.get("debit_total")  is not None else r.get("debit"))
         cr_mov = _num(r.get("credit_total") if r.get("credit_total") is not None else r.get("credit"))
 
-        # ✅ RAW TB balance is ALWAYS debit - credit (MUST NOT be normalised)
         if r.get("closing_balance_raw") is not None:
             raw = _num(r.get("closing_balance_raw"))
         elif r.get("debit_total") is not None or r.get("credit_total") is not None:
             raw = dr_mov - cr_mov
         elif r.get("closing_balance") is not None:
-            # last resort (only if service didn't provide raw)
             raw = _num(r.get("closing_balance"))
         else:
             raw = dr_mov - cr_mov
 
-        # ✅ TB columns from RAW only
         dr_bal = float(raw) if raw > 0 else 0.0
         cr_bal = float(-raw) if raw < 0 else 0.0
 
@@ -7508,22 +7512,15 @@ def api_trial_balance(company_id: int):
             "section": r.get("section") or "",
             "category": r.get("category") or "",
 
-            # ✅ what the TB UI should show
             "debit": float(dr_bal),
             "credit": float(cr_bal),
 
-            # keep movements for analytics/drilldown
             "debit_movement": float(dr_mov),
             "credit_movement": float(cr_mov),
 
-            # raw closing for debugging
             "closing_balance_raw": float(raw),
-
-            # optional: keep same as raw for TB
             "closing_balance": float(raw),
         })
-
-    out = split_cash_and_overdraft(out)
 
     return jsonify({
         "meta": {
@@ -7532,7 +7529,6 @@ def api_trial_balance(company_id: int):
         },
         "rows": out
     }), 200
-
 
 @app.route("/api/companies/<int:company_id>/trial_balance_asof", methods=["GET"])
 @require_auth
@@ -7562,12 +7558,9 @@ def api_trial_balance_asof(company_id: int):
             "standard": r.get("standard") or "",
             "debit":    float(dr),
             "credit":   float(cr),
-
-            # optional debug
             "closing_balance_raw": float(raw),
+            "closing_balance": float(raw),
         })
-
-    out = split_cash_and_overdraft(out)
 
     return jsonify({
         "meta": {"as_of": str(as_of), "label": f"As at {as_of}"},

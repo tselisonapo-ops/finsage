@@ -37,19 +37,20 @@ def _closing_balance(row: Dict[str, Any]) -> float:
 
 def split_cash_and_overdraft(tb_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
+    Presentation helper for Balance Sheet views only.
+
     If a cash/bank account has a credit balance (closing < 0),
-    reclassify it into Bank Overdraft (current liability).
+    reclassify it into Bank Overdraft (BS_CL_2105).
 
     IMPORTANT:
-    - Emits overdraft line with code 'BS_CL_2105' to match your COA bucket code.
-    - If 'BS_CL_2105' already exists in tb_rows, it will add to it (no duplicate lines).
+    - Do NOT use this for Trial Balance endpoints.
+    - Appends/updates overdraft row only once after scanning all rows.
     """
     rows = tb_rows or []
     out: List[Dict[str, Any]] = []
 
     overdraft_code = "BS_CL_2105"
     overdraft_total = 0.0
-
     existing_overdraft: Optional[Dict[str, Any]] = None
 
     for r in rows:
@@ -57,14 +58,12 @@ def split_cash_and_overdraft(tb_rows: List[Dict[str, Any]]) -> List[Dict[str, An
         name = str(r.get("name") or "").lower()
         fam = str(r.get("code_family") or "").upper().strip()
 
-        # pick up existing overdraft row (avoid duplicate)
         if code == overdraft_code:
             existing_overdraft = dict(r)
             continue
 
         num = _num_from_code(code)
 
-        # cash detection (bucket aware + numeric aware + text fallback)
         is_cash = (
             fam == "BS_CA"
             or num == 1000
@@ -73,53 +72,72 @@ def split_cash_and_overdraft(tb_rows: List[Dict[str, Any]]) -> List[Dict[str, An
         )
 
         if not is_cash:
-            out.append(r)
+            out.append(dict(r))
             continue
 
         closing = _closing_balance(r)
 
-        # normal cash (debit balance)
         if closing >= 0:
-            out.append(r)
+            out.append(dict(r))
             continue
 
-        # cash credit balance -> overdraft
-        overdraft_total += abs(closing)
+        overdraft_total += abs(float(closing))
 
-        # keep cash visible but zeroed (optional)
         z = dict(r)
 
-        # zero using the same "shape" the row already has
         if ("debit_total" in z) or ("credit_total" in z):
             z["debit_total"] = 0.0
             z["credit_total"] = 0.0
-        else:
+
+        if ("debit" in z) or ("credit" in z):
             z["debit"] = 0.0
             z["credit"] = 0.0
 
         z["closing_balance"] = 0.0
+        if "closing_balance_raw" in z:
+            z["closing_balance_raw"] = 0.0
+
         out.append(z)
 
-        if overdraft_total > 0:
-            if existing_overdraft is None:
-                existing_overdraft = {
-                    "code": overdraft_code,
-                    "name": "Bank Overdraft",
-                    "section": "Current Liabilities",
-                    "category": "Liability",
-                    "standard": "",
-                    "template_code": "2105",
-                    "code_family": "BS_CL",
-                    "code_numeric": 2105,
-                    "debit": 0.0,
-                    "credit": 0.0,
-                }
-            else:
-                existing_overdraft = dict(existing_overdraft)
-                existing_overdraft["debit"]  = float(existing_overdraft.get("debit")  or existing_overdraft.get("debit_total")  or 0.0)
-                existing_overdraft["credit"] = float(existing_overdraft.get("credit") or existing_overdraft.get("credit_total") or 0.0)
+    if overdraft_total > 0:
+        if existing_overdraft is None:
+            existing_overdraft = {
+                "code": overdraft_code,
+                "name": "Bank Overdraft",
+                "section": "Current Liabilities",
+                "category": "Liability",
+                "standard": "",
+                "template_code": "2105",
+                "code_family": "BS_CL",
+                "code_numeric": 2105,
+                "debit": 0.0,
+                "credit": 0.0,
+                "closing_balance": -float(overdraft_total),
+                "closing_balance_raw": -float(overdraft_total),
+            }
+        else:
+            existing_overdraft = dict(existing_overdraft)
 
-            existing_overdraft["credit"] = float(existing_overdraft.get("credit") or 0.0) + float(overdraft_total)
-            out.append(existing_overdraft)
+            base_debit = float(
+                existing_overdraft.get("debit")
+                or existing_overdraft.get("debit_total")
+                or 0.0
+            )
+            base_credit = float(
+                existing_overdraft.get("credit")
+                or existing_overdraft.get("credit_total")
+                or 0.0
+            )
+
+            existing_overdraft["debit"] = base_debit
+            existing_overdraft["credit"] = base_credit + float(overdraft_total)
+            existing_overdraft["closing_balance"] = base_debit - (base_credit + float(overdraft_total))
+            existing_overdraft["closing_balance_raw"] = existing_overdraft["closing_balance"]
+
+            if "debit_total" in existing_overdraft or "credit_total" in existing_overdraft:
+                existing_overdraft["debit_total"] = base_debit
+                existing_overdraft["credit_total"] = base_credit + float(overdraft_total)
+
+        out.append(existing_overdraft)
 
     return out
