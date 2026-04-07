@@ -5458,35 +5458,7 @@ const DASHBOARD_WIDGETS = {
   ],
 };
 
-async function renderDashboardByRoleAndPeriod() {
-  const role = getDashboardRole();
-  const widgets = DASHBOARD_WIDGETS[role] || DASHBOARD_WIDGETS.operator;
 
-  const widgetMap = {
-    renderDashboardKPIs: window.renderDashboardKPIs,
-    renderAnalysisWidget: window.renderAnalysisWidget,
-    renderMonthEndClose: window.renderMonthEndClose,
-    renderARAgingSnapshot: window.renderARAgingSnapshot,
-    renderAPAgingSnapshot: window.renderAPAgingSnapshot,
-    renderInventorySnapshot: window.renderInventorySnapshot,
-    renderFixedAssetsSnapshot: window.renderFixedAssetsSnapshot,
-    renderTaxComplianceCard: window.renderTaxComplianceCard,
-    renderSetupChecklistCard: window.renderSetupChecklistCard,
-    renderHealthComplianceCard: window.renderHealthComplianceCard,
-  };
-
-  // 🔹 ROLE-BASED WIDGETS
-  for (const key of widgets) {
-    const fn = widgetMap[key];
-    await safeWidget(key, fn, CURRENT_PERIOD_KEY);
-  }
-
-  // 🔹 ALWAYS SHOW THESE (financial core)
-  await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
-  await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
-  await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
-  await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
-}
 
 function destroyChart(name) {
   if (window[name] && typeof window[name].destroy === "function") {
@@ -10723,6 +10695,49 @@ async function renderDashboardInsights(periodKey = "this_month") {
 
 window.renderDashboardInsights = renderDashboardInsights;
 
+async function safeWidget(label, fn, ...args) {
+  if (typeof fn !== "function") {
+    console.warn(`[Dashboard] ${label} - function not defined, skipping.`);
+    return null;
+  }
+  try {
+    return await fn(...args);
+  } catch (err) {
+    console.error(`[Dashboard] Error while rendering ${label}:`, err);
+    return null;
+  }
+}
+
+async function renderDashboardByRoleAndPeriod() {
+  const role = getDashboardRole();
+  const widgets = DASHBOARD_WIDGETS[role] || DASHBOARD_WIDGETS.operator;
+
+  const widgetMap = {
+    renderDashboardKPIs: window.renderDashboardKPIs,
+    renderAnalysisWidget: window.renderAnalysisWidget,
+    renderMonthEndClose: window.renderMonthEndClose,
+    renderARAgingSnapshot: window.renderARAgingSnapshot,
+    renderAPAgingSnapshot: window.renderAPAgingSnapshot,
+    renderInventorySnapshot: window.renderInventorySnapshot,
+    renderFixedAssetsSnapshot: window.renderFixedAssetsSnapshot,
+    renderTaxComplianceCard: window.renderTaxComplianceCard,
+    renderSetupChecklistCard: window.renderSetupChecklistCard,
+    renderHealthComplianceCard: window.renderHealthComplianceCard,
+  };
+
+  // 🔹 ROLE-BASED WIDGETS
+  for (const key of widgets) {
+    const fn = widgetMap[key];
+    await safeWidget(key, fn, CURRENT_PERIOD_KEY);
+  }
+
+  // 🔹 ALWAYS SHOW THESE (financial core)
+  await safeWidget("Mini Profit & Loss", window.renderPnLMini, CURRENT_PERIOD_KEY);
+  await safeWidget("Mini Balance Sheet", window.renderBSMini, CURRENT_PERIOD_KEY);
+  await safeWidget("Cash Flow summary", window.renderCashFlow, CURRENT_PERIOD_KEY);
+  await safeWidget("Trial Balance", window.renderTB, CURRENT_PERIOD_KEY);
+}
+
 async function loadDashboard() {
   const postingCtx =
     window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
@@ -10742,19 +10757,6 @@ async function loadDashboard() {
   window.updatePostingCompanyBadge?.();
   window.bindReturnToPractitionerWorkspace?.();
 
-  async function safeWidget(label, fn, ...args) {
-    if (typeof fn !== "function") {
-      console.warn(`[Dashboard] ${label} - function not defined, skipping.`);
-      return null;
-    }
-    try {
-      return await fn(...args);
-    } catch (err) {
-      console.error(`[Dashboard] Error while rendering ${label}:`, err);
-      return null;
-    }
-  }
-
   const periodSel = document.getElementById("fsPeriodFilter");
   if (periodSel && !periodSel.dataset.bound) {
     periodSel.dataset.bound = "1";
@@ -10766,7 +10768,7 @@ async function loadDashboard() {
     });
   }
 
-  renderDashboardByRoleAndPeriod();  // ONLY ONE — role-based
+  await renderDashboardByRoleAndPeriod();
 
   async function refreshDashboardByPeriod() {
     await safeWidget("Main KPIs", window.renderDashboardKPIs, CURRENT_PERIOD_KEY);
