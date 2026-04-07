@@ -20545,7 +20545,7 @@ function renderDashboardStaffUtilization(summary) {
   `).join("");
 }
 
-function applyDashboardData(me, cache) {
+function applyDashboardData(me, cache = {}) {
   const engagements = Array.isArray(cache.engagements) ? cache.engagements : [];
   const portfolioSummary = cache.portfolioSummary || {};
   const portfolioRows = Array.isArray(cache.portfolioRows) ? cache.portfolioRows : [];
@@ -20683,7 +20683,6 @@ function applyDashboardData(me, cache) {
   renderDashboardStaffUtilization(capacitySummary);
 }
 
-
 function dashboardRoleKey(me) {
   const raw = String(me?.role || "").toLowerCase();
 
@@ -20788,7 +20787,7 @@ async function renderDashboardScreen(me, { force = false } = {}) {
   window.__PR_ME__ = me;
 
   applyDashboardVisibility(me);
-  applyDashboardData(me);
+  applyDashboardData(me, PR_DASHBOARD_CACHE || {});
   bindDashboardActions(me);
 
   const companyId = getActiveCompanyId();
