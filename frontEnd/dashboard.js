@@ -1848,14 +1848,14 @@ const ENDPOINTS = {
     recalculate: (companyId, loanId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/schedule/recalculate`,
 
-    inceptionPreview: (companyId, loanId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/preview_inception_journal`,
+    previewInception: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/preview_inception_journal`,
 
     paymentsCreate: (companyId, loanId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/payments`,
 
-    paymentPreview: (companyId, paymentId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/payments/${encodeURIComponent(paymentId)}/preview_journal`,
+    previewPayment: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/payments/preview_journal`,
 
     paymentPost: (companyId, paymentId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/payments/${encodeURIComponent(paymentId)}/post`,
@@ -32556,11 +32556,17 @@ async function loadLoanDetail(loanId) {
       }
 
       const entry = json?.data || null;
+      if (!entry) return null;
 
       renderPaymentModalJournal(entry);
+
       fillPaymentCards({
         amount_paid: payload.amount_paid,
-        ...(entry?.calculation || {}),
+        principal_amount: entry?.calculation?.principal_amount ?? 0,
+        interest_amount: entry?.calculation?.interest_amount ?? 0,
+        accrued_interest_amount: entry?.calculation?.accrued_interest_amount ?? 0,
+        fees_amount: entry?.calculation?.fees_amount ?? 0,
+        penalties_amount: entry?.calculation?.penalties_amount ?? 0,
       });
 
       return entry;
