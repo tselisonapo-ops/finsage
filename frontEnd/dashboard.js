@@ -31952,25 +31952,47 @@ async function renderLoanRegister() {
     }
   }
 
-async function saveLoan() {
+async function saveLoan({ previewOnly = false } = {}) {
   const cid = getCid();
-  if (!cid) return;
+  if (!cid) return null;
 
   const payload = getLoanFormPayload();
-  if (!payload.loan_name) return alert("Loan name is required.");
-  if (!payload.lender_name) return alert("Lender / loan holder is required.");
-  if (!payload.start_date) return alert("Start date is required.");
-  if (!payload.first_payment_date) return alert("First payment date is required.");
-  if (!(Number(payload.principal_amount) > 0)) return alert("Principal amount must be greater than zero.");
-  if (!(Number(payload.term_count) > 0)) return alert("Term must be greater than zero.");
+  if (!payload.loan_name) {
+    alert("Loan name is required.");
+    return null;
+  }
+  if (!payload.lender_name) {
+    alert("Lender / loan holder is required.");
+    return null;
+  }
+  if (!payload.start_date) {
+    alert("Start date is required.");
+    return null;
+  }
+  if (!payload.first_payment_date) {
+    alert("First payment date is required.");
+    return null;
+  }
+  if (!(Number(payload.principal_amount) > 0)) {
+    alert("Principal amount must be greater than zero.");
+    return null;
+  }
+  if (!(Number(payload.term_count) > 0)) {
+    alert("Term must be greater than zero.");
+    return null;
+  }
 
   try {
     let json;
+
     if (LOANS_STATE.currentLoanId) {
-      json = await window.apiFetch(ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId), {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
+      json = await window.apiFetch(
+        ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId),
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        }
+      );
     } else {
       json = await window.apiFetch(ENDPOINTS.loans.create(cid), {
         method: "POST",
@@ -31987,7 +32009,7 @@ async function saveLoan() {
       await renderLoanRegister();
       setLoanTab("loan-overview");
       applyLoanButtonsByMode();
-      return;
+      return null;
     }
 
     if (json?.ok === false) {
@@ -31997,7 +32019,8 @@ async function saveLoan() {
     const newLoanId =
       json?.data?.loan?.id ||
       json?.data?.loan_id ||
-      LOANS_STATE.currentLoanId;
+      LOANS_STATE.currentLoanId ||
+      null;
 
     await renderLoanRegister();
 
@@ -32007,11 +32030,16 @@ async function saveLoan() {
       applyLoanButtonsByMode();
     }
 
-    setLoanTab("loan-overview");
-    alert("Loan saved.");
+    if (!previewOnly) {
+      setLoanTab("loan-overview");
+      alert("Loan saved.");
+    }
+
+    return newLoanId;
   } catch (e) {
     console.error("[Loans] saveLoan failed", e);
     alert(String(e.message || e));
+    return null;
   }
 }
 
