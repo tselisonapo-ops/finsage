@@ -32255,14 +32255,14 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
 
   function bindLoanActionButtons() {
     $("#loanPreviewBtn")?.addEventListener("click", async () => {
-      const loanId = LOANS_STATE.currentLoanId;
-      if (!loanId) return alert("Save or select a loan first.");
+      const loanId = await saveLoan({ previewOnly: true });
+      if (!loanId) return;
       await previewLoanInceptionJournal(loanId, { pushToMainTab: true });
     });
 
     $("#loanPreviewInceptionBtn")?.addEventListener("click", async () => {
-      const loanId = LOANS_STATE.currentLoanId;
-      if (!loanId) return alert("Save or select a loan first.");
+      const loanId = await saveLoan({ previewOnly: true });
+      if (!loanId) return;
       await previewLoanInceptionJournal(loanId, { pushToMainTab: true });
     });
 
@@ -32275,7 +32275,7 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
 
     $("#loanPreviewReclassBtn")?.addEventListener("click", async () => {
       const loanId = LOANS_STATE.currentLoanId;
-      if (!loanId) return alert("Select a loan first.");
+      if (!loanId) return alert("Select a saved loan first.");
       await previewLoanReclassJournal(loanId, { pushToMainTab: true });
     });
   }

@@ -449,7 +449,8 @@ def api_create_loan_payment(company_id: int, loan_id: int):
     except Exception as e:
         current_app.logger.exception("❌ api_create_loan_payment failed")
         return jsonify({"ok": False, "error": str(e)}), 500
-    
+
+
 @loans_bp.route("/api/companies/<int:company_id>/loans/payments/<int:payment_id>/preview_journal", methods=["GET", "OPTIONS"])
 @require_auth
 def api_preview_loan_payment_journal(company_id: int, payment_id: int):
