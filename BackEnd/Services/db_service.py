@@ -30604,40 +30604,45 @@ class DatabaseService:
         out["resolved_accounts"] = accounts
         return out
 
+    def preview_loan_inception_journal(self, conn, company_id: int, *, data: dict):
+        loan_name = (data.get("loan_name") or "").strip()
+        start_date = _safe_date(data.get("start_date"))
+        first_payment_date = _safe_date(data.get("first_payment_date"))
+        principal_amount = _money(data.get("principal_amount"))
 
-    def preview_loan_inception_journal(self, conn, company_id: int, *, loan_id: int):
-        schema = self.company_schema(company_id)
+        if not loan_name:
+            raise ValueError("loan_name is required")
+        if not start_date:
+            raise ValueError("start_date is required")
+        if not first_payment_date:
+            raise ValueError("first_payment_date is required")
+        if principal_amount <= 0:
+            raise ValueError("principal_amount must be > 0")
 
-        with conn.cursor() as cur:
-            cur.execute(f"""
-                SELECT
-                    l.id,
-                    l.company_id,
-                    l.loan_name,
-                    l.loan_reference,
-                    l.currency,
-                    l.principal_amount,
-                    l.start_date,
-                    l.first_payment_date,
-                    l.payment_frequency,
-                    l.interest_method,
-                    l.annual_interest_rate,
-                    l.term_count,
-                    l.balloon_amount,
-                    l.fees_amount,
-                    l.accrued_interest_opening,
-                    l.bank_account_id
-                FROM {schema}.loans l
-                WHERE l.company_id = %s
-                AND l.id = %s
-                LIMIT 1
-            """, (company_id, loan_id))
-            loan_row = cur.fetchone()
-
-        if not loan_row:
-            raise ValueError("loan not found")
-
-        loan_row = dict(loan_row)
+        loan_row = {
+            "id": None,
+            "company_id": int(company_id),
+            "loan_name": loan_name,
+            "loan_reference": (data.get("loan_reference") or "").strip() or None,
+            "currency": (data.get("currency") or "ZAR").strip() or "ZAR",
+            "principal_amount": principal_amount,
+            "start_date": start_date,
+            "first_payment_date": first_payment_date,
+            "payment_frequency": (data.get("payment_frequency") or "monthly").strip(),
+            "interest_method": (data.get("interest_method") or "amortised_fixed_payment").strip(),
+            "annual_interest_rate": Decimal(str(data.get("annual_interest_rate") or 0)),
+            "term_count": int(data.get("term_count") or 0),
+            "balloon_amount": _money(data.get("balloon_amount")),
+            "fees_amount": _money(data.get("fees_amount")),
+            "accrued_interest_opening": _money(data.get("accrued_interest_opening")),
+            "bank_account_id": data.get("bank_account_id"),
+            "interest_expense_account_code": (data.get("interest_expense_account_code") or "").strip() or None,
+            "accrued_interest_account_code": (data.get("accrued_interest_account_code") or "").strip() or None,
+            "loan_payable_current_account_code": (data.get("loan_payable_current_account_code") or "").strip() or None,
+            "loan_payable_noncurrent_account_code": (data.get("loan_payable_noncurrent_account_code") or "").strip() or None,
+            "fees_asset_account_code": (data.get("fees_asset_account_code") or "").strip() or None,
+            "fees_expense_account_code": (data.get("fees_expense_account_code") or "").strip() or None,
+        }
 
         built = self.build_loan_inception_journal_lines(
             conn,
@@ -30648,113 +30653,57 @@ class DatabaseService:
 
         return {
             "date": str(loan_row["start_date"]),
-            "ref": loan_row.get("loan_reference") or f"LOAN-OPEN-{loan_id}",
+            "ref": loan_row.get("loan_reference") or "LOAN-OPEN-PREVIEW",
             "description": f"Initial recognition of loan - {loan_row['loan_name']}",
             "gross_amount": float(_money(loan_row.get("principal_amount"))),
             "net_amount": float(_money(loan_row.get("principal_amount"))),
             "vat_amount": 0.0,
             "currency": loan_row.get("currency") or "ZAR",
-            "source": "loan_inception",
-            "source_id": int(loan_id),
+            "source": "loan_inception_preview",
+            "source_id": None,
             "lines": built["journal_lines"],
             "resolved_accounts": built.get("resolved_accounts", {}),
             "dr_total": built.get("dr_total"),
             "cr_total": built.get("cr_total"),
         }
 
-    def preview_loan_payment_journal(self, conn, company_id: int, *, payment_id: int):
-        schema = self.company_schema(company_id)
+    def preview_loan_payment_journal(self, conn, company_id: int, *, data: dict):
+        loan_id = data.get("loan_id")
+        if not loan_id:
+            raise ValueError("loan_id is required")
 
-        with conn.cursor() as cur:
-            cur.execute(f"""
-                SELECT
-                    p.id AS payment_id,
-                    p.company_id,
-                    p.loan_id,
-                    p.payment_date,
-                    p.amount_paid,
-                    p.bank_account_id,
-                    p.reference,
-                    p.description AS payment_description,
-                    p.auto_calculate_split,
-                    p.principal_amount,
-                    p.interest_amount,
-                    p.accrued_interest_amount,
-                    p.fees_amount,
-                    p.penalties_amount,
-                    p.allocation_method,
-                    p.status AS payment_status,
-                    p.notes AS payment_notes,
+        loan_full = self.get_loan_full(conn, company_id, int(loan_id))
+        if not loan_full or not loan_full.get("loan"):
+            raise ValueError("loan not found")
 
-                    l.id AS loan_id_ref,
-                    l.loan_name,
-                    l.loan_reference,
-                    l.currency AS loan_currency,
-                    l.interest_method,
-                    l.payment_frequency,
-                    l.principal_amount AS loan_principal_amount,
-                    l.annual_interest_rate,
-                    l.start_date,
-                    l.first_payment_date,
-                    l.term_count,
-                    l.balloon_amount,
-                    l.fees_amount AS loan_fees_amount,
-                    l.accrued_interest_opening,
-                    l.variable_rate,
-                    l.bank_account_id AS loan_bank_account_id
-                FROM {schema}.loan_payments p
-                JOIN {schema}.loans l
-                ON l.company_id = p.company_id
-                AND l.id = p.loan_id
-                WHERE p.company_id = %s
-                AND p.id = %s
-                LIMIT 1
-            """, (company_id, payment_id))
-            row = cur.fetchone()
+        loan_row = loan_full["loan"]
 
-        if not row:
-            raise ValueError("payment not found")
+        payment_date = _safe_date(data.get("payment_date"))
+        if not payment_date:
+            raise ValueError("payment_date is required")
 
-        row = dict(row)
+        amount_paid = _money(data.get("amount_paid"))
+        if amount_paid <= 0:
+            raise ValueError("amount_paid must be > 0")
 
         payment_row = {
-            "id": row.get("payment_id"),
-            "company_id": row.get("company_id"),
-            "loan_id": row.get("loan_id"),
-            "payment_date": row.get("payment_date"),
-            "amount_paid": row.get("amount_paid"),
-            "bank_account_id": row.get("bank_account_id") or row.get("loan_bank_account_id"),
-            "reference": row.get("reference"),
-            "description": row.get("payment_description"),
-            "auto_calculate_split": row.get("auto_calculate_split"),
-            "principal_amount": row.get("principal_amount"),
-            "interest_amount": row.get("interest_amount"),
-            "accrued_interest_amount": row.get("accrued_interest_amount"),
-            "fees_amount": row.get("fees_amount"),
-            "penalties_amount": row.get("penalties_amount"),
-            "allocation_method": row.get("allocation_method"),
-            "status": row.get("payment_status"),
-            "notes": row.get("payment_notes"),
-        }
-
-        loan_row = {
-            "id": row.get("loan_id_ref") or row.get("loan_id"),
-            "company_id": row.get("company_id"),
-            "loan_name": row.get("loan_name"),
-            "loan_reference": row.get("loan_reference"),
-            "currency": row.get("loan_currency"),
-            "interest_method": row.get("interest_method"),
-            "payment_frequency": row.get("payment_frequency"),
-            "principal_amount": row.get("loan_principal_amount"),
-            "annual_interest_rate": row.get("annual_interest_rate"),
-            "start_date": row.get("start_date"),
-            "first_payment_date": row.get("first_payment_date"),
-            "term_count": row.get("term_count"),
-            "balloon_amount": row.get("balloon_amount"),
-            "fees_amount": row.get("loan_fees_amount"),
-            "accrued_interest_opening": row.get("accrued_interest_opening"),
-            "variable_rate": row.get("variable_rate"),
-            "bank_account_id": row.get("loan_bank_account_id"),
+            "id": None,
+            "company_id": int(company_id),
+            "loan_id": int(loan_id),
+            "payment_date": payment_date,
+            "amount_paid": amount_paid,
+            "bank_account_id": data.get("bank_account_id") or loan_row.get("bank_account_id"),
+            "reference": (data.get("reference") or "").strip() or None,
+            "description": (data.get("description") or "").strip() or None,
+            "auto_calculate_split": bool(data.get("auto_calculate_split", True)),
+            "principal_amount": _money(data.get("principal_amount")),
+            "interest_amount": _money(data.get("interest_amount")),
+            "accrued_interest_amount": _money(data.get("accrued_interest_amount")),
+            "fees_amount": _money(data.get("fees_amount")),
+            "penalties_amount": _money(data.get("penalties_amount")),
+            "allocation_method": (data.get("allocation_method") or "").strip() or None,
+            "status": "preview",
+            "notes": (data.get("notes") or "").strip() or None,
         }
 
         bank_account_id = payment_row.get("bank_account_id")
@@ -30787,21 +30736,21 @@ class DatabaseService:
 
         return {
             "date": str(payment_row["payment_date"]),
-            "ref": payment_row.get("reference") or f"LOAN-PAY-{payment_id}",
+            "ref": payment_row.get("reference") or "LOAN-PAY-PREVIEW",
             "description": f"Loan payment - {loan_row['loan_name']}",
             "gross_amount": float(total),
             "net_amount": float(total),
             "vat_amount": 0.0,
             "currency": (loan_row.get("currency") or bank_row.get("currency") or "ZAR"),
-            "source": "loan_payment",
-            "source_id": int(payment_id),
+            "source": "loan_payment_preview",
+            "source_id": None,
             "lines": built["journal_lines"],
             "resolved_accounts": built.get("resolved_accounts", {}),
             "calculation": breakdown,
             "dr_total": built.get("dr_total"),
             "cr_total": built.get("cr_total"),
         }
-    
+
     def post_loan_payment(self, conn, company_id: int, *, payment_id: int, user_id=None):
         schema = self.company_schema(company_id)
 

@@ -32374,12 +32374,17 @@ async function loadLoanDetail(loanId) {
     }
   }
 
-  async function previewLoanInceptionJournal(loanId, { pushToMainTab = true } = {}) {
+  async function previewLoanInceptionJournal({ pushToMainTab = true } = {}) {
     const cid = getCid();
-    if (!cid || !loanId) return;
+    if (!cid) return null;
 
     try {
-      const json = await window.apiFetch(ENDPOINTS.loans.inceptionPreview(cid, loanId));
+      const payload = getLoanFormPayload();
+
+      const json = await window.apiFetch(ENDPOINTS.loans.previewInception(cid), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
       if (json?.ok === false) {
         throw new Error(json?.error || "Failed to preview inception journal");
@@ -32390,7 +32395,7 @@ async function loadLoanDetail(loanId) {
       setLoanGlAccountsVisible(true);
       renderMainJournalPreview(entry, {
         title: "Loan Inception Preview",
-        source: "Inception"
+        source: "Inception",
       });
 
       if (pushToMainTab) setLoanTab("loan-journal");
@@ -32521,23 +32526,48 @@ async function loadLoanDetail(loanId) {
     }
   }
 
-  async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = {}) {
+  function getLoanPaymentPreviewPayload() {
+    return {
+      loan_id: LOANS_STATE.currentLoanId,
+      payment_date: $("#loanPaymentDate")?.value || null,
+      amount_paid: Number($("#loanPaymentAmount")?.value || 0),
+      bank_account_id: Number($("#loanPaymentBankAccountId")?.value || 0) || null,
+      reference: ($("#loanPaymentReference")?.value || "").trim(),
+      description: ($("#loanPaymentDescription")?.value || "").trim(),
+      auto_calculate_split: !!$("#loanPaymentAutoSplit")?.checked,
+      notes: ($("#loanPaymentNotes")?.value || "").trim() || null,
+    };
+  }
+
+  async function previewLoanPaymentJournal({ pushToMainTab = false } = {}) {
     const cid = getCid();
-    if (!cid || !paymentId) return;
+    if (!cid) return null;
 
     try {
-      const json = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
+      const payload = getLoanPaymentPreviewPayload();
+
+      const json = await window.apiFetch(ENDPOINTS.loans.previewPayment(cid), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
       if (json?.ok === false) {
-        throw new Error(json?.error || "Failed to preview payment journal");
+        throw new Error(json?.error || "Failed to preview loan payment journal");
       }
 
       const entry = json?.data || null;
-      renderMainJournalPreview(entry);
-      if (pushToMainTab) setLoanTab("loan-journal");
+
+      renderPaymentModalJournal(entry);
+      fillPaymentCards({
+        amount_paid: payload.amount_paid,
+        ...(entry?.calculation || {}),
+      });
+
+      return entry;
     } catch (e) {
       console.error("[Loans] previewLoanPaymentJournal failed", e);
       alert(String(e.message || e));
+      return null;
     }
   }
 
