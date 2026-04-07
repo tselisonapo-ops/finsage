@@ -31589,6 +31589,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       lender_name: ($("#loanLender")?.value || "").trim(),
       loan_type: ($("#loanType")?.value || "term_loan").trim(),
       start_date: $("#loanStartDate")?.value || null,
+      maturity_date: $("#loanEndDate")?.value || null,
       first_payment_date: $("#loanFirstPaymentDate")?.value || null,
       principal_amount: Number($("#loanPrincipalAmount")?.value || 0),
       annual_interest_rate: Number($("#loanInterestRate")?.value || 0),

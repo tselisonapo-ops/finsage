@@ -29837,6 +29837,7 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_full(conn, company_id, loan_id)
 
+
     def create_loan(self, conn, company_id: int, *, data: dict, user_id=None):
         schema = self.company_schema(company_id)
 
@@ -29938,13 +29939,13 @@ class DatabaseService:
                 "active" if bool(data.get("activate_on_create", True)) else "draft",
                 (data.get("notes") or "").strip() or None,
                 (data.get("agreement_reference") or "").strip() or None,
-                data.get("meta_json") or {},
+                Json(data.get("meta_json") or {}),
                 user_id,
             ))
             loan_id = cur.fetchone()["id"]
 
         conn.commit()
-        return self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)        
+        return self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)
 
     def update_loan(self, conn, company_id: int, loan_id: int, *, data: dict, user_id: int | None):
         schema = self.company_schema(company_id)
