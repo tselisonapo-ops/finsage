@@ -1848,6 +1848,9 @@ const ENDPOINTS = {
     recalculate: (companyId, loanId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/schedule/recalculate`,
 
+    inceptionPreview: (companyId, loanId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/preview_inception_journal`,
+
     paymentsCreate: (companyId, loanId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/payments`,
 
@@ -31785,6 +31788,79 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
     }
   }
 
+  async function previewLoanInceptionJournal(loanId, { pushToMainTab = true } = {}) {
+    const cid = getCid();
+    if (!cid || !loanId) return;
+
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.inceptionPreview(cid, loanId));
+
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to preview inception journal");
+      }
+
+      const entry = json?.data || null;
+      renderMainJournalPreview(entry);
+
+      if (pushToMainTab) setLoanTab("loan-journal");
+      return entry;
+    } catch (e) {
+      console.error("[Loans] previewLoanInceptionJournal failed", e);
+      alert(String(e.message || e));
+      return null;
+    }
+  }
+
+  async function previewLoanReclassJournal(loanId, { pushToMainTab = true } = {}) {
+    const cid = getCid();
+    if (!cid || !loanId) return;
+
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.reclassPreview(cid, loanId));
+
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to preview reclass journal");
+      }
+
+      const entry = json?.data || null;
+      renderMainJournalPreview(entry);
+
+      if (pushToMainTab) setLoanTab("loan-journal");
+      return entry;
+    } catch (e) {
+      console.error("[Loans] previewLoanReclassJournal failed", e);
+      alert(String(e.message || e));
+      return null;
+    }
+  }
+
+  function bindLoanActionButtons() {
+    $("#loanPreviewBtn")?.addEventListener("click", async () => {
+      const loanId = LOANS_STATE.currentLoanId;
+      if (!loanId) return alert("Save or select a loan first.");
+      await previewLoanInceptionJournal(loanId, { pushToMainTab: true });
+    });
+
+    $("#loanPreviewInceptionBtn")?.addEventListener("click", async () => {
+      const loanId = LOANS_STATE.currentLoanId;
+      if (!loanId) return alert("Save or select a loan first.");
+      await previewLoanInceptionJournal(loanId, { pushToMainTab: true });
+    });
+
+    $("#loanPreviewLastPaymentBtn")?.addEventListener("click", async () => {
+      const payments = LOANS_STATE.loanDetail?.payments || [];
+      const last = payments.find((p) => p?.id);
+      if (!last?.id) return alert("No payment found for preview.");
+      await previewLoanPaymentJournal(last.id, { pushToMainTab: true });
+    });
+
+    $("#loanPreviewReclassBtn")?.addEventListener("click", async () => {
+      const loanId = LOANS_STATE.currentLoanId;
+      if (!loanId) return alert("Select a loan first.");
+      await previewLoanReclassJournal(loanId, { pushToMainTab: true });
+    });
+  }
+
   async function applyLoanApprovalHandoff() {
     const requestId = Number(store?.get?.("fs_loan_approval_request_id") || 0) || null;
     const loanId = Number(store?.get?.("fs_loan_approval_loan_id") || 0) || null;
@@ -31901,6 +31977,9 @@ async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = 
     $("#loanReclassBtn")?.addEventListener("click", reclassifyLoan);
     $("#loanPaymentBtn")?.addEventListener("click", openLoanPaymentModal);
 
+    // ✅ ADD HERE
+    bindLoanActionButtons();
+
     $("#loanFilterStatus")?.addEventListener("change", renderLoanRegister);
     $("#loanSearch")?.addEventListener("input", debounce(renderLoanRegister, 250));
 
@@ -31908,34 +31987,6 @@ async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = 
       btn.addEventListener("click", () => {
         setLoanTab(btn.getAttribute("data-loan-tab"));
       });
-    });
-
-    $("#loanPreviewLastPaymentBtn")?.addEventListener("click", async () => {
-      const payments = LOANS_STATE.loanDetail?.payments || [];
-      if (!payments.length) return alert("No payments found.");
-      await previewLoanPaymentJournal(payments[0].id, { pushToMainTab: false });
-    });
-
-    $("#loanPreviewReclassBtn")?.addEventListener("click", async () => {
-      const loan = LOANS_STATE.loanDetail?.loan;
-      if (!loan?.id) return alert("Select a loan first.");
-      renderMainJournalPreview({
-        lines: [
-          {
-            account_code: loan.loan_payable_noncurrent_account_code || "",
-            description: `Reclass to current - ${loan.loan_name || ""}`,
-            debit: Number(loan.outstanding_principal || 0),
-            credit: 0,
-          },
-          {
-            account_code: loan.loan_payable_current_account_code || "",
-            description: `Reclass to current - ${loan.loan_name || ""}`,
-            debit: 0,
-            credit: Number(loan.outstanding_principal || 0),
-          },
-        ],
-      });
-      setLoanTab("loan-journal");
     });
 
     $("#loanPaymentsRefreshBtn")?.addEventListener("click", async () => {

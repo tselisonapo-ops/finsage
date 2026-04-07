@@ -167,7 +167,31 @@ def api_create_loan(company_id: int):
         current_app.logger.exception("❌ api_create_loan failed")
         return jsonify({"ok": False, "error": str(e)}), 500
     
+@loans_bp.route("/api/companies/<int:company_id>/loans/<int:loan_id>/preview_inception_journal", methods=["GET", "OPTIONS"])
+@require_auth
+def api_preview_loan_inception_journal(company_id: int, loan_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
 
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        with db_service._conn_cursor() as (conn, cur):
+            out = db_service.preview_loan_inception_journal(
+                conn,
+                int(company_id),
+                loan_id=int(loan_id),
+            )
+
+        return jsonify({"ok": True, "data": out}), 200
+
+    except Exception as e:
+        current_app.logger.exception("❌ api_preview_loan_inception_journal failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
 @loans_bp.route("/api/companies/<int:company_id>/loans/<int:loan_id>", methods=["PUT", "OPTIONS"])
 @require_auth
 def api_update_loan(company_id: int, loan_id: int):

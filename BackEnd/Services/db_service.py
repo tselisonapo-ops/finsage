@@ -29892,20 +29892,358 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_payment_full(conn, company_id, payment_id)
 
+    def _append_journal_line(self, lines: list, *, account_code: str, description: str, debit=0, credit=0):
+        dr = _money(debit or 0)
+        cr = _money(credit or 0)
+        if dr == 0 and cr == 0:
+            return
+
+        code = (account_code or "").strip()
+        if not code:
+            raise ValueError(f"Missing account code for journal line: {description}")
+
+        lines.append({
+            "account_code": code,
+            "description": description,
+            "debit": float(dr),
+            "credit": float(cr),
+        })
+
+
+    def _finalise_journal_lines(self, lines: list, *, strict: bool = True):
+        dr = _money(sum(Decimal(str(x.get("debit") or 0)) for x in lines))
+        cr = _money(sum(Decimal(str(x.get("credit") or 0)) for x in lines))
+
+        if dr != cr:
+            msg = f"Journal out of balance: debit={dr} credit={cr}"
+            if strict:
+                raise ValueError(msg)
+            return {
+                "journal_lines": lines,
+                "dr_total": float(dr),
+                "cr_total": float(cr),
+                "error": msg,
+            }
+
+        return {
+            "journal_lines": lines,
+            "dr_total": float(dr),
+            "cr_total": float(cr),
+        }
+
+    def _get_coa_role_account(self, cur, schema: str, role: str):
+        cur.execute(f"""
+            SELECT code, name, role
+            FROM {schema}.coa
+            WHERE posting = TRUE
+            AND role = %s
+            ORDER BY id
+            LIMIT 1
+        """, (role,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+    def resolve_loan_gl_accounts(
+        self,
+        conn,
+        company_id: int,
+        *,
+        loan_row: dict,
+        bank_account_id: int | None = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with conn.cursor() as cur:
+            resolved = {}
+            missing_roles = []
+
+            bank_row = self.get_company_bank_account(company_id, bank_account_id) if bank_account_id else None
+            bank_code = ((bank_row or {}).get("ledger_account_code") or "").strip()
+            resolved["bank_account_code"] = bank_code
+            if not bank_code:
+                missing_roles.append("bank_account_code")
+
+            role_map = {
+                "interest_expense_account_code": "loan_interest_expense",
+                "accrued_interest_account_code": "loan_accrued_interest",
+                "loan_payable_current_account_code": "loan_payable_current",
+                "loan_payable_noncurrent_account_code": "loan_payable_noncurrent",
+            }
+
+            for field_name, role in role_map.items():
+                coa = self._get_coa_role_account(cur, schema, role)
+                code = ((coa or {}).get("code") or "").strip()
+                resolved[field_name] = code
+                if not code:
+                    missing_roles.append(role)
+
+        if missing_roles:
+            raise ValueError("Missing required loan posting accounts: " + ", ".join(missing_roles))
+
+        return resolved
+
+    def build_loan_payment_journal_lines(
+        self,
+        conn,
+        company_id: int,
+        *,
+        loan_row: dict,
+        payment_row: dict,
+        breakdown: dict,
+        strict: bool = False,
+    ):
+        accounts = self.resolve_loan_gl_accounts(
+            conn,
+            company_id,
+            loan_row=loan_row,
+            bank_account_id=payment_row.get("bank_account_id") or loan_row.get("bank_account_id"),
+        )
+
+        lines = []
+        loan_name = loan_row.get("loan_name") or f"Loan {loan_row.get('id')}"
+        base_desc = f"Loan payment - {loan_name}"
+
+        principal = _money(breakdown.get("principal_amount"))
+        interest = _money(breakdown.get("interest_amount"))
+        accrued_interest = _money(breakdown.get("accrued_interest_amount"))
+        fees = _money(breakdown.get("fees_amount"))
+        penalties = _money(breakdown.get("penalties_amount"))
+        total = _money(breakdown.get("total_amount") or payment_row.get("amount_paid"))
+
+        if principal > 0:
+            self._append_journal_line(
+                lines,
+                account_code=accounts.get("loan_payable_current_account_code"),
+                description=f"{base_desc} - principal",
+                debit=principal,
+                credit=0,
+            )
+
+        if interest > 0:
+            self._append_journal_line(
+                lines,
+                account_code=accounts.get("interest_expense_account_code"),
+                description=f"{base_desc} - interest",
+                debit=interest,
+                credit=0,
+            )
+
+        if accrued_interest > 0:
+            self._append_journal_line(
+                lines,
+                account_code=accounts.get("accrued_interest_account_code"),
+                description=f"{base_desc} - accrued interest settlement",
+                debit=accrued_interest,
+                credit=0,
+            )
+
+        if fees > 0:
+            raise ValueError("fees posting not yet enabled in MVP")
+
+        if penalties > 0:
+            raise ValueError("penalties posting not yet enabled in MVP")
+
+        self._append_journal_line(
+            lines,
+            account_code=accounts.get("bank_account_code"),
+            description=f"{base_desc} - cash out",
+            debit=0,
+            credit=total,
+        )
+
+        out = self._finalise_journal_lines(lines, strict=strict)
+        out["resolved_accounts"] = accounts
+        return out
+
+    def _loan_liability_split_current_noncurrent(self, conn, company_id: int, *, loan_id: int):
+        schema = self.company_schema(company_id)
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT
+                    COALESCE(SUM(current_portion_amount), 0) AS current_total,
+                    COALESCE(SUM(noncurrent_portion_amount), 0) AS noncurrent_total
+                FROM {schema}.loan_schedules
+                WHERE company_id = %s
+                AND loan_id = %s
+            """, (company_id, loan_id))
+            row = cur.fetchone()
+
+        row = dict(row or {})
+        cur_amt = _money(row.get("current_total"))
+        ncur_amt = _money(row.get("noncurrent_total"))
+        return cur_amt, ncur_amt
+
+
+    def build_loan_inception_journal_lines(
+        self,
+        conn,
+        company_id: int,
+        *,
+        loan_row: dict,
+        strict: bool = False,
+    ):
+        loan_id = loan_row.get("id")
+        principal = _money(loan_row.get("principal_amount"))
+        if principal <= 0:
+            raise ValueError("Loan principal_amount must be greater than zero")
+
+        accounts = self.resolve_loan_gl_accounts(
+            conn,
+            company_id,
+            loan_row=loan_row,
+            bank_account_id=loan_row.get("bank_account_id"),
+        )
+
+        cur_amt, ncur_amt = self._loan_liability_split_current_noncurrent(
+            conn,
+            company_id,
+            loan_id=loan_id,
+        )
+
+        split_total = _money(cur_amt + ncur_amt)
+        if split_total <= 0:
+            # fallback if no schedule yet
+            cur_amt = principal
+            ncur_amt = Decimal("0.00")
+        elif split_total != principal:
+            diff = _money(principal - split_total)
+            ncur_amt = _money(ncur_amt + diff)
+
+        loan_name = loan_row.get("loan_name") or f"Loan {loan_id}"
+        desc = f"Initial recognition of loan - {loan_name}"
+
+        lines = []
+
+        self._append_journal_line(
+            lines,
+            account_code=accounts.get("bank_account_code"),
+            description=desc,
+            debit=principal,
+            credit=0,
+        )
+
+        if cur_amt > 0:
+            self._append_journal_line(
+                lines,
+                account_code=accounts.get("loan_payable_current_account_code"),
+                description=desc + " - current portion",
+                debit=0,
+                credit=cur_amt,
+            )
+
+        if ncur_amt > 0:
+            self._append_journal_line(
+                lines,
+                account_code=accounts.get("loan_payable_noncurrent_account_code"),
+                description=desc + " - non-current portion",
+                debit=0,
+                credit=ncur_amt,
+            )
+
+        out = self._finalise_journal_lines(lines, strict=strict)
+        out["resolved_accounts"] = accounts
+        return out
+
+
+    def preview_loan_inception_journal(self, conn, company_id: int, *, loan_id: int):
+        schema = self.company_schema(company_id)
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT
+                    l.id,
+                    l.company_id,
+                    l.loan_name,
+                    l.loan_reference,
+                    l.currency,
+                    l.principal_amount,
+                    l.start_date,
+                    l.first_payment_date,
+                    l.payment_frequency,
+                    l.interest_method,
+                    l.annual_interest_rate,
+                    l.term_count,
+                    l.balloon_amount,
+                    l.fees_amount,
+                    l.accrued_interest_opening,
+                    l.bank_account_id
+                FROM {schema}.loans l
+                WHERE l.company_id = %s
+                AND l.id = %s
+                LIMIT 1
+            """, (company_id, loan_id))
+            loan_row = cur.fetchone()
+
+        if not loan_row:
+            raise ValueError("loan not found")
+
+        loan_row = dict(loan_row)
+
+        built = self.build_loan_inception_journal_lines(
+            conn,
+            company_id,
+            loan_row=loan_row,
+            strict=True,
+        )
+
+        return {
+            "date": str(loan_row["start_date"]),
+            "ref": loan_row.get("loan_reference") or f"LOAN-OPEN-{loan_id}",
+            "description": f"Initial recognition of loan - {loan_row['loan_name']}",
+            "gross_amount": float(_money(loan_row.get("principal_amount"))),
+            "net_amount": float(_money(loan_row.get("principal_amount"))),
+            "vat_amount": 0.0,
+            "currency": loan_row.get("currency") or "ZAR",
+            "source": "loan_inception",
+            "source_id": int(loan_id),
+            "lines": built["journal_lines"],
+            "resolved_accounts": built.get("resolved_accounts", {}),
+            "dr_total": built.get("dr_total"),
+            "cr_total": built.get("cr_total"),
+        }
+
     def preview_loan_payment_journal(self, conn, company_id: int, *, payment_id: int):
         schema = self.company_schema(company_id)
 
         with conn.cursor() as cur:
             cur.execute(f"""
                 SELECT
-                    p.*,
+                    p.id AS payment_id,
+                    p.company_id,
+                    p.loan_id,
+                    p.payment_date,
+                    p.amount_paid,
+                    p.bank_account_id,
+                    p.reference,
+                    p.description AS payment_description,
+                    p.auto_calculate_split,
+                    p.principal_amount,
+                    p.interest_amount,
+                    p.accrued_interest_amount,
+                    p.fees_amount,
+                    p.penalties_amount,
+                    p.allocation_method,
+                    p.status AS payment_status,
+                    p.notes AS payment_notes,
+
+                    l.id AS loan_id_ref,
                     l.loan_name,
                     l.loan_reference,
                     l.currency AS loan_currency,
-                    l.interest_expense_account_code,
-                    l.accrued_interest_account_code,
-                    l.loan_payable_current_account_code,
-                    l.loan_payable_noncurrent_account_code
+                    l.interest_method,
+                    l.payment_frequency,
+                    l.principal_amount AS loan_principal_amount,
+                    l.annual_interest_rate,
+                    l.start_date,
+                    l.first_payment_date,
+                    l.term_count,
+                    l.balloon_amount,
+                    l.fees_amount AS loan_fees_amount,
+                    l.accrued_interest_opening,
+                    l.variable_rate,
+                    l.bank_account_id AS loan_bank_account_id
                 FROM {schema}.loan_payments p
                 JOIN {schema}.loans l
                 ON l.company_id = p.company_id
@@ -29915,87 +30253,97 @@ class DatabaseService:
                 LIMIT 1
             """, (company_id, payment_id))
             row = cur.fetchone()
-            if not row:
-                raise ValueError("payment not found")
 
-            row = dict(row)
+        if not row:
+            raise ValueError("payment not found")
 
-            bank_row = self.get_company_bank_account(company_id, row["bank_account_id"])
-            if not bank_row:
-                raise ValueError("bank account not found")
+        row = dict(row)
 
-            bank_account_code = (bank_row.get("ledger_account_code") or "").strip()
-            if not bank_account_code:
-                raise ValueError("bank account missing ledger_account_code")
+        payment_row = {
+            "id": row.get("payment_id"),
+            "company_id": row.get("company_id"),
+            "loan_id": row.get("loan_id"),
+            "payment_date": row.get("payment_date"),
+            "amount_paid": row.get("amount_paid"),
+            "bank_account_id": row.get("bank_account_id") or row.get("loan_bank_account_id"),
+            "reference": row.get("reference"),
+            "description": row.get("payment_description"),
+            "auto_calculate_split": row.get("auto_calculate_split"),
+            "principal_amount": row.get("principal_amount"),
+            "interest_amount": row.get("interest_amount"),
+            "accrued_interest_amount": row.get("accrued_interest_amount"),
+            "fees_amount": row.get("fees_amount"),
+            "penalties_amount": row.get("penalties_amount"),
+            "allocation_method": row.get("allocation_method"),
+            "status": row.get("payment_status"),
+            "notes": row.get("payment_notes"),
+        }
 
-            principal = _money(row.get("principal_amount"))
-            interest = _money(row.get("interest_amount"))
-            accrued_interest = _money(row.get("accrued_interest_amount"))
-            fees = _money(row.get("fees_amount"))
-            penalties = _money(row.get("penalties_amount"))
-            total = _money(row.get("amount_paid"))
+        loan_row = {
+            "id": row.get("loan_id_ref") or row.get("loan_id"),
+            "company_id": row.get("company_id"),
+            "loan_name": row.get("loan_name"),
+            "loan_reference": row.get("loan_reference"),
+            "currency": row.get("loan_currency"),
+            "interest_method": row.get("interest_method"),
+            "payment_frequency": row.get("payment_frequency"),
+            "principal_amount": row.get("loan_principal_amount"),
+            "annual_interest_rate": row.get("annual_interest_rate"),
+            "start_date": row.get("start_date"),
+            "first_payment_date": row.get("first_payment_date"),
+            "term_count": row.get("term_count"),
+            "balloon_amount": row.get("balloon_amount"),
+            "fees_amount": row.get("loan_fees_amount"),
+            "accrued_interest_opening": row.get("accrued_interest_opening"),
+            "variable_rate": row.get("variable_rate"),
+            "bank_account_id": row.get("loan_bank_account_id"),
+        }
 
-            lines = []
+        bank_account_id = payment_row.get("bank_account_id")
+        bank_row = self.get_company_bank_account(company_id, bank_account_id)
+        if not bank_row:
+            raise ValueError("bank account not found")
 
-            if principal > 0:
-                lines.append({
-                    "account_code": (row.get("loan_payable_current_account_code") or "").strip(),
-                    "description": f"Loan principal settlement - {row['loan_name']}",
-                    "debit": float(principal),
-                    "credit": 0.0,
-                })
+        bank_account_code = (bank_row.get("ledger_account_code") or "").strip()
+        if not bank_account_code:
+            raise ValueError("bank account missing ledger_account_code")
 
-            if interest > 0:
-                lines.append({
-                    "account_code": (row.get("interest_expense_account_code") or "").strip(),
-                    "description": f"Loan interest expense - {row['loan_name']}",
-                    "debit": float(interest),
-                    "credit": 0.0,
-                })
+        breakdown = self.calculate_loan_payment_breakdown(
+            conn,
+            company_id,
+            loan_row=loan_row,
+            payment_row=payment_row,
+            strict=True,
+        )
 
-            if accrued_interest > 0:
-                accrued_code = (row.get("accrued_interest_account_code") or "").strip()
-                if not accrued_code:
-                    raise ValueError("accrued_interest_account_code required when accrued interest exists")
-                lines.append({
-                    "account_code": accrued_code,
-                    "description": f"Accrued interest settlement - {row['loan_name']}",
-                    "debit": float(accrued_interest),
-                    "credit": 0.0,
-                })
+        built = self.build_loan_payment_journal_lines(
+            conn,
+            company_id,
+            loan_row=loan_row,
+            payment_row=payment_row,
+            breakdown=breakdown,
+            strict=True,
+        )
 
-            if fees > 0:
-                raise ValueError("fees posting not yet enabled in MVP")
+        total = _money(breakdown.get("total_amount") or payment_row.get("amount_paid") or 0)
 
-            if penalties > 0:
-                raise ValueError("penalties posting not yet enabled in MVP")
-
-            lines.append({
-                "account_code": bank_account_code,
-                "description": f"Loan payment cash out - {row['loan_name']}",
-                "debit": 0.0,
-                "credit": float(total),
-            })
-
-            dr = _money(sum(Decimal(str(x.get("debit") or 0)) for x in lines))
-            cr = _money(sum(Decimal(str(x.get("credit") or 0)) for x in lines))
-            if dr != cr:
-                raise ValueError(f"Loan payment journal out of balance: debit={dr} credit={cr}")
-
-            return {
-                "date": str(row["payment_date"]),
-                "ref": row.get("reference") or f"LOAN-PAY-{payment_id}",
-                "description": f"Loan payment - {row['loan_name']}",
-                "gross_amount": float(total),
-                "net_amount": float(total),
-                "vat_amount": 0.0,
-                "currency": (row.get("loan_currency") or bank_row.get("currency") or "ZAR"),
-                "source": "loan_payment",
-                "source_id": int(payment_id),
-                "lines": lines,
-            }
-
-
+        return {
+            "date": str(payment_row["payment_date"]),
+            "ref": payment_row.get("reference") or f"LOAN-PAY-{payment_id}",
+            "description": f"Loan payment - {loan_row['loan_name']}",
+            "gross_amount": float(total),
+            "net_amount": float(total),
+            "vat_amount": 0.0,
+            "currency": (loan_row.get("currency") or bank_row.get("currency") or "ZAR"),
+            "source": "loan_payment",
+            "source_id": int(payment_id),
+            "lines": built["journal_lines"],
+            "resolved_accounts": built.get("resolved_accounts", {}),
+            "calculation": breakdown,
+            "dr_total": built.get("dr_total"),
+            "cr_total": built.get("cr_total"),
+        }
+    
     def post_loan_payment(self, conn, company_id: int, *, payment_id: int, user_id=None):
         schema = self.company_schema(company_id)
 
@@ -30139,6 +30487,143 @@ class DatabaseService:
             "posted_journal_id": journal_id,
             "status": "posted",
         }
+
+    def calculate_loan_payment_breakdown(
+        self,
+        conn,
+        company_id: int,
+        *,
+        loan_row: dict,
+        payment_row: dict,
+        strict: bool = False,
+    ) -> dict:
+
+        method = (loan_row.get("interest_method") or "manual").lower().strip()
+
+        if not payment_row.get("auto_calculate_split", True):
+            return self._calc_manual_payment_breakdown(payment_row)
+
+        if method == "amortised fixed payment":
+            return self._calc_amortised_from_schedule(conn, company_id, loan_row, payment_row)
+
+        if method == "straight-line interest":
+            return self._calc_straight_line(conn, company_id, loan_row, payment_row)
+
+        if method == "interest only":
+            return self._calc_interest_only(conn, company_id, loan_row, payment_row)
+
+        if method == "manual":
+            return self._calc_manual_payment_breakdown(payment_row)
+
+        raise ValueError(f"Unsupported interest method: {method}")
+
+    def _calc_amortised_from_schedule(self, conn, company_id, loan_row, payment_row):
+        schema = self.company_schema(company_id)
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_schedules
+                WHERE company_id = %s
+                AND loan_id = %s
+                AND payment_status IN ('open','partial')
+                ORDER BY due_date
+                LIMIT 1
+            """, (company_id, loan_row["id"]))
+
+            sched = cur.fetchone()
+
+        if not sched:
+            raise ValueError("No open schedule found for amortised loan")
+
+        sched = dict(sched)
+
+        remaining_interest = _money(sched["scheduled_interest"] - sched["paid_interest"])
+        remaining_principal = _money(sched["scheduled_principal"] - sched["paid_principal"])
+
+        total_due = _money(remaining_interest + remaining_principal)
+        payment = _money(payment_row["amount_paid"])
+
+        if payment > total_due:
+            # extra payment → reduce principal
+            extra = payment - total_due
+            principal = remaining_principal + extra
+            interest = remaining_interest
+        else:
+            # proportional split
+            ratio = payment / total_due if total_due > 0 else Decimal("0")
+            interest = _money(remaining_interest * ratio)
+            principal = _money(payment - interest)
+
+        return {
+            "principal_amount": float(principal),
+            "interest_amount": float(interest),
+            "accrued_interest_amount": 0.0,
+            "fees_amount": 0.0,
+            "penalties_amount": 0.0,
+            "total_amount": float(payment),
+            "method_used": "amortised_schedule",
+            "warnings": [],
+        }
+
+    def _calc_straight_line(self, conn, company_id, loan_row, payment_row):
+        principal = _money(loan_row["principal_amount"])
+        rate = _money(loan_row["annual_interest_rate"]) / Decimal("100")
+        term = int(loan_row.get("term_count") or 1)
+
+        total_interest = _money(principal * rate)
+        per_period_interest = _money(total_interest / term)
+
+        payment = _money(payment_row["amount_paid"])
+
+        interest = min(per_period_interest, payment)
+        principal_component = _money(payment - interest)
+
+        return {
+            "principal_amount": float(principal_component),
+            "interest_amount": float(interest),
+            "accrued_interest_amount": 0.0,
+            "fees_amount": 0.0,
+            "penalties_amount": 0.0,
+            "total_amount": float(payment),
+            "method_used": "straight_line",
+            "warnings": [],
+        }
+
+    def _calc_interest_only(self, conn, company_id, loan_row, payment_row):
+        principal_balance = _money(loan_row["principal_amount"])
+        rate = _money(loan_row["annual_interest_rate"]) / Decimal("100")
+
+        periodic_rate = rate / Decimal("12")  # assume monthly for now
+
+        interest = _money(principal_balance * periodic_rate)
+        payment = _money(payment_row["amount_paid"])
+
+        if payment <= interest:
+            return {
+                "principal_amount": 0.0,
+                "interest_amount": float(payment),
+                "accrued_interest_amount": float(interest - payment),
+                "fees_amount": 0.0,
+                "penalties_amount": 0.0,
+                "total_amount": float(payment),
+                "method_used": "interest_only_partial",
+                "warnings": ["Payment less than interest → accrued interest created"],
+            }
+
+        principal_component = _money(payment - interest)
+
+        return {
+            "principal_amount": float(principal_component),
+            "interest_amount": float(interest),
+            "accrued_interest_amount": 0.0,
+            "fees_amount": 0.0,
+            "penalties_amount": 0.0,
+            "total_amount": float(payment),
+            "method_used": "interest_only",
+            "warnings": [],
+        }
+
 
     def compute_loan_current_noncurrent_split(self, conn, company_id: int, *, loan_id: int, as_of_date=None):
         schema = self.company_schema(company_id)
