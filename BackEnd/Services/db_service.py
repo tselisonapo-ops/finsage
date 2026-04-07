@@ -23477,11 +23477,12 @@ class DatabaseService:
     ) -> List[Dict[str, Any]]:
         """
         Compact BS summary for mini card.
-        Canonical:
-        - ac._classify_tb_row
-        - ac._bs_signed_amount
 
-        Includes current-year profit/loss in equity when P&L has not yet been closed.
+        Rules:
+        - Assets use debit-credit sign
+        - Liabilities/equity use credit-debit sign
+        - Negative cash/bank balances are presented as overdraft liabilities
+        - Current-year P&L is folded into equity
         """
 
         if as_of:
@@ -23492,9 +23493,6 @@ class DatabaseService:
             else:
                 tb_rows = self.get_trial_balance(company_id, None, None) or []
 
-        # BS presentation only
-        tb_rows = split_cash_and_overdraft(tb_rows)
-
         assets = 0.0
         liabilities = 0.0
         equity = 0.0
@@ -23503,26 +23501,44 @@ class DatabaseService:
         for r in tb_rows:
             kind = ac._classify_tb_row(r)
 
-            if kind in ("asset", "liability", "equity"):
-                amt = float(ac._bs_signed_amount(kind, r))
+            code = str(r.get("code") or r.get("account") or "").strip()
+            fam = str(r.get("code_family") or "").upper().strip()
+            name = str(r.get("name") or "").lower()
 
-                if kind == "asset":
-                    assets += amt
-                elif kind == "liability":
-                    liabilities += amt
-                else:
-                    equity += amt
+            raw = float(
+                r.get("closing_balance_raw")
+                if r.get("closing_balance_raw") is not None
+                else r.get("closing_balance")
+                or 0.0
+            )
+
+            is_cash = (
+                fam == "BS_CA"
+                or code == "BS_CA_1000"
+                or "cash" in name
+                or "bank" in name
+            )
+
+            # Reclass negative cash to overdraft liability
+            if kind == "asset" and is_cash and raw < 0:
+                liabilities += abs(raw)
+                continue
+
+            if kind == "asset":
+                assets += float(ac._bs_signed_amount(kind, r))
+                continue
+
+            if kind == "liability":
+                liabilities += float(ac._bs_signed_amount(kind, r))
+                continue
+
+            if kind == "equity":
+                equity += float(ac._bs_signed_amount(kind, r))
                 continue
 
             if kind in ("revenue", "cogs", "expense", "other"):
-                raw = float(
-                    r.get("closing_balance_raw")
-                    if r.get("closing_balance_raw") is not None
-                    else r.get("closing_balance")
-                    or 0.0
-                )
-                # TB convention = debit - credit
-                # positive => loss, negative => profit
+                # TB convention is debit-credit:
+                # positive = loss, negative = profit
                 current_year_pnl += raw
 
         # net loss reduces equity; net profit increases equity
