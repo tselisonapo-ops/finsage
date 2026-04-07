@@ -29563,8 +29563,10 @@ class DatabaseService:
 
             cur.execute(sql, tuple(params))
             rows = cur.fetchall() or []
-            return [dict(x) for x in rows]
 
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) if not isinstance(row, dict) else row for row in rows]
+        
     def get_loan_by_id(self, conn, company_id: int, loan_id: int):
         schema = self.company_schema(company_id)
         with conn.cursor() as cur:
@@ -29579,6 +29581,23 @@ class DatabaseService:
 
     def get_loan_full(self, conn, company_id: int, loan_id: int):
         schema = self.company_schema(company_id)
+
+        def _row_to_dict(cur, row):
+            if row is None:
+                return None
+            if isinstance(row, dict):
+                return row
+            cols = [desc[0] for desc in cur.description]
+            return dict(zip(cols, row))
+
+        def _rows_to_dicts(cur, rows):
+            if not rows:
+                return []
+            if isinstance(rows[0], dict):
+                return rows
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+
         with conn.cursor() as cur:
             cur.execute(f"""
                 SELECT *
@@ -29586,7 +29605,7 @@ class DatabaseService:
                 WHERE company_id=%s AND id=%s
                 LIMIT 1
             """, (company_id, loan_id))
-            loan = cur.fetchone()
+            loan = _row_to_dict(cur, cur.fetchone())
             if not loan:
                 return None
 
@@ -29596,7 +29615,7 @@ class DatabaseService:
                 WHERE company_id=%s AND loan_id=%s
                 ORDER BY schedule_version DESC, period_no ASC
             """, (company_id, loan_id))
-            schedule = [dict(x) for x in (cur.fetchall() or [])]
+            schedule = _rows_to_dicts(cur, cur.fetchall() or [])
 
             cur.execute(f"""
                 SELECT *
@@ -29604,7 +29623,7 @@ class DatabaseService:
                 WHERE company_id=%s AND loan_id=%s
                 ORDER BY payment_date DESC, id DESC
             """, (company_id, loan_id))
-            payments = [dict(x) for x in (cur.fetchall() or [])]
+            payments = _rows_to_dicts(cur, cur.fetchall() or [])
 
             cur.execute(f"""
                 SELECT
@@ -29621,7 +29640,7 @@ class DatabaseService:
                 FROM {schema}.journal j
                 WHERE j.company_id=%s
                 AND (
-                        (j.source = 'loan_origination'     AND j.source_id = %s)
+                        (j.source = 'loan_origination' AND j.source_id = %s)
                     OR (j.source = 'loan_reclassification' AND j.source_id = %s)
                     OR (j.source = 'loan_payment' AND j.source_id IN (
                             SELECT id
@@ -29631,15 +29650,15 @@ class DatabaseService:
                 )
                 ORDER BY j.date DESC, j.id DESC
             """, (company_id, loan_id, loan_id, company_id, loan_id))
-            journals = [dict(x) for x in (cur.fetchall() or [])]
+            journals = _rows_to_dicts(cur, cur.fetchall() or [])
 
             return {
-                "loan": dict(loan),
+                "loan": loan,
                 "schedule": schedule,
                 "payments": payments,
                 "journals": journals,
             }
-
+    
     def _period_delta_for_frequency(self, frequency: str):
         f = (frequency or "monthly").strip().lower()
         if f == "weekly":
