@@ -1928,28 +1928,42 @@ const ENDPOINTS = {
     },
   },
 
-// --- VAT / tax settings ---
-vatSummary: (companyId, from, to) => {
-  const params = new URLSearchParams();
-  if (from) params.append("from", from);
-  if (to) params.append("to", to);
-  const qs = params.toString();
-  return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary` + (qs ? `?${qs}` : "");
-},
+  // --- VAT / tax settings ---
+  vatSummary: (companyId, from, to) => {
+    const params = new URLSearchParams();
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    const qs = params.toString();
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary` + (qs ? `?${qs}` : "");
+  },
 
-vatLines: (companyId, from, to) => {
-  const params = new URLSearchParams();
-  if (from) params.append("from", from);
-  if (to) params.append("to", to);
-  const qs = params.toString();
-  return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines` + (qs ? `?${qs}` : "");
-},
+  vatLines: (companyId, from, to) => {
+    const params = new URLSearchParams();
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    const qs = params.toString();
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines` + (qs ? `?${qs}` : "");
+  },
 
-vatPeriods: (companyId) =>
-  `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/periods`,
+  vatPeriods: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/periods`,
 
-vatSettings: (companyId) =>
-  `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
+  vatSettings: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
+
+  vatFilings: (companyId, from, to) => {
+    const params = new URLSearchParams();
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    const qs = params.toString();
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings` + (qs ? `?${qs}` : "");
+  },
+
+  vatPrepareFiling: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/prepare`,
+
+  vatSubmitFiling: (companyId, filingId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/${encodeURIComponent(filingId)}/submit`,
 };
 
 
@@ -11128,6 +11142,91 @@ function buildVatLinesForJournalLine(line, vatCfg) {
 /* ==============================
  * VAT & Tax Screen
  * ============================== */
+function parseVatPeriodSelection() {
+  const sel = document.getElementById("vatPeriodSelect");
+  if (!sel?.value) return null;
+
+  try {
+    const parsed = JSON.parse(decodeURIComponent(sel.value));
+    if (!parsed?.start_date || !parsed?.end_date) return null;
+
+    return {
+      label: parsed.label || sel.options[sel.selectedIndex]?.text || "Selected period",
+      start: new Date(parsed.start_date + "T00:00:00"),
+      end: new Date(parsed.end_date + "T00:00:00"),
+      dueDate: parsed.due_date ? new Date(parsed.due_date + "T00:00:00") : null,
+      start_date: parsed.start_date,
+      end_date: parsed.end_date,
+      due_date: parsed.due_date || null,
+    };
+  } catch (e) {
+    console.warn("parseVatPeriodSelection failed:", e);
+    return null;
+  }
+}
+
+function daysBetweenLocal(a, b) {
+  const d1 = new Date(a);
+  const d2 = new Date(b);
+  d1.setHours(0, 0, 0, 0);
+  d2.setHours(0, 0, 0, 0);
+  return Math.round((d2 - d1) / 86400000);
+}
+
+function setVatFilingBadgeState({ filing, period }) {
+  const filingBadge = document.getElementById("vatFilingBadge");
+  const filingText = document.getElementById("vatFilingStatusText");
+  if (!filingBadge || !filingText) return;
+
+  filingBadge.className = "px-2 py-1 rounded bg-slate-100 text-slate-700";
+
+  if (filing?.status === "submitted") {
+    filingBadge.className = "px-2 py-1 rounded bg-emerald-100 text-emerald-700";
+    filingBadge.textContent = "Submitted";
+    filingText.textContent =
+      `Submitted${filing.submitted_at ? ` on ${String(filing.submitted_at).slice(0, 10)}` : ""}` +
+      `${filing.reference ? ` • Ref ${filing.reference}` : ""}`;
+    return;
+  }
+
+  if (filing?.status === "prepared") {
+    filingBadge.className = "px-2 py-1 rounded bg-blue-100 text-blue-700";
+    filingBadge.textContent = "Prepared";
+    filingText.textContent =
+      `Prepared${filing.prepared_at ? ` on ${String(filing.prepared_at).slice(0, 10)}` : ""}` +
+      `${period?.due_date ? ` • Due ${period.due_date}` : ""}`;
+    return;
+  }
+
+  const today = new Date();
+  const due = period?.dueDate || (period?.due_date ? new Date(period.due_date + "T00:00:00") : null);
+
+  if (!due) {
+    filingBadge.textContent = "Open";
+    filingText.textContent = "Open filing period.";
+    return;
+  }
+
+  const diff = daysBetweenLocal(today, due);
+
+  if (diff < 0) {
+    filingBadge.className = "px-2 py-1 rounded bg-red-100 text-red-700";
+    filingBadge.textContent = "Overdue";
+    filingText.textContent = `VAT return overdue. Due ${fmtLocalDate(due)}.`;
+    return;
+  }
+
+  if (diff <= 7) {
+    filingBadge.className = "px-2 py-1 rounded bg-amber-100 text-amber-700";
+    filingBadge.textContent = "Due soon";
+    filingText.textContent = `VAT return due ${fmtLocalDate(due)} (${diff} day${diff === 1 ? "" : "s"} left).`;
+    return;
+  }
+
+  filingBadge.textContent = "Open";
+  filingText.textContent = `Open filing period. Due ${fmtLocalDate(due)}.`;
+}
+
 function fmtLocalDate(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
     .toISOString()
@@ -11338,14 +11437,74 @@ function ensureVatScreen() {
     await renderVatDashboard?.();
   });
 
-  document.getElementById("vatExportBtn")?.addEventListener("click", (e) => {
+  document.getElementById("vatExportBtn")?.addEventListener("click", async (e) => {
     e.preventDefault();
-    alert("Export VAT report is not wired to backend yet.");
+
+    try {
+      const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+      if (!cid) throw new Error("No company selected");
+
+      const period = parseVatPeriodSelection?.();
+      if (!period?.start_date || !period?.end_date) {
+        alert("Please select a VAT period first.");
+        return;
+      }
+
+      const [linesRes, summary] = await Promise.all([
+        apiFetch(ENDPOINTS.vatLines(cid, period.start_date, period.end_date), { method: "GET" }),
+        apiFetch(ENDPOINTS.vatSummary(cid, period.start_date, period.end_date), { method: "GET" }),
+      ]);
+
+      const rows = Array.isArray(linesRes) ? linesRes : (linesRes?.lines || []);
+      if (!rows.length) {
+        alert("No VAT lines found for this period.");
+        return;
+      }
+
+      exportVatCsv({
+        companyId: cid,
+        period,
+        summary: summary || {},
+        rows,
+      });
+    } catch (err) {
+      console.error("VAT export failed:", err);
+      alert(err?.message || "Failed to export VAT report.");
+    }
   });
 
-  document.getElementById("vatFileNowBtn")?.addEventListener("click", (e) => {
+  document.getElementById("vatFileNowBtn")?.addEventListener("click", async (e) => {
     e.preventDefault();
-    alert("VAT filing workflow is not wired to backend yet.");
+
+    try {
+      const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+      if (!cid) throw new Error("No company selected");
+
+      const period = parseVatPeriodSelection();
+      if (!period?.start_date || !period?.end_date) {
+        alert("Please select a VAT period first.");
+        return;
+      }
+
+      const res = await apiFetch(ENDPOINTS.vatPrepareFiling(cid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: period.start_date,
+          to: period.end_date,
+        }),
+      });
+
+      if (res?.ok === false) {
+        throw new Error(res.error || "Failed to prepare VAT return");
+      }
+
+      await renderVatDashboard();
+      alert("VAT return prepared successfully.");
+    } catch (err) {
+      console.error("Prepare VAT filing failed:", err);
+      alert(err?.message || "Failed to prepare VAT return.");
+    }
   });
 
   console.log("ensureVatScreen: VAT layout initialised");
@@ -11357,21 +11516,45 @@ async function bindVatPeriodFilter() {
   sel.dataset.bound = "1";
 
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid) return;
+  if (!cid) {
+    delete sel.dataset.bound;
+    return;
+  }
 
   try {
     const res = await apiFetch(ENDPOINTS.vatPeriods(cid), { method: "GET" });
     const periods = Array.isArray(res?.periods) ? res.periods : [];
     const current = res?.current || null;
 
-    sel.innerHTML = periods.map((p) => {
-      return `<option value="${p.start_date}|${p.end_date}">${p.label}</option>`;
-    }).join("");
+    sel.innerHTML = [
+      `<option value="">Select VAT period</option>`,
+      ...periods.map((p) => {
+        const payload = encodeURIComponent(JSON.stringify({
+          label: p.label,
+          start_date: p.start_date,
+          end_date: p.end_date,
+          due_date: p.due_date || null,
+        }));
+        return `<option value="${payload}">${p.label}</option>`;
+      })
+    ].join("");
 
     if (current?.start_date && current?.end_date) {
-      sel.value = `${current.start_date}|${current.end_date}`;
+      sel.value = encodeURIComponent(JSON.stringify({
+        label: current.label,
+        start_date: current.start_date,
+        end_date: current.end_date,
+        due_date: current.due_date || null,
+      }));
     } else if (periods.length) {
-      sel.value = `${periods[0].start_date}|${periods[0].end_date}`;
+      sel.value = encodeURIComponent(JSON.stringify({
+        label: periods[0].label,
+        start_date: periods[0].start_date,
+        end_date: periods[0].end_date,
+        due_date: periods[0].due_date || null,
+      }));
+    } else {
+      sel.value = "";
     }
 
     sel.addEventListener("change", async () => {
@@ -11379,6 +11562,7 @@ async function bindVatPeriodFilter() {
     });
   } catch (err) {
     console.error("bindVatPeriodFilter failed:", err);
+    delete sel.dataset.bound;
   }
 }
 
@@ -11405,20 +11589,9 @@ async function renderVatDashboard() {
   const cfg = window.CURRENT_COMPANY?.vat_settings || {};
   const today = new Date();
 
-  let period = null;
-
-  const sel = document.getElementById("vatPeriodSelect");
-  if (sel?.value) {
-    const [from, to] = String(sel.value).split("|");
-    if (from && to) {
-      period = {
-        label: sel.options[sel.selectedIndex]?.text || "Selected period",
-        start: new Date(from + "T00:00:00"),
-        end: new Date(to + "T00:00:00"),
-        dueDate: null,
-      };
-    }
-  }
+  let period = (typeof parseVatPeriodSelection === "function")
+    ? parseVatPeriodSelection()
+    : null;
 
   if (!period) {
     try {
@@ -11431,11 +11604,23 @@ async function renderVatDashboard() {
   if (!period) {
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    period = { label: "Current month", start, end, dueDate: end };
+    period = {
+      label: "Current month",
+      start,
+      end,
+      dueDate: end,
+      start_date: fmtLocalDate(start),
+      end_date: fmtLocalDate(end),
+      due_date: fmtLocalDate(end),
+    };
+  } else {
+    if (!period.start_date && period.start) period.start_date = fmtLocalDate(period.start);
+    if (!period.end_date && period.end) period.end_date = fmtLocalDate(period.end);
+    if (!period.due_date && period.dueDate) period.due_date = fmtLocalDate(period.dueDate);
   }
 
-  const fromStr = fmtLocalDate(period.start);
-  const toStr = fmtLocalDate(period.end);
+  const fromStr = period.start_date || fmtLocalDate(period.start);
+  const toStr = period.end_date || fmtLocalDate(period.end);
 
   const lblEl = document.getElementById("vatPeriodLabel");
   const rangeEl = document.getElementById("vatPeriodRange");
@@ -11453,16 +11638,17 @@ async function renderVatDashboard() {
   if (lblEl) lblEl.textContent = period.label || "Current period";
   if (rangeEl) rangeEl.textContent = `Period: ${fromStr} to ${toStr}`;
 
-  if (filingBadge) filingBadge.textContent = "Open";
-  if (filingText) {
-    filingText.textContent = period?.dueDate
-      ? `Open filing period. Due ${fmtLocalDate(period.dueDate)}`
-      : "Open filing period.";
-  }
-
   if (!inEl || !outEl || !netEl) {
     console.warn("renderVatDashboard: VAT elements missing");
     return;
+  }
+
+  if (filingBadge) {
+    filingBadge.className = "px-2 py-1 rounded bg-slate-100 text-slate-700";
+    filingBadge.textContent = "Loading…";
+  }
+  if (filingText) {
+    filingText.textContent = "Loading filing status…";
   }
 
   inEl.textContent = fmt(0);
@@ -11483,12 +11669,10 @@ async function renderVatDashboard() {
 
     if (!cid) throw new Error("No company selected");
 
-    const linesUrl =
-      `/api/companies/${encodeURIComponent(cid)}/vat/lines?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}`;
-
-    const [linesRes, summary] = await Promise.all([
-      apiFetch(linesUrl, { method: "GET" }),
+    const [linesRes, summary, filingRes] = await Promise.all([
+      apiFetch(ENDPOINTS.vatLines(cid, fromStr, toStr), { method: "GET" }),
       apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
+      apiFetch(ENDPOINTS.vatFilings(cid, fromStr, toStr), { method: "GET" }),
     ]);
 
     const rows = Array.isArray(linesRes) ? linesRes : (linesRes?.lines || []);
@@ -11530,7 +11714,7 @@ async function renderVatDashboard() {
 
     const input = Number(summary?.input_total || 0);
     const output = Number(summary?.output_total || 0);
-    const net = output - input;
+    const net = Number(summary?.net_vat ?? (output - input));
 
     inEl.textContent = fmt(input);
     outEl.textContent = fmt(output);
@@ -11550,7 +11734,49 @@ async function renderVatDashboard() {
       }
     }
 
+    const filing =
+      filingRes?.filing ||
+      (Array.isArray(filingRes?.filings) ? filingRes.filings[0] : null) ||
+      null;
+
+    if (typeof setVatFilingBadgeState === "function") {
+      setVatFilingBadgeState({ filing, period });
+    } else {
+      if (filing?.status === "submitted") {
+        if (filingBadge) {
+          filingBadge.className = "px-2 py-1 rounded bg-emerald-100 text-emerald-700";
+          filingBadge.textContent = "Submitted";
+        }
+        if (filingText) {
+          filingText.textContent =
+            `Submitted${filing.submitted_at ? ` on ${String(filing.submitted_at).slice(0, 10)}` : ""}` +
+            `${filing.reference ? ` • Ref ${filing.reference}` : ""}`;
+        }
+      } else if (filing?.status === "prepared") {
+        if (filingBadge) {
+          filingBadge.className = "px-2 py-1 rounded bg-blue-100 text-blue-700";
+          filingBadge.textContent = "Prepared";
+        }
+        if (filingText) {
+          filingText.textContent =
+            `Prepared${filing.prepared_at ? ` on ${String(filing.prepared_at).slice(0, 10)}` : ""}` +
+            `${period?.due_date ? ` • Due ${period.due_date}` : ""}`;
+        }
+      } else {
+        if (filingBadge) {
+          filingBadge.className = "px-2 py-1 rounded bg-slate-100 text-slate-700";
+          filingBadge.textContent = "Open";
+        }
+        if (filingText) {
+          filingText.textContent = period?.due_date
+            ? `Open filing period. Due ${period.due_date}`
+            : "Open filing period.";
+        }
+      }
+    }
+
     console.log("renderVatDashboard: vatSummary =", summary);
+    console.log("renderVatDashboard: filing =", filing);
   } catch (err) {
     console.error("renderVatDashboard error:", err);
 
@@ -11558,6 +11784,14 @@ async function renderVatDashboard() {
     outEl.textContent = "Error";
     netEl.textContent = "Error";
     if (netLbl) netLbl.textContent = err?.message || "Could not load VAT summary.";
+
+    if (filingBadge) {
+      filingBadge.className = "px-2 py-1 rounded bg-red-100 text-red-700";
+      filingBadge.textContent = "Error";
+    }
+    if (filingText) {
+      filingText.textContent = "Could not load filing status.";
+    }
 
     if (linesBody) {
       linesBody.innerHTML = `<tr><td colspan="6" class="py-2 text-red-600">Failed to load VAT lines.</td></tr>`;

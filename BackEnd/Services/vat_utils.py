@@ -3,6 +3,7 @@ from collections import defaultdict
 # routes/companies_vat.py
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 from BackEnd.Services.db_service import db_service
+from BackEnd.Services.company_context import get_company_context
 from datetime import datetime, date, timedelta
 from typing import Optional, Tuple, Set
 from collections import defaultdict
@@ -228,6 +229,42 @@ def _get_vat_accounts(company_id: int) -> Tuple[Set[str], Set[str]]:
 
     return input_codes, output_codes
 
+def _serialise_vat_filing(row: dict):
+    if not row:
+        return None
+
+    def iso(v):
+        if v is None:
+            return None
+        try:
+            return v.isoformat()
+        except Exception:
+            return str(v)
+
+    return {
+        "id": row.get("id"),
+        "company_id": row.get("company_id"),
+        "period_start": iso(row.get("period_start")),
+        "period_end": iso(row.get("period_end")),
+        "period_label": row.get("period_label"),
+        "due_date": iso(row.get("due_date")),
+        "input_total": float(row.get("input_total") or 0),
+        "output_total": float(row.get("output_total") or 0),
+        "net_vat": float(row.get("net_vat") or 0),
+        "status": row.get("status"),
+        "reference": row.get("reference"),
+        "notes": row.get("notes"),
+        "prepared_at": iso(row.get("prepared_at")),
+        "prepared_by_user_id": row.get("prepared_by_user_id"),
+        "submitted_at": iso(row.get("submitted_at")),
+        "submitted_by_user_id": row.get("submitted_by_user_id"),
+        "source": row.get("source"),
+        "source_id": row.get("source_id"),
+        "created_at": iso(row.get("created_at")),
+        "updated_at": iso(row.get("updated_at")),
+    }
+
+
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat/periods", methods=["GET", "OPTIONS"])
 @require_auth
 def vat_periods(company_id: int):
@@ -443,3 +480,164 @@ def vat_lines(company_id: int):
         })
 
     return jsonify({"lines": lines}), 200
+
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings", methods=["GET", "OPTIONS"])
+@require_auth
+def vat_filings(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"error": "Not authorised"}), 403
+
+    try:
+        db_service.ensure_company_schema(company_id)
+        db_service.ensure_company_vat_filings(company_id)
+    except Exception:
+        pass
+
+    from_str = (request.args.get("from") or "").strip()
+    to_str = (request.args.get("to") or "").strip()
+
+    start_date = _parse_date(from_str, None)
+    end_date = _parse_date(to_str, None)
+
+    if start_date and end_date:
+        filing = db_service.get_vat_filing(company_id, start_date, end_date)
+        return jsonify({
+            "filing": _serialise_vat_filing(filing)
+        }), 200
+
+    rows = db_service.list_vat_filings(company_id, limit=100)
+    return jsonify({
+        "filings": [_serialise_vat_filing(r) for r in rows]
+    }), 200
+
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings/prepare", methods=["POST", "OPTIONS"])
+@require_auth
+def vat_prepare_filing(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    current_user = getattr(g, "current_user", {}) or {}
+    if int(current_user.get("company_id") or 0) != int(company_id):
+        return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
+
+    payload = request.get_json(force=True) or {}
+    from_str = (payload.get("from") or "").strip()
+    to_str = (payload.get("to") or "").strip()
+    notes = (payload.get("notes") or "").strip() or None
+
+    start_date = _parse_date(from_str, None)
+    end_date = _parse_date(to_str, None)
+
+    if not start_date or not end_date:
+        return jsonify({"ok": False, "error": "from and to are required"}), 400
+
+    try:
+        db_service.ensure_company_schema(company_id)
+        db_service.ensure_company_vat_filings(company_id)
+    except Exception:
+        pass
+
+    cfg = db_service.get_vat_settings(company_id) or {}
+    filing_lag_days = cfg.get("filing_lag_days")
+    if not isinstance(filing_lag_days, int):
+        filing_lag_days = 25
+
+    due_date = end_date + timedelta(days=filing_lag_days)
+
+    # Resolve label using the same period logic you already use
+    period_label = None
+    periods = (
+        _make_vat_periods_for_year(start_date.year - 1, cfg)
+        + _make_vat_periods_for_year(start_date.year, cfg)
+        + _make_vat_periods_for_year(start_date.year + 1, cfg)
+    )
+    for p in periods:
+        if p["start_date"] == start_date and p["end_date"] == end_date:
+            period_label = p["label"]
+            break
+
+    if not period_label:
+        period_label = f"{start_date.isoformat()} to {end_date.isoformat()}"
+
+    schema = db_service.company_schema(company_id)
+    input_codes, output_codes = _get_vat_accounts(company_id)
+    vat_codes = list(set(input_codes) | set(output_codes))
+
+    input_total = 0.0
+    output_total = 0.0
+
+    if vat_codes:
+        placeholders = ",".join(["%s"] * len(vat_codes))
+        sql = f"""
+          SELECT
+            account,
+            debit,
+            credit
+          FROM {schema}.ledger
+          WHERE company_id = %s
+            AND date >= %s
+            AND date <= %s
+            AND account IN ({placeholders})
+        """
+        with db_service._conn_cursor() as (_conn, cur):
+            cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
+            rows = cur.fetchall() or []
+
+        for r in rows:
+            code = str(r.get("account") or "")
+            dr = float(r.get("debit") or 0)
+            cr = float(r.get("credit") or 0)
+            bal = dr - cr
+
+            if code in input_codes:
+                input_total += bal
+            elif code in output_codes:
+                output_total += -bal
+
+    net_vat = output_total - input_total
+
+    filing_id = db_service.upsert_vat_filing_prepared(
+        company_id,
+        period_start=start_date,
+        period_end=end_date,
+        period_label=period_label,
+        due_date=due_date,
+        input_total=input_total,
+        output_total=output_total,
+        net_vat=net_vat,
+        notes=notes,
+        prepared_by_user_id=int(current_user.get("id") or 0) or None,
+        source="api",
+    )
+
+    saved = db_service.get_vat_filing(company_id, start_date, end_date)
+
+    try:
+        db_service.audit_log(
+            company_id=company_id,
+            actor_user_id=int(current_user.get("id") or 0),
+            module="tax",
+            action="prepare_vat_filing",
+            severity="info",
+            entity_type="vat_filing",
+            entity_id=str(filing_id),
+            entity_ref=(period_label or f"vat_filing_{filing_id}"),
+            amount=float(net_vat or 0.0),
+            currency=(get_company_context(db_service, company_id) or {}).get("currency"),
+            before_json=payload if isinstance(payload, dict) else {},
+            after_json=_serialise_vat_filing(saved) or {},
+            message="VAT return prepared",
+            source="api",
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True,
+        "filing_id": filing_id,
+        "filing": _serialise_vat_filing(saved),
+    }), 200

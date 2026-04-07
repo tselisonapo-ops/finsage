@@ -22590,6 +22590,400 @@ class DatabaseService:
         }
 
 
+    def ensure_company_vat_filings(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        CREATE TABLE IF NOT EXISTS {schema}.vat_filings (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            period_label TEXT NULL,
+            due_date DATE NULL,
+
+            input_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+            output_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_vat NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            reference TEXT NULL,
+            notes TEXT NULL,
+
+            prepared_at TIMESTAMPTZ NULL,
+            prepared_by_user_id INT NULL,
+            submitted_at TIMESTAMPTZ NULL,
+            submitted_by_user_id INT NULL,
+
+            source TEXT NULL,
+            source_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS company_id INT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS period_start DATE;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS period_end DATE;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS period_label TEXT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS due_date DATE;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS input_total NUMERIC(18,2);
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS output_total NUMERIC(18,2);
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS net_vat NUMERIC(18,2);
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS status TEXT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS reference TEXT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS notes TEXT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS prepared_at TIMESTAMPTZ;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS prepared_by_user_id INT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS submitted_by_user_id INT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS source TEXT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS source_id INT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.vat_filings
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        UPDATE {schema}.vat_filings
+        SET input_total = COALESCE(input_total, 0),
+            output_total = COALESCE(output_total, 0),
+            net_vat = COALESCE(net_vat, 0)
+        WHERE input_total IS NULL
+        OR output_total IS NULL
+        OR net_vat IS NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN input_total SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN input_total SET DEFAULT 0;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN output_total SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN output_total SET DEFAULT 0;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN net_vat SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN net_vat SET DEFAULT 0;
+
+        UPDATE {schema}.vat_filings
+        SET status = COALESCE(NULLIF(TRIM(status), ''), 'draft')
+        WHERE status IS NULL OR TRIM(status) = '';
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN status SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN status SET DEFAULT 'draft';
+
+        UPDATE {schema}.vat_filings
+        SET created_at = COALESCE(created_at, NOW()),
+            updated_at = COALESCE(updated_at, NOW())
+        WHERE created_at IS NULL OR updated_at IS NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN created_at SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN created_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN updated_at SET NOT NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = '{schema}'
+            AND indexname = '{schema}_vat_filings_period_uniq'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX %I ON %I.vat_filings(company_id, period_start, period_end)',
+            '{schema}_vat_filings_period_uniq',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_vat_filings_status_check'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.vat_filings
+            ADD CONSTRAINT %I
+            CHECK (status = ANY (ARRAY[''draft'',''prepared'',''submitted'',''cancelled'']::text[]))',
+            '{schema}',
+            '{schema}_vat_filings_status_check'
+            );
+        END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_vat_filings_status_idx
+        ON {schema}.vat_filings(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_vat_filings_due_date_idx
+        ON {schema}.vat_filings(company_id, due_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_vat_filings_period_idx
+        ON {schema}.vat_filings(company_id, period_start, period_end);
+        """
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(sql)
+            conn.commit()
+
+    def get_vat_filing(self, company_id: int, period_start, period_end):
+        schema = self.company_schema(company_id)
+        sql = f"""
+        SELECT
+            id,
+            company_id,
+            period_start,
+            period_end,
+            period_label,
+            due_date,
+            input_total,
+            output_total,
+            net_vat,
+            status,
+            reference,
+            notes,
+            prepared_at,
+            prepared_by_user_id,
+            submitted_at,
+            submitted_by_user_id,
+            source,
+            source_id,
+            created_at,
+            updated_at
+        FROM {schema}.vat_filings
+        WHERE company_id = %s
+            AND period_start = %s
+            AND period_end = %s
+        LIMIT 1
+        """
+        with self._conn_cursor() as (_conn, cur):
+            cur.execute(sql, (int(company_id), period_start, period_end))
+            return cur.fetchone() or None
+
+    def upsert_vat_filing_prepared(
+        self,
+        company_id: int,
+        *,
+        period_start,
+        period_end,
+        period_label=None,
+        due_date=None,
+        input_total=0,
+        output_total=0,
+        net_vat=0,
+        notes=None,
+        prepared_by_user_id=None,
+        source="api",
+        source_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        INSERT INTO {schema}.vat_filings (
+            company_id,
+            period_start,
+            period_end,
+            period_label,
+            due_date,
+            input_total,
+            output_total,
+            net_vat,
+            status,
+            notes,
+            prepared_at,
+            prepared_by_user_id,
+            source,
+            source_id,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s,
+            'prepared',
+            %s,
+            NOW(),
+            %s,
+            %s,
+            %s,
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT (company_id, period_start, period_end)
+        DO UPDATE SET
+            period_label = EXCLUDED.period_label,
+            due_date = EXCLUDED.due_date,
+            input_total = EXCLUDED.input_total,
+            output_total = EXCLUDED.output_total,
+            net_vat = EXCLUDED.net_vat,
+            status = 'prepared',
+            notes = COALESCE(EXCLUDED.notes, {schema}.vat_filings.notes),
+            prepared_at = NOW(),
+            prepared_by_user_id = EXCLUDED.prepared_by_user_id,
+            source = EXCLUDED.source,
+            source_id = EXCLUDED.source_id,
+            updated_at = NOW()
+        RETURNING id
+        """
+
+        params = (
+            int(company_id),
+            period_start,
+            period_end,
+            period_label,
+            due_date,
+            float(input_total or 0),
+            float(output_total or 0),
+            float(net_vat or 0),
+            notes,
+            int(prepared_by_user_id) if prepared_by_user_id else None,
+            source,
+            source_id,
+        )
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(sql, params)
+            row = cur.fetchone() or {}
+            conn.commit()
+            return int(row.get("id") if isinstance(row, dict) else row[0])
+
+    def mark_vat_filing_submitted(
+        self,
+        company_id: int,
+        filing_id: int,
+        *,
+        submitted_by_user_id=None,
+        reference=None,
+        notes=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        UPDATE {schema}.vat_filings
+        SET
+            status = 'submitted',
+            submitted_at = NOW(),
+            submitted_by_user_id = %s,
+            reference = COALESCE(%s, reference),
+            notes = COALESCE(%s, notes),
+            updated_at = NOW()
+        WHERE company_id = %s
+            AND id = %s
+        RETURNING id
+        """
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(sql, (
+                int(submitted_by_user_id) if submitted_by_user_id else None,
+                reference,
+                notes,
+                int(company_id),
+                int(filing_id),
+            ))
+            row = cur.fetchone()
+            conn.commit()
+            return bool(row)
+
+    def list_vat_filings(self, company_id: int, *, limit: int = 100):
+        schema = self.company_schema(company_id)
+        sql = f"""
+        SELECT
+            id,
+            company_id,
+            period_start,
+            period_end,
+            period_label,
+            due_date,
+            input_total,
+            output_total,
+            net_vat,
+            status,
+            reference,
+            notes,
+            prepared_at,
+            prepared_by_user_id,
+            submitted_at,
+            submitted_by_user_id,
+            source,
+            source_id,
+            created_at,
+            updated_at
+        FROM {schema}.vat_filings
+        WHERE company_id = %s
+        ORDER BY period_start DESC, id DESC
+        LIMIT %s
+        """
+        with self._conn_cursor() as (_conn, cur):
+            cur.execute(sql, (int(company_id), int(limit)))
+            return cur.fetchall() or []
+
+
+      
     def get_income_statement_v2(
         self,
         company_id: int = None,
