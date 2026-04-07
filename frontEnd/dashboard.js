@@ -32062,31 +32062,34 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-  async function loadLoanDetail(loanId) {
-    const cid = getCid();
-    if (!cid || !loanId) return;
+async function loadLoanDetail(loanId) {
+  const cid = getCid();
+  if (!cid || !loanId) return;
 
-    try {
-      const res = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));   
-      const data = json?.data || null;
-      if (!data) return;
+  try {
+    const json = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));
+    const data = json?.data || null;
+    if (!data) return;
 
-      LOANS_STATE.currentLoanId = Number(loanId);
-      LOANS_STATE.loanDetail = data;
+    LOANS_STATE.currentLoanId = Number(loanId);
+    LOANS_STATE.loanDetail = data;
 
-      fillLoanForm(data.loan || {});
-      fillLoanCards(data.loan || {});
-      renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
-      renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));      renderMainJournalPreview(null);
-      renderLoanList(LOANS_STATE.loans);
-      setLoanTab("loan-overview");
+    fillLoanForm(data.loan || {});
+    fillLoanCards(data.loan || {});
+    renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
+    renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));
 
-      applyLoanButtonsByMode();   // ← ADD THIS
-    } catch (e) {
-      console.error("[Loans] loadLoanDetail failed", e);
-      alert("Failed to load loan detail.");
-    }
+    setLoanGlAccountsVisible(false);
+    clearMainJournalPreview();
+
+    renderLoanList(LOANS_STATE.loans);
+    setLoanTab("loan-overview");
+    applyLoanButtonsByMode();
+  } catch (e) {
+    console.error("[Loans] loadLoanDetail failed", e);
+    alert("Failed to load loan detail.");
   }
+}
 
   async function saveLoan({ previewOnly = false } = {}) {
     const cid = getCid();
