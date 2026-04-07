@@ -31425,27 +31425,27 @@ function bindAssetRecordsPickerModal({ cid }) {
       || null;
   }
 
-function getCurrency(currency) {
-  return window.resolveCurrency
-    ? window.resolveCurrency(currency)
-    : (
-        String(currency || "").trim().toUpperCase() ||
-        String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
-        String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
-        "USD"
-      );
-}
+  function getCurrency(currency) {
+    return window.resolveCurrency
+      ? window.resolveCurrency(currency)
+      : (
+          String(currency || "").trim().toUpperCase() ||
+          String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
+          String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
+          "USD"
+        );
+  }
 
-function resolveLoanCurrency(currency) {
-  return (typeof window.resolveCurrency === "function")
-    ? window.resolveCurrency(currency)
-    : (
-        String(currency || "").trim().toUpperCase() ||
-        String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
-        String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
-        "USD"
-      );
-}
+  function resolveLoanCurrency(currency) {
+    return (typeof window.resolveCurrency === "function")
+      ? window.resolveCurrency(currency)
+      : (
+          String(currency || "").trim().toUpperCase() ||
+          String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
+          String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
+          "USD"
+        );
+  }
 
   function n2(v) {
     const n = Number(v || 0);
@@ -31480,6 +31480,58 @@ function resolveLoanCurrency(currency) {
       .replaceAll("'", "&#39;");
   }
 
+  function calculateLoanTerm() {
+    const start = $("#loanStartDate")?.value;
+    const end = $("#loanEndDate")?.value;
+    const freq = ($("#loanPaymentFrequency")?.value || "monthly").toLowerCase();
+    const termEl = $("#loanTermCount");
+
+    if (!termEl) return;
+
+    if (!start || !end) {
+      termEl.value = "";
+      return;
+    }
+
+    const d1 = new Date(start);
+    const d2 = new Date(end);
+
+    if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime()) || d2 < d1) {
+      termEl.value = "";
+      return;
+    }
+
+    let term = 0;
+
+    if (freq === "monthly") {
+      term =
+        (d2.getFullYear() - d1.getFullYear()) * 12 +
+        (d2.getMonth() - d1.getMonth());
+
+      if (d2.getDate() >= d1.getDate()) {
+        term += 1;
+      }
+    } else if (freq === "weekly") {
+      term = Math.ceil((d2 - d1) / (7 * 24 * 60 * 60 * 1000));
+    } else if (freq === "quarterly") {
+      const months =
+        (d2.getFullYear() - d1.getFullYear()) * 12 +
+        (d2.getMonth() - d1.getMonth()) +
+        (d2.getDate() >= d1.getDate() ? 1 : 0);
+      term = Math.ceil(months / 3);
+    } else if (freq === "annually") {
+      term = d2.getFullYear() - d1.getFullYear();
+      if (
+        d2.getMonth() > d1.getMonth() ||
+        (d2.getMonth() === d1.getMonth() && d2.getDate() >= d1.getDate())
+      ) {
+        term += 1;
+      }
+    }
+
+    termEl.value = term > 0 ? String(term) : "";
+  }
+
   function setLoanTab(name) {
     $$("[data-loan-tab]").forEach((btn) => {
       const active = btn.getAttribute("data-loan-tab") === name;
@@ -31494,14 +31546,14 @@ function resolveLoanCurrency(currency) {
     });
   }
 
-function normalizeLoanStatus(rawStatus, r = {}) {
-  const s = String(rawStatus || "draft").toLowerCase();
+  function normalizeLoanStatus(rawStatus, r = {}) {
+    const s = String(rawStatus || "draft").toLowerCase();
 
-  // approval layer override
-  if (r?.approval_status === "pending") return "pending_approval";
+    // approval layer override
+    if (r?.approval_status === "pending") return "pending_approval";
 
-  return s;
-}
+    return s;
+  }
 
   function newLoanTemplate() {
     const today = new Date();
@@ -31564,6 +31616,8 @@ function normalizeLoanStatus(rawStatus, r = {}) {
   function fillLoanForm(loan) {
     loan = loan || {};
 
+    calculateLoanTerm();
+
     $("#loanName").value = loan.loan_name || "";
     $("#loanReference").value = loan.loan_reference || "";
     $("#loanLender").value = loan.lender_name || "";
@@ -31594,6 +31648,20 @@ function normalizeLoanStatus(rawStatus, r = {}) {
     $("#loanStatusPill").textContent = loan.status || "New";
     $("#loanRefPill").textContent = loan.loan_reference || "";
     $("#loanRefPill").classList.toggle("hidden", !loan.loan_reference);
+  }
+
+  function resetLoanScreenForNewLoan(loan = newLoanTemplate()) {
+    setLoanGlAccountsVisible(false);
+    clearMainJournalPreview();
+
+    LOANS_STATE.lastPaymentDraft = null;
+
+    fillLoanForm(loan);
+    fillLoanCards(loan);
+    renderScheduleRows([], resolveLoanCurrency(loan.currency));
+    renderPaymentsRows([], resolveLoanCurrency(loan.currency));
+
+    calculateLoanTerm();
   }
 
   function fillLoanCards(loan) {
@@ -31648,6 +31716,65 @@ function normalizeLoanStatus(rawStatus, r = {}) {
     });
   }
 
+  function setLoanGlAccountsVisible(visible) {
+    const host = $("#loanGlAccountsSection");
+    if (!host) return;
+    host.classList.toggle("hidden", !visible);
+  }
+
+  function clearMainJournalPreview() {
+    const meta = $("#loanJournalHeaderMeta");
+    const card = $("#loanJournalHeaderCard");
+    const rows = $("#loanJournalPreviewRows");
+
+    if (meta) meta.innerHTML = "";
+    if (card) card.classList.add("hidden");
+
+    if (rows) {
+      rows.innerHTML = `
+        <tr>
+          <td colspan="4" class="px-3 py-6 text-center text-slate-400">
+            No journal preview yet.
+          </td>
+        </tr>
+      `;
+    }
+  }
+
+  function renderJournalHeader(entry, {
+    title = "Journal Header",
+    source = ""
+  } = {}) {
+    const card = $("#loanJournalHeaderCard");
+    const meta = $("#loanJournalHeaderMeta");
+    if (!card || !meta) return;
+
+    const header = entry?.header || entry?.journal_header || entry || {};
+    const lines = Array.isArray(entry?.lines) ? entry.lines : [];
+    const totalDebit = lines.reduce((a, x) => a + Number(x?.debit || 0), 0);
+    const totalCredit = lines.reduce((a, x) => a + Number(x?.credit || 0), 0);
+
+    const items = [
+      { label: "Preview Type", value: title },
+      { label: "Source", value: source || "—" },
+      { label: "Journal Date", value: fmtDate(header.journal_date || header.date || header.entry_date) },
+      { label: "Reference", value: header.reference || header.journal_reference || "—" },
+      { label: "Description", value: header.description || header.memo || header.narration || "—" },
+      { label: "Currency", value: header.currency || LOANS_STATE.loanDetail?.loan?.currency || "—" },
+      { label: "Total Debit", value: n2(totalDebit) },
+      { label: "Total Credit", value: n2(totalCredit) },
+    ];
+
+    meta.innerHTML = items.map((x) => `
+      <div class="rounded-lg border bg-white px-3 py-2">
+        <div class="text-[11px] text-slate-500">${escapeHtml(x.label)}</div>
+        <div class="font-medium text-slate-800">${escapeHtml(String(x.value ?? "—"))}</div>
+      </div>
+    `).join("");
+
+    card.classList.remove("hidden");
+  }
+
   function renderScheduleRows(schedule, currency = null) {
     currency = getCurrency(currency);    const host = $("#loanScheduleRows");
     if (!host) return;
@@ -31671,59 +31798,67 @@ function normalizeLoanStatus(rawStatus, r = {}) {
     `).join("");
   }
 
-function renderPaymentsRows(payments, currency = null) {
-  currency = getCurrency(currency);  const host = $("#loanPaymentsRows");
-  if (!host) return;
+  function renderPaymentsRows(payments, currency = null) {
+    currency = getCurrency(currency);  const host = $("#loanPaymentsRows");
+    if (!host) return;
 
-  if (!Array.isArray(payments) || !payments.length) {
-    host.innerHTML = `<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400">No payments yet.</td></tr>`;
-    return;
+    if (!Array.isArray(payments) || !payments.length) {
+      host.innerHTML = `<tr><td colspan="9" class="px-3 py-6 text-center text-slate-400">No payments yet.</td></tr>`;
+      return;
+    }
+
+    host.innerHTML = payments.map((p) => `
+      <tr class="border-t">
+        <td class="px-3 py-2">${fmtDate(p.payment_date)}</td>
+        <td class="px-3 py-2">${escapeHtml(p.reference || "")}</td>
+        <td class="px-3 py-2 text-right">${money(p.amount_paid || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(p.principal_amount || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(p.interest_amount || 0, currency)}</td>
+        <td class="px-3 py-2 text-right">${money(p.accrued_interest_amount || 0, currency)}</td>
+        <td class="px-3 py-2"><td>${renderStatusPill(p.status, p)}</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${escapeHtml(paymentWorkflowText(p))}</td>
+        <td class="px-3 py-2">
+          <div class="flex gap-2 flex-wrap">
+            <button class="btn" data-payment-preview="${p.id}">Preview</button>
+            ${String(p.status || "").toLowerCase() !== "posted"
+              ? `<button class="btn-highlight" data-payment-post="${p.id}">Post</button>`
+              : `<button class="btn" disabled>Posted</button>`
+            }
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    $$("[data-payment-preview]", host).forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const paymentId = Number(btn.getAttribute("data-payment-preview") || 0);
+        if (paymentId > 0) await previewLoanPaymentJournal(paymentId, { pushToMainTab: true });
+      });
+    });
+
+    $$("[data-payment-post]", host).forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const paymentId = Number(btn.getAttribute("data-payment-post") || 0);
+        if (paymentId > 0) await postLoanPayment(paymentId);
+      });
+    });
   }
 
-  host.innerHTML = payments.map((p) => `
-    <tr class="border-t">
-      <td class="px-3 py-2">${fmtDate(p.payment_date)}</td>
-      <td class="px-3 py-2">${escapeHtml(p.reference || "")}</td>
-      <td class="px-3 py-2 text-right">${money(p.amount_paid || 0, currency)}</td>
-      <td class="px-3 py-2 text-right">${money(p.principal_amount || 0, currency)}</td>
-      <td class="px-3 py-2 text-right">${money(p.interest_amount || 0, currency)}</td>
-      <td class="px-3 py-2 text-right">${money(p.accrued_interest_amount || 0, currency)}</td>
-      <td class="px-3 py-2"><td>${renderStatusPill(p.status, p)}</td>
-      <td class="px-3 py-2 text-xs text-slate-600">${escapeHtml(paymentWorkflowText(p))}</td>
-      <td class="px-3 py-2">
-        <div class="flex gap-2 flex-wrap">
-          <button class="btn" data-payment-preview="${p.id}">Preview</button>
-          ${String(p.status || "").toLowerCase() !== "posted"
-            ? `<button class="btn-highlight" data-payment-post="${p.id}">Post</button>`
-            : `<button class="btn" disabled>Posted</button>`
-          }
-        </div>
-      </td>
-    </tr>
-  `).join("");
-
-  $$("[data-payment-preview]", host).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const paymentId = Number(btn.getAttribute("data-payment-preview") || 0);
-      if (paymentId > 0) await previewLoanPaymentJournal(paymentId, { pushToMainTab: true });
-    });
-  });
-
-  $$("[data-payment-post]", host).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const paymentId = Number(btn.getAttribute("data-payment-post") || 0);
-      if (paymentId > 0) await postLoanPayment(paymentId);
-    });
-  });
-}
-
-  function renderMainJournalPreview(entry) {
+  function renderMainJournalPreview(entry, opts = {}) {
     const host = $("#loanJournalPreviewRows");
     if (!host) return;
 
+    renderJournalHeader(entry, opts);
+
     const lines = entry?.lines || [];
     if (!lines.length) {
-      host.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td></tr>`;
+      host.innerHTML = `
+        <tr>
+          <td colspan="4" class="px-3 py-6 text-center text-slate-400">
+            No journal preview yet.
+          </td>
+        </tr>
+      `;
       return;
     }
 
@@ -31799,27 +31934,27 @@ function renderPaymentsRows(payments, currency = null) {
     $("#loanStatOutstanding").textContent = window.money(totalOutstanding, getCurrency());
   }
 
-async function loadBankAccounts() {
-  const cid = getCid();
-  if (!cid) return [];
+  async function loadBankAccounts() {
+    const cid = getCid();
+    if (!cid) return [];
 
-  if (typeof ENDPOINTS?.bankAccounts !== "function") {
-    LOANS_STATE.bankAccounts = [];
-    fillBankAccountSelects([]);
-    return [];
+    if (typeof ENDPOINTS?.bankAccounts !== "function") {
+      LOANS_STATE.bankAccounts = [];
+      fillBankAccountSelects([]);
+      return [];
+    }
+
+    try {
+      const json = await window.apiFetch(ENDPOINTS.bankAccounts(cid));
+      LOANS_STATE.bankAccounts = json?.data || json || [];
+    } catch (e) {
+      console.warn("[Loans] bank accounts endpoint unavailable", e);
+      LOANS_STATE.bankAccounts = [];
+    }
+
+    fillBankAccountSelects(LOANS_STATE.bankAccounts);
+    return LOANS_STATE.bankAccounts;
   }
-
-  try {
-    const json = await window.apiFetch(ENDPOINTS.bankAccounts(cid));
-    LOANS_STATE.bankAccounts = json?.data || json || [];
-  } catch (e) {
-    console.warn("[Loans] bank accounts endpoint unavailable", e);
-    LOANS_STATE.bankAccounts = [];
-  }
-
-  fillBankAccountSelects(LOANS_STATE.bankAccounts);
-  return LOANS_STATE.bankAccounts;
-}
 
   function fillBankAccountSelects(rows) {
     const options = [
@@ -31833,12 +31968,12 @@ async function loadBankAccounts() {
     });
   }
 
-function isApprovalRequiredResponse(res, json) {
-  return (
-    Number(res?.status) === 202 &&
-    String(json?.error || "").toUpperCase() === "APPROVAL_REQUIRED"
-  );
-}
+  function isApprovalRequiredResponse(res, json) {
+    return (
+      Number(res?.status) === 202 &&
+      String(json?.error || "").toUpperCase() === "APPROVAL_REQUIRED"
+    );
+  }
 
   function loanWorkflowStatusLabel(status) {
     const s = String(status || "").toLowerCase();
@@ -31881,50 +32016,50 @@ function isApprovalRequiredResponse(res, json) {
     return { approvalRequired: true, approvalRequest: req };
   }
 
-async function renderLoanRegister() {
-  const cid = getCid();
-  if (!cid) return;
+  async function renderLoanRegister() {
+    const cid = getCid();
+    if (!cid) return;
 
-  const status = ($("#loanFilterStatus")?.value || "active").trim();
-  const q = ($("#loanSearch")?.value || "").trim();
-  const effectiveStatus = status === "all" ? "" : status;
+    const status = ($("#loanFilterStatus")?.value || "active").trim();
+    const q = ($("#loanSearch")?.value || "").trim();
+    const effectiveStatus = status === "all" ? "" : status;
 
-  LOANS_STATE.loading = true;
+    LOANS_STATE.loading = true;
 
-  try {
-    const json = await window.apiFetch(
-      ENDPOINTS.loans.list(cid, { status: effectiveStatus, q, limit: 200 })
-    );
-
-    LOANS_STATE.loans = json?.data || [];
-    renderLoanList(LOANS_STATE.loans);
-    computeLoanStats(LOANS_STATE.loans);
-    applyLoanButtonsByMode();
-
-    if (!LOANS_STATE.currentLoanId && LOANS_STATE.loans.length) {
-      await loadLoanDetail(LOANS_STATE.loans[0].id);
-    } else if (LOANS_STATE.currentLoanId) {
-      const stillExists = LOANS_STATE.loans.some(
-        (x) => Number(x.id) === Number(LOANS_STATE.currentLoanId)
+    try {
+      const json = await window.apiFetch(
+        ENDPOINTS.loans.list(cid, { status: effectiveStatus, q, limit: 200 })
       );
 
-      if (!stillExists && LOANS_STATE.loans.length) {
+      LOANS_STATE.loans = json?.data || [];
+      renderLoanList(LOANS_STATE.loans);
+      computeLoanStats(LOANS_STATE.loans);
+      applyLoanButtonsByMode();
+
+      if (!LOANS_STATE.currentLoanId && LOANS_STATE.loans.length) {
         await loadLoanDetail(LOANS_STATE.loans[0].id);
-      } else {
-        renderLoanList(LOANS_STATE.loans);
+      } else if (LOANS_STATE.currentLoanId) {
+        const stillExists = LOANS_STATE.loans.some(
+          (x) => Number(x.id) === Number(LOANS_STATE.currentLoanId)
+        );
+
+        if (!stillExists && LOANS_STATE.loans.length) {
+          await loadLoanDetail(LOANS_STATE.loans[0].id);
+        } else {
+          renderLoanList(LOANS_STATE.loans);
+        }
       }
+    } catch (e) {
+      console.error("[Loans] renderLoanRegister failed", e);
+      $("#loanList").innerHTML = `
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          Failed to load loans.
+        </div>
+      `;
+    } finally {
+      LOANS_STATE.loading = false;
     }
-  } catch (e) {
-    console.error("[Loans] renderLoanRegister failed", e);
-    $("#loanList").innerHTML = `
-      <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        Failed to load loans.
-      </div>
-    `;
-  } finally {
-    LOANS_STATE.loading = false;
   }
-}
 
   async function loadLoanDetail(loanId) {
     const cid = getCid();
@@ -31952,144 +32087,144 @@ async function renderLoanRegister() {
     }
   }
 
-async function saveLoan({ previewOnly = false } = {}) {
-  const cid = getCid();
-  if (!cid) return null;
+  async function saveLoan({ previewOnly = false } = {}) {
+    const cid = getCid();
+    if (!cid) return null;
 
-  const payload = getLoanFormPayload();
-  if (!payload.loan_name) {
-    alert("Loan name is required.");
-    return null;
-  }
-  if (!payload.lender_name) {
-    alert("Lender / loan holder is required.");
-    return null;
-  }
-  if (!payload.start_date) {
-    alert("Start date is required.");
-    return null;
-  }
-  if (!payload.first_payment_date) {
-    alert("First payment date is required.");
-    return null;
-  }
-  if (!(Number(payload.principal_amount) > 0)) {
-    alert("Principal amount must be greater than zero.");
-    return null;
-  }
-  if (!(Number(payload.term_count) > 0)) {
-    alert("Term must be greater than zero.");
-    return null;
-  }
-
-  try {
-    let json;
-
-    if (LOANS_STATE.currentLoanId) {
-      json = await window.apiFetch(
-        ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId),
-        {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        }
-      );
-    } else {
-      json = await window.apiFetch(ENDPOINTS.loans.create(cid), {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+    const payload = getLoanFormPayload();
+    if (!payload.loan_name) {
+      alert("Loan name is required.");
+      return null;
     }
-
-    if (isApprovalRequiredResponse(json)) {
-      await handleLoanApprovalRequired(json, {
-        successMessage: "Loan request submitted for approval.",
-        keepModalOpen: true,
-      });
-
-      await renderLoanRegister();
-      setLoanTab("loan-overview");
-      applyLoanButtonsByMode();
+    if (!payload.lender_name) {
+      alert("Lender / loan holder is required.");
+      return null;
+    }
+    if (!payload.start_date) {
+      alert("Start date is required.");
+      return null;
+    }
+    if (!payload.first_payment_date) {
+      alert("First payment date is required.");
+      return null;
+    }
+    if (!(Number(payload.principal_amount) > 0)) {
+      alert("Principal amount must be greater than zero.");
+      return null;
+    }
+    if (!(Number(payload.term_count) > 0)) {
+      alert("Term must be greater than zero.");
       return null;
     }
 
-    if (json?.ok === false) {
-      throw new Error(json?.error || "Failed to save loan");
+    try {
+      let json;
+
+      if (LOANS_STATE.currentLoanId) {
+        json = await window.apiFetch(
+          ENDPOINTS.loans.update(cid, LOANS_STATE.currentLoanId),
+          {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          }
+        );
+      } else {
+        json = await window.apiFetch(ENDPOINTS.loans.create(cid), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (isApprovalRequiredResponse(json)) {
+        await handleLoanApprovalRequired(json, {
+          successMessage: "Loan request submitted for approval.",
+          keepModalOpen: true,
+        });
+
+        await renderLoanRegister();
+        setLoanTab("loan-overview");
+        applyLoanButtonsByMode();
+        return null;
+      }
+
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to save loan");
+      }
+
+      const newLoanId =
+        json?.data?.loan?.id ||
+        json?.data?.loan_id ||
+        LOANS_STATE.currentLoanId ||
+        null;
+
+      await renderLoanRegister();
+
+      if (newLoanId) {
+        await loadLoanDetail(newLoanId);
+      } else {
+        applyLoanButtonsByMode();
+      }
+
+      if (!previewOnly) {
+        setLoanTab("loan-overview");
+        alert("Loan saved.");
+      }
+
+      return newLoanId;
+    } catch (e) {
+      console.error("[Loans] saveLoan failed", e);
+      alert(String(e.message || e));
+      return null;
     }
-
-    const newLoanId =
-      json?.data?.loan?.id ||
-      json?.data?.loan_id ||
-      LOANS_STATE.currentLoanId ||
-      null;
-
-    await renderLoanRegister();
-
-    if (newLoanId) {
-      await loadLoanDetail(newLoanId);
-    } else {
-      applyLoanButtonsByMode();
-    }
-
-    if (!previewOnly) {
-      setLoanTab("loan-overview");
-      alert("Loan saved.");
-    }
-
-    return newLoanId;
-  } catch (e) {
-    console.error("[Loans] saveLoan failed", e);
-    alert(String(e.message || e));
-    return null;
   }
-}
 
-async function recalculateLoanSchedule() {
-  const cid = getCid();
-  const loanId = LOANS_STATE.currentLoanId;
-  if (!cid || !loanId) return alert("Select a loan first.");
+  async function recalculateLoanSchedule() {
+    const cid = getCid();
+    const loanId = LOANS_STATE.currentLoanId;
+    if (!cid || !loanId) return alert("Select a loan first.");
 
-  try {
-    const json = await window.apiFetch(ENDPOINTS.loans.recalculate(cid, loanId), {
-      method: "POST",
-    });
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.recalculate(cid, loanId), {
+        method: "POST",
+      });
 
-    if (json?.ok === false) {
-      throw new Error(json?.error || "Failed to recalculate schedule");
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to recalculate schedule");
+      }
+
+      await loadLoanDetail(loanId);
+      setLoanTab("loan-schedule");
+      alert("Schedule recalculated.");
+    } catch (e) {
+      console.error("[Loans] recalculateLoanSchedule failed", e);
+      alert(String(e.message || e));
     }
-
-    await loadLoanDetail(loanId);
-    setLoanTab("loan-schedule");
-    alert("Schedule recalculated.");
-  } catch (e) {
-    console.error("[Loans] recalculateLoanSchedule failed", e);
-    alert(String(e.message || e));
   }
-}
 
-async function reclassifyLoan() {
-  const cid = getCid();
-  const loanId = LOANS_STATE.currentLoanId;
-  if (!cid || !loanId) return alert("Select a loan first.");
+  async function reclassifyLoan() {
+    const cid = getCid();
+    const loanId = LOANS_STATE.currentLoanId;
+    if (!cid || !loanId) return alert("Select a loan first.");
 
-  try {
-    const json = await window.apiFetch(ENDPOINTS.loans.reclassify(cid, loanId), {
-      method: "POST",
-      body: JSON.stringify({
-        as_of_date: new Date().toISOString().slice(0, 10),
-      }),
-    });
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.reclassify(cid, loanId), {
+        method: "POST",
+        body: JSON.stringify({
+          as_of_date: new Date().toISOString().slice(0, 10),
+        }),
+      });
 
-    if (json?.ok === false) {
-      throw new Error(json?.error || "Failed to post reclassification");
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to post reclassification");
+      }
+
+      await loadLoanDetail(loanId);
+      alert("Loan reclassification posted.");
+    } catch (e) {
+      console.error("[Loans] reclassifyLoan failed", e);
+      alert(String(e.message || e));
     }
-
-    await loadLoanDetail(loanId);
-    alert("Loan reclassification posted.");
-  } catch (e) {
-    console.error("[Loans] reclassifyLoan failed", e);
-    alert(String(e.message || e));
   }
-}
 
   function openLoanPaymentModal() {
     const loan = LOANS_STATE.loanDetail?.loan;
@@ -32119,73 +32254,73 @@ async function reclassifyLoan() {
     modal.classList.remove("flex");
   }
 
-async function saveLoanPaymentDraft({ autoPost = false } = {}) {
-  const cid = getCid();
-  const loanId = LOANS_STATE.currentLoanId;
-  if (!cid || !loanId) return alert("Select a loan first.");
+  async function saveLoanPaymentDraft({ autoPost = false } = {}) {
+    const cid = getCid();
+    const loanId = LOANS_STATE.currentLoanId;
+    if (!cid || !loanId) return alert("Select a loan first.");
 
-  const payload = {
-    payment_date: $("#loanPaymentDate")?.value || null,
-    amount_paid: Number($("#loanPaymentAmount")?.value || 0),
-    bank_account_id: Number($("#loanPaymentBankAccountId")?.value || 0) || null,
-    reference: ($("#loanPaymentReference")?.value || "").trim(),
-    description: ($("#loanPaymentDescription")?.value || "").trim(),
-    auto_calculate_split: !!$("#loanPaymentAutoSplit")?.checked,
-    notes: ($("#loanPaymentNotes")?.value || "").trim() || null,
-  };
+    const payload = {
+      payment_date: $("#loanPaymentDate")?.value || null,
+      amount_paid: Number($("#loanPaymentAmount")?.value || 0),
+      bank_account_id: Number($("#loanPaymentBankAccountId")?.value || 0) || null,
+      reference: ($("#loanPaymentReference")?.value || "").trim(),
+      description: ($("#loanPaymentDescription")?.value || "").trim(),
+      auto_calculate_split: !!$("#loanPaymentAutoSplit")?.checked,
+      notes: ($("#loanPaymentNotes")?.value || "").trim() || null,
+    };
 
-  if (!payload.payment_date) return alert("Payment date is required.");
-  if (!(payload.amount_paid > 0)) return alert("Amount paid must be greater than zero.");
-  if (!payload.bank_account_id) return alert("Bank account is required.");
+    if (!payload.payment_date) return alert("Payment date is required.");
+    if (!(payload.amount_paid > 0)) return alert("Amount paid must be greater than zero.");
+    if (!payload.bank_account_id) return alert("Bank account is required.");
 
-  try {
-    const json = await window.apiFetch(ENDPOINTS.loans.paymentsCreate(cid, loanId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-
-    if (isApprovalRequiredResponse(json)) {
-      LOANS_STATE.lastPaymentDraft = null;
-
-      await handleLoanApprovalRequired(json, {
-        successMessage: "Loan payment submitted for approval.",
-        keepModalOpen: true,
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.paymentsCreate(cid, loanId), {
+        method: "POST",
+        body: JSON.stringify(payload),
       });
 
-      return {
-        approval_required: true,
-        approval_request: json?.approval_request || null,
-      };
+      if (isApprovalRequiredResponse(json)) {
+        LOANS_STATE.lastPaymentDraft = null;
+
+        await handleLoanApprovalRequired(json, {
+          successMessage: "Loan payment submitted for approval.",
+          keepModalOpen: true,
+        });
+
+        return {
+          approval_required: true,
+          approval_request: json?.approval_request || null,
+        };
+      }
+
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to create loan payment");
+      }
+
+      LOANS_STATE.lastPaymentDraft = json?.data || null;
+
+      const p = LOANS_STATE.lastPaymentDraft?.payment || {};
+      const allocs = LOANS_STATE.lastPaymentDraft?.allocations || [];
+      const preview = LOANS_STATE.lastPaymentDraft?.journal_preview || null;
+
+      fillPaymentCards(p);
+      renderPaymentModalAllocations(
+        allocs,
+        resolveLoanCurrency(LOANS_STATE.loanDetail?.loan?.currency)
+      );
+      renderPaymentModalJournal(preview);
+
+      if (autoPost && p?.id) {
+        await postLoanPayment(p.id, { keepModalOpen: true });
+      }
+
+      return LOANS_STATE.lastPaymentDraft;
+    } catch (e) {
+      console.error("[Loans] saveLoanPaymentDraft failed", e);
+      alert(String(e.message || e));
+      return null;
     }
-
-    if (json?.ok === false) {
-      throw new Error(json?.error || "Failed to create loan payment");
-    }
-
-    LOANS_STATE.lastPaymentDraft = json?.data || null;
-
-    const p = LOANS_STATE.lastPaymentDraft?.payment || {};
-    const allocs = LOANS_STATE.lastPaymentDraft?.allocations || [];
-    const preview = LOANS_STATE.lastPaymentDraft?.journal_preview || null;
-
-    fillPaymentCards(p);
-    renderPaymentModalAllocations(
-      allocs,
-      resolveLoanCurrency(LOANS_STATE.loanDetail?.loan?.currency)
-    );
-    renderPaymentModalJournal(preview);
-
-    if (autoPost && p?.id) {
-      await postLoanPayment(p.id, { keepModalOpen: true });
-    }
-
-    return LOANS_STATE.lastPaymentDraft;
-  } catch (e) {
-    console.error("[Loans] saveLoanPaymentDraft failed", e);
-    alert(String(e.message || e));
-    return null;
   }
-}
 
   function applyLoanButtonsByMode() {
     const cid = getCid();
@@ -32247,7 +32382,12 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
       }
 
       const entry = json?.data || null;
-      renderMainJournalPreview(entry);
+
+      setLoanGlAccountsVisible(true);
+      renderMainJournalPreview(entry, {
+        title: "Loan Inception Preview",
+        source: "Inception"
+      });
 
       if (pushToMainTab) setLoanTab("loan-journal");
       return entry;
@@ -32270,7 +32410,12 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
       }
 
       const entry = json?.data || null;
-      renderMainJournalPreview(entry);
+
+      setLoanGlAccountsVisible(true);
+      renderMainJournalPreview(entry, {
+        title: "Loan Reclassification Preview",
+        source: "Reclassification"
+      });
 
       if (pushToMainTab) setLoanTab("loan-journal");
       return entry;
@@ -32339,72 +32484,71 @@ async function saveLoanPaymentDraft({ autoPost = false } = {}) {
     return "—";
   }
 
-async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
-  const cid = getCid();
-  if (!cid || !paymentId) return;
+  async function postLoanPayment(paymentId, { keepModalOpen = false } = {}) {
+    const cid = getCid();
+    if (!cid || !paymentId) return;
 
-  try {
-    const json = await window.apiFetch(ENDPOINTS.loans.paymentPost(cid, paymentId), {
-      method: "POST",
-    });
-
-    if (isApprovalRequiredResponse(json)) {
-      await handleLoanApprovalRequired(json, {
-        successMessage: "Loan payment posting submitted for approval.",
-        keepModalOpen,
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.paymentPost(cid, paymentId), {
+        method: "POST",
       });
-      return;
+
+      if (isApprovalRequiredResponse(json)) {
+        await handleLoanApprovalRequired(json, {
+          successMessage: "Loan payment posting submitted for approval.",
+          keepModalOpen,
+        });
+        return;
+      }
+
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to post payment");
+      }
+
+      await loadLoanDetail(LOANS_STATE.currentLoanId);
+      await renderLoanRegister();
+      setLoanTab("loan-payments");
+
+      if (!keepModalOpen) closeLoanPaymentModal();
+      alert("Loan payment posted.");
+    } catch (e) {
+      console.error("[Loans] postLoanPayment failed", e);
+      alert(String(e.message || e));
     }
-
-    if (json?.ok === false) {
-      throw new Error(json?.error || "Failed to post payment");
-    }
-
-    await loadLoanDetail(LOANS_STATE.currentLoanId);
-    await renderLoanRegister();
-    setLoanTab("loan-payments");
-
-    if (!keepModalOpen) closeLoanPaymentModal();
-    alert("Loan payment posted.");
-  } catch (e) {
-    console.error("[Loans] postLoanPayment failed", e);
-    alert(String(e.message || e));
   }
-}
 
-async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = {}) {
-  const cid = getCid();
-  if (!cid || !paymentId) return;
+  async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = {}) {
+    const cid = getCid();
+    if (!cid || !paymentId) return;
 
-  try {
-    const json = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.paymentPreview(cid, paymentId));
 
-    if (json?.ok === false) {
-      throw new Error(json?.error || "Failed to preview payment journal");
+      if (json?.ok === false) {
+        throw new Error(json?.error || "Failed to preview payment journal");
+      }
+
+      const entry = json?.data || null;
+      renderMainJournalPreview(entry);
+      if (pushToMainTab) setLoanTab("loan-journal");
+    } catch (e) {
+      console.error("[Loans] previewLoanPaymentJournal failed", e);
+      alert(String(e.message || e));
     }
-
-    const entry = json?.data || null;
-    renderMainJournalPreview(entry);
-    if (pushToMainTab) setLoanTab("loan-journal");
-  } catch (e) {
-    console.error("[Loans] previewLoanPaymentJournal failed", e);
-    alert(String(e.message || e));
   }
-}
 
   function createNewLoan() {
+    const loan = newLoanTemplate();
+
     LOANS_STATE.currentLoanId = null;
     LOANS_STATE.loanDetail = {
-      loan: newLoanTemplate(),
+      loan,
       schedule: [],
       payments: [],
       journals: [],
     };
-    fillLoanForm(LOANS_STATE.loanDetail.loan);
-    fillLoanCards(LOANS_STATE.loanDetail.loan);
-    renderScheduleRows([], resolveLoanCurrency());
-    renderPaymentsRows([], resolveLoanCurrency());
-    renderMainJournalPreview(null);
+
+    resetLoanScreenForNewLoan(loan);
     setLoanTab("loan-overview");
     applyLoanButtonsByMode();
   }
@@ -32424,7 +32568,11 @@ async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = 
     $("#loanReclassBtn")?.addEventListener("click", reclassifyLoan);
     $("#loanPaymentBtn")?.addEventListener("click", openLoanPaymentModal);
 
-    // ✅ ADD HERE
+    // term auto-calc
+    $("#loanStartDate")?.addEventListener("change", calculateLoanTerm);
+    $("#loanEndDate")?.addEventListener("change", calculateLoanTerm);
+    $("#loanPaymentFrequency")?.addEventListener("change", calculateLoanTerm);
+
     bindLoanActionButtons();
 
     $("#loanFilterStatus")?.addEventListener("change", renderLoanRegister);
@@ -32455,29 +32603,31 @@ async function previewLoanPaymentJournal(paymentId, { pushToMainTab = false } = 
       }
     });
 
+    setLoanGlAccountsVisible(false);
+    clearMainJournalPreview();
     setLoanTab("loan-overview");
   }
 
-function renderStatusPill(status, r = {}) {
-  const s = normalizeLoanStatus(status, r);
+  function renderStatusPill(status, r = {}) {
+    const s = normalizeLoanStatus(status, r);
 
-  const cls =
-    s === "posted" || s === "active"
-      ? "bg-emerald-100 text-emerald-700"
-      : s === "pending_approval"
-      ? "bg-amber-100 text-amber-700"
-      : s === "draft"
-      ? "bg-slate-100 text-slate-700"
-      : s === "rejected"
-      ? "bg-rose-100 text-rose-700"
-      : s === "cancelled" || s === "void"
-      ? "bg-slate-200 text-slate-700"
-      : "bg-slate-100 text-slate-700";
+    const cls =
+      s === "posted" || s === "active"
+        ? "bg-emerald-100 text-emerald-700"
+        : s === "pending_approval"
+        ? "bg-amber-100 text-amber-700"
+        : s === "draft"
+        ? "bg-slate-100 text-slate-700"
+        : s === "rejected"
+        ? "bg-rose-100 text-rose-700"
+        : s === "cancelled" || s === "void"
+        ? "bg-slate-200 text-slate-700"
+        : "bg-slate-100 text-slate-700";
 
-  return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}">
-    ${escapeHtml(loanWorkflowStatusLabel(s))}
-  </span>`;
-}
+    return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}">
+      ${escapeHtml(loanWorkflowStatusLabel(s))}
+    </span>`;
+  }
 
   window.bindLoansScreen = bindLoansScreen;
   window.renderLoanRegister = renderLoanRegister;

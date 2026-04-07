@@ -3805,6 +3805,11 @@
                     </div>
 
                     <div>
+                      <label class="text-xs text-slate-600">End Date *</label>
+                      <input id="loanTermCount" readonly class="w-full border rounded px-3 py-2">
+                    </div>
+
+                    <div>
                       <label class="text-xs text-slate-600">First Payment Date *</label>
                       <input id="loanFirstPaymentDate" type="date" class="w-full border rounded px-3 py-2">
                     </div>
@@ -3883,35 +3888,39 @@
                       <select id="loanBankAccountId" class="w-full border rounded px-3 py-2"></select>
                     </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Interest Expense Account</label>
-                      <input id="loanInterestExpenseAccountCode" class="w-full border rounded px-3 py-2">
-                    </div>
+                  <div id="loanGlAccountsSection" class="hidden">
+                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <div>
+                        <label class="text-xs text-slate-600">Interest Expense Account</label>
+                        <input id="loanInterestExpenseAccountCode" class="w-full border rounded px-3 py-2">
+                      </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Accrued Interest Account</label>
-                      <input id="loanAccruedInterestAccountCode" class="w-full border rounded px-3 py-2">
-                    </div>
+                      <div>
+                        <label class="text-xs text-slate-600">Accrued Interest Account</label>
+                        <input id="loanAccruedInterestAccountCode" class="w-full border rounded px-3 py-2">
+                      </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Loan Payable – Current</label>
-                      <input id="loanPayableCurrentAccountCode" class="w-full border rounded px-3 py-2">
-                    </div>
+                      <div>
+                        <label class="text-xs text-slate-600">Loan Payable – Current</label>
+                        <input id="loanPayableCurrentAccountCode" class="w-full border rounded px-3 py-2">
+                      </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Loan Payable – Non-Current</label>
-                      <input id="loanPayableNonCurrentAccountCode" class="w-full border rounded px-3 py-2">
-                    </div>
+                      <div>
+                        <label class="text-xs text-slate-600">Loan Payable – Non-Current</label>
+                        <input id="loanPayableNonCurrentAccountCode" class="w-full border rounded px-3 py-2">
+                      </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Fees Asset / Deferred Cost Account</label>
-                      <input id="loanFeesAssetAccountCode" class="w-full border rounded px-3 py-2">
-                    </div>
+                      <div>
+                        <label class="text-xs text-slate-600">Fees Asset / Deferred Cost Account</label>
+                        <input id="loanFeesAssetAccountCode" class="w-full border rounded px-3 py-2">
+                      </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Fees Expense Account</label>
-                      <input id="loanFeesExpenseAccountCode" class="w-full border rounded px-3 py-2">
+                      <div>
+                        <label class="text-xs text-slate-600">Fees Expense Account</label>
+                        <input id="loanFeesExpenseAccountCode" class="w-full border rounded px-3 py-2">
+                      </div>
                     </div>
+                  </div>
 
                     <div>
                       <label class="text-xs text-slate-600">Agreement Reference</label>
@@ -3956,22 +3965,29 @@
                       </div>
                     </div>
 
-                    <div class="rounded-xl border overflow-auto">
-                      <table class="min-w-full text-sm">
-                        <thead class="bg-slate-50 text-slate-600">
-                          <tr>
-                            <th class="text-left px-3 py-2">Account</th>
-                            <th class="text-left px-3 py-2">Description</th>
-                            <th class="text-right px-3 py-2">Debit</th>
-                            <th class="text-right px-3 py-2">Credit</th>
-                          </tr>
-                        </thead>
-                        <tbody id="loanJournalPreviewRows">
-                          <tr>
-                            <td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    <div class="space-y-3">
+                      <div id="loanJournalHeaderCard" class="hidden rounded-xl border bg-slate-50 p-3">
+                        <div class="text-xs font-semibold text-slate-600 mb-2">Journal Header</div>
+                        <div id="loanJournalHeaderMeta" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm"></div>
+                      </div>
+
+                      <div class="rounded-xl border overflow-auto">
+                        <table class="min-w-full text-sm">
+                          <thead class="bg-slate-50 text-slate-600">
+                            <tr>
+                              <th class="text-left px-3 py-2">Account</th>
+                              <th class="text-left px-3 py-2">Description</th>
+                              <th class="text-right px-3 py-2">Debit</th>
+                              <th class="text-right px-3 py-2">Credit</th>
+                            </tr>
+                          </thead>
+                          <tbody id="loanJournalPreviewRows">
+                            <tr>
+                              <td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </div>
