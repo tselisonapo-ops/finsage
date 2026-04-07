@@ -91,6 +91,28 @@ def _make_vat_periods_for_year(year: int, cfg: dict):
 
     return periods
 
+def compute_current_vat_period(today: date, cfg: dict):
+    """Return the VAT period that contains today."""
+    if not cfg:
+        return None
+
+    periods = (
+        _make_vat_periods_for_year(today.year - 1, cfg)
+        + _make_vat_periods_for_year(today.year, cfg)
+        + _make_vat_periods_for_year(today.year + 1, cfg)
+    )
+
+    filing_lag_days = cfg.get("filing_lag_days")
+    if not isinstance(filing_lag_days, int):
+        filing_lag_days = 25
+
+    for p in periods:
+        if p["start_date"] <= today <= p["end_date"]:
+            p["due_date"] = p["end_date"] + timedelta(days=filing_lag_days)
+            return p
+
+    return None
+
 def compute_next_vat_period(today: date, cfg: dict):
     """Return the period with the soonest dueDate >= today, or the
     last one if all are overdue."""
@@ -206,12 +228,56 @@ def _get_vat_accounts(company_id: int) -> Tuple[Set[str], Set[str]]:
 
     return input_codes, output_codes
 
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/periods", methods=["GET", "OPTIONS"])
+@require_auth
+def vat_periods(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"error": "Not authorised"}), 403
+
+    cfg = db_service.get_vat_settings(company_id) or {}
+    today = date.today()
+
+    filing_lag_days = cfg.get("filing_lag_days")
+    if not isinstance(filing_lag_days, int):
+        filing_lag_days = 25
+
+    periods = (
+        _make_vat_periods_for_year(today.year - 1, cfg)
+        + _make_vat_periods_for_year(today.year, cfg)
+        + _make_vat_periods_for_year(today.year + 1, cfg)
+    )
+
+    out = []
+    for p in periods:
+        due_date = p["end_date"] + timedelta(days=filing_lag_days)
+        out.append({
+            "label": p["label"],
+            "start_date": p["start_date"].isoformat(),
+            "end_date": p["end_date"].isoformat(),
+            "due_date": due_date.isoformat(),
+        })
+
+    out.sort(key=lambda x: x["start_date"], reverse=True)
+
+    current = compute_current_vat_period(today, cfg)
+
+    return jsonify({
+        "periods": out,
+        "current": {
+            "label": current["label"],
+            "start_date": current["start_date"].isoformat(),
+            "end_date": current["end_date"].isoformat(),
+            "due_date": current["due_date"].isoformat() if current.get("due_date") else None,
+        } if current else None,
+    }), 200
 
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat_summary", methods=["GET", "OPTIONS"])
 @require_auth
 def vat_summary(company_id: int):
-    ...
-
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
@@ -230,14 +296,19 @@ def vat_summary(company_id: int):
         return jsonify({"error": "from and to are required"}), 400
 
     schema = db_service.company_schema(company_id)
+    cfg = db_service.get_vat_settings(company_id) or {}
 
     input_codes, output_codes = _get_vat_accounts(company_id)
     vat_codes = list(set(input_codes) | set(output_codes))
     if not vat_codes:
-        return jsonify({"input_total": 0.0, "output_total": 0.0, "periods": []}), 200
+        return jsonify({
+            "input_total": 0.0,
+            "output_total": 0.0,
+            "net_vat": 0.0,
+            "periods": [],
+            "filing": None,
+        }), 200
 
-    # 🔥 IMPORTANT: your posted table is {schema}.ledger (NOT journal_lines)
-    # columns: date, ref, account, debit, credit, company_id
     placeholders = ",".join(["%s"] * len(vat_codes))
 
     sql = f"""
@@ -259,34 +330,45 @@ def vat_summary(company_id: int):
 
     input_total = 0.0
     output_total = 0.0
-
-    # optional periods breakdown (same idea as your old SQLAlchemy version)
-    cfg = {}  # if you have vat_settings in company profile, pass it in here
     buckets = defaultdict(lambda: {"input": 0.0, "output": 0.0})
 
     for r in rows:
         code = str(r.get("account") or "")
         dr = float(r.get("debit") or 0)
         cr = float(r.get("credit") or 0)
-        bal = dr - cr  # debit-positive
+        bal = dr - cr
 
-        # label = assign_period_label(r["date"], cfg)  # if you want
-        label = "Period"
+        label = assign_period_label(r["date"], cfg) if cfg else "Period"
 
         if code in input_codes:
             input_total += bal
             buckets[label]["input"] += bal
         elif code in output_codes:
-            amt = -bal  # output VAT is credit-positive
+            amt = -bal
             output_total += amt
             buckets[label]["output"] += amt
 
-    periods = [{"label": k, "input": v["input"], "output": v["output"]} for k, v in buckets.items()]
+    periods = [
+        {"label": k, "input": v["input"], "output": v["output"]}
+        for k, v in buckets.items()
+    ]
+
+    current_period = compute_current_vat_period(today, cfg) if cfg else None
 
     return jsonify({
         "input_total": input_total,
         "output_total": output_total,
+        "net_vat": output_total - input_total,
         "periods": periods,
+        "filing": {
+            "label": current_period["label"] if current_period else None,
+            "start_date": current_period["start_date"].isoformat() if current_period else None,
+            "end_date": current_period["end_date"].isoformat() if current_period else None,
+            "due_date": current_period["due_date"].isoformat() if current_period and current_period.get("due_date") else None,
+            "status": "open",
+            "frequency": cfg.get("frequency"),
+            "anchor_month": cfg.get("anchor_month"),
+        } if current_period else None,
     }), 200
 
 

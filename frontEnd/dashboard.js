@@ -1928,24 +1928,28 @@ const ENDPOINTS = {
     },
   },
 
-  // --- VAT / tax settings ---
-  vatSummary: (companyId, from, to) => {
-    const params = new URLSearchParams();
-    if (from) params.append("from", from);
-    if (to) params.append("to", to);
-    const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary` + (qs ? `?${qs}` : "");
-  },
+// --- VAT / tax settings ---
+vatSummary: (companyId, from, to) => {
+  const params = new URLSearchParams();
+  if (from) params.append("from", from);
+  if (to) params.append("to", to);
+  const qs = params.toString();
+  return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_summary` + (qs ? `?${qs}` : "");
+},
 
-  vatLines: (companyId, from, to) => {
-    const params = new URLSearchParams();
-    if (from) params.append("from", from);
-    if (to) params.append("to", to);
-    const qs = params.toString();
-    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines` + (qs ? `?${qs}` : "");
-  },
+vatLines: (companyId, from, to) => {
+  const params = new URLSearchParams();
+  if (from) params.append("from", from);
+  if (to) params.append("to", to);
+  const qs = params.toString();
+  return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/lines` + (qs ? `?${qs}` : "");
+},
 
-  vatSettings: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
+vatPeriods: (companyId) =>
+  `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/periods`,
+
+vatSettings: (companyId) =>
+  `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat_settings`,
 };
 
 
@@ -6836,8 +6840,9 @@ async function switchScreen(name) {
 
   // VAT
   if (name === "vat") {
-    ensureVatScreen?.();
-    renderVatDashboard?.();
+    ensureVatScreen();
+    bindVatPeriodFilter();
+    await renderVatDashboard();
   }
 
   wireJournalVatRateUI?.();
@@ -11123,8 +11128,86 @@ function buildVatLinesForJournalLine(line, vatCfg) {
 /* ==============================
  * VAT & Tax Screen
  * ============================== */
+function fmtLocalDate(d) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function computeCurrentVatPeriod(today = new Date(), cfg = {}) {
+  const periods = [
+    ...makeVatPeriodsForYear(today.getFullYear() - 1, cfg),
+    ...makeVatPeriodsForYear(today.getFullYear(), cfg),
+    ...makeVatPeriodsForYear(today.getFullYear() + 1, cfg),
+  ];
+
+  return (
+    periods.find((p) => p.start <= today && p.end >= today) ||
+    null
+  );
+}
+
+async function renderDashboardKPIs(periodKey = "this_month") {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const elCash = document.getElementById("kpiCash");
+  if (!elCash) return;
+
+  try {
+    const vatCfg = window.CURRENT_COMPANY?.vat_settings || {};
+    const today = new Date();
+
+    const vatPeriod = computeCurrentVatPeriod(today, vatCfg);
+    const vatFrom = vatPeriod?.start ? fmtLocalDate(vatPeriod.start) : null;
+    const vatTo = vatPeriod?.end ? fmtLocalDate(vatPeriod.end) : null;
+
+    const [tbMini, pnlMini, vatSummary] = await Promise.all([
+      apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
+      apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
+      (typeof ENDPOINTS.vatSummary === "function" && vatFrom && vatTo)
+        ? apiFetch(ENDPOINTS.vatSummary(cid, vatFrom, vatTo))
+        : Promise.resolve(null),
+    ]);
+
+    const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
+    const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
+
+    const cash = tbRows
+      .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
+
+    const ar = tbRows
+      .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
+
+    const ap = tbRows
+      .filter(r => /payable|creditor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .reduce((sum, r) => sum + Math.abs(Number(r.closing_balance ?? 0)), 0);
+
+    const np = pnlRows
+      .filter(r => /net profit|profit for the year|profit for period|net income/i.test(String(r.label || r.name || "")))
+      .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
+
+    const vat = Number(
+      vatSummary?.net_vat ??
+      vatSummary?.vat_payable ??
+      vatSummary?.amount ??
+      0
+    );
+
+    document.getElementById("kpiCash").textContent = money(cash);
+    document.getElementById("kpiAR").textContent = money(ar);
+    document.getElementById("kpiAP").textContent = money(ap);
+    document.getElementById("kpiNP").textContent = money(np);
+    document.getElementById("kpiVAT").textContent = money(vat);
+  } catch (e) {
+    console.error("renderDashboardKPIs error:", e);
+  }
+}
+window.renderDashboardKPIs = renderDashboardKPIs;
+
 function ensureVatScreen() {
-  // ✅ Create the VAT screen if it doesn't exist yet
   let section = document.getElementById("screen-vat");
   if (!section) {
     console.log("ensureVatScreen: creating #screen-vat dynamically");
@@ -11132,29 +11215,55 @@ function ensureVatScreen() {
 
     section = document.createElement("section");
     section.id = "screen-vat";
-    section.className = "screen"; // switchScreen uses .screen + .active
+    section.className = "screen";
     main.appendChild(section);
   }
 
-  // Only build once
   if (section.dataset.initialised === "1") return;
   section.dataset.initialised = "1";
 
   section.innerHTML = `
     <div class="px-4 py-4 space-y-4">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 class="text-lg font-semibold text-slate-800">VAT &amp; Tax</h2>
           <p class="text-xs text-slate-500">
-            View VAT input/output and net position for the current filing period.
+            View VAT input/output and net position for the selected filing period.
           </p>
         </div>
-        <div class="flex items-center gap-2 text-xs">
-          <span id="vatPeriodLabel" class="text-slate-600">Current period</span>
+
+        <div class="flex items-center gap-2 text-xs flex-wrap">
+          <select id="vatPeriodSelect" class="border rounded px-2 py-1 text-xs bg-white">
+            <option value="">Select VAT period</option>
+          </select>
+
+          <button id="vatPeriodRefreshBtn" class="px-3 py-1 rounded bg-[var(--fs-navy)] text-white">
+            Refresh
+          </button>
         </div>
       </div>
 
-      <!-- Summary card (UNCHANGED layout) -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-3 text-xs">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div class="font-semibold text-slate-700">VAT filing</div>
+            <div id="vatFilingStatusText" class="text-slate-500">
+              Status not loaded
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span id="vatFilingBadge" class="px-2 py-1 rounded bg-slate-100 text-slate-700">
+              Open
+            </span>
+
+            <button id="vatFileNowBtn" class="px-3 py-1 rounded bg-[var(--fs-navy)] text-white">
+              Prepare return
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
@@ -11186,7 +11295,6 @@ function ensureVatScreen() {
         <div id="vatPeriodRange" class="mt-2 text-[11px] text-slate-400"></div>
       </div>
 
-      <!-- ✅ VAT lines card (in the red area, BELOW summary) -->
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <div class="flex items-center justify-between mb-2">
           <div class="text-sm font-semibold text-slate-800">VAT lines</div>
@@ -11220,10 +11328,14 @@ function ensureVatScreen() {
     </div>
   `;
 
-  // Bind buttons
-  document.getElementById("vatRefreshBtn")?.addEventListener("click", (e) => {
+  document.getElementById("vatRefreshBtn")?.addEventListener("click", async (e) => {
     e.preventDefault();
-    renderVatDashboard?.();
+    await renderVatDashboard?.();
+  });
+
+  document.getElementById("vatPeriodRefreshBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await renderVatDashboard?.();
   });
 
   document.getElementById("vatExportBtn")?.addEventListener("click", (e) => {
@@ -11231,11 +11343,46 @@ function ensureVatScreen() {
     alert("Export VAT report is not wired to backend yet.");
   });
 
+  document.getElementById("vatFileNowBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    alert("VAT filing workflow is not wired to backend yet.");
+  });
+
   console.log("ensureVatScreen: VAT layout initialised");
 }
 
+async function bindVatPeriodFilter() {
+  const sel = document.getElementById("vatPeriodSelect");
+  if (!sel || sel.dataset.bound === "1") return;
+  sel.dataset.bound = "1";
+
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  try {
+    const res = await apiFetch(ENDPOINTS.vatPeriods(cid), { method: "GET" });
+    const periods = Array.isArray(res?.periods) ? res.periods : [];
+    const current = res?.current || null;
+
+    sel.innerHTML = periods.map((p) => {
+      return `<option value="${p.start_date}|${p.end_date}">${p.label}</option>`;
+    }).join("");
+
+    if (current?.start_date && current?.end_date) {
+      sel.value = `${current.start_date}|${current.end_date}`;
+    } else if (periods.length) {
+      sel.value = `${periods[0].start_date}|${periods[0].end_date}`;
+    }
+
+    sel.addEventListener("change", async () => {
+      await renderVatDashboard();
+    });
+  } catch (err) {
+    console.error("bindVatPeriodFilter failed:", err);
+  }
+}
+
 async function renderVatDashboard() {
-  // ✅ Always derive currency from company profile (set by resolveCompanyProfile)
   const cur = (typeof window.resolveCurrency === "function")
     ? window.resolveCurrency()
     : String(
@@ -11244,7 +11391,6 @@ async function renderVatDashboard() {
         "USD"
       ).toUpperCase();
 
-  // ✅ safe html helper (some of your code uses escapeHtml)
   const esc = (s) => String(s ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -11252,7 +11398,6 @@ async function renderVatDashboard() {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
-  // ✅ local formatter (no “ZAR …” hardcode)
   const fmt = (n) => (typeof window.money === "function")
     ? window.money(n, cur)
     : `${cur} ${Number(n || 0).toFixed(2)}`;
@@ -11260,65 +11405,77 @@ async function renderVatDashboard() {
   const cfg = window.CURRENT_COMPANY?.vat_settings || {};
   const today = new Date();
 
-  // Use your existing helper – same one used in renderTaxComplianceCard
   let period = null;
-  try {
-    if (typeof computeNextVatPeriod === "function") {
-      period = computeNextVatPeriod(today, cfg);
+
+  const sel = document.getElementById("vatPeriodSelect");
+  if (sel?.value) {
+    const [from, to] = String(sel.value).split("|");
+    if (from && to) {
+      period = {
+        label: sel.options[sel.selectedIndex]?.text || "Selected period",
+        start: new Date(from + "T00:00:00"),
+        end: new Date(to + "T00:00:00"),
+        dueDate: null,
+      };
     }
-  } catch (e) {
-    console.warn("computeNextVatPeriod error:", e);
   }
 
   if (!period) {
-    // Fallback: current month
+    try {
+      period = computeCurrentVatPeriod(today, cfg);
+    } catch (e) {
+      console.warn("computeCurrentVatPeriod error:", e);
+    }
+  }
+
+  if (!period) {
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     period = { label: "Current month", start, end, dueDate: end };
   }
 
-  const fromStr = period.start.toISOString().slice(0, 10);
-  const toStr   = period.end.toISOString().slice(0, 10);
+  const fromStr = fmtLocalDate(period.start);
+  const toStr = fmtLocalDate(period.end);
 
-  // -----------------------------
-  // UI refs
-  // -----------------------------
-  const lblEl   = document.getElementById("vatPeriodLabel");
+  const lblEl = document.getElementById("vatPeriodLabel");
   const rangeEl = document.getElementById("vatPeriodRange");
-  const inEl    = document.getElementById("vatInputAmount");
-  const outEl   = document.getElementById("vatOutputAmount");
-  const netEl   = document.getElementById("vatNetAmount");
-  const netLbl  = document.getElementById("vatNetLabel");
+  const inEl = document.getElementById("vatInputAmount");
+  const outEl = document.getElementById("vatOutputAmount");
+  const netEl = document.getElementById("vatNetAmount");
+  const netLbl = document.getElementById("vatNetLabel");
+  const filingBadge = document.getElementById("vatFilingBadge");
+  const filingText = document.getElementById("vatFilingStatusText");
 
-  // VAT lines table refs
-  const linesBody  = document.getElementById("vatLinesBody");
+  const linesBody = document.getElementById("vatLinesBody");
   const linesEmpty = document.getElementById("vatLinesEmpty");
-  const linesHint  = document.getElementById("vatLinesHint");
+  const linesHint = document.getElementById("vatLinesHint");
 
   if (lblEl) lblEl.textContent = period.label || "Current period";
   if (rangeEl) rangeEl.textContent = `Period: ${fromStr} to ${toStr}`;
+
+  if (filingBadge) filingBadge.textContent = "Open";
+  if (filingText) {
+    filingText.textContent = period?.dueDate
+      ? `Open filing period. Due ${fmtLocalDate(period.dueDate)}`
+      : "Open filing period.";
+  }
 
   if (!inEl || !outEl || !netEl) {
     console.warn("renderVatDashboard: VAT elements missing");
     return;
   }
 
-  // ✅ show formatted zero with correct currency while loading
-  inEl.textContent  = fmt(0);
+  inEl.textContent = fmt(0);
   outEl.textContent = fmt(0);
   netEl.textContent = fmt(0);
   if (netLbl) netLbl.textContent = "Loading…";
 
-  // -----------------------------
-  // VAT LINES (new)
-  // -----------------------------
   if (linesBody) {
     linesBody.innerHTML = `<tr><td colspan="6" class="py-2 text-slate-400">Loading…</td></tr>`;
     linesEmpty?.classList.add("hidden");
     if (linesHint) linesHint.textContent = "";
   }
 
-  // Fetch lines + summary in parallel (faster UI)
   try {
     const cid = (typeof companyId === "function")
       ? companyId()
@@ -11326,14 +11483,14 @@ async function renderVatDashboard() {
 
     if (!cid) throw new Error("No company selected");
 
-    const linesUrl = `/api/companies/${encodeURIComponent(cid)}/vat/lines?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}`;
+    const linesUrl =
+      `/api/companies/${encodeURIComponent(cid)}/vat/lines?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}`;
 
     const [linesRes, summary] = await Promise.all([
       apiFetch(linesUrl, { method: "GET" }),
       apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
     ]);
 
-    // ✅ render lines
     const rows = Array.isArray(linesRes) ? linesRes : (linesRes?.lines || []);
 
     if (linesBody) {
@@ -11345,7 +11502,7 @@ async function renderVatDashboard() {
         linesEmpty?.classList.add("hidden");
 
         for (const r of rows) {
-          const dt  = String(r.date || r.txn_date || r.posted_at || r.created_at || "").slice(0, 10);
+          const dt = String(r.date || r.txn_date || r.posted_at || r.created_at || "").slice(0, 10);
           const ref = r.ref || r.reference || r.doc_no || "";
           const acct = r.account_code || r.account || "";
           const acctName = r.account_name ? ` — ${r.account_name}` : "";
@@ -11371,14 +11528,13 @@ async function renderVatDashboard() {
       }
     }
 
-    // ✅ render summary (matches your /vat_summary response)
-    const input  = Number(summary?.input_total  || 0);
+    const input = Number(summary?.input_total || 0);
     const output = Number(summary?.output_total || 0);
-    const net    = output - input;
+    const net = output - input;
 
-    inEl.textContent  = fmt(input);
+    inEl.textContent = fmt(input);
     outEl.textContent = fmt(output);
-    netEl.textContent = fmt(net); // signed
+    netEl.textContent = fmt(net);
 
     if (netLbl) {
       netEl.classList.remove("text-red-600", "text-emerald-700");
@@ -11398,20 +11554,16 @@ async function renderVatDashboard() {
   } catch (err) {
     console.error("renderVatDashboard error:", err);
 
-    // summary fail state
-    inEl.textContent  = "Error";
+    inEl.textContent = "Error";
     outEl.textContent = "Error";
     netEl.textContent = "Error";
     if (netLbl) netLbl.textContent = err?.message || "Could not load VAT summary.";
 
-    // lines fail state
     if (linesBody) {
       linesBody.innerHTML = `<tr><td colspan="6" class="py-2 text-red-600">Failed to load VAT lines.</td></tr>`;
     }
   }
 }
-
-
 
 // Generic VAT expansion for *batch lines* (invoice, POS, IFRS wizards)
 function expandVatForBatch(lines, cfg) {
@@ -53048,59 +53200,8 @@ window.renderAPAging = renderAPAging;
   /* ==============================
    * Dashboard render helpers
    * ============================== */
-async function renderDashboardKPIs(periodKey = "this_month") {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid) return;
 
-  const elCash = document.getElementById("kpiCash");
-  if (!elCash) return;
 
-  try {
-    const [tbMini, pnlMini, vatSummary] = await Promise.all([
-      apiFetch(ENDPOINTS.trialBalanceMini(cid, { preset: periodKey })),
-      apiFetch(ENDPOINTS.pnlMini(cid, null, null, { preset: periodKey })),
-      typeof ENDPOINTS.vatSummary === "function"
-        ? apiFetch(ENDPOINTS.vatSummary(cid))
-        : Promise.resolve(null),
-    ]);
-
-    const tbRows = Array.isArray(tbMini?.rows) ? tbMini.rows : [];
-    const pnlRows = Array.isArray(pnlMini?.rows) ? pnlMini.rows : [];
-
-    const cash = tbRows
-      .filter(r => /cash|bank|overdraft/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
-
-    const ar = tbRows
-      .filter(r => /receivable|debtor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => sum + Number(r.closing_balance ?? r.debit ?? 0) - Number(r.credit ?? 0), 0);
-
-    const ap = tbRows
-      .filter(r => /payable|creditor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
-      .reduce((sum, r) => sum + Math.abs(Number(r.closing_balance ?? 0)), 0);
-
-    const np = pnlRows
-      .filter(r => /net profit|profit for the year|profit for period|net income/i.test(String(r.label || r.name || "")))
-      .reduce((sum, r) => sum + Number(r.amount ?? r.value ?? 0), 0);
-
-    const vat = Number(
-      vatSummary?.net_vat ??
-      vatSummary?.vat_payable ??
-      vatSummary?.amount ??
-      0
-    );
-
-    document.getElementById("kpiCash").textContent = money(cash);
-    document.getElementById("kpiAR").textContent = money(ar);
-    document.getElementById("kpiAP").textContent = money(ap);
-    document.getElementById("kpiNP").textContent = money(np);
-    document.getElementById("kpiVAT").textContent = money(vat);
-  } catch (e) {
-    console.error("renderDashboardKPIs error:", e);
-  }
-}
-
-window.renderDashboardKPIs = renderDashboardKPIs;
 
 async function renderMonthEndClose(periodKey = "this_month") {
   const tag = $("#closeStatusTag");
