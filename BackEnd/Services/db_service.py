@@ -29758,7 +29758,10 @@ class DatabaseService:
             if not loan:
                 raise ValueError("loan not found")
 
-            loan = dict(loan)
+            if not isinstance(loan, dict):
+                cols = [desc[0] for desc in cur.description]
+                loan = dict(zip(cols, loan))
+
             version = int(loan.get("schedule_version") or 1)
 
             rows = self._build_loan_amortisation_rows(loan)
@@ -29836,7 +29839,6 @@ class DatabaseService:
 
         conn.commit()
         return self.get_loan_full(conn, company_id, loan_id)
-
 
     def create_loan(self, conn, company_id: int, *, data: dict, user_id=None):
         schema = self.company_schema(company_id)
