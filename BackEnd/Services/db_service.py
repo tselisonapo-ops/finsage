@@ -30477,6 +30477,7 @@ class DatabaseService:
             "penalties_amount": _money(penalty_total),
         }
 
+
     def create_loan_payment(self, conn, company_id: int, *, loan_id: int, data: dict, user_id=None):
         schema = self.company_schema(company_id)
 
@@ -30524,7 +30525,7 @@ class DatabaseService:
                 "draft",
                 user_id,
                 (data.get("notes") or "").strip() or None,
-                data.get("meta_json") or {},
+                Json(data.get("meta_json") or {}),
             ))
             payment_id = cur.fetchone()["id"]
 
