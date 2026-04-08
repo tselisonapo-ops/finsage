@@ -30369,8 +30369,10 @@ class DatabaseService:
             WHERE p.company_id=%s AND p.id=%s
             FOR UPDATE
         """, (company_id, payment_id))
-        p = cur.fetchone()
-        p = self._row_to_dict(cur, cur.fetchone())
+
+        row = cur.fetchone()
+        p = self._row_to_dict(cur, row)
+
         if not p:
             raise ValueError("payment not found")
 
@@ -30418,7 +30420,7 @@ class DatabaseService:
             x if isinstance(x, dict) else dict(zip(cols, x))
             for x in rows
         ]
-        
+
         for row in schedule_rows:
             if amount_left <= 0:
                 break
