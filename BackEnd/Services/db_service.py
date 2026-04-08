@@ -30350,7 +30350,7 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_full(conn, company_id, loan_id)
 
-    def _row_to_dict(self, cur, row):
+    def _row_to_dict_from_cursor(self, cur, row):
         if not row:
             return None
         if isinstance(row, dict):
@@ -30371,7 +30371,7 @@ class DatabaseService:
         """, (company_id, payment_id))
 
         row = cur.fetchone()
-        p = self._row_to_dict(cur, row)
+        p = self._row_to_dict_from_cursor(cur, row)
 
         if not p:
             raise ValueError("payment not found")
