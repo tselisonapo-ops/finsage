@@ -30563,9 +30563,12 @@ class DatabaseService:
                 WHERE company_id=%s AND id=%s
                 LIMIT 1
             """, (company_id, payment_id))
-            payment = cur.fetchone()
-            if not payment:
+            payment_row = cur.fetchone()
+            if not payment_row:
                 return None
+
+            payment_cols = [d[0] for d in cur.description]
+            payment = self._row_to_dict(payment_row, payment_cols)
 
             cur.execute(f"""
                 SELECT *
@@ -30573,11 +30576,16 @@ class DatabaseService:
                 WHERE company_id=%s AND payment_id=%s
                 ORDER BY allocation_order ASC, id ASC
             """, (company_id, payment_id))
-            allocations = [dict(x) for x in (cur.fetchall() or [])]
+            allocation_rows = cur.fetchall() or []
+            allocation_cols = [d[0] for d in cur.description]
+            allocations = [
+                self._row_to_dict(row, allocation_cols)
+                for row in allocation_rows
+            ]
 
             preview = self.preview_loan_payment_journal(conn, company_id, payment_id=payment_id)
             return {
-                "payment": dict(payment),
+                "payment": payment,
                 "allocations": allocations,
                 "journal_preview": preview,
             }
