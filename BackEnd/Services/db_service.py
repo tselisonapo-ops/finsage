@@ -30399,8 +30399,14 @@ class DatabaseService:
             LIMIT 1
         """, (role,))
         row = cur.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
 
+        if isinstance(row, dict):
+            return row
+
+        cols = [desc[0] for desc in cur.description]
+        return dict(zip(cols, row))
 
     def resolve_loan_gl_accounts(
         self,
@@ -30554,22 +30560,27 @@ class DatabaseService:
             bank_account_id=loan_row.get("bank_account_id"),
         )
 
-        cur_amt, ncur_amt = self._loan_liability_split_current_noncurrent(
-            conn,
-            company_id,
-            loan_id=loan_id,
-        )
+        if loan_id:
+            cur_amt, ncur_amt = self._loan_liability_split_current_noncurrent(
+                conn,
+                company_id,
+                loan_id=loan_id,
+            )
+        else:
+            # preview path: derive split from unsaved amortisation rows
+            amort_rows = self._build_loan_amortisation_rows(loan_row)
+            cur_amt = _money(sum(_money(r.get("current_portion_amount")) for r in amort_rows))
+            ncur_amt = _money(sum(_money(r.get("noncurrent_portion_amount")) for r in amort_rows))
 
         split_total = _money(cur_amt + ncur_amt)
         if split_total <= 0:
-            # fallback if no schedule yet
             cur_amt = principal
             ncur_amt = Decimal("0.00")
         elif split_total != principal:
             diff = _money(principal - split_total)
             ncur_amt = _money(ncur_amt + diff)
 
-        loan_name = loan_row.get("loan_name") or f"Loan {loan_id}"
+        loan_name = loan_row.get("loan_name") or f"Loan {loan_id or 'Preview'}"
         desc = f"Initial recognition of loan - {loan_name}"
 
         lines = []
