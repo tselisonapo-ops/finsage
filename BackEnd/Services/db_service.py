@@ -90,6 +90,24 @@ def _tb_signed(r: Dict[str, Any]) -> float:
     return dr - cr
 
 
+def _money(self, x) -> Decimal:
+    return Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _pct4(self, x) -> Decimal:
+    return Decimal(str(x or 0)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def _json_dumps(self, obj) -> str:
+    return json.dumps(obj or {}, default=str)
+
+
+def _revenue_contract_ref(self, row: dict) -> str:
+    return (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
+
+
+def _revenue_run_ref(self, run_id: int) -> str:
+    return f"REV-RUN-{int(run_id)}"
 # ---------------------------
 # Small numeric helper
 # ---------------------------
@@ -18628,6 +18646,404 @@ class DatabaseService:
             NEW.updated_at = NOW();
             RETURN NEW;
         END; $$ LANGUAGE plpgsql;
+
+        -- ==================================================
+        -- IFRS 15: REVENUE CONTRACTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_contracts (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            customer_id INT NULL,
+            contract_number TEXT NOT NULL,
+            contract_title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',          -- draft/active/suspended/completed/terminated/cancelled
+            contract_currency TEXT NOT NULL DEFAULT 'ZAR',
+
+            contract_date DATE NOT NULL,
+            start_date DATE NULL,
+            end_date DATE NULL,
+
+            billing_method TEXT NOT NULL DEFAULT 'milestone', -- milestone/progress/periodic/manual
+            transaction_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+            variable_consideration_est NUMERIC(18,2) NOT NULL DEFAULT 0,
+            variable_consideration_constrained NUMERIC(18,2) NOT NULL DEFAULT 0,
+            financing_component_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            has_significant_financing_component BOOLEAN NOT NULL DEFAULT FALSE,
+            is_over_time BOOLEAN NOT NULL DEFAULT TRUE,
+
+            revenue_status TEXT NOT NULL DEFAULT 'not_started', -- not_started/in_progress/fully_recognized
+            billing_status TEXT NOT NULL DEFAULT 'unbilled',    -- unbilled/partially_billed/fully_billed
+            cash_status TEXT NOT NULL DEFAULT 'uncollected',    -- uncollected/partially_collected/fully_collected
+
+            contract_asset_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            contract_liability_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accounts_receivable_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recognized_revenue_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            billed_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            cash_received_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            source_quote_id INT NULL,
+            source_sales_order_id INT NULL,
+
+            approval_status TEXT NOT NULL DEFAULT 'draft',      -- draft/pending_approval/approved/rejected
+            approved_by_user_id INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS payload_json JSONB;
+        ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS approval_status TEXT;
+        ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS approved_by_user_id INT;
+        ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.revenue_contracts
+        SET payload_json = COALESCE(payload_json, '{}'::jsonb)
+        WHERE payload_json IS NULL;
+
+        ALTER TABLE {schema}.revenue_contracts
+        ALTER COLUMN payload_json SET NOT NULL,
+        ALTER COLUMN payload_json SET DEFAULT '{}'::jsonb;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_contracts_status_ck' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_contracts
+            ADD CONSTRAINT %I
+            CHECK (status IN (''draft'',''active'',''suspended'',''completed'',''terminated'',''cancelled''))',
+            '{schema}','{schema}_revenue_contracts_status_ck');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_contracts_approval_ck' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_contracts
+            ADD CONSTRAINT %I
+            CHECK (approval_status IN (''draft'',''pending_approval'',''approved'',''rejected''))',
+            '{schema}','{schema}_revenue_contracts_approval_ck');
+        END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_contracts_contract_no_uq
+        ON {schema}.revenue_contracts(company_id, contract_number);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_contracts_customer_idx
+        ON {schema}.revenue_contracts(customer_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_contracts_status_idx
+        ON {schema}.revenue_contracts(company_id, status, contract_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_contracts_approval_status_idx
+        ON {schema}.revenue_contracts(company_id, approval_status, created_at DESC);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_contracts_approved_by_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_contracts
+            ADD CONSTRAINT %I
+            FOREIGN KEY (approved_by_user_id)
+            REFERENCES public.users(id)
+            ON DELETE SET NULL',
+            '{schema}','{schema}_revenue_contracts_approved_by_fk');
+        END IF;
+        END $$;
+        -- ==================================================
+        -- IFRS 15: CONTRACT VERSIONS / MODIFICATIONS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_contract_versions (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            contract_id BIGINT NOT NULL,
+
+            version_no INT NOT NULL,
+            effective_date DATE NOT NULL,
+            version_reason TEXT NOT NULL DEFAULT 'initial', -- initial/modification/re-estimate/catch_up/termination
+
+            transaction_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allocated_revenue_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expected_cost_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_contract_versions_uq
+        ON {schema}.revenue_contract_versions(contract_id, version_no);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_contract_versions_effective_idx
+        ON {schema}.revenue_contract_versions(contract_id, effective_date DESC);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_contract_versions_contract_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_contract_versions
+            ADD CONSTRAINT %I
+            FOREIGN KEY (contract_id) REFERENCES %I.revenue_contracts(id)
+            ON DELETE CASCADE',
+            '{schema}','{schema}_revenue_contract_versions_contract_fk','{schema}');
+        END IF;
+        END $$;
+
+        -- ==================================================
+        -- IFRS 15: PERFORMANCE OBLIGATIONS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_obligations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            contract_id BIGINT NOT NULL,
+
+            obligation_code TEXT NOT NULL,
+            obligation_name TEXT NOT NULL,
+            distinct_flag BOOLEAN NOT NULL DEFAULT TRUE,
+            recognition_timing TEXT NOT NULL DEFAULT 'over_time', -- over_time/point_in_time
+            progress_method TEXT NOT NULL DEFAULT 'cost_to_cost', -- cost_to_cost/milestone/units/time_elapsed/manual
+            obligation_status TEXT NOT NULL DEFAULT 'draft',      -- draft/active/completed/cancelled
+
+            standalone_selling_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allocated_transaction_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            expected_total_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            actual_cost_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            progress_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            revenue_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            recognized_at_point_in_time_date DATE NULL,
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_obligations_code_uq
+        ON {schema}.revenue_obligations(contract_id, obligation_code);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_obligations_contract_idx
+        ON {schema}.revenue_obligations(contract_id, obligation_status);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_obligations_contract_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_obligations
+            ADD CONSTRAINT %I
+            FOREIGN KEY (contract_id) REFERENCES %I.revenue_contracts(id)
+            ON DELETE CASCADE',
+            '{schema}','{schema}_revenue_obligations_contract_fk','{schema}');
+        END IF;
+        END $$;
+
+        -- ==================================================
+        -- IFRS 15: BILLINGS / CASH / PROGRESS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_billing_events (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            contract_id BIGINT NOT NULL,
+            obligation_id BIGINT NULL,
+
+            event_date DATE NOT NULL,
+            event_type TEXT NOT NULL DEFAULT 'invoice', -- invoice/credit_note/debit_note/manual
+            source_invoice_id INT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'ZAR',
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_billing_events_contract_date_idx
+        ON {schema}.revenue_billing_events(contract_id, event_date DESC);
+
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_cash_events (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            contract_id BIGINT NOT NULL,
+            obligation_id BIGINT NULL,
+
+            event_date DATE NOT NULL,
+            event_type TEXT NOT NULL DEFAULT 'receipt', -- receipt/refund/manual
+            source_receipt_id INT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'ZAR',
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_cash_events_contract_date_idx
+        ON {schema}.revenue_cash_events(contract_id, event_date DESC);
+
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_progress_updates (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            contract_id BIGINT NOT NULL,
+            obligation_id BIGINT NOT NULL,
+
+            period_end DATE NOT NULL,
+            update_type TEXT NOT NULL DEFAULT 'cost_to_cost', -- cost_to_cost/milestone/units/manual
+            expected_total_cost NUMERIC(18,2) NULL,
+            actual_cost_to_date NUMERIC(18,2) NULL,
+            progress_percent NUMERIC(9,4) NULL,
+            units_done NUMERIC(18,4) NULL,
+            units_total NUMERIC(18,4) NULL,
+            milestone_code TEXT NULL,
+            certified_by_user_id INT NULL,
+
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_progress_updates_uq
+        ON {schema}.revenue_progress_updates(obligation_id, period_end, update_type);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_progress_updates_contract_idx
+        ON {schema}.revenue_progress_updates(contract_id, period_end DESC);
+
+        -- ==================================================
+        -- IFRS 15: RECOGNITION RUNS / JOURNALS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_recognition_runs (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            contract_id BIGINT NULL,
+
+            run_scope TEXT NOT NULL DEFAULT 'company', -- company/contract/obligation
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',      -- draft/posted/reversed/void
+            run_reason TEXT NOT NULL DEFAULT 'period_end', -- period_end/manual/modification/catch_up
+
+            journal_id INT NULL,
+            total_revenue_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_contract_asset_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_contract_liability_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            requested_by_user_id INT NULL,
+            posted_by_user_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_recognition_runs_period_idx
+        ON {schema}.revenue_recognition_runs(company_id, period_end DESC, status);
+
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_recognition_entries (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            run_id BIGINT NOT NULL,
+            contract_id BIGINT NOT NULL,
+            obligation_id BIGINT NULL,
+
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+
+            revenue_required_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            revenue_previously_recognized NUMERIC(18,2) NOT NULL DEFAULT 0,
+            revenue_delta_this_run NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            billed_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            cash_received_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            contract_asset_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
+            contract_liability_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            source_basis TEXT NOT NULL DEFAULT 'system',
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_recognition_entries_run_idx
+        ON {schema}.revenue_recognition_entries(run_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_recognition_entries_contract_idx
+        ON {schema}.revenue_recognition_entries(contract_id, period_end DESC);
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_billing_events_contract_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_billing_events
+            ADD CONSTRAINT %I
+            FOREIGN KEY (contract_id) REFERENCES %I.revenue_contracts(id)
+            ON DELETE CASCADE',
+            '{schema}','{schema}_revenue_billing_events_contract_fk','{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_cash_events_contract_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_cash_events
+            ADD CONSTRAINT %I
+            FOREIGN KEY (contract_id) REFERENCES %I.revenue_contracts(id)
+            ON DELETE CASCADE',
+            '{schema}','{schema}_revenue_cash_events_contract_fk','{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_progress_updates_obligation_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_progress_updates
+            ADD CONSTRAINT %I
+            FOREIGN KEY (obligation_id) REFERENCES %I.revenue_obligations(id)
+            ON DELETE CASCADE',
+            '{schema}','{schema}_revenue_progress_updates_obligation_fk','{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='{schema}_revenue_recognition_entries_run_fk' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_recognition_entries
+            ADD CONSTRAINT %I
+            FOREIGN KEY (run_id) REFERENCES %I.revenue_recognition_runs(id)
+            ON DELETE CASCADE',
+            '{schema}','{schema}_revenue_recognition_entries_run_fk','{schema}');
+        END IF;
+        END $$;
+
 
         """
         ddl_ap = """
@@ -55293,7 +55709,990 @@ class DatabaseService:
         cur.execute(sql, tuple(values))
         row = cur.fetchone()
         return row["id"] if row else None
-      
+
+    def get_revenue_contract(self, company_id: int, contract_id: int, cur=None) -> dict | None:
+        schema = self.company_schema(company_id)
+        sql = f"SELECT * FROM {schema}.revenue_contracts WHERE id=%s LIMIT 1;"
+        return self.fetch_one(sql, (int(contract_id),), cur=cur)
+
+
+    def create_revenue_contract(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        INSERT INTO {schema}.revenue_contracts (
+            company_id, customer_id, contract_number, contract_title, status,
+            contract_currency, contract_date, start_date, end_date, billing_method,
+            transaction_price, variable_consideration_est, variable_consideration_constrained,
+            financing_component_amount, has_significant_financing_component, is_over_time,
+            notes, payload_json, created_by_user_id
+        )
+        VALUES (
+            %s,%s,%s,%s,%s,
+            %s,%s,%s,%s,%s,
+            %s,%s,%s,
+            %s,%s,%s,
+            %s,%s::jsonb,%s
+        )
+        RETURNING *;
+        """
+
+        params = (
+            int(company_id),
+            data.get("customer_id"),
+            (data.get("contract_number") or "").strip(),
+            (data.get("contract_title") or "").strip(),
+            (data.get("status") or "draft").strip().lower(),
+            (data.get("contract_currency") or "ZAR").strip().upper(),
+            data.get("contract_date"),
+            data.get("start_date"),
+            data.get("end_date"),
+            (data.get("billing_method") or "milestone").strip().lower(),
+            float(data.get("transaction_price") or 0.0),
+            float(data.get("variable_consideration_est") or 0.0),
+            float(data.get("variable_consideration_constrained") or 0.0),
+            float(data.get("financing_component_amount") or 0.0),
+            bool(data.get("has_significant_financing_component", False)),
+            bool(data.get("is_over_time", True)),
+            data.get("notes"),
+            self._json_dumps(data.get("payload_json") or {}),
+            int(user_id) if user_id else None,
+        )
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(sql, params)
+            row = dict(cur.fetchone())
+            conn.commit()
+
+        try:
+            self.log_engagement_activity(
+                company_id=int(company_id),
+                actor_user_id=int(user_id or 0) or None,
+                module="revenue",
+                action="create_contract",
+                entity_type="revenue_contract",
+                entity_id=str(row["id"]),
+                entity_ref=self._revenue_contract_ref(row),
+                message=f"Created revenue contract {self._revenue_contract_ref(row)}",
+            )
+        except Exception:
+            pass
+
+        return row
+
+
+    def update_revenue_contract(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            before = self.get_revenue_contract(company_id, contract_id, cur=cur)
+            if not before:
+                raise ValueError("Revenue contract not found")
+
+            sql = f"""
+            UPDATE {schema}.revenue_contracts
+            SET
+                customer_id = COALESCE(%s, customer_id),
+                contract_number = COALESCE(NULLIF(%s,''), contract_number),
+                contract_title = COALESCE(NULLIF(%s,''), contract_title),
+                status = COALESCE(NULLIF(%s,''), status),
+                contract_currency = COALESCE(NULLIF(%s,''), contract_currency),
+                contract_date = COALESCE(%s, contract_date),
+                start_date = COALESCE(%s, start_date),
+                end_date = COALESCE(%s, end_date),
+                billing_method = COALESCE(NULLIF(%s,''), billing_method),
+                transaction_price = COALESCE(%s, transaction_price),
+                variable_consideration_est = COALESCE(%s, variable_consideration_est),
+                variable_consideration_constrained = COALESCE(%s, variable_consideration_constrained),
+                financing_component_amount = COALESCE(%s, financing_component_amount),
+                has_significant_financing_component = COALESCE(%s, has_significant_financing_component),
+                is_over_time = COALESCE(%s, is_over_time),
+                notes = COALESCE(%s, notes),
+                payload_json = COALESCE(%s::jsonb, payload_json),
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING *;
+            """
+            cur.execute(sql, (
+                data.get("customer_id"),
+                (data.get("contract_number") or "").strip(),
+                (data.get("contract_title") or "").strip(),
+                (data.get("status") or "").strip().lower(),
+                (data.get("contract_currency") or "").strip().upper(),
+                data.get("contract_date"),
+                data.get("start_date"),
+                data.get("end_date"),
+                (data.get("billing_method") or "").strip().lower(),
+                float(data["transaction_price"]) if data.get("transaction_price") is not None else None,
+                float(data["variable_consideration_est"]) if data.get("variable_consideration_est") is not None else None,
+                float(data["variable_consideration_constrained"]) if data.get("variable_consideration_constrained") is not None else None,
+                float(data["financing_component_amount"]) if data.get("financing_component_amount") is not None else None,
+                data.get("has_significant_financing_component"),
+                data.get("is_over_time"),
+                data.get("notes"),
+                self._json_dumps(data.get("payload_json")) if "payload_json" in data else None,
+                int(contract_id),
+            ))
+            after = dict(cur.fetchone())
+            conn.commit()
+
+        return {"before": before, "after": after}
+
+    def create_revenue_contract_version(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
+            if not contract:
+                raise ValueError("Revenue contract not found")
+
+            last_row = self.fetch_one(
+                f"SELECT COALESCE(MAX(version_no), 0) AS max_no FROM {schema}.revenue_contract_versions WHERE contract_id=%s;",
+                (int(contract_id),),
+                cur=cur,
+            )
+            version_no = int((last_row or {}).get("max_no") or 0) + 1
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_contract_versions (
+                    company_id, contract_id, version_no, effective_date, version_reason,
+                    transaction_price, allocated_revenue_total, expected_cost_total,
+                    payload_json, created_by_user_id
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                RETURNING *;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    version_no,
+                    data.get("effective_date"),
+                    (data.get("version_reason") or "initial").strip().lower(),
+                    float(data.get("transaction_price") or contract.get("transaction_price") or 0.0),
+                    float(data.get("allocated_revenue_total") or 0.0),
+                    float(data.get("expected_cost_total") or 0.0),
+                    self._json_dumps(data.get("payload_json")),
+                    int(user_id) if user_id else None,
+                )
+            )
+            row = dict(cur.fetchone())
+            conn.commit()
+
+        return row
+
+
+    def add_revenue_obligation(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
+            if not contract:
+                raise ValueError("Revenue contract not found")
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_obligations (
+                    company_id, contract_id, obligation_code, obligation_name,
+                    distinct_flag, recognition_timing, progress_method, obligation_status,
+                    standalone_selling_price, allocated_transaction_price,
+                    expected_total_cost, actual_cost_to_date, progress_percent, revenue_to_date,
+                    recognized_at_point_in_time_date, notes, payload_json
+                )
+                VALUES (
+                    %s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s,%s,
+                    %s,%s,%s,%s,
+                    %s,%s,%s::jsonb
+                )
+                RETURNING *;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    (data.get("obligation_code") or "").strip(),
+                    (data.get("obligation_name") or "").strip(),
+                    bool(data.get("distinct_flag", True)),
+                    (data.get("recognition_timing") or "over_time").strip().lower(),
+                    (data.get("progress_method") or "cost_to_cost").strip().lower(),
+                    (data.get("obligation_status") or "draft").strip().lower(),
+                    float(data.get("standalone_selling_price") or 0.0),
+                    float(data.get("allocated_transaction_price") or 0.0),
+                    float(data.get("expected_total_cost") or 0.0),
+                    float(data.get("actual_cost_to_date") or 0.0),
+                    float(data.get("progress_percent") or 0.0),
+                    float(data.get("revenue_to_date") or 0.0),
+                    data.get("recognized_at_point_in_time_date"),
+                    data.get("notes"),
+                    self._json_dumps(data.get("payload_json")),
+                )
+            )
+            row = dict(cur.fetchone())
+            conn.commit()
+
+        return row
+
+
+    def update_revenue_obligation(self, company_id: int, obligation_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            before = self.fetch_one(
+                f"SELECT * FROM {schema}.revenue_obligations WHERE id=%s LIMIT 1;",
+                (int(obligation_id),),
+                cur=cur,
+            )
+            if not before:
+                raise ValueError("Revenue obligation not found")
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_obligations
+                SET
+                    obligation_name = COALESCE(NULLIF(%s,''), obligation_name),
+                    distinct_flag = COALESCE(%s, distinct_flag),
+                    recognition_timing = COALESCE(NULLIF(%s,''), recognition_timing),
+                    progress_method = COALESCE(NULLIF(%s,''), progress_method),
+                    obligation_status = COALESCE(NULLIF(%s,''), obligation_status),
+                    standalone_selling_price = COALESCE(%s, standalone_selling_price),
+                    allocated_transaction_price = COALESCE(%s, allocated_transaction_price),
+                    expected_total_cost = COALESCE(%s, expected_total_cost),
+                    actual_cost_to_date = COALESCE(%s, actual_cost_to_date),
+                    progress_percent = COALESCE(%s, progress_percent),
+                    revenue_to_date = COALESCE(%s, revenue_to_date),
+                    recognized_at_point_in_time_date = COALESCE(%s, recognized_at_point_in_time_date),
+                    notes = COALESCE(%s, notes),
+                    payload_json = COALESCE(%s::jsonb, payload_json),
+                    updated_at = NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    (data.get("obligation_name") or "").strip(),
+                    data.get("distinct_flag"),
+                    (data.get("recognition_timing") or "").strip().lower(),
+                    (data.get("progress_method") or "").strip().lower(),
+                    (data.get("obligation_status") or "").strip().lower(),
+                    float(data["standalone_selling_price"]) if data.get("standalone_selling_price") is not None else None,
+                    float(data["allocated_transaction_price"]) if data.get("allocated_transaction_price") is not None else None,
+                    float(data["expected_total_cost"]) if data.get("expected_total_cost") is not None else None,
+                    float(data["actual_cost_to_date"]) if data.get("actual_cost_to_date") is not None else None,
+                    float(data["progress_percent"]) if data.get("progress_percent") is not None else None,
+                    float(data["revenue_to_date"]) if data.get("revenue_to_date") is not None else None,
+                    data.get("recognized_at_point_in_time_date"),
+                    data.get("notes"),
+                    self._json_dumps(data.get("payload_json")) if "payload_json" in data else None,
+                    int(obligation_id),
+                )
+            )
+            after = dict(cur.fetchone())
+            conn.commit()
+
+        return {"before": before, "after": after}
+
+
+    def record_revenue_billing_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_billing_events (
+                    company_id, contract_id, obligation_id, event_date, event_type,
+                    source_invoice_id, amount, currency, notes, payload_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                RETURNING *;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    data.get("obligation_id"),
+                    data.get("event_date"),
+                    (data.get("event_type") or "invoice").strip().lower(),
+                    data.get("source_invoice_id"),
+                    float(data.get("amount") or 0.0),
+                    (data.get("currency") or "ZAR").strip().upper(),
+                    data.get("notes"),
+                    self._json_dumps(data.get("payload_json")),
+                )
+            )
+            row = dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_contracts
+                SET billed_to_date = COALESCE((
+                        SELECT SUM(amount) FROM {schema}.revenue_billing_events WHERE contract_id=%s
+                    ), 0),
+                    billing_status = CASE
+                        WHEN COALESCE((
+                            SELECT SUM(amount) FROM {schema}.revenue_billing_events WHERE contract_id=%s
+                        ), 0) <= 0 THEN 'unbilled'
+                        WHEN COALESCE((
+                            SELECT SUM(amount) FROM {schema}.revenue_billing_events WHERE contract_id=%s
+                        ), 0) >= transaction_price THEN 'fully_billed'
+                        ELSE 'partially_billed'
+                    END,
+                    updated_at = NOW()
+                WHERE id=%s
+                """,
+                (int(contract_id), int(contract_id), int(contract_id), int(contract_id)),
+            )
+
+            contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
+            conn.commit()
+
+        return {"event": row, "contract": contract}
+
+
+    def record_revenue_cash_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_cash_events (
+                    company_id, contract_id, obligation_id, event_date, event_type,
+                    source_receipt_id, amount, currency, notes, payload_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                RETURNING *;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    data.get("obligation_id"),
+                    data.get("event_date"),
+                    (data.get("event_type") or "receipt").strip().lower(),
+                    data.get("source_receipt_id"),
+                    float(data.get("amount") or 0.0),
+                    (data.get("currency") or "ZAR").strip().upper(),
+                    data.get("notes"),
+                    self._json_dumps(data.get("payload_json")),
+                )
+            )
+            row = dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_contracts
+                SET cash_received_to_date = COALESCE((
+                        SELECT SUM(amount) FROM {schema}.revenue_cash_events WHERE contract_id=%s
+                    ), 0),
+                    cash_status = CASE
+                        WHEN COALESCE((
+                            SELECT SUM(amount) FROM {schema}.revenue_cash_events WHERE contract_id=%s
+                        ), 0) <= 0 THEN 'uncollected'
+                        WHEN COALESCE((
+                            SELECT SUM(amount) FROM {schema}.revenue_cash_events WHERE contract_id=%s
+                        ), 0) >= billed_to_date THEN 'fully_collected'
+                        ELSE 'partially_collected'
+                    END,
+                    updated_at = NOW()
+                WHERE id=%s
+                """,
+                (int(contract_id), int(contract_id), int(contract_id), int(contract_id)),
+            )
+
+            contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
+            conn.commit()
+
+        return {"event": row, "contract": contract}
+
+
+    def record_revenue_progress_update(self, company_id: int, obligation_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            obl = self.fetch_one(
+                f"SELECT * FROM {schema}.revenue_obligations WHERE id=%s LIMIT 1;",
+                (int(obligation_id),),
+                cur=cur,
+            )
+            if not obl:
+                raise ValueError("Revenue obligation not found")
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_progress_updates (
+                    company_id, contract_id, obligation_id, period_end, update_type,
+                    expected_total_cost, actual_cost_to_date, progress_percent,
+                    units_done, units_total, milestone_code, certified_by_user_id,
+                    notes, payload_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                ON CONFLICT (obligation_id, period_end, update_type)
+                DO UPDATE SET
+                    expected_total_cost = EXCLUDED.expected_total_cost,
+                    actual_cost_to_date = EXCLUDED.actual_cost_to_date,
+                    progress_percent = EXCLUDED.progress_percent,
+                    units_done = EXCLUDED.units_done,
+                    units_total = EXCLUDED.units_total,
+                    milestone_code = EXCLUDED.milestone_code,
+                    certified_by_user_id = EXCLUDED.certified_by_user_id,
+                    notes = EXCLUDED.notes,
+                    payload_json = EXCLUDED.payload_json
+                RETURNING *;
+                """,
+                (
+                    int(company_id),
+                    int(obl["contract_id"]),
+                    int(obligation_id),
+                    data.get("period_end"),
+                    (data.get("update_type") or "cost_to_cost").strip().lower(),
+                    float(data["expected_total_cost"]) if data.get("expected_total_cost") is not None else None,
+                    float(data["actual_cost_to_date"]) if data.get("actual_cost_to_date") is not None else None,
+                    float(data["progress_percent"]) if data.get("progress_percent") is not None else None,
+                    float(data["units_done"]) if data.get("units_done") is not None else None,
+                    float(data["units_total"]) if data.get("units_total") is not None else None,
+                    data.get("milestone_code"),
+                    int(user_id) if user_id else None,
+                    data.get("notes"),
+                    self._json_dumps(data.get("payload_json")),
+                )
+            )
+            row = dict(cur.fetchone())
+
+            new_expected = row.get("expected_total_cost")
+            new_actual = row.get("actual_cost_to_date")
+            new_progress = row.get("progress_percent")
+
+            if new_progress is None:
+                method = str(row.get("update_type") or obl.get("progress_method") or "").lower()
+                if method == "cost_to_cost":
+                    etc = Decimal(str(new_expected or obl.get("expected_total_cost") or 0))
+                    atd = Decimal(str(new_actual or obl.get("actual_cost_to_date") or 0))
+                    new_progress = float((atd / etc * Decimal("100")) if etc > 0 else Decimal("0"))
+                elif method == "units":
+                    done = Decimal(str(row.get("units_done") or 0))
+                    total = Decimal(str(row.get("units_total") or 0))
+                    new_progress = float((done / total * Decimal("100")) if total > 0 else Decimal("0"))
+                else:
+                    new_progress = float(obl.get("progress_percent") or 0.0)
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_obligations
+                SET
+                    expected_total_cost = COALESCE(%s, expected_total_cost),
+                    actual_cost_to_date = COALESCE(%s, actual_cost_to_date),
+                    progress_percent = %s,
+                    updated_at = NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    float(new_expected) if new_expected is not None else None,
+                    float(new_actual) if new_actual is not None else None,
+                    float(new_progress or 0.0),
+                    int(obligation_id),
+                )
+            )
+            obligation = dict(cur.fetchone())
+            conn.commit()
+
+        return {"progress_update": row, "obligation": obligation}
+
+
+    def preview_revenue_recognition_run(self, company_id: int, period_start, period_end, contract_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            contracts_sql = f"""
+            SELECT *
+            FROM {schema}.revenue_contracts
+            WHERE (%s IS NULL OR id=%s)
+            AND status IN ('draft','active','completed')
+            ORDER BY id ASC
+            """
+            contracts = self.fetch_all(contracts_sql, (contract_id, contract_id), cur=cur) or []
+
+            preview_entries = []
+            total_rev = Decimal("0.00")
+            total_ca = Decimal("0.00")
+            total_cl = Decimal("0.00")
+
+            for c in contracts:
+                obligations = self.fetch_all(
+                    f"""
+                    SELECT *
+                    FROM {schema}.revenue_obligations
+                    WHERE contract_id=%s
+                    ORDER BY id ASC
+                    """,
+                    (int(c["id"]),),
+                    cur=cur,
+                ) or []
+
+                billed_to_date_contract = Decimal(str(
+                    (self.fetch_one(
+                        f"SELECT COALESCE(SUM(amount),0) AS amt FROM {schema}.revenue_billing_events WHERE contract_id=%s AND event_date <= %s;",
+                        (int(c["id"]), period_end),
+                        cur=cur,
+                    ) or {}).get("amt") or 0
+                ))
+                cash_to_date_contract = Decimal(str(
+                    (self.fetch_one(
+                        f"SELECT COALESCE(SUM(amount),0) AS amt FROM {schema}.revenue_cash_events WHERE contract_id=%s AND event_date <= %s;",
+                        (int(c["id"]), period_end),
+                        cur=cur,
+                    ) or {}).get("amt") or 0
+                ))
+
+                for obl in obligations:
+                    latest_prog = self.fetch_one(
+                        f"""
+                        SELECT *
+                        FROM {schema}.revenue_progress_updates
+                        WHERE obligation_id=%s AND period_end <= %s
+                        ORDER BY period_end DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (int(obl["id"]), period_end),
+                        cur=cur,
+                    ) or {}
+
+                    allocated = Decimal(str(obl.get("allocated_transaction_price") or 0))
+                    timing = str(obl.get("recognition_timing") or "over_time").lower()
+                    method = str(obl.get("progress_method") or "cost_to_cost").lower()
+
+                    required_to_date = Decimal("0.00")
+
+                    if timing == "point_in_time":
+                        pit_date = obl.get("recognized_at_point_in_time_date")
+                        if pit_date and str(pit_date) <= str(period_end):
+                            required_to_date = allocated
+                    else:
+                        if method == "cost_to_cost":
+                            actual = Decimal(str(latest_prog.get("actual_cost_to_date") or obl.get("actual_cost_to_date") or 0))
+                            expected = Decimal(str(latest_prog.get("expected_total_cost") or obl.get("expected_total_cost") or 0))
+                            pct = (actual / expected) if expected > 0 else Decimal("0")
+                        elif method in {"units", "units_delivered"}:
+                            done = Decimal(str(latest_prog.get("units_done") or 0))
+                            total = Decimal(str(latest_prog.get("units_total") or 0))
+                            pct = (done / total) if total > 0 else Decimal("0")
+                        else:
+                            pct = Decimal(str(latest_prog.get("progress_percent") or obl.get("progress_percent") or 0)) / Decimal("100")
+
+                        if pct < 0:
+                            pct = Decimal("0")
+                        if pct > 1:
+                            pct = Decimal("1")
+
+                        required_to_date = (allocated * pct).quantize(Decimal("0.01"))
+
+                    prev_row = self.fetch_one(
+                        f"""
+                        SELECT COALESCE(SUM(revenue_delta_this_run),0) AS amt
+                        FROM {schema}.revenue_recognition_entries
+                        WHERE obligation_id=%s
+                        AND period_end < %s
+                        """,
+                        (int(obl["id"]), period_start),
+                        cur=cur,
+                    ) or {}
+                    prev_recognized = Decimal(str(prev_row.get("amt") or 0))
+
+                    delta = (required_to_date - prev_recognized).quantize(Decimal("0.01"))
+
+                    billed_to_date = Decimal("0.00")
+                    if obl.get("id"):
+                        billed_row = self.fetch_one(
+                            f"""
+                            SELECT COALESCE(SUM(amount),0) AS amt
+                            FROM {schema}.revenue_billing_events
+                            WHERE contract_id=%s
+                            AND (%s IS NULL OR obligation_id=%s OR obligation_id IS NULL)
+                            AND event_date <= %s
+                            """,
+                            (int(c["id"]), int(obl["id"]), int(obl["id"]), period_end),
+                            cur=cur,
+                        ) or {}
+                        billed_to_date = Decimal(str(billed_row.get("amt") or 0))
+
+                    earned_not_billed = required_to_date - billed_to_date
+                    billed_ahead = billed_to_date - required_to_date
+
+                    ca_delta = Decimal("0.00")
+                    cl_delta = Decimal("0.00")
+
+                    if delta > 0:
+                        if billed_ahead > 0:
+                            cl_delta = -min(delta, billed_ahead)
+                        else:
+                            ca_delta = delta
+                    elif delta < 0:
+                        reverse_amt = abs(delta)
+                        if billed_ahead > 0:
+                            cl_delta = min(reverse_amt, billed_ahead)
+                        else:
+                            ca_delta = -reverse_amt
+
+                    entry = {
+                        "contract_id": int(c["id"]),
+                        "contract_number": c.get("contract_number"),
+                        "obligation_id": int(obl["id"]),
+                        "obligation_code": obl.get("obligation_code"),
+                        "obligation_name": obl.get("obligation_name"),
+                        "period_start": str(period_start),
+                        "period_end": str(period_end),
+                        "revenue_required_to_date": float(required_to_date),
+                        "revenue_previously_recognized": float(prev_recognized),
+                        "revenue_delta_this_run": float(delta),
+                        "billed_to_date": float(billed_to_date),
+                        "cash_received_to_date": float(cash_to_date_contract),
+                        "contract_asset_delta": float(ca_delta),
+                        "contract_liability_delta": float(cl_delta),
+                        "source_basis": "system",
+                        "notes": None,
+                        "payload_json": {
+                            "timing": timing,
+                            "progress_method": method,
+                            "contract_billed_to_date": float(billed_to_date_contract),
+                            "contract_cash_to_date": float(cash_to_date_contract),
+                            "latest_progress_id": latest_prog.get("id"),
+                        },
+                    }
+                    preview_entries.append(entry)
+
+                    total_rev += delta
+                    total_ca += ca_delta
+                    total_cl += cl_delta
+
+            return {
+                "ok": True,
+                "scope": "contract" if contract_id else "company",
+                "contract_id": int(contract_id) if contract_id else None,
+                "period_start": str(period_start),
+                "period_end": str(period_end),
+                "entries": preview_entries,
+                "totals": {
+                    "total_revenue_delta": float(total_rev),
+                    "total_contract_asset_delta": float(total_ca),
+                    "total_contract_liability_delta": float(total_cl),
+                },
+            }
+
+
+    def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+        period_start = data.get("period_start")
+        period_end = data.get("period_end")
+        contract_id = data.get("contract_id")
+
+        preview = self.preview_revenue_recognition_run(
+            company_id=int(company_id),
+            period_start=period_start,
+            period_end=period_end,
+            contract_id=int(contract_id) if contract_id else None,
+        )
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_recognition_runs (
+                    company_id, contract_id, run_scope, period_start, period_end, status,
+                    run_reason, total_revenue_delta, total_contract_asset_delta, total_contract_liability_delta,
+                    requested_by_user_id, payload_json
+                )
+                VALUES (%s,%s,%s,%s,%s,'draft',%s,%s,%s,%s,%s,%s::jsonb)
+                RETURNING *;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id) if contract_id else None,
+                    "contract" if contract_id else "company",
+                    period_start,
+                    period_end,
+                    (data.get("run_reason") or "period_end").strip().lower(),
+                    float(preview["totals"]["total_revenue_delta"]),
+                    float(preview["totals"]["total_contract_asset_delta"]),
+                    float(preview["totals"]["total_contract_liability_delta"]),
+                    int(user_id) if user_id else None,
+                    self._json_dumps(data.get("payload_json")),
+                )
+            )
+            run = dict(cur.fetchone())
+            run_id = int(run["id"])
+
+            for e in preview["entries"]:
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.revenue_recognition_entries (
+                        company_id, run_id, contract_id, obligation_id,
+                        period_start, period_end,
+                        revenue_required_to_date, revenue_previously_recognized, revenue_delta_this_run,
+                        billed_to_date, cash_received_to_date, contract_asset_delta, contract_liability_delta,
+                        source_basis, notes, payload_json
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,
+                        %s,%s,
+                        %s,%s,%s,
+                        %s,%s,%s,%s,
+                        %s,%s,%s::jsonb
+                    )
+                    """,
+                    (
+                        int(company_id),
+                        run_id,
+                        int(e["contract_id"]),
+                        int(e["obligation_id"]) if e.get("obligation_id") else None,
+                        e["period_start"],
+                        e["period_end"],
+                        float(e["revenue_required_to_date"]),
+                        float(e["revenue_previously_recognized"]),
+                        float(e["revenue_delta_this_run"]),
+                        float(e["billed_to_date"]),
+                        float(e["cash_received_to_date"]),
+                        float(e["contract_asset_delta"]),
+                        float(e["contract_liability_delta"]),
+                        e.get("source_basis") or "system",
+                        e.get("notes"),
+                        self._json_dumps(e.get("payload_json")),
+                    )
+                )
+
+            conn.commit()
+
+        return {
+            "run": run,
+            "preview": preview,
+        }
+
+    def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
+        settings = self.get_company_account_settings(company_id) or {}
+
+        revenue_code = (settings.get("revenue_control_code") or settings.get("default_revenue_code") or "").strip()
+        contract_asset_code = (settings.get("contract_asset_code") or "BS_CA_1716").strip()
+        contract_liability_code = (settings.get("contract_liability_code") or "BS_CL_2700").strip()
+
+        if not revenue_code:
+            raise ValueError("Revenue control code is not configured")
+
+        jlines: list[dict] = []
+
+        for e in entries:
+            delta = Decimal(str(e.get("revenue_delta_this_run") or 0))
+            ca = Decimal(str(e.get("contract_asset_delta") or 0))
+            cl = Decimal(str(e.get("contract_liability_delta") or 0))
+            ref = e.get("obligation_code") or str(e.get("obligation_id") or "")
+
+            if delta == 0 and ca == 0 and cl == 0:
+                continue
+
+            if delta > 0:
+                if cl < 0:
+                    amt = abs(cl)
+                    jlines.append({"account_code": contract_liability_code, "debit": float(amt), "credit": 0.0, "memo": f"Revenue recognition release {ref}"})
+                    jlines.append({"account_code": revenue_code, "debit": 0.0, "credit": float(amt), "memo": f"Revenue recognized {ref}"})
+                if ca > 0:
+                    amt = ca
+                    jlines.append({"account_code": contract_asset_code, "debit": float(amt), "credit": 0.0, "memo": f"Unbilled revenue {ref}"})
+                    jlines.append({"account_code": revenue_code, "debit": 0.0, "credit": float(amt), "memo": f"Revenue recognized {ref}"})
+
+            elif delta < 0:
+                rev = abs(delta)
+                if cl > 0:
+                    amt = cl
+                    jlines.append({"account_code": revenue_code, "debit": float(amt), "credit": 0.0, "memo": f"Revenue reversal {ref}"})
+                    jlines.append({"account_code": contract_liability_code, "debit": 0.0, "credit": float(amt), "memo": f"Reverse liability release {ref}"})
+                if ca < 0:
+                    amt = abs(ca)
+                    jlines.append({"account_code": revenue_code, "debit": float(amt), "credit": 0.0, "memo": f"Revenue reversal {ref}"})
+                    jlines.append({"account_code": contract_asset_code, "debit": 0.0, "credit": float(amt), "memo": f"Reverse unbilled revenue {ref}"})
+
+        return jlines
+
+
+    def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            run = self.fetch_one(
+                f"SELECT * FROM {schema}.revenue_recognition_runs WHERE id=%s LIMIT 1;",
+                (int(run_id),),
+                cur=cur,
+            )
+            if not run:
+                raise ValueError("Recognition run not found")
+            if str(run.get("status") or "").lower() != "draft":
+                raise ValueError("Only draft runs can be posted")
+
+            entries = self.fetch_all(
+                f"SELECT * FROM {schema}.revenue_recognition_entries WHERE run_id=%s ORDER BY id ASC;",
+                (int(run_id),),
+                cur=cur,
+            ) or []
+
+            jlines = self._build_revenue_recognition_journal_lines(company_id, run=run, entries=entries)
+            if not jlines:
+                raise ValueError("Recognition run has no journal lines")
+
+            journal_id = self.post_journal_lines(
+                company_id=int(company_id),
+                source_module="revenue",
+                source_type="revenue_recognition_run",
+                source_id=int(run_id),
+                journal_lines=jlines,
+                user_id=int(user_id or 0) or None,
+            )
+
+            contract_ids = sorted({int(e["contract_id"]) for e in entries if e.get("contract_id")})
+            obligation_ids = sorted({int(e["obligation_id"]) for e in entries if e.get("obligation_id")})
+
+            for cid in contract_ids:
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.revenue_contracts c
+                    SET
+                        recognized_revenue_to_date = COALESCE((
+                            SELECT SUM(revenue_delta_this_run)
+                            FROM {schema}.revenue_recognition_entries
+                            WHERE contract_id = c.id
+                        ), 0),
+                        contract_asset_balance = COALESCE((
+                            SELECT SUM(contract_asset_delta)
+                            FROM {schema}.revenue_recognition_entries
+                            WHERE contract_id = c.id
+                        ), 0),
+                        contract_liability_balance = COALESCE((
+                            SELECT -SUM(contract_liability_delta)
+                            FROM {schema}.revenue_recognition_entries
+                            WHERE contract_id = c.id
+                        ), 0),
+                        revenue_status = CASE
+                            WHEN COALESCE((
+                                SELECT SUM(revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries
+                                WHERE contract_id = c.id
+                            ), 0) <= 0 THEN 'not_started'
+                            WHEN COALESCE((
+                                SELECT SUM(revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries
+                                WHERE contract_id = c.id
+                            ), 0) >= c.transaction_price THEN 'fully_recognized'
+                            ELSE 'in_progress'
+                        END,
+                        updated_at = NOW()
+                    WHERE c.id=%s
+                    """,
+                    (cid,),
+                )
+
+            for oid in obligation_ids:
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.revenue_obligations o
+                    SET revenue_to_date = COALESCE((
+                        SELECT SUM(revenue_delta_this_run)
+                        FROM {schema}.revenue_recognition_entries
+                        WHERE obligation_id = o.id
+                    ), 0),
+                    updated_at = NOW()
+                    WHERE o.id=%s
+                    """,
+                    (oid,),
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_recognition_runs
+                SET status='posted',
+                    journal_id=%s,
+                    posted_by_user_id=%s,
+                    posted_at=NOW()
+                WHERE id=%s
+                """,
+                (int(journal_id), int(user_id or 0) or None, int(run_id))
+            )
+
+            conn.commit()
+
+        try:
+            self.log_engagement_activity(
+                company_id=int(company_id),
+                actor_user_id=int(user_id or 0) or None,
+                module="revenue",
+                action="post_recognition_run",
+                entity_type="revenue_run",
+                entity_id=str(run_id),
+                entity_ref=self._revenue_run_ref(run_id),
+                message=f"Posted revenue recognition run {run_id}",
+            )
+        except Exception:
+            pass
+
+        return {"ok": True, "run_id": int(run_id), "journal_id": int(journal_id)}
+
+
+    def reverse_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            run = self.fetch_one(
+                f"SELECT * FROM {schema}.revenue_recognition_runs WHERE id=%s LIMIT 1;",
+                (int(run_id),),
+                cur=cur,
+            )
+            if not run:
+                raise ValueError("Recognition run not found")
+            if str(run.get("status") or "").lower() != "posted":
+                raise ValueError("Only posted runs can be reversed")
+
+            entries = self.fetch_all(
+                f"SELECT * FROM {schema}.revenue_recognition_entries WHERE run_id=%s ORDER BY id ASC;",
+                (int(run_id),),
+                cur=cur,
+            ) or []
+
+            reversed_lines = self._build_revenue_recognition_journal_lines(
+                company_id=company_id,
+                run=run,
+                entries=[
+                    dict(
+                        e,
+                        revenue_delta_this_run=float(-(Decimal(str(e.get("revenue_delta_this_run") or 0)))),
+                        contract_asset_delta=float(-(Decimal(str(e.get("contract_asset_delta") or 0)))),
+                        contract_liability_delta=float(-(Decimal(str(e.get("contract_liability_delta") or 0)))),
+                    )
+                    for e in entries
+                ],
+            )
+
+            journal_id = self.post_journal_lines(
+                company_id=int(company_id),
+                source_module="revenue",
+                source_type="revenue_recognition_reversal",
+                source_id=int(run_id),
+                journal_lines=reversed_lines,
+                user_id=int(user_id or 0) or None,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_recognition_runs
+                SET status='reversed',
+                    payload_json = COALESCE(payload_json, '{{}}'::jsonb) || %s::jsonb
+                WHERE id=%s
+                """,
+                (
+                    json.dumps({
+                        "reversal_journal_id": int(journal_id),
+                        "reversed_by_user_id": int(user_id or 0) or None,
+                        "reversed_at": datetime.utcnow().isoformat(),
+                    }),
+                    int(run_id),
+                )
+            )
+
+            conn.commit()
+
+        return {"ok": True, "run_id": int(run_id), "reversal_journal_id": int(journal_id)}
+
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

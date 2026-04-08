@@ -206,6 +206,38 @@ def normalize_policy(policy: dict) -> dict:
     p.setdefault("require_loan_settlement_review", bool(loans.get("require_settlement_review", True)))
 
     p["loans"] = loans
+
+    revenue = p.get("revenue") if isinstance(p.get("revenue"), dict) else {}
+    revenue.setdefault("review_enabled", False)
+    revenue.setdefault("require_contract_review", False)
+    revenue.setdefault("require_modification_review", True)
+    revenue.setdefault("require_recognition_run_review", True)
+    p["revenue"] = revenue
+
+    revenue_in = set(revenue.keys())
+
+    if "revenue_review_enabled" in p_in and "review_enabled" not in revenue_in:
+        revenue["review_enabled"] = bool(p.get("revenue_review_enabled"))
+    if "require_revenue_review" in p_in and "review_enabled" not in revenue_in:
+        revenue["review_enabled"] = bool(p.get("require_revenue_review"))
+
+    if "require_revenue_contract_review" in p_in and "require_contract_review" not in revenue_in:
+        revenue["require_contract_review"] = bool(p.get("require_revenue_contract_review"))
+
+    if "require_revenue_modification_review" in p_in and "require_modification_review" not in revenue_in:
+        revenue["require_modification_review"] = bool(p.get("require_revenue_modification_review"))
+
+    if "require_revenue_recognition_run_review" in p_in and "require_recognition_run_review" not in revenue_in:
+        revenue["require_recognition_run_review"] = bool(p.get("require_revenue_recognition_run_review"))
+
+    p.setdefault("revenue_review_enabled", bool(revenue.get("review_enabled", False)))
+    p.setdefault("require_revenue_review", bool(revenue.get("review_enabled", False)))
+    p.setdefault("require_revenue_contract_review", bool(revenue.get("require_contract_review", False)))
+    p.setdefault("require_revenue_modification_review", bool(revenue.get("require_modification_review", True)))
+    p.setdefault("require_revenue_recognition_run_review", bool(revenue.get("require_recognition_run_review", True)))
+
+    p["revenue"] = revenue
+    
     return p
 
 def is_company_owner(user: dict, company_profile: dict) -> bool:
@@ -487,6 +519,15 @@ def can_decide_request(user: dict, company_profile: dict, mode: str, module: str
         "post_loan_reclassification",
         "post_loan_modification",
         "post_loan_settlement",
+    }:
+        return can_decide_approvals(user, company_profile, mode)
+    
+    # inside approval permission routing
+    if module == "revenue" and action in {
+        "create_contract",
+        "modify_contract",
+        "post_recognition_run",
+        "reverse_recognition_run",
     }:
         return can_decide_approvals(user, company_profile, mode)
     

@@ -60,6 +60,28 @@ def company_policy(company_id: int) -> dict:
         or policy.get("payment_workflow_enabled")
         or policy.get("require_payment_approval")
     )
+
+    revenue_review_enabled = bool(
+        (policy.get("revenue") or {}).get("review_enabled")
+        or policy.get("revenue_review_enabled")
+        or policy.get("require_revenue_review")
+    )
+
+    require_revenue_contract_review = bool(
+        (policy.get("revenue") or {}).get("require_contract_review")
+        or policy.get("require_revenue_contract_review")
+    )
+
+    require_revenue_modification_review = bool(
+        (policy.get("revenue") or {}).get("require_modification_review")
+        or policy.get("require_revenue_modification_review")
+    )
+
+    require_revenue_recognition_run_review = bool(
+        (policy.get("revenue") or {}).get("require_recognition_run_review")
+        or policy.get("require_revenue_recognition_run_review")
+    )
+
     return {
         "mode": mode,
 
@@ -80,9 +102,16 @@ def company_policy(company_id: int) -> dict:
         "require_kyc": require_kyc,
         "require_vendor_kyc_on_release": require_vendor_kyc_on_release,
 
+        # Loans
         "loan_review_enabled": loan_review_enabled,
         "require_loan_create_review": require_loan_create_review,
         "require_loan_payment_review": require_loan_payment_review,
+
+        # Revenue / IFRS 15
+        "revenue_review_enabled": revenue_review_enabled,
+        "require_revenue_contract_review": require_revenue_contract_review,
+        "require_revenue_modification_review": require_revenue_modification_review,
+        "require_revenue_recognition_run_review": require_revenue_recognition_run_review,
 
         # diagnostics
         "_warnings": warnings,

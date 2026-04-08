@@ -1864,6 +1864,44 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/loans/${encodeURIComponent(loanId)}/reclassify`,
   },
 
+  revenue: {
+    contracts: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts`,
+
+    contract: (companyId, contractId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}`,
+
+    versions: (companyId, contractId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/versions`,
+
+    obligations: (companyId, contractId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/obligations`,
+
+    obligation: (companyId, obligationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}`,
+
+    billings: (companyId, contractId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/billings`,
+
+    cashReceipts: (companyId, contractId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/cash_receipts`,
+
+    progress: (companyId, obligationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}/progress`,
+
+    previewRun: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/preview`,
+
+    runs: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs`,
+
+    postRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}/post`,
+
+    reverseRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}/reverse`,
+  },
+
   supportUser: {
     // List tickets for the logged-in user
     list: (companyId) => 
@@ -2918,6 +2956,12 @@ FS.policy.applyModeDefaultsToCreditPolicy = function applyModeDefaultsToCreditPo
     p.leases.require_modification_review = true;
     p.leases.require_termination_review = true;
 
+    p.revenue.review_enabled = true;
+    p.require_revenue_review = true;
+    p.require_revenue_contract_review = true;
+    p.require_revenue_modification_review = true;
+    p.require_revenue_recognition_run_review = true;
+    
     return p;
   }
 
@@ -2952,6 +2996,12 @@ FS.policy.applyModeDefaultsToCreditPolicy = function applyModeDefaultsToCreditPo
     p.leases.require_payment_review = true;
     p.leases.require_modification_review = true;
     p.leases.require_termination_review = true;
+
+    p.revenue.review_enabled = true;
+    p.require_revenue_review = true;
+    p.require_revenue_contract_review = true;
+    p.require_revenue_modification_review = true;
+    p.require_revenue_recognition_run_review = true;
   }
 
   return p;
@@ -4184,7 +4234,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
           children: [
             { name: "Invoices", screen: "ar-invoices", icon: "🧾" },
             { name: "Quotations", screen: "ar-quotes", icon: "🗒️" },
-
+            { name: "Revenue", screen: "revenue", icon: "📘", minRole: "clerk" },
             // ✅ Receipts removed from main nav because it's inline on invoice modal
             // { name: "Receipts", screen: "ar-receipts", icon: "💰" },
           ],
@@ -4307,6 +4357,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Chart of Accounts", screen: "coa", icon: "📗", minRole: "assistant", permission: "can_view_reports" },
         { name: "IFRS 16 Lease Wizard", icon: "📄", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏗️", minRole: "assistant", permission: "can_manage_fixed_assets" },
+        {name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials"},
       ],
     },
 
@@ -5295,6 +5346,8 @@ const SCREEN_POLICY = {
   "ar-invoices": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   "ar-quotes": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   "ar-receipts": { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
+  revenue: { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
+  "revenue-setup": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
 
   // ✅ NEW: AR Control Room screens
   "ar-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
@@ -6423,7 +6476,17 @@ async function switchScreen(name) {
     name === "ap" ||
     name === "ap-bills" ||
     name === "ap-payments";
-  
+
+  const isRevenueWorkflow =
+    name === "revenue" ||
+    name === "revenue-contracts" ||
+    name === "revenue-runs";
+    
+  const isRevenueSetup =
+    name === "revenue-setup" ||
+    name === "revenue-setup-contract" ||
+    name === "revenue-setup-allocation";
+
   const isCatalogSubscreen = [
     "inventory-items",
     "inventory-movements",
@@ -6474,6 +6537,8 @@ async function switchScreen(name) {
   else if (name.startsWith("company")) base = "company";
   else if (isAPWorkflow) base = "ap";
   else if (isCatalogSubscreen) base = "inventory";
+  else if (isRevenueWorkflow) base = "revenue";
+  else if (isRevenueSetup) base = "revenue-setup";
 
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
@@ -6667,6 +6732,48 @@ async function switchScreen(name) {
     return;
   }
 
+  if (base === "revenue") {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      } else {
+        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+      }
+
+      if (window.FS?.control?.syncFromCompany) {
+        FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+      }
+    } catch (e) {
+      console.warn("[Revenue] ensureCompanyDataLoaded failed:", e);
+    }
+
+    await window.bindRevenueScreen?.(name);
+    console.log("[switchScreen] early return at:", name, "base:", base);
+    return;
+  }
+
+  if (base === "revenue-setup") {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      } else {
+        const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+        if (cid && typeof loadCompanyProfile === "function") await loadCompanyProfile(cid);
+      }
+
+      if (window.FS?.control?.syncFromCompany) {
+        FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+      }
+    } catch (e) {
+      console.warn("[RevenueSetup] ensureCompanyDataLoaded failed:", e);
+    }
+
+    await window.bindRevenueSetupScreen?.(name);
+    console.log("[switchScreen] early return at:", name, "base:", base);
+    return;
+  }
+
   // ✅ Payables binder
   if (base === "ap") {
     try {
@@ -6820,6 +6927,8 @@ async function switchScreen(name) {
     "bank-setup": "Bank Setup",
     "bank-recon": "Bank Reconciliation",
     loans: "Loans & Financing",
+    revenue: "Revenue Desk",
+    "revenue-setup": "Revenue Setup",
     inventory: "Inventory & Services",
     customers: "Customers",
     vendors: "Vendors",
@@ -32680,6 +32789,922 @@ function bindAssetRecordsPickerModal({ cid }) {
   window.closeLoanPaymentModal = closeLoanPaymentModal;
 })();
 
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) =>
+    String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[c]));
+
+  const money = (n) => {
+    const x = Number(n ?? 0);
+    if (!Number.isFinite(x)) return "0.00";
+    return x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const num = (v) => {
+    const x = Number(v ?? 0);
+    return Number.isFinite(x) ? x : 0;
+  };
+
+  const state = {
+    cid: null,
+    tab: "contracts",
+    contracts: [],
+    selectedContract: null,
+    selectedObligation: null,
+    preview: null,
+    runs: [],
+  };
+
+  function setMsg(msg = "", type = "info") {
+    const el = $("revScreenMsg");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.className = type === "error"
+      ? "text-sm text-rose-600"
+      : "text-sm text-slate-500";
+  }
+
+  function setRunMsg(msg = "", type = "info") {
+    const el = $("revRunMsg");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.className = type === "error"
+      ? "text-xs text-rose-600"
+      : "text-xs text-slate-500";
+  }
+
+  function monthBoundsISO() {
+    const now = new Date();
+    const ps = new Date(now.getFullYear(), now.getMonth(), 1);
+    const pe = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      period_start: ps.toISOString().slice(0, 10),
+      period_end: pe.toISOString().slice(0, 10),
+    };
+  }
+
+  function activeCid() {
+    return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
+  }
+
+  function setActiveTab(tab) {
+    state.tab = tab;
+
+    const panes = {
+      contracts: $("revPaneContracts"),
+      obligations: $("revPaneObligations"),
+      billings: $("revPaneBillings"),
+      progress: $("revPaneProgress"),
+      runs: $("revPaneRuns"),
+    };
+
+    Object.entries(panes).forEach(([k, el]) => {
+      if (!el) return;
+      if (k === tab) el.classList.remove("hidden");
+      else el.classList.add("hidden");
+    });
+
+    document.querySelectorAll("[data-rev-tab]").forEach((btn) => {
+      btn.classList.toggle("bg-[var(--fs-navy)]", btn.dataset.revTab === tab);
+      btn.classList.toggle("text-white", btn.dataset.revTab === tab);
+    });
+  }
+
+  function hydrateContractForm(c = {}) {
+    $("revContractId").value = c.id || "";
+    $("revContractNumber").value = c.contract_number || "";
+    $("revContractTitle").value = c.contract_title || "";
+    $("revContractCurrency").value = c.contract_currency || "ZAR";
+    $("revContractDate").value = String(c.contract_date || "").slice(0, 10);
+    $("revStartDate").value = String(c.start_date || "").slice(0, 10);
+    $("revEndDate").value = String(c.end_date || "").slice(0, 10);
+    $("revBillingMethod").value = c.billing_method || "milestone";
+    $("revTransactionPrice").value = num(c.transaction_price).toFixed(2);
+    $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
+    $("revIsOverTime").checked = !!c.is_over_time;
+    $("revHasFinancing").checked = !!c.has_significant_financing_component;
+    $("revContractNotes").value = c.notes || "";
+
+    $("revContractStatusPill").textContent = c.status || "draft";
+    state.selectedContract = c?.id ? c : null;
+
+    renderContractKpis(c);
+  }
+
+  function hydrateObligationForm(o = {}) {
+    $("revObligationId").value = o.id || "";
+    $("revObligationCode").value = o.obligation_code || "";
+    $("revObligationName").value = o.obligation_name || "";
+    $("revRecognitionTiming").value = o.recognition_timing || "over_time";
+    $("revProgressMethod").value = o.progress_method || "cost_to_cost";
+    $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
+    $("revAllocatedPrice").value = num(o.allocated_transaction_price).toFixed(2);
+    $("revExpectedCost").value = num(o.expected_total_cost).toFixed(2);
+    $("revPitDate").value = String(o.recognized_at_point_in_time_date || "").slice(0, 10);
+    $("revDistinctFlag").checked = o.distinct_flag !== false;
+    $("revObligationNotes").value = o.notes || "";
+
+    state.selectedObligation = o?.id ? o : null;
+  }
+
+  function contractPayloadFromUI() {
+    return {
+      contract_number: $("revContractNumber")?.value?.trim() || "",
+      contract_title: $("revContractTitle")?.value?.trim() || "",
+      contract_currency: $("revContractCurrency")?.value?.trim() || "ZAR",
+      contract_date: $("revContractDate")?.value || null,
+      start_date: $("revStartDate")?.value || null,
+      end_date: $("revEndDate")?.value || null,
+      billing_method: $("revBillingMethod")?.value || "milestone",
+      transaction_price: num($("revTransactionPrice")?.value),
+      variable_consideration_constrained: num($("revVariableConstrained")?.value),
+      has_significant_financing_component: !!$("revHasFinancing")?.checked,
+      is_over_time: !!$("revIsOverTime")?.checked,
+      notes: $("revContractNotes")?.value || "",
+      payload_json: {
+        ifrs15_initial_measurement: {
+          collectability_probable: !!$("revChkCollectability")?.checked,
+          rights_identifiable: !!$("revChkRights")?.checked,
+          payment_terms_identifiable: !!$("revChkTerms")?.checked,
+          commercial_substance: !!$("revChkSubstance")?.checked,
+        },
+      },
+    };
+  }
+
+  function obligationPayloadFromUI() {
+    return {
+      obligation_code: $("revObligationCode")?.value?.trim() || "",
+      obligation_name: $("revObligationName")?.value?.trim() || "",
+      recognition_timing: $("revRecognitionTiming")?.value || "over_time",
+      progress_method: $("revProgressMethod")?.value || "cost_to_cost",
+      standalone_selling_price: num($("revSSP")?.value),
+      allocated_transaction_price: num($("revAllocatedPrice")?.value),
+      expected_total_cost: num($("revExpectedCost")?.value),
+      recognized_at_point_in_time_date: $("revPitDate")?.value || null,
+      distinct_flag: !!$("revDistinctFlag")?.checked,
+      notes: $("revObligationNotes")?.value || "",
+    };
+  }
+
+  function billingPayloadFromUI() {
+    return {
+      event_date: $("revBillingDate")?.value || null,
+      event_type: $("revBillingType")?.value || "invoice",
+      amount: num($("revBillingAmount")?.value),
+      currency: $("revBillingCurrency")?.value?.trim() || "ZAR",
+      notes: $("revBillingNotes")?.value || "",
+      obligation_id: Number($("revObligationId")?.value || 0) || null,
+    };
+  }
+
+  function cashPayloadFromUI() {
+    return {
+      event_date: $("revCashDate")?.value || null,
+      event_type: $("revCashType")?.value || "receipt",
+      amount: num($("revCashAmount")?.value),
+      currency: $("revCashCurrency")?.value?.trim() || "ZAR",
+      notes: $("revCashNotes")?.value || "",
+      obligation_id: Number($("revObligationId")?.value || 0) || null,
+    };
+  }
+
+  function progressPayloadFromUI() {
+    return {
+      period_end: $("revProgressPeriodEnd")?.value || null,
+      update_type: $("revProgressType")?.value || "cost_to_cost",
+      expected_total_cost: num($("revProgressExpectedCost")?.value),
+      actual_cost_to_date: num($("revProgressActualCost")?.value),
+      progress_percent: $("revProgressPercent")?.value === "" ? null : num($("revProgressPercent")?.value),
+      milestone_code: $("revProgressMilestoneCode")?.value?.trim() || null,
+      notes: $("revProgressNotes")?.value || "",
+    };
+  }
+
+  function runPayloadFromUI() {
+    return {
+      period_start: $("revRunStart")?.value || "",
+      period_end: $("revRunEnd")?.value || "",
+      contract_id: Number($("revContractId")?.value || 0) || null,
+      run_reason: $("revRunReason")?.value || "period_end",
+    };
+  }
+
+  function renderContractKpis(c = {}) {
+    $("revKpiTxnPrice").textContent = money(c.transaction_price || 0);
+    $("revKpiRecognized").textContent = money(c.recognized_revenue_to_date || 0);
+    $("revKpiBilled").textContent = money(c.billed_to_date || 0);
+
+    const ca = num(c.contract_asset_balance);
+    const cl = num(c.contract_liability_balance);
+    let label = "Neutral";
+    if (ca > 0) label = `Asset ${money(ca)}`;
+    else if (cl > 0) label = `Liability ${money(cl)}`;
+    $("revKpiPosition").textContent = label;
+  }
+
+  function renderContractList() {
+    const el = $("revContractList");
+    if (!el) return;
+
+    const q = ($("revSearch")?.value || "").trim().toLowerCase();
+    const status = ($("revStatusFilter")?.value || "").trim().toLowerCase();
+
+    const rows = (state.contracts || []).filter((r) => {
+      const hay = [
+        r.contract_number,
+        r.contract_title,
+        r.status,
+      ].join(" ").toLowerCase();
+
+      if (q && !hay.includes(q)) return false;
+      if (status && String(r.status || "").toLowerCase() !== status) return false;
+      return true;
+    });
+
+    if (!rows.length) {
+      el.innerHTML = `<div class="text-xs text-slate-500">No contracts found.</div>`;
+      return;
+    }
+
+    el.innerHTML = rows.map((r) => `
+      <button
+        type="button"
+        class="w-full text-left border rounded-lg p-2 hover:bg-slate-50 rev-contract-pick"
+        data-id="${r.id}">
+        <div class="flex items-center justify-between gap-2">
+          <div class="font-medium text-sm truncate">${esc(r.contract_number || `Contract ${r.id}`)}</div>
+          <div class="text-[11px] px-2 py-0.5 rounded bg-slate-100">${esc(r.status || "draft")}</div>
+        </div>
+        <div class="text-xs text-slate-500 truncate mt-1">${esc(r.contract_title || "")}</div>
+        <div class="text-[11px] text-slate-500 mt-1">
+          Txn: ${money(r.transaction_price)} · Rev: ${money(r.recognized_revenue_to_date)}
+        </div>
+      </button>
+    `).join("");
+
+    el.querySelectorAll(".rev-contract-pick").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.dataset.id || 0) || null;
+        if (!id) return;
+        const row = state.contracts.find((x) => Number(x.id) === id);
+        if (!row) return;
+
+        hydrateContractForm(row);
+        await loadContractVersions(id);
+        await loadObligations(id);
+        await loadRuns();
+      });
+    });
+  }
+
+  function renderVersionList(items = []) {
+    const el = $("revVersionList");
+    if (!el) return;
+
+    if (!items.length) {
+      el.innerHTML = `<div class="text-xs text-slate-500">No versions yet.</div>`;
+      return;
+    }
+
+    el.innerHTML = items.map((r) => `
+      <div class="border rounded p-2 text-sm">
+        <div class="flex items-center justify-between">
+          <div class="font-medium">Version ${esc(r.version_no)}</div>
+          <div class="text-xs text-slate-500">${esc(String(r.effective_date || "").slice(0, 10))}</div>
+        </div>
+        <div class="text-xs text-slate-500 mt-1">
+          ${esc(r.version_reason || "initial")} · Txn ${money(r.transaction_price)}
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderObligations(items = []) {
+    const tb = $("revObligationTableBody");
+    if (!tb) return;
+
+    if (!items.length) {
+      tb.innerHTML = `<tr><td class="p-3 text-sm text-slate-500" colspan="6">No obligations yet.</td></tr>`;
+      return;
+    }
+
+    tb.innerHTML = items.map((r) => `
+      <tr class="border-b hover:bg-slate-50 rev-obl-row cursor-pointer" data-id="${r.id}">
+        <td class="p-2">${esc(r.obligation_code || "")}</td>
+        <td class="p-2">${esc(r.obligation_name || "")}</td>
+        <td class="p-2">${esc(r.recognition_timing || "")}</td>
+        <td class="p-2 text-right">${money(r.allocated_transaction_price)}</td>
+        <td class="p-2 text-right">${money(r.progress_percent || 0)}</td>
+        <td class="p-2 text-right">${money(r.revenue_to_date || 0)}</td>
+      </tr>
+    `).join("");
+
+    tb.querySelectorAll(".rev-obl-row").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        const id = Number(tr.dataset.id || 0) || null;
+        const row = items.find((x) => Number(x.id) === id);
+        if (!row) return;
+        hydrateObligationForm(row);
+      });
+    });
+  }
+
+  function renderRunPreview(preview) {
+    const body = $("revRunPreviewBody");
+    const summary = $("revRunSummary");
+    if (!body || !summary) return;
+
+    const entries = preview?.entries || [];
+    const totals = preview?.totals || {};
+
+    summary.innerHTML = `
+      <div>Revenue delta: <strong>${money(totals.total_revenue_delta || 0)}</strong></div>
+      <div>Contract asset delta: <strong>${money(totals.total_contract_asset_delta || 0)}</strong></div>
+      <div>Contract liability delta: <strong>${money(totals.total_contract_liability_delta || 0)}</strong></div>
+    `;
+
+    if (!entries.length) {
+      body.innerHTML = `<tr><td class="p-3 text-sm text-slate-500" colspan="6">No preview rows.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = entries.map((r) => `
+      <tr class="border-b">
+        <td class="p-2">${esc(r.contract_number || r.contract_id)}</td>
+        <td class="p-2">${esc(r.obligation_code || r.obligation_name || r.obligation_id)}</td>
+        <td class="p-2 text-right">${money(r.revenue_required_to_date)}</td>
+        <td class="p-2 text-right">${money(r.revenue_previously_recognized)}</td>
+        <td class="p-2 text-right">${money(r.revenue_delta_this_run)}</td>
+        <td class="p-2 text-right">${money(r.billed_to_date)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderRunList(items = []) {
+    const el = $("revRunList");
+    if (!el) return;
+
+    if (!items.length) {
+      el.innerHTML = `<div class="text-xs text-slate-500">No runs found.</div>`;
+      return;
+    }
+
+    el.innerHTML = items.map((r) => `
+      <button
+        type="button"
+        class="w-full text-left border rounded p-2 hover:bg-slate-50 rev-run-pick"
+        data-id="${r.id}">
+        <div class="flex items-center justify-between">
+          <div class="font-medium text-sm">Run ${esc(r.id)}</div>
+          <div class="text-[11px] px-2 py-0.5 rounded bg-slate-100">${esc(r.status || "draft")}</div>
+        </div>
+        <div class="text-xs text-slate-500 mt-1">
+          ${esc(String(r.period_start || "").slice(0, 10))} → ${esc(String(r.period_end || "").slice(0, 10))} · ${esc(r.run_reason || "")}
+        </div>
+      </button>
+    `).join("");
+
+    el.querySelectorAll(".rev-run-pick").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        $("revRunId").value = btn.dataset.id || "";
+      });
+    });
+  }
+
+  async function loadContracts() {
+    const cid = state.cid;
+    if (!cid) return;
+
+    setMsg("Loading contracts...");
+    try {
+      // temporary: contracts list endpoint is create-only, so use existing company route if you add list later
+      const data = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`);
+      state.contracts = data?.items || data?.data?.items || data?.data || [];
+      renderContractList();
+      setMsg(`${state.contracts.length} contract(s) loaded.`);
+    } catch (e) {
+      console.warn("[Revenue] contracts load failed", e);
+      state.contracts = [];
+      renderContractList();
+      setMsg(e?.message || "Failed to load contracts", "error");
+    }
+  }
+
+  async function loadContractVersions(contractId) {
+    const cid = state.cid;
+    if (!cid || !contractId) return;
+
+    try {
+      const data = await apiFetch(`${ENDPOINTS.revenue.versions(cid, contractId)}?list=1`);
+      renderVersionList(data?.items || data?.data?.items || data?.data || []);
+    } catch (_) {
+      renderVersionList([]);
+    }
+  }
+
+  async function loadObligations(contractId) {
+    const cid = state.cid;
+    if (!cid || !contractId) return;
+
+    try {
+      const data = await apiFetch(`${ENDPOINTS.revenue.obligations(cid, contractId)}?list=1`);
+      const items = data?.items || data?.data?.items || data?.data || [];
+      renderObligations(items);
+    } catch (e) {
+      console.warn("[Revenue] obligations load failed", e);
+      renderObligations([]);
+    }
+  }
+
+  async function loadRuns() {
+    const cid = state.cid;
+    if (!cid) return;
+
+    try {
+      const data = await apiFetch(`${ENDPOINTS.revenue.runs(cid)}?limit=50`);
+      state.runs = data?.items || data?.data?.items || data?.data || [];
+      renderRunList(state.runs);
+    } catch (e) {
+      console.warn("[Revenue] runs load failed", e);
+      state.runs = [];
+      renderRunList([]);
+    }
+  }
+
+  async function saveContract() {
+    const cid = state.cid;
+    if (!cid) throw new Error("Missing company id");
+
+    const payload = contractPayloadFromUI();
+    const out = await apiFetch(ENDPOINTS.revenue.contracts(cid), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const row = out?.data || out;
+    hydrateContractForm(row);
+    await loadContracts();
+    return row;
+  }
+
+  async function updateContract() {
+    const cid = state.cid;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    if (!cid || !contractId) throw new Error("Select a contract first");
+
+    const payload = contractPayloadFromUI();
+    const out = await apiFetch(ENDPOINTS.revenue.contract(cid, contractId), {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+
+    const row = out?.data || out?.after || out;
+    hydrateContractForm(row);
+    await loadContracts();
+    return row;
+  }
+
+  async function createVersion() {
+    const cid = state.cid;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    if (!cid || !contractId) throw new Error("Select a contract first");
+
+    const payload = {
+      effective_date: $("revContractDate")?.value || new Date().toISOString().slice(0, 10),
+      version_reason: "modification",
+      transaction_price: num($("revTransactionPrice")?.value),
+      allocated_revenue_total: 0,
+      expected_cost_total: 0,
+    };
+
+    await apiFetch(ENDPOINTS.revenue.versions(cid, contractId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    await loadContractVersions(contractId);
+    setMsg("Contract version created.");
+  }
+
+  async function saveObligation() {
+    const cid = state.cid;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    if (!cid || !contractId) throw new Error("Select a contract first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.obligations(cid, contractId), {
+      method: "POST",
+      body: JSON.stringify(obligationPayloadFromUI()),
+    });
+
+    await loadObligations(contractId);
+    setMsg("Obligation saved.");
+    return out;
+  }
+
+  async function updateObligation() {
+    const cid = state.cid;
+    const obligationId = Number($("revObligationId")?.value || 0) || null;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    if (!cid || !obligationId) throw new Error("Select an obligation first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.obligation(cid, obligationId), {
+      method: "PATCH",
+      body: JSON.stringify(obligationPayloadFromUI()),
+    });
+
+    await loadObligations(contractId);
+    setMsg("Obligation updated.");
+    return out;
+  }
+
+  async function recordBilling() {
+    const cid = state.cid;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    if (!cid || !contractId) throw new Error("Select a contract first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.billings(cid, contractId), {
+      method: "POST",
+      body: JSON.stringify(billingPayloadFromUI()),
+    });
+
+    setMsg("Billing event recorded.");
+    await loadContracts();
+    return out;
+  }
+
+  async function recordCash() {
+    const cid = state.cid;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    if (!cid || !contractId) throw new Error("Select a contract first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.cashReceipts(cid, contractId), {
+      method: "POST",
+      body: JSON.stringify(cashPayloadFromUI()),
+    });
+
+    setMsg("Cash event recorded.");
+    await loadContracts();
+    return out;
+  }
+
+  async function recordProgress() {
+    const cid = state.cid;
+    const obligationId = Number($("revObligationId")?.value || 0) || null;
+    if (!cid || !obligationId) throw new Error("Select an obligation first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.progress(cid, obligationId), {
+      method: "POST",
+      body: JSON.stringify(progressPayloadFromUI()),
+    });
+
+    setMsg("Progress recorded.");
+    return out;
+  }
+
+  async function previewRun() {
+    const cid = state.cid;
+    if (!cid) throw new Error("Missing company id");
+
+    const out = await apiFetch(ENDPOINTS.revenue.previewRun(cid), {
+      method: "POST",
+      body: JSON.stringify(runPayloadFromUI()),
+    });
+
+    const data = out?.data || out;
+    state.preview = data;
+    renderRunPreview(data);
+    setRunMsg("Preview loaded.");
+    return data;
+  }
+
+  async function createRun() {
+    const cid = state.cid;
+    if (!cid) throw new Error("Missing company id");
+
+    const out = await apiFetch(ENDPOINTS.revenue.runs(cid), {
+      method: "POST",
+      body: JSON.stringify(runPayloadFromUI()),
+    });
+
+    const run = out?.data?.run || out?.run || out?.data || out;
+    if (run?.id) $("revRunId").value = String(run.id);
+
+    if (out?.data?.preview || out?.preview) {
+      renderRunPreview(out.data?.preview || out.preview);
+    }
+
+    await loadRuns();
+    setRunMsg("Run created.");
+    return out;
+  }
+
+  async function postRun() {
+    const cid = state.cid;
+    const runId = Number($("revRunId")?.value || 0) || null;
+    if (!cid || !runId) throw new Error("Select or create a run first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.postRun(cid, runId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    if (out?.error === "APPROVAL_REQUIRED" || out?.approval_request) {
+      setRunMsg("Approval requested.");
+      return out;
+    }
+
+    setRunMsg("Run posted.");
+    await loadRuns();
+    await loadContracts();
+    return out;
+  }
+
+  async function reverseRun() {
+    const cid = state.cid;
+    const runId = Number($("revRunId")?.value || 0) || null;
+    if (!cid || !runId) throw new Error("Select a run first");
+
+    const out = await apiFetch(ENDPOINTS.revenue.reverseRun(cid, runId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    if (out?.error === "APPROVAL_REQUIRED" || out?.approval_request) {
+      setRunMsg("Approval requested.");
+      return out;
+    }
+
+    setRunMsg("Run reversed.");
+    await loadRuns();
+    await loadContracts();
+    return out;
+  }
+
+  async function openRevenueFromApprovalHandoff() {
+    const requestId = Number(store?.get?.("fs_revenue_approval_request_id") || 0) || null;
+    const contractId = Number(store?.get?.("fs_revenue_contract_id") || 0) || null;
+    const runId = Number(store?.get?.("fs_revenue_run_id") || 0) || null;
+
+    if (!requestId && !contractId && !runId) return;
+
+    if (requestId) $("revApprovalRequestId").value = String(requestId);
+    if (runId) $("revRunId").value = String(runId);
+
+    await loadContracts();
+    await loadRuns();
+
+    if (contractId) {
+      const row = (state.contracts || []).find((x) => Number(x.id) === contractId);
+      if (row) {
+        hydrateContractForm(row);
+        await loadContractVersions(contractId);
+        await loadObligations(contractId);
+      }
+    }
+
+    if (runId) {
+      setActiveTab("runs");
+      setRunMsg(`Approval handoff loaded for run ${runId}.`);
+    }
+
+    store?.set?.("fs_revenue_approval_request_id", "");
+    store?.set?.("fs_revenue_contract_id", "");
+    store?.set?.("fs_revenue_run_id", "");
+  }
+
+  function bindRevenueScreenEvents() {
+    document.querySelectorAll("[data-rev-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => setActiveTab(btn.dataset.revTab));
+    });
+
+    $("revBtnReload")?.addEventListener("click", async () => {
+      await loadContracts();
+      await loadRuns();
+    });
+
+    $("revSearch")?.addEventListener("input", renderContractList);
+    $("revStatusFilter")?.addEventListener("change", renderContractList);
+
+    $("revBtnNewContract")?.addEventListener("click", () => {
+      hydrateContractForm({});
+      setActiveTab("contracts");
+    });
+
+    $("revSaveContract")?.addEventListener("click", async () => {
+      try { await saveContract(); } catch (e) { setMsg(e?.message || "Save failed", "error"); }
+    });
+
+    $("revUpdateContract")?.addEventListener("click", async () => {
+      try { await updateContract(); } catch (e) { setMsg(e?.message || "Update failed", "error"); }
+    });
+
+    $("revCreateVersion")?.addEventListener("click", async () => {
+      try { await createVersion(); } catch (e) { setMsg(e?.message || "Create version failed", "error"); }
+    });
+
+    $("revAddObligation")?.addEventListener("click", () => {
+      hydrateObligationForm({});
+      setActiveTab("obligations");
+    });
+
+    $("revSaveObligation")?.addEventListener("click", async () => {
+      try { await saveObligation(); } catch (e) { setMsg(e?.message || "Save obligation failed", "error"); }
+    });
+
+    $("revUpdateObligation")?.addEventListener("click", async () => {
+      try { await updateObligation(); } catch (e) { setMsg(e?.message || "Update obligation failed", "error"); }
+    });
+
+    $("revSaveBilling")?.addEventListener("click", async () => {
+      try { await recordBilling(); } catch (e) { setMsg(e?.message || "Billing failed", "error"); }
+    });
+
+    $("revSaveCash")?.addEventListener("click", async () => {
+      try { await recordCash(); } catch (e) { setMsg(e?.message || "Cash receipt failed", "error"); }
+    });
+
+    $("revSaveProgress")?.addEventListener("click", async () => {
+      try { await recordProgress(); } catch (e) { setMsg(e?.message || "Progress update failed", "error"); }
+    });
+
+    $("revBtnPreviewRun")?.addEventListener("click", async () => {
+      try {
+        setActiveTab("runs");
+        await previewRun();
+      } catch (e) {
+        setRunMsg(e?.message || "Preview failed", "error");
+      }
+    });
+
+    $("revBtnCreateRun")?.addEventListener("click", async () => {
+      try {
+        setActiveTab("runs");
+        await createRun();
+      } catch (e) {
+        setRunMsg(e?.message || "Create run failed", "error");
+      }
+    });
+
+    $("revRunPreviewBtn")?.addEventListener("click", async () => {
+      try { await previewRun(); } catch (e) { setRunMsg(e?.message || "Preview failed", "error"); }
+    });
+
+    $("revRunCreateBtn")?.addEventListener("click", async () => {
+      try { await createRun(); } catch (e) { setRunMsg(e?.message || "Create run failed", "error"); }
+    });
+
+    $("revRunPostBtn")?.addEventListener("click", async () => {
+      try { await postRun(); } catch (e) { setRunMsg(e?.message || "Post failed", "error"); }
+    });
+
+    $("revRunReverseBtn")?.addEventListener("click", async () => {
+      try { await reverseRun(); } catch (e) { setRunMsg(e?.message || "Reverse failed", "error"); }
+    });
+  }
+
+  let bound = false;
+
+  window.bindRevenueScreen = async function bindRevenueScreen(name = "revenue") {
+    state.cid = activeCid();
+    if (!state.cid) {
+      setMsg("Missing company id", "error");
+      return;
+    }
+
+    if (!bound) {
+      bindRevenueScreenEvents();
+      bound = true;
+    }
+
+    const { period_start, period_end } = monthBoundsISO();
+    if ($("revPeriodStart") && !$("revPeriodStart").value) $("revPeriodStart").value = period_start;
+    if ($("revPeriodEnd") && !$("revPeriodEnd").value) $("revPeriodEnd").value = period_end;
+    if ($("revRunStart") && !$("revRunStart").value) $("revRunStart").value = period_start;
+    if ($("revRunEnd") && !$("revRunEnd").value) $("revRunEnd").value = period_end;
+    if ($("revProgressPeriodEnd") && !$("revProgressPeriodEnd").value) $("revProgressPeriodEnd").value = period_end;
+    if ($("revContractDate") && !$("revContractDate").value) $("revContractDate").value = period_start;
+    if ($("revBillingDate") && !$("revBillingDate").value) $("revBillingDate").value = period_end;
+    if ($("revCashDate") && !$("revCashDate").value) $("revCashDate").value = period_end;
+
+    setActiveTab("contracts");
+    await loadContracts();
+    await loadRuns();
+    await openRevenueFromApprovalHandoff();
+  };
+
+  window.openRevenueRunForApproval = async function openRevenueRunForApproval(runId, requestId = null) {
+    if (requestId) store?.set?.("fs_revenue_approval_request_id", requestId);
+    if (runId) store?.set?.("fs_revenue_run_id", runId);
+    await window.bindRevenueScreen?.("revenue");
+    setActiveTab("runs");
+  };
+
+  window.openRevenueContractForApproval = async function openRevenueContractForApproval(contractId, requestId = null) {
+    if (requestId) store?.set?.("fs_revenue_approval_request_id", requestId);
+    if (contractId) store?.set?.("fs_revenue_contract_id", contractId);
+    await window.bindRevenueScreen?.("revenue");
+    setActiveTab("contracts");
+  };
+})();
+
+(function () {
+  const $ = (id) => document.getElementById(id);
+
+  function setSetupTab(tab) {
+    const panes = {
+      "contract-rules": $("revSetupPaneContractRules"),
+      "obligation-rules": $("revSetupPaneObligationRules"),
+      "transaction-price": $("revSetupPaneTransactionPrice"),
+      "allocation": $("revSetupPaneAllocation"),
+    };
+
+    Object.entries(panes).forEach(([k, el]) => {
+      if (!el) return;
+      if (k === tab) el.classList.remove("hidden");
+      else el.classList.add("hidden");
+    });
+
+    document.querySelectorAll("[data-revsetup-tab]").forEach((btn) => {
+      btn.classList.toggle("bg-[var(--fs-navy)]", btn.dataset.revsetupTab === tab);
+      btn.classList.toggle("text-white", btn.dataset.revsetupTab === tab);
+    });
+  }
+
+  function getSetupPayload() {
+    return {
+      revenue_setup: {
+        contract_rules: {
+          collectability_required: !!$("revSetupCollectabilityRequired")?.checked,
+          rights_required: !!$("revSetupRightsRequired")?.checked,
+          payment_terms_required: !!$("revSetupTermsRequired")?.checked,
+          commercial_substance_required: !!$("revSetupSubstanceRequired")?.checked,
+        },
+        obligation_rules: {
+          distinct_by_default: !!$("revSetupDistinctByDefault")?.checked,
+          bundle_non_distinct: !!$("revSetupBundleNonDistinct")?.checked,
+        },
+        transaction_price: {
+          constrain_variable_by_default: !!$("revSetupConstrainVariable")?.checked,
+          financing_adjustment_enabled: !!$("revSetupFinancingAdjust")?.checked,
+        },
+        allocation: {
+          relative_ssp_default: !!$("revSetupAllocateBySSP")?.checked,
+          allow_specific_variable_allocation: !!$("revSetupAllowSpecificVariableAlloc")?.checked,
+        },
+      },
+    };
+  }
+
+  function setMsg(msg = "", type = "info") {
+    const el = $("revSetupMsg");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.className = type === "error" ? "text-sm text-rose-600 mt-2" : "text-sm text-slate-500 mt-2";
+  }
+
+  let bound = false;
+
+  window.bindRevenueSetupScreen = async function bindRevenueSetupScreen() {
+    if (!bound) {
+      document.querySelectorAll("[data-revsetup-tab]").forEach((btn) => {
+        btn.addEventListener("click", () => setSetupTab(btn.dataset.revsetupTab));
+      });
+
+      $("revSetupSaveBtn")?.addEventListener("click", async () => {
+        try {
+          const cid = FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
+          if (!cid) throw new Error("Missing company id");
+
+          const currentCp = (window.CURRENT_COMPANY?.credit_policy && typeof window.CURRENT_COMPANY.credit_policy === "object")
+            ? window.CURRENT_COMPANY.credit_policy
+            : {};
+
+          const nextCp = { ...currentCp, ...getSetupPayload() };
+
+          await FS.policy.setCompanyPolicy(cid, nextCp);
+          await ensureCompanyDataLoaded?.();
+          FS.control.syncFromCompany?.(window.CURRENT_COMPANY);
+
+          setMsg("Revenue setup saved.");
+        } catch (e) {
+          setMsg(e?.message || "Failed to save revenue setup", "error");
+        }
+      });
+
+      bound = true;
+    }
+
+    setSetupTab("contract-rules");
+  };
+})();
+
 // IAS 16 PPE acquisition
 async function postPpeAcquisitionJournal(ppe) {
   // ppe: { date, ref, assetAccount, cost, supplierAccount, vatEnabled, vatMode, vatRate }
@@ -44719,6 +45744,7 @@ async function renderApprovalsScreen(meta = {}) {
             <option value="ppe">PPE</option>
             <option value="control_room">Control Room</option>
             <option value="loans">Loans</option>
+            <option value="revenue">Revenue</option>
           </select>
         <button id="apprReload" class="px-3 py-1.5 text-xs rounded border">Reload</button>
       </div>
@@ -44885,6 +45911,16 @@ async function renderApprovalsScreen(meta = {}) {
       act === "post_loan_settlement" &&
       et === "loan";
       
+    const isRevenueRunApproval =
+      mod === "revenue" &&
+      ["post_recognition_run", "reverse_recognition_run"].includes(act) &&
+      et === "revenue_run";
+
+    const isRevenueContractApproval =
+      mod === "revenue" &&
+      ["create_contract", "approve_modification", "modify_contract"].includes(act) &&
+      et === "revenue_contract";
+
       // ✅ decide which primary action button to show
       let actionBtn = `<button class="apprDecideBtn px-3 py-1.5 text-xs rounded border" data-id="${esc(rid)}">Decide</button>`;
 
@@ -44994,6 +46030,18 @@ async function renderApprovalsScreen(meta = {}) {
             data-loan-id="${esc(String(r.entity_id || ""))}"
             data-action="${esc(String(r.action || ""))}"
             data-ref="${esc(String(r.entity_ref || ""))}"
+          >Review</button>
+        `;
+      }
+
+      else if (isRevenueRunApproval || isRevenueContractApproval) {
+        const pj = r.payload_json || {};
+        actionBtn = `
+          <button class="apprOpenRevenue px-3 py-1.5 text-xs rounded bg-[var(--fs-navy)] text-white"
+            data-id="${esc(rid)}"
+            data-run-id="${esc(String(pj.run_id || r.entity_id || ""))}"
+            data-contract-id="${esc(String(pj.contract_id || (et === "revenue_contract" ? r.entity_id : "")))}"
+            data-action="${esc(String(r.action || ""))}"
           >Review</button>
         `;
       }
@@ -45311,6 +46359,30 @@ async function renderApprovalsScreen(meta = {}) {
           }
         } else {
           window.setLoanTab?.("loan-journal");
+        }
+      });
+    });
+
+    listEl.querySelectorAll(".apprOpenRevenue").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const requestId = Number(btn.dataset.id || 0) || null;
+        const runId = Number(btn.dataset.runId || 0) || null;
+        const contractId = Number(btn.dataset.contractId || 0) || null;
+
+        if (requestId) store?.set?.("fs_revenue_approval_request_id", requestId);
+        if (runId) store?.set?.("fs_revenue_run_id", runId);
+        if (contractId) store?.set?.("fs_revenue_contract_id", contractId);
+
+        await switchScreen?.("revenue");
+
+        try {
+          if (runId) {
+            await window.openRevenueRunForApproval?.(runId, requestId);
+          } else if (contractId) {
+            await window.openRevenueContractForApproval?.(contractId, requestId);
+          }
+        } catch (e) {
+          console.error("[Approval] Failed to open revenue review", e);
         }
       });
     });

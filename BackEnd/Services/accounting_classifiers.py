@@ -953,7 +953,13 @@ def _coa_role_from_text(
     # ----------------------------
     is_expense = ("expense" in sec) or ("depreciation" in text) or ("amort" in text)
     is_asset = ("asset" in sec) or ("accum" in text) or ("contra" in text)
-    is_liability = "liability" in sec or "liab" in sec or "liability" in cat or "liab" in cat
+    is_liability = (
+        "liability" in sec
+        or "liab" in sec
+        or "liability" in cat
+        or "liab" in cat
+        or "payable" in text
+    )
 
     is_rou = any(k in text for k in (
         "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
@@ -968,14 +974,36 @@ def _coa_role_from_text(
     ))
 
     # ----------------------------
+    # IFRS 15 / contract liability
+    # ----------------------------
+    if has_any(
+        "deferred revenue",
+        "deferred income",
+        "contract liability",
+        "unearned revenue",
+        "customer advances",
+        "advance from customer",
+        "mobilisation advance",
+        "mobilization advance",
+        "revenue received but not yet earned",
+        "income received in advance",
+        "progress payment received in advance",
+    ):
+        return "contract_liability"
+
+    # ----------------------------
     # loan / borrowing roles
     # ----------------------------
     if is_liability:
         if has_any("loan payable - current", "current portion of loan", "current loan payable"):
             return "loan_payable_current"
 
-        if has_any("loan payable - non-current", "loan payable - non current",
-                   "non-current loan payable", "non current loan payable"):
+        if has_any(
+            "loan payable - non-current",
+            "loan payable - non current",
+            "non-current loan payable",
+            "non current loan payable",
+        ):
             return "loan_payable_noncurrent"
 
         if has_any("accrued interest", "interest payable"):
@@ -986,7 +1014,6 @@ def _coa_role_from_text(
             return "lease_interest_expense"
 
         if has_any("interest expense", "finance cost", "borrowing cost"):
-            # keep lease interest separate above
             if not has_any("lease interest"):
                 return "loan_interest_expense"
 
@@ -994,8 +1021,13 @@ def _coa_role_from_text(
             return "loan_fees_expense"
 
     if is_asset:
-        if has_any("deferred loan cost", "deferred finance cost", "loan transaction cost",
-                   "debt issue cost", "borrowing cost asset"):
+        if has_any(
+            "deferred loan cost",
+            "deferred finance cost",
+            "loan transaction cost",
+            "debt issue cost",
+            "borrowing cost asset",
+        ):
             return "loan_fees_asset"
 
     # ----------------------------
@@ -1012,18 +1044,15 @@ def _coa_role_from_text(
     # Expense side
     # ----------------------------
     if is_expense:
-        # ROU expense roles
         if ("depreciation" in text or "depr" in text) and is_rou:
             return "depreciation_expense_rou"
 
         if ("amort" in text) and is_rou:
             return "amortisation_expense_rou"
 
-        # Intangibles
         if "amort" in text and is_intangible:
             return "amortisation_expense"
 
-        # PPE depreciation expense roles
         if "depreciation" in text or "depr" in text:
             if is_buildings:
                 return "depreciation_expense_buildings"
