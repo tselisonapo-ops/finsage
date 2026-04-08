@@ -1148,14 +1148,20 @@ class DatabaseService:
                 return None
 
             row = _cur.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            if isinstance(row, dict):
+                return row
+
+            cols = [d[0] for d in _cur.description]
+            return {cols[i]: row[i] for i in range(min(len(cols), len(row)))}
 
         if cur is not None:
             return _run(cur)
 
         with self._conn_cursor() as (_c, _cur):
             return _run(_cur)
-
+    
     def fetch_all(
         self,
         sql: str,
@@ -31110,7 +31116,7 @@ class DatabaseService:
             "allocation_method": payment.get("allocation_method"),
             "notes": payment.get("notes"),
         }
-        
+
         preview_entry = self.preview_loan_payment_journal(conn, company_id, data=preview_data)
         preview_entry["source"] = "loan_payment"
         preview_entry["source_id"] = payment_id
