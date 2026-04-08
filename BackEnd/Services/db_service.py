@@ -30527,11 +30527,15 @@ class DatabaseService:
                 (data.get("notes") or "").strip() or None,
                 Json(data.get("meta_json") or {}),
             ))
-            payment_id = cur.fetchone()["id"]
+
+            row = cur.fetchone()
+            payment_id = row[0] if row else None
+            if not payment_id:
+                raise ValueError("Failed to create loan payment")
 
             if bool(data.get("auto_calculate_split", True)):
                 self._allocate_loan_payment(cur, company_id, payment_id=payment_id)
-
+                
         conn.commit()
         return self.get_loan_payment_full(conn, company_id, payment_id)
 
