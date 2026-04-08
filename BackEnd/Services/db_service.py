@@ -29722,16 +29722,21 @@ class DatabaseService:
                 if method == "interest_only":
                     principal_component = Decimal("0.00")
                     if i == periods:
-                        principal_component = opening - balloon
+                        principal_component = _money(opening - balloon)
                     payment = _money(interest + principal_component)
+
                 elif method == "straight_line_interest":
                     principal_component = _money((principal - balloon) / Decimal(periods))
                     if i == periods:
                         principal_component = _money(opening - balloon)
                     payment = _money(interest + principal_component)
+
                 elif method == "manual":
                     payment = _money(loan_row.get("payment_amount"))
                     principal_component = _money(max(Decimal("0.00"), payment - interest))
+                    if principal_component > opening:
+                        principal_component = opening
+
                 else:
                     payment = payment_amount
                     principal_component = _money(max(Decimal("0.00"), payment - interest))
@@ -29742,24 +29747,43 @@ class DatabaseService:
                 closing = _money(opening - principal_component)
                 status = "open"
 
-            current_portion = closing if i <= 12 else Decimal("0.00")
-            noncurrent_portion = Decimal("0.00") if i <= 12 else closing
-
             rows.append({
                 "period_no": i,
                 "due_date": due,
                 "opening_balance": opening,
-                "scheduled_payment": payment,
-                "scheduled_interest": interest,
-                "scheduled_principal": principal_component,
-                "closing_balance": closing,
-                "current_portion_amount": _money(current_portion),
-                "noncurrent_portion_amount": _money(noncurrent_portion),
+                "scheduled_payment": _money(payment),
+                "scheduled_interest": _money(interest),
+                "scheduled_principal": _money(principal_component),
+                "closing_balance": _money(closing),
+                "current_portion_amount": Decimal("0.00"),      # fill later
+                "noncurrent_portion_amount": Decimal("0.00"),   # fill later
                 "payment_status": status,
             })
 
             opening = closing
             due = due + delta
+
+        # classify principal due within next 12 months, frequency-aware
+        periods_within_12_months = max(1, int(per_year)) if per_year else 12
+
+        total_remaining_principal = principal
+        for idx, row in enumerate(rows):
+            current_due = _money(sum(
+                _money(r.get("scheduled_principal"))
+                for r in rows[idx: idx + periods_within_12_months]
+            ))
+
+            if current_due > total_remaining_principal:
+                current_due = _money(total_remaining_principal)
+
+            noncurrent_due = _money(total_remaining_principal - current_due)
+            if noncurrent_due < 0:
+                noncurrent_due = Decimal("0.00")
+
+            row["current_portion_amount"] = _money(current_due)
+            row["noncurrent_portion_amount"] = _money(noncurrent_due)
+
+            total_remaining_principal = _money(row["closing_balance"])
 
         return rows
 
