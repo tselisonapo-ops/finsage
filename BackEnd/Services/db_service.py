@@ -31109,24 +31109,42 @@ class DatabaseService:
         strict: bool = False,
     ) -> dict:
 
-        method = (loan_row.get("interest_method") or "manual").lower().strip()
+        method_raw = (loan_row.get("interest_method") or "manual")
+        method = str(method_raw).strip().lower()
+
+        # normalize common storage/display variants
+        method_key = (
+            method
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+
+        aliases = {
+            "amortised_fixed_payment": "amortised_fixed_payment",
+            "amortized_fixed_payment": "amortised_fixed_payment",
+            "straight_line_interest": "straight_line_interest",
+            "interest_only": "interest_only",
+            "manual": "manual",
+        }
+
+        method_key = aliases.get(method_key, method_key)
 
         if not payment_row.get("auto_calculate_split", True):
             return self._calc_manual_payment_breakdown(payment_row)
 
-        if method == "amortised fixed payment":
+        if method_key == "amortised_fixed_payment":
             return self._calc_amortised_from_schedule(conn, company_id, loan_row, payment_row)
 
-        if method == "straight-line interest":
+        if method_key == "straight_line_interest":
             return self._calc_straight_line(conn, company_id, loan_row, payment_row)
 
-        if method == "interest only":
+        if method_key == "interest_only":
             return self._calc_interest_only(conn, company_id, loan_row, payment_row)
 
-        if method == "manual":
+        if method_key == "manual":
             return self._calc_manual_payment_breakdown(payment_row)
 
-        raise ValueError(f"Unsupported interest method: {method}")
+        raise ValueError(f"Unsupported interest method: {method_raw}")
 
     def _calc_amortised_from_schedule(self, conn, company_id, loan_row, payment_row):
         schema = self.company_schema(company_id)
