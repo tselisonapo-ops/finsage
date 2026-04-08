@@ -55716,6 +55716,49 @@ class DatabaseService:
         sql = f"SELECT * FROM {schema}.revenue_contracts WHERE id=%s LIMIT 1;"
         return self.fetch_one(sql, (int(contract_id),), cur=cur)
 
+    def list_revenue_contracts(self, company_id: int, limit: int = 100, q: str | None = None, status: str | None = None):
+        schema = self.company_schema(company_id)
+        where = ["company_id = %s"]
+        params = [int(company_id)]
+
+        if q:
+            where.append("(contract_number ILIKE %s OR contract_title ILIKE %s)")
+            like = f"%{q.strip()}%"
+            params += [like, like]
+
+        if status:
+            where.append("status = %s")
+            params.append(status)
+
+        sql = f"""
+            SELECT *
+            FROM {schema}.revenue_contracts
+            WHERE {" AND ".join(where)}
+            ORDER BY created_at DESC, id DESC
+            LIMIT %s
+        """
+        params.append(int(limit))
+        return self.fetch_all(sql, tuple(params)) or []
+
+    def list_revenue_recognition_runs(self, company_id: int, limit: int = 50, contract_id: int | None = None):
+        schema = self.company_schema(company_id)
+        where = ["1=1"]
+        params = []
+
+        if contract_id:
+            where.append("contract_id = %s")
+            params.append(int(contract_id))
+
+        sql = f"""
+            SELECT *
+            FROM {schema}.revenue_recognition_runs
+            WHERE {" AND ".join(where)}
+            ORDER BY id DESC
+            LIMIT %s
+        """
+        params.append(int(limit))
+        return self.fetch_all(sql, tuple(params)) or []
+
 
     def create_revenue_contract(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)

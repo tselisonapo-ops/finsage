@@ -205,6 +205,114 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
         current_app.logger.exception("add_revenue_obligation failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+@revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_revenue_contracts(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            limit = int(request.args.get("limit", 100) or 100)
+            q = (request.args.get("q") or "").strip()
+            status = (request.args.get("status") or "").strip()
+            items = db_service.list_revenue_contracts(
+                company_id=int(company_id),
+                limit=limit,
+                q=q or None,
+                status=status or None,
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("list_revenue_contracts failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
+    body = request.get_json(silent=True) or {}
+    try:
+        out = db_service.create_revenue_contract(company_id, body, user_id=user_id)
+        try:
+            db_service.audit_log(
+                company_id,
+                actor_user_id=user_id,
+                module="revenue",
+                action="create_revenue_contract",
+                severity="info",
+                entity_type="revenue_contract",
+                entity_id=str(out["id"]),
+                entity_ref=out.get("contract_number"),
+                before_json={},
+                after_json=out,
+                message=f"Created revenue contract {out.get('contract_number')}",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception("audit_log failed in api_revenue_contracts POST")
+        return jsonify({"ok": True, "data": out}), 201
+    except Exception as e:
+        current_app.logger.exception("create_revenue_contract failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@revenue_bp.route("/api/companies/<int:company_id>/revenue/runs", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_revenue_runs(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            limit = int(request.args.get("limit", 50) or 50)
+            contract_id = request.args.get("contract_id")
+            items = db_service.list_revenue_recognition_runs(
+                company_id=int(company_id),
+                limit=limit,
+                contract_id=int(contract_id) if contract_id else None,
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("list_revenue_recognition_runs failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    user_id = _jwt_user_id()
+    body = request.get_json(silent=True) or {}
+    try:
+        out = db_service.create_revenue_recognition_run(company_id, body, user_id=user_id)
+        try:
+            db_service.audit_log(
+                company_id,
+                actor_user_id=user_id,
+                module="revenue",
+                action="create_revenue_recognition_run",
+                severity="info",
+                entity_type="revenue_run",
+                entity_id=str((out.get("run") or {}).get("id")),
+                entity_ref=f"REV-RUN-{(out.get('run') or {}).get('id')}",
+                before_json={},
+                after_json=out,
+                message=f"Created revenue recognition run {(out.get('run') or {}).get('id')}",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception("audit_log failed in api_revenue_runs POST")
+        return jsonify({"ok": True, "data": out}), 201
+    except Exception as e:
+        current_app.logger.exception("create_revenue_recognition_run failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
 
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>", methods=["PATCH", "OPTIONS"])
 @require_auth
