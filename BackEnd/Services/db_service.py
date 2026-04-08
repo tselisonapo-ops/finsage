@@ -31110,7 +31110,11 @@ class DatabaseService:
             "allocation_method": payment.get("allocation_method"),
             "notes": payment.get("notes"),
         }
+        
         preview_entry = self.preview_loan_payment_journal(conn, company_id, data=preview_data)
+        preview_entry["source"] = "loan_payment"
+        preview_entry["source_id"] = payment_id
+        preview_entry["ref"] = payment.get("reference") or f"LOAN-PAY-{payment_id}"
 
         with conn.cursor() as cur:
             journal_id = self.post_journal(company_id, preview_entry, cur=cur)
