@@ -33617,23 +33617,144 @@ function bindAssetRecordsPickerModal({ cid }) {
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  function setSetupTab(tab) {
-    const panes = {
-      "contract-rules": $("revSetupPaneContractRules"),
-      "obligation-rules": $("revSetupPaneObligationRules"),
-      "transaction-price": $("revSetupPaneTransactionPrice"),
-      "allocation": $("revSetupPaneAllocation"),
-    };
+  const IDS = {
+    msg: "revSetupMsg",
+    saveBtn: "revSetupSaveBtn",
+    resetBtn: "revSetupResetBtn",
+    reloadBtn: "revSetupReloadBtn",
 
-    Object.entries(panes).forEach(([k, el]) => {
+    panes: {
+      "contract-rules": "revSetupPaneContractRules",
+      "obligation-rules": "revSetupPaneObligationRules",
+      "transaction-price": "revSetupPaneTransactionPrice",
+      "allocation": "revSetupPaneAllocation",
+    },
+
+    fields: {
+      // Step 1
+      collectability_required: "revSetupCollectabilityRequired",
+      rights_required: "revSetupRightsRequired",
+      payment_terms_required: "revSetupTermsRequired",
+      commercial_substance_required: "revSetupSubstanceRequired",
+
+      // Step 2
+      distinct_by_default: "revSetupDistinctByDefault",
+      bundle_non_distinct: "revSetupBundleNonDistinct",
+      default_recognition_timing: "revSetupDefaultRecognitionTiming",
+      default_progress_method: "revSetupDefaultProgressMethod",
+      require_explicit_distinct_assessment: "revSetupRequireDistinctAssessment",
+
+      // Step 3
+      constrain_variable_by_default: "revSetupConstrainVariable",
+      financing_adjustment_enabled: "revSetupFinancingAdjust",
+      include_approved_variations_only: "revSetupApprovedVariationsOnly",
+      allow_negative_variable_consideration: "revSetupAllowNegativeVariable",
+
+      // Step 4
+      relative_ssp_default: "revSetupAllocateBySSP",
+      allow_specific_variable_allocation: "revSetupAllowSpecificVariableAlloc",
+      require_allocation_before_activation: "revSetupRequireAllocationBeforeActivation",
+    },
+  };
+
+  function defaultSetup() {
+    return {
+      revenue_setup: {
+        contract_rules: {
+          collectability_required: true,
+          rights_required: true,
+          payment_terms_required: true,
+          commercial_substance_required: true,
+        },
+        obligation_rules: {
+          distinct_by_default: true,
+          bundle_non_distinct: true,
+          default_recognition_timing: "over_time",
+          default_progress_method: "cost_to_cost",
+          require_explicit_distinct_assessment: false,
+        },
+        transaction_price: {
+          constrain_variable_by_default: true,
+          financing_adjustment_enabled: false,
+          include_approved_variations_only: true,
+          allow_negative_variable_consideration: true,
+        },
+        allocation: {
+          relative_ssp_default: true,
+          allow_specific_variable_allocation: true,
+          require_allocation_before_activation: true,
+        },
+      },
+    };
+  }
+
+  function deepMerge(base, patch) {
+    const out = Array.isArray(base) ? [...base] : { ...(base || {}) };
+    Object.entries(patch || {}).forEach(([k, v]) => {
+      if (
+        v &&
+        typeof v === "object" &&
+        !Array.isArray(v) &&
+        base &&
+        typeof base[k] === "object" &&
+        !Array.isArray(base[k])
+      ) {
+        out[k] = deepMerge(base[k], v);
+      } else {
+        out[k] = v;
+      }
+    });
+    return out;
+  }
+
+  function safeEl(id) {
+    return id ? $(id) : null;
+  }
+
+  function boolVal(id, fallback = false) {
+    const el = safeEl(id);
+    return el ? !!el.checked : !!fallback;
+  }
+
+  function textVal(id, fallback = "") {
+    const el = safeEl(id);
+    return el ? String(el.value ?? fallback) : String(fallback);
+  }
+
+  function setChecked(id, value) {
+    const el = safeEl(id);
+    if (el) el.checked = !!value;
+  }
+
+  function setValue(id, value) {
+    const el = safeEl(id);
+    if (el) el.value = value ?? "";
+  }
+
+  function setMsg(msg = "", type = "info") {
+    const el = safeEl(IDS.msg);
+    if (!el) return;
+    el.textContent = msg || "";
+    el.className =
+      type === "error"
+        ? "text-sm text-rose-600 mt-2"
+        : type === "success"
+        ? "text-sm text-emerald-600 mt-2"
+        : "text-sm text-slate-500 mt-2";
+  }
+
+  function setSetupTab(tab) {
+    Object.entries(IDS.panes).forEach(([key, paneId]) => {
+      const el = safeEl(paneId);
       if (!el) return;
-      if (k === tab) el.classList.remove("hidden");
+      if (key === tab) el.classList.remove("hidden");
       else el.classList.add("hidden");
     });
 
     document.querySelectorAll("[data-revsetup-tab]").forEach((btn) => {
-      btn.classList.toggle("bg-[var(--fs-navy)]", btn.dataset.revsetupTab === tab);
-      btn.classList.toggle("text-white", btn.dataset.revsetupTab === tab);
+      const active = btn.dataset.revsetupTab === tab;
+      btn.classList.toggle("bg-[var(--fs-navy)]", active);
+      btn.classList.toggle("text-white", active);
     });
   }
 
@@ -33641,67 +33762,193 @@ function bindAssetRecordsPickerModal({ cid }) {
     return {
       revenue_setup: {
         contract_rules: {
-          collectability_required: !!$("revSetupCollectabilityRequired")?.checked,
-          rights_required: !!$("revSetupRightsRequired")?.checked,
-          payment_terms_required: !!$("revSetupTermsRequired")?.checked,
-          commercial_substance_required: !!$("revSetupSubstanceRequired")?.checked,
+          collectability_required: boolVal(IDS.fields.collectability_required, true),
+          rights_required: boolVal(IDS.fields.rights_required, true),
+          payment_terms_required: boolVal(IDS.fields.payment_terms_required, true),
+          commercial_substance_required: boolVal(IDS.fields.commercial_substance_required, true),
         },
         obligation_rules: {
-          distinct_by_default: !!$("revSetupDistinctByDefault")?.checked,
-          bundle_non_distinct: !!$("revSetupBundleNonDistinct")?.checked,
+          distinct_by_default: boolVal(IDS.fields.distinct_by_default, true),
+          bundle_non_distinct: boolVal(IDS.fields.bundle_non_distinct, true),
+          default_recognition_timing: textVal(IDS.fields.default_recognition_timing, "over_time"),
+          default_progress_method: textVal(IDS.fields.default_progress_method, "cost_to_cost"),
+          require_explicit_distinct_assessment: boolVal(IDS.fields.require_explicit_distinct_assessment, false),
         },
         transaction_price: {
-          constrain_variable_by_default: !!$("revSetupConstrainVariable")?.checked,
-          financing_adjustment_enabled: !!$("revSetupFinancingAdjust")?.checked,
+          constrain_variable_by_default: boolVal(IDS.fields.constrain_variable_by_default, true),
+          financing_adjustment_enabled: boolVal(IDS.fields.financing_adjustment_enabled, false),
+          include_approved_variations_only: boolVal(IDS.fields.include_approved_variations_only, true),
+          allow_negative_variable_consideration: boolVal(IDS.fields.allow_negative_variable_consideration, true),
         },
         allocation: {
-          relative_ssp_default: !!$("revSetupAllocateBySSP")?.checked,
-          allow_specific_variable_allocation: !!$("revSetupAllowSpecificVariableAlloc")?.checked,
+          relative_ssp_default: boolVal(IDS.fields.relative_ssp_default, true),
+          allow_specific_variable_allocation: boolVal(IDS.fields.allow_specific_variable_allocation, true),
+          require_allocation_before_activation: boolVal(IDS.fields.require_allocation_before_activation, true),
         },
       },
     };
   }
 
-  function setMsg(msg = "", type = "info") {
-    const el = $("revSetupMsg");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.className = type === "error" ? "text-sm text-rose-600 mt-2" : "text-sm text-slate-500 mt-2";
+  function hydrateSetupForm(policyLike = {}) {
+    const merged = deepMerge(defaultSetup(), {
+      revenue_setup: policyLike?.revenue_setup || {},
+    });
+
+    const rs = merged.revenue_setup || {};
+
+    setChecked(IDS.fields.collectability_required, rs.contract_rules?.collectability_required);
+    setChecked(IDS.fields.rights_required, rs.contract_rules?.rights_required);
+    setChecked(IDS.fields.payment_terms_required, rs.contract_rules?.payment_terms_required);
+    setChecked(IDS.fields.commercial_substance_required, rs.contract_rules?.commercial_substance_required);
+
+    setChecked(IDS.fields.distinct_by_default, rs.obligation_rules?.distinct_by_default);
+    setChecked(IDS.fields.bundle_non_distinct, rs.obligation_rules?.bundle_non_distinct);
+    setValue(IDS.fields.default_recognition_timing, rs.obligation_rules?.default_recognition_timing || "over_time");
+    setValue(IDS.fields.default_progress_method, rs.obligation_rules?.default_progress_method || "cost_to_cost");
+    setChecked(
+      IDS.fields.require_explicit_distinct_assessment,
+      rs.obligation_rules?.require_explicit_distinct_assessment
+    );
+
+    setChecked(
+      IDS.fields.constrain_variable_by_default,
+      rs.transaction_price?.constrain_variable_by_default
+    );
+    setChecked(
+      IDS.fields.financing_adjustment_enabled,
+      rs.transaction_price?.financing_adjustment_enabled
+    );
+    setChecked(
+      IDS.fields.include_approved_variations_only,
+      rs.transaction_price?.include_approved_variations_only
+    );
+    setChecked(
+      IDS.fields.allow_negative_variable_consideration,
+      rs.transaction_price?.allow_negative_variable_consideration
+    );
+
+    setChecked(IDS.fields.relative_ssp_default, rs.allocation?.relative_ssp_default);
+    setChecked(
+      IDS.fields.allow_specific_variable_allocation,
+      rs.allocation?.allow_specific_variable_allocation
+    );
+    setChecked(
+      IDS.fields.require_allocation_before_activation,
+      rs.allocation?.require_allocation_before_activation
+    );
+  }
+
+  function currentCompanyCreditPolicy() {
+    const cp = window.CURRENT_COMPANY?.credit_policy;
+    return cp && typeof cp === "object" ? cp : {};
+  }
+
+  async function reloadCompanyAndHydrate() {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      }
+    } catch (_) {}
+
+    if (window.FS?.control?.syncFromCompany) {
+      FS.control.syncFromCompany(window.CURRENT_COMPANY || CURRENT_COMPANY);
+    }
+
+    hydrateSetupForm(currentCompanyCreditPolicy());
+  }
+
+  async function saveRevenueSetup() {
+    const cid = FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
+    if (!cid) throw new Error("Missing company id");
+
+    const currentCp = currentCompanyCreditPolicy();
+    const payload = getSetupPayload();
+
+    const nextCp = {
+      ...currentCp,
+      revenue_setup: payload.revenue_setup,
+    };
+
+    await FS.policy.setCompanyPolicy(cid, nextCp);
+    await reloadCompanyAndHydrate();
+  }
+
+  function resetToDefaults() {
+    hydrateSetupForm(defaultSetup());
+    setMsg("Defaults restored on screen. Save to persist.");
+  }
+
+  function bindTabsOnce() {
+    document.querySelectorAll("[data-revsetup-tab]").forEach((btn) => {
+      if (btn.dataset.boundRevsetupTab === "1") return;
+      btn.dataset.boundRevsetupTab = "1";
+      btn.addEventListener("click", () => {
+        setSetupTab(btn.dataset.revsetupTab);
+      });
+    });
+  }
+
+  function bindButtonsOnce() {
+    const saveBtn = safeEl(IDS.saveBtn);
+    if (saveBtn && saveBtn.dataset.boundRevsetupSave !== "1") {
+      saveBtn.dataset.boundRevsetupSave = "1";
+      saveBtn.addEventListener("click", async () => {
+        try {
+          setMsg("Saving...");
+          saveBtn.disabled = true;
+          await saveRevenueSetup();
+          setMsg("Revenue setup saved.", "success");
+        } catch (e) {
+          setMsg(e?.message || "Failed to save revenue setup", "error");
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+    }
+
+    const resetBtn = safeEl(IDS.resetBtn);
+    if (resetBtn && resetBtn.dataset.boundRevsetupReset !== "1") {
+      resetBtn.dataset.boundRevsetupReset = "1";
+      resetBtn.addEventListener("click", () => {
+        resetToDefaults();
+      });
+    }
+
+    const reloadBtn = safeEl(IDS.reloadBtn);
+    if (reloadBtn && reloadBtn.dataset.boundRevsetupReload !== "1") {
+      reloadBtn.dataset.boundRevsetupReload = "1";
+      reloadBtn.addEventListener("click", async () => {
+        try {
+          setMsg("Reloading...");
+          reloadBtn.disabled = true;
+          await reloadCompanyAndHydrate();
+          setMsg("Revenue setup reloaded.");
+        } catch (e) {
+          setMsg(e?.message || "Failed to reload revenue setup", "error");
+        } finally {
+          reloadBtn.disabled = false;
+        }
+      });
+    }
   }
 
   let bound = false;
 
   window.bindRevenueSetupScreen = async function bindRevenueSetupScreen() {
     if (!bound) {
-      document.querySelectorAll("[data-revsetup-tab]").forEach((btn) => {
-        btn.addEventListener("click", () => setSetupTab(btn.dataset.revsetupTab));
-      });
-
-      $("revSetupSaveBtn")?.addEventListener("click", async () => {
-        try {
-          const cid = FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
-          if (!cid) throw new Error("Missing company id");
-
-          const currentCp = (window.CURRENT_COMPANY?.credit_policy && typeof window.CURRENT_COMPANY.credit_policy === "object")
-            ? window.CURRENT_COMPANY.credit_policy
-            : {};
-
-          const nextCp = { ...currentCp, ...getSetupPayload() };
-
-          await FS.policy.setCompanyPolicy(cid, nextCp);
-          await ensureCompanyDataLoaded?.();
-          FS.control.syncFromCompany?.(window.CURRENT_COMPANY);
-
-          setMsg("Revenue setup saved.");
-        } catch (e) {
-          setMsg(e?.message || "Failed to save revenue setup", "error");
-        }
-      });
-
+      bindTabsOnce();
+      bindButtonsOnce();
       bound = true;
     }
 
     setSetupTab("contract-rules");
+    hydrateSetupForm(currentCompanyCreditPolicy());
+    setMsg("Revenue setup loaded.");
+  };
+
+  window.getRevenueSetupPolicy = function getRevenueSetupPolicy() {
+    const cp = currentCompanyCreditPolicy();
+    return deepMerge(defaultSetup(), { revenue_setup: cp?.revenue_setup || {} }).revenue_setup;
   };
 })();
 

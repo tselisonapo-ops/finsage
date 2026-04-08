@@ -3719,43 +3719,166 @@
                 IFRS 15 initial measurement, obligation design, transaction price, and allocation
               </div>
             </div>
+
+            <div class="flex items-center gap-2">
+              <button id="revSetupReloadBtn" class="btn" type="button">Reload</button>
+              <button id="revSetupResetBtn" class="btn" type="button">Reset Defaults</button>
+              <button id="revSetupSaveBtn" class="btn-highlight" type="button">Save Revenue Setup</button>
+            </div>
           </div>
 
-          <div class="grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)] gap-4">
+          <div class="grid grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)] gap-4">
             <aside class="card p-3 shadow-sage">
               <div class="text-sm font-semibold mb-2">IFRS 15 Setup</div>
+
               <div class="space-y-2">
-                <button class="btn w-full justify-start" type="button" data-revsetup-tab="contract-rules">Contract Rules</button>
-                <button class="btn w-full justify-start" type="button" data-revsetup-tab="obligation-rules">Performance Obligations</button>
-                <button class="btn w-full justify-start" type="button" data-revsetup-tab="transaction-price">Transaction Price</button>
-                <button class="btn w-full justify-start" type="button" data-revsetup-tab="allocation">Allocation</button>
+                <button class="btn w-full justify-start" type="button" data-revsetup-tab="contract-rules">
+                  Contract Rules
+                </button>
+                <button class="btn w-full justify-start" type="button" data-revsetup-tab="obligation-rules">
+                  Performance Obligations
+                </button>
+                <button class="btn w-full justify-start" type="button" data-revsetup-tab="transaction-price">
+                  Transaction Price
+                </button>
+                <button class="btn w-full justify-start" type="button" data-revsetup-tab="allocation">
+                  Allocation
+                </button>
               </div>
             </aside>
 
             <div class="space-y-4">
               <section id="revSetupPaneContractRules" class="card p-4 shadow-sage">
                 <div class="font-semibold mb-2">Step 1: Identify the Contract</div>
-                <div class="text-xs text-slate-500 mb-3">Control whether a contract qualifies for IFRS 15 scheduling.</div>
+                <div class="text-xs text-slate-500 mb-3">
+                  Control whether a contract qualifies for IFRS 15 scheduling.
+                </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <label class="flex items-center gap-2 text-sm">
                     <input id="revSetupCollectabilityRequired" type="checkbox" checked>
                     <span>Require probable collectability</span>
                   </label>
+
                   <label class="flex items-center gap-2 text-sm">
                     <input id="revSetupRightsRequired" type="checkbox" checked>
                     <span>Require identifiable rights</span>
                   </label>
+
                   <label class="flex items-center gap-2 text-sm">
                     <input id="revSetupTermsRequired" type="checkbox" checked>
                     <span>Require identifiable payment terms</span>
                   </label>
+
                   <label class="flex items-center gap-2 text-sm">
                     <input id="revSetupSubstanceRequired" type="checkbox" checked>
                     <span>Require commercial substance</span>
                   </label>
                 </div>
               </section>
+
+              <section id="revSetupPaneObligationRules" class="hidden card p-4 shadow-sage">
+                <div class="font-semibold mb-2">Step 2: Identify Performance Obligations</div>
+                <div class="text-xs text-slate-500 mb-3">
+                  Configure how promises are split, bundled, and measured.
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupDistinctByDefault" type="checkbox" checked>
+                    <span>Distinct by default</span>
+                  </label>
+
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupBundleNonDistinct" type="checkbox" checked>
+                    <span>Bundle non-distinct promises</span>
+                  </label>
+
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Default recognition timing</label>
+                    <select id="revSetupDefaultRecognitionTiming" class="w-full border rounded px-3 py-2 text-sm">
+                      <option value="over_time">Over time</option>
+                      <option value="point_in_time">Point in time</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-1">Default progress method</label>
+                    <select id="revSetupDefaultProgressMethod" class="w-full border rounded px-3 py-2 text-sm">
+                      <option value="cost_to_cost">Cost to cost</option>
+                      <option value="milestone">Milestone</option>
+                      <option value="units">Units</option>
+                      <option value="time_elapsed">Time elapsed</option>
+                      <option value="manual">Manual</option>
+                    </select>
+                  </div>
+
+                  <label class="flex items-center gap-2 text-sm md:col-span-2">
+                    <input id="revSetupRequireDistinctAssessment" type="checkbox">
+                    <span>Require explicit distinct assessment before activation</span>
+                  </label>
+                </div>
+              </section>
+
+              <section id="revSetupPaneTransactionPrice" class="hidden card p-4 shadow-sage">
+                <div class="font-semibold mb-2">Step 3: Determine Transaction Price</div>
+                <div class="text-xs text-slate-500 mb-3">
+                  Configure variable consideration, financing, and pricing adjustments.
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupConstrainVariable" type="checkbox" checked>
+                    <span>Constrain variable consideration by default</span>
+                  </label>
+
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupFinancingAdjust" type="checkbox">
+                    <span>Enable financing adjustment</span>
+                  </label>
+
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupApprovedVariationsOnly" type="checkbox" checked>
+                    <span>Include only approved variations by default</span>
+                  </label>
+
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupAllowNegativeVariable" type="checkbox" checked>
+                    <span>Allow negative variable consideration</span>
+                  </label>
+                </div>
+              </section>
+
+              <section id="revSetupPaneAllocation" class="hidden card p-4 shadow-sage">
+                <div class="font-semibold mb-2">Step 4: Allocate Transaction Price</div>
+                <div class="text-xs text-slate-500 mb-3">
+                  Configure how transaction price is distributed across obligations.
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupAllocateBySSP" type="checkbox" checked>
+                    <span>Allocate by relative SSP</span>
+                  </label>
+
+                  <label class="flex items-center gap-2 text-sm">
+                    <input id="revSetupAllowSpecificVariableAlloc" type="checkbox" checked>
+                    <span>Allow specific variable consideration allocation</span>
+                  </label>
+
+                  <label class="flex items-center gap-2 text-sm md:col-span-2">
+                    <input id="revSetupRequireAllocationBeforeActivation" type="checkbox" checked>
+                    <span>Require allocation before contract activation</span>
+                  </label>
+                </div>
+              </section>
+
+              <div class="card p-4 shadow-sage">
+                <div id="revSetupMsg" class="text-sm text-slate-500"></div>
+              </div>
+            </div>
+          </div>
+        </section>
 
               <section id="revSetupPaneObligationRules" class="hidden card p-4 shadow-sage">
                 <div class="font-semibold mb-2">Step 2: Identify Performance Obligations</div>
