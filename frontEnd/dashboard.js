@@ -32017,7 +32017,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     return { approvalRequired: true, approvalRequest: req };
   }
 
-  async function renderLoanRegister() {
+  async function renderLoanRegister({ preserveSelection = true } = {}) {
     const cid = getCid();
     if (!cid) return;
 
@@ -32033,23 +32033,20 @@ function bindAssetRecordsPickerModal({ cid }) {
       );
 
       LOANS_STATE.loans = json?.data || [];
-      renderLoanList(LOANS_STATE.loans);
-      computeLoanStats(LOANS_STATE.loans);
-      applyLoanButtonsByMode();
 
-      if (!LOANS_STATE.currentLoanId && LOANS_STATE.loans.length) {
-        await loadLoanDetail(LOANS_STATE.loans[0].id);
-      } else if (LOANS_STATE.currentLoanId) {
+      if (preserveSelection && LOANS_STATE.currentLoanId) {
         const stillExists = LOANS_STATE.loans.some(
           (x) => Number(x.id) === Number(LOANS_STATE.currentLoanId)
         );
 
-        if (!stillExists && LOANS_STATE.loans.length) {
-          await loadLoanDetail(LOANS_STATE.loans[0].id);
-        } else {
-          renderLoanList(LOANS_STATE.loans);
+        if (!stillExists) {
+          LOANS_STATE.currentLoanId = null;
         }
       }
+
+      renderLoanList(LOANS_STATE.loans);
+      computeLoanStats(LOANS_STATE.loans);
+      applyLoanButtonsByMode();
     } catch (e) {
       console.error("[Loans] renderLoanRegister failed", e);
       $("#loanList").innerHTML = `
@@ -32062,34 +32059,34 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-async function loadLoanDetail(loanId) {
-  const cid = getCid();
-  if (!cid || !loanId) return;
+  async function loadLoanDetail(loanId) {
+    const cid = getCid();
+    if (!cid || !loanId) return;
 
-  try {
-    const json = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));
-    const data = json?.data || null;
-    if (!data) return;
+    try {
+      const json = await window.apiFetch(ENDPOINTS.loans.get(cid, loanId));
+      const data = json?.data || null;
+      if (!data) return;
 
-    LOANS_STATE.currentLoanId = Number(loanId);
-    LOANS_STATE.loanDetail = data;
+      LOANS_STATE.currentLoanId = Number(loanId);
+      LOANS_STATE.loanDetail = data;
 
-    fillLoanForm(data.loan || {});
-    fillLoanCards(data.loan || {});
-    renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
-    renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));
+      fillLoanForm(data.loan || {});
+      fillLoanCards(data.loan || {});
+      renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
+      renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));
 
-    setLoanGlAccountsVisible(false);
-    clearMainJournalPreview();
+      setLoanGlAccountsVisible(false);
+      clearMainJournalPreview();
 
-    renderLoanList(LOANS_STATE.loans);
-    setLoanTab("loan-overview");
-    applyLoanButtonsByMode();
-  } catch (e) {
-    console.error("[Loans] loadLoanDetail failed", e);
-    alert("Failed to load loan detail.");
+      renderLoanList(LOANS_STATE.loans);
+      setLoanTab("loan-overview");
+      applyLoanButtonsByMode();
+    } catch (e) {
+      console.error("[Loans] loadLoanDetail failed", e);
+      alert("Failed to load loan detail.");
+    }
   }
-}
 
   async function saveLoan({ previewOnly = false } = {}) {
     const cid = getCid();
@@ -32381,6 +32378,16 @@ async function loadLoanDetail(loanId) {
     try {
       const payload = getLoanFormPayload();
 
+      if (!payload.loan_name) throw new Error("Loan name is required.");
+      if (!payload.lender_name) throw new Error("Lender / loan holder is required.");
+      if (!payload.start_date) throw new Error("Start date is required.");
+      if (!payload.first_payment_date) throw new Error("First payment date is required.");
+      if (!(Number(payload.principal_amount) > 0)) {
+        throw new Error("Principal amount must be greater than zero.");
+      }
+
+      console.log("[Loans] preview payload", payload);
+
       const json = await window.apiFetch(ENDPOINTS.loans.previewInception(cid), {
         method: "POST",
         body: JSON.stringify(payload),
@@ -32391,6 +32398,7 @@ async function loadLoanDetail(loanId) {
       }
 
       const entry = json?.data || null;
+      if (!entry) return null;
 
       setLoanGlAccountsVisible(true);
       renderMainJournalPreview(entry, {
