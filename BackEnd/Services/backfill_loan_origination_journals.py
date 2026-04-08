@@ -2,7 +2,7 @@ import os
 import sys
 import traceback
 
-from BackEnd.Services.db_service import db_service
+from BackEnd.Services.db_service import DatabaseService
 
 
 def main():
@@ -10,11 +10,15 @@ def main():
     if not dsn:
         raise RuntimeError("MASTER_DB_DSN environment variable not set")
 
-    db = db_service(dsn)
+    db = DatabaseService(dsn)
 
     company_id = 8
-    loan_ids = [1, 2]
     user_id = 8
+
+    if len(sys.argv) > 1:
+        loan_ids = [int(x) for x in sys.argv[1:]]
+    else:
+        loan_ids = [1, 2]
 
     print(f"Starting loan origination journal backfill for company_id={company_id}")
     print(f"Loan IDs: {loan_ids}")
