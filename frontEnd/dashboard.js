@@ -32452,7 +32452,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       await previewLoanInceptionJournal({ pushToMainTab: true });
     });
 
-    $("#loanPreviewLastPaymentBtn")?.addEventListener("click", async () => {
+    $("#loanPaymentPreviewBtn")?.addEventListener("click", async () => {
       await previewLoanPaymentJournal();
     });
 
