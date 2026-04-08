@@ -1558,21 +1558,21 @@ class DatabaseService:
         -- Add missing keys to credit_policy safely
         UPDATE public.companies
         SET credit_policy =
-        COALESCE(credit_policy, '{}'::jsonb)
+        COALESCE(credit_policy, '{{}}'::jsonb)
         || jsonb_build_object(
             'mode', COALESCE(credit_policy->>'mode', 'owner_managed')
             )
-        || CASE WHEN credit_policy ? 'review_enabled' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'review_enabled' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('review_enabled', false) END
-        || CASE WHEN credit_policy ? 'ap_review_enabled' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'ap_review_enabled' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('ap_review_enabled', false) END
-        || CASE WHEN credit_policy ? 'ap_auto_post' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'ap_auto_post' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('ap_auto_post', false) END
-        || CASE WHEN credit_policy ? 'payment_workflow_enabled' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'payment_workflow_enabled' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('payment_workflow_enabled', false) END
-        || CASE WHEN credit_policy ? 'require_payment_approval' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'require_payment_approval' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('require_payment_approval', false) END
-        || CASE WHEN credit_policy ? 'require_vendor_kyc_on_release' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'require_vendor_kyc_on_release' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('require_vendor_kyc_on_release', false) END
         WHERE credit_policy IS NULL
         OR NOT (credit_policy ? 'ap_review_enabled')
@@ -9803,15 +9803,15 @@ class DatabaseService:
 
             -- 2) backfill NULLs
             EXECUTE format(
-                'UPDATE %I.trial_balance SET company_id = {company_id} WHERE company_id IS NULL',
+                'UPDATE %I.trial_balance SET company_id = %L WHERE company_id IS NULL',
                 '{schema}', {company_id}
             );
 
-            -- 3) enforce NOT NULL + default
             EXECUTE format(
-                'ALTER TABLE %I.trial_balance ALTER COLUMN company_id SET DEFAULT {company_id}',
+                'ALTER TABLE %I.trial_balance ALTER COLUMN company_id SET DEFAULT %L',
                 '{schema}', {company_id}
             );
+
             EXECUTE format(
                 'ALTER TABLE %I.trial_balance ALTER COLUMN company_id SET NOT NULL',
                 '{schema}'
@@ -18692,7 +18692,7 @@ class DatabaseService:
             approved_at TIMESTAMPTZ NULL,
 
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_by_user_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -18706,12 +18706,12 @@ class DatabaseService:
         ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
         UPDATE {schema}.revenue_contracts
-        SET payload_json = COALESCE(payload_json, '{}'::jsonb)
+        SET payload_json = COALESCE(payload_json, '{{}}'::jsonb)
         WHERE payload_json IS NULL;
 
         ALTER TABLE {schema}.revenue_contracts
         ALTER COLUMN payload_json SET NOT NULL,
-        ALTER COLUMN payload_json SET DEFAULT '{}'::jsonb;
+        ALTER COLUMN payload_json SET DEFAULT '{{}}'::jsonb;
 
         DO $$
         BEGIN
@@ -18784,7 +18784,7 @@ class DatabaseService:
             allocated_revenue_total NUMERIC(18,2) NOT NULL DEFAULT 0,
             expected_cost_total NUMERIC(18,2) NOT NULL DEFAULT 0,
 
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_by_user_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -18836,7 +18836,7 @@ class DatabaseService:
 
             recognized_at_point_in_time_date DATE NULL,
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -18879,7 +18879,7 @@ class DatabaseService:
             amount NUMERIC(18,2) NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'ZAR',
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -18898,7 +18898,7 @@ class DatabaseService:
             amount NUMERIC(18,2) NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'ZAR',
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -18922,7 +18922,7 @@ class DatabaseService:
             certified_by_user_id INT NULL,
 
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -18955,7 +18955,7 @@ class DatabaseService:
             posted_by_user_id INT NULL,
             posted_at TIMESTAMPTZ NULL,
 
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -18983,7 +18983,7 @@ class DatabaseService:
 
             source_basis TEXT NOT NULL DEFAULT 'system',
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
