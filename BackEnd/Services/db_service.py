@@ -31075,11 +31075,12 @@ class DatabaseService:
                 AND id = %s
                 FOR UPDATE
             """, (company_id, payment_id))
-            payment = cur.fetchone()
-            if not payment:
+            payment_row = cur.fetchone()
+            if not payment_row:
                 raise ValueError("payment not found")
 
-            payment = dict(payment)
+            payment_cols = [d[0] for d in cur.description]
+            payment = self._row_to_dict(payment_row, payment_cols)
 
             if payment["status"] == "posted" and payment.get("posted_journal_id"):
                 return {
@@ -31091,10 +31092,25 @@ class DatabaseService:
             if payment["status"] not in {"draft", "approved"}:
                 raise ValueError(f"cannot post payment in status '{payment['status']}'")
 
-            # ensure allocation is rebuilt inside same txn
             self._allocate_loan_payment(cur, company_id, payment_id=payment_id)
 
-        preview_entry = self.preview_loan_payment_journal(conn, company_id, payment_id=payment_id)
+        preview_data = {
+            "loan_id": payment.get("loan_id"),
+            "payment_date": payment.get("payment_date"),
+            "amount_paid": payment.get("amount_paid"),
+            "bank_account_id": payment.get("bank_account_id"),
+            "reference": payment.get("reference"),
+            "description": payment.get("description"),
+            "auto_calculate_split": payment.get("auto_calculate_split", True),
+            "principal_amount": payment.get("principal_amount"),
+            "interest_amount": payment.get("interest_amount"),
+            "accrued_interest_amount": payment.get("accrued_interest_amount"),
+            "fees_amount": payment.get("fees_amount"),
+            "penalties_amount": payment.get("penalties_amount"),
+            "allocation_method": payment.get("allocation_method"),
+            "notes": payment.get("notes"),
+        }
+        preview_entry = self.preview_loan_payment_journal(conn, company_id, data=preview_data)
 
         with conn.cursor() as cur:
             journal_id = self.post_journal(company_id, preview_entry, cur=cur)
@@ -31116,7 +31132,9 @@ class DatabaseService:
                 AND payment_id = %s
                 ORDER BY allocation_order ASC, id ASC
             """, (company_id, payment_id))
-            allocs = [dict(x) for x in (cur.fetchall() or [])]
+            alloc_rows = cur.fetchall() or []
+            alloc_cols = [d[0] for d in cur.description]
+            allocs = [self._row_to_dict(x, alloc_cols) for x in alloc_rows]
 
             for a in allocs:
                 sched_id = a.get("loan_schedule_id")
