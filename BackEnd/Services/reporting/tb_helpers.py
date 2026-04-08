@@ -111,7 +111,9 @@ def split_cash_and_overdraft(tb_rows: List[Dict[str, Any]]) -> List[Dict[str, An
                 "code_family": "BS_CL",
                 "code_numeric": 2105,
                 "debit": 0.0,
-                "credit": 0.0,
+                "credit": float(overdraft_total),
+                "debit_total": 0.0,
+                "credit_total": float(overdraft_total),
                 "closing_balance": -float(overdraft_total),
                 "closing_balance_raw": -float(overdraft_total),
             }

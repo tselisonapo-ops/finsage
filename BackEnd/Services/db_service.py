@@ -29991,8 +29991,111 @@ class DatabaseService:
             loan_id = row["id"] if isinstance(row, dict) else row[0]
 
         conn.commit()
-        return self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)
 
+        out = self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)
+
+        loan_full = self.get_loan_full(conn, company_id, loan_id)
+        loan_row = (loan_full or {}).get("loan") or {}
+        if not loan_row:
+            raise ValueError("loan not found after create")
+
+        entry = self.preview_loan_inception_journal(
+            conn,
+            company_id,
+            data={
+                "loan_name": loan_row.get("loan_name"),
+                "loan_reference": loan_row.get("loan_reference"),
+                "currency": loan_row.get("currency"),
+                "principal_amount": loan_row.get("principal_amount"),
+                "start_date": loan_row.get("start_date"),
+                "first_payment_date": loan_row.get("first_payment_date"),
+                "payment_frequency": loan_row.get("payment_frequency"),
+                "interest_method": loan_row.get("interest_method"),
+                "annual_interest_rate": loan_row.get("annual_interest_rate"),
+                "term_count": loan_row.get("term_count"),
+                "balloon_amount": loan_row.get("balloon_amount"),
+                "fees_amount": loan_row.get("fees_amount"),
+                "accrued_interest_opening": loan_row.get("accrued_interest_opening"),
+                "bank_account_id": loan_row.get("bank_account_id"),
+                "interest_expense_account_code": loan_row.get("interest_expense_account_code"),
+                "accrued_interest_account_code": loan_row.get("accrued_interest_account_code"),
+                "loan_payable_current_account_code": loan_row.get("loan_payable_current_account_code"),
+                "loan_payable_noncurrent_account_code": loan_row.get("loan_payable_noncurrent_account_code"),
+                "fees_asset_account_code": loan_row.get("fees_asset_account_code"),
+                "fees_expense_account_code": loan_row.get("fees_expense_account_code"),
+            },
+        )
+
+        entry["source"] = "loan_origination"
+        entry["source_id"] = int(loan_id)
+        entry["created_by_user_id"] = user_id
+        entry["prepared_by_user_id"] = user_id
+
+        journal_id = self.post_journal(company_id, entry)
+
+        out["inception_journal_id"] = journal_id
+        out["inception_journal"] = entry
+        return out
+
+    def backfill_loan_inception_journal(self, company_id: int, loan_id: int, *, user_id=None) -> int:
+        with self._conn_cursor() as (conn, cur):
+            loan_full = self.get_loan_full(conn, company_id, loan_id)
+            if not loan_full or not loan_full.get("loan"):
+                raise ValueError("loan not found")
+
+            loan_row = loan_full["loan"]
+
+            entry = self.build_saved_loan_inception_journal_entry(
+                conn,
+                company_id,
+                loan_row=loan_row,
+            )
+
+            entry["source"] = "loan_origination"
+            entry["source_id"] = int(loan_id)
+            entry["created_by_user_id"] = user_id
+            entry["prepared_by_user_id"] = user_id
+
+            journal_id = self.post_journal(company_id, entry)
+            return int(journal_id)
+    
+    def build_saved_loan_inception_journal_entry(self, conn, company_id: int, *, loan_row: dict) -> dict:
+        built = self.build_loan_inception_journal_lines(
+            conn,
+            company_id,
+            loan_row=loan_row,
+            strict=True,
+        )
+
+        loan_id = loan_row.get("id")
+
+        return {
+            "date": str(loan_row["start_date"]),
+            "ref": loan_row.get("loan_reference") or f"LOAN-OPEN-{loan_id}",
+            "description": f"Initial recognition of loan - {loan_row['loan_name']}",
+            "gross_amount": float(_money(loan_row.get("principal_amount"))),
+            "net_amount": float(_money(loan_row.get("principal_amount"))),
+            "vat_amount": 0.0,
+            "currency": loan_row.get("currency") or "ZAR",
+            "lines": built["journal_lines"],
+            "resolved_accounts": built.get("resolved_accounts", {}),
+            "dr_total": built.get("dr_total"),
+            "cr_total": built.get("cr_total"),
+        }
+
+    def loan_origination_journal_exists(self, conn, company_id: int, loan_id: int) -> bool:
+        schema = self.company_schema(company_id)
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT 1
+                FROM {schema}.journal
+                WHERE company_id = %s
+                AND source = 'loan_origination'
+                AND source_id = %s
+                LIMIT 1
+            """, (company_id, loan_id))
+            return cur.fetchone() is not None
+        
     def update_loan(self, conn, company_id: int, loan_id: int, *, data: dict, user_id: int | None):
         schema = self.company_schema(company_id)
 
