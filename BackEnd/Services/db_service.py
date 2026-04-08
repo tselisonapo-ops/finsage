@@ -15922,6 +15922,9 @@ class DatabaseService:
         ALTER COLUMN meta_json SET NOT NULL,
         ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb;
 
+        ALTER TABLE {schema}.loan_payments
+        ADD COLUMN IF NOT EXISTS primary_schedule_id INT NULL;
+
         DO $ck_loan_payments$
         BEGIN
             IF EXISTS (
@@ -16192,6 +16195,45 @@ class DatabaseService:
                 );
             END IF;
         END $loan_touch$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_loan_payment_primary_sched_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.loan_payments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (primary_schedule_id)
+                    REFERENCES %I.loan_schedules(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_loan_payment_primary_sched_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname = '{schema}'
+                AND indexname = '{schema}_loan_payments_sched_open_uq'
+            ) THEN
+                EXECUTE format($sql$
+                    CREATE UNIQUE INDEX %I
+                    ON %I.loan_payments(company_id, primary_schedule_id)
+                    WHERE primary_schedule_id IS NOT NULL
+                    AND status IN ('draft','approved','posted')
+                $sql$, '{schema}_loan_payments_sched_open_uq', '{schema}');
+            END IF;
+        END $$;
 
         -- ==================================================
         -- SERVICE ITEMS  (FULL + SAFE EVOLVE)
