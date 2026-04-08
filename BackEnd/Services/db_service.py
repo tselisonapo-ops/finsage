@@ -30550,17 +30550,25 @@ class DatabaseService:
         with conn.cursor() as cur:
             cur.execute(f"""
                 SELECT
-                    COALESCE(SUM(current_portion_amount), 0) AS current_total,
-                    COALESCE(SUM(noncurrent_portion_amount), 0) AS noncurrent_total
+                    current_portion_amount,
+                    noncurrent_portion_amount
                 FROM {schema}.loan_schedules
                 WHERE company_id = %s
                 AND loan_id = %s
+                ORDER BY schedule_version DESC, period_no ASC
+                LIMIT 1
             """, (company_id, loan_id))
             row = cur.fetchone()
 
-        row = dict(row or {})
-        cur_amt = _money(row.get("current_total"))
-        ncur_amt = _money(row.get("noncurrent_total"))
+            if not row:
+                return Decimal("0.00"), Decimal("0.00")
+
+            if not isinstance(row, dict):
+                cols = [desc[0] for desc in cur.description]
+                row = dict(zip(cols, row))
+
+        cur_amt = _money(row.get("current_portion_amount"))
+        ncur_amt = _money(row.get("noncurrent_portion_amount"))
         return cur_amt, ncur_amt
 
 
@@ -30585,18 +30593,26 @@ class DatabaseService:
         )
 
         if loan_id:
+            # saved-loan path
             cur_amt, ncur_amt = self._loan_liability_split_current_noncurrent(
                 conn,
                 company_id,
                 loan_id=loan_id,
             )
         else:
-            # preview path: derive split from unsaved amortisation rows
+            # preview path: use OPENING split only, not totals across all rows
             amort_rows = self._build_loan_amortisation_rows(loan_row)
-            cur_amt = _money(sum(_money(r.get("current_portion_amount")) for r in amort_rows))
-            ncur_amt = _money(sum(_money(r.get("noncurrent_portion_amount")) for r in amort_rows))
+
+            if amort_rows:
+                cur_amt = _money(amort_rows[0].get("current_portion_amount"))
+                ncur_amt = _money(amort_rows[0].get("noncurrent_portion_amount"))
+            else:
+                cur_amt = principal
+                ncur_amt = Decimal("0.00")
 
         split_total = _money(cur_amt + ncur_amt)
+
+        # hard safety: opening liability must equal principal
         if split_total <= 0:
             cur_amt = principal
             ncur_amt = Decimal("0.00")
