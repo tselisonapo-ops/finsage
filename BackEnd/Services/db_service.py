@@ -30066,9 +30066,10 @@ class DatabaseService:
             if not existing:
                 raise ValueError("loan not found")
 
-            existing = dict(existing)
+            if not isinstance(existing, dict):
+                cols = [desc[0] for desc in cur.description]
+                existing = dict(zip(cols, existing))
 
-            # Keep actual live balances unless caller explicitly forces them.
             outstanding_principal = _money(
                 data["outstanding_principal"]
             ) if "outstanding_principal" in data else _money(
@@ -30081,10 +30082,8 @@ class DatabaseService:
                 existing.get("outstanding_interest", existing.get("accrued_interest_opening"))
             )
 
-            # Optional manual status override; otherwise keep current
             final_status = status or (existing.get("status") or "draft")
 
-            # Optional schedule version bump when terms affecting schedule changed
             schedule_sensitive_fields = {
                 "start_date",
                 "first_payment_date",
@@ -30180,7 +30179,7 @@ class DatabaseService:
                 schedule_version,
                 (data.get("notes") or "").strip() or None,
                 (data.get("agreement_reference") or "").strip() or None,
-                data.get("meta_json") if "meta_json" in data else (existing.get("meta_json") or {}),
+                Json(data.get("meta_json")) if "meta_json" in data else Json(existing.get("meta_json") or {}),
                 final_status,
                 final_status,
                 company_id,
