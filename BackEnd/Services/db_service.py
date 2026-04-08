@@ -31001,7 +31001,11 @@ class DatabaseService:
         principal_balance = _money(loan_row["principal_amount"])
         rate = _money(loan_row["annual_interest_rate"]) / Decimal("100")
 
-        periodic_rate = rate / Decimal("12")  # assume monthly for now
+        _, per_year = self._period_delta_for_frequency(
+            loan_row.get("payment_frequency")
+        )
+
+        periodic_rate = rate / per_year if per_year else Decimal("0")
 
         interest = _money(principal_balance * periodic_rate)
         payment = _money(payment_row["amount_paid"])
