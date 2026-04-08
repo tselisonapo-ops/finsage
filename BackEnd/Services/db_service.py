@@ -30583,13 +30583,31 @@ class DatabaseService:
                 for row in allocation_rows
             ]
 
-            preview = self.preview_loan_payment_journal(conn, company_id, payment_id=payment_id)
+            preview_data = {
+                "loan_id": payment.get("loan_id"),
+                "payment_date": payment.get("payment_date"),
+                "amount_paid": payment.get("amount_paid"),
+                "bank_account_id": payment.get("bank_account_id"),
+                "reference": payment.get("reference"),
+                "description": payment.get("description"),
+                "auto_calculate_split": payment.get("auto_calculate_split", True),
+                "principal_amount": payment.get("principal_amount"),
+                "interest_amount": payment.get("interest_amount"),
+                "accrued_interest_amount": payment.get("accrued_interest_amount"),
+                "fees_amount": payment.get("fees_amount"),
+                "penalties_amount": payment.get("penalties_amount"),
+                "allocation_method": payment.get("allocation_method"),
+                "notes": payment.get("notes"),
+            }
+
+            preview = self.preview_loan_payment_journal(conn, company_id, data=preview_data)
+
             return {
                 "payment": payment,
                 "allocations": allocations,
                 "journal_preview": preview,
             }
-
+    
     def _append_journal_line(
         self,
         lines: list,
