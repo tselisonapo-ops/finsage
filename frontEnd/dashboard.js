@@ -32445,27 +32445,22 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   function bindLoanActionButtons() {
     $("#loanPreviewBtn")?.addEventListener("click", async () => {
-      const loanId = await saveLoan({ previewOnly: true });
-      if (!loanId) return;
-      await previewLoanInceptionJournal(loanId, { pushToMainTab: true });
+      await previewLoanInceptionJournal({ pushToMainTab: true });
     });
 
     $("#loanPreviewInceptionBtn")?.addEventListener("click", async () => {
-      const loanId = await saveLoan({ previewOnly: true });
-      if (!loanId) return;
-      await previewLoanInceptionJournal(loanId, { pushToMainTab: true });
+      await previewLoanInceptionJournal({ pushToMainTab: true });
     });
 
     $("#loanPreviewLastPaymentBtn")?.addEventListener("click", async () => {
-      const payments = LOANS_STATE.loanDetail?.payments || [];
-      const last = payments.find((p) => p?.id);
-      if (!last?.id) return alert("No payment found for preview.");
-      await previewLoanPaymentJournal(last.id, { pushToMainTab: true });
+      await previewLoanPaymentJournal();
     });
 
     $("#loanPreviewReclassBtn")?.addEventListener("click", async () => {
       const loanId = LOANS_STATE.currentLoanId;
-      if (!loanId) return alert("Select a saved loan first.");
+      if (!loanId) {
+        return alert("Save the loan first before previewing reclassification.");
+      }
       await previewLoanReclassJournal(loanId, { pushToMainTab: true });
     });
   }
