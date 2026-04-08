@@ -30554,6 +30554,34 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_payment_full(conn, company_id, payment_id)
 
+    def get_loan_payment_full(self, conn, company_id: int, payment_id: int):
+        schema = self.company_schema(company_id)
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_payments
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+            """, (company_id, payment_id))
+            payment = cur.fetchone()
+            if not payment:
+                return None
+
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_payment_allocations
+                WHERE company_id=%s AND payment_id=%s
+                ORDER BY allocation_order ASC, id ASC
+            """, (company_id, payment_id))
+            allocations = [dict(x) for x in (cur.fetchall() or [])]
+
+            preview = self.preview_loan_payment_journal(conn, company_id, payment_id=payment_id)
+            return {
+                "payment": dict(payment),
+                "allocations": allocations,
+                "journal_preview": preview,
+            }
+
     def _append_journal_line(
         self,
         lines: list,
