@@ -30350,6 +30350,14 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_full(conn, company_id, loan_id)
 
+    def _row_to_dict(self, cur, row):
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return row
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
     def _allocate_loan_payment(self, cur, company_id: int, *, payment_id: int):
         schema = self.company_schema(company_id)
 
@@ -30362,10 +30370,10 @@ class DatabaseService:
             FOR UPDATE
         """, (company_id, payment_id))
         p = cur.fetchone()
+        p = self._row_to_dict(cur, cur.fetchone())
         if not p:
             raise ValueError("payment not found")
 
-        p = dict(p)
         loan_id = p["loan_id"]
         amount_left = _money(p["amount_paid"])
 
@@ -30404,8 +30412,13 @@ class DatabaseService:
             ORDER BY due_date ASC, period_no ASC
             FOR UPDATE
         """, (company_id, loan_id))
-        schedule_rows = [dict(x) for x in (cur.fetchall() or [])]
-
+        rows = cur.fetchall() or []
+        cols = [d[0] for d in cur.description]
+        schedule_rows = [
+            x if isinstance(x, dict) else dict(zip(cols, x))
+            for x in rows
+        ]
+        
         for row in schedule_rows:
             if amount_left <= 0:
                 break
