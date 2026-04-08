@@ -2015,7 +2015,7 @@ class DatabaseService:
                     raise
 
             print("[MASTER-DDL] base tables done, calling initialize_public_schema()")
-            self.initialize_public_schema()
+            #self.initialize_public_schema()
             print("[MASTER-DDL] initialize_public_schema() done")
 
 
