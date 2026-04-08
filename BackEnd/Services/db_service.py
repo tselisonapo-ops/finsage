@@ -30534,7 +30534,16 @@ class DatabaseService:
         conn.commit()
         return self.get_loan_payment_full(conn, company_id, payment_id)
 
-    def _append_journal_line(self, lines: list, *, account_code: str, description: str, debit=0, credit=0):
+    def _append_journal_line(
+        self,
+        lines: list,
+        *,
+        account_code: str,
+        account_name: str | None = None,
+        description: str,
+        debit=0,
+        credit=0,
+    ):
         dr = _money(debit or 0)
         cr = _money(credit or 0)
         if dr == 0 and cr == 0:
@@ -30546,6 +30555,7 @@ class DatabaseService:
 
         lines.append({
             "account_code": code,
+            "account_name": (account_name or code).strip(),
             "description": description,
             "debit": float(dr),
             "credit": float(cr),
@@ -30641,6 +30651,11 @@ class DatabaseService:
         breakdown: dict,
         strict: bool = False,
     ):
+        
+        def acct_name(code: str):
+            row = self.get_account_row_for_posting(company_id, code)
+            return row[0] if row else code 
+
         accounts = self.resolve_loan_gl_accounts(
             conn,
             company_id,
@@ -30663,6 +30678,7 @@ class DatabaseService:
             self._append_journal_line(
                 lines,
                 account_code=accounts.get("loan_payable_current_account_code"),
+                account_name=acct_name(accounts.get("loan_payable_current_account_code")),
                 description=f"{base_desc} - principal",
                 debit=principal,
                 credit=0,
@@ -30672,6 +30688,7 @@ class DatabaseService:
             self._append_journal_line(
                 lines,
                 account_code=accounts.get("interest_expense_account_code"),
+                account_name=acct_name(accounts.get("interest_expense_account_code")),
                 description=f"{base_desc} - interest",
                 debit=interest,
                 credit=0,
@@ -30681,6 +30698,7 @@ class DatabaseService:
             self._append_journal_line(
                 lines,
                 account_code=accounts.get("accrued_interest_account_code"),
+                account_name=acct_name(accounts.get("accrued_interest_account_code")),
                 description=f"{base_desc} - accrued interest settlement",
                 debit=accrued_interest,
                 credit=0,
@@ -30695,6 +30713,7 @@ class DatabaseService:
         self._append_journal_line(
             lines,
             account_code=accounts.get("bank_account_code"),
+            account_name=acct_name(accounts.get("bank_account_code")),
             description=f"{base_desc} - cash out",
             debit=0,
             credit=total,
@@ -30745,6 +30764,10 @@ class DatabaseService:
         if principal <= 0:
             raise ValueError("Loan principal_amount must be greater than zero")
 
+        def acct_name(code: str):
+            row = self.get_account_row_for_posting(company_id, code)
+            return row[0] if row else code
+
         accounts = self.resolve_loan_gl_accounts(
             conn,
             company_id,
@@ -30788,6 +30811,7 @@ class DatabaseService:
         self._append_journal_line(
             lines,
             account_code=accounts.get("bank_account_code"),
+            account_name=acct_name(accounts.get("bank_account_code")),
             description=desc,
             debit=principal,
             credit=0,
@@ -30797,15 +30821,19 @@ class DatabaseService:
             self._append_journal_line(
                 lines,
                 account_code=accounts.get("loan_payable_current_account_code"),
+                account_name=acct_name(accounts.get("loan_payable_current_account_code")),
                 description=desc + " - current portion",
                 debit=0,
                 credit=cur_amt,
             )
 
         if ncur_amt > 0:
+            code = accounts.get("loan_payable_noncurrent_account_code")
+
             self._append_journal_line(
                 lines,
-                account_code=accounts.get("loan_payable_noncurrent_account_code"),
+                account_code=code,
+                account_name=acct_name(code),
                 description=desc + " - non-current portion",
                 debit=0,
                 credit=ncur_amt,
