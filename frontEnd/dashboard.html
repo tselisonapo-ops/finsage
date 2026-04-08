@@ -1681,9 +1681,9 @@
         <!-- Reports -->
         <section id="screen-reports" class="screen">
 
-          <!-- Top row: summaries + notes -->
-          <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div class="card p-4 xl:col-span-2">
+          <!-- Top row: summaries -->
+          <div class="grid grid-cols-1 gap-4">
+            <div class="card p-4">
               <div class="flex items-center justify-between gap-2">
                 <div>
                   <h3 class="font-bold">Financial Statement Interpretation</h3>
@@ -1695,14 +1695,20 @@
 
               <div id="statementInterpretationHost" class="mt-3"></div>
             </div>
+          </div>
 
-            <div class="card p-4">
-              <h3 class="font-bold">📝 Statements Notes</h3>
-              <p class="text-sm text-slate-600 mt-1">
-                Generate required disclosures based on your reporting standard.
-              </p>
+          <!-- Statement viewer -->
+          <div class="card p-4 mt-4">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <h3 class="font-bold">Statement Viewer</h3>
+                <p class="text-sm text-slate-600 mt-1">
+                  Render financial statements, export outputs, and generate disclosure notes.
+                </p>
+              </div>
 
-              <div class="mt-2 flex flex-wrap gap-2 items-center">
+              <div class="flex flex-wrap gap-2 items-center">
+                <span class="text-xs font-medium text-slate-500">Statements Notes</span>
                 <select id="notesPack" class="px-3 py-2 border rounded text-sm">
                   <option value="ifrs16">IFRS 16 Lease disclosures</option>
                   <option value="ias16_ppe">IAS 16 PPE disclosures</option>
@@ -1714,12 +1720,9 @@
                 </button>
               </div>
             </div>
-          </div>
 
-          <!-- Statement viewer -->
-          <div class="card p-4 mt-4">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h3 class="font-bold">Statement Viewer</h3>
+            <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div></div>
               <span id="stmtPeriodLabel" class="text-xs text-slate-500"></span>
             </div>
 
@@ -1798,7 +1801,7 @@
           </div>
 
         </section>
-
+        
         <!-- Customers (Tri-pane) -->
         <section id="screen-customers" class="screen">
           <div class="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-4">

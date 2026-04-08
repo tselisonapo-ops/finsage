@@ -24954,6 +24954,58 @@ class DatabaseService:
                 "liability_noncurrent_code": LIAB_NCUR,
             }
 
+    def get_lease_schedule_by_id(
+        self,
+        company_id: int,
+        *,
+        lease_id: int,
+        schedule_id: int,
+        version_no: Optional[int] = None,
+        active_only: bool = True,
+        cur=None,
+    ) -> Optional[Dict[str, Any]]:
+        schema = f"company_{int(company_id)}"
+        lease_id = int(lease_id)
+        schedule_id = int(schedule_id)
+
+        where = ["id=%(schedule_id)s", "lease_id=%(lease_id)s"]
+        params = {"schedule_id": schedule_id, "lease_id": lease_id}
+
+        if active_only:
+            where.append("is_active=TRUE")
+
+        if version_no is not None:
+            where.append("version_no=%(version_no)s")
+            params["version_no"] = int(version_no)
+
+        sql = f"""
+        SELECT
+            id,
+            lease_id,
+            version_no,
+            is_active,
+            modification_id,
+            period_no,
+            period_start,
+            period_end,
+            payment_timing,
+            opening_liability,
+            interest,
+            payment,
+            principal,
+            closing_liability,
+            depreciation,
+            vat_portion,
+            net_payment,
+            posted_journal_id,
+            posted_at,
+            created_at
+        FROM {schema}.lease_schedule
+        WHERE {" AND ".join(where)}
+        LIMIT 1
+        """
+        return self.fetch_one(sql, params, cur=cur)
+
     def preview_lease_payment(
         self,
         *,
@@ -25019,16 +25071,15 @@ class DatabaseService:
         VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
         # pick schedule period
-        sched = None
         if schedule_id:
-            # Treat schedule_id as the PERIOD NUMBER (period_no)
-            sched = self.get_lease_schedule_row(
+            sched = self.get_lease_schedule_by_id(
                 company_id,
                 lease_id=int(lease_id),
-                period_no=int(schedule_id),
+                schedule_id=int(schedule_id),
+                active_only=True,
             )
             if not sched:
-                raise ValueError("Invalid schedule period (period_no)")
+                raise ValueError("Invalid schedule_id")
             
         if not sched:
             sched = self.get_next_unpaid_lease_period(company_id, int(lease_id))
