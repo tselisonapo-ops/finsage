@@ -29628,8 +29628,15 @@ class DatabaseService:
                 LIMIT 1
             """, (company_id, loan_id))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
 
+            if isinstance(row, dict):
+                return row
+
+            cols = [d[0] for d in cur.description]
+            return dict(zip(cols, row))
+        
     def get_loan_full(self, conn, company_id: int, loan_id: int):
         schema = self.company_schema(company_id)
 
