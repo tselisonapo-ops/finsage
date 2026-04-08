@@ -1561,19 +1561,20 @@ class DatabaseService:
         COALESCE(credit_policy, '{}'::jsonb)
         || jsonb_build_object(
             'mode', COALESCE(credit_policy->>'mode', 'owner_managed')
-            )
-        || CASE WHEN credit_policy ? 'review_enabled' THEN '{{}}'::jsonb
+        )
+        || CASE WHEN credit_policy ? 'review_enabled' THEN '{}'::jsonb
                 ELSE jsonb_build_object('review_enabled', false) END
-        || CASE WHEN credit_policy ? 'ap_review_enabled' THEN '{{}}'::jsonb
+        || CASE WHEN credit_policy ? 'ap_review_enabled' THEN '{}'::jsonb
                 ELSE jsonb_build_object('ap_review_enabled', false) END
-        || CASE WHEN credit_policy ? 'ap_auto_post' THEN '{{}}'::jsonb
+        || CASE WHEN credit_policy ? 'ap_auto_post' THEN '{}'::jsonb
                 ELSE jsonb_build_object('ap_auto_post', false) END
-        || CASE WHEN credit_policy ? 'payment_workflow_enabled' THEN '{{}}'::jsonb
+        || CASE WHEN credit_policy ? 'payment_workflow_enabled' THEN '{}'::jsonb
                 ELSE jsonb_build_object('payment_workflow_enabled', false) END
-        || CASE WHEN credit_policy ? 'require_payment_approval' THEN '{{}}'::jsonb
+        || CASE WHEN credit_policy ? 'require_payment_approval' THEN '{}'::jsonb
                 ELSE jsonb_build_object('require_payment_approval', false) END
-        || CASE WHEN credit_policy ? 'require_vendor_kyc_on_release' THEN '{{}}'::jsonb
+        || CASE WHEN credit_policy ? 'require_vendor_kyc_on_release' THEN '{}'::jsonb
                 ELSE jsonb_build_object('require_vendor_kyc_on_release', false) END
+                
         WHERE credit_policy IS NULL
         OR NOT (credit_policy ? 'ap_review_enabled')
         OR NOT (credit_policy ? 'ap_auto_post')
