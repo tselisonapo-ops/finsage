@@ -1558,7 +1558,7 @@ class DatabaseService:
         -- Add missing keys to credit_policy safely
         UPDATE public.companies
         SET credit_policy =
-        COALESCE(credit_policy, '{{}}'::jsonb)
+        COALESCE(credit_policy, '{}'::jsonb)
         || jsonb_build_object(
             'mode', COALESCE(credit_policy->>'mode', 'owner_managed')
             )
