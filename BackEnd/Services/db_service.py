@@ -19738,7 +19738,7 @@ class DatabaseService:
         -- =========================
         CREATE TABLE IF NOT EXISTS {schema}.customer_company_links (
             id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {int(company_id)},
+            company_id INT NOT NULL DEFAULT {company_id},
             customer_id INT NOT NULL,
             linked_company_id INT NOT NULL,
             link_type TEXT NOT NULL DEFAULT 'workspace',
