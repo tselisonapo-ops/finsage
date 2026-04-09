@@ -2715,16 +2715,6 @@
           <input type="hidden" id="quoteId" value="">
 
           <!-- =========================================================
-              INVOICE TOP ROW (only relevant when invoice pane is visible)
-              ========================================================= -->
-          <div id="arInvoiceTopRow" class="flex items-center justify-between mb-2">
-            <div class="flex gap-2">
-              <button id="btnToggleCustomers" type="button" class="btn">Customers</button>
-              <button id="btnToggleDrafts" type="button" class="btn">Draft invoices</button>
-            </div>
-          </div>
-
-          <!-- =========================================================
               MAIN AR GRID
               ========================================================= -->
           <div id="arGrid" class="grid grid-cols-1 gap-4">
@@ -2742,13 +2732,6 @@
               </div>
               <div id="arCustomerList" class="space-y-1"></div>
             </aside>
-
-            <div class="sm:col-span-2">
-              <label class="text-xs text-slate-600">Revenue Contract</label>
-              <select id="invRevenueContractId" class="w-full border rounded px-3 py-2">
-                <option value="">No contract link</option>
-              </select>
-            </div>
 
             <aside id="arDraftPane"
               class="hidden fixed z-[90] top-24 right-4 w-[360px] h-[70vh] bg-white border rounded-xl shadow-lg overflow-auto p-3">
@@ -2784,9 +2767,21 @@
             <!-- =========================
                 INVOICE PANE
                 ========================= -->
-            <section id="arInvoicePane" class="card p-4 shadow-sage overflow-hidden flex flex-col">
+            <section id="arInvoicePane" class="card p-4 shadow-sage flex flex-col min-h-0">
+              <div class="grid grid-cols-1 lg:grid-cols-12 gap-2 mb-2 -mt-1">
+                <div class="lg:col-span-6 flex items-center gap-2 flex-wrap">
+                  <button id="btnToggleCustomers" type="button" class="btn">Customers</button>
+                  <button id="btnToggleDrafts" type="button" class="btn">Draft invoices</button>
+                </div>
 
-              <div class="flex items-center gap-3 flex-wrap">
+                <div class="lg:col-span-6">
+                  <label class="text-[11px] text-slate-500 block mb-1">Revenue Contract</label>
+                  <select id="invRevenueContractId" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">No contract link</option>
+                  </select>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
                 <h3 class="font-bold">New Invoice</h3>
                 <span id="invStatus" class="pill">Draft</span>
 
@@ -2802,7 +2797,7 @@
                 </div>
               </div>
 
-              <div class="grid gap-2 sm:grid-cols-6 mt-3">
+              <div class="grid gap-2 sm:grid-cols-6 mt-2">
 
                 <div class="sm:col-span-2">
                   <label class="text-xs text-slate-600">Customer *</label>
@@ -2878,7 +2873,7 @@
                 </div>
               </div>
 
-              <div class="relative grow overflow-auto rounded-lg border mt-3">
+              <div class="relative flex-1 overflow-auto rounded-lg border mt-3">
                 <table class="min-w-full text-sm">
                   <thead class="sticky top-0 bg-white">
                     <tr class="text-slate-500">
