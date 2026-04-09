@@ -5641,6 +5641,11 @@ def create_invoice(cid: int):
         # --------------------------
         header = {
             "customer_id": cust_id,
+            "revenue_contract_id": (
+                int(payload.get("revenue_contract_id"))
+                if payload.get("revenue_contract_id") not in (None, "", 0, "0")
+                else None
+            ),
             "invoice_date": payload.get("invoice_date") or payload.get("date"),
             "due_date": payload.get("due_date"),
             "currency": payload.get("currency"),
@@ -5732,6 +5737,11 @@ def create_invoice(cid: int):
                 "item_code": item_code,
                 "vat_code": vat_code,
                 "description": (desc or item_name or ""),
+                "revenue_obligation_id": (
+                    int(ln.get("revenue_obligation_id") or ln.get("obligation_id"))
+                    if (ln.get("revenue_obligation_id") or ln.get("obligation_id")) not in (None, "", 0, "0")
+                    else None
+                ),
                 "account_code": raw_code,
                 "quantity": qty,
                 "unit_price": unit_price,
@@ -5831,6 +5841,28 @@ def create_invoice(cid: int):
         current_app.logger.info("create_invoice: before set_invoice_status posted")
         db_service.set_invoice_status(company_id, invoice_id, "posted")
         current_app.logger.info("create_invoice: set_invoice_status done")
+
+        # >>> ADD THIS BLOCK HERE <<<
+        revenue_contract_id = header.get("revenue_contract_id")
+        if revenue_contract_id:
+            db_service.record_revenue_billing_event(
+                company_id=company_id,
+                contract_id=int(revenue_contract_id),
+                data={
+                    "event_date": header.get("invoice_date"),
+                    "event_type": "invoice",
+                    "source_invoice_id": int(invoice_id),
+                    "amount": float(inv.get("total_amount") or inv.get("gross_amount") or 0.0),
+                    "currency": inv.get("currency") or header.get("currency") or "ZAR",
+                    "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                    "payload_json": {
+                        "customer_id": int(cust_id),
+                        "source": "ar_invoice_post",
+                        "invoice_number": inv.get("number"),
+                    },
+                },
+                user_id=int(user.get("id") or 0),
+            )
 
         current_app.logger.info("create_invoice: before reload posted invoice")
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
@@ -5996,6 +6028,11 @@ def update_invoice(cid: int, invoice_id: int):
         # --------------------------
         header = {
             "customer_id": cust_id,
+            "revenue_contract_id": (
+                int(payload.get("revenue_contract_id"))
+                if payload.get("revenue_contract_id") not in (None, "", 0, "0")
+                else None
+            ),
             "invoice_date": payload.get("invoice_date") or payload.get("date") or inv.get("invoice_date"),
             "due_date": payload.get("due_date") if "due_date" in payload else inv.get("due_date"),
             "currency": payload.get("currency") if "currency" in payload else inv.get("currency"),
@@ -6090,6 +6127,11 @@ def update_invoice(cid: int, invoice_id: int):
                 "item_code": item_code,
                 "vat_code": vat_code,
                 "description": (desc or item_name or ""),
+                "revenue_obligation_id": (
+                    int(ln.get("revenue_obligation_id") or ln.get("obligation_id"))
+                    if (ln.get("revenue_obligation_id") or ln.get("obligation_id")) not in (None, "", 0, "0")
+                    else None
+                ),
                 "account_code": raw_code,
                 "quantity": qty,
                 "unit_price": unit_price,
@@ -6125,6 +6167,28 @@ def update_invoice(cid: int, invoice_id: int):
                 enforce_credit=True,
                 require_approved=require_customer_approved,
             )
+
+            # >>> ADD THIS BLOCK HERE <<<
+            revenue_contract_id = header.get("revenue_contract_id")
+            if revenue_contract_id:
+                db_service.record_revenue_billing_event(
+                    company_id=company_id,
+                    contract_id=int(revenue_contract_id),
+                    data={
+                        "event_date": header.get("invoice_date"),
+                        "event_type": "invoice",
+                        "source_invoice_id": int(invoice_id),
+                        "amount": float(inv.get("total_amount") or inv.get("gross_amount") or 0.0),
+                        "currency": inv.get("currency") or header.get("currency") or "ZAR",
+                        "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                        "payload_json": {
+                            "customer_id": int(cust_id),
+                            "source": "ar_invoice_post",
+                            "invoice_number": inv.get("number"),
+                        },
+                    },
+                    user_id=int(user.get("id") or 0),
+                )
 
             posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
             posted["_posted_journal_id"] = journal_id

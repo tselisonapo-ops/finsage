@@ -1883,6 +1883,9 @@ const ENDPOINTS = {
     billings: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/billings`,
 
+    billingPosition: (companyId, obligationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}/billing_position`,
+
     cashReceipts: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/cash_receipts`,
 
@@ -35890,6 +35893,7 @@ async function openInvoiceIntoForm(invoiceId, { mode = "view" } = {}) {
       unit_price: ln.unit_price ?? 0,
       vatCode: ln.vatCode || "STANDARD",
       account_code: ln.account_code || "",
+      revenue_obligation_id: ln.revenue_obligation_id || null,
       vat_amount: ln.vat_amount,
       total_amount: ln.total_amount,
     });
@@ -36276,7 +36280,7 @@ async function loadInvoiceIntoForm(invoiceId) {
 
       // ✅ revenue account per line
       account_code: ln.account_code,
-
+      revenue_obligation_id: ln.revenue_obligation_id || null,
       // ✅ vat fields (your addLine may expect vat_rate)
       vat_rate: ln.vat_rate,
       vatCode: ln.vat_code || ln.vatCode,
@@ -36902,6 +36906,7 @@ function collectInvoiceFromForm() {
 
       const descEl  = tr.querySelector(".inv-service");
       const acctEl  = tr.querySelector(".inv-acct");
+      const oblEl   = tr.querySelector(".inv-obligation");
       const qtyEl   = tr.querySelector(".inv-qty");
       const priceEl = tr.querySelector(".inv-price");
       const vatEl   = tr.querySelector(".inv-vat-code");
@@ -36923,6 +36928,8 @@ function collectInvoiceFromForm() {
       }
 
       const account_code = ((acctEl?.value || "").trim() || revenueCodeDefault);
+      const obligationIdRaw = (oblEl?.value || "").trim();
+      const revenue_obligation_id = obligationIdRaw ? Number(obligationIdRaw) : null;
 
       // ✅ catalog meta (service | inventory | gl)
       const itemType = (typeEl?.value || "gl").trim().toLowerCase();
@@ -36943,6 +36950,7 @@ function collectInvoiceFromForm() {
         vatCode,
         vat_rate,
         account_code,
+        revenue_obligation_id,
 
         // ✅ NEW meta fields (what backend can use to link to master records)
         item: itemPick,             // optional duplicate, but handy
@@ -39766,6 +39774,7 @@ async function openArCustomerPicker({ closeOnPick = true, reason = "" } = {}) {
 }
 window.openArCustomerPicker = openArCustomerPicker;
 
+
 function bindARPanels() {
   const overlay   = document.getElementById("arOverlay");
   const custPane  = document.getElementById("arCustomerPane");
@@ -40825,7 +40834,8 @@ function readInvoiceForm() {
     const item = row.querySelector(".inv-desc")?.value || "";       // ✅ Item/Service
     const desc = row.querySelector(".inv-service")?.value || "";    // ✅ Description
     const acct = row.querySelector(".inv-acct")?.value || "";       // ✅ Revenue account
-
+    const obligationIdRaw = row.querySelector(".inv-obligation")?.value || "";
+    const revenue_obligation_id = obligationIdRaw ? Number(obligationIdRaw) : null;
     const qty  = parseFloat(row.querySelector(".inv-qty")?.value || "0") || 0;
     const unit = parseFloat(row.querySelector(".inv-price")?.value || "0") || 0;
 
@@ -40856,6 +40866,7 @@ function readInvoiceForm() {
       item_name: itemClean,                              // ✅ maps to DB item_name
       description: (descClean || itemClean || "—"),      // ✅ maps to DB description (NOT NULL)
       account_code: acct || null,
+      revenue_obligation_id,
       quantity: qty,
       unit_price: unit,
       net_amount: +net.toFixed(2),
@@ -42796,11 +42807,18 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
           <input class="w-full border rounded px-1 py-0.5 text-xs inv-service"
                 placeholder="Description">
         </td>
-      <td class="px-2 py-1 text-xs">
-        <select class="w-full border rounded px-1 py-0.5 text-xs inv-acct">
-          <option value="">(Default)</option>
-        </select>
-      </td>
+
+        <td class="px-2 py-1 text-xs">
+          <select class="w-full border rounded px-1 py-0.5 text-xs inv-obligation">
+            <option value="">No obligation</option>
+          </select>
+        </td>
+
+        <td class="px-2 py-1 text-xs">
+          <select class="w-full border rounded px-1 py-0.5 text-xs inv-acct">
+            <option value="">(Default)</option>
+          </select>
+        </td>
       <td class="px-2 py-1 text-xs text-right">
         <input type="number" step="0.01"
               class="w-full border rounded px-1 py-0.5 text-right text-xs inv-qty" value="1">
@@ -42864,6 +42882,17 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
     row.querySelector(".inv-qty").value = String(qtyVal ?? 0);
     row.querySelector(".inv-price").value = String(unitVal ?? 0);
     row.querySelector(".inv-vat-code").value = vatCode;
+
+    const obligationSel = row.querySelector(".inv-obligation");
+    const preObligationId =
+      data.revenue_obligation_id ??
+      data.obligation_id ??
+      null;
+
+    if (obligationSel) {
+      obligationSel.dataset.selectedValue =
+        preObligationId != null ? String(preObligationId) : "";
+    }
 
     // ✅ NOW: Catalog meta prefill (supports backend shapes)
     const preType =
@@ -42992,10 +43021,131 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
 
     if (!window._INV_TOTALS_LOCKED) window.recalcInvoice?.();
 
-    (window._INV_ITEM_CATALOG_READY || Promise.resolve())
-      .then(() => bindInvoiceLineItemPicker?.(row));
+  async function loadRevenueContractsForSelectedCustomer() {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const customerId = document.getElementById("invCustomerId")?.value || "";
+    const sel = document.getElementById("invRevenueContractId");
+    if (!cid || !sel) return;
 
-    return row;
+    sel.innerHTML = `<option value="">No contract link</option>`;
+
+    if (!customerId) return;
+
+    try {
+      const res = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`, { method: "GET" });
+      const items = res?.items || res?.data?.items || res?.data || [];
+
+      const mine = items.filter(x => String(x.customer_id || "") === String(customerId));
+
+      sel.innerHTML =
+        `<option value="">No contract link</option>` +
+        mine.map(c => `
+          <option value="${String(c.id)}">
+            ${escapeHtml(String(c.contract_number || `Contract ${c.id}`))} - ${escapeHtml(String(c.contract_title || ""))}
+          </option>
+        `).join("");
+    } catch (e) {
+      console.warn("[AR] loadRevenueContractsForSelectedCustomer failed", e);
+    }
+  }
+  window.loadRevenueContractsForSelectedCustomer = loadRevenueContractsForSelectedCustomer;
+
+  async function loadInvoiceLineObligationsFromContract() {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const contractId = document.getElementById("invRevenueContractId")?.value || "";
+    if (!cid) return;
+
+    let obligations = [];
+    if (contractId) {
+      try {
+        const res = await apiFetch(`${ENDPOINTS.revenue.obligations(cid, contractId)}`, { method: "GET" });
+        obligations = res?.items || res?.data?.items || res?.data || [];
+      } catch (e) {
+        console.warn("[AR] load obligations failed", e);
+      }
+    }
+
+    document.querySelectorAll("#invLines .inv-obligation").forEach((sel) => {
+      const keep = sel.dataset.selectedValue || sel.value || "";
+      sel.innerHTML =
+        `<option value="">No obligation</option>` +
+        obligations.map(o => `
+          <option value="${String(o.id)}">
+            ${escapeHtml(String(o.obligation_code || o.obligation_name || o.id))}
+          </option>
+        `).join("");
+
+      if (keep) sel.value = keep;
+    });
+  }
+  window.loadInvoiceLineObligationsFromContract = loadInvoiceLineObligationsFromContract;
+
+  async function applyObligationBillingToLine(row) {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid || !row) return;
+
+    const sel = row.querySelector(".inv-obligation");
+    const descEl = row.querySelector(".inv-service");
+    const qtyEl = row.querySelector(".inv-qty");
+    const priceEl = row.querySelector(".inv-price");
+
+    const obligationId = Number(sel?.value || 0) || null;
+    if (!obligationId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.revenue.billingPosition(cid, obligationId),
+        { method: "GET" }
+      );
+      const pos = res?.data || res;
+      if (!pos) return;
+
+      const remaining = Number(pos.remaining_to_bill || 0) || 0;
+      const obligationName = String(pos.obligation_name || "").trim();
+
+      if (descEl && (!descEl.value || !descEl.value.trim()) && obligationName) {
+        descEl.value = obligationName;
+      }
+
+      if (qtyEl) qtyEl.value = "1";
+
+      if (priceEl) {
+        const current = Number(String(priceEl.value || "0").replace(/,/g, "")) || 0;
+        if (current === 0 || row.dataset.priceTouched !== "1") {
+          priceEl.value = remaining.toFixed(2);
+        }
+      }
+
+      if (remaining <= 0) {
+        window.showToast?.("Selected obligation appears fully billed already.", "warning");
+      }
+
+      window.recalcInvoice?.({ force: true });
+      window.saveInvoiceDraftToLocal?.();
+    } catch (e) {
+      console.warn("[AR] applyObligationBillingToLine failed", e);
+    }
+  }
+  window.applyObligationBillingToLine = applyObligationBillingToLine;lyObligationBillingToLine = applyObligationBillingToLine;
+
+  (window._INV_ITEM_CATALOG_READY || Promise.resolve())
+    .then(() => bindInvoiceLineItemPicker?.(row));
+
+  if (obligationSel && !obligationSel.dataset.bound) {
+    obligationSel.dataset.bound = "1";
+    obligationSel.addEventListener("change", async () => {
+      obligationSel.dataset.selectedValue = obligationSel.value || "";
+      await window.applyObligationBillingToLine?.(row);
+    });
+  }
+
+  window.loadInvoiceLineObligationsFromContract?.().then(() => {
+    if (obligationSel?.dataset.selectedValue) {
+      obligationSel.value = obligationSel.dataset.selectedValue;
+    }
+  });
+
+  return row;
   }
   window.addLine = addLine;
 
@@ -43145,6 +43295,24 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
   const otherEl      = document.getElementById("invOther");
   const vatEnabledEl = document.getElementById("invVatEnabled");
   const vatSelEl     = document.getElementById("invDefaultVat");
+
+  const invCustomerNameEl = document.getElementById("invCustomerName");
+  const invRevenueContractEl = document.getElementById("invRevenueContractId");
+
+  if (invCustomerNameEl && !invCustomerNameEl.dataset.revBound) {
+    invCustomerNameEl.dataset.revBound = "1";
+    invCustomerNameEl.addEventListener("change", async () => {
+      await window.loadRevenueContractsForSelectedCustomer?.();
+      await window.loadInvoiceLineObligationsFromContract?.();
+    });
+  }
+
+  if (invRevenueContractEl && !invRevenueContractEl.dataset.revBound) {
+    invRevenueContractEl.dataset.revBound = "1";
+    invRevenueContractEl.addEventListener("change", async () => {
+      await window.loadInvoiceLineObligationsFromContract?.();
+    });
+  }
 
   if (discEl && !discEl.dataset.bound) {
     discEl.dataset.bound = "1";

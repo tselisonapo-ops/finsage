@@ -2743,6 +2743,13 @@
               <div id="arCustomerList" class="space-y-1"></div>
             </aside>
 
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-600">Revenue Contract</label>
+              <select id="invRevenueContractId" class="w-full border rounded px-3 py-2">
+                <option value="">No contract link</option>
+              </select>
+            </div>
+
             <aside id="arDraftPane"
               class="hidden fixed z-[90] top-24 right-4 w-[360px] h-[70vh] bg-white border rounded-xl shadow-lg overflow-auto p-3">
               <div class="flex items-center justify-between mb-2">
@@ -2875,15 +2882,16 @@
                 <table class="min-w-full text-sm">
                   <thead class="sticky top-0 bg-white">
                     <tr class="text-slate-500">
-                      <th class="px-3 py-2 text-left w-[18%]">Item/Service</th>
-                      <th class="px-3 py-2 text-left w-[32%]">Description</th>
-                      <th class="px-3 py-2 text-left w-[16%]">Revenue</th>
-                      <th class="px-3 py-2 text-right w-[8%]">Qty</th>
-                      <th class="px-3 py-2 text-right w-[12%]">Unit Price</th>
-                      <th class="px-3 py-2 text-right w-[14%] vat-col">VAT Code</th>
-                      <th class="px-3 py-2 text-right w-[10%] vat-col">VAT</th>
-                      <th class="px-3 py-2 text-right w-[14%]">Line Total</th>
-                      <th class="px-3 py-2 w-[40px]"></th>
+                      <th class="px-2 py-2 text-left w-[14%]">Item/Service</th>
+                      <th class="px-2 py-2 text-left w-[24%]">Description</th>
+                      <th class="px-2 py-2 text-left w-[14%]">Obligation</th>
+                      <th class="px-2 py-2 text-left w-[14%]">Revenue</th>
+                      <th class="px-2 py-2 text-right w-[7%]">Qty</th>
+                      <th class="px-2 py-2 text-right w-[10%]">Unit Price</th>
+                      <th class="px-2 py-2 text-right w-[10%] vat-col">VAT Code</th>
+                      <th class="px-2 py-2 text-right w-[7%] vat-col">VAT</th>
+                      <th class="px-2 py-2 text-right w-[10%]">Line Total</th>
+                      <th class="px-2 py-2 w-[40px]"></th>
                     </tr>
                   </thead>
                   <tbody id="invLines"></tbody>

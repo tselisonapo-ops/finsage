@@ -1460,17 +1460,7 @@ class DatabaseService:
         rows = self.fetch_all(f"SELECT code, role, code_family FROM {schema}.coa", ())
         return {r["code"]: r for r in (rows or [])}
 
-    def approve_invoice(self, company_id, invoice_id, user_id, cur=None):
-        schema = f"company_{company_id}"
-        sql = f"""
-        UPDATE {schema}.invoices
-        SET status='approved', updated_at=NOW()
-        WHERE id=%s AND status='draft'
-        """
-        if cur is not None:
-            cur.execute(sql, (int(invoice_id),))
-            return
-        self.execute_sql(sql, (int(invoice_id),))
+
 
     # ---------------------------
     # master schema bootstrap (public)
@@ -17420,6 +17410,7 @@ class DatabaseService:
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
             customer_id INT NOT NULL REFERENCES {schema}.customers(id),
+            revenue_contract_id INT NULL
             number TEXT NULL, -- draft-friendly
             invoice_date DATE NOT NULL,
             due_date DATE NULL,
@@ -17549,6 +17540,7 @@ class DatabaseService:
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
             invoice_id INT NOT NULL,
+            revenue_obligation_id INT NULL
             line_no INT NOT NULL,
             item_name TEXT NULL,
             description TEXT NOT NULL,
@@ -35989,6 +35981,11 @@ class DatabaseService:
                 "line_no": idx,
                 "item_name": (ln.get("item_name") or ln.get("itemName") or "").strip() or None,
                 "description": (ln.get("description") or "").strip(),
+                "revenue_obligation_id": (
+                    int(ln.get("revenue_obligation_id"))
+                    if ln.get("revenue_obligation_id") not in (None, "", 0, "0")
+                    else None
+                ),
                 "account_code": ln.get("account_code"),
                 "quantity": qty,
                 "unit_price": price,
@@ -36071,7 +36068,7 @@ class DatabaseService:
         cur.execute(
             f"""
             INSERT INTO {schema}.invoices (
-            company_id, customer_id, number, invoice_date, due_date, currency,
+            company_id, customer_id, revenue_contract_id, number, invoice_date, due_date, currency,
             subtotal_amount, discount_amount, discount_rate, other_amount,
             vat_amount, total_amount,
             status, bank_account_id, notes,
@@ -36113,7 +36110,8 @@ class DatabaseService:
                 item_name, description, account_code,
                 quantity, unit_price, discount_amount, net_amount,
                 vat_rate, vat_amount, total_amount,
-                item_type, item_id, item_code, vat_code
+                item_type, item_id, item_code, vat_code,
+                revenue_obligation_id
                 )
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
                 """,
@@ -36123,6 +36121,7 @@ class DatabaseService:
                     pl["line_no"],
                     pl.get("item_name"),
                     pl["description"],
+                    pl.get("revenue_obligation_id"),
                     pl["account_code"],
                     pl["quantity"],
                     pl["unit_price"],
@@ -39860,6 +39859,18 @@ class DatabaseService:
             """,
             (status, invoice_id),
         )
+
+    def approve_invoice(self, company_id, invoice_id, user_id, cur=None):
+        schema = f"company_{company_id}"
+        sql = f"""
+        UPDATE {schema}.invoices
+        SET status='approved', updated_at=NOW()
+        WHERE id=%s AND status='draft'
+        """
+        if cur is not None:
+            cur.execute(sql, (int(invoice_id),))
+            return
+        self.execute_sql(sql, (int(invoice_id),))
 
     def set_receipt_journal(self, company_id: int, receipt_id: int, journal_id: int):
         schema = self.company_schema(company_id)
@@ -56766,7 +56777,37 @@ class DatabaseService:
                     "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
                 },
             }
-        
+    def get_revenue_obligation_billing_position(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                o.id AS obligation_id,
+                o.contract_id,
+                o.obligation_code,
+                o.obligation_name,
+                o.allocated_transaction_price,
+                COALESCE((
+                    SELECT SUM(b.amount)
+                    FROM {schema}.revenue_billing_events b
+                    WHERE b.obligation_id = o.id
+                ), 0) AS billed_to_date,
+                GREATEST(
+                    COALESCE(o.allocated_transaction_price, 0) -
+                    COALESCE((
+                        SELECT SUM(b.amount)
+                        FROM {schema}.revenue_billing_events b
+                        WHERE b.obligation_id = o.id
+                    ), 0),
+                    0
+                ) AS remaining_to_bill
+            FROM {schema}.revenue_obligations o
+            WHERE o.id = %s
+            LIMIT 1
+        """
+        row = self.fetch_one(sql, (int(obligation_id),), cur=cur)
+        return row or None
+
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
         period_start = data.get("period_start")
