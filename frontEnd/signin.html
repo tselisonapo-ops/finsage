@@ -210,6 +210,30 @@
 
       const user = data.user || {};
 
+      // clear stale delegated workspace state on normal sign-in
+      const isDelegatedSignin =
+        user?.is_delegated_company_access === true ||
+        String(user?.access_scope || "").toLowerCase() === "delegated_workspace";
+
+      if (!isDelegatedSignin) {
+        localStorage.removeItem("fs_posting_context");
+        sessionStorage.removeItem("fs_posting_context");
+
+        localStorage.removeItem("source_company_id");
+        localStorage.removeItem("target_company_id");
+        localStorage.removeItem("engagement_id");
+        localStorage.removeItem("is_delegated_company_access");
+
+        sessionStorage.removeItem("source_company_id");
+        sessionStorage.removeItem("target_company_id");
+        sessionStorage.removeItem("engagement_id");
+        sessionStorage.removeItem("is_delegated_company_access");
+
+        window.__FS_DELEGATED_POSTING__ = false;
+        window.__FS_POSTING_CONTEXT__ = null;
+        window.__PR_POSTING_CONTEXT__ = null;
+      }
+
       if (data.token) {
         localStorage.setItem("fs_user_token", data.token);
         sessionStorage.setItem("fs_user_token", data.token);

@@ -5647,19 +5647,30 @@ function renderInsightBanner(data) {
 
   function restorePostingContext() {
     const ctx = getPostingContext();
-    if (!ctx) return null;
+    if (!ctx || typeof ctx !== "object") return null;
 
-    setDelegatedGlobals(ctx);
+    const normalized = {
+      targetCompanyId: Number(ctx.targetCompanyId || ctx.companyId || 0) || null,
+      sourceCompanyId: Number(ctx.sourceCompanyId || 0) || null,
+      engagementId: Number(ctx.engagementId || 0) || null,
+      engagementName: ctx.engagementName || null,
+      launchMode: String(ctx.launchMode || "").toLowerCase() || null,
+      accessMode: String(ctx.accessMode || "").toLowerCase() || null,
+      mode: String(ctx.mode || "").toLowerCase() || null,
+      companyId: Number(ctx.companyId || ctx.targetCompanyId || 0) || null,
+    };
+
+    setDelegatedGlobals(normalized);
 
     console.log("[PostingContext] restored", {
-      targetCompanyId: ctx.targetCompanyId,
-      sourceCompanyId: ctx.sourceCompanyId,
-      engagementId: ctx.engagementId,
-      launchMode: ctx.launchMode,
-      accessMode: ctx.accessMode,
+      targetCompanyId: normalized.targetCompanyId,
+      sourceCompanyId: normalized.sourceCompanyId,
+      engagementId: normalized.engagementId,
+      launchMode: normalized.launchMode,
+      accessMode: normalized.accessMode,
     });
 
-    return ctx;
+    return normalized;
   }
 
   function resolveInitialCompanyId() {
@@ -5951,24 +5962,34 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     me = window.currentUser || {};
   }
 
+  const userScope = String(
+    me?.access_scope ||
+    me?.token_access_scope ||
+    ""
+  ).toLowerCase();
+
+  const tokenSaysDelegated =
+    me?.is_delegated_company_access === true ||
+    userScope === "delegated_workspace";
+
   const postingCtx =
     window.__FS_POSTING_CONTEXT__ ||
     window.__PR_POSTING_CONTEXT__ ||
     window.FS_DELEGATED_WORKSPACE?.getPostingContext?.() ||
-    window.restorePostingContext?.() ||
+    (tokenSaysDelegated ? window.restorePostingContext?.() : null) ||
     null;
 
   const delegatedFromCtx =
+    tokenSaysDelegated &&
     !!postingCtx &&
     (
       postingCtx.accessMode === "delegated_workspace" ||
       postingCtx.launchMode === "posting" ||
-      postingCtx.mode === "delegated" ||
-      Number(postingCtx.targetCompanyId || postingCtx.companyId || 0) > 0 &&
-      !!postingCtx.engagementName
+      postingCtx.mode === "delegated"
     );
 
   const isDelegatedPosting =
+    tokenSaysDelegated ||
     String(currentMode || "").toLowerCase() === "delegated" ||
     !!window.__FS_DELEGATED_POSTING__ ||
     delegatedFromCtx;
@@ -6002,6 +6023,26 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       : "internal";
 
   select.onchange = () => {
+    let liveMe = null;
+    try {
+      liveMe =
+        window.currentUser ||
+        JSON.parse(localStorage.getItem("fs_user") || "null") ||
+        {};
+    } catch (_) {
+      liveMe = window.currentUser || {};
+    }
+
+    const liveScope = String(
+      liveMe?.access_scope ||
+      liveMe?.token_access_scope ||
+      ""
+    ).toLowerCase();
+
+    const liveTokenSaysDelegated =
+      liveMe?.is_delegated_company_access === true ||
+      liveScope === "delegated_workspace";
+
     const liveCtx =
       window.__FS_POSTING_CONTEXT__ ||
       window.__PR_POSTING_CONTEXT__ ||
@@ -6009,13 +6050,16 @@ function initDashboardModeSwitcher(currentMode = "internal") {
       null;
 
     const delegatedNow =
-      !!window.__FS_DELEGATED_POSTING__ ||
+      liveTokenSaysDelegated &&
       (
-        !!liveCtx &&
+        !!window.__FS_DELEGATED_POSTING__ ||
         (
-          liveCtx.accessMode === "delegated_workspace" ||
-          liveCtx.launchMode === "posting" ||
-          liveCtx.mode === "delegated"
+          !!liveCtx &&
+          (
+            liveCtx.accessMode === "delegated_workspace" ||
+            liveCtx.launchMode === "posting" ||
+            liveCtx.mode === "delegated"
+          )
         )
       );
 
@@ -56064,13 +56108,33 @@ async function bootstrapApp(currentUser) {
   // ------------------------------------------------------------
   // 1) Resolve company id + access mode
   // ------------------------------------------------------------
-  const postingCtx =
-    window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
-    window.restorePostingContext?.() ||
-    null;
-
-  // read token payload once
   let tokenPayload = null;
+  try {
+    const token = window.getToken?.();
+    if (token) {
+      const parts = String(token).split(".");
+      if (parts.length >= 2) {
+        tokenPayload = JSON.parse(atob(parts[1]));
+      }
+    }
+  } catch (e) {
+    console.warn("bootstrapApp: failed to decode token payload", e);
+    tokenPayload = null;
+  }
+
+  const tokenAccessScope = String(tokenPayload?.access_scope || "").toLowerCase();
+  const tokenSaysDelegated =
+    !!tokenPayload?.is_delegated_company_access ||
+    tokenAccessScope === "delegated_workspace";
+
+  const postingCtx = tokenSaysDelegated
+    ? (
+        window.FS_DELEGATED_WORKSPACE?.restorePostingContext?.() ||
+        window.restorePostingContext?.() ||
+        null
+      )
+    : null;
+
   try {
     const token = window.getToken?.();
     if (token) {
