@@ -32853,6 +32853,51 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
+function applyRevenueSetupDefaults() {
+  if (typeof window.getRevenueSetupPolicy !== "function") return;
+
+  const setup = window.getRevenueSetupPolicy() || {};
+
+  // Step 1 defaults -> contract criteria checkboxes
+  if ($("revChkCollectability")) {
+    $("revChkCollectability").checked = !!setup?.contract_rules?.collectability_required;
+  }
+  if ($("revChkRights")) {
+    $("revChkRights").checked = !!setup?.contract_rules?.rights_required;
+  }
+  if ($("revChkTerms")) {
+    $("revChkTerms").checked = !!setup?.contract_rules?.payment_terms_required;
+  }
+  if ($("revChkSubstance")) {
+    $("revChkSubstance").checked = !!setup?.contract_rules?.commercial_substance_required;
+  }
+
+  // Step 2 defaults -> obligation defaults
+  if ($("revRecognitionTiming") && setup?.obligation_rules?.default_recognition_timing) {
+    $("revRecognitionTiming").value = setup.obligation_rules.default_recognition_timing;
+  }
+
+  if ($("revProgressMethod") && setup?.obligation_rules?.default_progress_method) {
+    $("revProgressMethod").value = setup.obligation_rules.default_progress_method;
+  }
+}
+
+  function validateContractCriteria() {
+    if ($("revChkCollectability") && !$("revChkCollectability").checked) {
+      return "Collectability criteria not satisfied.";
+    }
+    if ($("revChkRights") && !$("revChkRights").checked) {
+      return "Rights are not identifiable.";
+    }
+    if ($("revChkTerms") && !$("revChkTerms").checked) {
+      return "Payment terms are not identifiable.";
+    }
+    if ($("revChkSubstance") && !$("revChkSubstance").checked) {
+      return "Commercial substance criteria not satisfied.";
+    }
+    return null;
+  }
+
   function setActiveTab(tab) {
     state.tab = tab;
 
@@ -32891,6 +32936,12 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revHasFinancing").checked = !!c.has_significant_financing_component;
     $("revContractNotes").value = c.notes || "";
 
+    const im = c?.payload_json?.ifrs15_initial_measurement || {};
+    if ($("revChkCollectability")) $("revChkCollectability").checked = !!im.collectability_probable;
+    if ($("revChkRights")) $("revChkRights").checked = !!im.rights_identifiable;
+    if ($("revChkTerms")) $("revChkTerms").checked = !!im.payment_terms_identifiable;
+    if ($("revChkSubstance")) $("revChkSubstance").checked = !!im.commercial_substance;
+    
     $("revContractStatusPill").textContent = c.status || "draft";
     state.selectedContract = c?.id ? c : null;
 
@@ -33242,8 +33293,14 @@ function bindAssetRecordsPickerModal({ cid }) {
     const cid = state.cid;
     if (!cid) throw new Error("Missing company id");
 
+    const criteriaError = validateContractCriteria();
+    if (criteriaError) {
+      throw new Error(criteriaError);
+    }
+
     const payload = contractPayloadFromUI();
     const out = await apiFetch(ENDPOINTS.revenue.contracts(cid), {
+
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -33582,6 +33639,8 @@ function bindAssetRecordsPickerModal({ cid }) {
       bindRevenueScreenEvents();
       bound = true;
     }
+
+    applyRevenueSetupDefaults();
 
     const { period_start, period_end } = monthBoundsISO();
     if ($("revPeriodStart") && !$("revPeriodStart").value) $("revPeriodStart").value = period_start;
