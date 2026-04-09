@@ -94,9 +94,17 @@ def _money(self, x) -> Decimal:
     return Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _pct4(self, x) -> Decimal:
-    return Decimal(str(x or 0)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+def _money2(self, v) -> Decimal:
+    return self._d(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+
+def _pct(self, v) -> Decimal:
+    x = self._d(v)
+    if x < 0:
+        x = Decimal("0")
+    if x > 100:
+        x = Decimal("100")
+    return x
 
 def _json_dumps(self, obj) -> str:
     return json.dumps(obj or {}, default=str)
@@ -56239,9 +56247,247 @@ class DatabaseService:
 
         return {"progress_update": row, "obligation": obligation}
 
+    def _get_revenue_setup_accounts(self, company_id: int) -> dict:
+        """
+        Resolve posting accounts from company account settings.
+        Adjust the setting keys below to match your actual settings table.
+        """
+        settings = self.get_company_account_settings(company_id) or {}
+
+        def resolve_code(setting_key: str, label: str) -> str:
+            raw = (settings.get(setting_key) or "").strip()
+            if not raw:
+                raise ValueError(f"{label} control not set")
+            row = self.get_account_row_for_posting(company_id, raw)
+            if not row:
+                raise ValueError(f"{label} control '{raw}' not found in COA")
+            code = (row[1] or "").strip()
+            if not code:
+                raise ValueError(f"{label} resolved blank posting code")
+            return code
+
+        return {
+            "revenue_code": resolve_code("revenue_control_code", "Revenue"),
+            "contract_asset_code": resolve_code("contract_asset_control_code", "Contract asset"),
+            "contract_liability_code": resolve_code("contract_liability_control_code", "Contract liability"),
+        }
+
+
+    def _point_in_time_satisfied(self, obligation: dict, period_end) -> bool:
+        """
+        MVP rule:
+        - if recognized_at_point_in_time_date exists and is <= period_end => satisfied
+        - OR payload_json.manual_pit_satisfied = true
+        """
+        pe = self._as_date(period_end)
+        pit_date = self._as_date(obligation.get("recognized_at_point_in_time_date"))
+        if pit_date and pe and pit_date <= pe:
+            return True
+
+        payload = obligation.get("payload_json") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+
+        return bool(payload.get("manual_pit_satisfied"))
+
+
+    def _obligation_progress_pct(self, obligation: dict, period_end) -> Decimal:
+        """
+        Returns a 0..100 percentage.
+        Supports:
+        - cost_to_cost
+        - units
+        - milestone/manual/time_elapsed fallback to stored progress_percent
+        """
+        method = str(obligation.get("progress_method") or "cost_to_cost").strip().lower()
+
+        if str(obligation.get("recognition_timing") or "").strip().lower() == "point_in_time":
+            return Decimal("100") if self._point_in_time_satisfied(obligation, period_end) else Decimal("0")
+
+        if method == "cost_to_cost":
+            expected_total_cost = self._d(obligation.get("expected_total_cost"))
+            actual_cost_to_date = self._d(obligation.get("actual_cost_to_date"))
+            if expected_total_cost <= 0:
+                return self._pct(obligation.get("progress_percent") or 0)
+            return self._pct((actual_cost_to_date / expected_total_cost) * Decimal("100"))
+
+        if method == "units":
+            payload = obligation.get("payload_json") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+
+            units_done = self._d(payload.get("units_done"))
+            units_total = self._d(payload.get("units_total"))
+            if units_total <= 0:
+                return self._pct(obligation.get("progress_percent") or 0)
+            return self._pct((units_done / units_total) * Decimal("100"))
+
+        # milestone / manual / time_elapsed / fallback
+        return self._pct(obligation.get("progress_percent") or 0)
+
+
+    def _obligation_billed_to_date(self, company_id: int, obligation: dict, period_end, cur=None) -> Decimal:
+        schema = self.company_schema(company_id)
+        oid = int(obligation["id"])
+        pe = self._as_date(period_end)
+
+        row = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(amount), 0) AS amt
+            FROM {schema}.revenue_billing_events
+            WHERE obligation_id = %s
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (oid, pe, pe),
+            cur=cur,
+        ) or {}
+        return self._money2(row.get("amt") or 0)
+
+
+    def _contract_fallback_billed_to_date(self, company_id: int, contract_id: int, period_end, cur=None) -> Decimal:
+        schema = self.company_schema(company_id)
+        pe = self._as_date(period_end)
+
+        row = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(amount), 0) AS amt
+            FROM {schema}.revenue_billing_events
+            WHERE contract_id = %s
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (int(contract_id), pe, pe),
+            cur=cur,
+        ) or {}
+        return self._money2(row.get("amt") or 0)
+
+
+    def _recognized_to_date_before_period(self, company_id: int, obligation_id: int, period_start, cur=None) -> Decimal:
+        schema = self.company_schema(company_id)
+        ps = self._as_date(period_start)
+
+        if ps is None:
+            return Decimal("0.00")
+
+        row = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(revenue_delta_this_run), 0) AS amt
+            FROM {schema}.revenue_recognition_entries e
+            JOIN {schema}.revenue_recognition_runs r
+            ON r.id = e.run_id
+            WHERE e.obligation_id = %s
+            AND r.status IN ('draft', 'posted')
+            AND r.period_end < %s
+            """,
+            (int(obligation_id), ps),
+            cur=cur,
+        ) or {}
+        return self._money2(row.get("amt") or 0)
+
+
+    def _calculate_obligation_revenue(self, company_id: int, contract: dict, obligation: dict, period_start, period_end, cur=None) -> dict:
+        """
+        Core IFRS 15 cumulative calculation for one obligation.
+        """
+        allocated = self._money2(obligation.get("allocated_transaction_price") or 0)
+        progress_pct = self._obligation_progress_pct(obligation, period_end)
+        revenue_required_to_date = self._money2((allocated * progress_pct) / Decimal("100"))
+        revenue_previously_recognized = self._recognized_to_date_before_period(
+            company_id=company_id,
+            obligation_id=int(obligation["id"]),
+            period_start=period_start,
+            cur=cur,
+        )
+        delta = self._money2(revenue_required_to_date - revenue_previously_recognized)
+
+        billed_to_date = self._obligation_billed_to_date(
+            company_id=company_id,
+            obligation=obligation,
+            period_end=period_end,
+            cur=cur,
+        )
+
+        # Fallback: if no billing rows were tagged to obligation but contract only has one obligation,
+        # treat all contract billing as belonging to this obligation.
+        if billed_to_date == Decimal("0.00"):
+            cnt = self.fetch_one(
+                f"""
+                SELECT COUNT(*) AS c
+                FROM {self.company_schema(company_id)}.revenue_obligations
+                WHERE contract_id = %s
+                """,
+                (int(contract["id"]),),
+                cur=cur,
+            ) or {}
+            if int(cnt.get("c") or 0) == 1:
+                billed_to_date = self._contract_fallback_billed_to_date(
+                    company_id=company_id,
+                    contract_id=int(contract["id"]),
+                    period_end=period_end,
+                    cur=cur,
+                )
+
+        #
+        # Position logic for THIS RUN only
+        #
+        # cumulative position before this run:
+        prev_position = self._money2(billed_to_date - revenue_previously_recognized)
+        # cumulative position after this run:
+        new_position = self._money2(billed_to_date - revenue_required_to_date)
+
+        prev_liability = prev_position if prev_position > 0 else Decimal("0.00")
+        prev_asset = -prev_position if prev_position < 0 else Decimal("0.00")
+
+        new_liability = new_position if new_position > 0 else Decimal("0.00")
+        new_asset = -new_position if new_position < 0 else Decimal("0.00")
+
+        contract_liability_delta = self._money2(prev_liability - new_liability)
+        contract_asset_delta = self._money2(new_asset - prev_asset)
+
+        # Sanity: for a positive revenue delta, one side should normally be active.
+        # Do not hard fail; just expose values.
+        return {
+            "company_id": int(company_id),
+            "contract_id": int(contract["id"]),
+            "contract_number": contract.get("contract_number"),
+            "obligation_id": int(obligation["id"]),
+            "obligation_code": obligation.get("obligation_code"),
+            "obligation_name": obligation.get("obligation_name"),
+            "recognition_timing": obligation.get("recognition_timing"),
+            "progress_method": obligation.get("progress_method"),
+            "progress_percent": float(progress_pct),
+            "allocated_transaction_price": float(allocated),
+
+            "revenue_required_to_date": float(revenue_required_to_date),
+            "revenue_previously_recognized": float(revenue_previously_recognized),
+            "revenue_delta_this_run": float(delta),
+
+            "billed_to_date": float(billed_to_date),
+            "contract_asset_delta": float(contract_asset_delta),
+            "contract_liability_delta": float(contract_liability_delta),
+
+            "run_reason": "period_close",
+            "payload_json": {
+                "calc": {
+                    "allocated_transaction_price": float(allocated),
+                    "progress_percent": float(progress_pct),
+                    "billed_to_date": float(billed_to_date),
+                    "previous_position": float(prev_position),
+                    "new_position": float(new_position),
+                }
+            },
+        }
 
     def preview_revenue_recognition_run(self, company_id: int, period_start, period_end, contract_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
+
+        period_start_s = str(period_start) if period_start is not None else None
+        period_end_s = str(period_end) if period_end is not None else None
 
         with self._conn_cursor() as (conn, cur):
             contracts_sql = f"""
@@ -56251,7 +56497,11 @@ class DatabaseService:
             AND status IN ('draft','active','completed')
             ORDER BY id ASC
             """
-            contracts = self.fetch_all(contracts_sql, (contract_id, contract_id), cur=cur) or []
+            contracts = self.fetch_all(
+                contracts_sql,
+                (int(contract_id) if contract_id else None, int(contract_id) if contract_id else None),
+                cur=cur,
+            ) or []
 
             preview_entries = []
             total_rev = Decimal("0.00")
@@ -56272,25 +56522,39 @@ class DatabaseService:
 
                 billed_to_date_contract = Decimal(str(
                     (self.fetch_one(
-                        f"SELECT COALESCE(SUM(amount),0) AS amt FROM {schema}.revenue_billing_events WHERE contract_id=%s AND event_date <= %s;",
+                        f"""
+                        SELECT COALESCE(SUM(amount),0) AS amt
+                        FROM {schema}.revenue_billing_events
+                        WHERE contract_id=%s
+                        AND event_date <= %s
+                        """,
                         (int(c["id"]), period_end),
                         cur=cur,
                     ) or {}).get("amt") or 0
-                ))
+                )).quantize(Decimal("0.01"))
+
                 cash_to_date_contract = Decimal(str(
                     (self.fetch_one(
-                        f"SELECT COALESCE(SUM(amount),0) AS amt FROM {schema}.revenue_cash_events WHERE contract_id=%s AND event_date <= %s;",
+                        f"""
+                        SELECT COALESCE(SUM(amount),0) AS amt
+                        FROM {schema}.revenue_cash_events
+                        WHERE contract_id=%s
+                        AND event_date <= %s
+                        """,
                         (int(c["id"]), period_end),
                         cur=cur,
                     ) or {}).get("amt") or 0
-                ))
+                )).quantize(Decimal("0.01"))
+
+                obligation_count = len(obligations)
 
                 for obl in obligations:
                     latest_prog = self.fetch_one(
                         f"""
                         SELECT *
                         FROM {schema}.revenue_progress_updates
-                        WHERE obligation_id=%s AND period_end <= %s
+                        WHERE obligation_id=%s
+                        AND period_end <= %s
                         ORDER BY period_end DESC, id DESC
                         LIMIT 1
                         """,
@@ -56298,27 +56562,42 @@ class DatabaseService:
                         cur=cur,
                     ) or {}
 
-                    allocated = Decimal(str(obl.get("allocated_transaction_price") or 0))
-                    timing = str(obl.get("recognition_timing") or "over_time").lower()
-                    method = str(obl.get("progress_method") or "cost_to_cost").lower()
+                    allocated = Decimal(str(obl.get("allocated_transaction_price") or 0)).quantize(Decimal("0.01"))
+                    timing = str(obl.get("recognition_timing") or "over_time").strip().lower()
+                    method = str(obl.get("progress_method") or "cost_to_cost").strip().lower()
 
                     required_to_date = Decimal("0.00")
 
                     if timing == "point_in_time":
                         pit_date = obl.get("recognized_at_point_in_time_date")
-                        if pit_date and str(pit_date) <= str(period_end):
+                        pit_date_s = str(pit_date) if pit_date is not None else None
+                        if pit_date_s and pit_date_s <= period_end_s:
                             required_to_date = allocated
                     else:
                         if method == "cost_to_cost":
-                            actual = Decimal(str(latest_prog.get("actual_cost_to_date") or obl.get("actual_cost_to_date") or 0))
-                            expected = Decimal(str(latest_prog.get("expected_total_cost") or obl.get("expected_total_cost") or 0))
+                            actual = Decimal(str(
+                                latest_prog.get("actual_cost_to_date")
+                                or obl.get("actual_cost_to_date")
+                                or 0
+                            ))
+                            expected = Decimal(str(
+                                latest_prog.get("expected_total_cost")
+                                or obl.get("expected_total_cost")
+                                or 0
+                            ))
                             pct = (actual / expected) if expected > 0 else Decimal("0")
+
                         elif method in {"units", "units_delivered"}:
                             done = Decimal(str(latest_prog.get("units_done") or 0))
                             total = Decimal(str(latest_prog.get("units_total") or 0))
                             pct = (done / total) if total > 0 else Decimal("0")
+
                         else:
-                            pct = Decimal(str(latest_prog.get("progress_percent") or obl.get("progress_percent") or 0)) / Decimal("100")
+                            pct = Decimal(str(
+                                latest_prog.get("progress_percent")
+                                or obl.get("progress_percent")
+                                or 0
+                            )) / Decimal("100")
 
                         if pct < 0:
                             pct = Decimal("0")
@@ -56329,50 +56608,50 @@ class DatabaseService:
 
                     prev_row = self.fetch_one(
                         f"""
-                        SELECT COALESCE(SUM(revenue_delta_this_run),0) AS amt
-                        FROM {schema}.revenue_recognition_entries
-                        WHERE obligation_id=%s
-                        AND period_end < %s
+                        SELECT COALESCE(SUM(e.revenue_delta_this_run),0) AS amt
+                        FROM {schema}.revenue_recognition_entries e
+                        JOIN {schema}.revenue_recognition_runs r
+                        ON r.id = e.run_id
+                        WHERE e.obligation_id=%s
+                        AND r.status = 'posted'
+                        AND r.period_end < %s
                         """,
                         (int(obl["id"]), period_start),
                         cur=cur,
                     ) or {}
-                    prev_recognized = Decimal(str(prev_row.get("amt") or 0))
+                    prev_recognized = Decimal(str(prev_row.get("amt") or 0)).quantize(Decimal("0.01"))
 
                     delta = (required_to_date - prev_recognized).quantize(Decimal("0.01"))
 
-                    billed_to_date = Decimal("0.00")
-                    if obl.get("id"):
-                        billed_row = self.fetch_one(
-                            f"""
-                            SELECT COALESCE(SUM(amount),0) AS amt
-                            FROM {schema}.revenue_billing_events
-                            WHERE contract_id=%s
-                            AND (%s IS NULL OR obligation_id=%s OR obligation_id IS NULL)
-                            AND event_date <= %s
-                            """,
-                            (int(c["id"]), int(obl["id"]), int(obl["id"]), period_end),
-                            cur=cur,
-                        ) or {}
-                        billed_to_date = Decimal(str(billed_row.get("amt") or 0))
+                    billed_row = self.fetch_one(
+                        f"""
+                        SELECT COALESCE(SUM(amount),0) AS amt
+                        FROM {schema}.revenue_billing_events
+                        WHERE obligation_id=%s
+                        AND event_date <= %s
+                        """,
+                        (int(obl["id"]), period_end),
+                        cur=cur,
+                    ) or {}
+                    billed_to_date = Decimal(str(billed_row.get("amt") or 0)).quantize(Decimal("0.01"))
 
-                    earned_not_billed = required_to_date - billed_to_date
-                    billed_ahead = billed_to_date - required_to_date
+                    if billed_to_date == Decimal("0.00") and obligation_count == 1:
+                        billed_to_date = billed_to_date_contract
 
-                    ca_delta = Decimal("0.00")
-                    cl_delta = Decimal("0.00")
+                    prev_position = (billed_to_date - prev_recognized).quantize(Decimal("0.01"))
+                    new_position = (billed_to_date - required_to_date).quantize(Decimal("0.01"))
 
-                    if delta > 0:
-                        if billed_ahead > 0:
-                            cl_delta = -min(delta, billed_ahead)
-                        else:
-                            ca_delta = delta
-                    elif delta < 0:
-                        reverse_amt = abs(delta)
-                        if billed_ahead > 0:
-                            cl_delta = min(reverse_amt, billed_ahead)
-                        else:
-                            ca_delta = -reverse_amt
+                    prev_liability = max(prev_position, Decimal("0.00"))
+                    prev_asset = max(-prev_position, Decimal("0.00"))
+
+                    new_liability = max(new_position, Decimal("0.00"))
+                    new_asset = max(-new_position, Decimal("0.00"))
+
+                    cl_delta = (prev_liability - new_liability).quantize(Decimal("0.01"))
+                    ca_delta = (new_asset - prev_asset).quantize(Decimal("0.01"))
+
+                    if delta == Decimal("0.00") and ca_delta == Decimal("0.00") and cl_delta == Decimal("0.00"):
+                        continue
 
                     entry = {
                         "contract_id": int(c["id"]),
@@ -56380,8 +56659,8 @@ class DatabaseService:
                         "obligation_id": int(obl["id"]),
                         "obligation_code": obl.get("obligation_code"),
                         "obligation_name": obl.get("obligation_name"),
-                        "period_start": str(period_start),
-                        "period_end": str(period_end),
+                        "period_start": period_start_s,
+                        "period_end": period_end_s,
                         "revenue_required_to_date": float(required_to_date),
                         "revenue_previously_recognized": float(prev_recognized),
                         "revenue_delta_this_run": float(delta),
@@ -56397,6 +56676,8 @@ class DatabaseService:
                             "contract_billed_to_date": float(billed_to_date_contract),
                             "contract_cash_to_date": float(cash_to_date_contract),
                             "latest_progress_id": latest_prog.get("id"),
+                            "previous_position": float(prev_position),
+                            "new_position": float(new_position),
                         },
                     }
                     preview_entries.append(entry)
@@ -56409,17 +56690,16 @@ class DatabaseService:
                 "ok": True,
                 "scope": "contract" if contract_id else "company",
                 "contract_id": int(contract_id) if contract_id else None,
-                "period_start": str(period_start),
-                "period_end": str(period_end),
+                "period_start": period_start_s,
+                "period_end": period_end_s,
                 "entries": preview_entries,
                 "totals": {
-                    "total_revenue_delta": float(total_rev),
-                    "total_contract_asset_delta": float(total_ca),
-                    "total_contract_liability_delta": float(total_cl),
+                    "total_revenue_delta": float(total_rev.quantize(Decimal("0.01"))),
+                    "total_contract_asset_delta": float(total_ca.quantize(Decimal("0.01"))),
+                    "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
                 },
             }
-
-
+        
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
         period_start = data.get("period_start")
@@ -56506,72 +56786,190 @@ class DatabaseService:
             "preview": preview,
         }
 
-    def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
-        settings = self.get_company_account_settings(company_id) or {}
+        def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
+            from decimal import Decimal, ROUND_HALF_UP
 
-        revenue_code = (settings.get("revenue_control_code") or settings.get("default_revenue_code") or "").strip()
-        contract_asset_code = (settings.get("contract_asset_code") or "BS_CA_1716").strip()
-        contract_liability_code = (settings.get("contract_liability_code") or "BS_CL_2700").strip()
+            settings = self.get_company_account_settings(company_id) or {}
 
-        if not revenue_code:
-            raise ValueError("Revenue control code is not configured")
+            revenue_code = (settings.get("revenue_control_code") or settings.get("default_revenue_code") or "").strip()
+            contract_asset_code = (settings.get("contract_asset_code") or "BS_CA_1716").strip()
+            contract_liability_code = (settings.get("contract_liability_code") or "BS_CL_2700").strip()
 
-        jlines: list[dict] = []
+            if not revenue_code:
+                raise ValueError("Revenue control code is not configured")
+            if not contract_asset_code:
+                raise ValueError("Contract asset code is not configured")
+            if not contract_liability_code:
+                raise ValueError("Contract liability code is not configured")
 
-        for e in entries:
-            delta = Decimal(str(e.get("revenue_delta_this_run") or 0))
-            ca = Decimal(str(e.get("contract_asset_delta") or 0))
-            cl = Decimal(str(e.get("contract_liability_delta") or 0))
-            ref = e.get("obligation_code") or str(e.get("obligation_id") or "")
+            def q2(v) -> Decimal:
+                return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-            if delta == 0 and ca == 0 and cl == 0:
-                continue
+            def add_line(bucket: list[dict], account_code: str, debit=0, credit=0, memo: str = ""):
+                d = q2(debit)
+                c = q2(credit)
+                if d == Decimal("0.00") and c == Decimal("0.00"):
+                    return
+                bucket.append({
+                    "account_code": account_code,
+                    "debit": float(d),
+                    "credit": float(c),
+                    "memo": memo,
+                })
 
-            if delta > 0:
-                if cl < 0:
-                    amt = abs(cl)
-                    jlines.append({"account_code": contract_liability_code, "debit": float(amt), "credit": 0.0, "memo": f"Revenue recognition release {ref}"})
-                    jlines.append({"account_code": revenue_code, "debit": 0.0, "credit": float(amt), "memo": f"Revenue recognized {ref}"})
-                if ca > 0:
-                    amt = ca
-                    jlines.append({"account_code": contract_asset_code, "debit": float(amt), "credit": 0.0, "memo": f"Unbilled revenue {ref}"})
-                    jlines.append({"account_code": revenue_code, "debit": 0.0, "credit": float(amt), "memo": f"Revenue recognized {ref}"})
+            jlines: list[dict] = []
 
-            elif delta < 0:
-                rev = abs(delta)
-                if cl > 0:
-                    amt = cl
-                    jlines.append({"account_code": revenue_code, "debit": float(amt), "credit": 0.0, "memo": f"Revenue reversal {ref}"})
-                    jlines.append({"account_code": contract_liability_code, "debit": 0.0, "credit": float(amt), "memo": f"Reverse liability release {ref}"})
-                if ca < 0:
-                    amt = abs(ca)
-                    jlines.append({"account_code": revenue_code, "debit": float(amt), "credit": 0.0, "memo": f"Revenue reversal {ref}"})
-                    jlines.append({"account_code": contract_asset_code, "debit": 0.0, "credit": float(amt), "memo": f"Reverse unbilled revenue {ref}"})
+            for e in entries:
+                delta = q2(e.get("revenue_delta_this_run"))
+                ca = q2(e.get("contract_asset_delta"))
+                cl = q2(e.get("contract_liability_delta"))
 
-        return jlines
+                ref = (
+                    e.get("obligation_code")
+                    or e.get("obligation_name")
+                    or str(e.get("obligation_id") or "")
+                ).strip()
+
+                if delta == Decimal("0.00") and ca == Decimal("0.00") and cl == Decimal("0.00"):
+                    continue
+
+                # 1) Positive revenue recognition
+                #    a) release contract liability: Dr Contract Liability / Cr Revenue
+                #    b) create contract asset:     Dr Contract Asset     / Cr Revenue
+                if delta > Decimal("0.00"):
+                    if cl < Decimal("0.00"):
+                        amt = abs(cl)
+                        add_line(
+                            jlines,
+                            contract_liability_code,
+                            debit=amt,
+                            credit=0,
+                            memo=f"Revenue recognition release {ref}",
+                        )
+                        add_line(
+                            jlines,
+                            revenue_code,
+                            debit=0,
+                            credit=amt,
+                            memo=f"Revenue recognized {ref}",
+                        )
+
+                    if ca > Decimal("0.00"):
+                        amt = ca
+                        add_line(
+                            jlines,
+                            contract_asset_code,
+                            debit=amt,
+                            credit=0,
+                            memo=f"Unbilled revenue recognized {ref}",
+                        )
+                        add_line(
+                            jlines,
+                            revenue_code,
+                            debit=0,
+                            credit=amt,
+                            memo=f"Revenue recognized {ref}",
+                        )
+
+                # 2) Negative revenue catch-up / reversal
+                #    a) re-create liability:       Dr Revenue / Cr Contract Liability
+                #    b) reverse contract asset:   Dr Revenue / Cr Contract Asset
+                elif delta < Decimal("0.00"):
+                    if cl > Decimal("0.00"):
+                        amt = cl
+                        add_line(
+                            jlines,
+                            revenue_code,
+                            debit=amt,
+                            credit=0,
+                            memo=f"Revenue reversal {ref}",
+                        )
+                        add_line(
+                            jlines,
+                            contract_liability_code,
+                            debit=0,
+                            credit=amt,
+                            memo=f"Reverse liability release {ref}",
+                        )
+
+                    if ca < Decimal("0.00"):
+                        amt = abs(ca)
+                        add_line(
+                            jlines,
+                            revenue_code,
+                            debit=amt,
+                            credit=0,
+                            memo=f"Revenue reversal {ref}",
+                        )
+                        add_line(
+                            jlines,
+                            contract_asset_code,
+                            debit=0,
+                            credit=amt,
+                            memo=f"Reverse unbilled revenue {ref}",
+                        )
+
+            # Safety check: journals must net to zero
+            total_debits = sum(q2(x.get("debit")) for x in jlines)
+            total_credits = sum(q2(x.get("credit")) for x in jlines)
+            if total_debits != total_credits:
+                raise ValueError(
+                    f"Recognition journal is out of balance: debits={total_debits} credits={total_credits}"
+                )
+
+            return jlines
 
 
     def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
+        from decimal import Decimal
+        from datetime import date
+
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
             run = self.fetch_one(
-                f"SELECT * FROM {schema}.revenue_recognition_runs WHERE id=%s LIMIT 1;",
+                f"""
+                SELECT *
+                FROM {schema}.revenue_recognition_runs
+                WHERE id=%s
+                LIMIT 1
+                """,
                 (int(run_id),),
                 cur=cur,
             )
             if not run:
                 raise ValueError("Recognition run not found")
+
             if str(run.get("status") or "").lower() != "draft":
                 raise ValueError("Only draft runs can be posted")
 
+            # 🔒 Period lock gate
+            run_period_end = run.get("period_end")
+            if not run_period_end:
+                raise ValueError("Recognition run is missing period_end")
+
+            if self.is_date_locked(company_id, tx_date=run_period_end, module="revenue"):
+                raise ValueError(f"PERIOD_LOCKED|revenue|{run_period_end}")
+
             entries = self.fetch_all(
-                f"SELECT * FROM {schema}.revenue_recognition_entries WHERE run_id=%s ORDER BY id ASC;",
+                f"""
+                SELECT *
+                FROM {schema}.revenue_recognition_entries
+                WHERE run_id=%s
+                ORDER BY id ASC
+                """,
                 (int(run_id),),
                 cur=cur,
             ) or []
 
-            jlines = self._build_revenue_recognition_journal_lines(company_id, run=run, entries=entries)
+            if not entries:
+                raise ValueError("Recognition run has no entries")
+
+            jlines = self._build_revenue_recognition_journal_lines(
+                company_id,
+                run=run,
+                entries=entries,
+            )
             if not jlines:
                 raise ValueError("Recognition run has no journal lines")
 
@@ -56593,33 +56991,54 @@ class DatabaseService:
                     UPDATE {schema}.revenue_contracts c
                     SET
                         recognized_revenue_to_date = COALESCE((
-                            SELECT SUM(revenue_delta_this_run)
-                            FROM {schema}.revenue_recognition_entries
-                            WHERE contract_id = c.id
+                            SELECT SUM(e.revenue_delta_this_run)
+                            FROM {schema}.revenue_recognition_entries e
+                            JOIN {schema}.revenue_recognition_runs r
+                            ON r.id = e.run_id
+                            WHERE e.contract_id = c.id
+                            AND r.status = 'posted'
                         ), 0),
+
                         contract_asset_balance = COALESCE((
-                            SELECT SUM(contract_asset_delta)
-                            FROM {schema}.revenue_recognition_entries
-                            WHERE contract_id = c.id
+                            SELECT SUM(e.contract_asset_delta)
+                            FROM {schema}.revenue_recognition_entries e
+                            JOIN {schema}.revenue_recognition_runs r
+                            ON r.id = e.run_id
+                            WHERE e.contract_id = c.id
+                            AND r.status = 'posted'
                         ), 0),
+
                         contract_liability_balance = COALESCE((
-                            SELECT -SUM(contract_liability_delta)
-                            FROM {schema}.revenue_recognition_entries
-                            WHERE contract_id = c.id
+                            SELECT -SUM(e.contract_liability_delta)
+                            FROM {schema}.revenue_recognition_entries e
+                            JOIN {schema}.revenue_recognition_runs r
+                            ON r.id = e.run_id
+                            WHERE e.contract_id = c.id
+                            AND r.status = 'posted'
                         ), 0),
+
                         revenue_status = CASE
                             WHEN COALESCE((
-                                SELECT SUM(revenue_delta_this_run)
-                                FROM {schema}.revenue_recognition_entries
-                                WHERE contract_id = c.id
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
                             ), 0) <= 0 THEN 'not_started'
+
                             WHEN COALESCE((
-                                SELECT SUM(revenue_delta_this_run)
-                                FROM {schema}.revenue_recognition_entries
-                                WHERE contract_id = c.id
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
                             ), 0) >= c.transaction_price THEN 'fully_recognized'
+
                             ELSE 'in_progress'
                         END,
+
                         updated_at = NOW()
                     WHERE c.id=%s
                     """,
@@ -56631,9 +57050,12 @@ class DatabaseService:
                     f"""
                     UPDATE {schema}.revenue_obligations o
                     SET revenue_to_date = COALESCE((
-                        SELECT SUM(revenue_delta_this_run)
-                        FROM {schema}.revenue_recognition_entries
-                        WHERE obligation_id = o.id
+                        SELECT SUM(e.revenue_delta_this_run)
+                        FROM {schema}.revenue_recognition_entries e
+                        JOIN {schema}.revenue_recognition_runs r
+                        ON r.id = e.run_id
+                        WHERE e.obligation_id = o.id
+                        AND r.status = 'posted'
                     ), 0),
                     updated_at = NOW()
                     WHERE o.id=%s
@@ -56669,8 +57091,11 @@ class DatabaseService:
         except Exception:
             pass
 
-        return {"ok": True, "run_id": int(run_id), "journal_id": int(journal_id)}
-
+        return {
+            "ok": True,
+            "run_id": int(run_id),
+            "journal_id": int(journal_id),
+        }
 
     def reverse_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)

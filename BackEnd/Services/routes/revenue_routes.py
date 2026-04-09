@@ -562,8 +562,6 @@ def api_post_revenue_recognition_run(company_id: int, run_id: int):
 
     cp = company_policy(int(company_id)) or {}
     mode = str(cp.get("mode") or "owner_managed").strip().lower()
-    policy = cp.get("policy") or {}
-    company_profile = cp.get("company") or {}
     user = getattr(g, "current_user", None) or {}
 
     review_required = (
@@ -576,12 +574,18 @@ def api_post_revenue_recognition_run(company_id: int, run_id: int):
 
     try:
         run = db_service.fetch_one(
-            f"SELECT * FROM {db_service.company_schema(company_id)}.revenue_recognition_runs WHERE id=%s LIMIT 1;",
+            f"""
+            SELECT *
+            FROM {db_service.company_schema(company_id)}.revenue_recognition_runs
+            WHERE id=%s
+            LIMIT 1
+            """,
             (int(run_id),),
         )
         if not run:
             return jsonify({"ok": False, "error": "Recognition run not found"}), 404
 
+        # approval path
         if review_required:
             dedupe_key = f"{company_id}:revenue:post_recognition_run:revenue_run:{run_id}"
             req = db_service.create_approval_request(
@@ -599,30 +603,39 @@ def api_post_revenue_recognition_run(company_id: int, run_id: int):
                 payload_json=_approval_payload_for_run(run),
             )
 
-        try:
-            db_service.audit_log(
-                company_id,
-                actor_user_id=user_id,
-                module="revenue",
-                action="approval_requested",
-                severity="info",
-                entity_type="approval_request",
-                entity_id=str(req.get("id")),
-                entity_ref=req.get("entity_ref"),
-                approval_request_id=int(req.get("id") or 0),
-                amount=float(req.get("amount") or 0.0),
-                currency=req.get("currency"),
-                before_json={},
-                after_json=req,
-                message=f"Revenue approval requested for {req.get('action')} {req.get('entity_ref')}",
-                source="api",
-            )
-        except Exception:
-            current_app.logger.exception("audit_log failed in revenue approval_requested")
-            
-            return jsonify({"ok": False, "error": "APPROVAL_REQUIRED", "approval_request": req}), 409
+            try:
+                db_service.audit_log(
+                    company_id,
+                    actor_user_id=user_id,
+                    module="revenue",
+                    action="approval_requested",
+                    severity="info",
+                    entity_type="approval_request",
+                    entity_id=str(req.get("id")),
+                    entity_ref=req.get("entity_ref"),
+                    approval_request_id=int(req.get("id") or 0),
+                    amount=float(req.get("amount") or 0.0),
+                    currency=req.get("currency"),
+                    before_json={},
+                    after_json=req,
+                    message=f"Revenue approval requested for {req.get('action')} {req.get('entity_ref')}",
+                    source="api",
+                )
+            except Exception:
+                current_app.logger.exception("audit_log failed in revenue approval_requested")
 
-        out = db_service.post_revenue_recognition_run(company_id, run_id, user_id=user_id)
+            return jsonify({
+                "ok": False,
+                "error": "APPROVAL_REQUIRED",
+                "approval_request": req,
+            }), 409
+
+        # direct post path
+        out = db_service.post_revenue_recognition_run(
+            company_id=int(company_id),
+            run_id=int(run_id),
+            user_id=int(user_id),
+        )
 
         try:
             db_service.audit_log(
@@ -642,12 +655,31 @@ def api_post_revenue_recognition_run(company_id: int, run_id: int):
         except Exception:
             current_app.logger.exception("audit_log failed in api_post_revenue_recognition_run")
 
+        try:
+            db_service.log_engagement_activity(
+                company_id=int(company_id),
+                actor_user_id=int(user_id),
+                module="revenue",
+                action="post_recognition_run",
+                entity_type="revenue_run",
+                entity_id=str(run_id),
+                entity_ref=f"REV-RUN-{run_id}",
+                message=f"Posted revenue recognition run {run_id}",
+            )
+        except Exception:
+            current_app.logger.exception("engagement activity failed in api_post_revenue_recognition_run")
+
         return jsonify({"ok": True, "data": out}), 200
+
     except Exception as e:
         current_app.logger.exception("post_revenue_recognition_run failed")
-        return jsonify({"ok": False, "error": str(e)}), 400
 
+        msg = str(e or "")
+        if msg.startswith("PERIOD_LOCKED|"):
+            return jsonify({"ok": False, "error": msg}), 409
 
+        return jsonify({"ok": False, "error": msg}), 400
+    
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/runs/<int:run_id>/reverse", methods=["POST", "OPTIONS"])
 @require_auth
 def api_reverse_revenue_recognition_run(company_id: int, run_id: int):

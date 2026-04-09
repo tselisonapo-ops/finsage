@@ -33218,55 +33218,137 @@ function bindAssetRecordsPickerModal({ cid }) {
     const totals = preview?.totals || {};
 
     summary.innerHTML = `
-      <div>Revenue delta: <strong>${money(totals.total_revenue_delta || 0)}</strong></div>
-      <div>Contract asset delta: <strong>${money(totals.total_contract_asset_delta || 0)}</strong></div>
-      <div>Contract liability delta: <strong>${money(totals.total_contract_liability_delta || 0)}</strong></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <div>Revenue delta: <strong>${money(totals.total_revenue_delta || 0)}</strong></div>
+        <div>Contract asset delta: <strong>${money(totals.total_contract_asset_delta || 0)}</strong></div>
+        <div>Contract liability delta: <strong>${money(totals.total_contract_liability_delta || 0)}</strong></div>
+      </div>
     `;
 
     if (!entries.length) {
-      body.innerHTML = `<tr><td class="p-3 text-sm text-slate-500" colspan="6">No preview rows.</td></tr>`;
+      body.innerHTML = `<tr><td class="p-3 text-sm text-slate-500" colspan="10">No preview rows.</td></tr>`;
       return;
     }
 
-    body.innerHTML = entries.map((r) => `
-      <tr class="border-b">
-        <td class="p-2">${esc(r.contract_number || r.contract_id)}</td>
-        <td class="p-2">${esc(r.obligation_code || r.obligation_name || r.obligation_id)}</td>
-        <td class="p-2 text-right">${money(r.revenue_required_to_date)}</td>
-        <td class="p-2 text-right">${money(r.revenue_previously_recognized)}</td>
-        <td class="p-2 text-right">${money(r.revenue_delta_this_run)}</td>
-        <td class="p-2 text-right">${money(r.billed_to_date)}</td>
-      </tr>
-    `).join("");
+    body.innerHTML = entries.map((r) => {
+      const timing =
+        r?.payload_json?.timing ||
+        r?.recognition_timing ||
+        "—";
+
+      const method =
+        r?.payload_json?.progress_method ||
+        r?.progress_method ||
+        "—";
+
+      const ca = Number(r.contract_asset_delta || 0);
+      const cl = Number(r.contract_liability_delta || 0);
+
+      let movement = "—";
+      if (ca > 0) movement = `Asset +${money(ca)}`;
+      else if (ca < 0) movement = `Asset ${money(ca)}`;
+      else if (cl < 0) movement = `Liability release ${money(Math.abs(cl))}`;
+      else if (cl > 0) movement = `Liability build ${money(cl)}`;
+
+      return `
+        <tr class="border-b align-top">
+          <td class="p-2">${esc(r.contract_number || r.contract_id)}</td>
+          <td class="p-2">
+            <div>${esc(r.obligation_code || r.obligation_name || r.obligation_id)}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">${esc(String(timing))} · ${esc(String(method))}</div>
+          </td>
+          <td class="p-2 text-right">${money(r.revenue_required_to_date)}</td>
+          <td class="p-2 text-right">${money(r.revenue_previously_recognized)}</td>
+          <td class="p-2 text-right">${money(r.revenue_delta_this_run)}</td>
+          <td class="p-2 text-right">${money(r.billed_to_date)}</td>
+          <td class="p-2 text-right">${money(r.contract_asset_delta)}</td>
+          <td class="p-2 text-right">${money(r.contract_liability_delta)}</td>
+          <td class="p-2">${esc(movement)}</td>
+        </tr>
+      `;
+    }).join("");
   }
 
   function renderRunList(items = []) {
     const el = $("revRunList");
     if (!el) return;
 
+    const selectedRunId = Number($("revRunId")?.value || 0) || null;
+
     if (!items.length) {
       el.innerHTML = `<div class="text-xs text-slate-500">No runs found.</div>`;
       return;
     }
 
-    el.innerHTML = items.map((r) => `
-      <button
-        type="button"
-        class="w-full text-left border rounded p-2 hover:bg-slate-50 rev-run-pick"
-        data-id="${r.id}">
-        <div class="flex items-center justify-between">
-          <div class="font-medium text-sm">Run ${esc(r.id)}</div>
-          <div class="text-[11px] px-2 py-0.5 rounded bg-slate-100">${esc(r.status || "draft")}</div>
-        </div>
-        <div class="text-xs text-slate-500 mt-1">
-          ${esc(String(r.period_start || "").slice(0, 10))} → ${esc(String(r.period_end || "").slice(0, 10))} · ${esc(r.run_reason || "")}
-        </div>
-      </button>
-    `).join("");
+    function statusPill(status) {
+      const s = String(status || "draft").toLowerCase();
+      let cls = "bg-slate-100 text-slate-700";
+      if (s === "posted") cls = "bg-emerald-100 text-emerald-700";
+      else if (s === "draft") cls = "bg-amber-100 text-amber-700";
+      else if (s === "reversed") cls = "bg-rose-100 text-rose-700";
+      else if (s === "pending_approval") cls = "bg-blue-100 text-blue-700";
+
+      return `<div class="text-[11px] px-2 py-0.5 rounded ${cls}">${esc(status || "draft")}</div>`;
+    }
+
+    el.innerHTML = items.map((r) => {
+      const isSelected = Number(r.id) === Number(selectedRunId);
+      const borderCls = isSelected
+        ? "border-[var(--fs-navy)] bg-slate-50"
+        : "border-slate-200 hover:bg-slate-50";
+
+      return `
+        <button
+          type="button"
+          class="w-full text-left border rounded p-2 rev-run-pick ${borderCls}"
+          data-id="${r.id}">
+          <div class="flex items-center justify-between gap-2">
+            <div class="font-medium text-sm">Run ${esc(r.id)}</div>
+            ${statusPill(r.status || "draft")}
+          </div>
+
+          <div class="text-xs text-slate-500 mt-1">
+            ${esc(String(r.period_start || "").slice(0, 10))} → ${esc(String(r.period_end || "").slice(0, 10))}
+            · ${esc(r.run_reason || "")}
+          </div>
+
+          <div class="text-[11px] text-slate-500 mt-1">
+            Revenue ${money(r.total_revenue_delta || 0)}
+            · CA ${money(r.total_contract_asset_delta || 0)}
+            · CL ${money(r.total_contract_liability_delta || 0)}
+          </div>
+
+          ${r.journal_id ? `
+            <div class="text-[11px] text-slate-500 mt-1">
+              Journal ${esc(r.journal_id)}
+            </div>
+          ` : ``}
+        </button>
+      `;
+    }).join("");
 
     el.querySelectorAll(".rev-run-pick").forEach((btn) => {
       btn.addEventListener("click", () => {
-        $("revRunId").value = btn.dataset.id || "";
+        const runId = Number(btn.dataset.id || 0) || null;
+        if (!runId) return;
+
+        $("revRunId").value = String(runId);
+
+        const row = items.find((x) => Number(x.id) === runId);
+        if (row) {
+          const status = String(row.status || "").toLowerCase();
+          if (status === "draft") {
+            setRunMsg(`Draft run ${runId} selected. You can post it.`);
+          } else if (status === "posted") {
+            setRunMsg(`Posted run ${runId} selected. You can reverse it.`);
+          } else if (status === "reversed") {
+            setRunMsg(`Reversed run ${runId} selected.`);
+          } else {
+            setRunMsg(`Run ${runId} selected.`);
+          }
+        }
+
+        renderRunList(items);
       });
     });
   }
@@ -33509,13 +33591,40 @@ function bindAssetRecordsPickerModal({ cid }) {
     const runId = Number($("revRunId")?.value || 0) || null;
     if (!cid || !runId) throw new Error("Select or create a run first");
 
+    const selectedRun =
+      (state.runs || []).find((x) => Number(x.id) === Number(runId)) || null;
+
+    if (!selectedRun) {
+      throw new Error("Selected run not found in run register");
+    }
+
+    const runStatus = String(selectedRun.status || "").toLowerCase();
+    if (runStatus !== "draft") {
+      throw new Error("Only draft runs can be posted");
+    }
+
+    const periodEnd =
+      String(selectedRun.period_end || $("revRunEnd")?.value || "").slice(0, 10);
+
+    if (!periodEnd) {
+      throw new Error("Missing posting period end date");
+    }
+
+    await assertNotLocked(periodEnd, "revenue");
+
     const out = await apiFetch(ENDPOINTS.revenue.postRun(cid, runId), {
       method: "POST",
       body: JSON.stringify({}),
     });
 
     if (out?.error === "APPROVAL_REQUIRED" || out?.approval_request) {
-      setRunMsg("Approval requested.");
+      const reqId = out?.approval_request?.id || "";
+      if (reqId) $("revApprovalRequestId").value = String(reqId);
+      setRunMsg(
+        reqId
+          ? `Approval requested for posting (request ${reqId}).`
+          : "Approval requested for posting."
+      );
       return out;
     }
 
@@ -33530,19 +33639,55 @@ function bindAssetRecordsPickerModal({ cid }) {
     const runId = Number($("revRunId")?.value || 0) || null;
     if (!cid || !runId) throw new Error("Select a run first");
 
+    const selectedRun =
+      (state.runs || []).find((x) => Number(x.id) === Number(runId)) || null;
+
+    if (!selectedRun) {
+      throw new Error("Selected run not found in run register");
+    }
+
+    const runStatus = String(selectedRun.status || "").toLowerCase();
+    if (runStatus !== "posted") {
+      throw new Error("Only posted runs can be reversed");
+    }
+
+    const reversalDate =
+      String(selectedRun.period_end || $("revRunEnd")?.value || "").slice(0, 10);
+
+    if (!reversalDate) {
+      throw new Error("Missing reversal period date");
+    }
+
+    // Frontend pre-check only. Backend must still enforce.
+    await assertNotLocked(reversalDate, "revenue");
+
     const out = await apiFetch(ENDPOINTS.revenue.reverseRun(cid, runId), {
       method: "POST",
       body: JSON.stringify({}),
     });
 
     if (out?.error === "APPROVAL_REQUIRED" || out?.approval_request) {
-      setRunMsg("Approval requested.");
+      const reqId = out?.approval_request?.id || "";
+      if (reqId) $("revApprovalRequestId").value = String(reqId);
+      setRunMsg(
+        reqId
+          ? `Approval requested for reversal (request ${reqId}).`
+          : "Approval requested for reversal."
+      );
       return out;
     }
 
     setRunMsg("Run reversed.");
     await loadRuns();
     await loadContracts();
+
+    const refreshed =
+      (state.runs || []).find((x) => Number(x.id) === Number(runId)) || selectedRun;
+
+    if (refreshed) {
+      $("revRunId").value = String(refreshed.id || "");
+    }
+
     return out;
   }
 
@@ -45311,6 +45456,7 @@ async function renderPeriodLocks() {
             <option value="gl">gl (system)</option>
             <option value="ar">ar</option>
             <option value="ap">ap</option>
+            <option value="revenue">revenue</option>
             <option value="all">all</option>
           </select>
           <input id="lockFrom" type="date" value="${isoMonthStart()}" class="pill" />

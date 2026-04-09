@@ -1065,8 +1065,11 @@ def api_decide_approval(company_id: int, request_id: int):
 
             except Exception as ex:
                 current_app.logger.exception("Approval execution failed")
-                exec_result = {"ok": False, "error": "EXECUTION_FAILED", "detail": str(ex)}
-                
+                detail = str(ex or "")
+                if detail.startswith("PERIOD_LOCKED|"):
+                    exec_result = {"ok": False, "error": detail, "detail": detail}
+                else:
+                    exec_result = {"ok": False, "error": "EXECUTION_FAILED", "detail": detail}
 
         # ✅ audit (best-effort)
         try:
