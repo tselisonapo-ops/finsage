@@ -18777,6 +18777,29 @@ class DatabaseService:
             '{schema}','{schema}_revenue_contracts_approved_by_fk');
         END IF;
         END $$;
+
+        DO $revenue_contracts_customer_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_revenue_contracts_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.revenue_contracts
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_revenue_contracts_customer_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $revenue_contracts_customer_fk$;
+
         -- ==================================================
         -- IFRS 15: CONTRACT VERSIONS / MODIFICATIONS
         -- ==================================================
@@ -19052,8 +19075,6 @@ class DatabaseService:
             '{schema}','{schema}_revenue_recognition_entries_run_fk','{schema}');
         END IF;
         END $$;
-
-
         """
         ddl_ap = """
         -- ==================================================
@@ -55739,10 +55760,14 @@ class DatabaseService:
             params.append(status)
 
         sql = f"""
-            SELECT *
-            FROM {schema}.revenue_contracts
-            WHERE {" AND ".join(where)}
-            ORDER BY created_at DESC, id DESC
+            SELECT
+                rc.*,
+                c.name AS customer_name
+            FROM {schema}.revenue_contracts rc
+            LEFT JOIN {schema}.customers c
+            ON c.id = rc.customer_id
+            WHERE {" AND ".join(where).replace("company_id = %s", "rc.company_id = %s").replace("contract_number ILIKE %s OR contract_title ILIKE %s", "rc.contract_number ILIKE %s OR rc.contract_title ILIKE %s").replace("status = %s", "rc.status = %s")}
+            ORDER BY rc.created_at DESC, rc.id DESC
             LIMIT %s
         """
         params.append(int(limit))
@@ -55771,49 +55796,69 @@ class DatabaseService:
     def create_revenue_contract(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
-        sql = f"""
-        INSERT INTO {schema}.revenue_contracts (
-            company_id, customer_id, contract_number, contract_title, status,
-            contract_currency, contract_date, start_date, end_date, billing_method,
-            transaction_price, variable_consideration_est, variable_consideration_constrained,
-            financing_component_amount, has_significant_financing_component, is_over_time,
-            notes, payload_json, created_by_user_id
-        )
-        VALUES (
-            %s,%s,%s,%s,%s,
-            %s,%s,%s,%s,%s,
-            %s,%s,%s,
-            %s,%s,%s,
-            %s,%s::jsonb,%s
-        )
-        RETURNING *;
-        """
+        customer_id = data.get("customer_id")
+        customer_id = int(customer_id) if customer_id not in (None, "", 0, "0") else None
 
-        params = (
-            int(company_id),
-            data.get("customer_id"),
-            (data.get("contract_number") or "").strip(),
-            (data.get("contract_title") or "").strip(),
-            (data.get("status") or "draft").strip().lower(),
-            (data.get("contract_currency") or "ZAR").strip().upper(),
-            data.get("contract_date"),
-            data.get("start_date"),
-            data.get("end_date"),
-            (data.get("billing_method") or "milestone").strip().lower(),
-            float(data.get("transaction_price") or 0.0),
-            float(data.get("variable_consideration_est") or 0.0),
-            float(data.get("variable_consideration_constrained") or 0.0),
-            float(data.get("financing_component_amount") or 0.0),
-            bool(data.get("has_significant_financing_component", False)),
-            bool(data.get("is_over_time", True)),
-            data.get("notes"),
-            self._json_dumps(data.get("payload_json") or {}),
-            int(user_id) if user_id else None,
-        )
+        # Recommended: require customer for IFRS 15 contracts
+        if customer_id is None:
+            raise ValueError("Customer is required for revenue contracts")
 
         with self._conn_cursor() as (conn, cur):
+            # validate customer exists in same company schema
+            customer = self.fetch_one(
+                f"SELECT id, name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                (customer_id,),
+                cur=cur,
+            )
+            if not customer:
+                raise ValueError("Selected customer not found")
+
+            sql = f"""
+            INSERT INTO {schema}.revenue_contracts (
+                company_id, customer_id, contract_number, contract_title, status,
+                contract_currency, contract_date, start_date, end_date, billing_method,
+                transaction_price, variable_consideration_est, variable_consideration_constrained,
+                financing_component_amount, has_significant_financing_component, is_over_time,
+                notes, payload_json, created_by_user_id
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,
+                %s,%s::jsonb,%s
+            )
+            RETURNING *;
+            """
+
+            params = (
+                int(company_id),
+                customer_id,
+                (data.get("contract_number") or "").strip(),
+                (data.get("contract_title") or "").strip(),
+                (data.get("status") or "draft").strip().lower(),
+                (data.get("contract_currency") or "ZAR").strip().upper(),
+                data.get("contract_date"),
+                data.get("start_date"),
+                data.get("end_date"),
+                (data.get("billing_method") or "milestone").strip().lower(),
+                float(data.get("transaction_price") or 0.0),
+                float(data.get("variable_consideration_est") or 0.0),
+                float(data.get("variable_consideration_constrained") or 0.0),
+                float(data.get("financing_component_amount") or 0.0),
+                bool(data.get("has_significant_financing_component", False)),
+                bool(data.get("is_over_time", True)),
+                data.get("notes"),
+                self._json_dumps(data.get("payload_json") or {}),
+                int(user_id) if user_id else None,
+            )
+
             cur.execute(sql, params)
             row = dict(cur.fetchone())
+
+            # enrich return for frontend
+            row["customer_name"] = customer.get("name")
+
             conn.commit()
 
         try:
@@ -55832,7 +55877,6 @@ class DatabaseService:
 
         return row
 
-
     def update_revenue_contract(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
@@ -55840,6 +55884,20 @@ class DatabaseService:
             before = self.get_revenue_contract(company_id, contract_id, cur=cur)
             if not before:
                 raise ValueError("Revenue contract not found")
+
+            customer_id = data.get("customer_id")
+            if customer_id in ("", 0, "0"):
+                customer_id = None
+            elif customer_id is not None:
+                customer_id = int(customer_id)
+
+                customer = self.fetch_one(
+                    f"SELECT id, name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                    (customer_id,),
+                    cur=cur,
+                )
+                if not customer:
+                    raise ValueError("Selected customer not found")
 
             sql = f"""
             UPDATE {schema}.revenue_contracts
@@ -55866,7 +55924,7 @@ class DatabaseService:
             RETURNING *;
             """
             cur.execute(sql, (
-                data.get("customer_id"),
+                customer_id,
                 (data.get("contract_number") or "").strip(),
                 (data.get("contract_title") or "").strip(),
                 (data.get("status") or "").strip().lower(),
@@ -55886,6 +55944,15 @@ class DatabaseService:
                 int(contract_id),
             ))
             after = dict(cur.fetchone())
+
+            if after and after.get("customer_id"):
+                cust = self.fetch_one(
+                    f"SELECT name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                    (int(after["customer_id"]),),
+                    cur=cur,
+                )
+                after["customer_name"] = (cust or {}).get("name")
+
             conn.commit()
 
         return {"before": before, "after": after}
@@ -56786,138 +56853,138 @@ class DatabaseService:
             "preview": preview,
         }
 
-        def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
-            from decimal import Decimal, ROUND_HALF_UP
+    def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
+        from decimal import Decimal, ROUND_HALF_UP
 
-            settings = self.get_company_account_settings(company_id) or {}
+        settings = self.get_company_account_settings(company_id) or {}
 
-            revenue_code = (settings.get("revenue_control_code") or settings.get("default_revenue_code") or "").strip()
-            contract_asset_code = (settings.get("contract_asset_code") or "BS_CA_1716").strip()
-            contract_liability_code = (settings.get("contract_liability_code") or "BS_CL_2700").strip()
+        revenue_code = (settings.get("revenue_control_code") or settings.get("default_revenue_code") or "").strip()
+        contract_asset_code = (settings.get("contract_asset_code") or "BS_CA_1716").strip()
+        contract_liability_code = (settings.get("contract_liability_code") or "BS_CL_2700").strip()
 
-            if not revenue_code:
-                raise ValueError("Revenue control code is not configured")
-            if not contract_asset_code:
-                raise ValueError("Contract asset code is not configured")
-            if not contract_liability_code:
-                raise ValueError("Contract liability code is not configured")
+        if not revenue_code:
+            raise ValueError("Revenue control code is not configured")
+        if not contract_asset_code:
+            raise ValueError("Contract asset code is not configured")
+        if not contract_liability_code:
+            raise ValueError("Contract liability code is not configured")
 
-            def q2(v) -> Decimal:
-                return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        def q2(v) -> Decimal:
+            return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-            def add_line(bucket: list[dict], account_code: str, debit=0, credit=0, memo: str = ""):
-                d = q2(debit)
-                c = q2(credit)
-                if d == Decimal("0.00") and c == Decimal("0.00"):
-                    return
-                bucket.append({
-                    "account_code": account_code,
-                    "debit": float(d),
-                    "credit": float(c),
-                    "memo": memo,
-                })
+        def add_line(bucket: list[dict], account_code: str, debit=0, credit=0, memo: str = ""):
+            d = q2(debit)
+            c = q2(credit)
+            if d == Decimal("0.00") and c == Decimal("0.00"):
+                return
+            bucket.append({
+                "account_code": account_code,
+                "debit": float(d),
+                "credit": float(c),
+                "memo": memo,
+            })
 
-            jlines: list[dict] = []
+        jlines: list[dict] = []
 
-            for e in entries:
-                delta = q2(e.get("revenue_delta_this_run"))
-                ca = q2(e.get("contract_asset_delta"))
-                cl = q2(e.get("contract_liability_delta"))
+        for e in entries:
+            delta = q2(e.get("revenue_delta_this_run"))
+            ca = q2(e.get("contract_asset_delta"))
+            cl = q2(e.get("contract_liability_delta"))
 
-                ref = (
-                    e.get("obligation_code")
-                    or e.get("obligation_name")
-                    or str(e.get("obligation_id") or "")
-                ).strip()
+            ref = (
+                e.get("obligation_code")
+                or e.get("obligation_name")
+                or str(e.get("obligation_id") or "")
+            ).strip()
 
-                if delta == Decimal("0.00") and ca == Decimal("0.00") and cl == Decimal("0.00"):
-                    continue
+            if delta == Decimal("0.00") and ca == Decimal("0.00") and cl == Decimal("0.00"):
+                continue
 
-                # 1) Positive revenue recognition
-                #    a) release contract liability: Dr Contract Liability / Cr Revenue
-                #    b) create contract asset:     Dr Contract Asset     / Cr Revenue
-                if delta > Decimal("0.00"):
-                    if cl < Decimal("0.00"):
-                        amt = abs(cl)
-                        add_line(
-                            jlines,
-                            contract_liability_code,
-                            debit=amt,
-                            credit=0,
-                            memo=f"Revenue recognition release {ref}",
-                        )
-                        add_line(
-                            jlines,
-                            revenue_code,
-                            debit=0,
-                            credit=amt,
-                            memo=f"Revenue recognized {ref}",
-                        )
+            # 1) Positive revenue recognition
+            #    a) release contract liability: Dr Contract Liability / Cr Revenue
+            #    b) create contract asset:     Dr Contract Asset     / Cr Revenue
+            if delta > Decimal("0.00"):
+                if cl < Decimal("0.00"):
+                    amt = abs(cl)
+                    add_line(
+                        jlines,
+                        contract_liability_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Revenue recognition release {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Revenue recognized {ref}",
+                    )
 
-                    if ca > Decimal("0.00"):
-                        amt = ca
-                        add_line(
-                            jlines,
-                            contract_asset_code,
-                            debit=amt,
-                            credit=0,
-                            memo=f"Unbilled revenue recognized {ref}",
-                        )
-                        add_line(
-                            jlines,
-                            revenue_code,
-                            debit=0,
-                            credit=amt,
-                            memo=f"Revenue recognized {ref}",
-                        )
+                if ca > Decimal("0.00"):
+                    amt = ca
+                    add_line(
+                        jlines,
+                        contract_asset_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Unbilled revenue recognized {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Revenue recognized {ref}",
+                    )
 
-                # 2) Negative revenue catch-up / reversal
-                #    a) re-create liability:       Dr Revenue / Cr Contract Liability
-                #    b) reverse contract asset:   Dr Revenue / Cr Contract Asset
-                elif delta < Decimal("0.00"):
-                    if cl > Decimal("0.00"):
-                        amt = cl
-                        add_line(
-                            jlines,
-                            revenue_code,
-                            debit=amt,
-                            credit=0,
-                            memo=f"Revenue reversal {ref}",
-                        )
-                        add_line(
-                            jlines,
-                            contract_liability_code,
-                            debit=0,
-                            credit=amt,
-                            memo=f"Reverse liability release {ref}",
-                        )
+            # 2) Negative revenue catch-up / reversal
+            #    a) re-create liability:       Dr Revenue / Cr Contract Liability
+            #    b) reverse contract asset:   Dr Revenue / Cr Contract Asset
+            elif delta < Decimal("0.00"):
+                if cl > Decimal("0.00"):
+                    amt = cl
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Revenue reversal {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        contract_liability_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Reverse liability release {ref}",
+                    )
 
-                    if ca < Decimal("0.00"):
-                        amt = abs(ca)
-                        add_line(
-                            jlines,
-                            revenue_code,
-                            debit=amt,
-                            credit=0,
-                            memo=f"Revenue reversal {ref}",
-                        )
-                        add_line(
-                            jlines,
-                            contract_asset_code,
-                            debit=0,
-                            credit=amt,
-                            memo=f"Reverse unbilled revenue {ref}",
-                        )
+                if ca < Decimal("0.00"):
+                    amt = abs(ca)
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Revenue reversal {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        contract_asset_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Reverse unbilled revenue {ref}",
+                    )
 
-            # Safety check: journals must net to zero
-            total_debits = sum(q2(x.get("debit")) for x in jlines)
-            total_credits = sum(q2(x.get("credit")) for x in jlines)
-            if total_debits != total_credits:
-                raise ValueError(
-                    f"Recognition journal is out of balance: debits={total_debits} credits={total_credits}"
-                )
+        # Safety check: journals must net to zero
+        total_debits = sum(q2(x.get("debit")) for x in jlines)
+        total_credits = sum(q2(x.get("credit")) for x in jlines)
+        if total_debits != total_credits:
+            raise ValueError(
+                f"Recognition journal is out of balance: debits={total_debits} credits={total_credits}"
+            )
 
-            return jlines
+        return jlines
 
 
     def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:

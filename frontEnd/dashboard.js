@@ -14227,10 +14227,11 @@ function getJournalGuardMessage(hint, acct) {
 
   if (hint === "revenue") {
     return {
-      title: "Use Revenue workflow instead?",
+      title: "Use Revenue Desk instead?",
       body:
-        `${name} is usually better raised through invoices / revenue workflow.\n\n` +
-        `If you continue in Journal, customer trail, billing linkage, and revenue support schedules may need manual handling.`,
+        `${name} is usually better managed through Revenue Desk.\n\n` +
+        `If you continue in Journal, contract linkage, customer linkage, billing, progress, ` +
+        `recognition runs, and revenue support schedules may need to be maintained manually.`,
       continueLabel: "Continue in Journal",
       moduleLabel: "Open Revenue Desk",
       screen: "revenue-desk",
@@ -14337,7 +14338,7 @@ async function enforceJournalAccountGuard({ side, code }) {
   const t = detectSubledgerType?.(acct);
 
   if (t === "ar") {
-    toast("Receivables must be posted via AR invoices (customer-linked).", "info");
+    toast("Accounts receivable must be posted via AR invoices (customer-linked).", "info");
     resetSelection();
     await window.switchScreen?.("ar-invoices");
     return { ok: false, reason: "ar_block" };
@@ -14524,7 +14525,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       journalSide: side,
       account_code: account?.code || "",
       account_name: account?.name || "",
-      journal_ref: journalRef,
+      journal_ref: journalRef || "",
     });
   }
 
@@ -14574,6 +14575,19 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   }
 
   if (moduleKey === "revenue") {
+    // store handoff context so Revenue Desk can prefill onboarding
+    try {
+      store?.set?.("fs_revenue_redirect_context", JSON.stringify({
+        source: "journal_guard",
+        account_code: account?.code || "",
+        account_name: account?.name || "",
+        journal_side: side || "",
+        journal_ref: journalRef || "",
+        journal_date: journalDate || "",
+        meta: meta || {},
+      }));
+    } catch (_) {}
+
     return await window.switchScreen?.("revenue-desk");
   }
 
@@ -32963,7 +32977,37 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
   }
 
+  async function loadRevenueCustomers() {
+    const sel = $("revCustomerId");
+    if (!sel) return;
+
+    let customers =
+      (Array.isArray(window.CUSTOMERS) && window.CUSTOMERS.length)
+        ? window.CUSTOMERS
+        : [];
+
+    if (!customers.length) {
+      try {
+        customers = await fetchCustomersFromBackend?.(true) || [];
+      } catch (_) {
+        customers = [];
+      }
+    }
+
+    sel.innerHTML = `
+      <option value="">Select customer</option>
+      ${customers.map(c => `
+        <option value="${esc(String(c.id || ""))}">
+          ${esc(c.name || c.customer_name || `Customer ${c.id}`)}
+        </option>
+      `).join("")}
+    `;
+  }
+
   function hydrateContractForm(c = {}) {
+    if ($("revCustomerId")) {
+      $("revCustomerId").value = c.customer_id || "";
+    }
     $("revContractId").value = c.id || "";
     $("revContractNumber").value = c.contract_number || "";
     $("revContractTitle").value = c.contract_title || "";
@@ -33008,6 +33052,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   function contractPayloadFromUI() {
     return {
+      customer_id: Number($("revCustomerId")?.value || 0) || null,
       contract_number: $("revContractNumber")?.value?.trim() || "",
       contract_title: $("revContractTitle")?.value?.trim() || "",
       contract_currency: $("revContractCurrency")?.value?.trim() || "ZAR",
@@ -33132,6 +33177,9 @@ function bindAssetRecordsPickerModal({ cid }) {
         class="w-full text-left border rounded-lg p-2 hover:bg-slate-50 rev-contract-pick"
         data-id="${r.id}">
         <div class="flex items-center justify-between gap-2">
+          <div class="text-xs text-slate-500">
+            ${esc(c.customer_name || c.customer_id || "")}
+          </div> 
           <div class="font-medium text-sm truncate">${esc(r.contract_number || `Contract ${r.id}`)}</div>
           <div class="text-[11px] px-2 py-0.5 rounded bg-slate-100">${esc(r.status || "draft")}</div>
         </div>
@@ -33841,6 +33889,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     setActiveTab("contracts");
     await loadContracts();
+    await loadRevenueCustomers();
     await loadRuns();
     await openRevenueFromApprovalHandoff();
   };
