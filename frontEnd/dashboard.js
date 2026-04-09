@@ -32853,34 +32853,32 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-function applyRevenueSetupDefaults() {
-  if (typeof window.getRevenueSetupPolicy !== "function") return;
+  function applyRevenueSetupDefaults() {
+    if (typeof window.getRevenueSetupPolicy !== "function") return;
 
-  const setup = window.getRevenueSetupPolicy() || {};
+    const setup = window.getRevenueSetupPolicy() || {};
 
-  // Step 1 defaults -> contract criteria checkboxes
-  if ($("revChkCollectability")) {
-    $("revChkCollectability").checked = !!setup?.contract_rules?.collectability_required;
-  }
-  if ($("revChkRights")) {
-    $("revChkRights").checked = !!setup?.contract_rules?.rights_required;
-  }
-  if ($("revChkTerms")) {
-    $("revChkTerms").checked = !!setup?.contract_rules?.payment_terms_required;
-  }
-  if ($("revChkSubstance")) {
-    $("revChkSubstance").checked = !!setup?.contract_rules?.commercial_substance_required;
-  }
+    if ($("revChkCollectability")) {
+      $("revChkCollectability").checked = !!setup?.contract_rules?.collectability_required;
+    }
+    if ($("revChkRights")) {
+      $("revChkRights").checked = !!setup?.contract_rules?.rights_required;
+    }
+    if ($("revChkTerms")) {
+      $("revChkTerms").checked = !!setup?.contract_rules?.payment_terms_required;
+    }
+    if ($("revChkSubstance")) {
+      $("revChkSubstance").checked = !!setup?.contract_rules?.commercial_substance_required;
+    }
 
-  // Step 2 defaults -> obligation defaults
-  if ($("revRecognitionTiming") && setup?.obligation_rules?.default_recognition_timing) {
-    $("revRecognitionTiming").value = setup.obligation_rules.default_recognition_timing;
-  }
+    if ($("revRecognitionTiming") && setup?.obligation_rules?.default_recognition_timing) {
+      $("revRecognitionTiming").value = setup.obligation_rules.default_recognition_timing;
+    }
 
-  if ($("revProgressMethod") && setup?.obligation_rules?.default_progress_method) {
-    $("revProgressMethod").value = setup.obligation_rules.default_progress_method;
+    if ($("revProgressMethod") && setup?.obligation_rules?.default_progress_method) {
+      $("revProgressMethod").value = setup.obligation_rules.default_progress_method;
+    }
   }
-}
 
   function validateContractCriteria() {
     if ($("revChkCollectability") && !$("revChkCollectability").checked) {
@@ -33730,11 +33728,11 @@ function applyRevenueSetupDefaults() {
           bundle_non_distinct: true,
           default_recognition_timing: "over_time",
           default_progress_method: "cost_to_cost",
-          require_explicit_distinct_assessment: false,
+          require_explicit_distinct_assessment: true,
         },
         transaction_price: {
           constrain_variable_by_default: true,
-          financing_adjustment_enabled: false,
+          financing_adjustment_enabled: true,
           include_approved_variations_only: true,
           allow_negative_variable_consideration: true,
         },
@@ -33812,8 +33810,13 @@ function applyRevenueSetupDefaults() {
 
     document.querySelectorAll("[data-revsetup-tab]").forEach((btn) => {
       const active = btn.dataset.revsetupTab === tab;
+
       btn.classList.toggle("bg-[var(--fs-navy)]", active);
       btn.classList.toggle("text-white", active);
+      btn.classList.toggle("border-[var(--fs-navy)]", active);
+
+      btn.classList.toggle("bg-white", !active);
+      btn.classList.toggle("text-slate-800", !active);
     });
   }
 
