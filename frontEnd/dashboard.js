@@ -6283,19 +6283,24 @@ function resolveScreenName(name) {
     "period-lock": "period-locks",
     "ctrl-ar-reconcile": "ar-recon",
 
-    // ✅ AP aliases (you use ap as the workflow screen)
+    // AP aliases
     "ap-bills": "ap",
     "bills": "ap",
     "ap-payments": "ap",
 
-    // ✅ Fixed assets naming mismatch
+    // Fixed assets naming mismatch
     "fixed-assets": "fixedassets",
     "fixed-asset-register": "fixedassets",
 
-    // ✅ Optional: if any old links use these
+    // AR aliases
     "invoices": "ar-invoices",
     "quotes": "ar-quotes",
     "receipts": "ar-receipts",
+
+    // Revenue aliases
+    "revenue-desk": "revenue",
+    "revenue-contracts": "revenue",
+    "revenue-runs": "revenue",
   };
 
   return alias[n] || n;
