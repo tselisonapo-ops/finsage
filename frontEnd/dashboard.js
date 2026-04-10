@@ -33556,7 +33556,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       const data = await apiFetch(`${ENDPOINTS.revenue.obligations(cid, contractId)}?list=1`);
       const items = data?.items || data?.data?.items || data?.data || [];
       renderObligations(items);
-      renderObligationAllocationHint(currentContract, obligations);
+      renderObligationAllocationHint(state.selectedContract, items);
     } catch (e) {
       console.warn("[Revenue] obligations load failed", e);
       renderObligations([]);
