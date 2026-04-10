@@ -65,7 +65,116 @@ def api_create_revenue_contract(company_id: int):
         current_app.logger.exception("create_revenue_contract failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+@revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/submit", methods=["POST", "OPTIONS"])
+@require_auth
+def api_submit_revenue_contract(company_id: int, contract_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
 
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
+    cp = company_policy(int(company_id)) or {}
+    mode = str(cp.get("mode") or "owner_managed").strip().lower()
+
+    review_required = (
+        mode in {"assisted", "controlled"}
+        and bool(
+            cp.get("revenue_review_enabled")
+            or cp.get("require_revenue_contract_review")
+        )
+    )
+
+    try:
+        contract = db_service.get_revenue_contract(int(company_id), int(contract_id))
+        if not contract:
+            return jsonify({"ok": False, "error": "Revenue contract not found"}), 404
+
+        approval_status = str(contract.get("approval_status") or "draft").strip().lower()
+        status = str(contract.get("status") or "draft").strip().lower()
+
+        if approval_status not in {"draft", "rejected", "pending_approval"}:
+            return jsonify({
+                "ok": False,
+                "error": f"Contract cannot be submitted from approval_status '{approval_status}'"
+            }), 409
+
+        contract_ref = (contract.get("contract_number") or f"REV-CON-{contract_id}").strip()
+
+        if review_required:
+            dedupe_key = f"{company_id}:revenue:create_contract:revenue_contract:{contract_id}"
+            req = db_service.create_approval_request(
+                company_id,
+                entity_type="revenue_contract",
+                entity_id=str(contract_id),
+                entity_ref=contract_ref,
+                module="revenue",
+                action="create_contract",
+                requested_by_user_id=int(user_id),
+                amount=float(contract.get("transaction_price") or 0.0),
+                currency=contract.get("contract_currency"),
+                risk_level="high",
+                dedupe_key=dedupe_key,
+                payload_json={
+                    "contract_id": int(contract_id),
+                },
+            )
+
+            try:
+                db_service.update_revenue_contract(
+                    int(company_id),
+                    int(contract_id),
+                    {"approval_status": "pending_approval"},
+                    user_id=int(user_id),
+                )
+            except Exception:
+                current_app.logger.exception("Failed to set revenue contract approval_status pending_approval")
+
+            try:
+                db_service.audit_log(
+                    company_id,
+                    actor_user_id=user_id,
+                    module="revenue",
+                    action="approval_requested",
+                    severity="info",
+                    entity_type="approval_request",
+                    entity_id=str(req.get("id")),
+                    entity_ref=req.get("entity_ref"),
+                    approval_request_id=int(req.get("id") or 0),
+                    amount=float(req.get("amount") or 0.0),
+                    currency=req.get("currency"),
+                    before_json=contract,
+                    after_json=req,
+                    message=f"Revenue approval requested for contract {req.get('entity_ref')}",
+                    source="api",
+                )
+            except Exception:
+                current_app.logger.exception("audit_log failed in api_submit_revenue_contract")
+
+            return jsonify({
+                "ok": False,
+                "error": "APPROVAL_REQUIRED",
+                "approval_request": req,
+            }), 409
+
+        out = db_service.approve_revenue_contract(
+            company_id=int(company_id),
+            contract_id=int(contract_id),
+            user_id=int(user_id),
+        )
+
+        return jsonify({"ok": True, "data": out}), 200
+
+    except Exception as e:
+        current_app.logger.exception("submit_revenue_contract failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>", methods=["PUT", "PATCH", "OPTIONS"])
 @require_auth
 def api_update_revenue_contract(company_id: int, contract_id: int):
@@ -84,6 +193,72 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
     body = request.get_json(silent=True) or {}
 
     try:
+        existing = db_service.get_revenue_contract(int(company_id), int(contract_id))
+        if not existing:
+            return jsonify({"ok": False, "error": "Revenue contract not found"}), 404
+
+        existing_status = str(existing.get("status") or "draft").strip().lower()
+
+        cp = company_policy(int(company_id)) or {}
+        mode = str(cp.get("mode") or "owner_managed").strip().lower()
+
+        review_required = (
+            existing_status in {"approved", "active"}
+            and mode in {"assisted", "controlled"}
+            and bool(
+                cp.get("revenue_review_enabled")
+                or cp.get("require_revenue_modification_review")
+            )
+        )
+
+        contract_ref = (existing.get("contract_number") or f"REV-CON-{contract_id}").strip()
+
+        if review_required:
+            req = db_service.create_approval_request(
+                company_id,
+                entity_type="revenue_contract",
+                entity_id=str(contract_id),
+                entity_ref=contract_ref,
+                module="revenue",
+                action="approve_modification",
+                requested_by_user_id=int(user_id),
+                amount=float(body.get("transaction_price") or existing.get("transaction_price") or 0.0),
+                currency=body.get("contract_currency") or existing.get("contract_currency"),
+                risk_level="high",
+                dedupe_key=f"{company_id}:revenue:approve_modification:revenue_contract:{contract_id}",
+                payload_json={
+                    "contract_id": int(contract_id),
+                    "modification": body,
+                },
+            )
+
+            try:
+                db_service.audit_log(
+                    company_id,
+                    actor_user_id=user_id,
+                    module="revenue",
+                    action="approval_requested",
+                    severity="info",
+                    entity_type="approval_request",
+                    entity_id=str(req.get("id")),
+                    entity_ref=req.get("entity_ref"),
+                    approval_request_id=int(req.get("id") or 0),
+                    amount=float(req.get("amount") or 0.0),
+                    currency=req.get("currency"),
+                    before_json=existing,
+                    after_json=req,
+                    message=f"Revenue modification approval requested for {req.get('entity_ref')}",
+                    source="api",
+                )
+            except Exception:
+                current_app.logger.exception("audit_log failed in api_update_revenue_contract")
+
+            return jsonify({
+                "ok": False,
+                "error": "APPROVAL_REQUIRED",
+                "approval_request": req,
+            }), 409
+
         out = db_service.update_revenue_contract(company_id, contract_id, body, user_id=user_id)
 
         try:
@@ -105,10 +280,10 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
             current_app.logger.exception("audit_log failed in api_update_revenue_contract")
 
         return jsonify({"ok": True, "data": out.get("after"), "before": out.get("before")}), 200
+
     except Exception as e:
         current_app.logger.exception("update_revenue_contract failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/versions", methods=["POST", "OPTIONS"])
 @require_auth
@@ -721,7 +896,6 @@ def api_reverse_revenue_recognition_run(company_id: int, run_id: int):
 
     cp = company_policy(int(company_id)) or {}
     mode = str(cp.get("mode") or "owner_managed").strip().lower()
-    policy = cp.get("policy") or {}
 
     review_required = (
         mode in {"assisted", "controlled"}
@@ -740,7 +914,6 @@ def api_reverse_revenue_recognition_run(company_id: int, run_id: int):
             return jsonify({"ok": False, "error": "Recognition run not found"}), 404
 
         if review_required:
-            dedupe_key = f"{company_id}:revenue:reverse_recognition_run:revenue_run:{run_id}"
             req = db_service.create_approval_request(
                 company_id,
                 entity_type="revenue_run",
@@ -752,32 +925,36 @@ def api_reverse_revenue_recognition_run(company_id: int, run_id: int):
                 amount=float(run.get("total_revenue_delta") or 0.0),
                 currency=None,
                 risk_level="critical",
-                dedupe_key=dedupe_key,
+                dedupe_key=f"{company_id}:revenue:reverse_recognition_run:revenue_run:{run_id}",
                 payload_json=_approval_payload_for_run(run),
             )
 
-        try:
-            db_service.audit_log(
-                company_id,
-                actor_user_id=user_id,
-                module="revenue",
-                action="approval_requested",
-                severity="info",
-                entity_type="approval_request",
-                entity_id=str(req.get("id")),
-                entity_ref=req.get("entity_ref"),
-                approval_request_id=int(req.get("id") or 0),
-                amount=float(req.get("amount") or 0.0),
-                currency=req.get("currency"),
-                before_json={},
-                after_json=req,
-                message=f"Revenue approval requested for {req.get('action')} {req.get('entity_ref')}",
-                source="api",
-            )
-        except Exception:
-            current_app.logger.exception("audit_log failed in revenue approval_requested")
-            
-            return jsonify({"ok": False, "error": "APPROVAL_REQUIRED", "approval_request": req}), 409
+            try:
+                db_service.audit_log(
+                    company_id,
+                    actor_user_id=user_id,
+                    module="revenue",
+                    action="approval_requested",
+                    severity="info",
+                    entity_type="approval_request",
+                    entity_id=str(req.get("id")),
+                    entity_ref=req.get("entity_ref"),
+                    approval_request_id=int(req.get("id") or 0),
+                    amount=float(req.get("amount") or 0.0),
+                    currency=req.get("currency"),
+                    before_json={},
+                    after_json=req,
+                    message=f"Revenue approval requested for {req.get('action')} {req.get('entity_ref')}",
+                    source="api",
+                )
+            except Exception:
+                current_app.logger.exception("audit_log failed in revenue approval_requested")
+
+            return jsonify({
+                "ok": False,
+                "error": "APPROVAL_REQUIRED",
+                "approval_request": req
+            }), 409
 
         out = db_service.reverse_revenue_recognition_run(company_id, run_id, user_id=user_id)
 
@@ -800,6 +977,7 @@ def api_reverse_revenue_recognition_run(company_id: int, run_id: int):
             current_app.logger.exception("audit_log failed in api_reverse_revenue_recognition_run")
 
         return jsonify({"ok": True, "data": out}), 200
+
     except Exception as e:
         current_app.logger.exception("reverse_revenue_recognition_run failed")
         return jsonify({"ok": False, "error": str(e)}), 400

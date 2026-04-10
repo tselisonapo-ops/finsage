@@ -1014,8 +1014,9 @@ def api_decide_approval(company_id: int, request_id: int):
                 # ========= REVENUE =========
                 elif module == "revenue" and action == "create_contract" and entity_type == "revenue_contract":
                     contract_id = int(entity_id)
-                    out = db_service.get_revenue_contract(company_id, contract_id)
-                    if not out:
+
+                    contract = db_service.get_revenue_contract(company_id, contract_id)
+                    if not contract:
                         raise ValueError("Revenue contract not found")
 
                     exec_result = db_service.approve_revenue_contract(
@@ -1026,33 +1027,35 @@ def api_decide_approval(company_id: int, request_id: int):
 
                 elif module == "revenue" and action == "approve_modification" and entity_type == "revenue_contract":
                     pj = req.get("payload_json") or {}
-                    contract_id = int(entity_id)
-                    modification_data = pj.get("modification") or {}
+                    contract_id = int(pj.get("contract_id") or entity_id)
+                    modification = pj.get("modification") or {}
+
                     exec_result = db_service.apply_revenue_contract_modification(
                         company_id=int(company_id),
                         contract_id=int(contract_id),
-                        data=modification_data,
+                        data=modification,
                         user_id=int(user_id),
                     )
 
                 elif module == "revenue" and action == "post_recognition_run" and entity_type == "revenue_run":
                     pj = req.get("payload_json") or {}
-                    run_id = int(pj.get("run_id") or entity_id)
+                    run_id0 = int(pj.get("run_id") or entity_id)
+
                     exec_result = db_service.post_revenue_recognition_run(
                         company_id=int(company_id),
-                        run_id=int(run_id),
+                        run_id=int(run_id0),
                         user_id=int(user_id),
                     )
 
                 elif module == "revenue" and action == "reverse_recognition_run" and entity_type == "revenue_run":
                     pj = req.get("payload_json") or {}
-                    run_id = int(pj.get("run_id") or entity_id)
+                    run_id0 = int(pj.get("run_id") or entity_id)
+
                     exec_result = db_service.reverse_revenue_recognition_run(
                         company_id=int(company_id),
-                        run_id=int(run_id),
+                        run_id=int(run_id0),
                         user_id=int(user_id),
                     )
-
                 # ========= FALLBACK =========
                 else:
                     exec_result = {

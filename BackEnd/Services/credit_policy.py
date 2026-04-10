@@ -525,7 +525,7 @@ def can_decide_request(user: dict, company_profile: dict, mode: str, module: str
     # inside approval permission routing
     if module == "revenue" and action in {
         "create_contract",
-        "modify_contract",
+        "approve_modification",
         "post_recognition_run",
         "reverse_recognition_run",
     }:

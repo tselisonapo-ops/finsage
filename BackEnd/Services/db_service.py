@@ -18706,6 +18706,23 @@ class DatabaseService:
         ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
         ALTER TABLE {schema}.revenue_contracts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS approval_status TEXT,
+        ADD COLUMN IF NOT EXISTS approved_by_user_id INT,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+
+        UPDATE {schema}.revenue_contracts
+        SET approval_status = CASE
+        WHEN approval_status IS NOT NULL AND approval_status <> '' THEN approval_status
+        WHEN status IN ('active', 'completed', 'suspended', 'terminated', 'cancelled') THEN 'approved'
+        ELSE 'draft'
+        END
+        WHERE approval_status IS NULL OR approval_status = '';
+
+        ALTER TABLE {schema}.revenue_contracts
+        ALTER COLUMN approval_status SET DEFAULT 'draft',
+        ALTER COLUMN approval_status SET NOT NULL;
+        
         UPDATE {schema}.revenue_contracts
         SET payload_json = COALESCE(payload_json, '{{}}'::jsonb)
         WHERE payload_json IS NULL;
@@ -18768,6 +18785,27 @@ class DatabaseService:
             ON DELETE SET NULL',
             '{schema}','{schema}_revenue_contracts_approved_by_fk');
         END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_revenue_contracts_status_approval_consistency_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.revenue_contracts
+                ADD CONSTRAINT %I
+                CHECK (
+                    NOT (approval_status = ''rejected'' AND status IN (''active'',''completed''))
+                )',
+                '{schema}',
+                '{schema}_revenue_contracts_status_approval_consistency_ck'
+                );
+            END IF;
         END $$;
 
         DO $revenue_contracts_customer_fk$
@@ -56890,6 +56928,244 @@ class DatabaseService:
         return {
             "run": run,
             "preview": preview,
+        }
+
+    def approve_revenue_contract(self, company_id: int, contract_id: int, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.revenue_contracts
+                WHERE id=%s
+                LIMIT 1
+                """,
+                (int(contract_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Revenue contract not found")
+
+            before = dict(row)
+            approval_before = str(before.get("approval_status") or "draft").strip().lower()
+            status_before = str(before.get("status") or "draft").strip().lower()
+
+            if approval_before not in {"draft", "pending_approval", "rejected"}:
+                raise ValueError(
+                    f"Revenue contract cannot be approved from approval_status '{approval_before}'"
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_contracts
+                SET
+                    approval_status='approved',
+                    approved_by_user_id=%s,
+                    approved_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *
+                """,
+                (
+                    int(user_id) if user_id else None,
+                    int(contract_id),
+                ),
+            )
+            after = dict(cur.fetchone())
+
+            conn.commit()
+
+        try:
+            contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
+            self.audit_log(
+                int(company_id),
+                actor_user_id=int(user_id or 0) or None,
+                module="revenue",
+                action="approve_revenue_contract",
+                severity="info",
+                entity_type="revenue_contract",
+                entity_id=str(after["id"]),
+                entity_ref=contract_ref,
+                before_json=before,
+                after_json=after,
+                message=f"Approved revenue contract {contract_ref}",
+                source="approval",
+            )
+        except Exception:
+            pass
+
+        try:
+            self.log_engagement_activity(
+                company_id=int(company_id),
+                actor_user_id=int(user_id or 0) or None,
+                module="revenue",
+                action="approve_contract",
+                entity_type="revenue_contract",
+                entity_id=str(after["id"]),
+                entity_ref=(after.get("contract_number") or f"REV-CON-{after.get('id')}").strip(),
+                message=f"Approved revenue contract {(after.get('contract_number') or f'REV-CON-{after.get('id')}').strip()}",
+            )
+        except Exception:
+            pass
+
+        return after
+
+    def apply_revenue_contract_modification(
+        self,
+        company_id: int,
+        contract_id: int,
+        data: dict,
+        user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        allowed_fields = {
+            "customer_id",
+            "contract_number",
+            "contract_title",
+            "contract_currency",
+            "contract_date",
+            "start_date",
+            "end_date",
+            "billing_method",
+            "transaction_price",
+            "variable_consideration_est",
+            "variable_consideration_constrained",
+            "financing_component_amount",
+            "has_significant_financing_component",
+            "is_over_time",
+            "notes",
+            "payload_json",
+        }
+
+        patch = {k: v for k, v in (data or {}).items() if k in allowed_fields}
+        if not patch:
+            raise ValueError("No valid revenue contract modification fields supplied")
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.revenue_contracts
+                WHERE id=%s
+                LIMIT 1
+                """,
+                (int(contract_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Revenue contract not found")
+
+            before = dict(row)
+            status_before = str(before.get("status") or "draft").strip().lower()
+
+            if status_before not in {"approved", "active", "pending_approval", "draft"}:
+                raise ValueError(f"Revenue contract cannot be modified from status '{status_before}'")
+
+            # preserve current values if not supplied
+            customer_id = patch.get("customer_id", before.get("customer_id"))
+            customer_id = int(customer_id) if customer_id not in (None, "", 0, "0") else None
+            if customer_id is None:
+                raise ValueError("Customer is required for revenue contracts")
+
+            customer = self.fetch_one(
+                f"SELECT id, name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                (customer_id,),
+                cur=cur,
+            )
+            if not customer:
+                raise ValueError("Selected customer not found")
+
+            payload_json = patch.get("payload_json", before.get("payload_json") or {})
+            if not isinstance(payload_json, dict):
+                payload_json = before.get("payload_json") or {}
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_contracts
+                SET
+                    customer_id=%s,
+                    contract_number=%s,
+                    contract_title=%s,
+                    contract_currency=%s,
+                    contract_date=%s,
+                    start_date=%s,
+                    end_date=%s,
+                    billing_method=%s,
+                    transaction_price=%s,
+                    variable_consideration_est=%s,
+                    variable_consideration_constrained=%s,
+                    financing_component_amount=%s,
+                    has_significant_financing_component=%s,
+                    is_over_time=%s,
+                    notes=%s,
+                    payload_json=%s::jsonb,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *
+                """,
+                (
+                    customer_id,
+                    (patch.get("contract_number", before.get("contract_number")) or "").strip(),
+                    (patch.get("contract_title", before.get("contract_title")) or "").strip(),
+                    (patch.get("contract_currency", before.get("contract_currency") or "ZAR") or "ZAR").strip().upper(),
+                    patch.get("contract_date", before.get("contract_date")),
+                    patch.get("start_date", before.get("start_date")),
+                    patch.get("end_date", before.get("end_date")),
+                    (patch.get("billing_method", before.get("billing_method") or "milestone") or "milestone").strip().lower(),
+                    float(patch.get("transaction_price", before.get("transaction_price") or 0.0)),
+                    float(patch.get("variable_consideration_est", before.get("variable_consideration_est") or 0.0)),
+                    float(patch.get("variable_consideration_constrained", before.get("variable_consideration_constrained") or 0.0)),
+                    float(patch.get("financing_component_amount", before.get("financing_component_amount") or 0.0)),
+                    bool(patch.get("has_significant_financing_component", before.get("has_significant_financing_component", False))),
+                    bool(patch.get("is_over_time", before.get("is_over_time", True))),
+                    patch.get("notes", before.get("notes")),
+                    json.dumps(payload_json, default=str),
+                    int(contract_id),
+                ),
+            )
+            after = dict(cur.fetchone())
+            after["customer_name"] = customer.get("name")
+
+            conn.commit()
+
+        try:
+            contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
+            self.audit_log(
+                int(company_id),
+                actor_user_id=int(user_id or 0) or None,
+                module="revenue",
+                action="apply_revenue_contract_modification",
+                severity="info",
+                entity_type="revenue_contract",
+                entity_id=str(after["id"]),
+                entity_ref=contract_ref,
+                before_json=before,
+                after_json=after,
+                message=f"Applied approved modification to revenue contract {contract_ref}",
+                source="approval",
+            )
+        except Exception:
+            pass
+
+        try:
+            self.log_engagement_activity(
+                company_id=int(company_id),
+                actor_user_id=int(user_id or 0) or None,
+                module="revenue",
+                action="apply_contract_modification",
+                entity_type="revenue_contract",
+                entity_id=str(after["id"]),
+                entity_ref=(after.get("contract_number") or f"REV-CON-{after.get('id')}").strip(),
+                message=f"Applied approved modification to revenue contract {(after.get('contract_number') or f'REV-CON-{after.get('id')}').strip()}",
+            )
+        except Exception:
+            pass
+
+        return {
+            "before": before,
+            "after": after,
         }
 
     def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:

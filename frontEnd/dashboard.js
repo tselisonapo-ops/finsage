@@ -1871,6 +1871,9 @@ const ENDPOINTS = {
     contract: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}`,
 
+    contractSubmit: (cid, contractId) =>
+      `/api/companies/${encodeURIComponent(cid)}/revenue/contracts/${encodeURIComponent(contractId)}/submit`,
+
     versions: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/versions`,
 
@@ -33437,6 +33440,40 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
   }
 
+  function renderRevenueApprovalBanner(ctx = {}) {
+    const el = $("revApprovalBanner");
+    if (!el) return;
+
+    const requestId = Number(ctx.requestId || state.pendingApprovalRequestId || 0) || null;
+    if (!requestId) {
+      el.classList.add("hidden");
+      el.innerHTML = "";
+      return;
+    }
+
+    el.classList.remove("hidden");
+    el.innerHTML = `
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="text-sm text-amber-900">
+          Approval review mode · Request #${requestId}
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="revApproveBtn" type="button" class="btn-highlight">Approve</button>
+          <button id="revRejectBtn" type="button" class="btn">Reject</button>
+        </div>
+      </div>
+    `;
+
+    $("revApproveBtn")?.addEventListener("click", async () => {
+      await decideRevenueApproval("approve");
+    });
+
+    $("revRejectBtn")?.addEventListener("click", async () => {
+      const note = prompt("Reason for rejection?") || "";
+      await decideRevenueApproval("reject", note);
+    });
+  }
+
   async function loadContracts() {
     const cid = state.cid;
     if (!cid) return;
@@ -33517,6 +33554,19 @@ function bindAssetRecordsPickerModal({ cid }) {
     hydrateContractForm(row);
     await loadContracts();
     return row;
+  }
+
+  async function submitContract() {
+    const cid = state.cid;
+    const contractId = Number($("revContractId")?.value || 0);
+    if (!cid || !contractId) throw new Error("Save the contract first.");
+
+    const out = await apiFetch(
+      `${ENDPOINTS.revenue.contractSubmit(cid, contractId)}`,
+      { method: "POST" }
+    );
+
+    return out;
   }
 
   async function updateContract() {
@@ -33716,6 +33766,37 @@ function bindAssetRecordsPickerModal({ cid }) {
     await loadRuns();
     await loadContracts();
     return out;
+  }
+
+  async function decideRevenueApproval(decision, note = "") {
+    const cid = state.cid || activeCid();
+    const requestId = Number(state.pendingApprovalRequestId || 0) || null;
+
+    if (!cid || !requestId) {
+      throw new Error("Missing approval request.");
+    }
+
+    setMsg(`${decision === "approve" ? "Approving" : "Rejecting"} request...`);
+
+    const res = await apiFetch(ENDPOINTS.approvals.decide(cid, requestId), {
+      method: "POST",
+      body: JSON.stringify({
+        decision,
+        note,
+      }),
+    });
+
+    state.pendingApprovalRequestId = null;
+    if ($("revApprovalBanner")) {
+      $("revApprovalBanner").classList.add("hidden");
+      $("revApprovalBanner").innerHTML = "";
+    }
+
+    await loadContracts();
+    await loadRuns();
+
+    setMsg(`Approval ${decision}d successfully.`);
+    return res;
   }
 
   async function reverseRun() {
@@ -33930,18 +34011,160 @@ function bindAssetRecordsPickerModal({ cid }) {
     await openRevenueFromApprovalHandoff();
   };
 
+  window.openRevenueApprovalContext = async function openRevenueApprovalContext(ctx = {}) {
+    const contractId = Number(ctx.contractId || 0) || null;
+    const runId = Number(ctx.runId || 0) || null;
+    const action = String(ctx.action || "").toLowerCase();
+
+    state.cid = activeCid();
+
+    if (!state.cid) {
+      setMsg("No active company selected", "error");
+      return;
+    }
+
+    try {
+      setMsg("Loading approval context...");
+
+      await loadRevenueCustomers();
+      await loadContracts();
+      await loadRuns();
+
+      if (contractId) {
+        const contract =
+          (state.contracts || []).find((x) => Number(x.id) === contractId) || null;
+
+        if (contract) {
+          hydrateContractForm(contract);
+          await loadContractVersions(contractId);
+          await loadObligations(contractId);
+        }
+      }
+
+      if (action === "create_contract" || action === "approve_modification" || action === "modify_contract") {
+        setActiveTab("contracts");
+      } else if (action === "post_recognition_run" || action === "reverse_recognition_run") {
+        setActiveTab("runs");
+      }
+
+      if (runId && $("revRunId")) {
+        $("revRunId").value = String(runId);
+      }
+
+      // remember approval request id for later approve/reject
+      state.pendingApprovalRequestId = Number(ctx.requestId || 0) || null;
+
+      setMsg("Approval review context loaded.");
+    } catch (e) {
+      console.warn("[Revenue] failed to open approval context", e);
+      setMsg(e?.message || "Failed to load approval context", "error");
+    }
+  };
+
   window.openRevenueRunForApproval = async function openRevenueRunForApproval(runId, requestId = null) {
-    if (requestId) store?.set?.("fs_revenue_approval_request_id", requestId);
-    if (runId) store?.set?.("fs_revenue_run_id", runId);
-    await window.bindRevenueScreen?.("revenue");
+    const cid = state.cid || activeCid();
+    if (!cid) throw new Error("Missing company id");
+
+    state.cid = cid;
+    state.pendingApprovalRequestId = Number(requestId || 0) || null;
+
+    // ✅ ADD IT HERE
+    if ($("revApprovalRequestId")) {
+      $("revApprovalRequestId").value = String(requestId || "");
+    }
+
+    setMsg("Loading recognition run for approval...");
+
+    await loadRuns();
+
+    const run =
+      (state.runs || []).find((x) => Number(x.id) === Number(runId)) || null;
+
+    if (!run) {
+      throw new Error("Revenue recognition run not found");
+    }
+
+    const contractId = Number(run.contract_id || 0) || null;
+    if (contractId) {
+      await loadContracts();
+      const contract =
+        (state.contracts || []).find((x) => Number(x.id) === contractId) || null;
+      if (contract) {
+        hydrateContractForm(contract);
+        await loadContractVersions(contractId);
+        await loadObligations(contractId);
+      }
+    }
+
+    if ($("revRunStart")) $("revRunStart").value = toDateInputValue(run.period_start);
+    if ($("revRunEnd")) $("revRunEnd").value = toDateInputValue(run.period_end);
+
     setActiveTab("runs");
+
+    try {
+      const preview = await apiFetch(ENDPOINTS.revenue.preview(state.cid), {
+        method: "POST",
+        body: JSON.stringify({
+          period_start: toDateInputValue(run.period_start),
+          period_end: toDateInputValue(run.period_end),
+          contract_id: contractId,
+        }),
+      });
+      state.preview = preview?.data || preview;
+      renderRunPreview(state.preview);
+    } catch (e) {
+      console.warn("[Revenue] preview load failed during approval review", e);
+    }
+
+    if (typeof renderRevenueApprovalBanner === "function") {
+      renderRevenueApprovalBanner({
+        requestId: state.pendingApprovalRequestId,
+        action: "run",
+        runId: Number(runId),
+        contractId,
+      });
+    }
+
+    setMsg("Revenue recognition run approval review loaded.");
   };
 
   window.openRevenueContractForApproval = async function openRevenueContractForApproval(contractId, requestId = null) {
-    if (requestId) store?.set?.("fs_revenue_approval_request_id", requestId);
-    if (contractId) store?.set?.("fs_revenue_contract_id", contractId);
-    await window.bindRevenueScreen?.("revenue");
+    const cid = state.cid || activeCid();
+    if (!cid) throw new Error("Missing company id");
+
+    state.cid = cid;
+    state.pendingApprovalRequestId = Number(requestId || 0) || null;
+
+    // ✅ ADD IT HERE
+    if ($("revApprovalRequestId")) {
+      $("revApprovalRequestId").value = String(requestId || "");
+    }
+    setMsg("Loading revenue contract for approval...");
+
+    await loadRevenueCustomers();
+    await loadContracts();
+
+    const contract =
+      (state.contracts || []).find((x) => Number(x.id) === Number(contractId)) || null;
+
+    if (!contract) {
+      throw new Error("Revenue contract not found in current list");
+    }
+
+    hydrateContractForm(contract);
+    await loadContractVersions(Number(contractId));
+    await loadObligations(Number(contractId));
     setActiveTab("contracts");
+
+    if (typeof renderRevenueApprovalBanner === "function") {
+      renderRevenueApprovalBanner({
+        requestId: state.pendingApprovalRequestId,
+        action: "contract",
+        contractId: Number(contractId),
+      });
+    }
+
+    setMsg("Revenue contract approval review loaded.");
   };
 })();
 
