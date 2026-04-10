@@ -55810,12 +55810,10 @@ class DatabaseService:
         customer_id = data.get("customer_id")
         customer_id = int(customer_id) if customer_id not in (None, "", 0, "0") else None
 
-        # Recommended: require customer for IFRS 15 contracts
         if customer_id is None:
             raise ValueError("Customer is required for revenue contracts")
 
         with self._conn_cursor() as (conn, cur):
-            # validate customer exists in same company schema
             customer = self.fetch_one(
                 f"SELECT id, name FROM {schema}.customers WHERE id=%s LIMIT 1;",
                 (customer_id,),
@@ -55860,17 +55858,17 @@ class DatabaseService:
                 bool(data.get("has_significant_financing_component", False)),
                 bool(data.get("is_over_time", True)),
                 data.get("notes"),
-                self._json_dumps(data.get("payload_json") or {}),
+                json.dumps(data.get("payload_json") or {}, default=str),
                 int(user_id) if user_id else None,
             )
 
             cur.execute(sql, params)
             row = dict(cur.fetchone())
-
-            # enrich return for frontend
             row["customer_name"] = customer.get("name")
 
             conn.commit()
+
+        contract_ref = (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
 
         try:
             self.log_engagement_activity(
@@ -55880,8 +55878,8 @@ class DatabaseService:
                 action="create_contract",
                 entity_type="revenue_contract",
                 entity_id=str(row["id"]),
-                entity_ref=self._revenue_contract_ref(row),
-                message=f"Created revenue contract {self._revenue_contract_ref(row)}",
+                entity_ref=contract_ref,
+                message=f"Created revenue contract {contract_ref}",
             )
         except Exception:
             pass
