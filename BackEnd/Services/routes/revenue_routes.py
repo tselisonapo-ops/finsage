@@ -3,6 +3,7 @@ from BackEnd.Services.auth_middleware import _corsify, require_auth
 from .invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.company import company_policy
 from BackEnd.Services.db_service import db_service
+from BackEnd.Services.credit_policy import can_decide_request
 
 revenue_bp = Blueprint("revenue", __name__)
 
@@ -82,6 +83,8 @@ def api_submit_revenue_contract(company_id: int, contract_id: int):
 
     cp = company_policy(int(company_id)) or {}
     mode = str(cp.get("mode") or "owner_managed").strip().lower()
+    user = getattr(g, "current_user", {}) or {}
+    company_profile = cp.get("company") or {}
 
     review_required = (
         mode in {"assisted", "controlled"}
@@ -91,13 +94,20 @@ def api_submit_revenue_contract(company_id: int, contract_id: int):
         )
     )
 
+    can_self_approve = can_decide_request(
+        user=user,
+        company_profile=company_profile,
+        mode=mode,
+        module="revenue",
+        action="create_contract",
+    )
+
     try:
         contract = db_service.get_revenue_contract(int(company_id), int(contract_id))
         if not contract:
             return jsonify({"ok": False, "error": "Revenue contract not found"}), 404
 
         approval_status = str(contract.get("approval_status") or "draft").strip().lower()
-        status = str(contract.get("status") or "draft").strip().lower()
 
         if approval_status not in {"draft", "rejected", "pending_approval"}:
             return jsonify({
@@ -107,7 +117,7 @@ def api_submit_revenue_contract(company_id: int, contract_id: int):
 
         contract_ref = (contract.get("contract_number") or f"REV-CON-{contract_id}").strip()
 
-        if review_required:
+        if review_required and not can_self_approve:
             dedupe_key = f"{company_id}:revenue:create_contract:revenue_contract:{contract_id}"
             req = db_service.create_approval_request(
                 company_id,

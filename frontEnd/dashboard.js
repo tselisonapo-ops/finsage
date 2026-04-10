@@ -33569,6 +33569,189 @@ function bindAssetRecordsPickerModal({ cid }) {
     return out;
   }
 
+  async function submitRevenueApprovalRequest({ cid, contractId, amount, currency, contractNumber }) {
+    if (!cid || !contractId) {
+      throw new Error("Missing cid/contractId for approval request.");
+    }
+
+    return apiFetch(
+      ENDPOINTS.revenue.contractSubmit(cid, contractId),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          currency,
+          contract_number: contractNumber,
+        }),
+      }
+    );
+  }
+
+  function getRevenueRoleContext() {
+    const cid = FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || state.cid;
+    if (!cid) throw new Error("No company selected.");
+
+    const mode = FS.control.get(cid);
+    const role = FS.role.normalize(getCurrentRole?.() || "");
+
+    const canApprove =
+      typeof FS?.policy?.canApproveRevenueContract === "function"
+        ? !!FS.policy.canApproveRevenueContract(role, cid)
+        : !!FS?.policy?.canApproveRevenue?.(role, cid);
+
+    const canDraft =
+      typeof FS?.policy?.canCreateRevenueContractDraft === "function"
+        ? !!FS.policy.canCreateRevenueContractDraft(role, cid)
+        : true;
+
+    return { cid, mode, role, canApprove, canDraft };
+  }
+
+  function updateRevenueActionButtons() {
+    const { cid, mode, canApprove, canDraft } = getRevenueRoleContext();
+
+    const btnDraft  = document.getElementById("revSaveBtn");
+    const btnSubmit = document.getElementById("revSubmitBtn"); // maker/request button
+    const btnPost   = document.getElementById("revApproveBtn"); // approver/direct button
+
+    if (btnDraft) {
+      btnDraft.disabled = !canDraft;
+      btnDraft.classList.toggle("opacity-50", !canDraft);
+    }
+
+    if (mode === FS.control.MODES.OWNER) {
+      btnSubmit?.classList.add("hidden");
+      btnPost?.classList.remove("hidden");
+      if (btnPost) {
+        btnPost.disabled = !canApprove;
+        btnPost.classList.toggle("opacity-50", btnPost.disabled);
+      }
+      return;
+    }
+
+    if (canApprove) {
+      btnSubmit?.classList.add("hidden");
+      btnPost?.classList.remove("hidden");
+      if (btnPost) {
+        btnPost.disabled = false;
+        btnPost.classList.remove("opacity-50");
+      }
+    } else {
+      btnPost?.classList.add("hidden");
+      btnSubmit?.classList.remove("hidden");
+      if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.classList.remove("opacity-50");
+      }
+    }
+  }
+
+  async function commitRevenueContract(action) {
+    const { cid, mode, canApprove, canDraft } = getRevenueRoleContext();
+    if (!cid) throw new Error("No company selected.");
+
+    async function ensureContractExistsDraftOnly() {
+      let contractId = parseInt($("revContractId")?.value || "0", 10) || 0;
+
+      if (!contractId) {
+        const saved = await saveContract();
+        contractId = saved?.id || 0;
+        if (contractId) $("revContractId").value = String(contractId);
+      }
+
+      if (!contractId) throw new Error("Could not create revenue contract.");
+      return contractId;
+    }
+
+    if (action === "draft") {
+      if (!canDraft) {
+        throw new Error("You are not allowed to save draft revenue contracts in this mode.");
+      }
+
+      const existingId = parseInt($("revContractId")?.value || "0", 10) || 0;
+      if (existingId) {
+        const updated = await updateContract();
+        return { ok: true, flow: "draft_only", contractId: existingId, data: updated };
+      }
+
+      const saved = await saveContract();
+      return { ok: true, flow: "draft_only", contractId: saved?.id || 0, data: saved };
+    }
+
+    if (action === "submit_for_approval") {
+      if (!canDraft) {
+        throw new Error("You are not allowed to submit revenue contracts in this mode.");
+      }
+
+      const contractId = await ensureContractExistsDraftOnly();
+      await updateContract();
+
+      const amount = Number($("revTransactionPrice")?.value || 0) || 0;
+      const currency = ($("revContractCurrency")?.value || "ZAR").trim();
+      const contractNumber = ($("revContractNumber")?.value || "").trim() || null;
+
+      const out = await submitRevenueApprovalRequest({
+        cid,
+        contractId,
+        amount,
+        currency,
+        contractNumber,
+      });
+
+      $("revContractStatusPill") && ($("revContractStatusPill").textContent = "pending_approval");
+
+      state.pendingApprovalRequestId =
+        Number(out?.approval_request?.id || 0) || null;
+
+      await loadContracts();
+      setMsg("Sent to Approvals inbox. Awaiting review.");
+      return { ok: true, flow: "sent_to_inbox", contractId, out };
+    }
+
+    if (action === "approve_post") {
+      const contractId = await ensureContractExistsDraftOnly();
+      await updateContract();
+
+      if (!canApprove && mode !== FS.control.MODES.OWNER) {
+        const amount = Number($("revTransactionPrice")?.value || 0) || 0;
+        const currency = ($("revContractCurrency")?.value || "ZAR").trim();
+        const contractNumber = ($("revContractNumber")?.value || "").trim() || null;
+
+        const out = await submitRevenueApprovalRequest({
+          cid,
+          contractId,
+          amount,
+          currency,
+          contractNumber,
+        });
+
+        $("revContractStatusPill") && ($("revContractStatusPill").textContent = "pending_approval");
+
+        state.pendingApprovalRequestId =
+          Number(out?.approval_request?.id || 0) || null;
+
+        await loadContracts();
+        setMsg("Sent to Approvals inbox. Awaiting review.");
+        return { ok: true, flow: "sent_to_inbox", contractId, out };
+      }
+
+      const out = await submitContract();
+
+      const row = out?.data || out;
+      if (row?.id) hydrateContractForm(row);
+
+      await loadContracts();
+      await loadContractVersions(contractId);
+      await loadObligations(contractId);
+
+      setMsg("Revenue contract submitted successfully.");
+      return { ok: true, flow: "approve", contractId, data: row };
+    }
+
+    throw new Error(`Unknown action: ${action}`);
+  }
+
   async function updateContract() {
     const cid = state.cid;
     const contractId = Number($("revContractId")?.value || 0) || null;
@@ -33888,6 +34071,65 @@ function bindAssetRecordsPickerModal({ cid }) {
     store?.set?.("fs_revenue_run_id", "");
   }
 
+  function bindRevenueContractActions() {
+    const btnDraft  = document.getElementById("revSaveBtn");
+    const btnSubmit = document.getElementById("revSubmitBtn");
+    const btnPost   = document.getElementById("revApproveBtn");
+
+    const refreshButtons = () => {
+      if (typeof updateRevenueActionButtons === "function") {
+        updateRevenueActionButtons();
+      }
+    };
+
+    if (btnDraft && btnDraft.dataset.bound !== "1") {
+      btnDraft.dataset.bound = "1";
+      btnDraft.type = "button";
+      btnDraft.addEventListener("click", async (e) => {
+        e.preventDefault();
+        try {
+          await commitRevenueContract("draft");
+        } catch (err) {
+          setMsg(err.message || "Could not save draft.", "error");
+        } finally {
+          refreshButtons();
+        }
+      });
+    }
+
+    if (btnSubmit && btnSubmit.dataset.bound !== "1") {
+      btnSubmit.dataset.bound = "1";
+      btnSubmit.type = "button";
+      btnSubmit.addEventListener("click", async (e) => {
+        e.preventDefault();
+        try {
+          await commitRevenueContract("submit_for_approval");
+        } catch (err) {
+          setMsg(err.message || "Could not request approval.", "error");
+        } finally {
+          refreshButtons();
+        }
+      });
+    }
+
+    if (btnPost && btnPost.dataset.bound !== "1") {
+      btnPost.dataset.bound = "1";
+      btnPost.type = "button";
+      btnPost.addEventListener("click", async (e) => {
+        e.preventDefault();
+        try {
+          await commitRevenueContract("approve_post");
+        } catch (err) {
+          setMsg(err.message || "Could not approve/post contract.", "error");
+        } finally {
+          refreshButtons();
+        }
+      });
+    }
+
+    refreshButtons();
+  }
+
   function bindRevenueScreenEvents() {
     document.querySelectorAll("[data-rev-tab]").forEach((btn) => {
       btn.addEventListener("click", () => setActiveTab(btn.dataset.revTab));
@@ -33907,11 +34149,51 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
 
     $("revSaveContract")?.addEventListener("click", async () => {
-      try { await saveContract(); } catch (e) { setMsg(e?.message || "Save failed", "error"); }
+      try {
+        await commitRevenueContract("draft");
+      } catch (e) {
+        setMsg(e?.message || "Save failed", "error");
+      }
     });
 
     $("revUpdateContract")?.addEventListener("click", async () => {
-      try { await updateContract(); } catch (e) { setMsg(e?.message || "Update failed", "error"); }
+      try {
+        await commitRevenueContract("draft");
+      } catch (e) {
+        setMsg(e?.message || "Update failed", "error");
+      }
+    });
+
+    $("revSubmitContract")?.addEventListener("click", async () => {
+      try {
+        const { canApprove, mode } = getRevenueRoleContext();
+
+        await commitRevenueContract(
+          (canApprove || mode === FS.control.MODES.OWNER)
+            ? "approve_post"
+            : "submit_for_approval"
+        );
+      } catch (e) {
+        setMsg(e?.message || "Submit failed", "error");
+      }
+    });
+
+    // add this if you have a dedicated request approval button
+    $("revSubmitContract")?.addEventListener("click", async () => {
+      try {
+        await commitRevenueContract("submit_for_approval");
+      } catch (e) {
+        setMsg(e?.message || "Submit for approval failed", "error");
+      }
+    });
+
+    // add this if you have an approver/owner action button
+    $("revApproveContract")?.addEventListener("click", async () => {
+      try {
+        await commitRevenueContract("approve_post");
+      } catch (e) {
+        setMsg(e?.message || "Approval failed", "error");
+      }
     });
 
     $("revCreateVersion")?.addEventListener("click", async () => {
