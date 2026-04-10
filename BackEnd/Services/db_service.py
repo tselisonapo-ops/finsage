@@ -57158,7 +57158,8 @@ class DatabaseService:
                 entity_type="revenue_contract",
                 entity_id=str(after["id"]),
                 entity_ref=(after.get("contract_number") or f"REV-CON-{after.get('id')}").strip(),
-                message=f"Applied approved modification to revenue contract {(after.get('contract_number') or f'REV-CON-{after.get('id')}').strip()}",
+                message=f"Applied approved modification to revenue contract {contract_ref}",
+                source="approval",
             )
         except Exception:
             pass
