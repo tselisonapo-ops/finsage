@@ -90,10 +90,6 @@ def _tb_signed(r: Dict[str, Any]) -> float:
     return dr - cr
 
 
-def _money(self, x) -> Decimal:
-    return Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
 def _money2(self, v) -> Decimal:
     return self._d(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -106,15 +102,14 @@ def _pct(self, v) -> Decimal:
         x = Decimal("100")
     return x
 
-def _json_dumps(self, obj) -> str:
+def _json_dumps(obj) -> str:
     return json.dumps(obj or {}, default=str)
-
 
 def _revenue_contract_ref(self, row: dict) -> str:
     return (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
 
 
-def _revenue_run_ref(self, run_id: int) -> str:
+def _revenue_run_ref(run_id: int) -> str:
     return f"REV-RUN-{int(run_id)}"
 # ---------------------------
 # Small numeric helper
@@ -56461,7 +56456,7 @@ class DatabaseService:
             (oid, pe, pe),
             cur=cur,
         ) or {}
-        return self._money2(row.get("amt") or 0)
+        return _money2(row.get("amt") or 0)
 
 
     def _contract_fallback_billed_to_date(self, company_id: int, contract_id: int, period_end, cur=None) -> Decimal:
@@ -56478,7 +56473,7 @@ class DatabaseService:
             (int(contract_id), pe, pe),
             cur=cur,
         ) or {}
-        return self._money2(row.get("amt") or 0)
+        return _money2(row.get("amt") or 0)
 
 
     def _recognized_to_date_before_period(self, company_id: int, obligation_id: int, period_start, cur=None) -> Decimal:
@@ -56501,23 +56496,23 @@ class DatabaseService:
             (int(obligation_id), ps),
             cur=cur,
         ) or {}
-        return self._money2(row.get("amt") or 0)
+        return _money2(row.get("amt") or 0)
 
 
     def _calculate_obligation_revenue(self, company_id: int, contract: dict, obligation: dict, period_start, period_end, cur=None) -> dict:
         """
         Core IFRS 15 cumulative calculation for one obligation.
         """
-        allocated = self._money2(obligation.get("allocated_transaction_price") or 0)
+        allocated = _money2(obligation.get("allocated_transaction_price") or 0)
         progress_pct = self._obligation_progress_pct(obligation, period_end)
-        revenue_required_to_date = self._money2((allocated * progress_pct) / Decimal("100"))
+        revenue_required_to_date = _money2((allocated * progress_pct) / Decimal("100"))
         revenue_previously_recognized = self._recognized_to_date_before_period(
             company_id=company_id,
             obligation_id=int(obligation["id"]),
             period_start=period_start,
             cur=cur,
         )
-        delta = self._money2(revenue_required_to_date - revenue_previously_recognized)
+        delta = _money2(revenue_required_to_date - revenue_previously_recognized)
 
         billed_to_date = self._obligation_billed_to_date(
             company_id=company_id,
@@ -56550,9 +56545,9 @@ class DatabaseService:
         # Position logic for THIS RUN only
         #
         # cumulative position before this run:
-        prev_position = self._money2(billed_to_date - revenue_previously_recognized)
+        prev_position = _money2(billed_to_date - revenue_previously_recognized)
         # cumulative position after this run:
-        new_position = self._money2(billed_to_date - revenue_required_to_date)
+        new_position = _money2(billed_to_date - revenue_required_to_date)
 
         prev_liability = prev_position if prev_position > 0 else Decimal("0.00")
         prev_asset = -prev_position if prev_position < 0 else Decimal("0.00")
@@ -56560,8 +56555,8 @@ class DatabaseService:
         new_liability = new_position if new_position > 0 else Decimal("0.00")
         new_asset = -new_position if new_position < 0 else Decimal("0.00")
 
-        contract_liability_delta = self._money2(prev_liability - new_liability)
-        contract_asset_delta = self._money2(new_asset - prev_asset)
+        contract_liability_delta = _money2(prev_liability - new_liability)
+        contract_asset_delta = _money2(new_asset - prev_asset)
 
         # Sanity: for a positive revenue delta, one side should normally be active.
         # Do not hard fail; just expose values.
