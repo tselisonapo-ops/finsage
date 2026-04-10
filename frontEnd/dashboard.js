@@ -33063,6 +33063,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     state.selectedContract = c?.id ? c : null;
 
     renderContractKpis(c);
+    renderObligationContractBanner(c);
+    refreshRevenueObligationActions();
   }
 
   function hydrateObligationForm(o = {}) {
@@ -33475,6 +33477,46 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
   }
 
+  function renderObligationContractBanner(contract) {
+    const el = $("revObligationContractBanner");
+    if (!el) return;
+
+    if (!contract || !contract.id) {
+      el.textContent = "No contract selected. Select a contract before adding an obligation.";
+      return;
+    }
+
+    el.innerHTML = `
+      <strong>Adding obligation to:</strong>
+      ${esc(contract.contract_number || `Contract ${contract.id}`)}
+      — ${esc(contract.contract_title || "")}
+      <span class="ml-2 text-slate-600">Customer: ${esc(contract.customer_name || "")}</span>
+    `;
+  }
+
+  function refreshRevenueObligationActions() {
+    const hasContract = !!Number($("revContractId")?.value || 0);
+    const btn = $("revSaveObligation");
+    if (!btn) return;
+
+    btn.disabled = !hasContract;
+    btn.classList.toggle("opacity-60", !hasContract);
+    btn.classList.toggle("cursor-not-allowed", !hasContract);
+    btn.title = hasContract ? "" : "Select a contract first";
+  }
+
+  function renderObligationAllocationHint(contract, obligations = []) {
+    const used = obligations.reduce((s, o) => s + Number(o.allocated_transaction_price || 0), 0);
+    const total = Number(contract?.transaction_price || 0);
+    const remaining = total - used;
+
+    const el = $("revObligationAllocationHint");
+    if (!el) return;
+
+    el.textContent = `Remaining allocable amount: ${money(remaining)}`;
+    el.className = remaining < 0 ? "text-sm text-rose-600" : "text-sm text-slate-500";
+  }
+
   async function loadContracts() {
     const cid = state.cid;
     if (!cid) return;
@@ -33514,6 +33556,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       const data = await apiFetch(`${ENDPOINTS.revenue.obligations(cid, contractId)}?list=1`);
       const items = data?.items || data?.data?.items || data?.data || [];
       renderObligations(items);
+      renderObligationAllocationHint(currentContract, obligations);
     } catch (e) {
       console.warn("[Revenue] obligations load failed", e);
       renderObligations([]);
@@ -34138,6 +34181,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       try {
         await loadRevenueCustomers();
         hydrateContractForm({});
+        refreshRevenueObligationActions();
         setActiveTab("contracts");
       } catch (e) {
         console.warn("[Revenue] loadRevenueCustomers failed on new contract", e);
@@ -34205,6 +34249,14 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
 
     $("revAddObligation")?.addEventListener("click", () => {
+      const contractId = Number($("revContractId")?.value || 0) || null;
+
+      if (!contractId) {
+        setMsg("Select a contract first. Obligations belong to a specific contract.", "error");
+        setActiveTab("contracts");
+        return;
+      }
+
       hydrateObligationForm({});
       setActiveTab("obligations");
     });

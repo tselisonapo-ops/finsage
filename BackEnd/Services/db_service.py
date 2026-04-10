@@ -56047,9 +56047,50 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
+            # 1) Contract must exist
             contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
             if not contract:
-                raise ValueError("Revenue contract not found")
+                raise ValueError("Invalid contract: contract does not exist")
+
+            # 2) Route contract must match payload contract if payload sends one
+            payload_contract_id = data.get("contract_id")
+            if payload_contract_id not in (None, "", 0, "0"):
+                if int(payload_contract_id) != int(contract_id):
+                    raise ValueError("Payload contract_id does not match selected contract")
+
+            # 3) Lifecycle guard
+            status = str(contract.get("status") or "").strip().lower()
+            approval_status = str(contract.get("approval_status") or "").strip().lower()
+
+            if status not in {"draft", "active"}:
+                raise ValueError(f"Cannot add obligation to contract with status '{status}'")
+
+            if approval_status not in {"draft", "approved"}:
+                raise ValueError(f"Cannot add obligation when approval_status is '{approval_status}'")
+
+            if float(contract.get("recognized_revenue_to_date") or 0.0) > 0:
+                raise ValueError("Cannot add obligations after revenue recognition has started")
+
+            # 4) Financial cap: total allocated cannot exceed contract transaction price
+            existing = self.fetch_one(
+                f"""
+                SELECT COALESCE(SUM(allocated_transaction_price), 0) AS total_allocated
+                FROM {schema}.revenue_obligations
+                WHERE contract_id = %s
+                """,
+                (int(contract_id),),
+                cur=cur,
+            ) or {}
+
+            existing_allocated = float(existing.get("total_allocated") or 0.0)
+            new_allocated = float(data.get("allocated_transaction_price") or 0.0)
+            contract_price = float(contract.get("transaction_price") or 0.0)
+
+            if existing_allocated + new_allocated > contract_price:
+                raise ValueError(
+                    f"Allocated obligations exceed contract price. "
+                    f"Existing: {existing_allocated:.2f}, New: {new_allocated:.2f}, Limit: {contract_price:.2f}"
+                )
 
             cur.execute(
                 f"""
@@ -56093,7 +56134,6 @@ class DatabaseService:
             conn.commit()
 
         return row
-
 
     def update_revenue_obligation(self, company_id: int, obligation_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
