@@ -34242,6 +34242,14 @@ function bindAssetRecordsPickerModal({ cid }) {
       }
     });
 
+    $("revBillingMethod")?.addEventListener("change", () => {
+      const bm = $("revBillingMethod").value;
+
+      if (bm === "progress") {
+        $("revSettlementPattern").value = "revenue_before_billing";
+      }
+    });
+
     $("revSaveContract")?.addEventListener("click", async () => {
       try {
         const { canApprove, mode } = getRevenueRoleContext();
