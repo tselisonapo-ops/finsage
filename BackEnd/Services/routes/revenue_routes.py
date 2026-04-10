@@ -295,7 +295,10 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
         current_app.logger.exception("update_revenue_contract failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/versions", methods=["POST", "OPTIONS"])
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/versions",
+    methods=["GET", "POST", "OPTIONS"],
+)
 @require_auth
 def api_create_revenue_contract_version(company_id: int, contract_id: int):
     if request.method == "OPTIONS":
@@ -306,11 +309,27 @@ def api_create_revenue_contract_version(company_id: int, contract_id: int):
     if deny:
         return deny
 
+    if request.method == "GET":
+        try:
+            items = db_service.list_revenue_contract_versions(
+                company_id=int(company_id),
+                contract_id=int(contract_id),
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("list_revenue_contract_versions failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
     user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
     body = request.get_json(silent=True) or {}
 
     try:
-        out = db_service.create_revenue_contract_version(company_id, contract_id, body, user_id=user_id)
+        out = db_service.create_revenue_contract_version(
+            company_id, contract_id, body, user_id=user_id
+        )
 
         try:
             db_service.log_engagement_activity(
@@ -345,12 +364,15 @@ def api_create_revenue_contract_version(company_id: int, contract_id: int):
             current_app.logger.exception("audit_log failed in api_create_revenue_contract_version")
 
         return jsonify({"ok": True, "data": out}), 201
+
     except Exception as e:
         current_app.logger.exception("create_revenue_contract_version failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
-
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/obligations", methods=["POST", "OPTIONS"])
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/obligations",
+    methods=["GET", "POST", "OPTIONS"],
+)
 @require_auth
 def api_add_revenue_obligation(company_id: int, contract_id: int):
     if request.method == "OPTIONS":
@@ -361,11 +383,27 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
     if deny:
         return deny
 
+    if request.method == "GET":
+        try:
+            items = db_service.list_revenue_obligations(
+                company_id=int(company_id),
+                contract_id=int(contract_id),
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("list_revenue_obligations failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
     user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
     body = request.get_json(silent=True) or {}
 
     try:
-        out = db_service.add_revenue_obligation(company_id, contract_id, body, user_id=user_id)
+        out = db_service.add_revenue_obligation(
+            company_id, contract_id, body, user_id=user_id
+        )
 
         try:
             db_service.audit_log(
@@ -386,10 +424,11 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
             current_app.logger.exception("audit_log failed in api_add_revenue_obligation")
 
         return jsonify({"ok": True, "data": out}), 201
+
     except Exception as e:
         current_app.logger.exception("add_revenue_obligation failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
+    
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts", methods=["GET", "POST", "OPTIONS"])
 @require_auth
 def api_revenue_contracts(company_id: int):

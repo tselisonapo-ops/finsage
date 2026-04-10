@@ -33651,13 +33651,15 @@ function bindAssetRecordsPickerModal({ cid }) {
     const { cid, mode, canApprove, canDraft } = getRevenueRoleContext();
     if (!cid) throw new Error("No company selected.");
 
-    async function ensureContractExistsDraftOnly() {
+    async function ensureContractExistsAndLatest() {
       let contractId = parseInt($("revContractId")?.value || "0", 10) || 0;
 
       if (!contractId) {
         const saved = await saveContract();
         contractId = saved?.id || 0;
         if (contractId) $("revContractId").value = String(contractId);
+      } else {
+        await updateContract();
       }
 
       if (!contractId) throw new Error("Could not create revenue contract.");
@@ -33669,14 +33671,8 @@ function bindAssetRecordsPickerModal({ cid }) {
         throw new Error("You are not allowed to save draft revenue contracts in this mode.");
       }
 
-      const existingId = parseInt($("revContractId")?.value || "0", 10) || 0;
-      if (existingId) {
-        const updated = await updateContract();
-        return { ok: true, flow: "draft_only", contractId: existingId, data: updated };
-      }
-
-      const saved = await saveContract();
-      return { ok: true, flow: "draft_only", contractId: saved?.id || 0, data: saved };
+      const contractId = await ensureContractExistsAndLatest();
+      return { ok: true, flow: "draft_only", contractId };
     }
 
     if (action === "submit_for_approval") {
@@ -33684,8 +33680,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         throw new Error("You are not allowed to submit revenue contracts in this mode.");
       }
 
-      const contractId = await ensureContractExistsDraftOnly();
-      await updateContract();
+      const contractId = await ensureContractExistsAndLatest();
 
       const amount = Number($("revTransactionPrice")?.value || 0) || 0;
       const currency = ($("revContractCurrency")?.value || "ZAR").trim();
@@ -33700,18 +33695,15 @@ function bindAssetRecordsPickerModal({ cid }) {
       });
 
       $("revContractStatusPill") && ($("revContractStatusPill").textContent = "pending_approval");
-
-      state.pendingApprovalRequestId =
-        Number(out?.approval_request?.id || 0) || null;
+      state.pendingApprovalRequestId = Number(out?.approval_request?.id || 0) || null;
 
       await loadContracts();
-      setMsg("Sent to Approvals inbox. Awaiting review.");
+      setMsg("Contract saved and sent for approval.");
       return { ok: true, flow: "sent_to_inbox", contractId, out };
     }
 
     if (action === "approve_post") {
-      const contractId = await ensureContractExistsDraftOnly();
-      await updateContract();
+      const contractId = await ensureContractExistsAndLatest();
 
       if (!canApprove && mode !== FS.control.MODES.OWNER) {
         const amount = Number($("revTransactionPrice")?.value || 0) || 0;
@@ -33727,12 +33719,10 @@ function bindAssetRecordsPickerModal({ cid }) {
         });
 
         $("revContractStatusPill") && ($("revContractStatusPill").textContent = "pending_approval");
-
-        state.pendingApprovalRequestId =
-          Number(out?.approval_request?.id || 0) || null;
+        state.pendingApprovalRequestId = Number(out?.approval_request?.id || 0) || null;
 
         await loadContracts();
-        setMsg("Sent to Approvals inbox. Awaiting review.");
+        setMsg("Contract saved and sent for approval.");
         return { ok: true, flow: "sent_to_inbox", contractId, out };
       }
 
@@ -33745,7 +33735,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       await loadContractVersions(contractId);
       await loadObligations(contractId);
 
-      setMsg("Revenue contract submitted successfully.");
+      setMsg("Contract saved and submitted successfully.");
       return { ok: true, flow: "approve", contractId, data: row };
     }
 
@@ -34150,9 +34140,15 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revSaveContract")?.addEventListener("click", async () => {
       try {
-        await commitRevenueContract("draft");
+        const { canApprove, mode } = getRevenueRoleContext();
+
+        await commitRevenueContract(
+          (canApprove || mode === FS.control.MODES.OWNER)
+            ? "approve_post"
+            : "submit_for_approval"
+        );
       } catch (e) {
-        setMsg(e?.message || "Save failed", "error");
+        setMsg(e?.message || "Save/submit failed", "error");
       }
     });
 

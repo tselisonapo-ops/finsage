@@ -57544,6 +57544,28 @@ class DatabaseService:
 
         return {"ok": True, "run_id": int(run_id), "reversal_journal_id": int(journal_id)}
 
+    def list_revenue_contract_versions(self, company_id: int, contract_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT *
+            FROM {schema}.revenue_contract_versions
+            WHERE contract_id = %s
+            ORDER BY version_no DESC, id DESC
+        """
+        return self.fetch_all(sql, (int(contract_id),)) or []
+
+
+    def list_revenue_obligations(self, company_id: int, contract_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT *
+            FROM {schema}.revenue_obligations
+            WHERE contract_id = %s
+            ORDER BY id ASC
+        """
+        return self.fetch_all(sql, (int(contract_id),)) or []
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
