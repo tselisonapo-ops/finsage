@@ -56949,7 +56949,6 @@ class DatabaseService:
 
             before = dict(row)
             approval_before = str(before.get("approval_status") or "draft").strip().lower()
-            status_before = str(before.get("status") or "draft").strip().lower()
 
             if approval_before not in {"draft", "pending_approval", "rejected"}:
                 raise ValueError(
@@ -56976,8 +56975,9 @@ class DatabaseService:
 
             conn.commit()
 
+        contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
+
         try:
-            contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
             self.audit_log(
                 int(company_id),
                 actor_user_id=int(user_id or 0) or None,
@@ -57003,8 +57003,8 @@ class DatabaseService:
                 action="approve_contract",
                 entity_type="revenue_contract",
                 entity_id=str(after["id"]),
-                entity_ref=(after.get("contract_number") or f"REV-CON-{after.get('id')}").strip(),
-                message=f"Approved revenue contract {(after.get('contract_number') or f'REV-CON-{after.get('id')}').strip()}",
+                entity_ref=contract_ref,
+                message=f"Approved revenue contract {contract_ref}",
             )
         except Exception:
             pass
