@@ -55987,7 +55987,7 @@ class DatabaseService:
                 data.get("has_significant_financing_component"),
                 data.get("is_over_time"),
                 data.get("notes"),
-                self._json_dumps(data.get("payload_json")) if "payload_json" in data else None,
+                _json_dumps(data.get("payload_json")) if "payload_json" in data else None,
                 int(contract_id),
             ))
             after = dict(cur.fetchone())
@@ -56038,7 +56038,7 @@ class DatabaseService:
                     float(data.get("transaction_price") or contract.get("transaction_price") or 0.0),
                     float(data.get("allocated_revenue_total") or 0.0),
                     float(data.get("expected_cost_total") or 0.0),
-                    self._json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json")),
                     int(user_id) if user_id else None,
                 )
             )
@@ -56091,7 +56091,7 @@ class DatabaseService:
                     float(data.get("revenue_to_date") or 0.0),
                     data.get("recognized_at_point_in_time_date"),
                     data.get("notes"),
-                    self._json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json")),
                 )
             )
             row = dict(cur.fetchone())
@@ -56148,7 +56148,7 @@ class DatabaseService:
                     float(data["revenue_to_date"]) if data.get("revenue_to_date") is not None else None,
                     data.get("recognized_at_point_in_time_date"),
                     data.get("notes"),
-                    self._json_dumps(data.get("payload_json")) if "payload_json" in data else None,
+                    _json_dumps(data.get("payload_json")) if "payload_json" in data else None,
                     int(obligation_id),
                 )
             )
@@ -56181,7 +56181,7 @@ class DatabaseService:
                     float(data.get("amount") or 0.0),
                     (data.get("currency") or "ZAR").strip().upper(),
                     data.get("notes"),
-                    self._json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json")),
                 )
             )
             row = dict(cur.fetchone())
@@ -56236,7 +56236,7 @@ class DatabaseService:
                     float(data.get("amount") or 0.0),
                     (data.get("currency") or "ZAR").strip().upper(),
                     data.get("notes"),
-                    self._json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json")),
                 )
             )
             row = dict(cur.fetchone())
@@ -56316,7 +56316,7 @@ class DatabaseService:
                     data.get("milestone_code"),
                     int(user_id) if user_id else None,
                     data.get("notes"),
-                    self._json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json")),
                 )
             )
             row = dict(cur.fetchone())
@@ -56879,7 +56879,7 @@ class DatabaseService:
                     float(preview["totals"]["total_contract_asset_delta"]),
                     float(preview["totals"]["total_contract_liability_delta"]),
                     int(user_id) if user_id else None,
-                    self._json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json")),
                 )
             )
             run = dict(cur.fetchone())
@@ -56919,7 +56919,7 @@ class DatabaseService:
                         float(e["contract_liability_delta"]),
                         e.get("source_basis") or "system",
                         e.get("notes"),
-                        self._json_dumps(e.get("payload_json")),
+                        _json_dumps(e.get("payload_json")),
                     )
                 )
 
@@ -57469,7 +57469,7 @@ class DatabaseService:
                 action="post_recognition_run",
                 entity_type="revenue_run",
                 entity_id=str(run_id),
-                entity_ref=self._revenue_run_ref(run_id),
+                entity_ref=_revenue_run_ref(run_id),
                 message=f"Posted revenue recognition run {run_id}",
             )
         except Exception:
