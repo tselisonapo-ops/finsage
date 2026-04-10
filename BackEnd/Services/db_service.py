@@ -56959,6 +56959,7 @@ class DatabaseService:
                 f"""
                 UPDATE {schema}.revenue_contracts
                 SET
+                    status='active',
                     approval_status='approved',
                     approved_by_user_id=%s,
                     approved_at=NOW(),
