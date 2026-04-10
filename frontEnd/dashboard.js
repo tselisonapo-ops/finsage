@@ -23257,6 +23257,7 @@ window.bindLessorsScreen = function () {
       b.classList.toggle("text-white", b.dataset.leaseTab === tab);
     });
   }
+  
 })();
 
 async function fillBankAccountSelect(selectElOrId, opts = {}) {
@@ -34133,9 +34134,16 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revSearch")?.addEventListener("input", renderContractList);
     $("revStatusFilter")?.addEventListener("change", renderContractList);
 
-    $("revBtnNewContract")?.addEventListener("click", () => {
-      hydrateContractForm({});
-      setActiveTab("contracts");
+    $("revBtnNewContract")?.addEventListener("click", async () => {
+      try {
+        await loadRevenueCustomers();
+        hydrateContractForm({});
+        setActiveTab("contracts");
+      } catch (e) {
+        console.warn("[Revenue] loadRevenueCustomers failed on new contract", e);
+        hydrateContractForm({});
+        setActiveTab("contracts");
+      }
     });
 
     $("revSaveContract")?.addEventListener("click", async () => {
