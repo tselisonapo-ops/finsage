@@ -43715,7 +43715,7 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
       console.warn("[AR] applyObligationBillingToLine failed", e);
     }
   }
-  window.applyObligationBillingToLine = applyObligationBillingToLine;lyObligationBillingToLine = applyObligationBillingToLine;
+  window.applyObligationBillingToLine = applyObligationBillingToLine;
 
   (window._INV_ITEM_CATALOG_READY || Promise.resolve())
     .then(() => bindInvoiceLineItemPicker?.(row));
