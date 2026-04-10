@@ -992,6 +992,37 @@ def _coa_role_from_text(
         return "contract_liability"
 
     # ----------------------------
+    # IFRS 15 / contract asset
+    # ----------------------------
+    if has_any(
+        "contract asset",
+        "contract assets",
+        "unbilled revenue",
+        "unbilled income",
+        "accrued contract income",
+        "accrued project revenue",
+        "accrued consulting revenue",
+        "contract assets - postpaid",
+        "postpaid contract revenue",
+        "revenue earned not yet billed",
+    ):
+        return "contract_asset"
+
+    # ----------------------------
+    # IFRS 15 / contract revenue
+    # ----------------------------
+    if has_any(
+        "contract income",
+        "contract revenue",
+        "revenue recognized from contracts",
+        "revenue recognition -ifrs 15",
+        "revenue recognition ifrs 15",
+        "e&m contract income",
+        "residential contract income",
+        "postpaid contract revenue",
+    ):
+        return "contract_revenue"
+    # ----------------------------
     # loan / borrowing roles
     # ----------------------------
     if is_liability:

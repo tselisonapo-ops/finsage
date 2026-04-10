@@ -33047,6 +33047,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revEndDate").value = toDateInputValue(c.end_date);
 
     $("revBillingMethod").value = c.billing_method || "milestone";
+    $("revSettlementPattern").value = c?.payload_json?.settlement_pattern || "";
     $("revTransactionPrice").value = num(c.transaction_price).toFixed(2);
     $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
     $("revIsOverTime").checked = !!c.is_over_time;
@@ -33099,6 +33100,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       is_over_time: !!$("revIsOverTime")?.checked,
       notes: $("revContractNotes")?.value || "",
       payload_json: {
+        settlement_pattern: $("revSettlementPattern")?.value || "",
         ifrs15_initial_measurement: {
           collectability_probable: !!$("revChkCollectability")?.checked,
           rights_identifiable: !!$("revChkRights")?.checked,
@@ -33312,7 +33314,8 @@ function bindAssetRecordsPickerModal({ cid }) {
         <div>Revenue delta: <strong>${money(totals.total_revenue_delta || 0)}</strong></div>
         <div>Contract asset delta: <strong>${money(totals.total_contract_asset_delta || 0)}</strong></div>
         <div>Contract liability delta: <strong>${money(totals.total_contract_liability_delta || 0)}</strong></div>
-      </div>
+        <th class="text-left p-2">Validation</th>
+        </div>
     `;
 
     if (!entries.length) {
@@ -33340,6 +33343,30 @@ function bindAssetRecordsPickerModal({ cid }) {
       else if (cl < 0) movement = `Liability release ${money(Math.abs(cl))}`;
       else if (cl > 0) movement = `Liability build ${money(cl)}`;
 
+      const validation =
+        r?.validation ||
+        r?.payload_json?.validation ||
+        {};
+
+      const blocking = Array.isArray(validation.blocking) ? validation.blocking : [];
+      const warnings = Array.isArray(validation.warnings) ? validation.warnings : [];
+
+      let validationHtml = `<span class="text-xs text-emerald-600">OK</span>`;
+
+      if (blocking.length) {
+        validationHtml = `
+          <div class="text-xs text-rose-600 font-medium">
+            ${blocking.map(esc).join("<br>")}
+          </div>
+        `;
+      } else if (warnings.length) {
+        validationHtml = `
+          <div class="text-xs text-amber-600">
+            ${warnings.map(esc).join("<br>")}
+          </div>
+        `;
+      }
+
       return `
         <tr class="border-b align-top">
           <td class="p-2">${esc(r.contract_number || r.contract_id)}</td>
@@ -33354,9 +33381,33 @@ function bindAssetRecordsPickerModal({ cid }) {
           <td class="p-2 text-right">${money(r.contract_asset_delta)}</td>
           <td class="p-2 text-right">${money(r.contract_liability_delta)}</td>
           <td class="p-2">${esc(movement)}</td>
-        </tr>
+          <td class="p-2">${validationHtml}</td>
+          </tr>
       `;
     }).join("");
+  }
+
+  function refreshRunActionState(preview) {
+    const entries = preview?.entries || [];
+    const hasBlocking = entries.some((r) => {
+      const validation = r?.validation || r?.payload_json?.validation || {};
+      return Array.isArray(validation.blocking) && validation.blocking.length > 0;
+    });
+
+    const createTop = $("revBtnCreateRun");
+    const createInline = $("revRunCreateBtn");
+    const postBtn = $("revRunPostBtn");
+
+    [createTop, createInline, postBtn].forEach((btn) => {
+      if (!btn) return;
+      btn.disabled = hasBlocking;
+      btn.classList.toggle("opacity-60", hasBlocking);
+      btn.classList.toggle("cursor-not-allowed", hasBlocking);
+    });
+
+    if (hasBlocking) {
+      setRunMsg("Preview has blocking validation issues. Fix them before creating or posting the run.", "error");
+    }
   }
 
   function renderRunList(items = []) {
@@ -33912,6 +33963,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     const data = out?.data || out;
     state.preview = data;
     renderRunPreview(data);
+    refreshRunActionState(out);
     setRunMsg("Preview loaded.");
     return data;
   }

@@ -36795,6 +36795,37 @@ class DatabaseService:
             if not inv:
                 raise ValueError("Invoice not found")
 
+            revenue_contract_id = inv.get("revenue_contract_id")
+            ifrs15_accounts = None
+            settlement_pattern = None
+
+            if revenue_contract_id:
+                ifrs15_accounts = self.resolve_ifrs15_accounts(company_id, cur=_cur)
+
+                contract = self.fetch_one(
+                    f"""
+                    SELECT id, contract_number, payload_json
+                    FROM {schema}.revenue_contracts
+                    WHERE id = %s
+                    LIMIT 1
+                    """,
+                    (int(revenue_contract_id),),
+                    cur=_cur,
+                ) or {}
+
+                payload_json = contract.get("payload_json") or {}
+                if isinstance(payload_json, str):
+                    try:
+                        payload_json = json.loads(payload_json)
+                    except Exception:
+                        payload_json = {}
+
+                settlement_pattern = (
+                    payload_json.get("settlement_pattern")
+                    or payload_json.get("ifrs15_settlement_pattern")
+                    or ""
+                ).strip().lower()
+
             # after: inv = self.get_invoice_with_lines_cur(...)
             inv_no = (inv.get("number") or "").strip()
 
@@ -56632,6 +56663,40 @@ class DatabaseService:
             },
         }
 
+    def resolve_ifrs15_accounts(self, company_id: int, cur=None) -> dict:
+        schema = self.company_schema(company_id)
+
+        rows = self.fetch_all(
+            f"""
+            SELECT code, role, name, section, category, standard, posting
+            FROM {schema}.coa
+            WHERE posting = TRUE
+            AND role IN ('CONTRACT_ASSET', 'CONTRACT_LIABILITY', 'CONTRACT_REVENUE')
+            """,
+            (),
+            cur=cur,
+        ) or []
+
+        by_role = {}
+        for r in rows:
+            role = (r.get("role") or "").strip().upper()
+            code = (r.get("code") or "").strip()
+            if role and code and role not in by_role:
+                by_role[role] = code
+
+        missing = [
+            role for role in ("CONTRACT_ASSET", "CONTRACT_LIABILITY", "CONTRACT_REVENUE")
+            if role not in by_role
+        ]
+        if missing:
+            raise ValueError(f"Missing IFRS 15 posting account(s): {', '.join(missing)}")
+
+        return {
+            "contract_asset_account": by_role["CONTRACT_ASSET"],
+            "contract_liability_account": by_role["CONTRACT_LIABILITY"],
+            "contract_revenue_account": by_role["CONTRACT_REVENUE"],
+        }
+
     def preview_revenue_recognition_run(self, company_id: int, period_start, period_end, contract_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
@@ -56802,6 +56867,14 @@ class DatabaseService:
                     if delta == Decimal("0.00") and ca_delta == Decimal("0.00") and cl_delta == Decimal("0.00"):
                         continue
 
+                    validation = self._validate_revenue_recognition_chain(
+                        company_id=company_id,
+                        contract=c,
+                        obligation=obl,
+                        period_end=period_end,
+                        cur=cur,
+                    )
+
                     entry = {
                         "contract_id": int(c["id"]),
                         "contract_number": c.get("contract_number"),
@@ -56819,6 +56892,7 @@ class DatabaseService:
                         "contract_liability_delta": float(cl_delta),
                         "source_basis": "system",
                         "notes": None,
+                        "validation": validation,
                         "payload_json": {
                             "timing": timing,
                             "progress_method": method,
@@ -56848,6 +56922,104 @@ class DatabaseService:
                     "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
                 },
             }
+        
+    def _validate_revenue_recognition_chain(
+        self,
+        company_id: int,
+        contract: dict,
+        obligation: dict,
+        period_end,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        blocking: list[str] = []
+        warnings: list[str] = []
+
+        contract_id = int(contract.get("id"))
+        obligation_id = int(obligation.get("id"))
+
+        payload = contract.get("payload_json") or {}
+        if isinstance(payload, str):
+            try:
+                import json
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+
+        settlement_pattern = str(payload.get("settlement_pattern") or "").strip().lower()
+        if settlement_pattern not in {
+            "revenue_before_billing",
+            "billing_before_revenue",
+            "cash_before_service",
+        }:
+            blocking.append("missing_settlement_pattern")
+
+        allocated = float(obligation.get("allocated_transaction_price") or 0.0)
+        if allocated <= 0:
+            blocking.append("missing_allocated_transaction_price")
+
+        try:
+            self.resolve_ifrs15_accounts(company_id, cur=cur)
+        except Exception:
+            blocking.append("missing_ifrs15_accounts")
+
+        timing = str(obligation.get("recognition_timing") or "over_time").strip().lower()
+
+        billed_row = self.fetch_one(
+            f"""
+            SELECT
+                COUNT(*) AS billing_count,
+                COUNT(source_invoice_id) AS linked_invoice_count,
+                COALESCE(SUM(amount), 0) AS billed_amt
+            FROM {schema}.revenue_billing_events
+            WHERE obligation_id = %s
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (obligation_id, period_end, period_end),
+            cur=cur,
+        ) or {}
+
+        billed_amt = float(billed_row.get("billed_amt") or 0.0)
+        billing_count = int(billed_row.get("billing_count") or 0)
+        linked_invoice_count = int(billed_row.get("linked_invoice_count") or 0)
+
+        if timing == "point_in_time":
+            pit_date = obligation.get("recognized_at_point_in_time_date")
+            pit_date_s = str(pit_date) if pit_date is not None else None
+            period_end_s = str(period_end) if period_end is not None else None
+
+            due_for_recognition = bool(pit_date_s and period_end_s and pit_date_s <= period_end_s)
+
+            if due_for_recognition and billed_amt <= 0:
+                blocking.append("point_in_time_missing_billing")
+
+            if due_for_recognition and billing_count > 0 and linked_invoice_count == 0:
+                warnings.append("point_in_time_billing_not_linked_to_invoice")
+
+        else:
+            if billed_amt > 0 and linked_invoice_count == 0:
+                warnings.append("billing_not_linked_to_invoice")
+
+        contract_status = str(contract.get("status") or "").strip().lower()
+        approval_status = str(contract.get("approval_status") or "").strip().lower()
+
+        if contract_status not in {"active", "completed", "draft"}:
+            blocking.append(f"invalid_contract_status:{contract_status}")
+
+        if approval_status not in {"approved", "draft"}:
+            warnings.append(f"contract_approval_status:{approval_status}")
+
+        return {
+            "ok": len(blocking) == 0,
+            "blocking": blocking,
+            "warnings": warnings,
+            "settlement_pattern": settlement_pattern or None,
+            "billed_to_date": billed_amt,
+            "billing_count": billing_count,
+            "linked_invoice_count": linked_invoice_count,
+        }
+
     def get_revenue_obligation_billing_position(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)
 

@@ -3348,11 +3348,26 @@
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Billing Method</label>
                         <select id="revBillingMethod" class="w-full border rounded px-3 py-2 text-sm">
+                        <label class="block text-xs text-slate-500 mb-1">Billing Method</label>
+                        <select id="revBillingMethod" class="w-full border rounded px-3 py-2 text-sm">
                           <option value="milestone">Milestone</option>
                           <option value="progress">Progress</option>
                           <option value="periodic">Periodic</option>
                           <option value="manual">Manual</option>
                         </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-1">Settlement Pattern</label>
+                      <select id="revSettlementPattern" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">Select settlement pattern</option>
+                        <option value="revenue_before_billing">Revenue before billing</option>
+                        <option value="billing_before_revenue">Billing before revenue</option>
+                        <option value="cash_before_service">Cash before service</option>
+                      </select>
+                      <div class="text-[11px] text-slate-500 mt-1">
+                        Tells the system whether to post to Contract Asset or Contract Liability.
                       </div>
                     </div>
 

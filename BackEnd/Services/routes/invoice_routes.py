@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from operator import inv
 from flask import request, jsonify, make_response, current_app
-
+import json
 from flask import Blueprint
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 
@@ -416,6 +416,35 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     if not lines:
         raise ValueError("Invoice has no lines")
 
+    # ---------- IFRS 15 detection ----------
+    revenue_contract_id = inv.get("revenue_contract_id")
+    ifrs15_accounts = None
+    settlement_pattern = ""
+
+    if revenue_contract_id:
+        ifrs15_accounts = db_service.resolve_ifrs15_accounts(company_id)
+
+        contract = db_service.fetch_one(f"""
+            SELECT payload_json
+            FROM {db_service.company_schema(company_id)}.revenue_contracts
+            WHERE id = %s
+            LIMIT 1
+        """, (int(revenue_contract_id),)) or {}
+
+        payload_json = contract.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            try:
+                payload_json = json.loads(payload_json)
+            except Exception:
+                payload_json = {}
+
+        settlement_pattern = (
+            payload_json.get("settlement_pattern") or ""
+        ).strip().lower()
+
+    if ifrs15_accounts and not settlement_pattern:
+        raise ValueError("Settlement pattern not set for revenue contract")
+
     def resolve_posting_code(raw_code: str) -> str:
         c = (raw_code or "").strip()
         if not c:
@@ -534,9 +563,25 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     # Cr Revenue = gross revenue before header discount (per account)
     for acct, amt in revenue_by_acct.items():
         amt = money(amt)
-        if amt:
-            jlines.append({"account_code": acct, "dc": "C", "amount": amt})
+        if not amt:
+            continue
 
+        target_account = acct  # default = normal revenue
+
+        # 🔥 IFRS 15 override
+        if ifrs15_accounts:
+            if settlement_pattern == "revenue_before_billing":
+                target_account = ifrs15_accounts["contract_asset_account"]
+
+            elif settlement_pattern in {"billing_before_revenue", "cash_before_service"}:
+                target_account = ifrs15_accounts["contract_liability_account"]
+
+        jlines.append({
+            "account_code": target_account,
+            "dc": "C",
+            "amount": amt
+        })
+    
     # ✅ Other income/charges line
     if other_amt != 0:
         if not OTHER_ACCOUNT:
