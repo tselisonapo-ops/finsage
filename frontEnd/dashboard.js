@@ -32887,6 +32887,22 @@ function bindAssetRecordsPickerModal({ cid }) {
     runs: [],
   };
 
+  function toDateInputValue(v) {
+    if (!v) return "";
+    const s = String(v).trim();
+
+    // already yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "";
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
   function setMsg(msg = "", type = "info") {
     const el = $("revScreenMsg");
     if (!el) return;
@@ -33016,13 +33032,16 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revCustomerId")) {
       $("revCustomerId").value = c.customer_id || "";
     }
+
     $("revContractId").value = c.id || "";
     $("revContractNumber").value = c.contract_number || "";
     $("revContractTitle").value = c.contract_title || "";
-    $("revContractCurrency").value = c.contract_currency || "ZAR";
-    $("revContractDate").value = String(c.contract_date || "").slice(0, 10);
-    $("revStartDate").value = String(c.start_date || "").slice(0, 10);
-    $("revEndDate").value = String(c.end_date || "").slice(0, 10);
+    $("revContractCurrency").value = resolveCurrency(c.contract_currency);
+
+    $("revContractDate").value = toDateInputValue(c.contract_date);
+    $("revStartDate").value = toDateInputValue(c.start_date);
+    $("revEndDate").value = toDateInputValue(c.end_date);
+
     $("revBillingMethod").value = c.billing_method || "milestone";
     $("revTransactionPrice").value = num(c.transaction_price).toFixed(2);
     $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
@@ -33035,7 +33054,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revChkRights")) $("revChkRights").checked = !!im.rights_identifiable;
     if ($("revChkTerms")) $("revChkTerms").checked = !!im.payment_terms_identifiable;
     if ($("revChkSubstance")) $("revChkSubstance").checked = !!im.commercial_substance;
-    
+
     $("revContractStatusPill").textContent = c.status || "draft";
     state.selectedContract = c?.id ? c : null;
 
@@ -33167,6 +33186,8 @@ function bindAssetRecordsPickerModal({ cid }) {
         r.contract_number,
         r.contract_title,
         r.status,
+        r.customer_name,
+        r.customer_id,
       ].join(" ").toLowerCase();
 
       if (q && !hay.includes(q)) return false;
@@ -33186,12 +33207,18 @@ function bindAssetRecordsPickerModal({ cid }) {
         data-id="${r.id}">
         <div class="flex items-center justify-between gap-2">
           <div class="text-xs text-slate-500">
-            ${esc(c.customer_name || c.customer_id || "")}
-          </div> 
-          <div class="font-medium text-sm truncate">${esc(r.contract_number || `Contract ${r.id}`)}</div>
-          <div class="text-[11px] px-2 py-0.5 rounded bg-slate-100">${esc(r.status || "draft")}</div>
+            ${esc(r.customer_name || String(r.customer_id || ""))}
+          </div>
+          <div class="font-medium text-sm truncate">
+            ${esc(r.contract_number || `Contract ${r.id}`)}
+          </div>
+          <div class="text-[11px] px-2 py-0.5 rounded bg-slate-100">
+            ${esc(r.status || "draft")}
+          </div>
         </div>
-        <div class="text-xs text-slate-500 truncate mt-1">${esc(r.contract_title || "")}</div>
+        <div class="text-xs text-slate-500 truncate mt-1">
+          ${esc(r.contract_title || "")}
+        </div>
         <div class="text-[11px] text-slate-500 mt-1">
           Txn: ${money(r.transaction_price)} · Rev: ${money(r.recognized_revenue_to_date)}
         </div>
@@ -33202,6 +33229,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       btn.addEventListener("click", async () => {
         const id = Number(btn.dataset.id || 0) || null;
         if (!id) return;
+
         const row = state.contracts.find((x) => Number(x.id) === id);
         if (!row) return;
 
