@@ -33660,71 +33660,29 @@ function bindAssetRecordsPickerModal({ cid }) {
           0
         ) || 0;
 
-      const currency =
-        $("revContractCurrency")?.value?.trim() || "ZAR";
+      const currency = resolveCurrency(
+        $("revContractCurrency")?.value
+      );
+      const invoiceDate =
+        obligation?.recognized_at_point_in_time_date ||
+        new Date().toISOString().slice(0, 10);
+
+      const payload = {
+        customerId,
+        customerName,
+        contractId,
+        contractNumber,
+        contractTitle,
+        obligationId,
+        obligationName,
+        obligationNotes,
+        allocatedPrice,
+        currency,
+        invoiceDate,
+      };
 
       await switchScreen("ar-invoices");
-
-      setTimeout(() => {
-        try {
-          $("invCustomerId").value = customerId || "";
-          $("invCustomerName").value = customerName || "";
-          $("invRevenueContractId").value = contractId || "";
-
-          if (typeof window.toggleInvoiceObligationUI === "function") {
-            window.toggleInvoiceObligationUI({
-              hasRevenueContract: !!contractId,
-              hasObligation: !!obligationId,
-            });
-          }
-          $("invDate").value = new Date().toISOString().slice(0, 10);
-          $("invCurrency").value = currency;
-          $("invMemo").value =
-            `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
-
-          if (typeof window.toggleInvoiceObligationUI === "function") {
-            window.toggleInvoiceObligationUI({
-              hasRevenueContract: !!contractId,
-              hasObligation: !!obligationId,
-            });
-          }
-
-          const body = $("invLines");
-          if (!body) return;
-
-          const fillFirstRow = () => {
-            const row = body.querySelector("tr");
-            if (!row) return false;
-
-            const itemEl = row.querySelector(".inv-desc");
-            const descEl = row.querySelector(".inv-service");
-            const oblEl = row.querySelector(".inv-obligation");
-            const qtyEl = row.querySelector(".inv-qty");
-            const priceEl = row.querySelector(".inv-price");
-
-            if (itemEl) itemEl.value = obligationName || "Service";
-            if (descEl) descEl.value = obligationNotes || contractTitle || "";
-            if (oblEl) oblEl.value = obligationId || "";
-            if (qtyEl) qtyEl.value = 1;
-            if (priceEl) priceEl.value = allocatedPrice || 0;
-
-            window.recalcInvoice?.({ force: true });
-            return true;
-          };
-
-          if (!body.querySelector("tr")) {
-            window.addInvoiceLine?.();
-          }
-
-          if (!fillFirstRow()) {
-            setTimeout(() => {
-              fillFirstRow();
-            }, 150);
-          }
-        } catch (err) {
-          console.warn("[Revenue → AR prefill failed]", err);
-        }
-      }, 250);
+      await window.prefillInvoiceFromRevenuePayload?.(payload);
     } catch (e) {
       console.warn("[redirectToInvoiceFromObligation] failed", e);
     }
@@ -34029,15 +33987,20 @@ function bindAssetRecordsPickerModal({ cid }) {
       body: JSON.stringify(obligationPayloadFromUI()),
     });
 
+    const saved = out?.data || out || {};
+
     await loadObligations(contractId);
     setMsg("Obligation saved.");
-    const saved = out?.data || out;
-    const timing = ($("revRecognitionTiming")?.value || "").toLowerCase();
+
+    const timing = String(saved?.recognition_timing || $("revRecognitionTiming")?.value || "")
+      .trim()
+      .toLowerCase();
 
     if (timing === "point_in_time") {
       const prefill = buildInvoicePrefillFromRevenueUI(saved);
       await redirectToInvoiceFromObligation(prefill);
     }
+
     return out;
   }
 
@@ -34568,15 +34531,27 @@ function bindAssetRecordsPickerModal({ cid }) {
   };
 
   function buildInvoicePrefillFromRevenueUI(savedObligation = {}) {
-    const contractId = Number($("revContractId")?.value || 0) || null;
-    const obligationId = Number(savedObligation?.id || $("revObligationId")?.value || 0) || null;
+    const contractId =
+      Number($("revContractId")?.value || 0) || null;
 
-    const customerId = Number($("revCustomerId")?.value || 0) || null;
-    const customerName = $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
+    const obligationId =
+      Number(savedObligation?.id || $("revObligationId")?.value || 0) || null;
 
-    const contractNumber = $("revContractNumber")?.value?.trim() || "";
-    const contractTitle = $("revContractTitle")?.value?.trim() || "";
-    const currency = $("revContractCurrency")?.value?.trim() || "ZAR";
+    const customerId =
+      Number($("revCustomerId")?.value || 0) || null;
+
+    const customerName =
+      $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
+
+    const contractNumber =
+      $("revContractNumber")?.value?.trim() || "";
+
+    const contractTitle =
+      $("revContractTitle")?.value?.trim() || "";
+
+    const currency = resolveCurrency(
+      $("revContractCurrency")?.value
+    );
 
     const obligationName =
       savedObligation?.obligation_name ||
@@ -34589,21 +34564,40 @@ function bindAssetRecordsPickerModal({ cid }) {
       "";
 
     const allocatedPrice =
-      Number(savedObligation?.allocated_transaction_price ?? $("revAllocatedPrice")?.value ?? 0) || 0;
+      Number(
+        savedObligation?.allocated_transaction_price ??
+        $("revAllocatedPrice")?.value ??
+        0
+      ) || 0;
+
+    const satisfactionDate =
+      savedObligation?.recognized_at_point_in_time_date ||
+      $("revPitDate")?.value ||
+      "";
 
     return {
       customer_id: customerId,
       customer_name: customerName,
+
       revenue_contract_id: contractId,
+      revenue_contract_number: contractNumber,
+      revenue_contract_title: contractTitle,
+
       revenue_obligation_id: obligationId,
-      invoice_date: new Date().toISOString().slice(0, 10),
+      revenue_obligation_name: obligationName,
+      revenue_obligation_notes: obligationNotes,
+
+      invoice_date: satisfactionDate || new Date().toISOString().slice(0, 10),
       currency,
+
       memo: `Invoice for ${obligationName || "service"}${contractNumber ? ` (${contractNumber})` : ""}`,
+
       line: {
         item_name: obligationName || "Service",
         description: obligationNotes || contractTitle || obligationName || "",
         quantity: 1,
         unit_price: allocatedPrice,
+        revenue_obligation_id: obligationId,
       },
     };
   }
@@ -43344,6 +43338,86 @@ function bindAR() {
       return [];
     };
   }
+
+  async function prefillInvoiceFromRevenuePayload(payload = {}) {
+    try {
+      const {
+        customerId,
+        customerName,
+        contractId,
+        contractNumber,
+        contractTitle,
+        obligationId,
+        obligationName,
+        obligationNotes,
+        allocatedPrice,
+        currency,
+        invoiceDate,
+      } = payload;
+
+      // 1. Header basics
+      if ($("invCustomerId")) $("invCustomerId").value = customerId || "";
+      if ($("invCustomerName")) $("invCustomerName").value = customerName || "";
+      if ($("invDate")) $("invDate").value = invoiceDate || "";
+      if ($("invCurrency")) $("invCurrency").value = currency || "ZAR";
+      if ($("invMemo")) {
+        $("invMemo").value =
+          `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
+      }
+
+      // 2. Load contracts for selected customer first
+      const contracts = await window.loadRevenueContractsForSelectedCustomer?.() || [];
+
+      if ($("invRevenueContractId")) {
+        $("invRevenueContractId").value = contractId ? String(contractId) : "";
+      }
+
+      window.toggleInvoiceContractUI?.({
+        hasCustomerContracts: contracts.length > 0,
+      });
+
+      // 3. Load obligations for selected contract
+      const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
+
+      window.toggleInvoiceObligationUI?.({
+        hasRevenueContract: !!contractId,
+        hasObligation: obligations.length > 0,
+      });
+
+      // 4. Ensure one line exists
+      const body = $("invLines");
+      if (!body) return;
+
+      let row = body.querySelector("tr");
+      if (!row) {
+        row = window.addLine?.() || null;
+      }
+      if (!row) return;
+
+      // 5. Fill that row
+      const itemEl = row.querySelector(".inv-item-pick");
+      const descEl = row.querySelector(".inv-service");
+      const oblEl = row.querySelector(".inv-obligation");
+      const qtyEl = row.querySelector(".inv-qty");
+      const priceEl = row.querySelector(".inv-price");
+
+      if (itemEl) itemEl.value = obligationName || "Service";
+      if (descEl) descEl.value = obligationNotes || contractTitle || "";
+      if (qtyEl) qtyEl.value = "1";
+      if (priceEl) priceEl.value = String(allocatedPrice || 0);
+
+      if (oblEl) {
+        oblEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
+        oblEl.value = obligationId ? String(obligationId) : "";
+      }
+
+      await window.applyObligationBillingToLine?.(row);
+      window.recalcInvoice?.({ force: true });
+    } catch (err) {
+      console.warn("[prefillInvoiceFromRevenuePayload] failed", err);
+    }
+  }
+  window.prefillInvoiceFromRevenuePayload = prefillInvoiceFromRevenuePayload;
 
   function toggleInvoiceObligationUI(opts = {}) {
     const hasRevenueContract = !!opts.hasRevenueContract;
