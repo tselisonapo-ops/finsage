@@ -3344,11 +3344,13 @@
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Settlement Pattern</label>
                         <select id="revSettlementPattern" class="w-full border rounded px-3 py-2 text-sm">
-                          <option value="">Select settlement pattern</option>
+                          <option value="" selected disabled hidden>Choose settlement pattern…</option>
                           <option value="revenue_before_billing">Revenue before billing</option>
                           <option value="billing_before_revenue">Billing before revenue</option>
                           <option value="cash_before_service">Cash before service</option>
                         </select>
+                        <div id="revSettlementPatternHelp" class="mt-1 text-[11px] text-slate-500 hidden"></div>
+                      </div>
 
                         <div class="mt-1 text-[11px] text-slate-500 space-y-1">
                           <div><strong>Revenue before billing:</strong> recognize first, invoice later; posts through Contract Asset.</div>

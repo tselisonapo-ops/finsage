@@ -32982,6 +32982,32 @@ function bindAssetRecordsPickerModal({ cid }) {
     return null;
   }
 
+  function refreshSettlementPatternHelp() {
+    const sel = $("revSettlementPattern");
+    const el = $("revSettlementPatternHelp");
+    if (!sel || !el) return;
+
+    const v = (sel.value || "").trim();
+
+    if (!v) {
+      el.textContent = "";
+      el.classList.add("hidden");
+      return;
+    }
+
+    const helpMap = {
+      revenue_before_billing:
+        "Use when work is performed before the customer is invoiced. Invoice posting clears Contract Asset later.",
+      billing_before_revenue:
+        "Use when the customer is invoiced before the service is fully earned. Billing posts to Contract Liability first.",
+      cash_before_service:
+        "Use when cash is received before service delivery. The amount stays in Contract Liability until revenue is earned.",
+    };
+
+    el.textContent = helpMap[v] || "";
+    el.classList.toggle("hidden", !helpMap[v]);
+  }
+
   function setActiveTab(tab) {
     state.tab = tab;
 
@@ -33048,6 +33074,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revBillingMethod").value = c.billing_method || "milestone";
     $("revSettlementPattern").value = c?.payload_json?.settlement_pattern || "";
+    refreshSettlementPatternHelp();
     $("revTransactionPrice").value = num(c.transaction_price).toFixed(2);
     $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
     $("revIsOverTime").checked = !!c.is_over_time;
@@ -33587,6 +33614,78 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  async function redirectToInvoiceFromObligation(obligation) {
+    try {
+      if (!obligation) return;
+
+      const contractId = Number($("revContractId")?.value || 0);
+      const contractNumber = $("revContractNumber")?.value || "";
+      const customerId = $("revCustomerId")?.value || "";
+      const customerName =
+        $("revCustomerId")?.selectedOptions?.[0]?.textContent || "";
+
+      // 👉 Switch to AR screen
+      await switchScreen("ar-invoices");
+
+      // small delay to allow UI to mount
+      setTimeout(() => {
+        try {
+          // ─────────────────────────────
+          // HEADER PREFILL
+          // ─────────────────────────────
+          $("invCustomerId").value = customerId;
+          $("invCustomerName").value = customerName;
+
+          $("invRevenueContractId").value = contractId;
+
+          $("invMemo").value =
+            `Invoice for ${obligation.obligation_name || "service"} (${contractNumber})`;
+
+          $("invDate").value = new Date().toISOString().slice(0, 10);
+
+          // ─────────────────────────────
+          // ENSURE AT LEAST ONE LINE EXISTS
+          // ─────────────────────────────
+          const body = $("invLines");
+          if (!body || !body.children.length) {
+            window.addInvoiceLine?.();
+          }
+
+          const row = body.querySelector("tr");
+
+          if (!row) return;
+
+          // ─────────────────────────────
+          // LINE PREFILL
+          // ─────────────────────────────
+          row.querySelector(".inv-desc").value =
+            obligation.obligation_name || "Service";
+
+          row.querySelector(".inv-service").value =
+            obligation.obligation_description ||
+            $("revContractTitle")?.value ||
+            "";
+
+          row.querySelector(".inv-obligation").value =
+            obligation.id || "";
+
+          row.querySelector(".inv-qty").value = 1;
+
+          row.querySelector(".inv-price").value =
+            obligation.allocated_transaction_price || 0;
+
+          // trigger recalc
+          window.recalcInvoice?.();
+
+        } catch (err) {
+          console.warn("[Revenue → AR prefill failed]", err);
+        }
+      }, 250);
+    } catch (e) {
+      console.warn("[redirectToInvoiceFromObligation] failed", e);
+    }
+  }
+
   async function loadContractVersions(contractId) {
     const cid = state.cid;
     if (!cid || !contractId) return;
@@ -33888,6 +33987,11 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     await loadObligations(contractId);
     setMsg("Obligation saved.");
+    const timing = ($("revRecognitionTiming")?.value || "").toLowerCase();
+
+    if (timing === "point_in_time") {
+      await redirectToInvoiceFromObligation(out?.data || out);
+    }
     return out;
   }
 
@@ -34233,6 +34337,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       try {
         await loadRevenueCustomers();
         hydrateContractForm({});
+        refreshSettlementPatternHelp();
         refreshRevenueObligationActions();
         setActiveTab("contracts");
       } catch (e) {
@@ -34249,6 +34354,8 @@ function bindAssetRecordsPickerModal({ cid }) {
         $("revSettlementPattern").value = "revenue_before_billing";
       }
     });
+
+    $("revSettlementPattern")?.addEventListener("change", refreshSettlementPatternHelp);
 
     $("revSaveContract")?.addEventListener("click", async () => {
       try {
@@ -34387,6 +34494,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (!bound) {
       bindRevenueScreenEvents();
+      bindRevenueContractActions();   // 👈 SHOULD BE HERE
       bound = true;
     }
 
