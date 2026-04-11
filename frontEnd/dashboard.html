@@ -600,25 +600,31 @@
     overflow-x:hidden;
   }
 
-  .inv-obligation-col.hidden {
-    display: none;
-  }
+.inv-item-col--wide {
+  width: 26%;
+}
 
-  .inv-item-col--normal {
-    width: 14%;
-  }
+.inv-item-col--normal {
+  width: 18%;
+}
 
-  .inv-desc-col--normal {
-    width: 24%;
-  }
+.inv-desc-col--wide {
+  width: 34%;
+}
 
-  .inv-item-col--wide {
-    width: 20%;
-  }
+.inv-desc-col--normal {
+  width: 24%;
+}
 
-  .inv-desc-col--wide {
-    width: 32%;
-  }
+.inv-obligation-col {
+  width: 12%;
+}
+
+#invLines .inv-item-col input,
+#invLines .inv-desc-col input,
+#invLines .inv-obligation-col select {
+  width: 100%;
+}
 
   /* Make form fields visibly "input-like" */
   .input{
@@ -2846,39 +2852,40 @@
                   <input id="invCurrency" class="w-full border rounded px-3 py-2" value="ZAR">
                 </div>
 
-                <div class="grid gap-2 sm:grid-cols-3 mt-2">
-
-                  <div id="invRevenueContractWrap" class="invisible pointer-events-none">
-                    <label class="text-xs text-slate-600">Revenue Contract</label>
-                    <select id="invRevenueContractId" class="w-full border rounded px-3 py-2 text-xs">
-                      <option value="">Select contract...</option>
-                    </select>
-                    <p class="mt-1 text-[11px] text-slate-400">
-                      Visible only when the selected customer has linked revenue contract(s).
-                    </p>
-                  </div>
-
-                  <div>
-                    <label class="text-xs text-slate-600">Revenue account *</label>
-                    <select id="invRevenueAccount" class="w-full border rounded px-3 py-2 text-xs">
-                      <option value="">Loading…</option>
-                    </select>
-                    <p class="mt-1 text-[11px] text-slate-400">
-                      Used as the default revenue account for new invoice lines.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-1">Bank account (for receipts)</label>
-                    <select id="invoiceBankAccount" class="w-full border rounded px-3 py-2 text-sm"></select>
-                    <p class="mt-1 text-[11px] text-slate-400">
-                      If left blank, backend will use default <em>receipts</em> bank account.
-                    </p>
-                  </div>
-
-                </div>
               </div>
-              
+
+              <div class="grid gap-2 sm:grid-cols-3 mt-2">
+
+                <div id="invRevenueContractWrap" class="invisible pointer-events-none">
+                  <label class="text-xs text-slate-600">Revenue Contract</label>
+                  <select id="invRevenueContractId" class="w-full border rounded px-3 py-2 text-xs">
+                    <option value="">Select contract...</option>
+                  </select>
+                  <p class="mt-1 text-[11px] text-slate-400">
+                    Visible only when the selected customer has linked revenue contract(s).
+                  </p>
+                </div>
+
+                <div>
+                  <label class="text-xs text-slate-600">Revenue account *</label>
+                  <select id="invRevenueAccount" class="w-full border rounded px-3 py-2 text-xs">
+                    <option value="">Loading…</option>
+                  </select>
+                  <p class="mt-1 text-[11px] text-slate-400">
+                    Used as the default revenue account for new invoice lines.
+                  </p>
+                </div>
+
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Bank account (for receipts)</label>
+                  <select id="invoiceBankAccount" class="w-full border rounded px-3 py-2 text-sm"></select>
+                  <p class="mt-1 text-[11px] text-slate-400">
+                    If left blank, backend will use default <em>receipts</em> bank account.
+                  </p>
+                </div>
+
+              </div>
+
               <div class="mt-2 flex items-center gap-3 flex-wrap">
                 <label class="flex items-center gap-2 text-sm whitespace-nowrap">
                   <input type="checkbox" id="invVatEnabled" class="h-4 w-4">
