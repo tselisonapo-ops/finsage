@@ -36107,7 +36107,7 @@ class DatabaseService:
             status, bank_account_id, notes,
             issued_at, issued_by
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id;
             """,
             (
