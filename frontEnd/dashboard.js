@@ -33655,6 +33655,31 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
   window.waitForElement = waitForElement;
 
+  function normalizeInvoiceDate(input) {
+    if (!input) return new Date().toISOString().slice(0, 10);
+
+    const s = String(input).trim();
+
+    // already ISO-like: 2025-07-31 or 2025-07-31T...
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      return s.slice(0, 10);
+    }
+
+    // yyyy/mm/dd
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(s)) {
+      return s.replace(/\//g, "-");
+    }
+
+    // try JS date parse only if valid
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toISOString().slice(0, 10);
+    }
+
+    console.warn("⚠️ [Redirect] invalid invoice date from payload, falling back to today:", input);
+    return new Date().toISOString().slice(0, 10);
+  }
+
 async function redirectToInvoiceFromObligation(obligation) {
   try {
     const contractId = Number($("revContractId")?.value || 0) || null;
@@ -33703,10 +33728,19 @@ async function redirectToInvoiceFromObligation(obligation) {
     const rawInvoiceDate =
       obligation?.recognized_at_point_in_time_date ||
       obligation?.invoice_date ||
-      obligation?.invoiceDate ||
-      new Date().toISOString().slice(0, 10);
+      obligation?.invoiceDate;
 
-    const invoiceDate = String(rawInvoiceDate).slice(0, 10);
+    let invoiceDate = new Date().toISOString().slice(0, 10);
+
+    if (rawInvoiceDate) {
+      const parsed = new Date(rawInvoiceDate);
+
+      if (!Number.isNaN(parsed.getTime())) {
+        invoiceDate = parsed.toISOString().slice(0, 10);
+      } else {
+        console.warn("⚠️ invalid rawInvoiceDate, using today:", rawInvoiceDate);
+      }
+    }
 
     const payload = {
       customerId,
@@ -43412,6 +43446,7 @@ function bindAR() {
       return [];
     };
   }
+
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
