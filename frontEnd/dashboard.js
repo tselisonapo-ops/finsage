@@ -43417,9 +43417,6 @@ function bindAR() {
     try {
       console.log("🧾 [Prefill] CALLED");
       console.log("📦 [Prefill] payload =", payload);
-      console.log("🔎 [Prefill] invCustomerId exists?", !!$("invCustomerId"));
-      console.log("🔎 [Prefill] invRevenueContractId exists?", !!$("invRevenueContractId"));
-      console.log("🔎 [Prefill] invLines exists?", !!$("invLines"));
 
       const customerId =
         payload.customerId ??
@@ -43469,13 +43466,29 @@ function bindAR() {
         payload.line?.unit_price ??
         0;
 
-      const currency =
-        resolveCurrency(payload.currency);
+      const currency = resolveCurrency(payload.currency);
 
-      const invoiceDate =
+      const rawInvoiceDate =
         payload.invoiceDate ??
         payload.invoice_date ??
         new Date().toISOString().slice(0, 10);
+
+      const invoiceDate = rawInvoiceDate
+        ? new Date(rawInvoiceDate).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+
+      // 🔥 use direct DOM lookups, not $()
+      const invCustomerIdEl = document.getElementById("invCustomerId");
+      const invCustomerNameEl = document.getElementById("invCustomerName");
+      const invDateEl = document.getElementById("invDate");
+      const invCurrencyEl = document.getElementById("invCurrency");
+      const invMemoEl = document.getElementById("invMemo");
+      const invRevenueContractEl = document.getElementById("invRevenueContractId");
+      const body = document.getElementById("invLines");
+
+      console.log("🔎 [Prefill] invCustomerId exists?", !!invCustomerIdEl);
+      console.log("🔎 [Prefill] invRevenueContractId exists?", !!invRevenueContractEl);
+      console.log("🔎 [Prefill] invLines exists?", !!body);
 
       console.log("➡️ [Prefill] customerId =", customerId);
       console.log("➡️ [Prefill] contractId =", contractId);
@@ -43483,13 +43496,13 @@ function bindAR() {
       console.log("➡️ [Prefill] invoiceDate =", invoiceDate);
 
       // 1. Header basics
-      if ($("invCustomerId")) $("invCustomerId").value = customerId ? String(customerId) : "";
-      if ($("invCustomerName")) $("invCustomerName").value = customerName || "";
-      if ($("invDate")) $("invDate").value = invoiceDate || "";
-      if ($("invCurrency")) $("invCurrency").value = currency || "USD";
+      if (invCustomerIdEl) invCustomerIdEl.value = customerId ? String(customerId) : "";
+      if (invCustomerNameEl) invCustomerNameEl.value = customerName || "";
+      if (invDateEl) invDateEl.value = invoiceDate || "";
+      if (invCurrencyEl) invCurrencyEl.value = currency || "USD";
 
-      if ($("invMemo")) {
-        $("invMemo").value =
+      if (invMemoEl) {
+        invMemoEl.value =
           payload.memo ||
           `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
       }
@@ -43504,9 +43517,9 @@ function bindAR() {
         hasCustomerContracts: contracts.length > 0,
       });
 
-      if ($("invRevenueContractId")) {
-        $("invRevenueContractId").value = contractId ? String(contractId) : "";
-        console.log("🧾 [Prefill] Contract field set to:", $("invRevenueContractId").value);
+      if (invRevenueContractEl) {
+        invRevenueContractEl.value = contractId ? String(contractId) : "";
+        console.log("🧾 [Prefill] Contract field set to:", invRevenueContractEl.value);
       }
 
       // 3. Load obligations for selected contract
@@ -43519,7 +43532,6 @@ function bindAR() {
       });
 
       // 4. Ensure one line exists
-      const body = $("invLines");
       if (!body) {
         console.warn("❌ [Prefill] invLines tbody not found");
         return;
@@ -43534,8 +43546,6 @@ function bindAR() {
         console.warn("❌ [Prefill] Could not get or create invoice row");
         return;
       }
-
-      console.log("🧱 [Prefill] Row ready:", row);
 
       // 5. Fill that row
       const itemEl = row.querySelector(".inv-item-pick");
@@ -43553,11 +43563,7 @@ function bindAR() {
         oblEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
         oblEl.value = obligationId ? String(obligationId) : "";
         console.log("🧾 [Prefill] Obligation field set to:", oblEl.value);
-      } else {
-        console.warn("⚠️ [Prefill] No obligation select found on row");
       }
-
-      console.log("🧱 [Prefill] Row populated");
 
       await window.applyObligationBillingToLine?.(row);
       console.log("💰 [Prefill] applyObligationBillingToLine completed");
