@@ -6751,33 +6751,34 @@ async function switchScreen(name) {
     await window.renderLoanRegister?.();
   }
 
-  // ✅ AR Workflow screens live in screen-ar
   if (isARWorkflow) {
-    // 1) Ensure AR screen is fully wired + hydrated
-    //    (initReceivablesScreen already calls bindAR internally)
     await initReceivablesScreen?.();
 
-    // 2) Ensure customers exist (optional if initReceivablesScreen already fetches)
     try { await fetchCustomersFromBackend?.(false); } catch (e) {}
 
-    // 3) Decide pane based on route
     const isQuotesRoute = (name === "ar-quotes");
     window.showArPane?.(isQuotesRoute ? "quotes" : "invoices");
 
-    // 4) Route-specific “enter” logic
+    // ✅ consume pending revenue prefill ONLY after invoice pane is shown
+    if (!isQuotesRoute && window._PENDING_REVENUE_INVOICE_PREFILL) {
+      const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
+      window._PENDING_REVENUE_INVOICE_PREFILL = null;
+
+      console.log("🧾 [switchScreen AR] consuming pending revenue invoice prefill", payload);
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await window.prefillInvoiceFromRevenuePayload?.(payload);
+    }
+
     if (isQuotesRoute) {
       try { await enterQuotesScreen?.(); }
       catch (e) { console.warn("[Quotes] enter failed", e); }
     } else {
-      // Invoice-only extra wiring (safe)
       try { wireInvoiceCustomerPicker?.(); } catch (e) {}
 
-      // ✅ NEW: approvals inbox → review invoice in screen-ar
-      // (will no-op if no handoff is pending)
       try { await openInvoiceFromApprovalHandoff?.(); }
       catch (e) { console.warn("[AR] approval handoff failed:", e); }
 
-      // ✅ after any route handoff, re-evaluate buttons
       if (typeof updateInvoiceActionButtons === "function") {
         updateInvoiceActionButtons();
       }
@@ -37396,16 +37397,6 @@ async function initReceivablesScreen() {
   await loadRevenueAccountsForInvoice?.();
   await renderDraftInvoiceList?.();
 
-  // consume pending redirect payload AFTER AR is ready
-  if (window._PENDING_REVENUE_INVOICE_PREFILL) {
-    const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
-    window._PENDING_REVENUE_INVOICE_PREFILL = null;
-
-    console.log("🧾 [AR Init] consuming pending revenue invoice prefill", payload);
-
-    await window.prefillInvoiceFromRevenuePayload?.(payload);
-  }
-
   updateInvoiceActionButtons();
 }
 
@@ -43394,6 +43385,9 @@ function bindAR() {
     try {
       console.log("🧾 [Prefill] CALLED");
       console.log("📦 [Prefill] payload =", payload);
+      console.log("🔎 [Prefill] invCustomerId exists?", !!$("invCustomerId"));
+      console.log("🔎 [Prefill] invRevenueContractId exists?", !!$("invRevenueContractId"));
+      console.log("🔎 [Prefill] invLines exists?", !!$("invLines"));
 
       const customerId =
         payload.customerId ??
