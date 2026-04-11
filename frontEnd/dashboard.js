@@ -33630,63 +33630,101 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-  async function redirectToInvoiceFromObligation(obligation) {
-    try {
-      const contractId = Number($("revContractId")?.value || 0) || null;
-      const contractNumber = $("revContractNumber")?.value?.trim() || "";
-      const contractTitle = $("revContractTitle")?.value?.trim() || "";
+async function redirectToInvoiceFromObligation(obligation) {
+  try {
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    const contractNumber = $("revContractNumber")?.value?.trim() || "";
+    const contractTitle = $("revContractTitle")?.value?.trim() || "";
 
-      const customerId = Number($("revCustomerId")?.value || 0) || null;
-      const customerName =
-        $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
+    const customerId = Number($("revCustomerId")?.value || 0) || null;
+    const customerName =
+      $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
 
-      const obligationId =
-        Number(obligation?.id || $("revObligationId")?.value || 0) || null;
+    const obligationId =
+      Number(
+        (
+          obligation?.id ??
+          obligation?.obligationId ??
+          obligation?.revenue_obligation_id ??
+          $("revObligationId")?.value
+        ) || 0
+      ) || null;
 
-      const obligationName =
-        obligation?.obligation_name ||
-        $("revObligationName")?.value?.trim() ||
-        "Service";
+    const obligationName =
+      obligation?.obligation_name ||
+      obligation?.obligationName ||
+      obligation?.revenue_obligation_name ||
+      $("revObligationName")?.value?.trim() ||
+      "Service";
 
-      const obligationNotes =
-        obligation?.notes ||
-        $("revObligationNotes")?.value ||
-        "";
+    const obligationNotes =
+      obligation?.notes ||
+      obligation?.obligationNotes ||
+      obligation?.revenue_obligation_notes ||
+      $("revObligationNotes")?.value ||
+      "";
 
-      const allocatedPrice =
-        Number(
-          obligation?.allocated_transaction_price ??
-          $("revAllocatedPrice")?.value ??
-          0
-        ) || 0;
+    const allocatedPrice =
+      Number(
+        obligation?.allocated_transaction_price ??
+        obligation?.allocatedPrice ??
+        obligation?.line?.unit_price ??
+        $("revAllocatedPrice")?.value ??
+        0
+      ) || 0;
 
-      const currency = resolveCurrency(
-        $("revContractCurrency")?.value
-      );
-      const invoiceDate =
-        obligation?.recognized_at_point_in_time_date ||
-        new Date().toISOString().slice(0, 10);
+    const currency = resolveCurrency($("revContractCurrency")?.value);
 
-      const payload = {
-        customerId,
-        customerName,
-        contractId,
-        contractNumber,
-        contractTitle,
-        obligationId,
-        obligationName,
-        obligationNotes,
-        allocatedPrice,
-        currency,
-        invoiceDate,
-      };
+    const invoiceDate =
+      obligation?.recognized_at_point_in_time_date ||
+      obligation?.invoice_date ||
+      obligation?.invoiceDate ||
+      new Date().toISOString().slice(0, 10);
 
-      await switchScreen("ar-invoices");
-      await window.prefillInvoiceFromRevenuePayload?.(payload);
-    } catch (e) {
-      console.warn("[redirectToInvoiceFromObligation] failed", e);
+    const payload = {
+      customerId,
+      customerName,
+      contractId,
+      contractNumber,
+      contractTitle,
+      obligationId,
+      obligationName,
+      obligationNotes,
+      allocatedPrice,
+      currency,
+      invoiceDate,
+      memo: `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`,
+      line: {
+        item_name: obligationName || "Service",
+        description: obligationNotes || contractTitle || "",
+        quantity: 1,
+        unit_price: allocatedPrice,
+        revenue_obligation_id: obligationId,
+      },
+    };
+
+    console.log("🚀 [Redirect] START");
+    console.log("📦 [Redirect] payload =", payload);
+
+    await switchScreen("ar-invoices");
+    console.log("📺 [Redirect] switched to ar-invoices");
+
+    // give AR a moment to finish rendering/binding
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    console.log("⏳ [Redirect] delay complete, about to prefill");
+
+    if (typeof window.prefillInvoiceFromRevenuePayload === "function") {
+      console.log("➡️ [Redirect] calling prefillInvoiceFromRevenuePayload");
+      await window.prefillInvoiceFromRevenuePayload(payload);
+    } else {
+      console.warn("❌ [Redirect] window.prefillInvoiceFromRevenuePayload is not defined");
     }
+
+    console.log("✅ [Redirect] DONE");
+  } catch (e) {
+    console.warn("[redirectToInvoiceFromObligation] failed", e);
   }
+}
 
   async function loadContractVersions(contractId) {
     const cid = state.cid;
@@ -43341,6 +43379,9 @@ function bindAR() {
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
+      console.log("🧾 [Prefill] CALLED");
+      console.log("📦 [Prefill] payload =", payload);
+
       const customerId =
         payload.customerId ??
         payload.customer_id ??
@@ -43369,6 +43410,7 @@ function bindAR() {
       const obligationId =
         payload.obligationId ??
         payload.revenue_obligation_id ??
+        payload.line?.revenue_obligation_id ??
         null;
 
       const obligationName =
@@ -43389,19 +43431,23 @@ function bindAR() {
         0;
 
       const currency =
-        payload.currency ??
-        "ZAR";
+        resolveCurrency(payload.currency);
 
       const invoiceDate =
         payload.invoiceDate ??
         payload.invoice_date ??
         new Date().toISOString().slice(0, 10);
 
+      console.log("➡️ [Prefill] customerId =", customerId);
+      console.log("➡️ [Prefill] contractId =", contractId);
+      console.log("➡️ [Prefill] obligationId =", obligationId);
+      console.log("➡️ [Prefill] invoiceDate =", invoiceDate);
+
       // 1. Header basics
       if ($("invCustomerId")) $("invCustomerId").value = customerId ? String(customerId) : "";
       if ($("invCustomerName")) $("invCustomerName").value = customerName || "";
       if ($("invDate")) $("invDate").value = invoiceDate || "";
-      if ($("invCurrency")) $("invCurrency").value = currency || "ZAR";
+      if ($("invCurrency")) $("invCurrency").value = currency || "USD";
 
       if ($("invMemo")) {
         $("invMemo").value =
@@ -43409,8 +43455,11 @@ function bindAR() {
           `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
       }
 
+      console.log("🧾 [Prefill] Header set");
+
       // 2. Load contracts for selected customer first
       const contracts = await window.loadRevenueContractsForSelectedCustomer?.() || [];
+      console.log("📚 [Prefill] Contracts loaded:", contracts);
 
       window.toggleInvoiceContractUI?.({
         hasCustomerContracts: contracts.length > 0,
@@ -43418,10 +43467,12 @@ function bindAR() {
 
       if ($("invRevenueContractId")) {
         $("invRevenueContractId").value = contractId ? String(contractId) : "";
+        console.log("🧾 [Prefill] Contract field set to:", $("invRevenueContractId").value);
       }
 
       // 3. Load obligations for selected contract
       const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
+      console.log("📦 [Prefill] Obligations loaded:", obligations);
 
       window.toggleInvoiceObligationUI?.({
         hasRevenueContract: !!contractId,
@@ -43430,13 +43481,22 @@ function bindAR() {
 
       // 4. Ensure one line exists
       const body = $("invLines");
-      if (!body) return;
+      if (!body) {
+        console.warn("❌ [Prefill] invLines tbody not found");
+        return;
+      }
 
       let row = body.querySelector("tr");
       if (!row) {
+        console.log("🧱 [Prefill] No row found, adding one");
         row = window.addLine?.() || null;
       }
-      if (!row) return;
+      if (!row) {
+        console.warn("❌ [Prefill] Could not get or create invoice row");
+        return;
+      }
+
+      console.log("🧱 [Prefill] Row ready:", row);
 
       // 5. Fill that row
       const itemEl = row.querySelector(".inv-item-pick");
@@ -43453,10 +43513,18 @@ function bindAR() {
       if (oblEl) {
         oblEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
         oblEl.value = obligationId ? String(obligationId) : "";
+        console.log("🧾 [Prefill] Obligation field set to:", oblEl.value);
+      } else {
+        console.warn("⚠️ [Prefill] No obligation select found on row");
       }
 
+      console.log("🧱 [Prefill] Row populated");
+
       await window.applyObligationBillingToLine?.(row);
+      console.log("💰 [Prefill] applyObligationBillingToLine completed");
+
       window.recalcInvoice?.({ force: true });
+      console.log("✅ [Prefill] DONE");
     } catch (err) {
       console.warn("[prefillInvoiceFromRevenuePayload] failed", err);
     }
