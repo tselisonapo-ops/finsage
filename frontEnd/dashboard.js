@@ -43341,40 +43341,84 @@ function bindAR() {
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
-      const {
-        customerId,
-        customerName,
-        contractId,
-        contractNumber,
-        contractTitle,
-        obligationId,
-        obligationName,
-        obligationNotes,
-        allocatedPrice,
-        currency,
-        invoiceDate,
-      } = payload;
+      const customerId =
+        payload.customerId ??
+        payload.customer_id ??
+        null;
+
+      const customerName =
+        payload.customerName ??
+        payload.customer_name ??
+        "";
+
+      const contractId =
+        payload.contractId ??
+        payload.revenue_contract_id ??
+        null;
+
+      const contractNumber =
+        payload.contractNumber ??
+        payload.revenue_contract_number ??
+        "";
+
+      const contractTitle =
+        payload.contractTitle ??
+        payload.revenue_contract_title ??
+        "";
+
+      const obligationId =
+        payload.obligationId ??
+        payload.revenue_obligation_id ??
+        null;
+
+      const obligationName =
+        payload.obligationName ??
+        payload.revenue_obligation_name ??
+        payload.line?.item_name ??
+        "Service";
+
+      const obligationNotes =
+        payload.obligationNotes ??
+        payload.revenue_obligation_notes ??
+        payload.line?.description ??
+        "";
+
+      const allocatedPrice =
+        payload.allocatedPrice ??
+        payload.line?.unit_price ??
+        0;
+
+      const currency =
+        payload.currency ??
+        "ZAR";
+
+      const invoiceDate =
+        payload.invoiceDate ??
+        payload.invoice_date ??
+        new Date().toISOString().slice(0, 10);
 
       // 1. Header basics
-      if ($("invCustomerId")) $("invCustomerId").value = customerId || "";
+      if ($("invCustomerId")) $("invCustomerId").value = customerId ? String(customerId) : "";
       if ($("invCustomerName")) $("invCustomerName").value = customerName || "";
       if ($("invDate")) $("invDate").value = invoiceDate || "";
       if ($("invCurrency")) $("invCurrency").value = currency || "ZAR";
+
       if ($("invMemo")) {
         $("invMemo").value =
+          payload.memo ||
           `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
       }
 
       // 2. Load contracts for selected customer first
       const contracts = await window.loadRevenueContractsForSelectedCustomer?.() || [];
 
-      if ($("invRevenueContractId")) {
-        $("invRevenueContractId").value = contractId ? String(contractId) : "";
-      }
-
       window.toggleInvoiceContractUI?.({
         hasCustomerContracts: contracts.length > 0,
       });
+
+      if ($("invRevenueContractId")) {
+        $("invRevenueContractId").value = contractId ? String(contractId) : "";
+      }
 
       // 3. Load obligations for selected contract
       const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
