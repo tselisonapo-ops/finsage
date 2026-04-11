@@ -2846,42 +2846,6 @@
                   <input id="invCurrency" class="w-full border rounded px-3 py-2" value="ZAR">
                 </div>
 
-                <div class="grid gap-2 sm:grid-cols-6 mt-2">
-
-                  <div class="sm:col-span-2">
-                    <label class="text-xs text-slate-600">Customer *</label>
-                    <input list="invCustomerList" id="invCustomerName"
-                          class="w-full border rounded px-3 py-2"
-                          placeholder="Type to search" required>
-                    <datalist id="invCustomerList"></datalist>
-                    <input type="hidden" id="invCustomerId">
-                  </div>
-
-                  <div>
-                    <label class="text-xs text-slate-600">Invoice #</label>
-                    <input id="invNumber" class="w-full border rounded px-3 py-2" placeholder="Auto if empty">
-                  </div>
-
-                  <div>
-                    <label class="text-xs text-slate-600">Date *</label>
-                    <input type="date" id="invDate" class="w-full border rounded px-3 py-2" required>
-                  </div>
-
-                  <div>
-                    <label class="text-xs text-slate-600">Due</label>
-                    <select id="invTerms" class="w-full border rounded px-3 py-2">
-                      <option value="on_receipt">Due on receipt</option>
-                      <option value="15">Net 15</option>
-                      <option value="30">Net 30</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="text-xs text-slate-600">Currency</label>
-                    <input id="invCurrency" class="w-full border rounded px-3 py-2" value="ZAR">
-                  </div>
-                </div>
-
                 <div class="grid gap-2 sm:grid-cols-3 mt-2">
 
                   <div id="invRevenueContractWrap" class="hidden">
