@@ -600,6 +600,26 @@
     overflow-x:hidden;
   }
 
+  .inv-obligation-col.hidden {
+    display: none;
+  }
+
+  .inv-item-col--normal {
+    width: 14%;
+  }
+
+  .inv-desc-col--normal {
+    width: 24%;
+  }
+
+  .inv-item-col--wide {
+    width: 20%;
+  }
+
+  .inv-desc-col--wide {
+    width: 32%;
+  }
+
   /* Make form fields visibly "input-like" */
   .input{
     width:100%;
@@ -2877,9 +2897,9 @@
                 <table class="min-w-full text-sm">
                   <thead class="sticky top-0 bg-white">
                     <tr class="text-slate-500">
-                      <th class="px-2 py-2 text-left w-[14%]">Item/Service</th>
-                      <th class="px-2 py-2 text-left w-[24%]">Description</th>
-                      <th class="px-2 py-2 text-left w-[14%]">Obligation</th>
+                      <th class="px-2 py-2 text-left inv-item-col inv-item-col--normal">Item/Service</th>
+                      <th class="px-2 py-2 text-left inv-desc-col inv-desc-col--normal">Description</th>
+                      <th class="px-2 py-2 text-left inv-obligation-col">Obligation</th>
                       <th class="px-2 py-2 text-left w-[14%]">Revenue</th>
                       <th class="px-2 py-2 text-right w-[7%]">Qty</th>
                       <th class="px-2 py-2 text-right w-[10%]">Unit Price</th>

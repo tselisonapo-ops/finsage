@@ -33616,67 +33616,95 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   async function redirectToInvoiceFromObligation(obligation) {
     try {
-      if (!obligation) return;
+      const contractId = Number($("revContractId")?.value || 0) || null;
+      const contractNumber = $("revContractNumber")?.value?.trim() || "";
+      const contractTitle = $("revContractTitle")?.value?.trim() || "";
 
-      const contractId = Number($("revContractId")?.value || 0);
-      const contractNumber = $("revContractNumber")?.value || "";
-      const customerId = $("revCustomerId")?.value || "";
+      const customerId = Number($("revCustomerId")?.value || 0) || null;
       const customerName =
-        $("revCustomerId")?.selectedOptions?.[0]?.textContent || "";
+        $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
 
-      // 👉 Switch to AR screen
+      const obligationId =
+        Number(obligation?.id || $("revObligationId")?.value || 0) || null;
+
+      const obligationName =
+        obligation?.obligation_name ||
+        $("revObligationName")?.value?.trim() ||
+        "Service";
+
+      const obligationNotes =
+        obligation?.notes ||
+        $("revObligationNotes")?.value ||
+        "";
+
+      const allocatedPrice =
+        Number(
+          obligation?.allocated_transaction_price ??
+          $("revAllocatedPrice")?.value ??
+          0
+        ) || 0;
+
+      const currency =
+        $("revContractCurrency")?.value?.trim() || "ZAR";
+
       await switchScreen("ar-invoices");
 
-      // small delay to allow UI to mount
       setTimeout(() => {
         try {
-          // ─────────────────────────────
-          // HEADER PREFILL
-          // ─────────────────────────────
-          $("invCustomerId").value = customerId;
-          $("invCustomerName").value = customerName;
+          $("invCustomerId").value = customerId || "";
+          $("invCustomerName").value = customerName || "";
+          $("invRevenueContractId").value = contractId || "";
 
-          $("invRevenueContractId").value = contractId;
-
-          $("invMemo").value =
-            `Invoice for ${obligation.obligation_name || "service"} (${contractNumber})`;
-
+          if (typeof window.toggleInvoiceObligationUI === "function") {
+            window.toggleInvoiceObligationUI({
+              hasRevenueContract: !!contractId,
+              hasObligation: !!obligationId,
+            });
+          }
           $("invDate").value = new Date().toISOString().slice(0, 10);
+          $("invCurrency").value = currency;
+          $("invMemo").value =
+            `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
 
-          // ─────────────────────────────
-          // ENSURE AT LEAST ONE LINE EXISTS
-          // ─────────────────────────────
+          if (typeof window.toggleInvoiceObligationUI === "function") {
+            window.toggleInvoiceObligationUI({
+              hasRevenueContract: !!contractId,
+              hasObligation: !!obligationId,
+            });
+          }
+
           const body = $("invLines");
-          if (!body || !body.children.length) {
+          if (!body) return;
+
+          const fillFirstRow = () => {
+            const row = body.querySelector("tr");
+            if (!row) return false;
+
+            const itemEl = row.querySelector(".inv-desc");
+            const descEl = row.querySelector(".inv-service");
+            const oblEl = row.querySelector(".inv-obligation");
+            const qtyEl = row.querySelector(".inv-qty");
+            const priceEl = row.querySelector(".inv-price");
+
+            if (itemEl) itemEl.value = obligationName || "Service";
+            if (descEl) descEl.value = obligationNotes || contractTitle || "";
+            if (oblEl) oblEl.value = obligationId || "";
+            if (qtyEl) qtyEl.value = 1;
+            if (priceEl) priceEl.value = allocatedPrice || 0;
+
+            window.recalcInvoice?.({ force: true });
+            return true;
+          };
+
+          if (!body.querySelector("tr")) {
             window.addInvoiceLine?.();
           }
 
-          const row = body.querySelector("tr");
-
-          if (!row) return;
-
-          // ─────────────────────────────
-          // LINE PREFILL
-          // ─────────────────────────────
-          row.querySelector(".inv-desc").value =
-            obligation.obligation_name || "Service";
-
-          row.querySelector(".inv-service").value =
-            obligation.obligation_description ||
-            $("revContractTitle")?.value ||
-            "";
-
-          row.querySelector(".inv-obligation").value =
-            obligation.id || "";
-
-          row.querySelector(".inv-qty").value = 1;
-
-          row.querySelector(".inv-price").value =
-            obligation.allocated_transaction_price || 0;
-
-          // trigger recalc
-          window.recalcInvoice?.();
-
+          if (!fillFirstRow()) {
+            setTimeout(() => {
+              fillFirstRow();
+            }, 150);
+          }
         } catch (err) {
           console.warn("[Revenue → AR prefill failed]", err);
         }
@@ -33987,10 +34015,12 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     await loadObligations(contractId);
     setMsg("Obligation saved.");
+    const saved = out?.data || out;
     const timing = ($("revRecognitionTiming")?.value || "").toLowerCase();
 
     if (timing === "point_in_time") {
-      await redirectToInvoiceFromObligation(out?.data || out);
+      const prefill = buildInvoicePrefillFromRevenueUI(saved);
+      await redirectToInvoiceFromObligation(prefill);
     }
     return out;
   }
@@ -34516,6 +34546,47 @@ function bindAssetRecordsPickerModal({ cid }) {
     await loadRuns();
     await openRevenueFromApprovalHandoff();
   };
+
+  function buildInvoicePrefillFromRevenueUI(savedObligation = {}) {
+    const contractId = Number($("revContractId")?.value || 0) || null;
+    const obligationId = Number(savedObligation?.id || $("revObligationId")?.value || 0) || null;
+
+    const customerId = Number($("revCustomerId")?.value || 0) || null;
+    const customerName = $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
+
+    const contractNumber = $("revContractNumber")?.value?.trim() || "";
+    const contractTitle = $("revContractTitle")?.value?.trim() || "";
+    const currency = $("revContractCurrency")?.value?.trim() || "ZAR";
+
+    const obligationName =
+      savedObligation?.obligation_name ||
+      $("revObligationName")?.value?.trim() ||
+      "";
+
+    const obligationNotes =
+      savedObligation?.notes ||
+      $("revObligationNotes")?.value ||
+      "";
+
+    const allocatedPrice =
+      Number(savedObligation?.allocated_transaction_price ?? $("revAllocatedPrice")?.value ?? 0) || 0;
+
+    return {
+      customer_id: customerId,
+      customer_name: customerName,
+      revenue_contract_id: contractId,
+      revenue_obligation_id: obligationId,
+      invoice_date: new Date().toISOString().slice(0, 10),
+      currency,
+      memo: `Invoice for ${obligationName || "service"}${contractNumber ? ` (${contractNumber})` : ""}`,
+      line: {
+        item_name: obligationName || "Service",
+        description: obligationNotes || contractTitle || obligationName || "",
+        quantity: 1,
+        unit_price: allocatedPrice,
+      },
+    };
+  }
 
   window.openRevenueApprovalContext = async function openRevenueApprovalContext(ctx = {}) {
     const contractId = Number(ctx.contractId || 0) || null;
@@ -43245,6 +43316,27 @@ function bindAR() {
     };
   }
 
+  function toggleInvoiceObligationUI(opts = {}) {
+    const hasRevenueContract = !!opts.hasRevenueContract;
+    const hasObligation = !!opts.hasObligation;
+    const show = hasRevenueContract || hasObligation;
+
+    document.querySelectorAll(".inv-obligation-col").forEach((el) => {
+      el.classList.toggle("hidden", !show);
+    });
+
+    document.querySelectorAll(".inv-item-col").forEach((el) => {
+      el.classList.toggle("inv-item-col--normal", show);
+      el.classList.toggle("inv-item-col--wide", !show);
+    });
+
+    document.querySelectorAll(".inv-desc-col").forEach((el) => {
+      el.classList.toggle("inv-desc-col--normal", show);
+      el.classList.toggle("inv-desc-col--wide", !show);
+    });
+  }
+  window.toggleInvoiceObligationUI = toggleInvoiceObligationUI;
+
   // ✅ Build the datalist + maps
   async function loadInvoiceItemCatalog() {
     const dl = document.getElementById("invItemCatalogList");
@@ -43357,6 +43449,12 @@ function bindAR() {
   // --------------------------
   if (typeof fillInvoiceCustomerList === "function") fillInvoiceCustomerList();
   if (typeof bindInvoiceCustomerIdSync === "function") bindInvoiceCustomerIdSync();
+
+  // 👇 ADD IT HERE
+  toggleInvoiceObligationUI({
+    hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
+    hasObligation: !!document.querySelector("#invLines .inv-obligation")?.value,
+  });
 
   window._INV_TOTALS_LOCKED = window._INV_TOTALS_LOCKED ?? false;
 
@@ -43550,8 +43648,8 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
     row.className = "inv-line-row";
 
     row.innerHTML = `
-        <td class="px-2 py-1 text-xs">
-          <input class="w-full border rounded px-1 py-0.5 text-xs inv-item-pick"
+        <td class="px-2 py-1 text-xs inv-item-col inv-item-col--normal">
+          <input class="w-full border rounded px-1 py-0.5 text-xs inv-item-pick inv-desc"
                 placeholder="Type or pick item/service"
                 list="invItemCatalogList">
 
@@ -43560,12 +43658,12 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
           <input type="hidden" class="inv-item-code" value="">
         </td>
 
-        <td class="px-2 py-1 text-xs">
+        <td class="px-2 py-1 text-xs inv-desc-col inv-desc-col--normal">
           <input class="w-full border rounded px-1 py-0.5 text-xs inv-service"
                 placeholder="Description">
         </td>
 
-        <td class="px-2 py-1 text-xs">
+        <td class="px-2 py-1 text-xs inv-obligation-col">
           <select class="w-full border rounded px-1 py-0.5 text-xs inv-obligation">
             <option value="">No obligation</option>
           </select>
@@ -43896,13 +43994,23 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
     });
   }
 
-  window.loadInvoiceLineObligationsFromContract?.().then(() => {
-    if (obligationSel?.dataset.selectedValue) {
-      obligationSel.value = obligationSel.dataset.selectedValue;
-    }
-  });
+    window.loadInvoiceLineObligationsFromContract?.().then(() => {
+      if (obligationSel?.dataset.selectedValue) {
+        obligationSel.value = obligationSel.dataset.selectedValue;
+      }
 
-  return row;
+      toggleInvoiceObligationUI({
+        hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
+        hasObligation: !!row.querySelector(".inv-obligation")?.value,
+      });
+    });
+
+    toggleInvoiceObligationUI({
+      hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
+      hasObligation: !!row.querySelector(".inv-obligation")?.value,
+    });
+
+    return row;
   }
   window.addLine = addLine;
 
@@ -44061,6 +44169,10 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
     invCustomerNameEl.addEventListener("change", async () => {
       await window.loadRevenueContractsForSelectedCustomer?.();
       await window.loadInvoiceLineObligationsFromContract?.();
+      toggleInvoiceObligationUI({
+        hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
+        hasObligation: !!document.querySelector("#invLines .inv-obligation")?.value,
+      });
     });
   }
 
