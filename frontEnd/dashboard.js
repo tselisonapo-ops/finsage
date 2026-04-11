@@ -33630,6 +33630,19 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  async function waitForElement(id, timeoutMs = 3000, intervalMs = 50) {
+    const started = Date.now();
+
+    while (Date.now() - started < timeoutMs) {
+      const el = document.getElementById(id);
+      if (el) return el;
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+
+    return null;
+  }
+  window.waitForElement = waitForElement;
+
 async function redirectToInvoiceFromObligation(obligation) {
   try {
     const contractId = Number($("revContractId")?.value || 0) || null;
@@ -33706,26 +33719,17 @@ async function redirectToInvoiceFromObligation(obligation) {
     console.log("🚀 [Redirect] START");
     console.log("📦 [Redirect] payload =", payload);
 
+    window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+    console.log("📝 [Redirect] stored pending prefill payload");
+
     await switchScreen("ar-invoices");
     console.log("📺 [Redirect] switched to ar-invoices");
-
-    // give AR a moment to finish rendering/binding
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    console.log("⏳ [Redirect] delay complete, about to prefill");
-
-    if (typeof window.prefillInvoiceFromRevenuePayload === "function") {
-      console.log("➡️ [Redirect] calling prefillInvoiceFromRevenuePayload");
-      await window.prefillInvoiceFromRevenuePayload(payload);
-    } else {
-      console.warn("❌ [Redirect] window.prefillInvoiceFromRevenuePayload is not defined");
-    }
 
     console.log("✅ [Redirect] DONE");
   } catch (e) {
     console.warn("[redirectToInvoiceFromObligation] failed", e);
   }
 }
-
   async function loadContractVersions(contractId) {
     const cid = state.cid;
     if (!cid || !contractId) return;
@@ -37371,7 +37375,7 @@ async function initReceivablesScreen() {
     bindInvoiceLineButtons();
     bindInvoicePostingUI();
     bindCustomerInvoicesPane();
-    wireCustomerInvoicesPaneHandlers();   // ✅ ADD HERE
+    wireCustomerInvoicesPaneHandlers();
     bindInvoiceViewerModal();
     bindInvoiceAllocatePaymentUI();
     bindInvoiceRecalcButton();
@@ -37383,16 +37387,25 @@ async function initReceivablesScreen() {
     bindInvoiceCustomerLookup();
   }
 
-  // ✅ ensure datalist exists + customers loaded
+  // ensure datalist exists + customers loaded
   await fillInvoiceCustomerList();
 
-  // ✅ list pane
+  // list pane
   await renderArCustomerList?.({ closeOnPick: true });
 
   await loadRevenueAccountsForInvoice?.();
   await renderDraftInvoiceList?.();
 
-  // 🔥 ADD THIS HERE
+  // consume pending redirect payload AFTER AR is ready
+  if (window._PENDING_REVENUE_INVOICE_PREFILL) {
+    const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
+    window._PENDING_REVENUE_INVOICE_PREFILL = null;
+
+    console.log("🧾 [AR Init] consuming pending revenue invoice prefill", payload);
+
+    await window.prefillInvoiceFromRevenuePayload?.(payload);
+  }
+
   updateInvoiceActionButtons();
 }
 
@@ -43879,11 +43892,17 @@ function bindAR() {
     const customerId = document.getElementById("invCustomerId")?.value || "";
     const sel = document.getElementById("invRevenueContractId");
 
-    if (!cid || !sel) return [];
+    console.log("📚 [Contracts] cid =", cid, "customerId =", customerId);
+
+    if (!cid || !sel) {
+      console.warn("❌ [Contracts] cid or contract select missing");
+      return [];
+    }
 
     sel.innerHTML = `<option value="">Select contract...</option>`;
 
     if (!customerId) {
+      console.warn("⚠️ [Contracts] no customerId on invoice form");
       toggleInvoiceContractUI({ hasCustomerContracts: false });
       toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
       return [];
@@ -43892,7 +43911,11 @@ function bindAR() {
     try {
       const res = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`, { method: "GET" });
       const items = res?.items || res?.data?.items || res?.data || [];
+
+      console.log("📚 [Contracts] raw items =", items);
+
       const mine = items.filter(x => String(x.customer_id || "") === String(customerId));
+      console.log("📚 [Contracts] filtered =", mine);
 
       if (!mine.length) {
         toggleInvoiceContractUI({ hasCustomerContracts: false });
