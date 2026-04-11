@@ -36140,14 +36140,14 @@ class DatabaseService:
             cur.execute(
                 f"""
                 INSERT INTO {schema}.invoice_lines (
-                company_id, invoice_id, line_no,
-                item_name, description, account_code,
-                quantity, unit_price, discount_amount, net_amount,
-                vat_rate, vat_amount, total_amount,
-                item_type, item_id, item_code, vat_code,
-                revenue_obligation_id
+                    company_id, invoice_id, line_no,
+                    item_name, description, account_code,
+                    quantity, unit_price, discount_amount, net_amount,
+                    vat_rate, vat_amount, total_amount,
+                    item_type, item_id, item_code, vat_code,
+                    revenue_obligation_id
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
                 """,
                 (
                     company_id,
@@ -36155,8 +36155,7 @@ class DatabaseService:
                     pl["line_no"],
                     pl.get("item_name"),
                     pl["description"],
-                    pl.get("revenue_obligation_id"),
-                    pl["account_code"],
+                    pl.get("account_code"),
                     pl["quantity"],
                     pl["unit_price"],
                     pl["discount_amount"],
@@ -36168,6 +36167,7 @@ class DatabaseService:
                     pl.get("item_id"),
                     pl.get("item_code"),
                     pl.get("vat_code"),
+                    pl.get("revenue_obligation_id"),
                 ),
             )
 
