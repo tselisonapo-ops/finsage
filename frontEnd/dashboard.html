@@ -3333,11 +3333,29 @@
                       <input id="revContractTitle" class="w-full border rounded px-3 py-2 text-sm">
                     </div>
 
-                    <div>
-                      <label class="block text-xs text-slate-500 mb-1">Customer</label>
-                      <select id="revCustomerId" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">Select customer</option>
-                      </select>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Customer</label>
+                        <select id="revCustomerId" class="w-full border rounded px-3 py-2 text-sm">
+                          <option value="">Select customer</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Settlement Pattern</label>
+                        <select id="revSettlementPattern" class="w-full border rounded px-3 py-2 text-sm">
+                          <option value="">Select settlement pattern</option>
+                          <option value="revenue_before_billing">Revenue before billing</option>
+                          <option value="billing_before_revenue">Billing before revenue</option>
+                          <option value="cash_before_service">Cash before service</option>
+                        </select>
+
+                        <div class="mt-1 text-[11px] text-slate-500 space-y-1">
+                          <div><strong>Revenue before billing:</strong> recognize first, invoice later; posts through Contract Asset.</div>
+                          <div><strong>Billing before revenue:</strong> invoice first, earn later; posts through Contract Liability.</div>
+                          <div><strong>Cash before service:</strong> receive payment before work is done; hold in Contract Liability until earned.</div>
+                        </div>
+                      </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
@@ -3353,19 +3371,6 @@
                           <option value="periodic">Periodic</option>
                           <option value="manual">Manual</option>
                         </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label class="block text-xs text-slate-500 mb-1">Settlement Pattern</label>
-                      <select id="revSettlementPattern" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">Select settlement pattern</option>
-                        <option value="revenue_before_billing">Revenue before billing</option>
-                        <option value="billing_before_revenue">Billing before revenue</option>
-                        <option value="cash_before_service">Cash before service</option>
-                      </select>
-                      <div class="text-[11px] text-slate-500 mt-1">
-                        Tells the system whether to post to Contract Asset or Contract Liability.
                       </div>
                     </div>
 
