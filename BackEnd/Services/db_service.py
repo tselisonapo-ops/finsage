@@ -56123,6 +56123,32 @@ class DatabaseService:
                     f"Existing: {existing_allocated:.2f}, New: {new_allocated:.2f}, Limit: {contract_price:.2f}"
                 )
 
+            timing = (data.get("recognition_timing") or "over_time").strip().lower()
+            progress_method = (data.get("progress_method") or "cost_to_cost").strip().lower()
+
+            expected_total_cost = float(data.get("expected_total_cost") or 0.0)
+            pit_date = data.get("recognized_at_point_in_time_date")
+
+            if timing not in {"over_time", "point_in_time"}:
+                raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
+
+            if timing == "point_in_time":
+                if not pit_date:
+                    raise ValueError("Point-in-time obligations require a satisfaction date.")
+
+                data["expected_total_cost"] = 0.0
+                data["actual_cost_to_date"] = 0.0
+                data["progress_percent"] = 0.0
+
+            if timing == "over_time":
+                if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
+                    raise ValueError("Invalid progress method for over-time obligation.")
+
+                if progress_method == "cost_to_cost" and expected_total_cost <= 0:
+                    raise ValueError("Over-time obligations using cost-to-cost require expected total cost.")
+
+                data["recognized_at_point_in_time_date"] = None
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_obligations (
@@ -56178,6 +56204,46 @@ class DatabaseService:
             if not before:
                 raise ValueError("Revenue obligation not found")
 
+            timing = (data.get("recognition_timing") if data.get("recognition_timing") not in (None, "") else before.get("recognition_timing") or "over_time")
+            timing = str(timing).strip().lower()
+
+            progress_method = (data.get("progress_method") if data.get("progress_method") not in (None, "") else before.get("progress_method") or "cost_to_cost")
+            progress_method = str(progress_method).strip().lower()
+
+            expected_total_cost = (
+                float(data["expected_total_cost"])
+                if data.get("expected_total_cost") is not None
+                else float(before.get("expected_total_cost") or 0.0)
+            )
+
+            pit_date = (
+                data.get("recognized_at_point_in_time_date")
+                if "recognized_at_point_in_time_date" in data
+                else before.get("recognized_at_point_in_time_date")
+            )
+
+            if timing not in {"over_time", "point_in_time"}:
+                raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
+
+            if timing == "point_in_time":
+                if not pit_date:
+                    raise ValueError("Point-in-time obligations require a satisfaction date.")
+
+                # cleanup conflicting over-time fields
+                data["expected_total_cost"] = 0.0
+                data["actual_cost_to_date"] = 0.0
+                data["progress_percent"] = 0.0
+
+            if timing == "over_time":
+                if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
+                    raise ValueError("Invalid progress method for over-time obligation.")
+
+                if progress_method == "cost_to_cost" and expected_total_cost <= 0:
+                    raise ValueError("Over-time obligations using cost-to-cost require expected total cost.")
+
+                # cleanup conflicting point-in-time trigger
+                data["recognized_at_point_in_time_date"] = None
+
             cur.execute(
                 f"""
                 UPDATE {schema}.revenue_obligations
@@ -56193,7 +56259,7 @@ class DatabaseService:
                     actual_cost_to_date = COALESCE(%s, actual_cost_to_date),
                     progress_percent = COALESCE(%s, progress_percent),
                     revenue_to_date = COALESCE(%s, revenue_to_date),
-                    recognized_at_point_in_time_date = COALESCE(%s, recognized_at_point_in_time_date),
+                    recognized_at_point_in_time_date = %s,
                     notes = COALESCE(%s, notes),
                     payload_json = COALESCE(%s::jsonb, payload_json),
                     updated_at = NOW()
@@ -56222,7 +56288,6 @@ class DatabaseService:
             conn.commit()
 
         return {"before": before, "after": after}
-
 
     def record_revenue_billing_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)

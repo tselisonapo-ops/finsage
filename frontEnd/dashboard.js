@@ -32939,6 +32939,21 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
+  function toggleObligationFields() {
+    const timing = document.getElementById("revRecognitionTiming")?.value;
+
+    const overTimeBlock = document.getElementById("revOverTimeBlock");
+    const pitBlock = document.getElementById("revPointInTimeBlock");
+
+    if (timing === "point_in_time") {
+      overTimeBlock?.classList.add("hidden");
+      pitBlock?.classList.remove("hidden");
+    } else {
+      overTimeBlock?.classList.remove("hidden");
+      pitBlock?.classList.add("hidden");
+    }
+  }
+
   function applyRevenueSetupDefaults() {
     if (typeof window.getRevenueSetupPolicy !== "function") return;
 
@@ -33109,6 +33124,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revObligationNotes").value = o.notes || "";
 
     state.selectedObligation = o?.id ? o : null;
+    toggleObligationFields();
   }
 
   function contractPayloadFromUI() {
@@ -34458,6 +34474,8 @@ function bindAssetRecordsPickerModal({ cid }) {
       setActiveTab("obligations");
     });
 
+    $("revRecognitionTiming")?.addEventListener("change", toggleObligationFields);
+
     $("revSaveObligation")?.addEventListener("click", async () => {
       try { await saveObligation(); } catch (e) { setMsg(e?.message || "Save obligation failed", "error"); }
     });
@@ -34511,6 +34529,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revRunReverseBtn")?.addEventListener("click", async () => {
       try { await reverseRun(); } catch (e) { setRunMsg(e?.message || "Reverse failed", "error"); }
     });
+
+    toggleObligationFields();
   }
 
   let bound = false;
@@ -37319,6 +37339,7 @@ async function initReceivablesScreen() {
     bindInvoiceLineButtons();
     bindInvoicePostingUI();
     bindCustomerInvoicesPane();
+    wireCustomerInvoicesPaneHandlers();   // ✅ ADD HERE
     bindInvoiceViewerModal();
     bindInvoiceAllocatePaymentUI();
     bindInvoiceRecalcButton();
@@ -40489,7 +40510,6 @@ async function fetchCustomersFromBackend(forceFresh = false) {
   return CUSTOMER_CACHE;
 }
 
-
 function bindInvoiceCustomerIdSync() {
   const nameEl = document.getElementById("invCustomerName");
   const idEl   = document.getElementById("invCustomerId");
@@ -40499,7 +40519,7 @@ function bindInvoiceCustomerIdSync() {
   if (nameEl.dataset.bound === "1") return;
   nameEl.dataset.bound = "1";
 
-  const sync = () => {
+  const sync = async () => {
     const typed = (nameEl.value || "").trim().toLowerCase();
     const customers = window._invoiceCustomers || [];
 
@@ -40509,16 +40529,25 @@ function bindInvoiceCustomerIdSync() {
 
     const id = match ? Number(match.id) : null;
 
-    // set form ID field (backend expects this)
+    // set form ID field
     idEl.value = id ? String(id) : "";
 
-    // set global invoice state (your UI expects this)
+    // set global invoice state
     window.CURRENT_INVOICE_CUSTOMER_ID = id;
     window.CURRENT_INVOICE_CUSTOMER = match || null;
 
     if (id && typeof renderCustomerHighlights === "function") {
       renderCustomerHighlights(id);
     }
+
+    // ✅ NEW: refresh revenue contract dropdown for selected customer
+    await window.loadRevenueContractsForSelectedCustomer?.();
+
+    // ✅ if customer changed, also clear obligation UI until contract is chosen
+    window.toggleInvoiceObligationUI?.({
+      hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
+      hasObligation: false,
+    });
   };
 
   nameEl.addEventListener("input", sync);
@@ -43337,6 +43366,20 @@ function bindAR() {
   }
   window.toggleInvoiceObligationUI = toggleInvoiceObligationUI;
 
+  function toggleInvoiceContractUI(opts = {}) {
+    const hasCustomerContracts = !!opts.hasCustomerContracts;
+    const wrap = document.getElementById("invRevenueContractWrap");
+    const sel = document.getElementById("invRevenueContractId");
+
+    wrap?.classList.toggle("hidden", !hasCustomerContracts);
+
+    if (!hasCustomerContracts && sel) {
+      sel.innerHTML = `<option value="">Select contract...</option>`;
+      sel.value = "";
+    }
+  }
+  window.toggleInvoiceContractUI = toggleInvoiceContractUI;
+
   // ✅ Build the datalist + maps
   async function loadInvoiceItemCatalog() {
     const dl = document.getElementById("invItemCatalogList");
@@ -43450,11 +43493,26 @@ function bindAR() {
   if (typeof fillInvoiceCustomerList === "function") fillInvoiceCustomerList();
   if (typeof bindInvoiceCustomerIdSync === "function") bindInvoiceCustomerIdSync();
 
-  // 👇 ADD IT HERE
-  toggleInvoiceObligationUI({
-    hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
-    hasObligation: !!document.querySelector("#invLines .inv-obligation")?.value,
+  document.getElementById("invCustomerName")?.addEventListener("change", async () => {
+    await window.loadRevenueContractsForSelectedCustomer?.();
   });
+
+  document.getElementById("invCustomerId")?.addEventListener("change", async () => {
+    await window.loadRevenueContractsForSelectedCustomer?.();
+  });
+
+  document.getElementById("invRevenueContractId")?.addEventListener("change", async () => {
+    const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
+
+    toggleInvoiceObligationUI({
+      hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
+      hasObligation: obligations.length > 0,
+    });
+  });
+
+  // 👇 ADD IT HERE
+  toggleInvoiceContractUI({ hasCustomerContracts: false });
+  toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
 
   window._INV_TOTALS_LOCKED = window._INV_TOTALS_LOCKED ?? false;
 
@@ -43512,122 +43570,167 @@ function bindAR() {
     id.value = metaOrNull.id != null ? String(metaOrNull.id) : "";
     code.value = metaOrNull.code || "";
   }
-window.setLineCatalogMeta = setLineCatalogMeta;
+  window.setLineCatalogMeta = setLineCatalogMeta;
 
-function bindInvoiceLineItemPicker(row) {
-  if (!row || row.dataset.itemPickBound === "1") return;
-  row.dataset.itemPickBound = "1";
+  function bindInvoiceLineItemPicker(row) {
+    if (!row || row.dataset.itemPickBound === "1") return;
+    row.dataset.itemPickBound = "1";
 
-  const pick = row.querySelector(".inv-item-pick");
-  if (!pick) return;
+    const pick = row.querySelector(".inv-item-pick");
+    if (!pick) return;
 
-  const listId = pick.getAttribute("list") || "invItemCatalogList";
-  const listEl = document.getElementById(listId);
+    const listId = pick.getAttribute("list") || "invItemCatalogList";
+    const listEl = document.getElementById(listId);
 
-  const descEl  = row.querySelector(".inv-service");
-  const priceEl = row.querySelector(".inv-price");
-  const acctEl  = row.querySelector(".inv-acct");
-  const vatEl   = row.querySelector(".inv-vat-code");
+    const descEl  = row.querySelector(".inv-service");
+    const priceEl = row.querySelector(".inv-price");
+    const acctEl  = row.querySelector(".inv-acct");
+    const vatEl   = row.querySelector(".inv-vat-code");
 
-  // Track manual overrides so we don't stomp user choices
-  if (priceEl && !priceEl.dataset.bound) {
-    priceEl.dataset.bound = "1";
-    priceEl.addEventListener("input", () => (row.dataset.priceTouched = "1"));
-    priceEl.addEventListener("change", () => (row.dataset.priceTouched = "1"));
-  }
-  if (acctEl && !acctEl.dataset.bound) {
-    acctEl.dataset.bound = "1";
-    acctEl.addEventListener("change", () => (row.dataset.acctTouched = "1"));
-  }
-  if (vatEl && !vatEl.dataset.bound) {
-    vatEl.dataset.bound = "1";
-    vatEl.addEventListener("change", () => (row.dataset.vatTouched = "1"));
-  }
+    // Track manual overrides so we don't stomp user choices
+    if (priceEl && !priceEl.dataset.bound) {
+      priceEl.dataset.bound = "1";
+      priceEl.addEventListener("input", () => (row.dataset.priceTouched = "1"));
+      priceEl.addEventListener("change", () => (row.dataset.priceTouched = "1"));
+    }
+    if (acctEl && !acctEl.dataset.bound) {
+      acctEl.dataset.bound = "1";
+      acctEl.addEventListener("change", () => (row.dataset.acctTouched = "1"));
+    }
+    if (vatEl && !vatEl.dataset.bound) {
+      vatEl.dataset.bound = "1";
+      vatEl.addEventListener("change", () => (row.dataset.vatTouched = "1"));
+    }
 
-  const findOptionMeta = () => {
-    if (!listEl) return null;
-    const v = (pick.value || "").trim();
-    if (!v) return null;
+    const findOptionMeta = () => {
+      if (!listEl) return null;
+      const v = (pick.value || "").trim();
+      if (!v) return null;
 
-    // Find the datalist option whose value equals the input value
-    const opt = Array.from(listEl.options || []).find(o => (o.value || "").trim() === v);
-    if (!opt) return null;
+      // Find the datalist option whose value equals the input value
+      const opt = Array.from(listEl.options || []).find(o => (o.value || "").trim() === v);
+      if (!opt) return null;
 
-    const meta = {
-      type: (opt.dataset.type || "").trim().toLowerCase(), // service|inventory
-      id: opt.dataset.id ? Number(opt.dataset.id) : null,
-      code: (opt.dataset.code || "").trim(),
-      name: (opt.dataset.name || opt.value || "").trim(),
-      price: opt.dataset.price != null && opt.dataset.price !== "" ? Number(opt.dataset.price) : null,
-      revenue_account: (opt.dataset.revenue_account || "").trim() || null,
-      vat_code: (opt.dataset.vat_code || "").trim() || null,
+      const meta = {
+        type: (opt.dataset.type || "").trim().toLowerCase(), // service|inventory
+        id: opt.dataset.id ? Number(opt.dataset.id) : null,
+        code: (opt.dataset.code || "").trim(),
+        name: (opt.dataset.name || opt.value || "").trim(),
+        price: opt.dataset.price != null && opt.dataset.price !== "" ? Number(opt.dataset.price) : null,
+        revenue_account: (opt.dataset.revenue_account || "").trim() || null,
+        vat_code: (opt.dataset.vat_code || "").trim() || null,
+      };
+
+      if (!meta.type || (meta.type !== "service" && meta.type !== "inventory")) return null;
+      return meta;
     };
 
-    if (!meta.type || (meta.type !== "service" && meta.type !== "inventory")) return null;
-    return meta;
-  };
-
-  const applyMeta = (meta) => {
-    // ✅ set hidden fields (type/id/code)
-    setLineCatalogMeta(row, meta);
-
-    // Optional autopopulate
-    if (descEl && (!descEl.value || !descEl.value.trim())) {
-      descEl.value = meta.name || "";
-    }
-
-    // Only fill price if user hasn't touched it AND current price is blank/0
-    const curPrice = Number(String(priceEl?.value || "0").replace(/,/g, "")) || 0;
-    if (priceEl && row.dataset.priceTouched !== "1" && curPrice === 0 && meta.price != null) {
-      priceEl.value = String(meta.price);
-    }
-
-    // Only fill account if user hasn't chosen one yet
-    if (acctEl && row.dataset.acctTouched !== "1" && meta.revenue_account && !acctEl.value) {
-      acctEl.value = String(meta.revenue_account);
-    }
-
-    // ✅ VAT: only auto-set if user hasn't touched VAT AND it's still default STANDARD
-    const curVat = String(vatEl?.value || "").toUpperCase();
-    const metaVat = String(meta.vat_code || "").toUpperCase();
-    if (vatEl && metaVat && row.dataset.vatTouched !== "1" && (curVat === "STANDARD" || !curVat)) {
-      vatEl.value = metaVat;
-    }
-
-    window.recalcInvoice?.({ force: true });
-    window.saveInvoiceDraftToLocal?.();
-  };
-
-  const clearMeta = () => {
-    // user typed a custom value -> treat as GL/free-text
-    setLineCatalogMeta(row, null);
-    window.saveInvoiceDraftToLocal?.();
-  };
-
-  const resolve = () => {
-    const meta = parseCatalogValue(pick.value);
-    if (meta) {
+    const applyMeta = (meta) => {
+      // ✅ set hidden fields (type/id/code)
       setLineCatalogMeta(row, meta);
+
+      // Optional autopopulate
+      if (descEl && (!descEl.value || !descEl.value.trim())) {
+        descEl.value = meta.name || "";
+      }
+
+      // Only fill price if user hasn't touched it AND current price is blank/0
+      const curPrice = Number(String(priceEl?.value || "0").replace(/,/g, "")) || 0;
+      if (priceEl && row.dataset.priceTouched !== "1" && curPrice === 0 && meta.price != null) {
+        priceEl.value = String(meta.price);
+      }
+
+      // Only fill account if user hasn't chosen one yet
+      if (acctEl && row.dataset.acctTouched !== "1" && meta.revenue_account && !acctEl.value) {
+        acctEl.value = String(meta.revenue_account);
+      }
+
+      // ✅ VAT: only auto-set if user hasn't touched VAT AND it's still default STANDARD
+      const curVat = String(vatEl?.value || "").toUpperCase();
+      const metaVat = String(meta.vat_code || "").toUpperCase();
+      if (vatEl && metaVat && row.dataset.vatTouched !== "1" && (curVat === "STANDARD" || !curVat)) {
+        vatEl.value = metaVat;
+      }
+
       window.recalcInvoice?.({ force: true });
       window.saveInvoiceDraftToLocal?.();
-    } else {
+    };
+
+    const clearMeta = () => {
+      // user typed a custom value -> treat as GL/free-text
       setLineCatalogMeta(row, null);
       window.saveInvoiceDraftToLocal?.();
+    };
+
+    const resolve = () => {
+      const meta = parseCatalogValue(pick.value);
+      if (meta) {
+        setLineCatalogMeta(row, meta);
+        window.recalcInvoice?.({ force: true });
+        window.saveInvoiceDraftToLocal?.();
+      } else {
+        setLineCatalogMeta(row, null);
+        window.saveInvoiceDraftToLocal?.();
+      }
+    };
+
+    pick.addEventListener("change", resolve);
+    pick.addEventListener("blur", resolve);
+
+    // Optional: live match while typing (nice UX)
+    pick.addEventListener("input", () => {
+      // if it matches an option exactly, apply meta immediately, else clear
+      const meta = findOptionMeta();
+      if (meta) applyMeta(meta);
+      else clearMeta();
+    });
+  }
+  window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
+
+  async function loadRevenueContractsForSelectedCustomer() {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const customerId = document.getElementById("invCustomerId")?.value || "";
+    const sel = document.getElementById("invRevenueContractId");
+
+    if (!cid || !sel) return [];
+
+    sel.innerHTML = `<option value="">Select contract...</option>`;
+
+    if (!customerId) {
+      toggleInvoiceContractUI({ hasCustomerContracts: false });
+      toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
+      return [];
     }
-  };
 
-  pick.addEventListener("change", resolve);
-  pick.addEventListener("blur", resolve);
+    try {
+      const res = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`, { method: "GET" });
+      const items = res?.items || res?.data?.items || res?.data || [];
+      const mine = items.filter(x => String(x.customer_id || "") === String(customerId));
 
-  // Optional: live match while typing (nice UX)
-  pick.addEventListener("input", () => {
-    // if it matches an option exactly, apply meta immediately, else clear
-    const meta = findOptionMeta();
-    if (meta) applyMeta(meta);
-    else clearMeta();
-  });
-}
-window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
+      if (!mine.length) {
+        toggleInvoiceContractUI({ hasCustomerContracts: false });
+        toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
+        return [];
+      }
+
+      sel.innerHTML =
+        `<option value="">Select contract...</option>` +
+        mine.map(c => `
+          <option value="${String(c.id)}">
+            ${escapeHtml(String(c.contract_number || `Contract ${c.id}`))} - ${escapeHtml(String(c.contract_title || ""))}
+          </option>
+        `).join("");
+
+      toggleInvoiceContractUI({ hasCustomerContracts: true });
+      return mine;
+    } catch (e) {
+      console.warn("[AR] loadRevenueContractsForSelectedCustomer failed", e);
+      toggleInvoiceContractUI({ hasCustomerContracts: false });
+      toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
+      return [];
+    }
+  }
+  window.loadRevenueContractsForSelectedCustomer = loadRevenueContractsForSelectedCustomer;
 
   // --------------------------
   // Add invoice line
@@ -43876,39 +43979,11 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
 
     if (!window._INV_TOTALS_LOCKED) window.recalcInvoice?.();
 
-  async function loadRevenueContractsForSelectedCustomer() {
-    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-    const customerId = document.getElementById("invCustomerId")?.value || "";
-    const sel = document.getElementById("invRevenueContractId");
-    if (!cid || !sel) return;
-
-    sel.innerHTML = `<option value="">No contract link</option>`;
-
-    if (!customerId) return;
-
-    try {
-      const res = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`, { method: "GET" });
-      const items = res?.items || res?.data?.items || res?.data || [];
-
-      const mine = items.filter(x => String(x.customer_id || "") === String(customerId));
-
-      sel.innerHTML =
-        `<option value="">No contract link</option>` +
-        mine.map(c => `
-          <option value="${String(c.id)}">
-            ${escapeHtml(String(c.contract_number || `Contract ${c.id}`))} - ${escapeHtml(String(c.contract_title || ""))}
-          </option>
-        `).join("");
-    } catch (e) {
-      console.warn("[AR] loadRevenueContractsForSelectedCustomer failed", e);
-    }
-  }
-  window.loadRevenueContractsForSelectedCustomer = loadRevenueContractsForSelectedCustomer;
 
   async function loadInvoiceLineObligationsFromContract() {
     const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     const contractId = document.getElementById("invRevenueContractId")?.value || "";
-    if (!cid) return;
+    if (!cid) return [];
 
     let obligations = [];
     if (contractId) {
@@ -43932,6 +44007,13 @@ window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
 
       if (keep) sel.value = keep;
     });
+
+    toggleInvoiceObligationUI({
+      hasRevenueContract: !!contractId,
+      hasObligation: obligations.length > 0,
+    });
+
+    return obligations;
   }
   window.loadInvoiceLineObligationsFromContract = loadInvoiceLineObligationsFromContract;
 
