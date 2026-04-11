@@ -2846,9 +2846,11 @@
                   <input id="invCurrency" class="w-full border rounded px-3 py-2" value="ZAR">
                 </div>
 
-                <div class="grid gap-2 sm:grid-cols-9 mt-2">
+                <div class="grid gap-2 sm:grid-cols-6 mt-2">
 
-                  <div class="sm:col-span-3">
+                <div class="grid gap-2 sm:grid-cols-6 mt-2">
+
+                  <div class="sm:col-span-2">
                     <label class="text-xs text-slate-600">Customer *</label>
                     <input list="invCustomerList" id="invCustomerName"
                           class="w-full border rounded px-3 py-2"
@@ -2857,17 +2859,17 @@
                     <input type="hidden" id="invCustomerId">
                   </div>
 
-                  <div class="sm:col-span-2">
+                  <div>
                     <label class="text-xs text-slate-600">Invoice #</label>
                     <input id="invNumber" class="w-full border rounded px-3 py-2" placeholder="Auto if empty">
                   </div>
 
-                  <div class="sm:col-span-2">
+                  <div>
                     <label class="text-xs text-slate-600">Date *</label>
                     <input type="date" id="invDate" class="w-full border rounded px-3 py-2" required>
                   </div>
 
-                  <div class="sm:col-span-1">
+                  <div>
                     <label class="text-xs text-slate-600">Due</label>
                     <select id="invTerms" class="w-full border rounded px-3 py-2">
                       <option value="on_receipt">Due on receipt</option>
@@ -2876,12 +2878,15 @@
                     </select>
                   </div>
 
-                  <div class="sm:col-span-1">
+                  <div>
                     <label class="text-xs text-slate-600">Currency</label>
                     <input id="invCurrency" class="w-full border rounded px-3 py-2" value="ZAR">
                   </div>
+                </div>
 
-                  <div id="invRevenueContractWrap" class="sm:col-span-3 hidden">
+                <div class="grid gap-2 sm:grid-cols-3 mt-2">
+
+                  <div id="invRevenueContractWrap" class="hidden">
                     <label class="text-xs text-slate-600">Revenue Contract</label>
                     <select id="invRevenueContractId" class="w-full border rounded px-3 py-2 text-xs">
                       <option value="">Select contract...</option>
@@ -2891,7 +2896,7 @@
                     </p>
                   </div>
 
-                  <div class="sm:col-span-3">
+                  <div>
                     <label class="text-xs text-slate-600">Revenue account *</label>
                     <select id="invRevenueAccount" class="w-full border rounded px-3 py-2 text-xs">
                       <option value="">Loading…</option>
@@ -2901,15 +2906,15 @@
                     </p>
                   </div>
 
-                  <div class="sm:col-span-3">
+                  <div>
                     <label class="block text-xs text-slate-500 mb-1">Bank account (for receipts)</label>
                     <select id="invoiceBankAccount" class="border rounded w-full px-2 py-1 text-sm"></select>
                     <p class="mt-1 text-[11px] text-slate-400">
                       If left blank, backend will use default <em>receipts</em> bank account.
                     </p>
                   </div>
+
                 </div>
-              </div>
 
               <div class="mt-2 flex items-center gap-3 flex-wrap">
                 <label class="flex items-center gap-2 text-sm whitespace-nowrap">
