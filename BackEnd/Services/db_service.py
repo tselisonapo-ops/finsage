@@ -36113,6 +36113,7 @@ class DatabaseService:
             (
                 company_id,
                 int(header["customer_id"]),
+                header.get("revenue_contract_id"),  # ✅ ADD THIS LINE
                 header["number"],
                 header["invoice_date"],
                 header.get("due_date"),

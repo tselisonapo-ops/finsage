@@ -41772,7 +41772,7 @@ async function loadDraftInvoices() {
 function readInvoiceForm() {
   const customerName = document.getElementById("invCustomerName")?.value || "";
   const customerId   = document.getElementById("invCustomerId")?.value || null;
-
+  
   const invoiceDate  = document.getElementById("invDate")?.value || "";
   const terms        = document.getElementById("invTerms")?.value || "Due on receipt";
   const dueDate      = document.getElementById("invDueDate")?.value || ""; // if you have it
@@ -41844,7 +41844,7 @@ function readInvoiceForm() {
     id: invId || null,
     customer_id: customerId ? Number(customerId) : null,
     customer_name: customerName,
-
+    revenue_contract_id: document.getElementById("invRevenueContractId")?.value || null,
     number,
     invoice_date: invoiceDate,         // ✅ DB column
     due_date: dueDate || null,         // ✅ DB column
