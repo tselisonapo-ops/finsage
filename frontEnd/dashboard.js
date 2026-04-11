@@ -43371,7 +43371,8 @@ function bindAR() {
     const wrap = document.getElementById("invRevenueContractWrap");
     const sel = document.getElementById("invRevenueContractId");
 
-    wrap?.classList.toggle("hidden", !hasCustomerContracts);
+    wrap?.classList.toggle("invisible", !hasCustomerContracts);
+    wrap?.classList.toggle("pointer-events-none", !hasCustomerContracts);
 
     if (!hasCustomerContracts && sel) {
       sel.innerHTML = `<option value="">Select contract...</option>`;
