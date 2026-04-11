@@ -6766,8 +6766,19 @@ async function switchScreen(name) {
 
       console.log("🧾 [switchScreen AR] consuming pending revenue invoice prefill", payload);
 
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      await window.prefillInvoiceFromRevenuePayload?.(payload);
+      // wait for full invoice UI, not just one element at a time
+      const ready = await window.waitForInvoiceReady?.(4000);
+
+      console.log("🔎 [switchScreen AR] invoice ready?", !!ready);
+      console.log("🔎 [switchScreen AR] invCustomerId ready?", !!document.getElementById("invCustomerId"));
+      console.log("🔎 [switchScreen AR] invRevenueContractId ready?", !!document.getElementById("invRevenueContractId"));
+      console.log("🔎 [switchScreen AR] invLines ready?", !!document.getElementById("invLines"));
+
+      if (!ready) {
+        console.warn("❌ [switchScreen AR] invoice UI not ready; skipping revenue prefill");
+      } else {
+        await window.prefillInvoiceFromRevenuePayload?.(payload);
+      }
     }
 
     if (isQuotesRoute) {
@@ -33689,11 +33700,13 @@ async function redirectToInvoiceFromObligation(obligation) {
 
     const currency = resolveCurrency($("revContractCurrency")?.value);
 
-    const invoiceDate =
+    const rawInvoiceDate =
       obligation?.recognized_at_point_in_time_date ||
       obligation?.invoice_date ||
       obligation?.invoiceDate ||
       new Date().toISOString().slice(0, 10);
+
+    const invoiceDate = String(rawInvoiceDate).slice(0, 10);
 
     const payload = {
       customerId,
@@ -34801,6 +34814,25 @@ async function redirectToInvoiceFromObligation(obligation) {
     setMsg("Revenue contract approval review loaded.");
   };
 })();
+
+async function waitForInvoiceReady(timeoutMs = 4000) {
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    const hasCustomer = !!document.getElementById("invCustomerId");
+    const hasContract = !!document.getElementById("invRevenueContractId");
+    const hasLines = !!document.getElementById("invLines");
+
+    if (hasCustomer && hasContract && hasLines) {
+      return true;
+    }
+
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  return false;
+}
+window.waitForInvoiceReady = waitForInvoiceReady;
 
 (function () {
   const $ = (id) => document.getElementById(id);
