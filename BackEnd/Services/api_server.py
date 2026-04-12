@@ -5852,7 +5852,13 @@ def create_invoice(cid: int):
                     "event_date": header.get("invoice_date"),
                     "event_type": "invoice",
                     "source_invoice_id": int(invoice_id),
-                    "amount": float(inv.get("total_amount") or inv.get("gross_amount") or 0.0),
+                    "amount": float(
+                        sum(
+                            (l.get("net_amount") or 0.0)
+                            for l in inv.get("lines", [])
+                            if l.get("revenue_obligation_id")
+                        )
+                    ),
                     "currency": inv.get("currency") or header.get("currency") or "ZAR",
                     "notes": f"From AR invoice {inv.get('number') or invoice_id}",
                     "payload_json": {

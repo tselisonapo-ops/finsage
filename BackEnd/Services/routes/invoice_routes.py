@@ -192,6 +192,33 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
             ar_ledger_code=ar_ledger_code,
         )
 
+        inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
+
+        revenue_contract_id = inv.get("revenue_contract_id")
+
+        if revenue_contract_id:
+            db_service.record_revenue_cash_event(
+                company_id=company_id,
+                contract_id=int(revenue_contract_id),
+                data={
+                    "event_date": str(payment_date),
+                    "event_type": "receipt",
+                    "source_invoice_id": int(invoice_id),
+                    "source_receipt_id": int(out.get("receipt_id")),
+                    "amount": float(amount),
+                    "currency": inv.get("currency") or "ZAR",
+                    "notes": f"Cash received for invoice {inv.get('number')}",
+                    "payload_json": {
+                        "customer_id": int(inv.get("customer_id") or 0),
+                        "source": "ar_receipt",
+                        "invoice_number": inv.get("number"),
+                    },
+                },
+                user_id=actor_user_id or 0,
+            )
+    except Exception:
+        current_app.logger.exception("⚠️ revenue cash event failed")
+        
         # ✅ OPTIONAL: snapshot after
         after_inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
         after_json = {

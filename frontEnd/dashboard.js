@@ -37788,6 +37788,7 @@ function collectInvoiceFromForm() {
 
   const bankSel = document.getElementById("invoiceBankAccount");
   const revSel  = document.getElementById("invRevenueAccount");
+  const contractSel = document.getElementById("invRevenueContractId");
 
   const invoiceId    = idInput?.value ? parseInt(idInput.value, 10) : null;
   const customerName = custInput?.value?.trim() || "";
@@ -37877,7 +37878,7 @@ function collectInvoiceFromForm() {
         const customEl = tr.querySelector(".inv-vat-custom");
         vat_rate = parseFloat(customEl?.value || "0") || 0; // percent
       }
-
+      const revenueContractId = contractSel?.value ? parseInt(contractSel.value, 10) : null;
       const account_code = ((acctEl?.value || "").trim() || revenueCodeDefault);
       const obligationIdRaw = (oblEl?.value || "").trim();
       const revenue_obligation_id = obligationIdRaw ? Number(obligationIdRaw) : null;
@@ -37918,6 +37919,7 @@ function collectInvoiceFromForm() {
     id: invoiceId,
     customer_id: customerId,
     customer_name: customerName,
+    revenue_contract_id: revenueContractId,
     invoice_date,
     due_date,
     number,
