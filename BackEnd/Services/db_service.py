@@ -46866,88 +46866,7 @@ class DatabaseService:
         return (row["id"] if isinstance(row, dict) else row[0]) if row else None
 
 
-    def upsert_engagement_posting_activity(
-        self,
-        cur,
-        *,
-        company_id: int,
-        engagement_id: int,
-        posting_date,
-        module_name: str,
-        event_type: str,
-        description: str,
-        reference_no: str = None,
-        prepared_by_user_id: int = None,
-        reviewer_user_id: int = None,
-        status: str = "posted",
-        amount=None,
-        currency_code: str = "ZAR",
-        source_table: str = None,
-        source_id: int = None,
-        notes: str = None,
-        created_by_user_id: int = None,
-        updated_by_user_id: int = None,
-    ):
-        schema = self.company_schema(company_id)
 
-        sql = f"""
-            INSERT INTO {schema}.engagement_posting_activity (
-                company_id,
-                engagement_id,
-                posting_date,
-                module_name,
-                event_type,
-                reference_no,
-                description,
-                prepared_by_user_id,
-                reviewer_user_id,
-                status,
-                amount,
-                currency_code,
-                source_table,
-                source_id,
-                notes,
-                created_by_user_id,
-                updated_by_user_id
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (company_id, engagement_id, module_name, source_table, source_id, event_type)
-            DO UPDATE SET
-                posting_date = EXCLUDED.posting_date,
-                reference_no = EXCLUDED.reference_no,
-                description = EXCLUDED.description,
-                prepared_by_user_id = EXCLUDED.prepared_by_user_id,
-                reviewer_user_id = EXCLUDED.reviewer_user_id,
-                status = EXCLUDED.status,
-                amount = EXCLUDED.amount,
-                currency_code = EXCLUDED.currency_code,
-                notes = EXCLUDED.notes,
-                updated_by_user_id = EXCLUDED.updated_by_user_id,
-                updated_at = NOW(),
-                is_active = TRUE
-        """
-        cur.execute(
-            sql,
-            (
-                int(company_id),
-                int(engagement_id),
-                posting_date,
-                module_name,
-                event_type,
-                reference_no,
-                description,
-                prepared_by_user_id,
-                reviewer_user_id,
-                status,
-                amount,
-                currency_code,
-                source_table,
-                int(source_id) if source_id is not None else None,
-                notes,
-                created_by_user_id,
-                updated_by_user_id,
-            ),
-        )
         
     def get_source_engagement_link_for_company(self, company_id: int, *, cur):
         """
@@ -50565,29 +50484,32 @@ class DatabaseService:
         }
         return mapping.get(qt)
 
+        
     def upsert_engagement_posting_activity(
         self,
         cur,
         *,
         company_id: int,
         engagement_id: int,
+        posting_date,
         module_name: str,
         event_type: str,
-        posting_date,
         description: str,
         reference_no: str = None,
+        prepared_by_user_id: int = None,
+        reviewer_user_id: int = None,
+        status: str = "posted",
         amount=None,
         currency_code: str = "ZAR",
         source_table: str = None,
         source_id: int = None,
-        prepared_by_user_id: int = None,
-        reviewer_user_id: int = None,
-        status: str = "posted",
+        notes: str = None,
         created_by_user_id: int = None,
+        updated_by_user_id: int = None,
     ):
-        schema = f"company_{company_id}"
+        schema = self.company_schema(company_id)
 
-        cur.execute(f"""
+        sql = f"""
             INSERT INTO {schema}.engagement_posting_activity (
                 company_id,
                 engagement_id,
@@ -50603,36 +50525,49 @@ class DatabaseService:
                 currency_code,
                 source_table,
                 source_id,
+                notes,
                 created_by_user_id,
                 updated_by_user_id
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (company_id, engagement_id, module_name, source_table, source_id, event_type)
             DO UPDATE SET
+                posting_date = EXCLUDED.posting_date,
+                reference_no = EXCLUDED.reference_no,
                 description = EXCLUDED.description,
-                amount = EXCLUDED.amount,
+                prepared_by_user_id = EXCLUDED.prepared_by_user_id,
+                reviewer_user_id = EXCLUDED.reviewer_user_id,
                 status = EXCLUDED.status,
+                amount = EXCLUDED.amount,
+                currency_code = EXCLUDED.currency_code,
+                notes = EXCLUDED.notes,
+                updated_by_user_id = EXCLUDED.updated_by_user_id,
                 updated_at = NOW(),
-                updated_by_user_id = EXCLUDED.updated_by_user_id
-        """, (
-            company_id,
-            engagement_id,
-            posting_date,
-            module_name,
-            event_type,
-            reference_no,
-            description,
-            prepared_by_user_id,
-            reviewer_user_id,
-            status,
-            amount,
-            currency_code,
-            source_table,
-            source_id,
-            created_by_user_id,
-            created_by_user_id,
-        ))
-        
+                is_active = TRUE
+        """
+        cur.execute(
+            sql,
+            (
+                int(company_id),
+                int(engagement_id),
+                posting_date,
+                module_name,
+                event_type,
+                reference_no,
+                description,
+                prepared_by_user_id,
+                reviewer_user_id,
+                status,
+                amount,
+                currency_code,
+                source_table,
+                int(source_id) if source_id is not None else None,
+                notes,
+                created_by_user_id,
+                updated_by_user_id,
+            ),
+        )
+
     def get_review_queue_item_detail(
         self,
         cur,
