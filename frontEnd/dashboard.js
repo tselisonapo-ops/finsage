@@ -33415,6 +33415,8 @@ function bindAssetRecordsPickerModal({ cid }) {
 
         // add this if you want refresh on contract pick
         await loadRevenueCashBankAccounts();
+        await loadBillingOverview(id);
+        await loadCashOverview(id);
       });
     });
   }
@@ -33734,6 +33736,64 @@ function bindAssetRecordsPickerModal({ cid }) {
     `;
   }
 
+  function renderBillingOverview(items = []) {
+    const el = $("revBillingOverview");
+    if (!el) return;
+
+    if (!items.length) {
+      el.innerHTML = `<div class="p-3 text-xs text-slate-400">No billing events yet.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-50 border-b text-[11px] font-semibold text-slate-600">
+        <div class="col-span-2">Date</div>
+        <div class="col-span-2">Type</div>
+        <div class="col-span-3">Source</div>
+        <div class="col-span-2 text-right">Amount</div>
+        <div class="col-span-3">Notes</div>
+      </div>
+      ${items.map(r => `
+        <div class="grid grid-cols-12 gap-2 px-3 py-2 border-b text-xs">
+          <div class="col-span-2">${esc(String(r.event_date || "").slice(0, 10))}</div>
+          <div class="col-span-2">${esc(r.event_type || "")}</div>
+          <div class="col-span-3">${esc(r.source_invoice_id ? `Invoice #${r.source_invoice_id}` : "Manual")}</div>
+          <div class="col-span-2 text-right">${money(r.amount)}</div>
+          <div class="col-span-3 truncate">${esc(r.notes || "")}</div>
+        </div>
+      `).join("")}
+    `;
+  }
+
+  function renderCashOverview(items = []) {
+    const el = $("revCashOverview");
+    if (!el) return;
+
+    if (!items.length) {
+      el.innerHTML = `<div class="p-3 text-xs text-slate-400">No cash events yet.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-50 border-b text-[11px] font-semibold text-slate-600">
+        <div class="col-span-2">Date</div>
+        <div class="col-span-2">Type</div>
+        <div class="col-span-3">Source</div>
+        <div class="col-span-2 text-right">Amount</div>
+        <div class="col-span-3">Notes</div>
+      </div>
+      ${items.map(r => `
+        <div class="grid grid-cols-12 gap-2 px-3 py-2 border-b text-xs">
+          <div class="col-span-2">${esc(String(r.event_date || "").slice(0, 10))}</div>
+          <div class="col-span-2">${esc(r.event_type || "")}</div>
+          <div class="col-span-3">${esc(r.source_receipt_id ? `Receipt #${r.source_receipt_id}` : "Manual")}</div>
+          <div class="col-span-2 text-right">${money(r.amount)}</div>
+          <div class="col-span-3 truncate">${esc(r.notes || "")}</div>
+        </div>
+      `).join("")}
+    `;
+  }
+
   async function redirectRevenueCashToInvoicePaymentModal(invoiceId, cashPayload = {}) {
     try {
       if (!invoiceId) throw new Error("Invoice ID is required for payment allocation.");
@@ -34025,6 +34085,60 @@ async function redirectToInvoiceFromObligation(obligation) {
       console.warn("[Revenue] runs load failed", e);
       state.runs = [];
       renderRunList([]);
+    }
+  }
+
+  async function loadBillingOverview(contractId) {
+    const cid = activeCid();
+    if (!cid || !contractId) {
+      renderBillingOverview([]);
+      return;
+    }
+
+    try {
+      const raw = await apiFetch(
+        `${ENDPOINTS.revenue.billings(cid, contractId)}?list=1`,
+        { method: "GET" }
+      );
+
+      const payload = unwrapApi(raw);
+      const items =
+        Array.isArray(payload) ? payload :
+        Array.isArray(payload?.items) ? payload.items :
+        Array.isArray(payload?.data) ? payload.data :
+        [];
+
+      renderBillingOverview(items);
+    } catch (e) {
+      console.warn("[Revenue] loadBillingOverview failed", e);
+      renderBillingOverview([]);
+    }
+  }
+
+  async function loadCashOverview(contractId) {
+    const cid = activeCid();
+    if (!cid || !contractId) {
+      renderCashOverview([]);
+      return;
+    }
+
+    try {
+      const raw = await apiFetch(
+        `${ENDPOINTS.revenue.cash(cid, contractId)}?list=1`,
+        { method: "GET" }
+      );
+
+      const payload = unwrapApi(raw);
+      const items =
+        Array.isArray(payload) ? payload :
+        Array.isArray(payload?.items) ? payload.items :
+        Array.isArray(payload?.data) ? payload.data :
+        [];
+
+      renderCashOverview(items);
+    } catch (e) {
+      console.warn("[Revenue] loadCashOverview failed", e);
+      renderCashOverview([]);
     }
   }
 
@@ -34746,7 +34860,16 @@ async function redirectToInvoiceFromObligation(obligation) {
     });
 
     $("revSaveBilling")?.addEventListener("click", async () => {
-      try { await recordBilling(); } catch (e) { setMsg(e?.message || "Billing failed", "error"); }
+      try {
+        await recordBilling();
+
+        const contractId = Number($("revContractId")?.value || 0) || null;
+        if (contractId) {
+          await loadBillingOverview(contractId);
+        }
+      } catch (e) {
+        setMsg(e?.message || "Billing failed", "error");
+      }
     });
 
     $("revSaveCash")?.addEventListener("click", async () => {
@@ -34768,6 +34891,10 @@ async function redirectToInvoiceFromObligation(obligation) {
         }
 
         await redirectRevenueCashToInvoicePaymentModal(Number(invoice.id), payload);
+
+        // optional immediate refresh if you later save directly from revenue cash
+        await loadCashOverview(payload.contractId);
+
       } catch (e) {
         setMsg(e?.message || "Cash receipt redirect failed", "error");
       }
@@ -35991,6 +36118,46 @@ function updateInvoiceActionButtons() {
   }
 }
 
+async function refreshRevenueBillingOverviewFromInvoice(invoiceLike = {}) {
+  try {
+    const contractId =
+      Number(
+        invoiceLike?.revenue_contract_id ??
+        invoiceLike?.revenueContractId ??
+        invoiceLike?.contract_id ??
+        0
+      ) || null;
+
+    if (!contractId) return;
+
+    if (typeof window.loadBillingOverview === "function") {
+      await window.loadBillingOverview(contractId);
+    }
+  } catch (e) {
+    console.warn("[Revenue] refreshRevenueBillingOverviewFromInvoice failed", e);
+  }
+}
+
+async function refreshRevenueCashOverviewFromInvoice(invoiceLike = {}) {
+  try {
+    const contractId =
+      Number(
+        invoiceLike?.revenue_contract_id ??
+        invoiceLike?.revenueContractId ??
+        invoiceLike?.contract_id ??
+        0
+      ) || null;
+
+    if (!contractId) return;
+
+    if (typeof window.loadCashOverview === "function") {
+      await window.loadCashOverview(contractId);
+    }
+  } catch (e) {
+    console.warn("[Revenue] refreshRevenueCashOverviewFromInvoice failed", e);
+  }
+}
+
 async function submitInvoiceForApprovalFlow({ cid, invId }) {
   const totals = window.recalcInvoice?.({ force: true }) || {};
   const amount = totals.grandTotal ?? totals.total ?? 0;
@@ -36122,6 +36289,7 @@ async function commitInvoice(action) {
       const status = e?.status || e?.httpStatus || e?.response?.status;
       if (status === 401 || status === 403) {
         return await submitInvoiceForApprovalFlow({ cid, invId });
+        await refreshRevenueBillingOverviewFromInvoice(posted || { revenue_contract_id: invoice?.revenue_contract_id });
       }
       throw e;
     }
@@ -46190,6 +46358,7 @@ async function refreshOpenInvoiceViewer() {
       const custId = getOpenInvoiceObj?.()?.customer_id;
       if (custId && typeof renderCustomerInvoicesList === "function") {
         await renderCustomerInvoicesList(custId);
+        await refreshRevenueCashOverviewFromInvoice(inv || { revenue_contract_id: openInv?.revenue_contract_id });
       }
     })(),
 
