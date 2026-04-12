@@ -56334,6 +56334,47 @@ class DatabaseService:
 
         return {"event": row, "contract": contract}
 
+    def list_revenue_billing_events(
+        self,
+        company_id: int,
+        contract_id: int,
+        limit: int = 100,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                rbe.*,
+                i.number AS source_invoice_number
+            FROM {schema}.revenue_billing_events rbe
+            LEFT JOIN {schema}.invoices i
+            ON i.id = rbe.source_invoice_id
+            WHERE rbe.contract_id = %s
+            ORDER BY rbe.event_date DESC, rbe.id DESC
+            LIMIT %s
+        """
+        return self.fetch_all(sql, (int(contract_id), int(limit)), cur=cur) or []
+
+
+    def list_revenue_cash_events(
+        self,
+        company_id: int,
+        contract_id: int,
+        limit: int = 100,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            SELECT
+                rce.*
+            FROM {schema}.revenue_cash_events rce
+            WHERE rce.contract_id = %s
+            ORDER BY rce.event_date DESC, rce.id DESC
+            LIMIT %s
+        """
+        return self.fetch_all(sql, (int(contract_id), int(limit)), cur=cur) or []
 
     def record_revenue_progress_update(self, company_id: int, obligation_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)

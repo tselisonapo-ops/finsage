@@ -34124,7 +34124,7 @@ async function redirectToInvoiceFromObligation(obligation) {
 
     try {
       const raw = await apiFetch(
-        `${ENDPOINTS.revenue.cash(cid, contractId)}?list=1`,
+        `${ENDPOINTS.revenue.cashReceipts(cid, contractId)}?list=1`,
         { method: "GET" }
       );
 
