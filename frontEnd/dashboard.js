@@ -33126,7 +33126,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     const el = document.getElementById("revCashBankAccountId");
     if (!el) return;
 
-    const { cid } = getCtx?.() || {};
+    const cid = activeCid();
     if (!cid) return;
 
     const url =
@@ -33158,7 +33158,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         return;
       }
 
-      rows.forEach(b => {
+      rows.forEach((b) => {
         const id = b.id ?? b.bank_account_id ?? null;
         if (!id) return;
 
