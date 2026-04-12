@@ -33474,22 +33474,47 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   async function findPostedInvoiceForRevenueContract(contractId) {
-    const cid = getActiveCompanyId?.() || state?.cid;
+    const cid = activeCid();
     if (!cid || !contractId) return null;
 
-    const raw = await apiFetch(
-      `${ENDPOINTS.invoices(cid)}?limit=500`,
-      { method: "GET" }
-    );
+    try {
+      const billingRaw = await apiFetch(
+        `${ENDPOINTS.revenue.billings(cid, contractId)}?list=1`,
+        { method: "GET" }
+      );
 
-    const rows = unwrapApi(raw) || [];
+      const billingPayload = unwrapApi(billingRaw);
+      const billingItems =
+        Array.isArray(billingPayload) ? billingPayload :
+        Array.isArray(billingPayload?.items) ? billingPayload.items :
+        Array.isArray(billingPayload?.data) ? billingPayload.data :
+        [];
 
-    const match = rows.find((r) =>
+      const latestLinkedBilling = billingItems.find(x => Number(x.source_invoice_id || 0) > 0);
+
+      if (latestLinkedBilling?.source_invoice_id) {
+        return {
+          id: Number(latestLinkedBilling.source_invoice_id),
+          number: latestLinkedBilling.source_invoice_number || "",
+          revenue_contract_id: contractId,
+          status: "posted",
+        };
+      }
+    } catch (e) {
+      console.warn("[Revenue Cash] billing-based invoice lookup failed", e);
+    }
+
+    const raw = await apiFetch(`${ENDPOINTS.invoices(cid)}?limit=500`, { method: "GET" });
+    const payload = unwrapApi(raw);
+    const rows =
+      Array.isArray(payload) ? payload :
+      Array.isArray(payload?.data) ? payload.data :
+      [];
+
+    return rows.find(r =>
       Number(r.revenue_contract_id || 0) === Number(contractId) &&
       String(r.status || "").toLowerCase() === "posted"
-    );
-
-    return match || null;
+    ) || null;
   }
 
   function renderRunPreview(preview) {
