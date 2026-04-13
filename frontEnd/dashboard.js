@@ -32951,33 +32951,30 @@ function bindAssetRecordsPickerModal({ cid }) {
   function activeCid() {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
-  
+
   function setRevenueSidebarPinnedLayout(pinned) {
     const layout = $("revLayout");
     const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
     const pinBtn = $("revSidebarPinBtn");
+    const main = $("revMain");
 
-    if (!layout || !sidebar || !body) return;
-
-    // always keep workspace in left column
-    layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
-    layout.classList.remove("grid-cols-1");
+    if (!layout || !sidebar || !body || !main) return;
 
     if (pinned) {
-      sidebar.classList.remove("overflow-visible");
-      sidebar.classList.add("overflow-hidden");
+      // normal 2-column layout
+      layout.classList.remove("grid-cols-1");
+      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
 
-      body.classList.remove(
-        "max-h-0",
-        "opacity-0",
-        "pointer-events-none",
-        "absolute",
-        "left-0",
-        "right-0",
-        "top-full",
-        "z-30"
+      sidebar.classList.remove(
+        "absolute", "left-0", "top-0", "z-30", "w-[280px]"
       );
+      sidebar.classList.add("self-start");
+
+      main.classList.remove("xl:col-span-1");
+      main.classList.add("xl:col-start-2");
+
+      body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
       body.classList.add("max-h-[1200px]", "opacity-100");
 
       if (pinBtn) {
@@ -32985,11 +32982,18 @@ function bindAssetRecordsPickerModal({ cid }) {
         pinBtn.title = "Unpin sidebar";
       }
     } else {
-      // keep header fixed there, body becomes dropdown overlay
-      sidebar.classList.remove("overflow-hidden");
-      sidebar.classList.add("overflow-visible");
+      // sidebar header floats, main uses full width
+      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
+      layout.classList.add("grid-cols-1");
 
-      body.classList.add("absolute", "left-0", "right-0", "top-full", "z-30");
+      sidebar.classList.remove("self-start");
+      sidebar.classList.add(
+        "absolute", "left-0", "top-0", "z-30", "w-[280px]"
+      );
+
+      main.classList.remove("xl:col-start-2");
+      main.classList.add("xl:col-span-1");
+
       body.classList.remove("max-h-[1200px]", "opacity-100");
       body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
 
@@ -33029,7 +33033,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     state.revSidebarPinned = false;
 
-    // default: header fixed there, body hidden
+    // default collapsed but floating
     setRevenueSidebarPinnedLayout(false);
 
     header?.addEventListener("mouseenter", () => {
@@ -33321,7 +33325,6 @@ function bindAssetRecordsPickerModal({ cid }) {
     state.selectedContract = c?.id ? c : null;
 
     renderContractKpis(c);
-    renderObligationContractBanner(c);
     refreshRevenueObligationActions();
   }
 
@@ -33890,6 +33893,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         if (!row) return;
         state.selectedObligation = row;
         renderObligationPreview(row);
+        renderObligationContractBanner(null);
         setObligationViewMode("preview");
       });
     });
@@ -34171,7 +34175,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!el) return;
 
     if (!contract || !contract.id) {
-      el.textContent = "No contract selected. Select a contract before adding an obligation.";
+      el.innerHTML = "";
+      el.classList.add("hidden");
       return;
     }
 
@@ -34181,6 +34186,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       — ${esc(contract.contract_title || "")}
       <span class="ml-2 text-slate-600">Customer: ${esc(contract.customer_name || "")}</span>
     `;
+    el.classList.remove("hidden");
   }
 
   function renderBillingOverview(items = []) {
@@ -35386,6 +35392,7 @@ async function redirectToInvoiceFromObligation(obligation) {
       }
 
     hydrateObligationForm({});
+    renderObligationContractBanner(state.selectedContract);
     setObligationViewMode("form");
     setActiveTab("obligations");  
     });
@@ -35414,6 +35421,7 @@ async function redirectToInvoiceFromObligation(obligation) {
         state.selectedObligation = out?.data || state.selectedObligation;
 
         renderObligationPreview(state.selectedObligation);
+        renderObligationContractBanner(null);
         setObligationViewMode("preview");
 
       } catch (e) { 
@@ -35425,6 +35433,7 @@ async function redirectToInvoiceFromObligation(obligation) {
       if (!state.selectedObligation) return;
 
       hydrateObligationForm(state.selectedObligation);
+      renderObligationContractBanner(state.selectedContract);
       setObligationViewMode("form");
     });
 
