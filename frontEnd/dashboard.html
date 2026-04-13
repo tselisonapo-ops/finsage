@@ -3435,6 +3435,29 @@
                         <input id="revHasFinancing" type="checkbox">
                         <span>Significant financing component</span>
                       </label>
+                      <div id="revFinancingFields" class="hidden mt-3 border rounded-lg p-3 bg-slate-50">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Financing rate (%)</label>
+                            <input id="revFinancingRate" type="number" step="0.0001" class="w-full border rounded px-3 py-2 text-sm" placeholder="0.0000">
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Financing start date</label>
+                            <input id="revFinancingStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Financing end date</label>
+                            <input id="revFinancingEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                          </div>
+                        </div>
+
+                        <div class="mt-3">
+                          <label class="block text-xs text-slate-500 mb-1">Financing notes</label>
+                          <textarea id="revFinancingNotes" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="Optional financing assessment notes"></textarea>
+                        </div>
+                      </div>
                     </div>
 
                     <textarea id="revContractNotes" class="w-full border rounded px-3 py-2 text-sm" rows="5" placeholder="Contract notes"></textarea>
@@ -3506,8 +3529,17 @@
                       <input id="revObligationCode" class="w-full border rounded px-3 py-2 text-sm">
                     </div>
                     <div>
+                    <div>
                       <label class="block text-xs text-slate-500 mb-1">Obligation Name</label>
-                      <input id="revObligationName" class="w-full border rounded px-3 py-2 text-sm">
+                      <input
+                        id="revObligationName"
+                        list="revObligationCatalogList"
+                        class="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="Select a service/inventory item or type manually"
+                        autocomplete="off"
+                      >
+                      <datalist id="revObligationCatalogList"></datalist>
+                      <div id="revObligationCatalogHint" class="text-[11px] text-slate-500 mt-1 hidden"></div>
                     </div>
                     <!-- Timing + Dynamic Field -->
                     <div class="grid grid-cols-2 gap-3">

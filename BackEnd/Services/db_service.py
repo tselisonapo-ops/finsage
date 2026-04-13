@@ -56085,6 +56085,12 @@ class DatabaseService:
 
                 data["recognized_at_point_in_time_date"] = None
 
+            payload_json = dict(data.get("payload_json") or {})
+            payload_json["catalog_item_type"] = data.get("catalog_item_type")
+            payload_json["catalog_item_id"] = data.get("catalog_item_id")
+            payload_json["catalog_item_code"] = data.get("catalog_item_code")
+            payload_json["catalog_item_label"] = data.get("catalog_item_label")
+                
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_obligations (
@@ -56120,7 +56126,7 @@ class DatabaseService:
                     float(data.get("revenue_to_date") or 0.0),
                     data.get("recognized_at_point_in_time_date"),
                     data.get("notes"),
-                    _json_dumps(data.get("payload_json")),
+                    _json_dumps(payload_json),
                 )
             )
             row = dict(cur.fetchone())
@@ -56180,6 +56186,20 @@ class DatabaseService:
                 # cleanup conflicting point-in-time trigger
                 data["recognized_at_point_in_time_date"] = None
 
+            payload_json = dict(before.get("payload_json") or {})
+
+            if "payload_json" in data and isinstance(data.get("payload_json"), dict):
+                payload_json.update(data.get("payload_json") or {})
+
+            if "catalog_item_type" in data:
+                payload_json["catalog_item_type"] = data.get("catalog_item_type")
+            if "catalog_item_id" in data:
+                payload_json["catalog_item_id"] = data.get("catalog_item_id")
+            if "catalog_item_code" in data:
+                payload_json["catalog_item_code"] = data.get("catalog_item_code")
+            if "catalog_item_label" in data:
+                payload_json["catalog_item_label"] = data.get("catalog_item_label")
+
             cur.execute(
                 f"""
                 UPDATE {schema}.revenue_obligations
@@ -56216,7 +56236,7 @@ class DatabaseService:
                     float(data["revenue_to_date"]) if data.get("revenue_to_date") is not None else None,
                     data.get("recognized_at_point_in_time_date"),
                     data.get("notes"),
-                    _json_dumps(data.get("payload_json")) if "payload_json" in data else None,
+                    _json_dumps(payload_json),
                     int(obligation_id),
                 )
             )

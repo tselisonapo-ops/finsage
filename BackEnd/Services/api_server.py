@@ -5852,6 +5852,13 @@ def create_invoice(cid: int):
                     "event_date": header.get("invoice_date"),
                     "event_type": "invoice",
                     "source_invoice_id": int(invoice_id),
+                    # ✅ ADD THIS
+                    "obligation_id": int(
+                        next(
+                            (l.get("revenue_obligation_id") for l in inv.get("lines", []) if l.get("revenue_obligation_id")),
+                            0
+                        ) or 0
+                    ) or None,
                     "amount": float(
                         sum(
                             (l.get("net_amount") or 0.0)

@@ -32966,6 +32966,21 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function toggleFinancingFields() {
+    const checked = !!$("revHasFinancing")?.checked;
+    const box = $("revFinancingFields");
+    if (!box) return;
+
+    box.classList.toggle("hidden", !checked);
+
+    if (!checked) {
+      if ($("revFinancingRate")) $("revFinancingRate").value = "";
+      if ($("revFinancingStartDate")) $("revFinancingStartDate").value = "";
+      if ($("revFinancingEndDate")) $("revFinancingEndDate").value = "";
+      if ($("revFinancingNotes")) $("revFinancingNotes").value = "";
+    }
+  }
+
   function applyRevenueSetupDefaults() {
     if (typeof window.getRevenueSetupPolicy !== "function") return;
 
@@ -33106,6 +33121,26 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
     $("revIsOverTime").checked = !!c.is_over_time;
     $("revHasFinancing").checked = !!c.has_significant_financing_component;
+    const financing = c?.payload_json?.financing || {};
+
+    if ($("revFinancingRate")) {
+      $("revFinancingRate").value =
+        financing.rate != null && financing.rate !== ""
+          ? Number(financing.rate)
+          : "";
+    }
+
+    if ($("revFinancingStartDate")) {
+      $("revFinancingStartDate").value = toDateInputValue(financing.start_date);
+    }
+
+    if ($("revFinancingEndDate")) {
+      $("revFinancingEndDate").value = toDateInputValue(financing.end_date);
+    }
+
+    if ($("revFinancingNotes")) {
+      $("revFinancingNotes").value = financing.notes || "";
+    }
     $("revContractNotes").value = c.notes || "";
 
     const im = c?.payload_json?.ifrs15_initial_measurement || {};
@@ -33233,10 +33268,163 @@ function bindAssetRecordsPickerModal({ cid }) {
     };
   }
 
+  async function loadRevenueObligationCatalog() {
+    const dl = $("revObligationCatalogList");
+    if (!dl) return [];
+
+    await window.loadInvoiceItemCatalog?.();
+
+    const catalog = window._INV_ITEM_CATALOG || {};
+    const byValue = catalog.byValue || new Map();
+
+    dl.innerHTML = "";
+
+    const seen = new Set();
+    const items = [];
+
+    for (const [friendly, meta] of byValue.entries()) {
+      if (!friendly || !meta) continue;
+
+      const key = `${meta.type || ""}|${meta.id || ""}|${friendly}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const opt = document.createElement("option");
+      opt.value = friendly;
+      opt.dataset.type = meta.type || "";
+      opt.dataset.id = meta.id != null ? String(meta.id) : "";
+      opt.dataset.code = meta.code || "";
+      opt.dataset.name = meta.name || "";
+      opt.dataset.price = meta.price != null ? String(meta.price) : "";
+      opt.dataset.revenue_account = meta.revenue_account || "";
+      opt.dataset.vat_code = meta.vat_code || "";
+
+      dl.appendChild(opt);
+      items.push({
+        label: friendly,
+        ...meta,
+      });
+    }
+
+    return items;
+  }
+  window.loadRevenueObligationCatalog = loadRevenueObligationCatalog;
+
+  function findRevenueObligationCatalogMeta(rawValue) {
+    const v = String(rawValue || "").trim();
+    if (!v) return null;
+
+    const dl = $("revObligationCatalogList");
+    const norm = (s) => String(s || "").trim().toLowerCase();
+
+    const opt = Array.from(dl?.options || []).find(o => norm(o.value) === norm(v));
+    if (opt) {
+      return {
+        type: opt.dataset.type || "",
+        id: opt.dataset.id ? Number(opt.dataset.id) : null,
+        code: opt.dataset.code || "",
+        name: opt.dataset.name || v,
+        price: Number(opt.dataset.price || 0),
+        revenue_account: opt.dataset.revenue_account || null,
+        vat_code: opt.dataset.vat_code || null,
+        label: opt.value,
+      };
+    }
+
+    const catalog = window._INV_ITEM_CATALOG || {};
+    const byValue = catalog.byValue || new Map();
+    const byCode = catalog.byCode || new Map();
+    const byName = catalog.byName || new Map();
+
+    return (
+      byValue.get(v) ||
+      byCode.get(norm(v)) ||
+      byName.get(norm(v)) ||
+      null
+    );
+  }
+
+  function applyCatalogMetaToObligationForm(meta) {
+    if (!meta) return;
+
+    const hint = $("revObligationCatalogHint");
+
+    if (!$("revObligationCode")?.value?.trim() && meta.code) {
+      $("revObligationCode").value = meta.code;
+    }
+
+    if (!$("revObligationName")?.value?.trim() || $("revObligationName").value === meta.label) {
+      $("revObligationName").value = meta.name || meta.label || "";
+    }
+
+    if (num($("revSSP")?.value) === 0 && Number(meta.price || 0) > 0) {
+      $("revSSP").value = Number(meta.price).toFixed(2);
+    }
+
+    if (num($("revAllocatedPrice")?.value) === 0 && Number(meta.price || 0) > 0) {
+      $("revAllocatedPrice").value = Number(meta.price).toFixed(2);
+    }
+
+    if (hint) {
+      const parts = [
+        meta.type ? `Type: ${meta.type}` : "",
+        meta.code ? `Code: ${meta.code}` : "",
+        meta.vat_code ? `VAT: ${meta.vat_code}` : "",
+      ].filter(Boolean);
+
+      hint.textContent = parts.join(" • ");
+      hint.classList.toggle("hidden", !parts.length);
+    }
+  }
+
+  function bindRevenueObligationCatalogPicker() {
+    const input = $("revObligationName");
+    if (!input || input.dataset.boundCatalog === "1") return;
+
+    const handlePick = () => {
+      const meta = findRevenueObligationCatalogMeta(input.value);
+      if (!meta) return;
+      applyCatalogMetaToObligationForm(meta);
+    };
+
+    input.addEventListener("change", handlePick);
+    input.addEventListener("blur", handlePick);
+
+    input.dataset.boundCatalog = "1";
+  }
+
   function hydrateObligationForm(o = {}) {
+    const pj = o?.payload_json || {};
+
+    const catalogItemLabel =
+      o.catalog_item_label ??
+      pj.catalog_item_label ??
+      "";
+
+    const catalogItemType =
+      o.catalog_item_type ??
+      pj.catalog_item_type ??
+      "";
+
+    const catalogItemCode =
+      o.catalog_item_code ??
+      pj.catalog_item_code ??
+      "";
+
+    const vatCode =
+      o.vat_code ??
+      pj.vat_code ??
+      "";
+
     $("revObligationId").value = o.id || "";
-    $("revObligationCode").value = o.obligation_code || "";
-    $("revObligationName").value = o.obligation_name || "";
+    $("revObligationCode").value = o.obligation_code || catalogItemCode || "";
+
+    const displayName =
+      catalogItemLabel ||
+      o.obligation_name ||
+      "";
+
+    $("revObligationName").value = displayName;
     $("revRecognitionTiming").value = o.recognition_timing || "over_time";
     $("revProgressMethod").value = o.progress_method || "cost_to_cost";
     $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
@@ -33247,10 +33435,25 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revObligationNotes").value = o.notes || "";
 
     state.selectedObligation = o?.id ? o : null;
+
+    const hint = $("revObligationCatalogHint");
+    if (hint) {
+      const parts = [
+        catalogItemType ? `Type: ${catalogItemType}` : "",
+        catalogItemCode ? `Code: ${catalogItemCode}` : "",
+        vatCode ? `VAT: ${vatCode}` : "",
+      ].filter(Boolean);
+
+      hint.textContent = parts.join(" • ");
+      hint.classList.toggle("hidden", !parts.length);
+    }
+
     toggleObligationFields();
   }
 
   function contractPayloadFromUI() {
+    const hasFinancing = !!$("revHasFinancing")?.checked;
+
     return {
       customer_id: Number($("revCustomerId")?.value || 0) || null,
       contract_number: $("revContractNumber")?.value?.trim() || "",
@@ -33262,11 +33465,17 @@ function bindAssetRecordsPickerModal({ cid }) {
       billing_method: $("revBillingMethod")?.value || "milestone",
       transaction_price: num($("revTransactionPrice")?.value),
       variable_consideration_constrained: num($("revVariableConstrained")?.value),
-      has_significant_financing_component: !!$("revHasFinancing")?.checked,
+      has_significant_financing_component: hasFinancing,
       is_over_time: !!$("revIsOverTime")?.checked,
       notes: $("revContractNotes")?.value || "",
       payload_json: {
         settlement_pattern: $("revSettlementPattern")?.value || "",
+        financing: {
+          rate: hasFinancing ? num($("revFinancingRate")?.value) : null,
+          start_date: hasFinancing ? ($("revFinancingStartDate")?.value || null) : null,
+          end_date: hasFinancing ? ($("revFinancingEndDate")?.value || null) : null,
+          notes: hasFinancing ? ($("revFinancingNotes")?.value || "") : "",
+        },
         ifrs15_initial_measurement: {
           collectability_probable: !!$("revChkCollectability")?.checked,
           rights_identifiable: !!$("revChkRights")?.checked,
@@ -33278,9 +33487,12 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function obligationPayloadFromUI() {
+    const rawName = $("revObligationName")?.value?.trim() || "";
+    const picked = findRevenueObligationCatalogMeta(rawName);
+
     return {
-      obligation_code: $("revObligationCode")?.value?.trim() || "",
-      obligation_name: $("revObligationName")?.value?.trim() || "",
+      obligation_code: $("revObligationCode")?.value?.trim() || picked?.code || "",
+      obligation_name: picked?.name || rawName,
       recognition_timing: $("revRecognitionTiming")?.value || "over_time",
       progress_method: $("revProgressMethod")?.value || "cost_to_cost",
       standalone_selling_price: num($("revSSP")?.value),
@@ -33289,6 +33501,12 @@ function bindAssetRecordsPickerModal({ cid }) {
       recognized_at_point_in_time_date: $("revPitDate")?.value || null,
       distinct_flag: !!$("revDistinctFlag")?.checked,
       notes: $("revObligationNotes")?.value || "",
+
+      // new linkage
+      catalog_item_type: picked?.type || null,
+      catalog_item_id: picked?.id || null,
+      catalog_item_code: picked?.code || null,
+      catalog_item_label: rawName || null,
     };
   }
 
@@ -33341,11 +33559,17 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revKpiRecognized").textContent = money(c.recognized_revenue_to_date || 0);
     $("revKpiBilled").textContent = money(c.billed_to_date || 0);
 
-    const ca = num(c.contract_asset_balance);
-    const cl = num(c.contract_liability_balance);
     let label = "Neutral";
-    if (ca > 0) label = `Asset ${money(ca)}`;
-    else if (cl > 0) label = `Liability ${money(cl)}`;
+
+    if (ca > 0) {
+      label = `Asset ${money(ca)}`;
+    } else if (cl > 0) {
+      label = `Liability ${money(cl)}`;
+    } else if (num(c.recognized_revenue_to_date) !== num(c.billed_to_date)) {
+      const diff = num(c.recognized_revenue_to_date) - num(c.billed_to_date);
+      if (diff > 0) label = `Asset ${money(diff)}`;
+      else if (diff < 0) label = `Liability ${money(Math.abs(diff))}`;
+    }
     $("revKpiPosition").textContent = label;
   }
 
@@ -34185,6 +34409,21 @@ async function redirectToInvoiceFromObligation(obligation) {
     }
   }
 
+  function validateFinancingInputs() {
+    if (!$("revHasFinancing")?.checked) return null;
+
+    const rate = num($("revFinancingRate")?.value);
+    const start = $("revFinancingStartDate")?.value || "";
+    const end = $("revFinancingEndDate")?.value || "";
+
+    if (!rate || rate <= 0) return "Enter a valid financing rate.";
+    if (!start) return "Select financing start date.";
+    if (!end) return "Select financing end date.";
+    if (start > end) return "Financing end date cannot be before start date.";
+
+    return null;
+  }
+
   async function saveContract() {
     const cid = state.cid;
     if (!cid) throw new Error("Missing company id");
@@ -34194,16 +34433,24 @@ async function redirectToInvoiceFromObligation(obligation) {
       throw new Error(criteriaError);
     }
 
-    const payload = contractPayloadFromUI();
-    const out = await apiFetch(ENDPOINTS.revenue.contracts(cid), {
+    // ✅ ADD THIS BLOCK
+    const financingError = validateFinancingInputs?.();
+    if (financingError) {
+      throw new Error(financingError);
+    }
 
+    const payload = contractPayloadFromUI();
+
+    const out = await apiFetch(ENDPOINTS.revenue.contracts(cid), {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
     const row = out?.data || out;
+
     hydrateContractForm(row);
     await loadContracts();
+
     return row;
   }
 
@@ -34437,19 +34684,31 @@ async function redirectToInvoiceFromObligation(obligation) {
     const contractId = Number($("revContractId")?.value || 0) || null;
     if (!cid || !contractId) throw new Error("Select a contract first");
 
+    const payload = obligationPayloadFromUI();
+
+    if (!payload.obligation_name?.trim()) {
+      throw new Error("Select or enter an obligation name.");
+    }
+
     const out = await apiFetch(ENDPOINTS.revenue.obligations(cid, contractId), {
       method: "POST",
-      body: JSON.stringify(obligationPayloadFromUI()),
+      body: JSON.stringify(payload),
     });
 
     const saved = out?.data || out || {};
 
     await loadObligations(contractId);
+
+    // keep form aligned with saved row
+    hydrateObligationForm(saved);
     setMsg("Obligation saved.");
 
-    const timing = String(saved?.recognition_timing || $("revRecognitionTiming")?.value || "")
-      .trim()
-      .toLowerCase();
+    const timing = String(
+      saved?.recognition_timing ||
+      payload?.recognition_timing ||
+      $("revRecognitionTiming")?.value ||
+      ""
+    ).trim().toLowerCase();
 
     if (timing === "point_in_time") {
       const prefill = buildInvoicePrefillFromRevenueUI(saved);
@@ -34459,19 +34718,38 @@ async function redirectToInvoiceFromObligation(obligation) {
     return out;
   }
 
+
   async function updateObligation() {
     const cid = state.cid;
     const obligationId = Number($("revObligationId")?.value || 0) || null;
     const contractId = Number($("revContractId")?.value || 0) || null;
-    if (!cid || !obligationId) throw new Error("Select an obligation first");
+
+    if (!cid || !contractId || !obligationId) {
+      throw new Error("Select an obligation first");
+    }
+
+    const payload = obligationPayloadFromUI();
+
+    if (!payload.obligation_name?.trim()) {
+      throw new Error("Select or enter an obligation name.");
+    }
 
     const out = await apiFetch(ENDPOINTS.revenue.obligation(cid, obligationId), {
       method: "PATCH",
-      body: JSON.stringify(obligationPayloadFromUI()),
+      body: JSON.stringify(payload),
     });
 
+    const saved = out?.data || out || {
+      id: obligationId,
+      ...payload,
+    };
+
     await loadObligations(contractId);
+
+    // keep selected obligation/form in sync
+    hydrateObligationForm(saved);
     setMsg("Obligation updated.");
+
     return out;
   }
 
@@ -34800,13 +35078,16 @@ async function redirectToInvoiceFromObligation(obligation) {
     $("revBtnNewContract")?.addEventListener("click", async () => {
       try {
         await loadRevenueCustomers();
+        await loadRevenueObligationCatalog?.();   // <-- add this
         hydrateContractForm({});
+        hydrateObligationForm({});                // <-- optional but useful
         refreshSettlementPatternHelp();
         refreshRevenueObligationActions();
         setActiveTab("contracts");
       } catch (e) {
         console.warn("[Revenue] loadRevenueCustomers failed on new contract", e);
         hydrateContractForm({});
+        hydrateObligationForm({});
         setActiveTab("contracts");
       }
     });
@@ -34820,6 +35101,8 @@ async function redirectToInvoiceFromObligation(obligation) {
     });
 
     $("revSettlementPattern")?.addEventListener("change", refreshSettlementPatternHelp);
+
+    $("revHasFinancing")?.addEventListener("change", toggleFinancingFields);
 
     $("revSaveContract")?.addEventListener("click", async () => {
       try {
@@ -34892,7 +35175,18 @@ async function redirectToInvoiceFromObligation(obligation) {
       setActiveTab("obligations");
     });
 
+    $("revObligationName")?.addEventListener("change", () => {
+      const meta = findRevenueObligationCatalogMeta?.($("revObligationName")?.value || "");
+      if (meta) applyCatalogMetaToObligationForm?.(meta);
+    });
+
+    $("revObligationName")?.addEventListener("blur", () => {
+      const meta = findRevenueObligationCatalogMeta?.($("revObligationName")?.value || "");
+      if (meta) applyCatalogMetaToObligationForm?.(meta);
+    });
+
     $("revRecognitionTiming")?.addEventListener("change", toggleObligationFields);
+
 
     $("revSaveObligation")?.addEventListener("click", async () => {
       try { await saveObligation(); } catch (e) { setMsg(e?.message || "Save obligation failed", "error"); }
@@ -35014,6 +35308,8 @@ async function redirectToInvoiceFromObligation(obligation) {
     setActiveTab("contracts");
     await loadContracts();
     await loadRevenueCustomers();
+    await loadRevenueObligationCatalog?.();   // <-- add this
+    bindRevenueObligationCatalogPicker?.();   // <-- add this
     await loadRuns();
     await openRevenueFromApprovalHandoff();
     await loadRevenueCashBankAccounts();
