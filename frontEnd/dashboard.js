@@ -32901,6 +32901,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     selectedObligation: null,
     preview: null,
     runs: [],
+    revSidebarPinned: false,
   };
 
   function toDateInputValue(v) {
@@ -32949,6 +32950,73 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   function activeCid() {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
+  }
+
+  function setRevenueSidebarExpanded(expanded) {
+    const layout = $("revLayout");
+    const sidebar = $("revSidebar");
+    const title = $("revSidebarTitle");
+    const body = $("revSidebarBody");
+    const pinBtn = $("revSidebarPinBtn");
+
+    if (!layout || !sidebar) return;
+
+    if (expanded) {
+      layout.classList.remove("xl:grid-cols-[56px_minmax(0,1fr)]");
+      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+
+      sidebar.classList.remove("xl:w-[56px]");
+      sidebar.classList.add("xl:w-[280px]");
+
+      title?.classList.remove("opacity-0", "pointer-events-none");
+      title?.classList.add("opacity-100");
+
+      body?.classList.remove("opacity-0", "pointer-events-none");
+      body?.classList.add("opacity-100");
+
+      pinBtn?.setAttribute("title", state.revSidebarPinned ? "Unpin sidebar" : "Pin sidebar");
+    } else {
+      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
+      layout.classList.add("xl:grid-cols-[56px_minmax(0,1fr)]");
+
+      sidebar.classList.remove("xl:w-[280px]");
+      sidebar.classList.add("xl:w-[56px]");
+
+      title?.classList.remove("opacity-100");
+      title?.classList.add("opacity-0", "pointer-events-none");
+
+      body?.classList.remove("opacity-100");
+      body?.classList.add("opacity-0", "pointer-events-none");
+
+      pinBtn?.setAttribute("title", "Pin sidebar");
+    }
+  }
+
+  function bindRevenueSidebarHover() {
+    const sidebar = $("revSidebar");
+    const pinBtn = $("revSidebarPinBtn");
+    if (!sidebar || sidebar.dataset.boundHover === "1") return;
+
+    state.revSidebarPinned = false;
+
+    sidebar.addEventListener("mouseenter", () => {
+      if (!state.revSidebarPinned) setRevenueSidebarExpanded(true);
+    });
+
+    sidebar.addEventListener("mouseleave", () => {
+      if (!state.revSidebarPinned) setRevenueSidebarExpanded(false);
+    });
+
+    pinBtn?.addEventListener("click", () => {
+      state.revSidebarPinned = !state.revSidebarPinned;
+      setRevenueSidebarExpanded(state.revSidebarPinned);
+      pinBtn.textContent = state.revSidebarPinned ? "📍" : "📌";
+    });
+
+    sidebar.dataset.boundHover = "1";
+
+    // default collapsed
+    setRevenueSidebarExpanded(false);
   }
 
   function renderContractPreview(c = {}) {
@@ -35419,7 +35487,8 @@ async function redirectToInvoiceFromObligation(obligation) {
 
     if (!bound) {
       bindRevenueScreenEvents();
-      bindRevenueContractActions();   // 👈 SHOULD BE HERE
+      bindRevenueContractActions();
+      bindRevenueSidebarHover();
       bound = true;
     }
 
