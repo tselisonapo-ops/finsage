@@ -32953,13 +32953,13 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function syncRevenueMainWidthState() {
-    const main = $("revMain");
-    if (!main) return;
+    const content = $("revContentShift");
+    if (!content) return;
 
     if (state.revSidebarPinned) {
-      main.classList.add("xl:pl-[296px]");
+      content.classList.add("xl:ml-[296px]");
     } else {
-      main.classList.remove("xl:pl-[296px]");
+      content.classList.remove("xl:ml-[296px]");
     }
   }
 
@@ -32970,8 +32970,9 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (!sidebar || !body) return;
 
-    // sidebar launcher always stays fixed
-    sidebar.classList.add("absolute", "left-0", "top-0", "z-30", "w-[280px]");
+    // keep workspace bar in normal flow always
+    sidebar.classList.remove("absolute", "left-0", "top-0", "w-[280px]");
+    sidebar.classList.add("relative", "overflow-visible");
 
     if (pinned) {
       body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
@@ -33014,38 +33015,37 @@ function bindAssetRecordsPickerModal({ cid }) {
     body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
   }
 
-  function bindRevenueSidebarRollDown() {
-    const sidebar = $("revSidebar");
-    const header = $("revSidebarHeader");
-    const pinBtn = $("revSidebarPinBtn");
+function bindRevenueSidebarRollDown() {
+  const sidebar = $("revSidebar");
+  const header = $("revSidebarHeader");
+  const pinBtn = $("revSidebarPinBtn");
 
-    if (!sidebar || sidebar.dataset.boundRoll === "1") return;
+  if (!sidebar || sidebar.dataset.boundRoll === "1") return;
 
-    state.revSidebarPinned = false;
+  state.revSidebarPinned = false;
 
-    setRevenueSidebarPinnedLayout(false);
-    syncRevenueMainWidthState(); // optional safety call
+  setRevenueSidebarPinnedLayout(false);
 
-    header?.addEventListener("mouseenter", () => {
-      expandRevenueSidebarHover();
-    });
+  header?.addEventListener("mouseenter", () => {
+    expandRevenueSidebarHover();
+  });
 
-    sidebar.addEventListener("mouseenter", () => {
-      expandRevenueSidebarHover();
-    });
+  sidebar.addEventListener("mouseenter", () => {
+    expandRevenueSidebarHover();
+  });
 
-    sidebar.addEventListener("mouseleave", () => {
-      collapseRevenueSidebarHover();
-    });
+  sidebar.addEventListener("mouseleave", () => {
+    collapseRevenueSidebarHover();
+  });
 
-    pinBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      state.revSidebarPinned = !state.revSidebarPinned;
-      setRevenueSidebarPinnedLayout(state.revSidebarPinned);
-    });
+  pinBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.revSidebarPinned = !state.revSidebarPinned;
+    setRevenueSidebarPinnedLayout(state.revSidebarPinned);
+  });
 
-    sidebar.dataset.boundRoll = "1";
-  }
+  sidebar.dataset.boundRoll = "1";
+}
 
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
