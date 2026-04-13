@@ -3528,35 +3528,31 @@
 
               <!-- TAB: OBLIGATIONS -->
               <section id="revPaneObligations" class="hidden card p-4 shadow-sage">
-
-                <!-- 🔵 PREVIEW -->
-                <div id="revObligationPreviewWrap" class="card p-4 border mb-4">
-                  <div class="flex items-center justify-between mb-2">
-                    <div class="font-semibold">Obligation Preview</div>
-                    <button id="revEditObligationBtn" class="btn-ghost text-sm">Edit</button>
+                <div class="flex items-center justify-between mb-3">
+                  <div>
+                    <div class="font-semibold">Performance Obligations</div>
+                    <div class="text-xs text-slate-500">Distinct promises, timing, SSP, and allocation</div>
                   </div>
-
-                  <div id="revObligationPreviewBody" class="text-sm text-slate-700">
-                    <span class="text-slate-500">Select an obligation to preview</span>
-                  </div>
+                  <button id="revAddObligation" class="btn" type="button">Add Obligation</button>
                 </div>
 
-                <!-- 🟢 FORM -->
-                <div id="revObligationFormWrap" class="hidden">
+                <div id="revObligationContractBanner" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm"></div>
 
-                  <div class="flex items-center justify-between mb-3">
-                    <div>
-                      <div class="font-semibold">Performance Obligations</div>
-                      <div class="text-xs text-slate-500">Distinct promises, timing, SSP, and allocation</div>
+                <div class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
+
+                  <!-- LEFT SIDE: preview/form swap -->
+                  <div>
+                    <div id="revObligationPreviewWrap" class="card p-4 border">
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="font-semibold">Obligation Preview</div>
+                        <button id="revEditObligationBtn" class="btn-ghost text-sm" type="button">Edit</button>
+                      </div>
+                      <div id="revObligationPreviewBody" class="text-sm text-slate-700">
+                        <span class="text-slate-500">Select an obligation to preview</span>
+                      </div>
                     </div>
-                    <button id="revAddObligation" class="btn" type="button">Add Obligation</button>
-                  </div>
 
-                  <div id="revObligationContractBanner" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm"></div>
-
-                  <div class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
-                    <!-- LEFT: FORM -->
-                    <div class="space-y-3">
+                    <div id="revObligationFormWrap" class="hidden space-y-3">
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Obligation Code</label>
                         <input id="revObligationCode" class="w-full border rounded px-3 py-2 text-sm">
@@ -3635,28 +3631,29 @@
                         <button id="revUpdateObligation" class="btn" type="button">Update Obligation</button>
                       </div>
                     </div>
+                  </div>
 
-                    <!-- RIGHT: REGISTER -->
-                    <div class="card p-3 border self-start min-w-0">
-                      <div class="font-semibold text-sm mb-2">Obligations Register</div>
-                      <div id="revObligationTableWrap" class="overflow-auto max-h-[420px]">
-                        <table class="min-w-full text-sm">
-                          <thead>
-                            <tr class="border-b">
-                              <th class="text-left p-2">Code</th>
-                              <th class="text-left p-2">Name</th>
-                              <th class="text-left p-2">Timing</th>
-                              <th class="text-right p-2">Allocated</th>
-                              <th class="text-right p-2">Progress %</th>
-                              <th class="text-right p-2">Revenue LTD</th>
-                            </tr>
-                          </thead>
-                          <tbody id="revObligationTableBody"></tbody>
-                        </table>
-                      </div>
+                  <!-- RIGHT SIDE: table always visible -->
+                  <div class="card p-3 border self-start min-w-0">
+                    <div class="font-semibold text-sm mb-2">Obligations Register</div>
+                    <div id="revObligationTableWrap" class="overflow-auto max-h-[420px]">
+                      <table class="min-w-full text-sm">
+                        <thead>
+                          <tr class="border-b">
+                            <th class="text-left p-2">Code</th>
+                            <th class="text-left p-2">Name</th>
+                            <th class="text-left p-2">Timing</th>
+                            <th class="text-right p-2">Allocated</th>
+                            <th class="text-right p-2">Progress %</th>
+                            <th class="text-right p-2">Revenue LTD</th>
+                          </tr>
+                        </thead>
+                        <tbody id="revObligationTableBody"></tbody>
+                      </table>
                     </div>
                   </div>
-                </div>  
+
+                </div>
               </section>
 
               <!-- TAB: BILLINGS -->

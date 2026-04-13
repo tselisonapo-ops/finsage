@@ -33723,16 +33723,18 @@ function bindAssetRecordsPickerModal({ cid }) {
         if (!row) return;
 
         state.selectedContract = row;
-        renderContractPreview(row);
-        setContractViewMode("preview");
-        await loadContractVersions(id);
-        await loadObligations(id);
-        await loadRuns();
 
-        // add this if you want refresh on contract pick
+        renderContractPreview(row);
+        renderContractKpis(row);                 // <-- add this
+        $("revContractStatusPill").textContent = row.status || "draft"; // optional
+        setContractViewMode("preview");
+
+        await loadContractVersions(row.id);
+        await loadObligations(row.id);
+        await loadRuns();
         await loadRevenueCashBankAccounts();
-        await loadBillingOverview(id);
-        await loadCashOverview(id);
+        await loadBillingOverview(row.id);
+        await loadCashOverview(row.id);
       });
     });
   }
@@ -34542,7 +34544,14 @@ async function redirectToInvoiceFromObligation(obligation) {
 
     const row = out?.data || out;
 
-    hydrateContractForm(row);
+    state.selectedContract = row;
+
+    renderContractPreview(row);   // 🔥 ADD THIS
+    renderContractKpis(row);      // 🔥 ADD THIS
+
+    setContractViewMode("preview"); // optional but recommended
+
+    hydrateContractForm(row); // keep if needed for edit later
     await loadContracts();
 
     return row;
