@@ -32952,111 +32952,153 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-function setRevenueSidebarPinnedLayout(pinned) {
-  const layout = $("revLayout");
-  const sidebar = $("revSidebar");
-  const body = $("revSidebarBody");
-  const pinBtn = $("revSidebarPinBtn");
+  function syncRevenueMainWidthState() {
+    const main = $("revMain");
+    if (!main) return;
 
-  if (!layout || !sidebar || !body) return;
+    if (state.revSidebarPinned) {
+      main.classList.remove("xl:col-span-full");
+      main.classList.add("xl:col-start-2");
+    } else {
+      main.classList.remove("xl:col-start-2");
+      main.classList.add("xl:col-span-full");
+    }
+  }
 
-  if (pinned) {
-    // Sidebar is part of the normal grid, screens shift right naturally
-    layout.classList.remove("grid-cols-1");
-    layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+  function setRevenueSidebarPinnedLayout(pinned) {
+    const layout = $("revLayout");
+    const sidebar = $("revSidebar");
+    const body = $("revSidebarBody");
+    const pinBtn = $("revSidebarPinBtn");
+    const main = $("revMain");
 
-    sidebar.classList.remove(
-      "absolute",
-      "left-0",
-      "top-0",
-      "z-30",
-      "w-[280px]"
-    );
-    sidebar.classList.add("self-start");
+    if (!layout || !sidebar || !body || !main) return;
+
+    if (pinned) {
+      // 2-column layout: sidebar occupies left column, content shifts right
+      layout.classList.remove("grid-cols-1");
+      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+
+      // sidebar stays in normal flow
+      sidebar.classList.remove("xl:col-span-1", "relative", "z-20");
+      sidebar.classList.add("self-start");
+
+      // body becomes part of normal flow
+      body.classList.remove(
+        "absolute",
+        "left-0",
+        "top-full",
+        "w-[280px]",
+        "z-30",
+        "shadow-xl",
+        "border",
+        "border-slate-200",
+        "rounded-b-lg",
+        "bg-white"
+      );
+
+      body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
+      body.classList.add("max-h-[1200px]", "opacity-100");
+
+      // main stays in right column
+      main.classList.remove("xl:col-span-full");
+      main.classList.add("xl:col-start-2");
+
+      if (pinBtn) {
+        pinBtn.textContent = "📍";
+        pinBtn.title = "Unpin sidebar";
+      }
+    } else {
+      // 1-column layout: everything below should be full width like screenshot 2
+      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
+      layout.classList.add("grid-cols-1");
+
+      // sidebar header remains in flow, only dropdown body overlays
+      sidebar.classList.remove("self-start");
+      sidebar.classList.add("relative", "z-20", "xl:col-span-1");
+
+      // dropdown body overlays below header
+      body.classList.add(
+        "absolute",
+        "left-0",
+        "top-full",
+        "w-[280px]",
+        "z-30",
+        "shadow-xl",
+        "border",
+        "border-slate-200",
+        "rounded-b-lg",
+        "bg-white"
+      );
+
+      body.classList.remove("max-h-[1200px]", "opacity-100");
+      body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
+
+      // main becomes full width and sits below
+      main.classList.remove("xl:col-start-2");
+      main.classList.add("xl:col-span-full");
+
+      if (pinBtn) {
+        pinBtn.textContent = "📌";
+        pinBtn.title = "Pin sidebar";
+      }
+    }
+    syncRevenueMainWidthState(); // add this
+  }
+
+  function expandRevenueSidebarHover() {
+    if (state.revSidebarPinned) return;
+
+    const body = $("revSidebarBody");
+    if (!body) return;
 
     body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
     body.classList.add("max-h-[1200px]", "opacity-100");
+  }
 
-    if (pinBtn) {
-      pinBtn.textContent = "📍";
-      pinBtn.title = "Unpin sidebar";
-    }
-  } else {
-    // Sidebar header stays there, body becomes dropdown overlay, screens use full width
-    layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
-    layout.classList.add("grid-cols-1");
+  function collapseRevenueSidebarHover() {
+    if (state.revSidebarPinned) return;
 
-    sidebar.classList.remove("self-start");
-    sidebar.classList.add(
-      "absolute",
-      "left-0",
-      "top-0",
-      "z-30",
-      "w-[280px]"
-    );
+    const body = $("revSidebarBody");
+    if (!body) return;
 
     body.classList.remove("max-h-[1200px]", "opacity-100");
     body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
-
-    if (pinBtn) {
-      pinBtn.textContent = "📌";
-      pinBtn.title = "Pin sidebar";
-    }
   }
-}
 
-function expandRevenueSidebarHover() {
-  if (state.revSidebarPinned) return;
+  function bindRevenueSidebarRollDown() {
+    const sidebar = $("revSidebar");
+    const header = $("revSidebarHeader");
+    const pinBtn = $("revSidebarPinBtn");
 
-  const body = $("revSidebarBody");
-  if (!body) return;
+    if (!sidebar || sidebar.dataset.boundRoll === "1") return;
 
-  body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
-  body.classList.add("max-h-[1200px]", "opacity-100");
-}
+    state.revSidebarPinned = false;
 
-function collapseRevenueSidebarHover() {
-  if (state.revSidebarPinned) return;
+    setRevenueSidebarPinnedLayout(false);
+    syncRevenueMainWidthState(); // optional safety call
 
-  const body = $("revSidebarBody");
-  if (!body) return;
+    header?.addEventListener("mouseenter", () => {
+      expandRevenueSidebarHover();
+    });
 
-  body.classList.remove("max-h-[1200px]", "opacity-100");
-  body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
-}
+    sidebar.addEventListener("mouseenter", () => {
+      expandRevenueSidebarHover();
+    });
 
-function bindRevenueSidebarRollDown() {
-  const sidebar = $("revSidebar");
-  const header = $("revSidebarHeader");
-  const pinBtn = $("revSidebarPinBtn");
+    sidebar.addEventListener("mouseleave", () => {
+      collapseRevenueSidebarHover();
+    });
 
-  if (!sidebar || sidebar.dataset.boundRoll === "1") return;
+    pinBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.revSidebarPinned = !state.revSidebarPinned;
+      setRevenueSidebarPinnedLayout(state.revSidebarPinned);
+    });
 
-  state.revSidebarPinned = false;
+    sidebar.dataset.boundRoll = "1";
+  }
 
-  // default = collapsed, header fixed there
-  setRevenueSidebarPinnedLayout(false);
-
-  header?.addEventListener("mouseenter", () => {
-    expandRevenueSidebarHover();
-  });
-
-  sidebar.addEventListener("mouseenter", () => {
-    expandRevenueSidebarHover();
-  });
-
-  sidebar.addEventListener("mouseleave", () => {
-    collapseRevenueSidebarHover();
-  });
-
-  pinBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    state.revSidebarPinned = !state.revSidebarPinned;
-    setRevenueSidebarPinnedLayout(state.revSidebarPinned);
-  });
-
-  sidebar.dataset.boundRoll = "1";
-}
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
@@ -33233,6 +33275,7 @@ function bindRevenueSidebarRollDown() {
       btn.classList.toggle("bg-[var(--fs-navy)]", btn.dataset.revTab === tab);
       btn.classList.toggle("text-white", btn.dataset.revTab === tab);
     });
+    syncRevenueMainWidthState(); // add this
   }
 
   async function loadRevenueCustomers() {
@@ -34181,11 +34224,18 @@ function bindRevenueSidebarRollDown() {
     }
 
     el.innerHTML = `
-      <strong>Adding obligation to:</strong>
-      ${esc(contract.contract_number || `Contract ${contract.id}`)}
-      — ${esc(contract.contract_title || "")}
-      <span class="ml-2 text-slate-600">Customer: ${esc(contract.customer_name || "")}</span>
+      <div class="font-semibold text-slate-800">
+        Adding obligation to:
+      </div>
+      <div class="text-slate-700">
+        ${esc(contract.contract_number || `Contract ${contract.id}`)}
+        ${contract.contract_title ? `• ${esc(contract.contract_title)}` : ""}
+      </div>
+      <div class="text-slate-500 text-xs">
+        Customer: ${esc(contract.customer_name || "")}
+      </div>
     `;
+
     el.classList.remove("hidden");
   }
 
@@ -35383,18 +35433,22 @@ async function redirectToInvoiceFromObligation(obligation) {
     });
 
     $("revAddObligation")?.addEventListener("click", () => {
-      const contractId = Number($("revContractId")?.value || 0) || null;
-
-      if (!contractId) {
+      if (!state.selectedContract?.id) {
         setMsg("Select a contract first. Obligations belong to a specific contract.", "error");
         setActiveTab("contracts");
         return;
       }
 
-    hydrateObligationForm({});
-    renderObligationContractBanner(state.selectedContract);
-    setObligationViewMode("form");
-    setActiveTab("obligations");  
+      // sync hidden field
+      $("revContractId").value = state.selectedContract.id;
+
+      hydrateObligationForm({});
+
+      // 🔥 banner always uses actual selected contract
+      renderObligationContractBanner(state.selectedContract);
+
+      setObligationViewMode("form");
+      setActiveTab("obligations");
     });
 
     $("revObligationName")?.addEventListener("change", () => {
