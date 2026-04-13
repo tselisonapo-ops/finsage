@@ -32957,93 +32957,41 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!main) return;
 
     if (state.revSidebarPinned) {
-      main.classList.remove("xl:col-span-full");
-      main.classList.add("xl:col-start-2");
+      main.classList.add("xl:pl-[296px]");
     } else {
-      main.classList.remove("xl:col-start-2");
-      main.classList.add("xl:col-span-full");
+      main.classList.remove("xl:pl-[296px]");
     }
   }
 
   function setRevenueSidebarPinnedLayout(pinned) {
-    const layout = $("revLayout");
     const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
     const pinBtn = $("revSidebarPinBtn");
-    const main = $("revMain");
 
-    if (!layout || !sidebar || !body || !main) return;
+    if (!sidebar || !body) return;
+
+    // sidebar launcher always stays fixed
+    sidebar.classList.add("absolute", "left-0", "top-0", "z-30", "w-[280px]");
 
     if (pinned) {
-      // 2-column layout: sidebar occupies left column, content shifts right
-      layout.classList.remove("grid-cols-1");
-      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
-
-      // sidebar stays in normal flow
-      sidebar.classList.remove("xl:col-span-1", "relative", "z-20");
-      sidebar.classList.add("self-start");
-
-      // body becomes part of normal flow
-      body.classList.remove(
-        "absolute",
-        "left-0",
-        "top-full",
-        "w-[280px]",
-        "z-30",
-        "shadow-xl",
-        "border",
-        "border-slate-200",
-        "rounded-b-lg",
-        "bg-white"
-      );
-
       body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
       body.classList.add("max-h-[1200px]", "opacity-100");
-
-      // main stays in right column
-      main.classList.remove("xl:col-span-full");
-      main.classList.add("xl:col-start-2");
 
       if (pinBtn) {
         pinBtn.textContent = "📍";
         pinBtn.title = "Unpin sidebar";
       }
     } else {
-      // 1-column layout: everything below should be full width like screenshot 2
-      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
-      layout.classList.add("grid-cols-1");
-
-      // sidebar header remains in flow, only dropdown body overlays
-      sidebar.classList.remove("self-start");
-      sidebar.classList.add("relative", "z-20", "xl:col-span-1");
-
-      // dropdown body overlays below header
-      body.classList.add(
-        "absolute",
-        "left-0",
-        "top-full",
-        "w-[280px]",
-        "z-30",
-        "shadow-xl",
-        "border",
-        "border-slate-200",
-        "rounded-b-lg",
-        "bg-white"
-      );
-
       body.classList.remove("max-h-[1200px]", "opacity-100");
       body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
-
-      // main becomes full width and sits below
-      main.classList.remove("xl:col-start-2");
-      main.classList.add("xl:col-span-full");
 
       if (pinBtn) {
         pinBtn.textContent = "📌";
         pinBtn.title = "Pin sidebar";
       }
     }
-    syncRevenueMainWidthState(); // add this
+
+    syncRevenueMainWidthState();
   }
 
   function expandRevenueSidebarHover() {
