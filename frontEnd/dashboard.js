@@ -32951,7 +32951,7 @@ function bindAssetRecordsPickerModal({ cid }) {
   function activeCid() {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
-
+  
   function setRevenueSidebarPinnedLayout(pinned) {
     const layout = $("revLayout");
     const sidebar = $("revSidebar");
@@ -32960,15 +32960,24 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (!layout || !sidebar || !body) return;
 
+    // always keep workspace in left column
+    layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+    layout.classList.remove("grid-cols-1");
+
     if (pinned) {
-      // screens shift right
-      layout.classList.remove("grid-cols-1");
-      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+      sidebar.classList.remove("overflow-visible");
+      sidebar.classList.add("overflow-hidden");
 
-      sidebar.classList.remove("xl:w-full");
-      sidebar.classList.add("xl:w-[280px]");
-
-      body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
+      body.classList.remove(
+        "max-h-0",
+        "opacity-0",
+        "pointer-events-none",
+        "absolute",
+        "left-0",
+        "right-0",
+        "top-full",
+        "z-30"
+      );
       body.classList.add("max-h-[1200px]", "opacity-100");
 
       if (pinBtn) {
@@ -32976,13 +32985,11 @@ function bindAssetRecordsPickerModal({ cid }) {
         pinBtn.title = "Unpin sidebar";
       }
     } else {
-      // header stays in place, screens use rest of space
-      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
-      layout.classList.add("grid-cols-1");
+      // keep header fixed there, body becomes dropdown overlay
+      sidebar.classList.remove("overflow-hidden");
+      sidebar.classList.add("overflow-visible");
 
-      sidebar.classList.remove("xl:w-[280px]");
-      sidebar.classList.add("xl:w-full");
-
+      body.classList.add("absolute", "left-0", "right-0", "top-full", "z-30");
       body.classList.remove("max-h-[1200px]", "opacity-100");
       body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
 
@@ -33022,7 +33029,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     state.revSidebarPinned = false;
 
-    // default: unpinned, collapsed, header visible
+    // default: header fixed there, body hidden
     setRevenueSidebarPinnedLayout(false);
 
     header?.addEventListener("mouseenter", () => {
