@@ -32952,35 +32952,64 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-  function setRevenueSidebarPinnedLayout(pinned) {
-    const layout = $("revLayout");
-    if (!layout) return;
+function setRevenueSidebarPinnedLayout(pinned) {
+  const sidebar = $("revSidebar");
+  const body = $("revSidebarBody");
+  const pinBtn = $("revSidebarPinBtn");
 
-    if (pinned) {
-      layout.classList.remove("grid-cols-1");
-      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
-    } else {
-      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
-      layout.classList.add("grid-cols-1");
+  if (!sidebar || !body) return;
+
+  if (pinned) {
+    sidebar.classList.remove("xl:w-[64px]");
+    sidebar.classList.add("xl:w-[280px]");
+
+    body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
+    body.classList.add("max-h-[1200px]", "opacity-100");
+
+    if (pinBtn) {
+      pinBtn.textContent = "📍";
+      pinBtn.title = "Unpin sidebar";
+    }
+  } else {
+    sidebar.classList.remove("xl:w-[280px]");
+    sidebar.classList.add("xl:w-[64px]");
+
+    body.classList.remove("max-h-[1200px]", "opacity-100");
+    body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
+
+    if (pinBtn) {
+      pinBtn.textContent = "📌";
+      pinBtn.title = "Pin sidebar";
     }
   }
+}
 
-  function expandRevenueSidebar() {
+  function expandRevenueSidebarHover() {
+    if (state.revSidebarPinned) return;
+
+    const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
-    if (!body) return;
+    if (!sidebar || !body) return;
 
-    body.classList.remove("max-h-0", "opacity-0");
+    sidebar.classList.remove("xl:w-[64px]");
+    sidebar.classList.add("xl:w-[280px]");
+
+    body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
     body.classList.add("max-h-[1200px]", "opacity-100");
   }
 
-  function collapseRevenueSidebar(force = false) {
-    if (state.revSidebarPinned && !force) return;
+  function collapseRevenueSidebarHover() {
+    if (state.revSidebarPinned) return;
 
+    const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
-    if (!body) return;
+    if (!sidebar || !body) return;
+
+    sidebar.classList.remove("xl:w-[280px]");
+    sidebar.classList.add("xl:w-[64px]");
 
     body.classList.remove("max-h-[1200px]", "opacity-100");
-    body.classList.add("max-h-0", "opacity-0");
+    body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
   }
 
   function bindRevenueSidebarRollDown() {
@@ -32990,52 +33019,27 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (!sidebar || sidebar.dataset.boundRoll === "1") return;
 
-    state.revSidebarPinned = false;
+    state.revSidebarPinned = true;
 
-    // default: unpinned, content below
-    setRevenueSidebarPinnedLayout(false);
-    collapseRevenueSidebar(true);
+    // default open, current layout
+    setRevenueSidebarPinnedLayout(true);
 
     header?.addEventListener("mouseenter", () => {
-      if (!state.revSidebarPinned) expandRevenueSidebar();
+      expandRevenueSidebarHover();
     });
 
     sidebar.addEventListener("mouseenter", () => {
-      if (!state.revSidebarPinned) expandRevenueSidebar();
+      expandRevenueSidebarHover();
     });
 
     sidebar.addEventListener("mouseleave", () => {
-      if (!state.revSidebarPinned) collapseRevenueSidebar();
-    });
-
-    header?.addEventListener("click", (e) => {
-      if (e.target === pinBtn) return;
-
-      const body = $("revSidebarBody");
-      if (!body) return;
-
-      if (body.classList.contains("max-h-0")) {
-        expandRevenueSidebar();
-      } else if (!state.revSidebarPinned) {
-        collapseRevenueSidebar();
-      }
+      collapseRevenueSidebarHover();
     });
 
     pinBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
       state.revSidebarPinned = !state.revSidebarPinned;
-
-      if (state.revSidebarPinned) {
-        setRevenueSidebarPinnedLayout(true);
-        expandRevenueSidebar();
-        pinBtn.textContent = "📍";
-        pinBtn.title = "Unpin sidebar";
-      } else {
-        pinBtn.textContent = "📌";
-        pinBtn.title = "Pin sidebar";
-        setRevenueSidebarPinnedLayout(false);
-        collapseRevenueSidebar(true);
-      }
+      setRevenueSidebarPinnedLayout(state.revSidebarPinned);
     });
 
     sidebar.dataset.boundRoll = "1";

@@ -3271,16 +3271,16 @@
             </div>
           </div>
 
-          <div id="revApprovalBanner" class="hidden border rounded-lg bg-amber-50 border-amber-200 px-3 py-2 mb-3"></div> 
+          <div id="revLayout" class="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-4 transition-all duration-300">
 
           <div id="revLayout" class="grid grid-cols-1 gap-4 transition-all duration-300">
             <!-- LEFT SIDEBAR -->
-            <aside id="revSidebar" class="card shadow-sage overflow-hidden self-start">
+            <aside id="revSidebar" class="card shadow-sage overflow-hidden self-start xl:w-[280px] transition-all duration-300">
               <div
                 id="revSidebarHeader"
                 class="flex items-center justify-between px-3 py-3 border-b cursor-pointer select-none"
               >
-                <div class="text-sm font-semibold">Revenue Workspace</div>
+                <div class="text-sm font-semibold whitespace-nowrap">Revenue Workspace</div>
                 <button
                   id="revSidebarPinBtn"
                   type="button"
@@ -3293,6 +3293,9 @@
 
               <div
                 id="revSidebarBody"
+                class="max-h-[1200px] opacity-100 overflow-hidden transition-all duration-300 ease-in-out origin-top"
+              >
+                <div class="p-3">
                 class="max-h-0 opacity-0 overflow-hidden transition-all duration-300 ease-in-out origin-top"
               >
                 <div class="p-3">
