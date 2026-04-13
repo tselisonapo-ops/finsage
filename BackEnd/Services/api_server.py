@@ -5882,23 +5882,41 @@ def create_invoice(cid: int):
         current_app.logger.info("create_invoice: reload posted invoice done")
         posted["_posted_journal_id"] = journal_id
 
-        db_service.audit_log(
-            company_id=company_id,
-            actor_user_id=int(user.get("id") or 0),
-            module="ar",
-            action="post",
-            severity="info",
-            entity_type="invoice",
-            entity_id=str(invoice_id),
-            entity_ref=str(posted.get("number") or inv_no or invoice_id),
-            journal_id=int(journal_id) if journal_id else None,
-            customer_id=int(cust_id),
-            amount=float(posted.get("total_amount") or posted.get("gross_amount") or 0.0),
-            currency=posted.get("currency"),
-            before_json={},
-            after_json=posted,
-            message="Invoice posted to GL (auto-post: review disabled)",
-        )
+        safe_journal_id = None
+        try:
+            jid = int(journal_id) if journal_id else None
+            if jid and getattr(db_service, "journal_exists", None):
+                if db_service.journal_exists(jid):
+                    safe_journal_id = jid
+            else:
+                safe_journal_id = None
+        except Exception:
+            safe_journal_id = None
+
+        try:
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(user.get("id") or 0),
+                module="ar",
+                action="post",
+                severity="info",
+                entity_type="invoice",
+                entity_id=str(invoice_id),
+                entity_ref=str(posted.get("number") or inv_no or invoice_id),
+                journal_id=safe_journal_id,
+                customer_id=int(cust_id),
+                amount=float(posted.get("total_amount") or posted.get("gross_amount") or 0.0),
+                currency=posted.get("currency"),
+                before_json={},
+                after_json=posted,
+                message="Invoice posted to GL (auto-post: review disabled)",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "create_invoice: audit_log failed after posting | invoice_id=%s journal_id=%r",
+                invoice_id,
+                journal_id,
+            )
 
         return jsonify(posted), 201
 

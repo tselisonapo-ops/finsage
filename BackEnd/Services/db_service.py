@@ -36186,6 +36186,10 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
+    def journal_exists(self, journal_id: int) -> bool:
+        sql = "SELECT 1 FROM journal WHERE id = %s LIMIT 1"
+        return bool(self.fetch_one(sql, (int(journal_id),)))
+
     def get_invoice_with_lines(self, company_id: int, invoice_id: int) -> Optional[Dict[str, Any]]:
         schema = self.company_schema(company_id)
 
