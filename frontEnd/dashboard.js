@@ -32951,6 +32951,62 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
+  function renderContractPreview(c = {}) {
+    const el = $("revContractPreviewBody");
+    if (!el) return;
+
+    if (!c?.id) {
+      el.innerHTML = `<div class="text-sm text-slate-500">Select a contract from the left to preview it, or click New Contract to create one.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
+        <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
+        <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
+        <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
+        <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
+        <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
+        <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
+        <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
+        <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
+        <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
+      </div>
+      <div class="mt-3">
+        <div class="text-slate-500 text-xs mb-1">Notes</div>
+        <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
+      </div>
+    `;
+  }
+
+  function renderObligationPreview(o = {}) {
+    const el = $("revObligationPreviewBody");
+    if (!el) return;
+
+    if (!o?.id) {
+      el.innerHTML = `<div class="text-sm text-slate-500">Select an obligation row to preview it, or click Add Obligation to create one.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div><span class="text-slate-500">Code:</span> <strong>${esc(o.obligation_code || "")}</strong></div>
+        <div><span class="text-slate-500">Timing:</span> <strong>${esc(o.recognition_timing || "")}</strong></div>
+        <div><span class="text-slate-500">Name:</span> <strong>${esc(o.obligation_name || "")}</strong></div>
+        <div><span class="text-slate-500">Progress Method:</span> <strong>${esc(o.progress_method || "")}</strong></div>
+        <div><span class="text-slate-500">SSP:</span> <strong>${money(o.standalone_selling_price)}</strong></div>
+        <div><span class="text-slate-500">Allocated:</span> <strong>${money(o.allocated_transaction_price)}</strong></div>
+        <div><span class="text-slate-500">Expected Cost:</span> <strong>${money(o.expected_total_cost)}</strong></div>
+        <div><span class="text-slate-500">Revenue LTD:</span> <strong>${money(o.revenue_to_date)}</strong></div>
+      </div>
+      <div class="mt-3">
+        <div class="text-slate-500 text-xs mb-1">Notes</div>
+        <div class="border rounded p-3 bg-slate-50">${esc(o.notes || "—")}</div>
+      </div>
+    `;
+  }
+
   function toggleObligationFields() {
     const timing = document.getElementById("revRecognitionTiming")?.value;
 
@@ -33098,6 +33154,16 @@ function bindAssetRecordsPickerModal({ cid }) {
         </option>
       `).join("")}
     `;
+  }
+
+  function setContractViewMode(mode = "preview") {
+    $("revContractPreviewWrap")?.classList.toggle("hidden", mode !== "preview");
+    $("revContractFormWrap")?.classList.toggle("hidden", mode !== "form");
+  }
+
+  function setObligationViewMode(mode = "preview") {
+    $("revObligationPreviewWrap")?.classList.toggle("hidden", mode !== "preview");
+    $("revObligationFormWrap")?.classList.toggle("hidden", mode !== "form");
   }
 
   function hydrateContractForm(c = {}) {
@@ -33566,18 +33632,35 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revKpiBilled")) $("revKpiBilled").textContent = money(billed);
 
     let label = "Neutral";
+    let cls = "px-2 py-1 rounded bg-slate-100 text-slate-600"; // ⚪ default badge
 
     if (ca > 0) {
-      label = `Asset ${money(ca)}`;
+      label = `▲ Asset ${money(ca)}`;
+      cls = "px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-semibold";
     } else if (cl > 0) {
-      label = `Liability ${money(cl)}`;
+      label = `▼ Liability ${money(cl)}`;
+      cls = "px-2 py-1 rounded bg-rose-100 text-rose-700 font-semibold";
     } else {
       const diff = recognized - billed;
-      if (diff > 0) label = `Asset ${money(diff)}`;
-      else if (diff < 0) label = `Liability ${money(Math.abs(diff))}`;
+
+      if (diff > 0) {
+        label = `▲ Asset ${money(diff)}`;
+        cls = "px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-semibold";
+      } else if (diff < 0) {
+        label = `▼ Liability ${money(Math.abs(diff))}`;
+        cls = "px-2 py-1 rounded bg-rose-100 text-rose-700 font-semibold";
+      }
     }
 
-    if ($("revKpiPosition")) $("revKpiPosition").textContent = label;
+    const el = $("revKpiPosition");
+    if (el) {
+      el.textContent = label;
+
+      // ✅ preserve layout + add smooth transition
+      el.className = "inline-block transition-all duration-200";
+
+      el.classList.add(...cls.split(" "));
+    }
   }
 
   function renderContractList() {
@@ -33639,7 +33722,9 @@ function bindAssetRecordsPickerModal({ cid }) {
         const row = state.contracts.find((x) => Number(x.id) === id);
         if (!row) return;
 
-        hydrateContractForm(row);
+        state.selectedContract = row;
+        renderContractPreview(row);
+        setContractViewMode("preview");
         await loadContractVersions(id);
         await loadObligations(id);
         await loadRuns();
@@ -33699,7 +33784,9 @@ function bindAssetRecordsPickerModal({ cid }) {
         const id = Number(tr.dataset.id || 0) || null;
         const row = items.find((x) => Number(x.id) === id);
         if (!row) return;
-        hydrateObligationForm(row);
+        state.selectedObligation = row;
+        renderObligationPreview(row);
+        setObligationViewMode("preview");
       });
     });
   }
@@ -35087,6 +35174,7 @@ async function redirectToInvoiceFromObligation(obligation) {
         await loadRevenueCustomers();
         await loadRevenueObligationCatalog?.();   // <-- add this
         hydrateContractForm({});
+        setContractViewMode("form");
         hydrateObligationForm({});                // <-- optional but useful
         refreshSettlementPatternHelp();
         refreshRevenueObligationActions();
@@ -35094,6 +35182,7 @@ async function redirectToInvoiceFromObligation(obligation) {
       } catch (e) {
         console.warn("[Revenue] loadRevenueCustomers failed on new contract", e);
         hydrateContractForm({});
+        setContractViewMode("form");
         hydrateObligationForm({});
         setActiveTab("contracts");
       }
@@ -35169,6 +35258,13 @@ async function redirectToInvoiceFromObligation(obligation) {
       try { await createVersion(); } catch (e) { setMsg(e?.message || "Create version failed", "error"); }
     });
 
+    $("revEditContractBtn")?.addEventListener("click", () => {
+      if (!state.selectedContract) return;
+
+      hydrateContractForm(state.selectedContract);
+      setContractViewMode("form");
+    });
+
     $("revAddObligation")?.addEventListener("click", () => {
       const contractId = Number($("revContractId")?.value || 0) || null;
 
@@ -35178,8 +35274,9 @@ async function redirectToInvoiceFromObligation(obligation) {
         return;
       }
 
-      hydrateObligationForm({});
-      setActiveTab("obligations");
+    hydrateObligationForm({});
+    setObligationViewMode("form");
+    setActiveTab("obligations");  
     });
 
     $("revObligationName")?.addEventListener("change", () => {
@@ -35200,7 +35297,24 @@ async function redirectToInvoiceFromObligation(obligation) {
     });
 
     $("revUpdateObligation")?.addEventListener("click", async () => {
-      try { await updateObligation(); } catch (e) { setMsg(e?.message || "Update obligation failed", "error"); }
+      try { 
+        const out = await updateObligation();
+
+        state.selectedObligation = out?.data || state.selectedObligation;
+
+        renderObligationPreview(state.selectedObligation);
+        setObligationViewMode("preview");
+
+      } catch (e) { 
+        setMsg(e?.message || "Update obligation failed", "error"); 
+      }
+    });
+
+    $("revEditObligationBtn")?.addEventListener("click", () => {
+      if (!state.selectedObligation) return;
+
+      hydrateObligationForm(state.selectedObligation);
+      setObligationViewMode("form");
     });
 
     $("revSaveBilling")?.addEventListener("click", async () => {
