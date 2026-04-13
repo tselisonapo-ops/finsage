@@ -32952,6 +32952,19 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
+  function setRevenueSidebarPinnedLayout(pinned) {
+    const layout = $("revLayout");
+    if (!layout) return;
+
+    if (pinned) {
+      layout.classList.remove("grid-cols-1");
+      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+    } else {
+      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
+      layout.classList.add("grid-cols-1");
+    }
+  }
+
   function expandRevenueSidebar() {
     const body = $("revSidebarBody");
     if (!body) return;
@@ -32960,8 +32973,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     body.classList.add("max-h-[1200px]", "opacity-100");
   }
 
-  function collapseRevenueSidebar() {
-    if (state.revSidebarPinned) return;
+  function collapseRevenueSidebar(force = false) {
+    if (state.revSidebarPinned && !force) return;
 
     const body = $("revSidebarBody");
     if (!body) return;
@@ -32979,16 +32992,20 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     state.revSidebarPinned = false;
 
+    // default: unpinned, content below
+    setRevenueSidebarPinnedLayout(false);
+    collapseRevenueSidebar(true);
+
     header?.addEventListener("mouseenter", () => {
-      expandRevenueSidebar();
+      if (!state.revSidebarPinned) expandRevenueSidebar();
     });
 
     sidebar.addEventListener("mouseenter", () => {
-      expandRevenueSidebar();
+      if (!state.revSidebarPinned) expandRevenueSidebar();
     });
 
     sidebar.addEventListener("mouseleave", () => {
-      collapseRevenueSidebar();
+      if (!state.revSidebarPinned) collapseRevenueSidebar();
     });
 
     header?.addEventListener("click", (e) => {
@@ -33009,20 +33026,19 @@ function bindAssetRecordsPickerModal({ cid }) {
       state.revSidebarPinned = !state.revSidebarPinned;
 
       if (state.revSidebarPinned) {
+        setRevenueSidebarPinnedLayout(true);
         expandRevenueSidebar();
         pinBtn.textContent = "📍";
         pinBtn.title = "Unpin sidebar";
       } else {
         pinBtn.textContent = "📌";
         pinBtn.title = "Pin sidebar";
-        collapseRevenueSidebar();
+        setRevenueSidebarPinnedLayout(false);
+        collapseRevenueSidebar(true);
       }
     });
 
     sidebar.dataset.boundRoll = "1";
-
-    // default collapsed
-    collapseRevenueSidebar();
   }
 
   function renderContractPreview(c = {}) {
