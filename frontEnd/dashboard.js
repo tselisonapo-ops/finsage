@@ -32952,47 +32952,50 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-function setRevenueSidebarPinnedLayout(pinned) {
-  const sidebar = $("revSidebar");
-  const body = $("revSidebarBody");
-  const pinBtn = $("revSidebarPinBtn");
+  function setRevenueSidebarPinnedLayout(pinned) {
+    const layout = $("revLayout");
+    const sidebar = $("revSidebar");
+    const body = $("revSidebarBody");
+    const pinBtn = $("revSidebarPinBtn");
 
-  if (!sidebar || !body) return;
+    if (!layout || !sidebar || !body) return;
 
-  if (pinned) {
-    sidebar.classList.remove("xl:w-[64px]");
-    sidebar.classList.add("xl:w-[280px]");
+    if (pinned) {
+      layout.classList.remove("grid-cols-1");
+      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
 
-    body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
-    body.classList.add("max-h-[1200px]", "opacity-100");
+      sidebar.classList.remove("xl:w-[64px]");
+      sidebar.classList.add("xl:w-[280px]");
 
-    if (pinBtn) {
-      pinBtn.textContent = "📍";
-      pinBtn.title = "Unpin sidebar";
-    }
-  } else {
-    sidebar.classList.remove("xl:w-[280px]");
-    sidebar.classList.add("xl:w-[64px]");
+      body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
+      body.classList.add("max-h-[1200px]", "opacity-100");
 
-    body.classList.remove("max-h-[1200px]", "opacity-100");
-    body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
+      if (pinBtn) {
+        pinBtn.textContent = "📍";
+        pinBtn.title = "Unpin sidebar";
+      }
+    } else {
+      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
+      layout.classList.add("grid-cols-1");
 
-    if (pinBtn) {
-      pinBtn.textContent = "📌";
-      pinBtn.title = "Pin sidebar";
+      sidebar.classList.remove("xl:w-[280px]");
+      sidebar.classList.add("xl:w-full");
+
+      body.classList.remove("max-h-[1200px]", "opacity-100");
+      body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
+
+      if (pinBtn) {
+        pinBtn.textContent = "📌";
+        pinBtn.title = "Pin sidebar";
+      }
     }
   }
-}
 
   function expandRevenueSidebarHover() {
     if (state.revSidebarPinned) return;
 
-    const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
-    if (!sidebar || !body) return;
-
-    sidebar.classList.remove("xl:w-[64px]");
-    sidebar.classList.add("xl:w-[280px]");
+    if (!body) return;
 
     body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
     body.classList.add("max-h-[1200px]", "opacity-100");
@@ -33001,12 +33004,8 @@ function setRevenueSidebarPinnedLayout(pinned) {
   function collapseRevenueSidebarHover() {
     if (state.revSidebarPinned) return;
 
-    const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
-    if (!sidebar || !body) return;
-
-    sidebar.classList.remove("xl:w-[280px]");
-    sidebar.classList.add("xl:w-[64px]");
+    if (!body) return;
 
     body.classList.remove("max-h-[1200px]", "opacity-100");
     body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
@@ -33021,7 +33020,7 @@ function setRevenueSidebarPinnedLayout(pinned) {
 
     state.revSidebarPinned = true;
 
-    // default open, current layout
+    // default = pinned/open
     setRevenueSidebarPinnedLayout(true);
 
     header?.addEventListener("mouseenter", () => {
