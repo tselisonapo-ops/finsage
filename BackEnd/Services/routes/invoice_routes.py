@@ -134,7 +134,7 @@ def _deny_if_wrong_company(
 @require_auth
 def allocate_invoice_payment(company_id: int, invoice_id: int):
     if request.method == "OPTIONS":
-        return _corsify(make_response("", 204)) 
+        return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
     deny = _deny_if_wrong_company(
@@ -147,10 +147,8 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
 
     data = request.get_json(silent=True) or {}
 
-    # ✅ Safer actor id (works for old + new JWTs)
     actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
 
-    # ✅ OPTIONAL: snapshot before (good for audit diffs)
     before_inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
     before_json = {
         "status": before_inv.get("status"),
@@ -177,7 +175,6 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
 
         reference = (data.get("reference") or "").strip() or None
         description = (data.get("description") or "").strip() or None
-
         ar_ledger_code = (data.get("ar_ledger_code") or "").strip() or None
 
         out = db_service.allocate_payment_to_invoice(
@@ -193,33 +190,33 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
         )
 
         inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
-
         revenue_contract_id = inv.get("revenue_contract_id")
 
+        # only this mirror step is optional / non-blocking
         if revenue_contract_id:
-            db_service.record_revenue_cash_event(
-                company_id=company_id,
-                contract_id=int(revenue_contract_id),
-                data={
-                    "event_date": str(payment_date),
-                    "event_type": "receipt",
-                    "source_invoice_id": int(invoice_id),
-                    "source_receipt_id": int(out.get("receipt_id")),
-                    "amount": float(amount),
-                    "currency": inv.get("currency") or "ZAR",
-                    "notes": f"Cash received for invoice {inv.get('number')}",
-                    "payload_json": {
-                        "customer_id": int(inv.get("customer_id") or 0),
-                        "source": "ar_receipt",
-                        "invoice_number": inv.get("number"),
+            try:
+                db_service.record_revenue_cash_event(
+                    company_id=company_id,
+                    contract_id=int(revenue_contract_id),
+                    data={
+                        "event_date": str(payment_date),
+                        "event_type": "receipt",
+                        "source_invoice_id": int(invoice_id),
+                        "source_receipt_id": int(out.get("receipt_id")) if out.get("receipt_id") else None,
+                        "amount": float(amount),
+                        "currency": inv.get("currency") or "ZAR",
+                        "notes": f"Cash received for invoice {inv.get('number')}",
+                        "payload_json": {
+                            "customer_id": int(inv.get("customer_id") or 0),
+                            "source": "ar_receipt",
+                            "invoice_number": inv.get("number"),
+                        },
                     },
-                },
-                user_id=actor_user_id or 0,
-            )
-    except Exception:
-        current_app.logger.exception("⚠️ revenue cash event failed")
-        
-        # ✅ OPTIONAL: snapshot after
+                    user_id=actor_user_id or 0,
+                )
+            except Exception:
+                current_app.logger.exception("⚠️ revenue cash event failed")
+
         after_inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
         after_json = {
             "status": after_inv.get("status"),
@@ -230,7 +227,6 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
             "number": after_inv.get("number"),
         }
 
-        # ✅ AUDIT LOG (success only)
         try:
             journal_id = out.get("journal_id") if isinstance(out, dict) else None
             currency = (
@@ -271,7 +267,6 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
                 source="api",
             )
         except Exception:
-            # ✅ never break the main action because audit logging failed
             current_app.logger.exception("audit_log failed in allocate_invoice_payment")
 
         return jsonify({"ok": True, "data": out}), 200
@@ -282,7 +277,6 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
             company_id, invoice_id
         )
 
-        # ✅ (Optional) audit failures too (warning/error)
         try:
             db_service.audit_log(
                 company_id,
@@ -305,7 +299,7 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
             current_app.logger.exception("audit_log failed in allocate_invoice_payment error handler")
 
         return jsonify({"ok": False, "error": str(e)}), 400
-
+    
 @invoices_bp.route("/api/companies/<int:company_id>/invoices/<int:invoice_id>", methods=["GET", "OPTIONS"])
 @require_auth
 def get_invoice(company_id: int, invoice_id: int):
