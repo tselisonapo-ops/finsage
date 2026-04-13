@@ -32964,15 +32964,10 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function setRevenueSidebarPinnedLayout(pinned) {
-    const sidebar = $("revSidebar");
     const body = $("revSidebarBody");
     const pinBtn = $("revSidebarPinBtn");
 
-    if (!sidebar || !body) return;
-
-    // keep workspace bar in normal flow always
-    sidebar.classList.remove("absolute", "left-0", "top-0", "w-[280px]");
-    sidebar.classList.add("relative", "overflow-visible");
+    if (!body) return;
 
     if (pinned) {
       body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
@@ -33015,37 +33010,36 @@ function bindAssetRecordsPickerModal({ cid }) {
     body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
   }
 
-function bindRevenueSidebarRollDown() {
-  const sidebar = $("revSidebar");
-  const header = $("revSidebarHeader");
-  const pinBtn = $("revSidebarPinBtn");
+  function bindRevenueSidebarRollDown() {
+    const sidebar = $("revSidebar");
+    const header = $("revSidebarHeader");
+    const pinBtn = $("revSidebarPinBtn");
 
-  if (!sidebar || sidebar.dataset.boundRoll === "1") return;
+    if (!sidebar || sidebar.dataset.boundRoll === "1") return;
 
-  state.revSidebarPinned = false;
+    state.revSidebarPinned = false;
+    setRevenueSidebarPinnedLayout(false);
 
-  setRevenueSidebarPinnedLayout(false);
+    header?.addEventListener("mouseenter", () => {
+      expandRevenueSidebarHover();
+    });
 
-  header?.addEventListener("mouseenter", () => {
-    expandRevenueSidebarHover();
-  });
+    sidebar.addEventListener("mouseenter", () => {
+      expandRevenueSidebarHover();
+    });
 
-  sidebar.addEventListener("mouseenter", () => {
-    expandRevenueSidebarHover();
-  });
+    sidebar.addEventListener("mouseleave", () => {
+      collapseRevenueSidebarHover();
+    });
 
-  sidebar.addEventListener("mouseleave", () => {
-    collapseRevenueSidebarHover();
-  });
+    pinBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.revSidebarPinned = !state.revSidebarPinned;
+      setRevenueSidebarPinnedLayout(state.revSidebarPinned);
+    });
 
-  pinBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    state.revSidebarPinned = !state.revSidebarPinned;
-    setRevenueSidebarPinnedLayout(state.revSidebarPinned);
-  });
-
-  sidebar.dataset.boundRoll = "1";
-}
+    sidebar.dataset.boundRoll = "1";
+  }
 
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
