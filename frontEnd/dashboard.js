@@ -33828,25 +33828,45 @@ function bindAssetRecordsPickerModal({ cid }) {
         cashPayload,
       });
 
-      // 1) open invoice viewer
-      await openInvoiceViewer(invoiceId);
+      // 1) Switch to AR invoices screen first
+      await switchScreen("ar-invoices");
 
-      // 2) wait for payment panel controls
+      // 2) Make sure invoice pane is showing, not quotes
+      if (typeof window.showArPane === "function") {
+        window.showArPane("invoices");
+      }
+
+      // 3) Wait for invoice viewer controls to exist
+      await window.waitForElement?.("invoiceViewerModal", 4000);
+      await window.waitForElement?.("invViewPayPanel", 4000);
+
+      // 4) Open invoice viewer
+      if (typeof window.openInvoiceViewer === "function") {
+        await window.openInvoiceViewer(invoiceId);
+      } else {
+        throw new Error("openInvoiceViewer is not available.");
+      }
+
+      // 5) Grab payment panel controls
       const payPanel = document.getElementById("invViewPayPanel");
       const dateEl   = document.getElementById("invViewPayDate");
       const amtEl    = document.getElementById("invViewPayAmount");
       const bankEl   = document.getElementById("invViewPayBank");
       const refEl    = document.getElementById("invViewPayRef");
       const msgEl    = document.getElementById("invViewPayMsg");
+      const openBtn  = document.getElementById("invViewAllocatePayment");
 
       if (!payPanel || !dateEl || !amtEl || !bankEl || !refEl) {
         throw new Error("Invoice payment modal controls are not available.");
       }
 
-      // 3) open the allocation panel
+      // 6) Open allocate-payment panel
+      if (openBtn && payPanel.classList.contains("hidden")) {
+        openBtn.click();
+      }
       payPanel.classList.remove("hidden");
 
-      // 4) prefill values
+      // 7) Prefill values
       if (cashPayload.eventDate) {
         dateEl.value = cashPayload.eventDate;
       }
@@ -33855,24 +33875,22 @@ function bindAssetRecordsPickerModal({ cid }) {
         amtEl.value = String(cashPayload.amount);
       }
 
-      // reference: prefer contract no, otherwise invoice will still show in viewer header
+      if (cashPayload.bankAccountId) {
+        bankEl.value = String(cashPayload.bankAccountId);
+      }
+
       refEl.value =
         cashPayload.contractNumber ||
         refEl.value ||
         "";
 
-      if (cashPayload.bankAccountId) {
-        bankEl.value = String(cashPayload.bankAccountId);
-      }
-
       if (msgEl) {
-        msgEl.textContent =
-          cashPayload.notes
-            ? `From Revenue Desk: ${cashPayload.notes}`
-            : "Prefilled from Revenue Desk.";
+        msgEl.textContent = cashPayload.notes
+          ? `Prefilled from Revenue Desk: ${cashPayload.notes}`
+          : "Prefilled from Revenue Desk.";
       }
 
-      // optional: keep payload around for save handler / debugging
+      // 8) Keep for later success refresh/debugging
       window._REVENUE_CASH_REDIRECT_CTX = {
         invoiceId,
         ...cashPayload,
