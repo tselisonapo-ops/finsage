@@ -45890,6 +45890,7 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
     setModalButtonsDisabled?.(false);
   }
 }
+window.openInvoiceViewer = openInvoiceViewer;
 
 async function renderCustomerHighlightsInto(customerId, sumHost, actHost) {
   if (!sumHost || !actHost) return;
