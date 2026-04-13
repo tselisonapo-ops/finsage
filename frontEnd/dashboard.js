@@ -33555,9 +33555,15 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function renderContractKpis(c = {}) {
-    $("revKpiTxnPrice").textContent = money(c.transaction_price || 0);
-    $("revKpiRecognized").textContent = money(c.recognized_revenue_to_date || 0);
-    $("revKpiBilled").textContent = money(c.billed_to_date || 0);
+    const txn = num(c.transaction_price);
+    const recognized = num(c.recognized_revenue_to_date);
+    const billed = num(c.billed_to_date);
+    const ca = num(c.contract_asset_balance);
+    const cl = num(c.contract_liability_balance);
+
+    if ($("revKpiTxnPrice")) $("revKpiTxnPrice").textContent = money(txn);
+    if ($("revKpiRecognized")) $("revKpiRecognized").textContent = money(recognized);
+    if ($("revKpiBilled")) $("revKpiBilled").textContent = money(billed);
 
     let label = "Neutral";
 
@@ -33565,12 +33571,13 @@ function bindAssetRecordsPickerModal({ cid }) {
       label = `Asset ${money(ca)}`;
     } else if (cl > 0) {
       label = `Liability ${money(cl)}`;
-    } else if (num(c.recognized_revenue_to_date) !== num(c.billed_to_date)) {
-      const diff = num(c.recognized_revenue_to_date) - num(c.billed_to_date);
+    } else {
+      const diff = recognized - billed;
       if (diff > 0) label = `Asset ${money(diff)}`;
       else if (diff < 0) label = `Liability ${money(Math.abs(diff))}`;
     }
-    $("revKpiPosition").textContent = label;
+
+    if ($("revKpiPosition")) $("revKpiPosition").textContent = label;
   }
 
   function renderContractList() {
