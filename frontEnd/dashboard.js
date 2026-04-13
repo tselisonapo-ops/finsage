@@ -32961,10 +32961,11 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!layout || !sidebar || !body) return;
 
     if (pinned) {
+      // screens shift right
       layout.classList.remove("grid-cols-1");
       layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
 
-      sidebar.classList.remove("xl:w-[64px]");
+      sidebar.classList.remove("xl:w-full");
       sidebar.classList.add("xl:w-[280px]");
 
       body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
@@ -32975,6 +32976,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         pinBtn.title = "Unpin sidebar";
       }
     } else {
+      // header stays in place, screens use rest of space
       layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
       layout.classList.add("grid-cols-1");
 
@@ -33018,10 +33020,10 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (!sidebar || sidebar.dataset.boundRoll === "1") return;
 
-    state.revSidebarPinned = true;
+    state.revSidebarPinned = false;
 
-    // default = pinned/open
-    setRevenueSidebarPinnedLayout(true);
+    // default: unpinned, collapsed, header visible
+    setRevenueSidebarPinnedLayout(false);
 
     header?.addEventListener("mouseenter", () => {
       expandRevenueSidebarHover();
