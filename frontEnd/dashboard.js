@@ -32952,111 +32952,111 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-  function setRevenueSidebarPinnedLayout(pinned) {
-    const layout = $("revLayout");
-    const sidebar = $("revSidebar");
-    const body = $("revSidebarBody");
-    const pinBtn = $("revSidebarPinBtn");
-    const main = $("revMain");
+function setRevenueSidebarPinnedLayout(pinned) {
+  const layout = $("revLayout");
+  const sidebar = $("revSidebar");
+  const body = $("revSidebarBody");
+  const pinBtn = $("revSidebarPinBtn");
 
-    if (!layout || !sidebar || !body || !main) return;
+  if (!layout || !sidebar || !body) return;
 
-    if (pinned) {
-      // normal 2-column layout
-      layout.classList.remove("grid-cols-1");
-      layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
+  if (pinned) {
+    // Sidebar is part of the normal grid, screens shift right naturally
+    layout.classList.remove("grid-cols-1");
+    layout.classList.add("xl:grid-cols-[280px_minmax(0,1fr)]");
 
-      sidebar.classList.remove(
-        "absolute", "left-0", "top-0", "z-30", "w-[280px]"
-      );
-      sidebar.classList.add("self-start");
-
-      main.classList.remove("xl:col-span-1");
-      main.classList.add("xl:col-start-2");
-
-      body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
-      body.classList.add("max-h-[1200px]", "opacity-100");
-
-      if (pinBtn) {
-        pinBtn.textContent = "📍";
-        pinBtn.title = "Unpin sidebar";
-      }
-    } else {
-      // sidebar header floats, main uses full width
-      layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
-      layout.classList.add("grid-cols-1");
-
-      sidebar.classList.remove("self-start");
-      sidebar.classList.add(
-        "absolute", "left-0", "top-0", "z-30", "w-[280px]"
-      );
-
-      main.classList.remove("xl:col-start-2");
-      main.classList.add("xl:col-span-1");
-
-      body.classList.remove("max-h-[1200px]", "opacity-100");
-      body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
-
-      if (pinBtn) {
-        pinBtn.textContent = "📌";
-        pinBtn.title = "Pin sidebar";
-      }
-    }
-  }
-
-  function expandRevenueSidebarHover() {
-    if (state.revSidebarPinned) return;
-
-    const body = $("revSidebarBody");
-    if (!body) return;
+    sidebar.classList.remove(
+      "absolute",
+      "left-0",
+      "top-0",
+      "z-30",
+      "w-[280px]"
+    );
+    sidebar.classList.add("self-start");
 
     body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
     body.classList.add("max-h-[1200px]", "opacity-100");
-  }
 
-  function collapseRevenueSidebarHover() {
-    if (state.revSidebarPinned) return;
+    if (pinBtn) {
+      pinBtn.textContent = "📍";
+      pinBtn.title = "Unpin sidebar";
+    }
+  } else {
+    // Sidebar header stays there, body becomes dropdown overlay, screens use full width
+    layout.classList.remove("xl:grid-cols-[280px_minmax(0,1fr)]");
+    layout.classList.add("grid-cols-1");
 
-    const body = $("revSidebarBody");
-    if (!body) return;
+    sidebar.classList.remove("self-start");
+    sidebar.classList.add(
+      "absolute",
+      "left-0",
+      "top-0",
+      "z-30",
+      "w-[280px]"
+    );
 
     body.classList.remove("max-h-[1200px]", "opacity-100");
     body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
+
+    if (pinBtn) {
+      pinBtn.textContent = "📌";
+      pinBtn.title = "Pin sidebar";
+    }
   }
+}
 
-  function bindRevenueSidebarRollDown() {
-    const sidebar = $("revSidebar");
-    const header = $("revSidebarHeader");
-    const pinBtn = $("revSidebarPinBtn");
+function expandRevenueSidebarHover() {
+  if (state.revSidebarPinned) return;
 
-    if (!sidebar || sidebar.dataset.boundRoll === "1") return;
+  const body = $("revSidebarBody");
+  if (!body) return;
 
-    state.revSidebarPinned = false;
+  body.classList.remove("max-h-0", "opacity-0", "pointer-events-none");
+  body.classList.add("max-h-[1200px]", "opacity-100");
+}
 
-    // default collapsed but floating
-    setRevenueSidebarPinnedLayout(false);
+function collapseRevenueSidebarHover() {
+  if (state.revSidebarPinned) return;
 
-    header?.addEventListener("mouseenter", () => {
-      expandRevenueSidebarHover();
-    });
+  const body = $("revSidebarBody");
+  if (!body) return;
 
-    sidebar.addEventListener("mouseenter", () => {
-      expandRevenueSidebarHover();
-    });
+  body.classList.remove("max-h-[1200px]", "opacity-100");
+  body.classList.add("max-h-0", "opacity-0", "pointer-events-none");
+}
 
-    sidebar.addEventListener("mouseleave", () => {
-      collapseRevenueSidebarHover();
-    });
+function bindRevenueSidebarRollDown() {
+  const sidebar = $("revSidebar");
+  const header = $("revSidebarHeader");
+  const pinBtn = $("revSidebarPinBtn");
 
-    pinBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      state.revSidebarPinned = !state.revSidebarPinned;
-      setRevenueSidebarPinnedLayout(state.revSidebarPinned);
-    });
+  if (!sidebar || sidebar.dataset.boundRoll === "1") return;
 
-    sidebar.dataset.boundRoll = "1";
-  }
+  state.revSidebarPinned = false;
 
+  // default = collapsed, header fixed there
+  setRevenueSidebarPinnedLayout(false);
+
+  header?.addEventListener("mouseenter", () => {
+    expandRevenueSidebarHover();
+  });
+
+  sidebar.addEventListener("mouseenter", () => {
+    expandRevenueSidebarHover();
+  });
+
+  sidebar.addEventListener("mouseleave", () => {
+    collapseRevenueSidebarHover();
+  });
+
+  pinBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.revSidebarPinned = !state.revSidebarPinned;
+    setRevenueSidebarPinnedLayout(state.revSidebarPinned);
+  });
+
+  sidebar.dataset.boundRoll = "1";
+}
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
