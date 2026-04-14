@@ -33598,32 +33598,40 @@ class DatabaseService:
         _ = cur.fetchone()
 
         # publish engagement posting activity (TEMP hardcoded bridge for validation)
-        engagement_company_id = 8
-        engagement_id = 14
-
-        currency_code = (bill.get("currency") or "ZAR").strip() or "ZAR"
-
-        self.upsert_engagement_posting_activity(
-            cur,
-            company_id=int(engagement_company_id),
-            engagement_id=int(engagement_id),
-            posting_date=bdate,
-            module_name="accounts_payable",
-            event_type="posted",
-            reference_no=ref,
-            description=desc,
-            prepared_by_user_id=None,
-            reviewer_user_id=None,
-            status="posted",
-            amount=bill_total,
-            currency_code=currency_code,
-            source_table="bills",
-            source_id=int(bill_id),
-            notes=f"Bill posted to journal {journal_id}",
-            created_by_user_id=None,
-            updated_by_user_id=None,
+        engagement_company_id = (
+            bill.get("engagement_company_id")
+            or bill.get("source_company_id")
+            or company_id
         )
+        engagement_id = bill.get("engagement_id")
 
+        if engagement_company_id and engagement_id:
+            currency_code = (bill.get("currency") or "ZAR").strip() or "ZAR"
+
+            self.upsert_engagement_posting_activity(
+                cur,
+                company_id=int(engagement_company_id),
+                engagement_id=int(engagement_id),
+                posting_date=bdate,
+                module_name="accounts_payable",
+                event_type="posted",
+                reference_no=ref,
+                description=desc,
+                prepared_by_user_id=bill.get("prepared_by_user_id"),
+                reviewer_user_id=bill.get("reviewer_user_id"),
+                status="posted",
+                amount=bill_total,
+                currency_code=currency_code,
+                source_table="bills",
+                source_id=int(bill_id),
+                notes=f"Bill posted to journal {journal_id}",
+                created_by_user_id=bill.get("created_by_user_id"),
+                updated_by_user_id=bill.get("updated_by_user_id"),
+            )
+
+            print("[_post_bill_to_gl_cur] engagement activity recorded", flush=True)
+        else:
+            print("[_post_bill_to_gl_cur] engagement activity skipped (no engagement link)", flush=True)
         print("[_post_bill_to_gl_cur] engagement activity recorded", flush=True)
 
         return journal_id
@@ -37006,38 +37014,43 @@ class DatabaseService:
             if not _cur.fetchone():
                 return int(journal_id)
 
-            # 10) publish engagement posting activity (CRITICAL BRIDGE)
+            # 10) publish engagement posting activity only when invoice is engagement-linked
             try:
-                # 🔹 TEMP: replace this with real resolver later
-                # For now hardcode to validate pipeline
-                engagement_company_id = 8
-                engagement_id = 14
-
-                total_amount = money(inv.get("total_amount") or inv.get("total") or 0.0)
-                currency_code = (inv.get("currency") or "ZAR").strip() or "ZAR"
-
-                self.upsert_engagement_posting_activity(
-                    _cur,
-                    company_id=int(engagement_company_id),
-                    engagement_id=int(engagement_id),
-                    posting_date=inv_date,
-                    module_name="accounts_receivable",
-                    event_type="posted",
-                    reference_no=inv_no,
-                    description=desc,
-                    prepared_by_user_id=None,
-                    reviewer_user_id=None,
-                    status="posted",
-                    amount=total_amount,
-                    currency_code=currency_code,
-                    source_table="invoices",
-                    source_id=int(invoice_id),
-                    notes=f"Invoice posted to journal {journal_id}",
-                    created_by_user_id=None,
-                    updated_by_user_id=None,
+                engagement_company_id = (
+                    inv.get("engagement_company_id")
+                    or inv.get("source_company_id")
+                    or company_id
                 )
+                engagement_id = inv.get("engagement_id")
 
-                print("[post_invoice_to_gl] engagement activity recorded", flush=True)
+                if engagement_company_id and engagement_id:
+                    total_amount = money(inv.get("total_amount") or inv.get("total") or 0.0)
+                    currency_code = (inv.get("currency") or "ZAR").strip() or "ZAR"
+
+                    self.upsert_engagement_posting_activity(
+                        _cur,
+                        company_id=int(engagement_company_id),
+                        engagement_id=int(engagement_id),
+                        posting_date=inv_date,
+                        module_name="accounts_receivable",
+                        event_type="posted",
+                        reference_no=inv_no,
+                        description=desc,
+                        prepared_by_user_id=inv.get("prepared_by_user_id"),
+                        reviewer_user_id=inv.get("reviewer_user_id"),
+                        status="posted",
+                        amount=total_amount,
+                        currency_code=currency_code,
+                        source_table="invoices",
+                        source_id=int(invoice_id),
+                        notes=f"Invoice posted to journal {journal_id}",
+                        created_by_user_id=inv.get("created_by_user_id"),
+                        updated_by_user_id=inv.get("updated_by_user_id"),
+                    )
+
+                    print("[post_invoice_to_gl] engagement activity recorded", flush=True)
+                else:
+                    print("[post_invoice_to_gl] engagement activity skipped (no engagement link)", flush=True)
 
             except Exception as e:
                 print("[post_invoice_to_gl] engagement activity failed:", str(e), flush=True)

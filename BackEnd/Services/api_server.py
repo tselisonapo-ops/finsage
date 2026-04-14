@@ -6391,28 +6391,55 @@ def post_invoice(cid: int, invoice_id: int):
             require_approved=require_approved,
         )
 
-        db_service.set_invoice_status(company_id, invoice_id, "posted")
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
         posted["_posted_journal_id"] = journal_id
 
-        db_service.audit_log(
-            company_id=company_id,
-            actor_user_id=int(user.get("id") or 0),
-            module="ar",
-            action="post",
-            severity="info",
-            entity_type="invoice",
-            entity_id=str(invoice_id),
-            entity_ref=str((posted or {}).get("number") or invoice_id),
-            journal_id=int(journal_id) if journal_id else None,
-            customer_id=int((posted or {}).get("customer_id") or 0) or None,
-            amount=float((posted or {}).get("total_amount") or (posted or {}).get("gross_amount") or 0.0),
-            currency=(posted or {}).get("currency"),
-            before_json={},
-            after_json=posted or {},
-            message="Invoice posted to GL",
-        )
+        safe_journal_id = None
+        try:
+            jid = int(journal_id) if journal_id else None
+            if jid:
+                row = db_service.fetch_one(
+                    f"SELECT id FROM company_{company_id}.journal WHERE id = %s LIMIT 1",
+                    (jid,),
+                )
+                if row:
+                    safe_journal_id = jid
+                else:
+                    current_app.logger.warning(
+                        "post_invoice: journal_id %s not found after posting",
+                        jid,
+                    )
+        except Exception:
+            current_app.logger.exception(
+                "post_invoice: journal check failed | invoice_id=%s journal_id=%r",
+                invoice_id,
+                journal_id,
+            )
 
+        try:
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(user.get("id") or 0),
+                module="ar",
+                action="post",
+                severity="info",
+                entity_type="invoice",
+                entity_id=str(invoice_id),
+                entity_ref=str((posted or {}).get("number") or invoice_id),
+                journal_id=safe_journal_id,
+                customer_id=int((posted or {}).get("customer_id") or 0) or None,
+                amount=float((posted or {}).get("total_amount") or (posted or {}).get("gross_amount") or 0.0),
+                currency=(posted or {}).get("currency"),
+                before_json={},
+                after_json=posted or {},
+                message="Invoice posted to GL",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "post_invoice: audit_log failed | invoice_id=%s journal_id=%r",
+                invoice_id,
+                journal_id,
+            )
         return jsonify(posted), 200
 
     except Exception as e:
