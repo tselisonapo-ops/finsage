@@ -5838,43 +5838,44 @@ def create_invoice(cid: int):
         )
         current_app.logger.info("create_invoice: post_invoice_to_gl done journal_id=%s", journal_id)
 
-        current_app.logger.info("create_invoice: before set_invoice_status posted")
-        db_service.set_invoice_status(company_id, invoice_id, "posted")
-        current_app.logger.info("create_invoice: set_invoice_status done")
-
-        # >>> ADD THIS BLOCK HERE <<<
-        revenue_contract_id = header.get("revenue_contract_id")
-        if revenue_contract_id:
-            db_service.record_revenue_billing_event(
-                company_id=company_id,
-                contract_id=int(revenue_contract_id),
-                data={
-                    "event_date": header.get("invoice_date"),
-                    "event_type": "invoice",
-                    "source_invoice_id": int(invoice_id),
-                    # ✅ ADD THIS
-                    "obligation_id": int(
-                        next(
-                            (l.get("revenue_obligation_id") for l in inv.get("lines", []) if l.get("revenue_obligation_id")),
-                            0
-                        ) or 0
-                    ) or None,
-                    "amount": float(
-                        sum(
-                            (l.get("net_amount") or 0.0)
-                            for l in inv.get("lines", [])
-                            if l.get("revenue_obligation_id")
-                        )
-                    ),
-                    "currency": inv.get("currency") or header.get("currency") or "ZAR",
-                    "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-                    "payload_json": {
-                        "customer_id": int(cust_id),
-                        "source": "ar_invoice_post",
-                        "invoice_number": inv.get("number"),
+        try:
+            revenue_contract_id = header.get("revenue_contract_id")
+            if revenue_contract_id:
+                db_service.record_revenue_billing_event(
+                    company_id=company_id,
+                    contract_id=int(revenue_contract_id),
+                    data={
+                        "event_date": header.get("invoice_date"),
+                        "event_type": "invoice",
+                        "source_invoice_id": int(invoice_id),
+                        "obligation_id": int(
+                            next(
+                                (l.get("revenue_obligation_id") for l in inv.get("lines", []) if l.get("revenue_obligation_id")),
+                                0
+                            ) or 0
+                        ) or None,
+                        "amount": float(
+                            sum(
+                                (l.get("net_amount") or 0.0)
+                                for l in inv.get("lines", [])
+                                if l.get("revenue_obligation_id")
+                            )
+                        ),
+                        "currency": inv.get("currency") or header.get("currency") or "ZAR",
+                        "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                        "payload_json": {
+                            "customer_id": int(cust_id),
+                            "source": "ar_invoice_post",
+                            "invoice_number": inv.get("number"),
+                        },
                     },
-                },
-                user_id=int(user.get("id") or 0),
+                    user_id=int(user.get("id") or 0),
+                )
+        except Exception:
+            current_app.logger.exception(
+                "create_invoice: record_revenue_billing_event failed | invoice_id=%s contract_id=%r",
+                invoice_id,
+                header.get("revenue_contract_id"),
             )
 
         current_app.logger.info("create_invoice: before reload posted invoice")
