@@ -57682,13 +57682,27 @@ class DatabaseService:
             if not jlines:
                 raise ValueError("Recognition run has no journal lines")
 
+            run_period_end = run.get("period_end")
+            run_ref = f"REV-RUN-{int(run_id)}"
+            run_desc = f"Revenue recognition run {int(run_id)}"
+
+            entry = {
+                "date": run_period_end,
+                "ref": run_ref,
+                "description": run_desc,
+                "lines": jlines,
+                "source": "adjustment",
+                "source_id": int(run_id),
+                "currency": (run.get("currency") or "ZAR"),
+                # optional engagement fields if you later support them
+                "created_by_user_id": int(user_id or 0) or None,
+                "updated_by_user_id": int(user_id or 0) or None,
+            }
+
             journal_id = self.post_journal(
                 company_id=int(company_id),
-                source_module="revenue",
-                source_type="revenue_recognition_run",
-                source_id=int(run_id),
-                journal_lines=jlines,
-                user_id=int(user_id or 0) or None,
+                entry=entry,
+                cur=cur,
             )
 
             contract_ids = sorted({int(e["contract_id"]) for e in entries if e.get("contract_id")})
@@ -57840,13 +57854,27 @@ class DatabaseService:
                 ],
             )
 
+            run_period_end = run.get("period_end")
+            run_ref = f"REV-RUN-{int(run_id)}"
+            run_desc = f"Revenue recognition run {int(run_id)}"
+
+            entry = {
+                "date": run_period_end,
+                "ref": run_ref,
+                "description": run_desc,
+                "lines": reversed_lines,
+                "source": "adjustment",
+                "source_id": int(run_id),
+                "currency": (run.get("currency") or "ZAR"),
+                # optional engagement fields if you later support them
+                "created_by_user_id": int(user_id or 0) or None,
+                "updated_by_user_id": int(user_id or 0) or None,
+            }
+
             journal_id = self.post_journal(
                 company_id=int(company_id),
-                source_module="revenue",
-                source_type="revenue_recognition_reversal",
-                source_id=int(run_id),
-                journal_lines=reversed_lines,
-                user_id=int(user_id or 0) or None,
+                entry=entry,
+                cur=cur,
             )
 
             cur.execute(
