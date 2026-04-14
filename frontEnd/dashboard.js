@@ -44521,7 +44521,7 @@ function bindAR() {
       console.log("🧾 [Prefill] Header set");
 
       // 2. Load contracts for selected customer first
-      const contracts = await window.loadRevenueContractsForSelectedCustomer?.() || [];
+      const contracts = await window.loadRevenueContractsForSelectedCustomer?.(contractId) || [];
       console.log("📚 [Prefill] Contracts loaded:", contracts);
 
       window.toggleInvoiceContractUI?.({
@@ -44930,12 +44930,16 @@ function bindAR() {
   }
   window.bindInvoiceLineItemPicker = bindInvoiceLineItemPicker;
 
-  async function loadRevenueContractsForSelectedCustomer() {
+  async function loadRevenueContractsForSelectedCustomer(preferredContractId = null) {
     const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-    const customerId = document.getElementById("invCustomerId")?.value || "";
     const sel = document.getElementById("invRevenueContractId");
+    const customerIdEl = document.getElementById("invCustomerId");
+    const customerNameEl = document.getElementById("invCustomerName");
 
-    console.log("📚 [Contracts] cid =", cid, "customerId =", customerId);
+    let customerId = customerIdEl?.value || "";
+    const contractId = preferredContractId || sel?.value || "";
+
+    console.log("📚 [Contracts] cid =", cid, "customerId =", customerId, "preferredContractId =", contractId);
 
     if (!cid || !sel) {
       console.warn("❌ [Contracts] cid or contract select missing");
@@ -44944,18 +44948,41 @@ function bindAR() {
 
     sel.innerHTML = `<option value="">Select contract...</option>`;
 
-    if (!customerId) {
-      console.warn("⚠️ [Contracts] no customerId on invoice form");
-      toggleInvoiceContractUI({ hasCustomerContracts: false });
-      toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
-      return [];
-    }
-
     try {
       const res = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`, { method: "GET" });
       const items = res?.items || res?.data?.items || res?.data || [];
 
       console.log("📚 [Contracts] raw items =", items);
+
+      // ✅ derive customer from preferred/current contract if customer is blank
+      if (!customerId && contractId) {
+        const pickedContract = items.find(x => String(x.id) === String(contractId));
+        if (pickedContract) {
+          customerId = String(pickedContract.customer_id || "");
+          const customerName = String(pickedContract.customer_name || "");
+
+          if (customerIdEl) customerIdEl.value = customerId;
+          if (customerNameEl) customerNameEl.value = customerName;
+
+          window.CURRENT_INVOICE_CUSTOMER_ID = customerId ? Number(customerId) : null;
+          window.CURRENT_INVOICE_CUSTOMER = pickedContract.customer_id
+            ? { id: Number(pickedContract.customer_id), name: customerName }
+            : null;
+
+          console.log("🧠 [Contracts] derived customer from contract =", {
+            contractId,
+            customerId,
+            customerName,
+          });
+        }
+      }
+
+      if (!customerId) {
+        console.warn("⚠️ [Contracts] no customerId on invoice form");
+        toggleInvoiceContractUI({ hasCustomerContracts: false });
+        toggleInvoiceObligationUI({ hasRevenueContract: false, hasObligation: false });
+        return [];
+      }
 
       const mine = items.filter(x => String(x.customer_id || "") === String(customerId));
       console.log("📚 [Contracts] filtered =", mine);
@@ -44974,7 +45001,12 @@ function bindAR() {
           </option>
         `).join("");
 
+      if (contractId && mine.some(x => String(x.id) === String(contractId))) {
+        sel.value = String(contractId);
+      }
+
       toggleInvoiceContractUI({ hasCustomerContracts: true });
+
       return mine;
     } catch (e) {
       console.warn("[AR] loadRevenueContractsForSelectedCustomer failed", e);
@@ -45504,6 +45536,7 @@ function bindAR() {
     invCustomerNameEl.addEventListener("change", async () => {
       await window.loadRevenueContractsForSelectedCustomer?.();
       await window.loadInvoiceLineObligationsFromContract?.();
+
       toggleInvoiceObligationUI({
         hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
         hasObligation: !!document.querySelector("#invLines .inv-obligation")?.value,
