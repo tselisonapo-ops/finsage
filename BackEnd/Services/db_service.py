@@ -56523,29 +56523,43 @@ class DatabaseService:
 
     def _get_revenue_setup_accounts(self, company_id: int) -> dict:
         """
-        Resolve posting accounts from company account settings.
-        Adjust the setting keys below to match your actual settings table.
+        Resolve IFRS 15 posting accounts by role / mapping, not raw company settings.
         """
-        settings = self.get_company_account_settings(company_id) or {}
+        acct_map = self.resolve_ifrs15_accounts(company_id) or {}
 
-        def resolve_code(setting_key: str, label: str) -> str:
-            raw = (settings.get(setting_key) or "").strip()
-            if not raw:
-                raise ValueError(f"{label} control not set")
-            row = self.get_account_row_for_posting(company_id, raw)
-            if not row:
-                raise ValueError(f"{label} control '{raw}' not found in COA")
-            code = (row[1] or "").strip()
-            if not code:
-                raise ValueError(f"{label} resolved blank posting code")
-            return code
+        revenue_code = (
+            acct_map.get("revenue_code")
+            or acct_map.get("revenue")
+            or acct_map.get("revenue_account_code")
+            or ""
+        ).strip()
+
+        contract_asset_code = (
+            acct_map.get("contract_asset_code")
+            or acct_map.get("contract_asset")
+            or acct_map.get("contract_asset_account_code")
+            or ""
+        ).strip()
+
+        contract_liability_code = (
+            acct_map.get("contract_liability_code")
+            or acct_map.get("contract_liability")
+            or acct_map.get("contract_liability_account_code")
+            or ""
+        ).strip()
+
+        if not revenue_code:
+            raise ValueError("Revenue control code is not configured")
+        if not contract_asset_code:
+            raise ValueError("Contract asset control code is not configured")
+        if not contract_liability_code:
+            raise ValueError("Contract liability control code is not configured")
 
         return {
-            "revenue_code": resolve_code("revenue_control_code", "Revenue"),
-            "contract_asset_code": resolve_code("contract_asset_control_code", "Contract asset"),
-            "contract_liability_code": resolve_code("contract_liability_control_code", "Contract liability"),
+            "revenue_code": revenue_code,
+            "contract_asset_code": contract_asset_code,
+            "contract_liability_code": contract_liability_code,
         }
-
 
     def _point_in_time_satisfied(self, obligation: dict, period_end) -> bool:
         """
@@ -57474,19 +57488,12 @@ class DatabaseService:
     def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
         from decimal import Decimal, ROUND_HALF_UP
 
-        settings = self.get_company_account_settings(company_id) or {}
+        acct = self._get_revenue_setup_accounts(company_id)
 
-        revenue_code = (settings.get("revenue_control_code") or settings.get("default_revenue_code") or "").strip()
-        contract_asset_code = (settings.get("contract_asset_code") or "BS_CA_1716").strip()
-        contract_liability_code = (settings.get("contract_liability_code") or "BS_CL_2700").strip()
-
-        if not revenue_code:
-            raise ValueError("Revenue control code is not configured")
-        if not contract_asset_code:
-            raise ValueError("Contract asset code is not configured")
-        if not contract_liability_code:
-            raise ValueError("Contract liability code is not configured")
-
+        revenue_code = acct["revenue_code"]
+        contract_asset_code = acct["contract_asset_code"]
+        contract_liability_code = acct["contract_liability_code"]
+        
         def q2(v) -> Decimal:
             return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
