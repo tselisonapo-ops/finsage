@@ -5490,6 +5490,116 @@ function getStoredUser() {
   }
 }
 
+async function renderActionRequired(periodKey = "this_month") {
+  const host = document.getElementById("actionsList");
+  if (!host) return;
+
+  try {
+    const snap = await getDashboardData(periodKey);
+
+    const aging = snap?.aging || {};
+    const vat = snap?.vat || {};
+    const bs = snap?.balanceSheet || {};
+    const counts = snap?.counts || {};
+
+    const ar = aging?.ar || {};
+    const ap = aging?.ap || {};
+
+    const arOverdue =
+      Number(ar["61_90"] || 0) +
+      Number(ar["91_120"] || 0) +
+      Number(ar["121_plus"] || 0);
+
+    const apOverdue =
+      Number(ap["61_90"] || 0) +
+      Number(ap["91_plus"] || 0);
+
+    const vatNet = Number(vat?.net || 0);
+    const bsCheck = Number(bs?.check || 0);
+    const customers = Number(counts?.customers || 0);
+    const vendors = Number(counts?.vendors || 0);
+
+    const items = [];
+
+    // 🔴 High priority
+    if (arOverdue > 0) {
+      items.push({
+        text: `Overdue receivables of ${money(arOverdue)} require follow-up.`,
+        tone: "red",
+      });
+    }
+
+    if (apOverdue > 0) {
+      items.push({
+        text: `Outstanding payables of ${money(apOverdue)} may require settlement.`,
+        tone: "amber",
+      });
+    }
+
+    if (Math.abs(bsCheck) > 1) {
+      items.push({
+        text: `Balance sheet imbalance of ${money(bsCheck)} detected.`,
+        tone: "red",
+      });
+    }
+
+    if (vatNet > 0) {
+      items.push({
+        text: `VAT payable of ${money(vatNet)} is due.`,
+        tone: "amber",
+      });
+    }
+
+    // 🟡 Medium priority
+    if (customers === 0) {
+      items.push({
+        text: "No customers created yet.",
+        tone: "blue",
+      });
+    }
+
+    if (vendors === 0) {
+      items.push({
+        text: "No vendors created yet.",
+        tone: "blue",
+      });
+    }
+
+    // ✅ No issues
+    if (items.length === 0) {
+      host.innerHTML = `
+        <li class="text-emerald-600 text-sm">
+          ✔ No immediate actions required.
+        </li>
+      `;
+      return;
+    }
+
+    // 🎨 Render list
+    host.innerHTML = items
+      .map((i) => {
+        const color =
+          i.tone === "red"
+            ? "text-red-600"
+            : i.tone === "amber"
+            ? "text-amber-600"
+            : "text-blue-600";
+
+        return `<li class="text-sm ${color}">• ${i.text}</li>`;
+      })
+      .join("");
+  } catch (e) {
+    console.error("renderActionRequired error:", e);
+    host.innerHTML = `
+      <li class="text-slate-500 text-sm">
+        Unable to load actions at the moment.
+      </li>
+    `;
+  }
+}
+
+window.renderActionRequired = renderActionRequired;
+
 function getDashboardRole() {
   const me = window.currentUser || {};
   const role = String(window.getCurrentRole?.() || me.role || "viewer").toLowerCase();
