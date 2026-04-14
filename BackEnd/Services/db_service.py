@@ -37045,12 +37045,27 @@ class DatabaseService:
             return int(journal_id)
 
         if cur is not None:
-            return _run(cur)
+            jid = _run(cur)
+
+            cur.execute(f"SELECT 1 FROM {schema}.journal WHERE id = %s", (jid,))
+            if not cur.fetchone():
+                raise Exception(f"Journal insert failed inside transaction, id={jid}")
+
+            return jid
 
         with self._conn_cursor() as (conn, _cur):
             try:
                 jid = _run(_cur)
                 conn.commit()
+
+                # 🔥 VERIFY journal actually exists
+                check_sql = f"SELECT 1 FROM {schema}.journal WHERE id = %s"
+                _cur.execute(check_sql, (jid,))
+                exists = _cur.fetchone()
+
+                if not exists:
+                    raise Exception(f"Journal insert failed or rolled back, id={jid}")
+
                 return jid
             except Exception:
                 conn.rollback()

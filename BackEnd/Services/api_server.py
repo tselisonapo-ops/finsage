@@ -5886,12 +5886,25 @@ def create_invoice(cid: int):
         safe_journal_id = None
         try:
             jid = int(journal_id) if journal_id else None
-            if jid and getattr(db_service, "journal_exists", None):
-                if db_service.journal_exists(jid):
+            if jid:
+                row = db_service.fetch_one(
+                    f"SELECT id FROM company_{company_id}.journal WHERE id = %s LIMIT 1",
+                    (jid,),
+                )
+                if row:
                     safe_journal_id = jid
-            else:
-                safe_journal_id = None
+                else:
+                    current_app.logger.warning(
+                        "create_invoice: journal_id %s not found in company_%s.journal after posting",
+                        jid,
+                        company_id,
+                    )
         except Exception:
+            current_app.logger.exception(
+                "create_invoice: failed checking journal existence | invoice_id=%s journal_id=%r",
+                invoice_id,
+                journal_id,
+            )
             safe_journal_id = None
 
         try:
