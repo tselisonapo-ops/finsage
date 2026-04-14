@@ -400,6 +400,23 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
 
     body = request.get_json(silent=True) or {}
 
+    # ✅ normalize obligation timing payload
+    timing = str(body.get("recognition_timing") or "over_time").strip().lower()
+    body["recognition_timing"] = timing
+
+    if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
+        body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower()
+
+    if timing == "point_in_time":
+        body["progress_method"] = None
+        body["expected_total_cost"] = 0.0
+        body["actual_cost_to_date"] = 0.0
+        body["progress_percent"] = 0.0
+    else:
+        body["recognized_at_point_in_time_date"] = None
+        body["recognition_trigger"] = None
+        body["progress_method"] = str(body.get("progress_method") or "cost_to_cost").strip().lower()
+
     try:
         out = db_service.add_revenue_obligation(
             company_id, contract_id, body, user_id=user_id
@@ -550,7 +567,34 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
         return deny
 
     user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
     body = request.get_json(silent=True) or {}
+
+    # ✅ normalize obligation timing payload
+    if "recognition_timing" in body and body.get("recognition_timing") is not None:
+        body["recognition_timing"] = str(body.get("recognition_timing") or "").strip().lower()
+
+    if "progress_method" in body and body.get("progress_method") is not None:
+        body["progress_method"] = str(body.get("progress_method") or "").strip().lower()
+
+    if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
+        body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower()
+
+    timing = body.get("recognition_timing")
+
+    if timing == "point_in_time":
+        body["progress_method"] = None
+        body["expected_total_cost"] = 0.0
+        body["actual_cost_to_date"] = 0.0
+        body["progress_percent"] = 0.0
+
+    elif timing == "over_time":
+        body["recognized_at_point_in_time_date"] = None
+        body["recognition_trigger"] = None
+        if not body.get("progress_method"):
+            body["progress_method"] = "cost_to_cost"
 
     try:
         out = db_service.update_revenue_obligation(company_id, obligation_id, body, user_id=user_id)
@@ -577,7 +621,6 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
     except Exception as e:
         current_app.logger.exception("update_revenue_obligation failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @revenue_bp.route(
     "/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/billings",

@@ -33041,6 +33041,28 @@ function bindAssetRecordsPickerModal({ cid }) {
     sidebar.dataset.boundRoll = "1";
   }
 
+  function getExpectedPositionFromSettlementPattern(pattern) {
+    const v = String(pattern || "").trim().toLowerCase();
+
+    if (v === "billing_before_revenue" || v === "cash_before_service") {
+      return "Liability expected first";
+    }
+    if (v === "revenue_before_billing") {
+      return "Asset expected first";
+    }
+    return "Neutral / depends on activity";
+  }
+
+  function getCurrentPositionFromContract(c = {}) {
+    const recognized = num(c.recognized_revenue_to_date);
+    const billed = num(c.billed_to_date);
+    const net = billed - recognized;
+
+    if (net > 0) return `Liability ${money(net)}`;
+    if (net < 0) return `Asset ${money(Math.abs(net))}`;
+    return "Neutral";
+  }
+
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
@@ -33106,9 +33128,17 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
       pitBlock?.classList.remove("hidden");
+
+      if ($("revProgressMethod")) $("revProgressMethod").value = "";
     } else {
       overTimeBlock?.classList.remove("hidden");
       pitBlock?.classList.add("hidden");
+
+      if ($("revProgressMethod") && !$("revProgressMethod").value) {
+        $("revProgressMethod").value = "cost_to_cost";
+      }
+      if ($("revPitDate")) $("revPitDate").value = $("revPitDate").value || "";
+      if ($("revPitTrigger")) $("revPitTrigger").value = "";
     }
   }
 
@@ -33583,6 +33613,9 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revObligationName").value = displayName;
     $("revRecognitionTiming").value = o.recognition_timing || "over_time";
     $("revProgressMethod").value = o.progress_method || "cost_to_cost";
+    if ($("revPitTrigger")) {
+      $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
+    }
     $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
     $("revAllocatedPrice").value = num(o.allocated_transaction_price).toFixed(2);
     $("revExpectedCost").value = num(o.expected_total_cost).toFixed(2);
@@ -33655,10 +33688,10 @@ function bindAssetRecordsPickerModal({ cid }) {
       allocated_transaction_price: num($("revAllocatedPrice")?.value),
       expected_total_cost: num($("revExpectedCost")?.value),
       recognized_at_point_in_time_date: $("revPitDate")?.value || null,
+      recognition_trigger: $("revPitTrigger")?.value || null,
       distinct_flag: !!$("revDistinctFlag")?.checked,
       notes: $("revObligationNotes")?.value || "",
 
-      // new linkage
       catalog_item_type: picked?.type || null,
       catalog_item_id: picked?.id || null,
       catalog_item_code: picked?.code || null,
@@ -33714,41 +33747,28 @@ function bindAssetRecordsPickerModal({ cid }) {
     const txn = num(c.transaction_price);
     const recognized = num(c.recognized_revenue_to_date);
     const billed = num(c.billed_to_date);
-    const ca = num(c.contract_asset_balance);
-    const cl = num(c.contract_liability_balance);
 
     if ($("revKpiTxnPrice")) $("revKpiTxnPrice").textContent = money(txn);
     if ($("revKpiRecognized")) $("revKpiRecognized").textContent = money(recognized);
     if ($("revKpiBilled")) $("revKpiBilled").textContent = money(billed);
 
+    const net = billed - recognized;
+
     let label = "Neutral";
-    let cls = "px-2 py-1 rounded bg-slate-100 text-slate-600"; // ⚪ default badge
+    let cls = "px-2 py-1 rounded bg-slate-100 text-slate-600";
 
-    if (ca > 0) {
-      label = `▲ Asset ${money(ca)}`;
-      cls = "px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-semibold";
-    } else if (cl > 0) {
-      label = `▼ Liability ${money(cl)}`;
+    if (net > 0) {
+      label = `▼ Liability ${money(net)}`;
       cls = "px-2 py-1 rounded bg-rose-100 text-rose-700 font-semibold";
-    } else {
-      const diff = recognized - billed;
-
-      if (diff > 0) {
-        label = `▲ Asset ${money(diff)}`;
-        cls = "px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-semibold";
-      } else if (diff < 0) {
-        label = `▼ Liability ${money(Math.abs(diff))}`;
-        cls = "px-2 py-1 rounded bg-rose-100 text-rose-700 font-semibold";
-      }
+    } else if (net < 0) {
+      label = `▲ Asset ${money(Math.abs(net))}`;
+      cls = "px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-semibold";
     }
 
     const el = $("revKpiPosition");
     if (el) {
       el.textContent = label;
-
-      // ✅ preserve layout + add smooth transition
       el.className = "inline-block transition-all duration-200";
-
       el.classList.add(...cls.split(" "));
     }
   }

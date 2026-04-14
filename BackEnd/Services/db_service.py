@@ -18892,6 +18892,7 @@ class DatabaseService:
             revenue_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
 
             recognized_at_point_in_time_date DATE NULL,
+            recognition_trigger TEXT NULL,
             notes TEXT NULL,
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
@@ -18904,6 +18905,9 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_revenue_obligations_contract_idx
         ON {schema}.revenue_obligations(contract_id, obligation_status);
+
+        ALTER TABLE {schema}.revenue_obligations
+        ADD COLUMN IF NOT EXISTS recognition_trigger TEXT NULL;
 
         DO $$
         BEGIN
@@ -55790,30 +55794,43 @@ class DatabaseService:
 
     def list_revenue_contracts(self, company_id: int, limit: int = 100, q: str | None = None, status: str | None = None):
         schema = self.company_schema(company_id)
-        where = ["company_id = %s"]
+
+        where = ["rc.company_id = %s"]
         params = [int(company_id)]
 
         if q:
-            where.append("(contract_number ILIKE %s OR contract_title ILIKE %s)")
+            where.append("(rc.contract_number ILIKE %s OR rc.contract_title ILIKE %s OR c.name ILIKE %s)")
             like = f"%{q.strip()}%"
-            params += [like, like]
+            params += [like, like, like]
 
         if status:
-            where.append("status = %s")
+            where.append("rc.status = %s")
             params.append(status)
 
         sql = f"""
             SELECT
                 rc.*,
-                c.name AS customer_name
+                c.name AS customer_name,
+
+                COALESCE(rc.payload_json->>'settlement_pattern', '') AS settlement_pattern,
+
+                CASE
+                    WHEN COALESCE(rc.billed_to_date, 0) - COALESCE(rc.recognized_revenue_to_date, 0) > 0 THEN 'liability'
+                    WHEN COALESCE(rc.billed_to_date, 0) - COALESCE(rc.recognized_revenue_to_date, 0) < 0 THEN 'asset'
+                    ELSE 'neutral'
+                END AS contract_position_type,
+
+                ABS(COALESCE(rc.billed_to_date, 0) - COALESCE(rc.recognized_revenue_to_date, 0)) AS contract_position_amount
+
             FROM {schema}.revenue_contracts rc
             LEFT JOIN {schema}.customers c
             ON c.id = rc.customer_id
-            WHERE {" AND ".join(where).replace("company_id = %s", "rc.company_id = %s").replace("contract_number ILIKE %s OR contract_title ILIKE %s", "rc.contract_number ILIKE %s OR rc.contract_title ILIKE %s").replace("status = %s", "rc.status = %s")}
+            WHERE {" AND ".join(where)}
             ORDER BY rc.created_at DESC, rc.id DESC
             LIMIT %s
         """
         params.append(int(limit))
+
         return self.fetch_all(sql, tuple(params)) or []
 
     def list_revenue_recognition_runs(self, company_id: int, limit: int = 50, contract_id: int | None = None):
@@ -56100,13 +56117,18 @@ class DatabaseService:
             if timing not in {"over_time", "point_in_time"}:
                 raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
 
+            pit_trigger = (data.get("recognition_trigger") or "").strip().lower()
+
             if timing == "point_in_time":
                 if not pit_date:
                     raise ValueError("Point-in-time obligations require a satisfaction date.")
+                if not pit_trigger:
+                    raise ValueError("Point-in-time obligations require a recognition trigger.")
 
                 data["expected_total_cost"] = 0.0
                 data["actual_cost_to_date"] = 0.0
                 data["progress_percent"] = 0.0
+                data["progress_method"] = None
 
             if timing == "over_time":
                 if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
@@ -56122,6 +56144,7 @@ class DatabaseService:
             payload_json["catalog_item_id"] = data.get("catalog_item_id")
             payload_json["catalog_item_code"] = data.get("catalog_item_code")
             payload_json["catalog_item_label"] = data.get("catalog_item_label")
+            payload_json["recognition_trigger"] = data.get("recognition_trigger")
                 
             cur.execute(
                 f"""
@@ -56130,14 +56153,14 @@ class DatabaseService:
                     distinct_flag, recognition_timing, progress_method, obligation_status,
                     standalone_selling_price, allocated_transaction_price,
                     expected_total_cost, actual_cost_to_date, progress_percent, revenue_to_date,
-                    recognized_at_point_in_time_date, notes, payload_json
+                    recognized_at_point_in_time_date, recognition_trigger, notes, payload_json
                 )
                 VALUES (
                     %s,%s,%s,%s,
                     %s,%s,%s,%s,
                     %s,%s,
                     %s,%s,%s,%s,
-                    %s,%s,%s::jsonb
+                    %s,%s,%s,%s::jsonb
                 )
                 RETURNING *;
                 """,
@@ -56148,7 +56171,7 @@ class DatabaseService:
                     (data.get("obligation_name") or "").strip(),
                     bool(data.get("distinct_flag", True)),
                     (data.get("recognition_timing") or "over_time").strip().lower(),
-                    (data.get("progress_method") or "cost_to_cost").strip().lower(),
+                    ((data.get("progress_method") or "cost_to_cost").strip().lower() if timing == "over_time" else None),
                     (data.get("obligation_status") or "draft").strip().lower(),
                     float(data.get("standalone_selling_price") or 0.0),
                     float(data.get("allocated_transaction_price") or 0.0),
@@ -56157,6 +56180,7 @@ class DatabaseService:
                     float(data.get("progress_percent") or 0.0),
                     float(data.get("revenue_to_date") or 0.0),
                     data.get("recognized_at_point_in_time_date"),
+                    data.get("recognition_trigger"),
                     data.get("notes"),
                     _json_dumps(payload_json),
                 )
@@ -56178,10 +56202,18 @@ class DatabaseService:
             if not before:
                 raise ValueError("Revenue obligation not found")
 
-            timing = (data.get("recognition_timing") if data.get("recognition_timing") not in (None, "") else before.get("recognition_timing") or "over_time")
+            timing = (
+                data.get("recognition_timing")
+                if data.get("recognition_timing") not in (None, "")
+                else before.get("recognition_timing") or "over_time"
+            )
             timing = str(timing).strip().lower()
 
-            progress_method = (data.get("progress_method") if data.get("progress_method") not in (None, "") else before.get("progress_method") or "cost_to_cost")
+            progress_method = (
+                data.get("progress_method")
+                if data.get("progress_method") not in (None, "")
+                else before.get("progress_method") or "cost_to_cost"
+            )
             progress_method = str(progress_method).strip().lower()
 
             expected_total_cost = (
@@ -56196,17 +56228,35 @@ class DatabaseService:
                 else before.get("recognized_at_point_in_time_date")
             )
 
+            before_payload = before.get("payload_json") or {}
+            if isinstance(before_payload, str):
+                try:
+                    before_payload = json.loads(before_payload)
+                except Exception:
+                    before_payload = {}
+
+            pit_trigger = (
+                data.get("recognition_trigger")
+                if "recognition_trigger" in data
+                else before.get("recognition_trigger")
+                or before_payload.get("recognition_trigger")
+            )
+            pit_trigger = (pit_trigger or "").strip().lower()
+
             if timing not in {"over_time", "point_in_time"}:
                 raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
 
             if timing == "point_in_time":
                 if not pit_date:
                     raise ValueError("Point-in-time obligations require a satisfaction date.")
+                if not pit_trigger:
+                    raise ValueError("Point-in-time obligations require a recognition trigger.")
 
-                # cleanup conflicting over-time fields
+                # cleanup over-time specific fields
                 data["expected_total_cost"] = 0.0
                 data["actual_cost_to_date"] = 0.0
                 data["progress_percent"] = 0.0
+                data["progress_method"] = None
 
             if timing == "over_time":
                 if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
@@ -56215,10 +56265,11 @@ class DatabaseService:
                 if progress_method == "cost_to_cost" and expected_total_cost <= 0:
                     raise ValueError("Over-time obligations using cost-to-cost require expected total cost.")
 
-                # cleanup conflicting point-in-time trigger
+                # cleanup point-in-time specific fields
                 data["recognized_at_point_in_time_date"] = None
+                data["recognition_trigger"] = None
 
-            payload_json = dict(before.get("payload_json") or {})
+            payload_json = dict(before_payload)
 
             if "payload_json" in data and isinstance(data.get("payload_json"), dict):
                 payload_json.update(data.get("payload_json") or {})
@@ -56231,6 +56282,8 @@ class DatabaseService:
                 payload_json["catalog_item_code"] = data.get("catalog_item_code")
             if "catalog_item_label" in data:
                 payload_json["catalog_item_label"] = data.get("catalog_item_label")
+            if "recognition_trigger" in data:
+                payload_json["recognition_trigger"] = data.get("recognition_trigger")
 
             cur.execute(
                 f"""
@@ -56248,6 +56301,7 @@ class DatabaseService:
                     progress_percent = COALESCE(%s, progress_percent),
                     revenue_to_date = COALESCE(%s, revenue_to_date),
                     recognized_at_point_in_time_date = %s,
+                    recognition_trigger = %s,
                     notes = COALESCE(%s, notes),
                     payload_json = COALESCE(%s::jsonb, payload_json),
                     updated_at = NOW()
@@ -56258,7 +56312,7 @@ class DatabaseService:
                     (data.get("obligation_name") or "").strip(),
                     data.get("distinct_flag"),
                     (data.get("recognition_timing") or "").strip().lower(),
-                    (data.get("progress_method") or "").strip().lower(),
+                    ((data.get("progress_method") or "").strip().lower() if data.get("progress_method") is not None else None),
                     (data.get("obligation_status") or "").strip().lower(),
                     float(data["standalone_selling_price"]) if data.get("standalone_selling_price") is not None else None,
                     float(data["allocated_transaction_price"]) if data.get("allocated_transaction_price") is not None else None,
@@ -56267,6 +56321,7 @@ class DatabaseService:
                     float(data["progress_percent"]) if data.get("progress_percent") is not None else None,
                     float(data["revenue_to_date"]) if data.get("revenue_to_date") is not None else None,
                     data.get("recognized_at_point_in_time_date"),
+                    data.get("recognition_trigger"),
                     data.get("notes"),
                     _json_dumps(payload_json),
                     int(obligation_id),
@@ -56566,15 +56621,9 @@ class DatabaseService:
         }
 
     def _point_in_time_satisfied(self, obligation: dict, period_end) -> bool:
-        """
-        MVP rule:
-        - if recognized_at_point_in_time_date exists and is <= period_end => satisfied
-        - OR payload_json.manual_pit_satisfied = true
-        """
         pe = self._as_date(period_end)
         pit_date = self._as_date(obligation.get("recognized_at_point_in_time_date"))
-        if pit_date and pe and pit_date <= pe:
-            return True
+        trigger = (obligation.get("recognition_trigger") or "").strip()
 
         payload = obligation.get("payload_json") or {}
         if isinstance(payload, str):
@@ -56583,8 +56632,13 @@ class DatabaseService:
             except Exception:
                 payload = {}
 
-        return bool(payload.get("manual_pit_satisfied"))
+        if not trigger:
+            trigger = (payload.get("recognition_trigger") or "").strip()
 
+        if pit_date and pe and pit_date <= pe and trigger:
+            return True
+
+        return bool(payload.get("manual_pit_satisfied"))
 
     def _obligation_progress_pct(self, obligation: dict, period_end) -> Decimal:
         """
@@ -56815,6 +56869,8 @@ class DatabaseService:
         }
 
     def preview_revenue_recognition_run(self, company_id: int, period_start, period_end, contract_id: int | None = None) -> dict:
+        from decimal import Decimal
+
         schema = self.company_schema(company_id)
 
         period_start_s = str(period_start) if period_start is not None else None
@@ -56834,7 +56890,9 @@ class DatabaseService:
                 cur=cur,
             ) or []
 
-            preview_entries = []
+            preview_contracts = []
+            flat_entries = []
+
             total_rev = Decimal("0.00")
             total_ca = Decimal("0.00")
             total_cl = Decimal("0.00")
@@ -56878,6 +56936,11 @@ class DatabaseService:
                 )).quantize(Decimal("0.01"))
 
                 obligation_count = len(obligations)
+
+                contract_entries = []
+                contract_rev = Decimal("0.00")
+                contract_ca = Decimal("0.00")
+                contract_cl = Decimal("0.00")
 
                 for obl in obligations:
                     latest_prog = self.fetch_one(
@@ -56995,6 +57058,7 @@ class DatabaseService:
                     entry = {
                         "contract_id": int(c["id"]),
                         "contract_number": c.get("contract_number"),
+                        "contract_title": c.get("contract_title"),
                         "obligation_id": int(obl["id"]),
                         "obligation_code": obl.get("obligation_code"),
                         "obligation_name": obl.get("obligation_name"),
@@ -57020,11 +57084,35 @@ class DatabaseService:
                             "new_position": float(new_position),
                         },
                     }
-                    preview_entries.append(entry)
 
-                    total_rev += delta
-                    total_ca += ca_delta
-                    total_cl += cl_delta
+                    contract_entries.append(entry)
+                    flat_entries.append(entry)
+
+                    contract_rev += delta
+                    contract_ca += ca_delta
+                    contract_cl += cl_delta
+
+                # include contract block only if it has something to recognize
+                if contract_entries:
+                    preview_contracts.append({
+                        "contract_id": int(c["id"]),
+                        "contract_number": c.get("contract_number"),
+                        "contract_title": c.get("contract_title"),
+                        "customer_id": c.get("customer_id"),
+                        "customer_name": c.get("customer_name"),
+                        "period_start": period_start_s,
+                        "period_end": period_end_s,
+                        "entries": contract_entries,
+                        "totals": {
+                            "total_revenue_delta": float(contract_rev.quantize(Decimal("0.01"))),
+                            "total_contract_asset_delta": float(contract_ca.quantize(Decimal("0.01"))),
+                            "total_contract_liability_delta": float(contract_cl.quantize(Decimal("0.01"))),
+                        },
+                    })
+
+                    total_rev += contract_rev
+                    total_ca += contract_ca
+                    total_cl += contract_cl
 
             return {
                 "ok": True,
@@ -57032,14 +57120,20 @@ class DatabaseService:
                 "contract_id": int(contract_id) if contract_id else None,
                 "period_start": period_start_s,
                 "period_end": period_end_s,
-                "entries": preview_entries,
+
+                # ✅ grouped output first
+                "contracts": preview_contracts,
+
+                # ✅ keep flat entries too for compatibility with existing UI
+                "entries": flat_entries,
+
                 "totals": {
                     "total_revenue_delta": float(total_rev.quantize(Decimal("0.01"))),
                     "total_contract_asset_delta": float(total_ca.quantize(Decimal("0.01"))),
                     "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
                 },
             }
-        
+    
     def _validate_revenue_recognition_chain(
         self,
         company_id: int,
@@ -57703,6 +57797,18 @@ class DatabaseService:
                 company_id=int(company_id),
                 entry=entry,
                 cur=cur,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_recognition_runs
+                SET status='posted',
+                    journal_id=%s,
+                    posted_by_user_id=%s,
+                    posted_at=NOW()
+                WHERE id=%s
+                """,
+                (int(journal_id), int(user_id or 0) or None, int(run_id))
             )
 
             contract_ids = sorted({int(e["contract_id"]) for e in entries if e.get("contract_id")})
