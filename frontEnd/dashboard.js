@@ -34378,26 +34378,21 @@ function bindAssetRecordsPickerModal({ cid }) {
         cashPayload,
       });
 
-      // 1) Switch to AR invoices screen first
       await switchScreen("ar-invoices");
 
-      // 2) Make sure invoice pane is showing, not quotes
       if (typeof window.showArPane === "function") {
         window.showArPane("invoices");
       }
 
-      // 3) Wait for invoice viewer controls to exist
       await window.waitForElement?.("invoiceViewerModal", 4000);
       await window.waitForElement?.("invViewPayPanel", 4000);
 
-      // 4) Open invoice viewer
       if (typeof window.openInvoiceViewer === "function") {
         await window.openInvoiceViewer(invoiceId);
       } else {
         throw new Error("openInvoiceViewer is not available.");
       }
 
-      // 5) Grab payment panel controls
       const payPanel = document.getElementById("invViewPayPanel");
       const dateEl   = document.getElementById("invViewPayDate");
       const amtEl    = document.getElementById("invViewPayAmount");
@@ -34410,13 +34405,28 @@ function bindAssetRecordsPickerModal({ cid }) {
         throw new Error("Invoice payment modal controls are not available.");
       }
 
-      // 6) Open allocate-payment panel
+      // hidden revenue context fields
+      let revContractEl = document.getElementById("invViewPayRevenueContractId");
+      if (!revContractEl) {
+        revContractEl = document.createElement("input");
+        revContractEl.type = "hidden";
+        revContractEl.id = "invViewPayRevenueContractId";
+        payPanel.appendChild(revContractEl);
+      }
+
+      let revObligationEl = document.getElementById("invViewPayRevenueObligationId");
+      if (!revObligationEl) {
+        revObligationEl = document.createElement("input");
+        revObligationEl.type = "hidden";
+        revObligationEl.id = "invViewPayRevenueObligationId";
+        payPanel.appendChild(revObligationEl);
+      }
+
       if (openBtn && payPanel.classList.contains("hidden")) {
         openBtn.click();
       }
       payPanel.classList.remove("hidden");
 
-      // 7) Prefill values
       if (cashPayload.eventDate) {
         dateEl.value = cashPayload.eventDate;
       }
@@ -34434,13 +34444,16 @@ function bindAssetRecordsPickerModal({ cid }) {
         refEl.value ||
         "";
 
+      // bind revenue context for save step
+      revContractEl.value = cashPayload.contractId ? String(cashPayload.contractId) : "";
+      revObligationEl.value = cashPayload.obligationId ? String(cashPayload.obligationId) : "";
+
       if (msgEl) {
         msgEl.textContent = cashPayload.notes
           ? `Prefilled from Revenue Desk: ${cashPayload.notes}`
           : "Prefilled from Revenue Desk.";
       }
 
-      // 8) Keep for later success refresh/debugging
       window._REVENUE_CASH_REDIRECT_CTX = {
         invoiceId,
         ...cashPayload,
@@ -34453,6 +34466,8 @@ function bindAssetRecordsPickerModal({ cid }) {
           amount: amtEl.value,
           bankAccountId: bankEl.value,
           reference: refEl.value,
+          contractId: revContractEl.value,
+          obligationId: revObligationEl.value,
         },
       });
     } catch (e) {
@@ -37038,17 +37053,30 @@ async function commitInvoice(action) {
       return await submitInvoiceForApprovalFlow({ cid, invId });
     }
 
-    // allowed users can post
     try {
       const posted = await postInvoiceAccordingToPolicy(invId);
-      return { ok: true, flow: "post", invId, posted: posted?.data || posted };
+
+      // ✅ FIX: refresh revenue AFTER successful posting
+      try {
+        await refreshRevenueBillingOverviewFromInvoice(posted?.data || posted);
+      } catch (e) {
+        console.warn("Revenue refresh failed after posting", e);
+      }
+
+      return {
+        ok: true,
+        flow: "post",
+        invId,
+        posted: posted?.data || posted
+      };
+
     } catch (e) {
-      // fallback: if backend denies posting, submit for approval instead
       const status = e?.status || e?.httpStatus || e?.response?.status;
+
       if (status === 401 || status === 403) {
         return await submitInvoiceForApprovalFlow({ cid, invId });
-        await refreshRevenueBillingOverviewFromInvoice(posted || { revenue_contract_id: invoice?.revenue_contract_id });
       }
+
       throw e;
     }
   }
