@@ -34386,7 +34386,7 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
   window.waitForElement = waitForElement;
 
-  function normalizeInvoiceDate(input) {
+  function toIsoDate(input) {
     if (!input) return new Date().toISOString().slice(0, 10);
 
     const s = String(input).trim();
@@ -34401,114 +34401,115 @@ function bindAssetRecordsPickerModal({ cid }) {
       return s.replace(/\//g, "-");
     }
 
-    // try JS date parse only if valid
+    // safe JS parse
     const d = new Date(s);
     if (!Number.isNaN(d.getTime())) {
       return d.toISOString().slice(0, 10);
     }
 
-    console.warn("⚠️ [Redirect] invalid invoice date from payload, falling back to today:", input);
+    console.warn("⚠️ Invalid date, falling back to today:", input);
     return new Date().toISOString().slice(0, 10);
   }
 
-async function redirectToInvoiceFromObligation(obligation) {
-  try {
-    const contractId = Number($("revContractId")?.value || 0) || null;
-    const contractNumber = $("revContractNumber")?.value?.trim() || "";
-    const contractTitle = $("revContractTitle")?.value?.trim() || "";
+  async function redirectToInvoiceFromObligation(obligation) {
+    try {
+      const contractId = Number($("revContractId")?.value || 0) || null;
+      const contractNumber = $("revContractNumber")?.value?.trim() || "";
+      const contractTitle = $("revContractTitle")?.value?.trim() || "";
 
-    const customerId = Number($("revCustomerId")?.value || 0) || null;
-    const customerName =
-      $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
+      const customerId = Number($("revCustomerId")?.value || 0) || null;
+      const customerName =
+        $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
 
-    const obligationId =
-      Number(
-        (
-          obligation?.id ??
-          obligation?.obligationId ??
-          obligation?.revenue_obligation_id ??
-          $("revObligationId")?.value
-        ) || 0
-      ) || null;
+      const obligationId =
+        Number(
+          (
+            obligation?.id ??
+            obligation?.obligationId ??
+            obligation?.revenue_obligation_id ??
+            $("revObligationId")?.value
+          ) || 0
+        ) || null;
 
-    const obligationName =
-      obligation?.obligation_name ||
-      obligation?.obligationName ||
-      obligation?.revenue_obligation_name ||
-      $("revObligationName")?.value?.trim() ||
-      "Service";
+      const obligationName =
+        obligation?.obligation_name ||
+        obligation?.obligationName ||
+        obligation?.revenue_obligation_name ||
+        $("revObligationName")?.value?.trim() ||
+        "Service";
 
-    const obligationNotes =
-      obligation?.notes ||
-      obligation?.obligationNotes ||
-      obligation?.revenue_obligation_notes ||
-      $("revObligationNotes")?.value ||
-      "";
+      const obligationNotes =
+        obligation?.notes ||
+        obligation?.obligationNotes ||
+        obligation?.revenue_obligation_notes ||
+        $("revObligationNotes")?.value ||
+        "";
 
-    const allocatedPrice =
-      Number(
-        obligation?.allocated_transaction_price ??
-        obligation?.allocatedPrice ??
-        obligation?.line?.unit_price ??
-        $("revAllocatedPrice")?.value ??
-        0
-      ) || 0;
+      const allocatedPrice =
+        Number(
+          obligation?.allocated_transaction_price ??
+          obligation?.allocatedPrice ??
+          obligation?.line?.unit_price ??
+          $("revAllocatedPrice")?.value ??
+          0
+        ) || 0;
 
-    const currency = resolveCurrency($("revContractCurrency")?.value);
+      const currency = resolveCurrency($("revContractCurrency")?.value);
 
-    const rawInvoiceDate =
-      obligation?.recognized_at_point_in_time_date ||
-      obligation?.invoice_date ||
-      obligation?.invoiceDate;
+      const rawInvoiceDate =
+        obligation?.recognized_at_point_in_time_date ||
+        obligation?.invoice_date ||
+        obligation?.invoiceDate;
 
-    let invoiceDate = new Date().toISOString().slice(0, 10);
+      let invoiceDate = new Date().toISOString().slice(0, 10);
 
-    if (rawInvoiceDate) {
-      const parsed = new Date(rawInvoiceDate);
+      if (rawInvoiceDate) {
+        const parsed = new Date(rawInvoiceDate);
 
-      if (!Number.isNaN(parsed.getTime())) {
-        invoiceDate = parsed.toISOString().slice(0, 10);
-      } else {
-        console.warn("⚠️ invalid rawInvoiceDate, using today:", rawInvoiceDate);
+        if (!Number.isNaN(parsed.getTime())) {
+          invoiceDate = parsed.toISOString().slice(0, 10);
+        } else {
+          console.warn("⚠️ invalid rawInvoiceDate, using today:", rawInvoiceDate);
+        }
       }
+
+      const payload = {
+        customerId,
+        customerName,
+        contractId,
+        contractNumber,
+        contractTitle,
+        obligationId,
+        obligationName,
+        obligationNotes,
+        allocatedPrice,
+        currency,
+        invoiceDate,
+        memo: `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`,
+        line: {
+          item_name: obligationName || "Service",
+          description: obligationNotes || contractTitle || "",
+          quantity: 1,
+          unit_price: allocatedPrice,
+          revenue_obligation_id: obligationId,
+        },
+      };
+
+      console.log("🚀 [Redirect] START");
+      console.log("📦 [Redirect] payload =", payload);
+
+      window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+      console.log("📝 [Redirect] stored pending prefill payload");
+
+      await switchScreen("ar-invoices");
+      console.log("📺 [Redirect] switched to ar-invoices");
+
+      console.log("✅ [Redirect] DONE");
+    } catch (e) {
+      console.warn("[redirectToInvoiceFromObligation] failed", e);
     }
-
-    const payload = {
-      customerId,
-      customerName,
-      contractId,
-      contractNumber,
-      contractTitle,
-      obligationId,
-      obligationName,
-      obligationNotes,
-      allocatedPrice,
-      currency,
-      invoiceDate,
-      memo: `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`,
-      line: {
-        item_name: obligationName || "Service",
-        description: obligationNotes || contractTitle || "",
-        quantity: 1,
-        unit_price: allocatedPrice,
-        revenue_obligation_id: obligationId,
-      },
-    };
-
-    console.log("🚀 [Redirect] START");
-    console.log("📦 [Redirect] payload =", payload);
-
-    window._PENDING_REVENUE_INVOICE_PREFILL = payload;
-    console.log("📝 [Redirect] stored pending prefill payload");
-
-    await switchScreen("ar-invoices");
-    console.log("📺 [Redirect] switched to ar-invoices");
-
-    console.log("✅ [Redirect] DONE");
-  } catch (e) {
-    console.warn("[redirectToInvoiceFromObligation] failed", e);
   }
-}
+
   async function loadContractVersions(contractId) {
     const cid = state.cid;
     if (!cid || !contractId) return;
@@ -35055,8 +35056,8 @@ async function redirectToInvoiceFromObligation(obligation) {
       throw new Error("Only draft runs can be posted");
     }
 
-    const periodEnd =
-      String(selectedRun.period_end || $("revRunEnd")?.value || "").slice(0, 10);
+    const rawPeriodEnd = selectedRun.period_end || $("revRunEnd")?.value || "";
+    const periodEnd = toIsoDate(rawPeriodEnd);
 
     if (!periodEnd) {
       throw new Error("Missing posting period end date");
