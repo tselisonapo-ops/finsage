@@ -57682,7 +57682,7 @@ class DatabaseService:
             if not jlines:
                 raise ValueError("Recognition run has no journal lines")
 
-            journal_id = self.post_journal_lines(
+            journal_id = self.post_journal(
                 company_id=int(company_id),
                 source_module="revenue",
                 source_type="revenue_recognition_run",
@@ -57840,7 +57840,7 @@ class DatabaseService:
                 ],
             )
 
-            journal_id = self.post_journal_lines(
+            journal_id = self.post_journal(
                 company_id=int(company_id),
                 source_module="revenue",
                 source_type="revenue_recognition_reversal",
