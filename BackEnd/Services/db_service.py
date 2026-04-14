@@ -56526,23 +56526,27 @@ class DatabaseService:
         Resolve IFRS 15 posting accounts by role / mapping, not raw company settings.
         """
         acct_map = self.resolve_ifrs15_accounts(company_id) or {}
-
+        print("[IFRS15 ACCOUNTS]", acct_map, flush=True)
+        
         revenue_code = (
-            acct_map.get("revenue_code")
+            acct_map.get("contract_revenue_account")
+            or acct_map.get("revenue_code")
             or acct_map.get("revenue")
             or acct_map.get("revenue_account_code")
             or ""
         ).strip()
 
         contract_asset_code = (
-            acct_map.get("contract_asset_code")
+            acct_map.get("contract_asset_account")
+            or acct_map.get("contract_asset_code")
             or acct_map.get("contract_asset")
             or acct_map.get("contract_asset_account_code")
             or ""
         ).strip()
 
         contract_liability_code = (
-            acct_map.get("contract_liability_code")
+            acct_map.get("contract_liability_account")
+            or acct_map.get("contract_liability_code")
             or acct_map.get("contract_liability")
             or acct_map.get("contract_liability_account_code")
             or ""
@@ -56800,9 +56804,14 @@ class DatabaseService:
             raise ValueError(f"Missing IFRS 15 posting account(s): {', '.join(missing)}")
 
         return {
+            "revenue_code": by_role["CONTRACT_REVENUE"],
+            "contract_asset_code": by_role["CONTRACT_ASSET"],
+            "contract_liability_code": by_role["CONTRACT_LIABILITY"],
+
+            # optional aliases
+            "contract_revenue_account": by_role["CONTRACT_REVENUE"],
             "contract_asset_account": by_role["CONTRACT_ASSET"],
             "contract_liability_account": by_role["CONTRACT_LIABILITY"],
-            "contract_revenue_account": by_role["CONTRACT_REVENUE"],
         }
 
     def preview_revenue_recognition_run(self, company_id: int, period_start, period_end, contract_id: int | None = None) -> dict:
@@ -57493,7 +57502,7 @@ class DatabaseService:
         revenue_code = acct["revenue_code"]
         contract_asset_code = acct["contract_asset_code"]
         contract_liability_code = acct["contract_liability_code"]
-        
+
         def q2(v) -> Decimal:
             return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
