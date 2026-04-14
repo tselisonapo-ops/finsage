@@ -3256,9 +3256,9 @@
           <input type="hidden" id="revRunId" value="">
           <input type="hidden" id="revApprovalRequestId" value="">
 
-          <div id="revLayout" class="space-y-1">
+          <div id="revLayout" class="h-[calc(100vh-140px)] flex flex-col gap-2">
             <!-- FIXED TOP ROW: workspace + KPIs -->
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[280px_repeat(4,minmax(0,1fr))] gap-4 items-start">
+            <div id="revTopStrip" class="shrink-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[280px_repeat(4,minmax(0,1fr))] gap-4 items-start">
               
               <!-- Revenue Workspace: stays fixed on same row as KPIs -->
               <aside id="revSidebar" class="relative overflow-visible">
@@ -3302,7 +3302,7 @@
 
                 <div
                   id="revSidebarBody"
-                  class="absolute left-0 top-full mt-2 w-[280px] max-h-0 opacity-0 pointer-events-none overflow-hidden transition-all duration-300 ease-in-out origin-top z-30"
+                  class="mt-2 h-[calc(100vh-230px)] overflow-y-auto"
                 >
                   <div class="p-3 bg-white rounded-b-lg border border-t-0 shadow-sage">
                     <div class="space-y-2">
@@ -3376,7 +3376,7 @@
             </div>
 
             <!-- ONLY THIS AREA SHIFTS -->
-            <div id="revContentShift" class="transition-all duration-300">
+            <div id="revContentShift" class="flex-1 min-h-0 overflow-y-auto transition-all duration-300">
               <!-- TAB: CONTRACTS -->
               <section id="revPaneContracts" class="card p-3 shadow-sage">
                 <div id="revContractPreviewWrap" class="card p-4 border">
