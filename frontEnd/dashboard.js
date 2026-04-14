@@ -35393,6 +35393,56 @@ function bindAssetRecordsPickerModal({ cid }) {
       });
     }
 
+    // ✅ NEW CONTRACT button moved into preview grid
+    const btnGridNew = document.getElementById("revGridNewContractBtn");
+    if (btnGridNew && btnGridNew.dataset.bound !== "1") {
+      btnGridNew.dataset.bound = "1";
+      btnGridNew.type = "button";
+      btnGridNew.addEventListener("click", (e) => {
+        e.preventDefault();
+
+        state.selectedContract = null;
+        state.selectedObligation = null;
+
+        hydrateContractForm({});
+        renderContractPreview({});
+        renderContractKpis({});
+        setContractViewMode("form");
+        setActiveTab("contracts");
+        setMsg("");
+      });
+    }
+
+    // ✅ PREVIEW button on contract capture screen
+    const btnBackPreview = document.getElementById("revBackToPreviewBtn");
+    if (btnBackPreview && btnBackPreview.dataset.bound !== "1") {
+      btnBackPreview.dataset.bound = "1";
+      btnBackPreview.type = "button";
+      btnBackPreview.addEventListener("click", async (e) => {
+        e.preventDefault();
+
+        setContractViewMode("preview");
+        setActiveTab("contracts");
+
+        if (state.selectedContract?.id) {
+          renderContractPreview(state.selectedContract);
+          renderContractKpis(state.selectedContract);
+          await loadContractVersions(state.selectedContract.id);
+          await loadObligations(state.selectedContract.id);
+        } else {
+          renderContractPreview({});
+          renderContractKpis({});
+        }
+
+        setMsg("");
+      });
+    }
+
+    // ✅ remove old top-row buttons if they still exist
+    document.getElementById("revNewContractBtn")?.remove();
+    document.getElementById("revPreviewRunBtn")?.remove();
+    document.getElementById("revCreateRunBtn")?.remove();
+
     refreshButtons();
   }
 
