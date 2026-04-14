@@ -48,7 +48,10 @@
   }
 
   .screen{display:none}
-  .screen.active{display:block}
+  .screen.active{
+    display:block;
+    height:100%;
+  }
 
   .chart-wrap{height:320px}
   @media(max-width:768px){
@@ -363,6 +366,10 @@
     background: #fff;
   }
 
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
   /* Print / PDF-friendly statement page */
   .stmt-page {
     width: 210mm;           /* A4 width */
@@ -767,7 +774,7 @@
       </header>
 
       <!-- Screens -->
-      <div class="w-full px-4 pt-1 pb-6 space-y-2">
+      <div class="w-full px-4 pt-1 pb-6 space-y-2 h-[calc(100vh-57px)] overflow-hidden">
 
         <!-- Dashboard -->
         <section id="screen-dashboard" class="screen active">
@@ -3250,7 +3257,7 @@
           </div><!-- /arGrid -->
         </section><!-- /screen-ar -->
 
-        <section id="screen-revenue" class="screen hidden">
+        <section id="screen-revenue" class="screen hidden h-full">>
           <input type="hidden" id="revContractId" value="">
           <input type="hidden" id="revObligationId" value="">
           <input type="hidden" id="revRunId" value="">
@@ -3262,17 +3269,13 @@
               
               <!-- Revenue Workspace: stays fixed on same row as KPIs -->
               <aside id="revSidebar" class="relative overflow-visible">
-                
                 <div
                   id="revSidebarHeader"
                   class="card shadow-sage flex items-center justify-between px-3 py-3 cursor-pointer select-none bg-white rounded-lg"
                 >
-                  
-                  <!-- LEFT: Title + Info -->
                   <div class="flex items-center gap-2">
                     <div class="text-sm font-semibold whitespace-nowrap">Revenue Workspace</div>
 
-                    <!-- ✅ NEW: Info icon (no behavior impact) -->
                     <div class="relative group">
                       <button
                         type="button"
@@ -3282,14 +3285,12 @@
                         i
                       </button>
 
-                      <!-- Tooltip -->
                       <div class="absolute left-0 top-7 hidden group-hover:block z-50 w-64 rounded-lg border border-slate-200 bg-white shadow-lg p-3 text-[11px] text-slate-600">
                         IFRS 15 contracts, obligations, billings, progress, and recognition runs.
                       </div>
                     </div>
                   </div>
 
-                  <!-- RIGHT: existing pin button (unchanged) -->
                   <button
                     id="revSidebarPinBtn"
                     type="button"
@@ -3299,12 +3300,47 @@
                     📌
                   </button>
                 </div>
+              </aside>
 
+              <!-- KPI 1 -->
+              <div class="card p-3 shadow-sage">
+                <div class="text-xs text-slate-500">Transaction Price</div>
+                <div id="revKpiTxnPrice" class="text-xl font-bold mt-1">0.00</div>
+              </div>
+
+              <!-- KPI 2 -->
+              <div class="card p-3 shadow-sage">
+                <div class="text-xs text-slate-500">Revenue Recognized</div>
+                <div id="revKpiRecognized" class="text-xl font-bold mt-1">0.00</div>
+              </div>
+
+              <!-- KPI 3 -->
+              <div class="card p-3 shadow-sage">
+                <div class="text-xs text-slate-500">Billed to Date</div>
+                <div id="revKpiBilled" class="text-xl font-bold mt-1">0.00</div>
+              </div>
+
+              <!-- KPI 4 -->
+              <div class="card p-3 shadow-sage">
+                <div class="text-xs text-slate-500">Contract Position</div>
+                <div id="revKpiPosition" class="text-xl font-bold mt-1">—</div>
+                <div class="text-[11px] text-slate-500 mt-2">
+                  Calculated from billed to date versus recognized revenue.
+                </div>
+              </div>
+            </div>
+
+            <!-- ONLY THIS AREA SHIFTS -->
+            <!-- LOWER ROW: sidebar body on left, screens on right -->
+            <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-4">
+
+              <!-- LEFT: Revenue Workspace body -->
+              <aside class="min-h-0">
                 <div
                   id="revSidebarBody"
-                  class="mt-2 h-[calc(100vh-230px)] overflow-y-auto"
+                  class="h-full overflow-y-auto"
                 >
-                  <div class="p-3 bg-white rounded-b-lg border border-t-0 shadow-sage">
+                  <div class="p-3 bg-white rounded-lg border shadow-sage">
                     <div class="space-y-2">
                       <button class="btn w-full justify-start" type="button" data-rev-tab="contracts">Contracts</button>
                       <button class="btn w-full justify-start" type="button" data-rev-tab="obligations">Obligations</button>
@@ -3347,418 +3383,381 @@
                 </div>
               </aside>
 
-              <!-- KPI 1 -->
-              <div class="card p-3 shadow-sage">
-                <div class="text-xs text-slate-500">Transaction Price</div>
-                <div id="revKpiTxnPrice" class="text-xl font-bold mt-1">0.00</div>
-              </div>
+              <!-- RIGHT: main screens -->
+              <div id="revContentShift" class="min-h-0 overflow-y-auto transition-all duration-300">
 
-              <!-- KPI 2 -->
-              <div class="card p-3 shadow-sage">
-                <div class="text-xs text-slate-500">Revenue Recognized</div>
-                <div id="revKpiRecognized" class="text-xl font-bold mt-1">0.00</div>
-              </div>
-
-              <!-- KPI 3 -->
-              <div class="card p-3 shadow-sage">
-                <div class="text-xs text-slate-500">Billed to Date</div>
-                <div id="revKpiBilled" class="text-xl font-bold mt-1">0.00</div>
-              </div>
-
-              <!-- KPI 4 -->
-              <div class="card p-3 shadow-sage">
-                <div class="text-xs text-slate-500">Contract Position</div>
-                <div id="revKpiPosition" class="text-xl font-bold mt-1">—</div>
-                <div class="text-[11px] text-slate-500 mt-2">
-                  Calculated from billed to date versus recognized revenue.
-                </div>
-              </div>
-            </div>
-
-            <!-- ONLY THIS AREA SHIFTS -->
-            <div id="revContentShift" class="flex-1 min-h-0 overflow-y-auto transition-all duration-300">
-              <!-- TAB: CONTRACTS -->
-              <section id="revPaneContracts" class="card p-3 shadow-sage">
-                <div id="revContractPreviewWrap" class="card p-4 border">
-                  <div class="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <h3 class="text-base font-semibold text-slate-800">Contract Preview</h3>
-                      <div class="text-xs text-slate-500">View and manage the selected revenue contract.</div>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <button
-                        id="revGridNewContractBtn"
-                        type="button"
-                        class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-                      >
-                        New Contract
-                      </button>
-
-                      <button
-                        id="revContractEditBtn"
-                        type="button"
-                        class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </div>
-
-                  <div id="revContractPreviewBody" class="text-sm text-slate-700">
-                    <span class="text-slate-500">Select a contract to preview</span>
-                  </div>
-                </div>
-
-                <div id="revContractFormWrap" class="hidden">
-                  <div class="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <h3 class="text-base font-semibold text-slate-800">Contract Setup</h3>
-                      <div class="text-xs text-slate-500">Contract header and initial IFRS 15 measurement</div>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <button
-                        id="revBackToPreviewBtn"
-                        type="button"
-                        class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-                      >
-                        Preview
-                      </button>
-                    </div>
-
-                    <div id="revContractStatusPill" class="pill">No contract selected</div>
-                  </div>
-
-                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                    <div class="space-y-3">
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Contract No</label>
-                          <input id="revContractNumber" class="w-full border rounded px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Currency</label>
-                          <input id="revContractCurrency" class="w-full border rounded px-3 py-2 text-sm" value="ZAR">
-                        </div>
-                      </div>
-
+                <!-- TAB: CONTRACTS -->
+                <section id="revPaneContracts" class="card p-3 shadow-sage">
+                  <div id="revContractPreviewWrap" class="card p-4 border">
+                    <div class="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Contract Title</label>
-                        <input id="revContractTitle" class="w-full border rounded px-3 py-2 text-sm">
+                        <h3 class="text-base font-semibold text-slate-800">Contract Preview</h3>
+                        <div class="text-xs text-slate-500">View and manage the selected revenue contract.</div>
                       </div>
 
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Customer</label>
-                          <select id="revCustomerId" class="w-full border rounded px-3 py-2 text-sm">
-                            <option value="">Select customer</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Settlement Pattern</label>
-                          <select id="revSettlementPattern" class="w-full border rounded px-3 py-2 text-sm">
-                            <option value="" selected disabled hidden>Choose settlement pattern…</option>
-                            <option value="revenue_before_billing">Revenue before billing</option>
-                            <option value="billing_before_revenue">Billing before revenue</option>
-                            <option value="cash_before_service">Cash before service</option>
-                          </select>
-
-                          <div id="revSettlementPatternHelp" class="mt-1 text-[11px] text-slate-500 hidden"></div>
-
-                          <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2">
-                            <div class="text-[11px] uppercase tracking-wide text-slate-400">Expected Position</div>
-                            <div id="revExpectedPositionHint" class="text-xs text-slate-600 mt-1">
-                              Select a settlement pattern to see the expected contract position flow.
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Contract Date</label>
-                          <input id="revContractDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Billing Method</label>
-                          <select id="revBillingMethod" class="w-full border rounded px-3 py-2 text-sm">
-                            <option value="milestone">Milestone</option>
-                            <option value="progress">Progress</option>
-                            <option value="periodic">Periodic</option>
-                            <option value="manual">Manual</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Start Date</label>
-                          <input id="revStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">End Date</label>
-                          <input id="revEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                        </div>
-                      </div>
-
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Transaction Price</label>
-                          <input id="revTransactionPrice" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
-                        </div>
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Variable Consideration (Constrained)</label>
-                          <input id="revVariableConstrained" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
-                        </div>
-                      </div>
-
-                      <div class="grid grid-cols-2 gap-3">
-                        <label class="flex items-center gap-2 text-sm">
-                          <input id="revIsOverTime" type="checkbox" checked>
-                          <span>Recognize over time</span>
-                        </label>
-                        <label class="flex items-center gap-2 text-sm">
-                          <input id="revHasFinancing" type="checkbox">
-                          <span>Significant financing component</span>
-                        </label>
-
-                        <div id="revFinancingFields" class="hidden mt-3 border rounded-lg p-3 bg-slate-50 col-span-2">
-                          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div>
-                              <label class="block text-xs text-slate-500 mb-1">Financing rate (%)</label>
-                              <input id="revFinancingRate" type="number" step="0.0001" class="w-full border rounded px-3 py-2 text-sm" placeholder="0.0000">
-                            </div>
-
-                            <div>
-                              <label class="block text-xs text-slate-500 mb-1">Financing start date</label>
-                              <input id="revFinancingStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                            </div>
-
-                            <div>
-                              <label class="block text-xs text-slate-500 mb-1">Financing end date</label>
-                              <input id="revFinancingEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                            </div>
-                          </div>
-
-                          <div class="mt-3">
-                            <label class="block text-xs text-slate-500 mb-1">Financing notes</label>
-                            <textarea id="revFinancingNotes" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="Optional financing assessment notes"></textarea>
-                          </div>
-                        </div>
-                      </div>
-
-                      <textarea id="revContractNotes" class="w-full border rounded px-3 py-2 text-sm" rows="5" placeholder="Contract notes"></textarea>
-
-                      <div>
-                        <label class="block text-xs text-slate-500 mb-1">Contract document</label>
-                        <input id="revContractFile" type="file" class="w-full border rounded px-3 py-2 text-sm" />
-                        <div class="text-[11px] text-slate-500 mt-1">
-                          Upload signed contract / variation / supporting file
-                        </div>
-                      </div>
-
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <button id="revSaveContract" class="btn" type="button">Save Contract</button>
-                        <button id="revUpdateContract" class="btn" type="button">Update Contract</button>
-                        <button id="revSubmitContract" class="btn-highlight" type="button">Submit Contract</button>
-                        <button id="revCreateVersion" class="btn" type="button">Add Version</button>
-                      </div>
-                    </div>
-
-                    <div class="space-y-3">
-                      <div class="card p-3 bg-slate-50 border">
-                        <div class="font-semibold text-sm mb-2">IFRS 15 Initial Measurement</div>
-                        <div class="text-xs text-slate-600 space-y-2">
-                          <label class="flex items-start gap-2">
-                            <input id="revChkCollectability" type="checkbox" class="mt-0.5">
-                            <span>Probable collectability</span>
-                          </label>
-                          <label class="flex items-start gap-2">
-                            <input id="revChkRights" type="checkbox" class="mt-0.5">
-                            <span>Rights identifiable</span>
-                          </label>
-                          <label class="flex items-start gap-2">
-                            <input id="revChkTerms" type="checkbox" class="mt-0.5">
-                            <span>Payment terms identifiable</span>
-                          </label>
-                          <label class="flex items-start gap-2">
-                            <input id="revChkSubstance" type="checkbox" class="mt-0.5">
-                            <span>Commercial substance exists</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div class="card p-3 border">
-                        <div class="font-semibold text-sm mb-2">Contract Versions</div>
-                        <div id="revVersionList" class="space-y-2 text-sm text-slate-700"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <!-- TAB: OBLIGATIONS -->
-              <section id="revPaneObligations" class="hidden card p-4 shadow-sage">
-                <div class="flex items-center justify-between mb-3">
-                  <div>
-                    <div class="font-semibold">Performance Obligations</div>
-                    <div class="text-xs text-slate-500">Distinct promises, timing, SSP, and allocation</div>
-                  </div>
-                  <button id="revAddObligation" class="btn" type="button">Add Obligation</button>
-                </div>
-
-                <div id="revObligationContractBanner" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm"></div>
-
-                <div class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
-
-                  <!-- LEFT SIDE: preview/form swap -->
-                  <div>
-                    <div id="revObligationPreviewWrap" class="card p-4 border">
-                      <div class="flex items-center justify-between mb-2">
-                        <div class="font-semibold">Obligation Preview</div>
-                        <button id="revEditObligationBtn" class="btn-ghost text-sm" type="button">Edit</button>
-                      </div>
-                      <div id="revObligationPreviewBody" class="text-sm text-slate-700">
-                        <span class="text-slate-500">Select an obligation to preview</span>
-                      </div>
-                    </div>
-
-                    <div id="revObligationFormWrap" class="hidden space-y-3">
-                      <div>
-                        <label class="block text-xs text-slate-500 mb-1">Obligation Code</label>
-                        <input id="revObligationCode" class="w-full border rounded px-3 py-2 text-sm">
-                      </div>
-
-                      <div>
-                        <label class="block text-xs text-slate-500 mb-1">Obligation Name</label>
-                        <input
-                          id="revObligationName"
-                          list="revObligationCatalogList"
-                          class="w-full border rounded px-3 py-2 text-sm"
-                          placeholder="Select a service/inventory item or type manually"
-                          autocomplete="off"
+                      <div class="flex items-center gap-2">
+                        <button
+                          id="revGridNewContractBtn"
+                          type="button"
+                          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
                         >
-                        <datalist id="revObligationCatalogList"></datalist>
-                        <div id="revObligationCatalogHint" class="text-[11px] text-slate-500 mt-1 hidden"></div>
+                          New Contract
+                        </button>
+
+                        <button
+                          id="revContractEditBtn"
+                          type="button"
+                          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+                        >
+                          Edit
+                        </button>
                       </div>
+                    </div>
 
-                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-
-                        <!-- Timing -->
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Timing</label>
-                          <select id="revRecognitionTiming" class="w-full border rounded px-3 py-2 text-sm">
-                            <option value="over_time">Over time</option>
-                            <option value="point_in_time">Point in time</option>
-                          </select>
-                        </div>
-
-                        <!-- Over Time -->
-                        <div id="revOverTimeBlock">
-                          <label class="block text-xs text-slate-500 mb-1">Progress Method</label>
-                          <select id="revProgressMethod" class="w-full border rounded px-3 py-2 text-sm">
-                            <option value="cost_to_cost">Cost to cost</option>
-                            <option value="milestone">Milestone</option>
-                            <option value="units">Units</option>
-                            <option value="time_elapsed">Time elapsed</option>
-                            <option value="manual">Manual</option>
-                          </select>
-                          <div class="mt-1 text-[11px] text-slate-500">
-                            Used only for obligations recognized over time.
-                          </div>
-                        </div>
-
-                        <!-- Point in Time -->
-                        <div id="revPointInTimeBlock" class="hidden md:col-span-2">
-                          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-
-                            <div>
-                              <label class="block text-xs text-slate-500 mb-1">Satisfaction Date</label>
-                              <input id="revPitDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                            </div>
-
-                            <div>
-                              <label class="block text-xs text-slate-500 mb-1">Recognition Trigger</label>
-                              <select id="revPitTrigger" class="w-full border rounded px-3 py-2 text-sm">
-                                <option value="">Select trigger...</option>
-                                <option value="customer_acceptance">Customer acceptance</option>
-                                <option value="delivery_completed">Delivery completed</option>
-                                <option value="milestone_certified">Milestone certified</option>
-                                <option value="report_issued">Report issued</option>
-                                <option value="invoice_issued">Invoice issued</option>
-                                <option value="manual_confirmation">Manual confirmation</option>
-                              </select>
-                            </div>
-
-                          </div>
-
-                          <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
-                            Point-in-time recognition requires the event that proves the performance obligation has been satisfied.
-                          </div>
-                        </div>
-
-                      </div>
-
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">SSP</label>
-                          <input id="revSSP" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
-                        </div>
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Allocated Price</label>
-                          <input id="revAllocatedPrice" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
-                        </div>
-                      </div>
-
-                      <div id="revObligationAllocationHint" class="text-sm mt-1"></div>
-
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">Expected Total Cost</label>
-                          <input id="revExpectedCost" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
-                        </div>
-                      </div>
-
-                      <div class="flex items-center gap-2">
-                        <label class="flex items-center gap-2 text-sm">
-                          <input id="revDistinctFlag" type="checkbox" checked>
-                          <span>Distinct</span>
-                        </label>
-                      </div>
-
-                      <textarea id="revObligationNotes" class="w-full border rounded px-3 py-2 text-sm" rows="4" placeholder="Obligation notes"></textarea>
-
-                      <div class="flex items-center gap-2">
-                        <button id="revSaveObligation" class="btn" type="button">Save Obligation</button>
-                        <button id="revUpdateObligation" class="btn" type="button">Update Obligation</button>
-                      </div>
+                    <div id="revContractPreviewBody" class="text-sm text-slate-700">
+                      <span class="text-slate-500">Select a contract to preview</span>
                     </div>
                   </div>
 
-                  <!-- RIGHT SIDE: table always visible -->
-                  <div class="card p-3 border self-start min-w-0">
-                    <div class="font-semibold text-sm mb-2">Obligations Register</div>
-                    <div id="revObligationTableWrap" class="overflow-auto max-h-[420px]">
-                      <table class="min-w-full text-sm">
-                        <thead>
-                          <tr class="border-b">
-                            <th class="text-left p-2">Code</th>
-                            <th class="text-left p-2">Name</th>
-                            <th class="text-left p-2">Timing</th>
-                            <th class="text-right p-2">Allocated</th>
-                            <th class="text-right p-2">Progress %</th>
-                            <th class="text-right p-2">Revenue LTD</th>
-                          </tr>
-                        </thead>
-                        <tbody id="revObligationTableBody"></tbody>
-                      </table>
+                  <div id="revContractFormWrap" class="hidden">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <h3 class="text-base font-semibold text-slate-800">Contract Setup</h3>
+                        <div class="text-xs text-slate-500">Contract header and initial IFRS 15 measurement</div>
+                      </div>
+
+                      <div class="flex items-center gap-2">
+                        <button
+                          id="revBackToPreviewBtn"
+                          type="button"
+                          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+                        >
+                          Preview
+                        </button>
+                      </div>
+
+                      <div id="revContractStatusPill" class="pill">No contract selected</div>
+                    </div>
+
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Contract No</label>
+                            <input id="revContractNumber" class="w-full border rounded px-3 py-2 text-sm">
+                          </div>
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Currency</label>
+                            <input id="revContractCurrency" class="w-full border rounded px-3 py-2 text-sm" value="ZAR">
+                          </div>
+                        </div>
+
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-1">Contract Title</label>
+                          <input id="revContractTitle" class="w-full border rounded px-3 py-2 text-sm">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Customer</label>
+                            <select id="revCustomerId" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="">Select customer</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Settlement Pattern</label>
+                            <select id="revSettlementPattern" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="" selected disabled hidden>Choose settlement pattern…</option>
+                              <option value="revenue_before_billing">Revenue before billing</option>
+                              <option value="billing_before_revenue">Billing before revenue</option>
+                              <option value="cash_before_service">Cash before service</option>
+                            </select>
+
+                            <div id="revSettlementPatternHelp" class="mt-1 text-[11px] text-slate-500 hidden"></div>
+
+                            <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2">
+                              <div class="text-[11px] uppercase tracking-wide text-slate-400">Expected Position</div>
+                              <div id="revExpectedPositionHint" class="text-xs text-slate-600 mt-1">
+                                Select a settlement pattern to see the expected contract position flow.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Contract Date</label>
+                            <input id="revContractDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                          </div>
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Billing Method</label>
+                            <select id="revBillingMethod" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="milestone">Milestone</option>
+                              <option value="progress">Progress</option>
+                              <option value="periodic">Periodic</option>
+                              <option value="manual">Manual</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Start Date</label>
+                            <input id="revStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                          </div>
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">End Date</label>
+                            <input id="revEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                          </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Transaction Price</label>
+                            <input id="revTransactionPrice" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
+                          </div>
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Variable Consideration (Constrained)</label>
+                            <input id="revVariableConstrained" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
+                          </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <label class="flex items-center gap-2 text-sm">
+                            <input id="revIsOverTime" type="checkbox" checked>
+                            <span>Recognize over time</span>
+                          </label>
+                          <label class="flex items-center gap-2 text-sm">
+                            <input id="revHasFinancing" type="checkbox">
+                            <span>Significant financing component</span>
+                          </label>
+
+                          <div id="revFinancingFields" class="hidden mt-3 border rounded-lg p-3 bg-slate-50 col-span-2">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <label class="block text-xs text-slate-500 mb-1">Financing rate (%)</label>
+                                <input id="revFinancingRate" type="number" step="0.0001" class="w-full border rounded px-3 py-2 text-sm" placeholder="0.0000">
+                              </div>
+
+                              <div>
+                                <label class="block text-xs text-slate-500 mb-1">Financing start date</label>
+                                <input id="revFinancingStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                              </div>
+
+                              <div>
+                                <label class="block text-xs text-slate-500 mb-1">Financing end date</label>
+                                <input id="revFinancingEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                              </div>
+                            </div>
+
+                            <div class="mt-3">
+                              <label class="block text-xs text-slate-500 mb-1">Financing notes</label>
+                              <textarea id="revFinancingNotes" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="Optional financing assessment notes"></textarea>
+                            </div>
+                          </div>
+                        </div>
+
+                        <textarea id="revContractNotes" class="w-full border rounded px-3 py-2 text-sm" rows="5" placeholder="Contract notes"></textarea>
+
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-1">Contract document</label>
+                          <input id="revContractFile" type="file" class="w-full border rounded px-3 py-2 text-sm" />
+                          <div class="text-[11px] text-slate-500 mt-1">
+                            Upload signed contract / variation / supporting file
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <button id="revSaveContract" class="btn" type="button">Save Contract</button>
+                          <button id="revUpdateContract" class="btn" type="button">Update Contract</button>
+                          <button id="revSubmitContract" class="btn-highlight" type="button">Submit Contract</button>
+                          <button id="revCreateVersion" class="btn" type="button">Add Version</button>
+                        </div>
+                      </div>
+
+                      <div class="space-y-3">
+                        <div class="card p-3 bg-slate-50 border">
+                          <div class="font-semibold text-sm mb-2">IFRS 15 Initial Measurement</div>
+                          <div class="text-xs text-slate-600 space-y-2">
+                            <label class="flex items-start gap-2">
+                              <input id="revChkCollectability" type="checkbox" class="mt-0.5">
+                              <span>Probable collectability</span>
+                            </label>
+                            <label class="flex items-start gap-2">
+                              <input id="revChkRights" type="checkbox" class="mt-0.5">
+                              <span>Rights identifiable</span>
+                            </label>
+                            <label class="flex items-start gap-2">
+                              <input id="revChkTerms" type="checkbox" class="mt-0.5">
+                              <span>Payment terms identifiable</span>
+                            </label>
+                            <label class="flex items-start gap-2">
+                              <input id="revChkSubstance" type="checkbox" class="mt-0.5">
+                              <span>Commercial substance exists</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div class="card p-3 border">
+                          <div class="font-semibold text-sm mb-2">Contract Versions</div>
+                          <div id="revVersionList" class="space-y-2 text-sm text-slate-700"></div>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                </section>
 
-                </div>
-              </section>
+                <!-- TAB: OBLIGATIONS -->
+                <section id="revPaneObligations" class="hidden card p-4 shadow-sage">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <div class="font-semibold">Performance Obligations</div>
+                      <div class="text-xs text-slate-500">Distinct promises, timing, SSP, and allocation</div>
+                    </div>
+                    <button id="revAddObligation" class="btn" type="button">Add Obligation</button>
+                  </div>
+
+                  <div id="revObligationContractBanner" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm"></div>
+
+                  <div class="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4 items-start">
+
+                    <div>
+                      <div id="revObligationPreviewWrap" class="card p-4 border">
+                        <div class="flex items-center justify-between mb-2">
+                          <div class="font-semibold">Obligation Preview</div>
+                          <button id="revEditObligationBtn" class="btn-ghost text-sm" type="button">Edit</button>
+                        </div>
+                        <div id="revObligationPreviewBody" class="text-sm text-slate-700">
+                          <span class="text-slate-500">Select an obligation to preview</span>
+                        </div>
+                      </div>
+
+                      <div id="revObligationFormWrap" class="hidden space-y-3">
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-1">Obligation Code</label>
+                          <input id="revObligationCode" class="w-full border rounded px-3 py-2 text-sm">
+                        </div>
+
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-1">Obligation Name</label>
+                          <input
+                            id="revObligationName"
+                            list="revObligationCatalogList"
+                            class="w-full border rounded px-3 py-2 text-sm"
+                            placeholder="Select a service/inventory item or type manually"
+                            autocomplete="off"
+                          >
+                          <datalist id="revObligationCatalogList"></datalist>
+                          <div id="revObligationCatalogHint" class="text-[11px] text-slate-500 mt-1 hidden"></div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Timing</label>
+                            <select id="revRecognitionTiming" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="over_time">Over time</option>
+                              <option value="point_in_time">Point in time</option>
+                            </select>
+                          </div>
+
+                          <div id="revOverTimeBlock">
+                            <label class="block text-xs text-slate-500 mb-1">Progress Method</label>
+                            <select id="revProgressMethod" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="cost_to_cost">Cost to cost</option>
+                              <option value="milestone">Milestone</option>
+                              <option value="units">Units</option>
+                              <option value="time_elapsed">Time elapsed</option>
+                              <option value="manual">Manual</option>
+                            </select>
+                            <div class="mt-1 text-[11px] text-slate-500">
+                              Used only for obligations recognized over time.
+                            </div>
+                          </div>
+
+                          <div id="revPointInTimeBlock" class="hidden md:col-span-2">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label class="block text-xs text-slate-500 mb-1">Satisfaction Date</label>
+                                <input id="revPitDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                              </div>
+
+                              <div>
+                                <label class="block text-xs text-slate-500 mb-1">Recognition Trigger</label>
+                                <select id="revPitTrigger" class="w-full border rounded px-3 py-2 text-sm">
+                                  <option value="">Select trigger...</option>
+                                  <option value="customer_acceptance">Customer acceptance</option>
+                                  <option value="delivery_completed">Delivery completed</option>
+                                  <option value="milestone_certified">Milestone certified</option>
+                                  <option value="report_issued">Report issued</option>
+                                  <option value="invoice_issued">Invoice issued</option>
+                                  <option value="manual_confirmation">Manual confirmation</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
+                              Point-in-time recognition requires the event that proves the performance obligation has been satisfied.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">SSP</label>
+                            <input id="revSSP" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
+                          </div>
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Allocated Price</label>
+                            <input id="revAllocatedPrice" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
+                          </div>
+                        </div>
+
+                        <div id="revObligationAllocationHint" class="text-sm mt-1"></div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">Expected Total Cost</label>
+                            <input id="revExpectedCost" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                          <label class="flex items-center gap-2 text-sm">
+                            <input id="revDistinctFlag" type="checkbox" checked>
+                            <span>Distinct</span>
+                          </label>
+                        </div>
+
+                        <textarea id="revObligationNotes" class="w-full border rounded px-3 py-2 text-sm" rows="4" placeholder="Obligation notes"></textarea>
+
+                        <div class="flex items-center gap-2">
+                          <button id="revSaveObligation" class="btn" type="button">Save Obligation</button>
+                          <button id="revUpdateObligation" class="btn" type="button">Update Obligation</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="card p-3 border self-start min-w-0">
+                      <div class="font-semibold text-sm mb-2">Obligations Register</div>
+                      <div id="revObligationTableWrap" class="overflow-auto max-h-[420px]">
+                        <table class="min-w-full text-sm">
+                          <thead>
+                            <tr class="border-b">
+                              <th class="text-left p-2">Code</th>
+                              <th class="text-left p-2">Name</th>
+                              <th class="text-left p-2">Timing</th>
+                              <th class="text-right p-2">Allocated</th>
+                              <th class="text-right p-2">Progress %</th>
+                              <th class="text-right p-2">Revenue LTD</th>
+                            </tr>
+                          </thead>
+                          <tbody id="revObligationTableBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </section>
 
               <!-- TAB: BILLINGS -->
               <section id="revPaneBillings" class="hidden card p-4 shadow-sage">
