@@ -56527,7 +56527,7 @@ class DatabaseService:
         """
         acct_map = self.resolve_ifrs15_accounts(company_id) or {}
         print("[IFRS15 ACCOUNTS]", acct_map, flush=True)
-        
+
         revenue_code = (
             acct_map.get("contract_revenue_account")
             or acct_map.get("revenue_code")
@@ -57525,6 +57525,14 @@ class DatabaseService:
             ca = q2(e.get("contract_asset_delta"))
             cl = q2(e.get("contract_liability_delta"))
 
+            # 👇 ADD HERE
+            print("[revenue_run] ENTRY DEBUG:", {
+                "obligation_id": e.get("obligation_id"),
+                "delta": str(delta),
+                "contract_asset_delta": str(ca),
+                "contract_liability_delta": str(cl),
+            }, flush=True)
+
             ref = (
                 e.get("obligation_code")
                 or e.get("obligation_name")
@@ -57534,12 +57542,11 @@ class DatabaseService:
             if delta == Decimal("0.00") and ca == Decimal("0.00") and cl == Decimal("0.00"):
                 continue
 
-            # 1) Positive revenue recognition
-            #    a) release contract liability: Dr Contract Liability / Cr Revenue
-            #    b) create contract asset:     Dr Contract Asset     / Cr Revenue
+            # Positive revenue recognition
             if delta > Decimal("0.00"):
-                if cl < Decimal("0.00"):
-                    amt = abs(cl)
+                # release deferred / contract liability
+                if cl > Decimal("0.00"):
+                    amt = cl
                     add_line(
                         jlines,
                         contract_liability_code,
@@ -57555,6 +57562,7 @@ class DatabaseService:
                         memo=f"Revenue recognized {ref}",
                     )
 
+                # recognize unbilled revenue / contract asset
                 if ca > Decimal("0.00"):
                     amt = ca
                     add_line(
@@ -57572,12 +57580,11 @@ class DatabaseService:
                         memo=f"Revenue recognized {ref}",
                     )
 
-            # 2) Negative revenue catch-up / reversal
-            #    a) re-create liability:       Dr Revenue / Cr Contract Liability
-            #    b) reverse contract asset:   Dr Revenue / Cr Contract Asset
+            # Negative revenue catch-up / reversal
             elif delta < Decimal("0.00"):
-                if cl > Decimal("0.00"):
-                    amt = cl
+                # recreate liability / reverse prior release
+                if cl < Decimal("0.00"):
+                    amt = abs(cl)
                     add_line(
                         jlines,
                         revenue_code,
@@ -57593,6 +57600,7 @@ class DatabaseService:
                         memo=f"Reverse liability release {ref}",
                     )
 
+                # reverse unbilled revenue / contract asset
                 if ca < Decimal("0.00"):
                     amt = abs(ca)
                     add_line(
@@ -57610,7 +57618,6 @@ class DatabaseService:
                         memo=f"Reverse unbilled revenue {ref}",
                     )
 
-        # Safety check: journals must net to zero
         total_debits = sum(q2(x.get("debit")) for x in jlines)
         total_credits = sum(q2(x.get("credit")) for x in jlines)
         if total_debits != total_credits:
@@ -57618,8 +57625,9 @@ class DatabaseService:
                 f"Recognition journal is out of balance: debits={total_debits} credits={total_credits}"
             )
 
+        # 👇 ADD THIS HERE
+        print("[revenue_run] FINAL JOURNAL LINES:", jlines, flush=True)
         return jlines
-
 
     def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
         from decimal import Decimal
