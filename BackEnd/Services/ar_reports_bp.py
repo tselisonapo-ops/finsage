@@ -361,9 +361,11 @@ def check_period_lock(cid: int):
         module = "ar"
     if module in ("general_ledger", "general-ledger"):
         module = "gl"
+    if module in ("revenue", "ifrs15", "revenue_recognition", "revenue-recognition"):
+        module = "revenue"
 
-    # ✅ Validate module (prevents weird values)
-    if module not in ("gl", "ar", "ap", "all"):
+    # ✅ Validate module
+    if module not in ("gl", "ar", "ap", "revenue", "all"):
         return jsonify({"error": f"Invalid module: {module}"}), 400
 
     try:
