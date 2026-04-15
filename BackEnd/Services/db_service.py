@@ -18879,9 +18879,25 @@ class DatabaseService:
             obligation_code TEXT NOT NULL,
             obligation_name TEXT NOT NULL,
             distinct_flag BOOLEAN NOT NULL DEFAULT TRUE,
-            recognition_timing TEXT NOT NULL DEFAULT 'over_time', -- over_time/point_in_time
-            progress_method TEXT NOT NULL DEFAULT 'cost_to_cost', -- cost_to_cost/milestone/units/time_elapsed/manual
-            obligation_status TEXT NOT NULL DEFAULT 'draft',      -- draft/active/completed/cancelled
+
+            recognition_timing TEXT NOT NULL DEFAULT 'over_time'
+                CHECK (recognition_timing IN ('over_time', 'point_in_time')),
+
+            progress_method TEXT NULL
+                CHECK (
+                    progress_method IS NULL OR
+                    progress_method IN (
+                        'cost_to_cost',
+                        'milestone',
+                        'units',
+                        'time_elapsed',
+                        'manual',
+                        'units_delivered'
+                    )
+                ),
+
+            obligation_status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (obligation_status IN ('draft', 'active', 'completed', 'cancelled')),
 
             standalone_selling_price NUMERIC(18,2) NOT NULL DEFAULT 0,
             allocated_transaction_price NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -18897,7 +18913,24 @@ class DatabaseService:
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_revenue_obligations_timing_chk
+            CHECK (
+                (
+                    recognition_timing = 'over_time'
+                    AND progress_method IS NOT NULL
+                    AND recognized_at_point_in_time_date IS NULL
+                )
+                OR
+                (
+                    recognition_timing = 'point_in_time'
+                    AND progress_method IS NULL
+                    AND recognized_at_point_in_time_date IS NOT NULL
+                    AND recognition_trigger IS NOT NULL
+                    AND BTRIM(recognition_trigger) <> ''
+                )
+            )
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_obligations_code_uq
@@ -18906,23 +18939,23 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_revenue_obligations_contract_idx
         ON {schema}.revenue_obligations(contract_id, obligation_status);
 
-        ALTER TABLE {schema}.revenue_obligations
-        ADD COLUMN IF NOT EXISTS recognition_trigger TEXT NULL;
-
         DO $$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='{schema}_revenue_obligations_contract_fk' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.revenue_obligations
-            ADD CONSTRAINT %I
-            FOREIGN KEY (contract_id) REFERENCES %I.revenue_contracts(id)
-            ON DELETE CASCADE',
-            '{schema}','{schema}_revenue_obligations_contract_fk','{schema}');
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_revenue_obligations_contract_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.revenue_obligations
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (contract_id) REFERENCES %I.revenue_contracts(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_revenue_obligations_contract_fk', '{schema}'
+                );
+            END IF;
         END $$;
 
         -- ==================================================
@@ -56108,83 +56141,123 @@ class DatabaseService:
                     f"Existing: {existing_allocated:.2f}, New: {new_allocated:.2f}, Limit: {contract_price:.2f}"
                 )
 
-            timing = (data.get("recognition_timing") or "over_time").strip().lower()
-            progress_method = (data.get("progress_method") or "cost_to_cost").strip().lower()
+            # 5) Normalize fields
+            obligation_code = (data.get("obligation_code") or "").strip()
+            obligation_name = (data.get("obligation_name") or "").strip()
+            distinct_flag = bool(data.get("distinct_flag", True))
+            obligation_status = (data.get("obligation_status") or "draft").strip().lower()
 
-            expected_total_cost = float(data.get("expected_total_cost") or 0.0)
-            pit_date = data.get("recognized_at_point_in_time_date")
-
-            if timing not in {"over_time", "point_in_time"}:
+            recognition_timing = (data.get("recognition_timing") or "over_time").strip().lower()
+            if recognition_timing not in {"over_time", "point_in_time"}:
                 raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
 
-            pit_trigger = (data.get("recognition_trigger") or "").strip().lower()
+            recognition_trigger = (data.get("recognition_trigger") or "").strip().lower() or None
 
-            if timing == "point_in_time":
-                if not pit_date:
+            standalone_selling_price = float(data.get("standalone_selling_price") or 0.0)
+            allocated_transaction_price = float(data.get("allocated_transaction_price") or 0.0)
+            expected_total_cost = float(data.get("expected_total_cost") or 0.0)
+            actual_cost_to_date = float(data.get("actual_cost_to_date") or 0.0)
+            progress_percent = float(data.get("progress_percent") or 0.0)
+            revenue_to_date = float(data.get("revenue_to_date") or 0.0)
+            recognized_at_point_in_time_date = data.get("recognized_at_point_in_time_date")
+            notes = data.get("notes")
+
+            raw_progress_method = (data.get("progress_method") or "").strip().lower()
+
+            valid_progress_methods = {
+                "cost_to_cost",
+                "milestone",
+                "units",
+                "time_elapsed",
+                "manual",
+                "units_delivered",
+            }
+
+            # 6) Timing-specific rules
+            if recognition_timing == "point_in_time":
+                if not recognized_at_point_in_time_date:
                     raise ValueError("Point-in-time obligations require a satisfaction date.")
-                if not pit_trigger:
+                if not recognition_trigger:
                     raise ValueError("Point-in-time obligations require a recognition trigger.")
 
-                data["expected_total_cost"] = 0.0
-                data["actual_cost_to_date"] = 0.0
-                data["progress_percent"] = 0.0
-                data["progress_method"] = None
+                progress_method = None
+                expected_total_cost = 0.0
+                actual_cost_to_date = 0.0
+                progress_percent = 0.0
 
-            if timing == "over_time":
-                if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
+            else:  # over_time
+                progress_method = raw_progress_method or "cost_to_cost"
+
+                if progress_method not in valid_progress_methods:
                     raise ValueError("Invalid progress method for over-time obligation.")
 
                 if progress_method == "cost_to_cost" and expected_total_cost <= 0:
                     raise ValueError("Over-time obligations using cost-to-cost require expected total cost.")
 
-                data["recognized_at_point_in_time_date"] = None
+                recognized_at_point_in_time_date = None
+                recognition_trigger = None
 
+            # 7) Payload enrichment
             payload_json = dict(data.get("payload_json") or {})
             payload_json["catalog_item_type"] = data.get("catalog_item_type")
             payload_json["catalog_item_id"] = data.get("catalog_item_id")
             payload_json["catalog_item_code"] = data.get("catalog_item_code")
             payload_json["catalog_item_label"] = data.get("catalog_item_label")
-            payload_json["recognition_trigger"] = data.get("recognition_trigger")
-                
+            payload_json["recognition_trigger"] = recognition_trigger
+
+            # 8) Insert
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_obligations (
-                    company_id, contract_id, obligation_code, obligation_name,
-                    distinct_flag, recognition_timing, progress_method, obligation_status,
-                    standalone_selling_price, allocated_transaction_price,
-                    expected_total_cost, actual_cost_to_date, progress_percent, revenue_to_date,
-                    recognized_at_point_in_time_date, recognition_trigger, notes, payload_json
+                    company_id,
+                    contract_id,
+                    obligation_code,
+                    obligation_name,
+                    distinct_flag,
+                    recognition_timing,
+                    progress_method,
+                    obligation_status,
+                    standalone_selling_price,
+                    allocated_transaction_price,
+                    expected_total_cost,
+                    actual_cost_to_date,
+                    progress_percent,
+                    revenue_to_date,
+                    recognized_at_point_in_time_date,
+                    recognition_trigger,
+                    notes,
+                    payload_json
                 )
                 VALUES (
-                    %s,%s,%s,%s,
-                    %s,%s,%s,%s,
-                    %s,%s,
-                    %s,%s,%s,%s,
-                    %s,%s,%s,%s::jsonb
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s::jsonb
                 )
                 RETURNING *;
                 """,
                 (
                     int(company_id),
                     int(contract_id),
-                    (data.get("obligation_code") or "").strip(),
-                    (data.get("obligation_name") or "").strip(),
-                    bool(data.get("distinct_flag", True)),
-                    (data.get("recognition_timing") or "over_time").strip().lower(),
-                    ((data.get("progress_method") or "cost_to_cost").strip().lower() if timing == "over_time" else None),
-                    (data.get("obligation_status") or "draft").strip().lower(),
-                    float(data.get("standalone_selling_price") or 0.0),
-                    float(data.get("allocated_transaction_price") or 0.0),
-                    float(data.get("expected_total_cost") or 0.0),
-                    float(data.get("actual_cost_to_date") or 0.0),
-                    float(data.get("progress_percent") or 0.0),
-                    float(data.get("revenue_to_date") or 0.0),
-                    data.get("recognized_at_point_in_time_date"),
-                    data.get("recognition_trigger"),
-                    data.get("notes"),
+                    obligation_code,
+                    obligation_name,
+                    distinct_flag,
+                    recognition_timing,
+                    progress_method,
+                    obligation_status,
+                    standalone_selling_price,
+                    allocated_transaction_price,
+                    expected_total_cost,
+                    actual_cost_to_date,
+                    progress_percent,
+                    revenue_to_date,
+                    recognized_at_point_in_time_date,
+                    recognition_trigger,
+                    notes,
                     _json_dumps(payload_json),
                 )
             )
+
             row = dict(cur.fetchone())
             conn.commit()
 
