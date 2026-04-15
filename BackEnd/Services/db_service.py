@@ -57468,23 +57468,17 @@ class DatabaseService:
 
         timing = str(obligation.get("recognition_timing") or "over_time").strip().lower()
 
-        billed_row = self.fetch_one(
-            f"""
-            SELECT
-                COUNT(*) AS billing_count,
-                COUNT(source_invoice_id) AS linked_invoice_count,
-                COALESCE(SUM(amount), 0) AS billed_amt
-            FROM {schema}.revenue_billing_events
-            WHERE obligation_id = %s
-            AND (%s IS NULL OR event_date <= %s)
-            """,
-            (obligation_id, period_end, period_end),
+        billing_stats = self._obligation_billing_validation_stats(
+            company_id=company_id,
+            contract=contract,
+            obligation=obligation,
+            period_end=period_end,
             cur=cur,
-        ) or {}
+        )
 
-        billed_amt = float(billed_row.get("billed_amt") or 0.0)
-        billing_count = int(billed_row.get("billing_count") or 0)
-        linked_invoice_count = int(billed_row.get("linked_invoice_count") or 0)
+        billed_amt = float(billing_stats.get("billed_to_date") or 0.0)
+        billing_count = int(billing_stats.get("billing_count") or 0)
+        linked_invoice_count = int(billing_stats.get("linked_invoice_count") or 0)
 
         if timing == "point_in_time":
             pit_date = obligation.get("recognized_at_point_in_time_date")
@@ -57522,6 +57516,62 @@ class DatabaseService:
             "linked_invoice_count": linked_invoice_count,
         }
 
+    def _obligation_billing_validation_stats(self, company_id: int, contract: dict, obligation: dict, period_end=None, cur=None) -> dict:
+        schema = self.company_schema(company_id)
+        obligation_id = int(obligation["id"])
+        contract_id = int(contract["id"])
+        pe = self._as_date(period_end)
+
+        direct = self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(amount), 0) AS billed_amt,
+                COUNT(*) AS billing_count,
+                COUNT(source_invoice_id) AS linked_invoice_count
+            FROM {schema}.revenue_billing_events
+            WHERE obligation_id = %s
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (obligation_id, pe, pe),
+            cur=cur,
+        ) or {}
+
+        direct_billed = _money2(direct.get("billed_amt") or 0)
+
+        if direct_billed > Decimal("0.00"):
+            return {
+                "billed_to_date": direct_billed,
+                "billing_count": int(direct.get("billing_count") or 0),
+                "linked_invoice_count": int(direct.get("linked_invoice_count") or 0),
+            }
+
+        allocated_billed = self._allocated_obligation_billed_to_date(
+            company_id=company_id,
+            contract=contract,
+            obligation=obligation,
+            period_end=period_end,
+            cur=cur,
+        )
+
+        contract_pool = self.fetch_one(
+            f"""
+            SELECT
+                COUNT(*) AS billing_count,
+                COUNT(source_invoice_id) AS linked_invoice_count
+            FROM {schema}.revenue_billing_events
+            WHERE contract_id = %s
+            AND obligation_id IS NULL
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (contract_id, pe, pe),
+            cur=cur,
+        ) or {}
+
+        return {
+            "billed_to_date": allocated_billed,
+            "billing_count": int(contract_pool.get("billing_count") or 0),
+            "linked_invoice_count": int(contract_pool.get("linked_invoice_count") or 0),
+        }
 
     def _allocated_obligation_billed_to_date(
         self,
@@ -57601,33 +57651,52 @@ class DatabaseService:
     def get_revenue_obligation_billing_position(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)
 
-        sql = f"""
-            SELECT
-                o.id AS obligation_id,
-                o.contract_id,
-                o.obligation_code,
-                o.obligation_name,
-                o.allocated_transaction_price,
-                COALESCE((
-                    SELECT SUM(b.amount)
-                    FROM {schema}.revenue_billing_events b
-                    WHERE b.obligation_id = o.id
-                ), 0) AS billed_to_date,
-                GREATEST(
-                    COALESCE(o.allocated_transaction_price, 0) -
-                    COALESCE((
-                        SELECT SUM(b.amount)
-                        FROM {schema}.revenue_billing_events b
-                        WHERE b.obligation_id = o.id
-                    ), 0),
-                    0
-                ) AS remaining_to_bill
-            FROM {schema}.revenue_obligations o
-            WHERE o.id = %s
+        obligation = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.revenue_obligations
+            WHERE id = %s
             LIMIT 1
-        """
-        row = self.fetch_one(sql, (int(obligation_id),), cur=cur)
-        return row or None
+            """,
+            (int(obligation_id),),
+            cur=cur,
+        )
+        if not obligation:
+            return None
+
+        contract = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.revenue_contracts
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (int(obligation["contract_id"]),),
+            cur=cur,
+        )
+        if not contract:
+            return None
+
+        billed_to_date = self._allocated_obligation_billed_to_date(
+            company_id=company_id,
+            contract=contract,
+            obligation=obligation,
+            period_end=None,
+            cur=cur,
+        )
+
+        allocated_tp = _money2(obligation.get("allocated_transaction_price") or 0)
+        remaining_to_bill = _money2(max(Decimal("0.00"), allocated_tp - billed_to_date))
+
+        return {
+            "obligation_id": int(obligation["id"]),
+            "contract_id": int(obligation["contract_id"]),
+            "obligation_code": obligation.get("obligation_code"),
+            "obligation_name": obligation.get("obligation_name"),
+            "allocated_transaction_price": float(allocated_tp),
+            "billed_to_date": float(billed_to_date),
+            "remaining_to_bill": float(remaining_to_bill),
+        }
 
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
