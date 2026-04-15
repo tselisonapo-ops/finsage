@@ -90,8 +90,8 @@ def _tb_signed(r: Dict[str, Any]) -> float:
     return dr - cr
 
 
-def _money2(self, v) -> Decimal:
-    return self._d(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+def _money2(v) -> Decimal:
+    return _d(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _pct(self, v) -> Decimal:
