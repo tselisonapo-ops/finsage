@@ -153,6 +153,53 @@
 
 console.log("✅ dashboard.js booting");
 
+(function () {
+  const app = document.querySelector(".app");
+  const menuBtn = document.getElementById("mobileMenu");
+  const overlay = document.getElementById("navOverlay");
+
+  if (!app || !menuBtn) return;
+
+  function isDesktop() {
+    return window.innerWidth >= 1024;
+  }
+
+  function closeNav() {
+    app.classList.remove("nav-open");
+    overlay?.classList.add("hidden");
+  }
+
+  function openNav() {
+    if (isDesktop()) {
+      app.classList.toggle("nav-collapsed");
+      return;
+    }
+    app.classList.add("nav-open");
+    overlay?.classList.remove("hidden");
+  }
+
+  menuBtn.addEventListener("click", () => {
+    if (isDesktop()) {
+      app.classList.toggle("nav-collapsed");
+    } else {
+      const open = app.classList.contains("nav-open");
+      if (open) closeNav();
+      else openNav();
+    }
+  });
+
+  overlay?.addEventListener("click", closeNav);
+
+  window.addEventListener("resize", () => {
+    if (isDesktop()) {
+      overlay?.classList.add("hidden");
+      app.classList.remove("nav-open");
+    } else {
+      app.classList.remove("nav-collapsed");
+    }
+  });
+})();
+
 window.addEventListener("error", (e) => {
   console.log("GLOBAL ERROR:", e.message);
 });

@@ -583,28 +583,79 @@ html, body {
     }
   }
 
-  /* App layout */
-  .app{
-    display:flex;
-    height:100vh;
-    overflow:hidden;              /* body/page won't scroll */
-  }
+/* App layout */
+.app{
+  display:flex;
+  height:100vh;
+  overflow:hidden;
+  position:relative;
+}
 
-  /* Sidebar stays put */
+/* Sidebar */
+.sidebar{
+  width:270px;
+  position:fixed;
+  top:0;
+  left:0;
+  bottom:0;
+  z-index:50;
+  background:#fff;
+  border-right:1px solid var(--fs-border);
+  overflow-y:auto;
+  overflow-x:hidden;
+  transition:transform .22s ease;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* Main area */
+.main{
+  flex:1;
+  height:100vh;
+  overflow-y:auto;
+  overflow-x:hidden;
+  transition:margin-left .22s ease;
+  min-width:0;
+}
+
+/* Desktop default */
+@media (min-width:1024px){
   .sidebar{
-    width:270px;
-    position:fixed;
-    top:0; left:0; bottom:0;
-    overflow:hidden;              /* change to auto if you want sidebar scroll */
+    transform:translateX(0);
   }
 
-  /* Main area scrolls */
   .main{
-    margin-left:270px;            /* same as sidebar width */
-    height:100vh;
-    overflow-y:auto;
-    overflow-x:hidden;
+    margin-left:270px;
   }
+
+  .app.nav-collapsed .sidebar{
+    transform:translateX(-100%);
+  }
+
+  .app.nav-collapsed .main{
+    margin-left:0;
+  }
+}
+
+/* Small / tablet */
+@media (max-width:1023px){
+  .sidebar{
+    transform:translateX(-100%);
+    box-shadow:0 18px 40px rgba(0,0,0,.18);
+  }
+
+  .app.nav-open .sidebar{
+    transform:translateX(0);
+  }
+
+  .main{
+    margin-left:0;
+    width:100%;
+  }
+
+  .app.nav-open .main{
+    margin-left:270px;
+  }
+}
 
 .inv-item-col--wide {
   width: 26%;
@@ -662,7 +713,7 @@ html, body {
 <body class="text-[15px] text-slate-800">
   <div class="app">
     <!-- Left Nav -->
-    <aside class="sidebar w-[270px] hidden lg:flex flex-col border-r border-[var(--fs-border)] bg-white">
+    <aside class="sidebar flex flex-col">
       <div class="px-5 py-4">
         <div class="flex items-center gap-2">
           <div class="w-8 h-8 rounded-lg bg-[var(--fs-navy)]"></div>
@@ -674,7 +725,7 @@ html, body {
         </div>
       </div>
 
-      <nav id="mainNav" class="flex-1 px-2 py-2"></nav>
+      <nav id="mainNav" class="flex-1 px-2 py-2 overflow-y-auto"></nav>
 
       <!-- 🔹 Reporting & Compliance: Lease wizard entry -->
       <div class="px-3 pb-4 border-t border-[var(--fs-border)]">
@@ -695,6 +746,8 @@ html, body {
       </div>
     </aside>
 
+    <div id="navOverlay" class="fixed inset-0 bg-black/40 hidden z-40 lg:hidden"></div>
+    
     <!-- Main -->
     <main class="main flex-1">
       <!-- Header -->
@@ -703,7 +756,9 @@ html, body {
 
           <!-- LEFT -->
           <div class="flex items-center gap-3 flex-nowrap">
-            <button id="mobileMenu" class="lg:hidden px-3 py-2 border rounded-lg"></button>
+            <button id="mobileMenu" class="px-3 py-2 border rounded-lg bg-white text-slate-700" type="button" aria-label="Toggle navigation">
+              ☰
+            </button>
 
             <span id="companyBadge" class="pill whitespace-nowrap hidden md:inline">
               Your company
