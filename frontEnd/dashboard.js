@@ -33520,17 +33520,31 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function buildRevenueCashRedirectPayload() {
+    const selected = state.selectedContract || null;
+
     const contractId =
-      Number($("revContractId")?.value || 0) || null;
+      Number(
+        $("revContractId")?.value ||
+        selected?.id ||
+        0
+      ) || null;
 
     const contractNumber =
-      $("revContractNumber")?.value?.trim() || "";
+      $("revContractNumber")?.value?.trim() ||
+      selected?.contract_number ||
+      "";
 
     const customerId =
-      Number($("revCustomerId")?.value || 0) || null;
+      Number(
+        $("revCustomerId")?.value ||
+        selected?.customer_id ||
+        0
+      ) || null;
 
     const customerName =
-      $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() || "";
+      $("revCustomerId")?.selectedOptions?.[0]?.textContent?.trim() ||
+      selected?.customer_name ||
+      "";
 
     const obligationId =
       Number($("revObligationId")?.value || 0) || null;
@@ -33542,7 +33556,11 @@ function bindAssetRecordsPickerModal({ cid }) {
       num($("revCashAmount")?.value);
 
     const currency =
-      resolveCurrency($("revCashCurrency")?.value);
+      resolveCurrency(
+        $("revCashCurrency")?.value ||
+        selected?.currency ||
+        ""
+      );
 
     const notes =
       $("revCashNotes")?.value?.trim() || "";
@@ -33563,7 +33581,6 @@ function bindAssetRecordsPickerModal({ cid }) {
       bankAccountId,
     };
   }
-
   async function loadRevenueObligationCatalog() {
     const dl = $("revObligationCatalogList");
     if (!dl) return [];
@@ -33944,9 +33961,20 @@ function bindAssetRecordsPickerModal({ cid }) {
 
         state.selectedContract = row;
 
+        const revContractIdEl = $("revContractId");
+        if (revContractIdEl) revContractIdEl.value = row.id || "";
+
+        const revContractNumberEl = $("revContractNumber");
+        if (revContractNumberEl) revContractNumberEl.value = row.contract_number || "";
+
+        const revCustomerIdEl = $("revCustomerId");
+        if (revCustomerIdEl && row.customer_id) {
+          revCustomerIdEl.value = String(row.customer_id);
+        }
+
         renderContractPreview(row);
-        renderContractKpis(row);                 // <-- add this
-        $("revContractStatusPill").textContent = row.status || "draft"; // optional
+        renderContractKpis(row);
+        $("revContractStatusPill").textContent = row.status || "draft";
         setContractViewMode("preview");
 
         await loadContractVersions(row.id);
@@ -35650,6 +35678,10 @@ function bindAssetRecordsPickerModal({ cid }) {
           throw new Error("Select a revenue contract first.");
         }
 
+        if (!payload.customerId) {
+          throw new Error("Selected contract is missing a customer.");
+        }
+
         if (!(Number(payload.amount) > 0)) {
           throw new Error("Enter a valid cash amount.");
         }
@@ -35661,10 +35693,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         }
 
         await redirectRevenueCashToInvoicePaymentModal(Number(invoice.id), payload);
-
-        // optional immediate refresh if you later save directly from revenue cash
         await loadCashOverview(payload.contractId);
-
       } catch (e) {
         setMsg(e?.message || "Cash receipt redirect failed", "error");
       }
