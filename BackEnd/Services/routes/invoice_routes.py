@@ -581,24 +581,60 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     # Dr AR = gross after discount + VAT after discount
     jlines = [{"account_code": AR_ACCOUNT, "dc": "D", "amount": gross_total}]
 
+    remaining_contract_asset = 0.0
+
+    if ifrs15_accounts and revenue_contract_id:
+        contract = db_service.fetch_one(f"""
+            SELECT COALESCE(contract_asset_balance,0) AS ca
+            FROM {db_service.company_schema(company_id)}.revenue_contracts
+            WHERE id = %s
+            LIMIT 1
+        """, (int(revenue_contract_id),)) or {}
+
+        remaining_contract_asset = money(contract.get("ca") or 0.0)
+        
     # Cr Revenue = gross revenue before header discount (per account)
     for acct, amt in revenue_by_acct.items():
         amt = money(amt)
         if not amt:
             continue
 
-        target_account = acct  # default = normal revenue
-
         # 🔥 IFRS 15 override
         if ifrs15_accounts:
-            if settlement_pattern == "revenue_before_billing":
-                target_account = ifrs15_accounts["contract_asset_account"]
+            invoice_amt = amt
 
-            elif settlement_pattern in {"billing_before_revenue", "cash_before_service"}:
-                target_account = ifrs15_accounts["contract_liability_account"]
+            if remaining_contract_asset > 0:
+                clear_amt = min(remaining_contract_asset, invoice_amt)
+                clear_amt = money(clear_amt)
 
+                if clear_amt > 0:
+                    jlines.append({
+                        "account_code": ifrs15_accounts["contract_asset_account"],
+                        "dc": "C",
+                        "amount": clear_amt
+                    })
+
+                remaining = money(invoice_amt - clear_amt)
+                remaining_contract_asset = money(remaining_contract_asset - clear_amt)
+
+                if remaining > 0:
+                    jlines.append({
+                        "account_code": ifrs15_accounts["contract_liability_account"],
+                        "dc": "C",
+                        "amount": remaining
+                    })
+            else:
+                jlines.append({
+                    "account_code": ifrs15_accounts["contract_liability_account"],
+                    "dc": "C",
+                    "amount": invoice_amt
+                })
+
+            continue
+
+        # ✅ NORMAL REVENUE (NO CONTRACT)
         jlines.append({
-            "account_code": target_account,
+            "account_code": acct,
             "dc": "C",
             "amount": amt
         })

@@ -33228,28 +33228,113 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!el) return;
 
     if (!c?.id) {
-      el.innerHTML = `<div class="text-sm text-slate-500">Select a contract from the left to preview it, or click New Contract to create one.</div>`;
+      el.innerHTML = `
+        <div class="text-sm text-slate-500">
+          Select a contract from the left to preview it, or click New Contract to create one.
+        </div>
+      `;
       return;
     }
 
+    const expectedPosition = getExpectedPositionFromSettlementPattern(
+      c?.payload_json?.settlement_pattern || ""
+    );
+
     el.innerHTML = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
-        <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
-        <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
-        <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
-        <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
-        <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
-        <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
-        <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
-        <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
-        <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
-      </div>
-      <div class="mt-3">
-        <div class="text-slate-500 text-xs mb-1">Notes</div>
-        <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
+      <div class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
+          <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
+          <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
+          <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
+          <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
+          <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
+          <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
+          <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
+          <div><span class="text-slate-500">Expected Position:</span> <strong>${esc(expectedPosition)}</strong></div>
+          <div><span class="text-slate-500">Current Position:</span> <strong>${esc(getCurrentPositionFromContract(c))}</strong></div>
+          <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
+          <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
+        </div>
+
+        <div>
+          <div class="text-slate-500 text-xs mb-1">Notes</div>
+          <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
+          <button
+            id="revPreviewCreateInvoiceBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+          >
+            Create Invoice
+          </button>
+
+          <button
+            id="revPreviewRecordPaymentBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+          >
+            Record Payment
+          </button>
+
+          <button
+            id="revPreviewDefineObligationsBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+          >
+            Define Obligations
+          </button>
+        </div>
       </div>
     `;
+
+    $("revPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
+      try {
+        const contract = state.selectedContract || c;
+        if (!contract?.id) throw new Error("Select a contract first.");
+
+        const prefill = buildInvoicePrefillFromContractPreview(contract);
+        await redirectToInvoiceFromContract(prefill);
+      } catch (e) {
+        setMsg(e?.message || "Invoice redirect failed", "error");
+      }
+    });
+
+    $("revPreviewRecordPaymentBtn")?.addEventListener("click", () => {
+      try {
+        const contract = state.selectedContract || c;
+        if (!contract?.id) throw new Error("Select a contract first.");
+
+        if ($("revContractId")) $("revContractId").value = String(contract.id || "");
+        if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
+        if ($("revCustomerId")) $("revCustomerId").value = String(contract.customer_id || "");
+        if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
+
+        setActiveTab("billings");
+        setMsg("Enter payment details, then save the cash receipt.");
+      } catch (e) {
+        setMsg(e?.message || "Could not open payment flow", "error");
+      }
+    });
+
+    $("revPreviewDefineObligationsBtn")?.addEventListener("click", () => {
+      try {
+        const contract = state.selectedContract || c;
+        if (!contract?.id) throw new Error("Select a contract first.");
+
+        if ($("revContractId")) $("revContractId").value = String(contract.id || "");
+        state.selectedObligation = null;
+        hydrateObligationForm({});
+        renderObligationPreview({});
+        renderObligationContractBanner(contract);
+        setObligationViewMode("form");
+        setActiveTab("obligations");
+      } catch (e) {
+        setMsg(e?.message || "Could not open obligations", "error");
+      }
+    });
   }
 
   function renderObligationPreview(o = {}) {
@@ -35914,14 +35999,17 @@ function bindAssetRecordsPickerModal({ cid }) {
 
         const invoice = await findPostedInvoiceForRevenueContract(payload.contractId);
 
-        if (!invoice?.id) {
-          throw new Error("No posted invoice found for this contract.");
+        if (invoice?.id) {
+          await redirectRevenueCashToInvoicePaymentModal(Number(invoice.id), payload);
+        } else {
+          await recordCash();
+          setMsg("Cash receipt recorded directly against the contract.");
         }
 
-        await redirectRevenueCashToInvoicePaymentModal(Number(invoice.id), payload);
         await loadCashOverview(payload.contractId);
+        await loadContracts();
       } catch (e) {
-        setMsg(e?.message || "Cash receipt redirect failed", "error");
+        setMsg(e?.message || "Cash receipt failed", "error");
       }
     });
 
@@ -44890,6 +44978,52 @@ function bindAR() {
     };
   }
 
+  function buildInvoicePrefillFromContractPreview(c = {}) {
+    return {
+      customer_id: c.customer_id || null,
+      customer_name: c.customer_name || "",
+      revenue_contract_id: c.id || null,
+      revenue_contract_number: c.contract_number || "",
+      revenue_contract_title: c.contract_title || "",
+      invoice_date: new Date().toISOString().slice(0, 10),
+      currency: resolveCurrency(c.contract_currency || "ZAR"),
+      memo: `Invoice for ${c.contract_title || c.contract_number || "contract"}`,
+      line: {
+        item_name: c.contract_title || "Contract billing",
+        description: c.notes || "",
+        quantity: 1,
+        unit_price: Number(c.transaction_price || 0),
+        revenue_obligation_id: null
+      }
+    };
+  }
+
+  async function redirectToInvoiceFromContract(payload) {
+    try {
+      console.log("🚀 [Contract → Invoice Redirect] payload =", payload);
+      window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+      await switchScreen("ar-invoices");
+    } catch (e) {
+      console.warn("[redirectToInvoiceFromContract] failed", e);
+      throw e;
+    }
+  }
+
+  function openObligationsForSelectedContract() {
+    const c = state.selectedContract || null;
+    if (!c?.id) {
+      setMsg("Select a contract first.", "error");
+      return;
+    }
+
+    $("revContractId").value = String(c.id);
+    state.selectedObligation = null;
+    hydrateObligationForm({});
+    renderObligationPreview({});
+    renderObligationContractBanner(c);
+    setObligationViewMode("form");
+    setActiveTab("obligations");
+  }
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
@@ -44931,6 +45065,7 @@ function bindAR() {
         payload.obligationName ??
         payload.revenue_obligation_name ??
         payload.line?.item_name ??
+        contractTitle ??
         "Service";
 
       const obligationNotes =
@@ -44944,7 +45079,7 @@ function bindAR() {
         payload.line?.unit_price ??
         0;
 
-      const currency = resolveCurrency(payload.currency);
+      const currency = resolveCurrency(payload.currency || "ZAR");
 
       const rawInvoiceDate =
         payload.invoiceDate ??
@@ -44955,7 +45090,6 @@ function bindAR() {
         ? new Date(rawInvoiceDate).toISOString().slice(0, 10)
         : new Date().toISOString().slice(0, 10);
 
-      // 🔥 use direct DOM lookups, not $()
       const invCustomerIdEl = document.getElementById("invCustomerId");
       const invCustomerNameEl = document.getElementById("invCustomerName");
       const invDateEl = document.getElementById("invDate");
@@ -44973,11 +45107,10 @@ function bindAR() {
       console.log("➡️ [Prefill] obligationId =", obligationId);
       console.log("➡️ [Prefill] invoiceDate =", invoiceDate);
 
-      // 1. Header basics
       if (invCustomerIdEl) invCustomerIdEl.value = customerId ? String(customerId) : "";
       if (invCustomerNameEl) invCustomerNameEl.value = customerName || "";
       if (invDateEl) invDateEl.value = invoiceDate || "";
-      if (invCurrencyEl) invCurrencyEl.value = currency || "USD";
+      if (invCurrencyEl) invCurrencyEl.value = currency || "ZAR";
 
       if (invMemoEl) {
         invMemoEl.value =
@@ -44985,11 +45118,7 @@ function bindAR() {
           `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
       }
 
-      console.log("🧾 [Prefill] Header set");
-
-      // 2. Load contracts for selected customer first
       const contracts = await window.loadRevenueContractsForSelectedCustomer?.(contractId) || [];
-      console.log("📚 [Prefill] Contracts loaded:", contracts);
 
       window.toggleInvoiceContractUI?.({
         hasCustomerContracts: contracts.length > 0,
@@ -44997,19 +45126,15 @@ function bindAR() {
 
       if (invRevenueContractEl) {
         invRevenueContractEl.value = contractId ? String(contractId) : "";
-        console.log("🧾 [Prefill] Contract field set to:", invRevenueContractEl.value);
       }
 
-      // 3. Load obligations for selected contract
       const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
-      console.log("📦 [Prefill] Obligations loaded:", obligations);
 
       window.toggleInvoiceObligationUI?.({
         hasRevenueContract: !!contractId,
         hasObligation: obligations.length > 0,
       });
 
-      // 4. Ensure one line exists
       if (!body) {
         console.warn("❌ [Prefill] invLines tbody not found");
         return;
@@ -45017,7 +45142,6 @@ function bindAR() {
 
       let row = body.querySelector("tr");
       if (!row) {
-        console.log("🧱 [Prefill] No row found, adding one");
         row = window.addLine?.() || null;
       }
       if (!row) {
@@ -45025,9 +45149,8 @@ function bindAR() {
         return;
       }
 
-      // 5. Fill that row
-      const itemEl = row.querySelector(".inv-item-pick");
-      const descEl = row.querySelector(".inv-service");
+      const itemEl = row.querySelector(".inv-desc");      // item_name in readInvoiceForm
+      const descEl = row.querySelector(".inv-service");   // description in readInvoiceForm
       const oblEl = row.querySelector(".inv-obligation");
       const qtyEl = row.querySelector(".inv-qty");
       const priceEl = row.querySelector(".inv-price");
@@ -45040,11 +45163,9 @@ function bindAR() {
       if (oblEl) {
         oblEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
         oblEl.value = obligationId ? String(obligationId) : "";
-        console.log("🧾 [Prefill] Obligation field set to:", oblEl.value);
       }
 
       await window.applyObligationBillingToLine?.(row);
-      console.log("💰 [Prefill] applyObligationBillingToLine completed");
 
       window.recalcInvoice?.({ force: true });
       console.log("✅ [Prefill] DONE");
@@ -45053,6 +45174,57 @@ function bindAR() {
     }
   }
   window.prefillInvoiceFromRevenuePayload = prefillInvoiceFromRevenuePayload;
+
+  async function consumePendingRevenueInvoicePrefill() {
+    try {
+      const payload = window._PENDING_REVENUE_INVOICE_PREFILL || null;
+      if (!payload) return;
+
+      console.log("🧾 [AR] consuming pending revenue invoice prefill", payload);
+
+      // clear immediately so it does not keep reapplying
+      window._PENDING_REVENUE_INVOICE_PREFILL = null;
+
+      // show invoice area if you have pane switching
+      if (typeof window.showArPane === "function") {
+        window.showArPane("invoices");
+      }
+
+      // reset form for a new invoice instead of loading an existing one
+      if (typeof window.resetInvoiceForm === "function") {
+        await window.resetInvoiceForm();
+      } else {
+        const $ = (id) => document.getElementById(id);
+
+        if ($("invId")) $("invId").value = "";
+        if ($("invCustomerName")) $("invCustomerName").value = "";
+        if ($("invCustomerId")) $("invCustomerId").value = "";
+        if ($("invNumber")) $("invNumber").value = "";
+        if ($("invDate")) $("invDate").value = new Date().toISOString().slice(0, 10);
+        if ($("invDueDate")) $("invDueDate").value = "";
+        if ($("invCurrency")) $("invCurrency").value = "ZAR";
+        if ($("invMemo")) $("invMemo").value = "";
+        if ($("invRevenueContractId")) $("invRevenueContractId").value = "";
+
+        const tbody = document.querySelector("#invLines");
+        if (tbody) tbody.innerHTML = "";
+      }
+
+      await window.waitForElement?.("invCustomerId", 3000);
+      await window.waitForElement?.("invLines", 3000);
+
+      await window.prefillInvoiceFromRevenuePayload?.(payload);
+
+      if (typeof window.recalcInvoice === "function") {
+        window.recalcInvoice({ force: true });
+      }
+
+      console.log("✅ [AR] revenue invoice prefill applied");
+    } catch (err) {
+      console.warn("[consumePendingRevenueInvoicePrefill] failed", err);
+    }
+  }
+  window.consumePendingRevenueInvoicePrefill = consumePendingRevenueInvoicePrefill;
 
   function toggleInvoiceObligationUI(opts = {}) {
     const hasRevenueContract = !!opts.hasRevenueContract;
@@ -46003,6 +46175,10 @@ function bindAR() {
     invCustomerNameEl.addEventListener("change", async () => {
       await window.loadRevenueContractsForSelectedCustomer?.();
       await window.loadInvoiceLineObligationsFromContract?.();
+
+      setTimeout(() => {
+        window.consumePendingRevenueInvoicePrefill?.();
+      }, 0);
 
       toggleInvoiceObligationUI({
         hasRevenueContract: !!document.getElementById("invRevenueContractId")?.value,
