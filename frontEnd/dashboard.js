@@ -34098,6 +34098,13 @@ function bindAssetRecordsPickerModal({ cid }) {
         if (!row) return;
 
         state.selectedContract = row;
+        state.selectedObligation = null;
+
+        // reset obligation ui when switching contracts
+        hydrateObligationForm({});
+        renderObligationPreview({});
+        renderObligationContractBanner(null);
+        setObligationViewMode("preview");
 
         const revContractIdEl = $("revContractId");
         if (revContractIdEl) revContractIdEl.value = row.id || "";
