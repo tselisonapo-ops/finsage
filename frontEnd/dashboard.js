@@ -33207,42 +33207,76 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   function renderObligationPreview(o = {}) {
     const el = $("revObligationPreviewBody");
+    const editBtn = $("revEditObligationBtn");
     if (!el) return;
 
     if (!o?.id) {
       el.innerHTML = `<div class="text-sm text-slate-500">Select an obligation row to preview it, or click Add Obligation to create one.</div>`;
+      if (editBtn) editBtn.classList.add("hidden");
       return;
     }
+
+    if (editBtn) editBtn.classList.remove("hidden");
 
     const timing = String(o.recognition_timing || "").toLowerCase();
     const satisfactionStatus = o.satisfaction_status || "pending";
     const satisfiedAt = toDateInputValue(o.satisfied_at);
     const evidenceRef = o.satisfaction_evidence_ref || "";
+    const evidenceType =
+      o.satisfaction_evidence_type ||
+      o?.payload_json?.satisfaction_evidence_type ||
+      "";
+    const trigger = o.recognition_trigger || "—";
+
+    const canMarkSatisfied =
+      timing === "point_in_time" &&
+      satisfactionStatus !== "satisfied";
 
     el.innerHTML = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div><span class="text-slate-500">Code:</span> <strong>${esc(o.obligation_code || "")}</strong></div>
-        <div><span class="text-slate-500">Timing:</span> <strong>${esc(o.recognition_timing || "")}</strong></div>
-        <div><span class="text-slate-500">Name:</span> <strong>${esc(o.obligation_name || "")}</strong></div>
-        <div><span class="text-slate-500">Trigger:</span> <strong>${esc(o.recognition_trigger || "")}</strong></div>
-        <div><span class="text-slate-500">SSP:</span> <strong>${money(o.standalone_selling_price)}</strong></div>
-        <div><span class="text-slate-500">Allocated:</span> <strong>${money(o.allocated_transaction_price)}</strong></div>
-        <div><span class="text-slate-500">Revenue LTD:</span> <strong>${money(o.revenue_to_date)}</strong></div>
-        <div><span class="text-slate-500">Satisfaction Status:</span> <strong>${esc(satisfactionStatus)}</strong></div>
-        ${timing === "point_in_time" ? `
-          <div><span class="text-slate-500">Eligibility Date:</span> <strong>${esc(toDateInputValue(o.recognized_at_point_in_time_date))}</strong></div>
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+          <div><span class="text-slate-500">Code:</span> <strong>${esc(o.obligation_code || "")}</strong></div>
+          <div><span class="text-slate-500">Timing:</span> <strong>${esc(o.recognition_timing || "")}</strong></div>
+          <div><span class="text-slate-500">Name:</span> <strong>${esc(o.obligation_name || "")}</strong></div>
+          <div><span class="text-slate-500">Trigger:</span> <strong>${esc(trigger)}</strong></div>
+          <div><span class="text-slate-500">SSP:</span> <strong>${money(o.standalone_selling_price)}</strong></div>
+          <div><span class="text-slate-500">Allocated:</span> <strong>${money(o.allocated_transaction_price)}</strong></div>
+          <div><span class="text-slate-500">Revenue LTD:</span> <strong>${money(o.revenue_to_date)}</strong></div>
+          <div><span class="text-slate-500">Satisfaction Status:</span> <strong>${esc(satisfactionStatus)}</strong></div>
+          <div><span class="text-slate-500">Eligibility Date:</span> <strong>${esc(toDateInputValue(o.recognized_at_point_in_time_date) || "—")}</strong></div>
           <div><span class="text-slate-500">Satisfied At:</span> <strong>${esc(satisfiedAt || "—")}</strong></div>
+          <div><span class="text-slate-500">Evidence Type:</span> <strong>${esc(evidenceType || "—")}</strong></div>
           <div><span class="text-slate-500">Evidence Ref:</span> <strong>${esc(evidenceRef || "—")}</strong></div>
-        ` : `
-          <div><span class="text-slate-500">Progress Method:</span> <strong>${esc(o.progress_method || "")}</strong></div>
-          <div><span class="text-slate-500">Expected Cost:</span> <strong>${money(o.expected_total_cost)}</strong></div>
-        `}
-      </div>
-      <div class="mt-3">
-        <div class="text-slate-500 text-xs mb-1">Notes</div>
-        <div class="border rounded p-3 bg-slate-50">${esc(o.notes || "—")}</div>
+        </div>
+
+        <div>
+          <div class="text-slate-500 text-xs mb-1">Notes</div>
+          <div class="border rounded p-3 bg-slate-50">${esc(o.notes || "—")}</div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          ${canMarkSatisfied ? `<button id="revPreviewMarkSatisfiedBtn" class="btn" type="button">Mark Satisfied</button>` : ``}
+          ${timing === "point_in_time" ? `<button id="revPreviewCreateInvoiceBtn" class="btn-ghost" type="button">Create Invoice</button>` : ``}
+        </div>
       </div>
     `;
+
+    $("revPreviewMarkSatisfiedBtn")?.addEventListener("click", async () => {
+      try {
+        await markSelectedObligationSatisfiedFromPreview();
+      } catch (e) {
+        setMsg(e?.message || "Mark satisfied failed", "error");
+      }
+    });
+
+    $("revPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
+      try {
+        const prefill = buildInvoicePrefillFromRevenueUI(o);
+        await redirectToInvoiceFromObligation(prefill);
+      } catch (e) {
+        setMsg(e?.message || "Invoice redirect failed", "error");
+      }
+    });
   }
 
   function toggleObligationFields() {
@@ -33250,7 +33284,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     const overTimeBlock = document.getElementById("revOverTimeBlock");
     const pitBlock = document.getElementById("revPointInTimeBlock");
-    const expectedCostWrap = $("revExpectedCost")?.closest("div")?.parentElement || null;
+    const expectedCostWrap = $("revExpectedCostWrap");
 
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
@@ -33270,6 +33304,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
       if ($("revSatisfactionStatus")) $("revSatisfactionStatus").value = "pending";
       if ($("revSatisfiedAt")) $("revSatisfiedAt").value = "";
+      if ($("revSatisfactionEvidenceType")) $("revSatisfactionEvidenceType").value = "";
       if ($("revSatisfactionEvidenceRef")) $("revSatisfactionEvidenceRef").value = "";
     }
   }
@@ -33751,6 +33786,11 @@ function bindAssetRecordsPickerModal({ cid }) {
       pj.vat_code ??
       "";
 
+    const evidenceType =
+      o.satisfaction_evidence_type ??
+      pj.satisfaction_evidence_type ??
+      "";
+
     $("revObligationId").value = o.id || "";
     $("revObligationCode").value = o.obligation_code || catalogItemCode || "";
 
@@ -33762,8 +33802,25 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revObligationName").value = displayName;
     $("revRecognitionTiming").value = o.recognition_timing || "point_in_time";
     $("revProgressMethod").value = o.progress_method || "";
+
     if ($("revPitTrigger")) {
       $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
+    }
+
+    if ($("revSatisfactionStatus")) {
+      $("revSatisfactionStatus").value = o.satisfaction_status || "pending";
+    }
+
+    if ($("revSatisfiedAt")) {
+      $("revSatisfiedAt").value = toDateInputValue(o.satisfied_at);
+    }
+
+    if ($("revSatisfactionEvidenceType")) {
+      $("revSatisfactionEvidenceType").value = evidenceType || "";
+    }
+
+    if ($("revSatisfactionEvidenceRef")) {
+      $("revSatisfactionEvidenceRef").value = o.satisfaction_evidence_ref || "";
     }
 
     $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
@@ -33772,16 +33829,6 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revPitDate").value = toDateInputValue(o.recognized_at_point_in_time_date);
     $("revDistinctFlag").checked = o.distinct_flag !== false;
     $("revObligationNotes").value = o.notes || "";
-
-    if ($("revSatisfactionStatus")) {
-      $("revSatisfactionStatus").value = o.satisfaction_status || "pending";
-    }
-    if ($("revSatisfiedAt")) {
-      $("revSatisfiedAt").value = toDateInputValue(o.satisfied_at);
-    }
-    if ($("revSatisfactionEvidenceRef")) {
-      $("revSatisfactionEvidenceRef").value = o.satisfaction_evidence_ref || "";
-    }
 
     state.selectedObligation = o?.id ? o : null;
 
@@ -33839,27 +33886,34 @@ function bindAssetRecordsPickerModal({ cid }) {
     return `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/satisfy`;
   }
 
-  async function markObligationSatisfied() {
+  async function markSelectedObligationSatisfiedFromPreview() {
     const cid = state.cid;
-    const obligationId = Number($("revObligationId")?.value || 0) || null;
+    const selected = state.selectedObligation || null;
     const contractId = Number($("revContractId")?.value || 0) || null;
 
-    if (!cid || !obligationId || !contractId) {
+    if (!cid || !selected?.id || !contractId) {
       throw new Error("Select an obligation first");
     }
 
     const payload = {
-      recognition_trigger: $("revPitTrigger")?.value || null,
-      satisfaction_status: $("revSatisfactionStatus")?.value || "satisfied",
-      satisfied_at: $("revSatisfiedAt")?.value || $("revPitDate")?.value || null,
-      satisfaction_evidence_ref: $("revSatisfactionEvidenceRef")?.value?.trim() || null,
-      notes: $("revObligationNotes")?.value || "",
+      recognition_trigger: selected.recognition_trigger || null,
+      satisfaction_status: "satisfied",
+      satisfied_at:
+        selected.satisfied_at ||
+        selected.recognized_at_point_in_time_date ||
+        new Date().toISOString().slice(0, 10),
+      satisfaction_evidence_ref: selected.satisfaction_evidence_ref || null,
+      satisfaction_evidence_type:
+        selected.satisfaction_evidence_type ||
+        selected?.payload_json?.satisfaction_evidence_type ||
+        null,
+      notes: selected.notes || "",
     };
 
     const out = await apiFetch(
       ENDPOINTS?.revenue?.satisfyObligation
-        ? ENDPOINTS.revenue.satisfyObligation(cid, obligationId)
-        : revenueSatisfyEndpoint(cid, obligationId),
+        ? ENDPOINTS.revenue.satisfyObligation(cid, selected.id)
+        : revenueSatisfyEndpoint(cid, selected.id),
       {
         method: "POST",
         body: JSON.stringify(payload),
@@ -33867,11 +33921,10 @@ function bindAssetRecordsPickerModal({ cid }) {
     );
 
     const saved = out?.data || out || {};
+    state.selectedObligation = saved;
     await loadObligations(contractId);
-    hydrateObligationForm(saved);
     renderObligationPreview(saved);
-    setObligationViewMode("preview");
-    setMsg("Obligation satisfaction updated.");
+    setMsg("Obligation marked satisfied.");
 
     return out;
   }
@@ -33880,6 +33933,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     const rawName = $("revObligationName")?.value?.trim() || "";
     const picked = findRevenueObligationCatalogMeta(rawName);
     const timing = $("revRecognitionTiming")?.value || "point_in_time";
+
+    const evidenceType = $("revSatisfactionEvidenceType")?.value || null;
 
     return {
       obligation_code: $("revObligationCode")?.value?.trim() || picked?.code || "",
@@ -33897,6 +33952,10 @@ function bindAssetRecordsPickerModal({ cid }) {
       satisfaction_status: $("revSatisfactionStatus")?.value || "pending",
       satisfied_at: $("revSatisfiedAt")?.value || null,
       satisfaction_evidence_ref: $("revSatisfactionEvidenceRef")?.value?.trim() || null,
+
+      payload_json: {
+        satisfaction_evidence_type: evidenceType,
+      },
 
       catalog_item_type: picked?.type || null,
       catalog_item_id: picked?.id || null,
@@ -35155,25 +35214,14 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     await loadObligations(contractId);
 
-    // keep form aligned with saved row
-    hydrateObligationForm(saved);
+    state.selectedObligation = saved;
+    renderObligationPreview(saved);
+    renderObligationContractBanner(null);
+    setObligationViewMode("preview");
     setMsg("Obligation saved.");
-
-    const timing = String(
-      saved?.recognition_timing ||
-      payload?.recognition_timing ||
-      $("revRecognitionTiming")?.value ||
-      ""
-    ).trim().toLowerCase();
-
-    if (timing === "point_in_time") {
-      const prefill = buildInvoicePrefillFromRevenueUI(saved);
-      await redirectToInvoiceFromObligation(prefill);
-    }
 
     return out;
   }
-
 
   async function updateObligation() {
     const cid = state.cid;
