@@ -18909,11 +18909,31 @@ class DatabaseService:
 
             recognized_at_point_in_time_date DATE NULL,
             recognition_trigger TEXT NULL,
+
+            satisfaction_status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (satisfaction_status IN ('pending', 'satisfied', 'reversed')),
+
+            satisfied_at DATE NULL,
+            satisfaction_evidence_ref TEXT NULL,
+            satisfaction_confirmed_by_user_id BIGINT NULL,
+
             notes TEXT NULL,
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            ALTER TABLE {schema}.revenue_obligations
+            ADD COLUMN IF NOT EXISTS satisfaction_status TEXT NOT NULL DEFAULT 'pending';
+
+            ALTER TABLE {schema}.revenue_obligations
+            ADD COLUMN IF NOT EXISTS satisfied_at DATE NULL;
+
+            ALTER TABLE {schema}.revenue_obligations
+            ADD COLUMN IF NOT EXISTS satisfaction_evidence_ref TEXT NULL;
+
+            ALTER TABLE {schema}.revenue_obligations
+            ADD COLUMN IF NOT EXISTS satisfaction_confirmed_by_user_id BIGINT NULL;
 
             CONSTRAINT {schema}_revenue_obligations_timing_chk
             CHECK (
@@ -18926,10 +18946,44 @@ class DatabaseService:
                 (
                     recognition_timing = 'point_in_time'
                     AND progress_method IS NULL
-                    AND recognized_at_point_in_time_date IS NOT NULL
                     AND recognition_trigger IS NOT NULL
                     AND BTRIM(recognition_trigger) <> ''
                 )
+            ),
+
+            CONSTRAINT {schema}_revenue_obligations_satisfaction_chk
+            CHECK (
+                (
+                    recognition_timing = 'over_time'
+                    AND satisfaction_status = 'pending'
+                    AND satisfied_at IS NULL
+                )
+                OR
+                (
+                    recognition_timing = 'point_in_time'
+                    AND (
+                        satisfaction_status = 'pending'
+                        OR (
+                            satisfaction_status IN ('satisfied', 'reversed')
+                            AND satisfied_at IS NOT NULL
+                        )
+                    )
+                )
+            )
+        );
+
+        ALTER TABLE {schema}.revenue_obligations
+        ADD CONSTRAINT {schema}_revenue_obligations_satisfaction_chk
+        CHECK (
+            (
+                recognition_timing = 'over_time'
+                AND satisfaction_status = 'pending'
+                AND satisfied_at IS NULL
+            )
+            OR
+            (
+                recognition_timing = 'point_in_time'
+                AND satisfaction_status IN ('pending', 'satisfied', 'reversed')
             )
         );
 
@@ -18938,6 +18992,9 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_revenue_obligations_contract_idx
         ON {schema}.revenue_obligations(contract_id, obligation_status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_obligations_satisfaction_idx
+        ON {schema}.revenue_obligations(contract_id, recognition_timing, satisfaction_status, satisfied_at);
 
         DO $$
         BEGIN
@@ -56092,22 +56149,146 @@ class DatabaseService:
         return row
 
 
+    def mark_revenue_obligation_satisfied(
+        self,
+        company_id: int,
+        obligation_id: int,
+        data: dict,
+        user_id: int | None = None,
+    ) -> dict:
+        import json
+
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            before = self.fetch_one(
+                f"SELECT * FROM {schema}.revenue_obligations WHERE id=%s LIMIT 1;",
+                (int(obligation_id),),
+                cur=cur,
+            )
+            if not before:
+                raise ValueError("Revenue obligation not found")
+
+            if int(before.get("company_id") or 0) != int(company_id):
+                raise ValueError("Obligation does not belong to this company")
+
+            timing = str(before.get("recognition_timing") or "").strip().lower()
+            if timing != "point_in_time":
+                raise ValueError("Only point-in-time obligations can be marked satisfied")
+
+            obligation_status = str(before.get("obligation_status") or "").strip().lower()
+            if obligation_status not in {"draft", "active", "completed"}:
+                raise ValueError(f"Cannot satisfy obligation with status '{obligation_status}'")
+
+            contract = self.get_revenue_contract(company_id, int(before["contract_id"]), cur=cur)
+            if not contract:
+                raise ValueError("Parent revenue contract not found")
+
+            contract_status = str(contract.get("status") or "").strip().lower()
+            approval_status = str(contract.get("approval_status") or "").strip().lower()
+
+            if contract_status not in {"draft", "active", "completed"}:
+                raise ValueError(f"Cannot satisfy obligation under contract status '{contract_status}'")
+
+            if approval_status not in {"draft", "approved"}:
+                raise ValueError(f"Cannot satisfy obligation when approval_status is '{approval_status}'")
+
+            before_payload = before.get("payload_json") or {}
+            if isinstance(before_payload, str):
+                try:
+                    before_payload = json.loads(before_payload)
+                except Exception:
+                    before_payload = {}
+
+            recognition_trigger = (
+                data.get("recognition_trigger")
+                if "recognition_trigger" in data
+                else before.get("recognition_trigger")
+                or before_payload.get("recognition_trigger")
+            )
+            recognition_trigger = (recognition_trigger or "").strip().lower()
+
+            if not recognition_trigger:
+                raise ValueError("Point-in-time obligations require a recognition trigger")
+
+            satisfaction_status = str(data.get("satisfaction_status") or "satisfied").strip().lower()
+            if satisfaction_status not in {"satisfied", "reversed"}:
+                raise ValueError("Satisfaction action only supports 'satisfied' or 'reversed'")
+
+            satisfied_at = (
+                data.get("satisfied_at")
+                or before.get("satisfied_at")
+                or before.get("recognized_at_point_in_time_date")
+            )
+            if not satisfied_at:
+                raise ValueError("Satisfied point-in-time obligations require satisfied_at")
+
+            satisfaction_evidence_ref = (
+                data.get("satisfaction_evidence_ref")
+                if "satisfaction_evidence_ref" in data
+                else before.get("satisfaction_evidence_ref")
+            )
+            satisfaction_evidence_ref = (satisfaction_evidence_ref or "").strip() or None
+
+            notes = data.get("notes")
+
+            payload_json = dict(before_payload)
+            payload_json["recognition_trigger"] = recognition_trigger
+            payload_json["manual_pit_satisfied"] = (satisfaction_status == "satisfied")
+            payload_json["satisfied_at"] = str(satisfied_at) if satisfied_at is not None else None
+
+            if satisfaction_evidence_ref:
+                payload_json["satisfaction_evidence_ref"] = satisfaction_evidence_ref
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_obligations
+                SET
+                    recognition_timing = 'point_in_time',
+                    progress_method = NULL,
+                    expected_total_cost = 0,
+                    actual_cost_to_date = 0,
+                    progress_percent = 0,
+                    recognition_trigger = %s,
+                    satisfaction_status = %s,
+                    satisfied_at = %s,
+                    satisfaction_evidence_ref = %s,
+                    satisfaction_confirmed_by_user_id = %s,
+                    notes = COALESCE(%s, notes),
+                    payload_json = %s::jsonb,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING *;
+                """,
+                (
+                    recognition_trigger,
+                    satisfaction_status,
+                    satisfied_at,
+                    satisfaction_evidence_ref,
+                    int(user_id) if user_id else None,
+                    notes,
+                    _json_dumps(payload_json),
+                    int(obligation_id),
+                )
+            )
+            after = dict(cur.fetchone())
+            conn.commit()
+
+        return {"before": before, "after": after}
+
     def add_revenue_obligation(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
-            # 1) Contract must exist
             contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
             if not contract:
                 raise ValueError("Invalid contract: contract does not exist")
 
-            # 2) Route contract must match payload contract if payload sends one
             payload_contract_id = data.get("contract_id")
             if payload_contract_id not in (None, "", 0, "0"):
                 if int(payload_contract_id) != int(contract_id):
                     raise ValueError("Payload contract_id does not match selected contract")
 
-            # 3) Lifecycle guard
             status = str(contract.get("status") or "").strip().lower()
             approval_status = str(contract.get("approval_status") or "").strip().lower()
 
@@ -56120,7 +56301,6 @@ class DatabaseService:
             if float(contract.get("recognized_revenue_to_date") or 0.0) > 0:
                 raise ValueError("Cannot add obligations after revenue recognition has started")
 
-            # 4) Financial cap: total allocated cannot exceed contract transaction price
             existing = self.fetch_one(
                 f"""
                 SELECT COALESCE(SUM(allocated_transaction_price), 0) AS total_allocated
@@ -56141,13 +56321,12 @@ class DatabaseService:
                     f"Existing: {existing_allocated:.2f}, New: {new_allocated:.2f}, Limit: {contract_price:.2f}"
                 )
 
-            # 5) Normalize fields
             obligation_code = (data.get("obligation_code") or "").strip()
             obligation_name = (data.get("obligation_name") or "").strip()
             distinct_flag = bool(data.get("distinct_flag", True))
             obligation_status = (data.get("obligation_status") or "draft").strip().lower()
 
-            recognition_timing = (data.get("recognition_timing") or "over_time").strip().lower()
+            recognition_timing = (data.get("recognition_timing") or "point_in_time").strip().lower()
             if recognition_timing not in {"over_time", "point_in_time"}:
                 raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
 
@@ -56164,6 +56343,14 @@ class DatabaseService:
 
             raw_progress_method = (data.get("progress_method") or "").strip().lower()
 
+            satisfaction_status = (data.get("satisfaction_status") or "pending").strip().lower()
+            if satisfaction_status not in {"pending", "satisfied", "reversed"}:
+                raise ValueError("Invalid satisfaction status.")
+
+            satisfied_at = data.get("satisfied_at")
+            satisfaction_evidence_ref = (data.get("satisfaction_evidence_ref") or "").strip() or None
+            satisfaction_confirmed_by_user_id = int(user_id) if user_id and satisfaction_status == "satisfied" else None
+
             valid_progress_methods = {
                 "cost_to_cost",
                 "milestone",
@@ -56173,10 +56360,7 @@ class DatabaseService:
                 "units_delivered",
             }
 
-            # 6) Timing-specific rules
             if recognition_timing == "point_in_time":
-                if not recognized_at_point_in_time_date:
-                    raise ValueError("Point-in-time obligations require a satisfaction date.")
                 if not recognition_trigger:
                     raise ValueError("Point-in-time obligations require a recognition trigger.")
 
@@ -56185,7 +56369,12 @@ class DatabaseService:
                 actual_cost_to_date = 0.0
                 progress_percent = 0.0
 
-            else:  # over_time
+                if satisfaction_status in {"satisfied", "reversed"}:
+                    satisfied_at = satisfied_at or recognized_at_point_in_time_date
+                    if not satisfied_at:
+                        raise ValueError("Satisfied point-in-time obligations require satisfied_at.")
+
+            else:
                 progress_method = raw_progress_method or "cost_to_cost"
 
                 if progress_method not in valid_progress_methods:
@@ -56196,8 +56385,11 @@ class DatabaseService:
 
                 recognized_at_point_in_time_date = None
                 recognition_trigger = None
+                satisfaction_status = "pending"
+                satisfied_at = None
+                satisfaction_evidence_ref = None
+                satisfaction_confirmed_by_user_id = None
 
-            # 7) Payload enrichment
             payload_json = dict(data.get("payload_json") or {})
             payload_json["catalog_item_type"] = data.get("catalog_item_type")
             payload_json["catalog_item_id"] = data.get("catalog_item_id")
@@ -56205,7 +56397,6 @@ class DatabaseService:
             payload_json["catalog_item_label"] = data.get("catalog_item_label")
             payload_json["recognition_trigger"] = recognition_trigger
 
-            # 8) Insert
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_obligations (
@@ -56225,6 +56416,10 @@ class DatabaseService:
                     revenue_to_date,
                     recognized_at_point_in_time_date,
                     recognition_trigger,
+                    satisfaction_status,
+                    satisfied_at,
+                    satisfaction_evidence_ref,
+                    satisfaction_confirmed_by_user_id,
                     notes,
                     payload_json
                 )
@@ -56232,7 +56427,8 @@ class DatabaseService:
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s::jsonb
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s::jsonb
                 )
                 RETURNING *;
                 """,
@@ -56253,6 +56449,10 @@ class DatabaseService:
                     revenue_to_date,
                     recognized_at_point_in_time_date,
                     recognition_trigger,
+                    satisfaction_status,
+                    satisfied_at,
+                    satisfaction_evidence_ref,
+                    satisfaction_confirmed_by_user_id,
                     notes,
                     _json_dumps(payload_json),
                 )
@@ -56278,16 +56478,16 @@ class DatabaseService:
             timing = (
                 data.get("recognition_timing")
                 if data.get("recognition_timing") not in (None, "")
-                else before.get("recognition_timing") or "over_time"
+                else before.get("recognition_timing") or "point_in_time"
             )
             timing = str(timing).strip().lower()
 
             progress_method = (
                 data.get("progress_method")
                 if data.get("progress_method") not in (None, "")
-                else before.get("progress_method") or "cost_to_cost"
+                else before.get("progress_method")
             )
-            progress_method = str(progress_method).strip().lower()
+            progress_method = (str(progress_method).strip().lower() if progress_method is not None else None)
 
             expected_total_cost = (
                 float(data["expected_total_cost"])
@@ -56316,20 +56516,44 @@ class DatabaseService:
             )
             pit_trigger = (pit_trigger or "").strip().lower()
 
+            satisfaction_status = (
+                data.get("satisfaction_status")
+                if data.get("satisfaction_status") not in (None, "")
+                else before.get("satisfaction_status") or "pending"
+            )
+            satisfaction_status = str(satisfaction_status).strip().lower()
+
+            satisfied_at = (
+                data.get("satisfied_at")
+                if "satisfied_at" in data
+                else before.get("satisfied_at")
+            )
+
+            satisfaction_evidence_ref = (
+                data.get("satisfaction_evidence_ref")
+                if "satisfaction_evidence_ref" in data
+                else before.get("satisfaction_evidence_ref")
+            )
+
             if timing not in {"over_time", "point_in_time"}:
                 raise ValueError("Invalid recognition timing. Use 'over_time' or 'point_in_time'.")
 
+            if satisfaction_status not in {"pending", "satisfied", "reversed"}:
+                raise ValueError("Invalid satisfaction status.")
+
             if timing == "point_in_time":
-                if not pit_date:
-                    raise ValueError("Point-in-time obligations require a satisfaction date.")
                 if not pit_trigger:
                     raise ValueError("Point-in-time obligations require a recognition trigger.")
 
-                # cleanup over-time specific fields
                 data["expected_total_cost"] = 0.0
                 data["actual_cost_to_date"] = 0.0
                 data["progress_percent"] = 0.0
                 data["progress_method"] = None
+
+                if satisfaction_status in {"satisfied", "reversed"}:
+                    satisfied_at = satisfied_at or pit_date
+                    if not satisfied_at:
+                        raise ValueError("Satisfied point-in-time obligations require satisfied_at.")
 
             if timing == "over_time":
                 if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
@@ -56338,9 +56562,11 @@ class DatabaseService:
                 if progress_method == "cost_to_cost" and expected_total_cost <= 0:
                     raise ValueError("Over-time obligations using cost-to-cost require expected total cost.")
 
-                # cleanup point-in-time specific fields
                 data["recognized_at_point_in_time_date"] = None
                 data["recognition_trigger"] = None
+                satisfaction_status = "pending"
+                satisfied_at = None
+                satisfaction_evidence_ref = None
 
             payload_json = dict(before_payload)
 
@@ -56365,7 +56591,7 @@ class DatabaseService:
                     obligation_name = COALESCE(NULLIF(%s,''), obligation_name),
                     distinct_flag = COALESCE(%s, distinct_flag),
                     recognition_timing = COALESCE(NULLIF(%s,''), recognition_timing),
-                    progress_method = COALESCE(NULLIF(%s,''), progress_method),
+                    progress_method = %s,
                     obligation_status = COALESCE(NULLIF(%s,''), obligation_status),
                     standalone_selling_price = COALESCE(%s, standalone_selling_price),
                     allocated_transaction_price = COALESCE(%s, allocated_transaction_price),
@@ -56375,6 +56601,10 @@ class DatabaseService:
                     revenue_to_date = COALESCE(%s, revenue_to_date),
                     recognized_at_point_in_time_date = %s,
                     recognition_trigger = %s,
+                    satisfaction_status = %s,
+                    satisfied_at = %s,
+                    satisfaction_evidence_ref = %s,
+                    satisfaction_confirmed_by_user_id = %s,
                     notes = COALESCE(%s, notes),
                     payload_json = COALESCE(%s::jsonb, payload_json),
                     updated_at = NOW()
@@ -56385,7 +56615,7 @@ class DatabaseService:
                     (data.get("obligation_name") or "").strip(),
                     data.get("distinct_flag"),
                     (data.get("recognition_timing") or "").strip().lower(),
-                    ((data.get("progress_method") or "").strip().lower() if data.get("progress_method") is not None else None),
+                    (None if data.get("progress_method") is None else (data.get("progress_method") or "").strip().lower()),
                     (data.get("obligation_status") or "").strip().lower(),
                     float(data["standalone_selling_price"]) if data.get("standalone_selling_price") is not None else None,
                     float(data["allocated_transaction_price"]) if data.get("allocated_transaction_price") is not None else None,
@@ -56395,6 +56625,10 @@ class DatabaseService:
                     float(data["revenue_to_date"]) if data.get("revenue_to_date") is not None else None,
                     data.get("recognized_at_point_in_time_date"),
                     data.get("recognition_trigger"),
+                    satisfaction_status,
+                    satisfied_at,
+                    satisfaction_evidence_ref,
+                    int(user_id) if user_id and satisfaction_status == "satisfied" else before.get("satisfaction_confirmed_by_user_id"),
                     data.get("notes"),
                     _json_dumps(payload_json),
                     int(obligation_id),
@@ -56695,8 +56929,6 @@ class DatabaseService:
 
     def _point_in_time_satisfied(self, obligation: dict, period_end) -> bool:
         pe = self._as_date(period_end)
-        pit_date = self._as_date(obligation.get("recognized_at_point_in_time_date"))
-        trigger = (obligation.get("recognition_trigger") or "").strip()
 
         payload = obligation.get("payload_json") or {}
         if isinstance(payload, str):
@@ -56705,13 +56937,26 @@ class DatabaseService:
             except Exception:
                 payload = {}
 
-        if not trigger:
-            trigger = (payload.get("recognition_trigger") or "").strip()
+        status = str(obligation.get("satisfaction_status") or "").strip().lower()
+        satisfied_at = self._as_date(
+            obligation.get("satisfied_at") or payload.get("satisfied_at")
+        )
 
-        if pit_date and pe and pit_date <= pe and trigger:
-            return True
+        if status == "satisfied":
+            if pe is None:
+                return True
+            if satisfied_at is None:
+                return True
+            return satisfied_at <= pe
 
-        return bool(payload.get("manual_pit_satisfied"))
+        if bool(payload.get("manual_pit_satisfied")):
+            if pe is None:
+                return True
+            if satisfied_at is None:
+                return True
+            return satisfied_at <= pe
+
+        return False
 
     def _obligation_progress_pct(self, obligation: dict, period_end) -> Decimal:
         """
@@ -57036,10 +57281,10 @@ class DatabaseService:
                     required_to_date = Decimal("0.00")
 
                     if timing == "point_in_time":
-                        pit_date = obl.get("recognized_at_point_in_time_date")
-                        pit_date_s = str(pit_date) if pit_date is not None else None
-                        if pit_date_s and pit_date_s <= period_end_s:
+                        if self._point_in_time_satisfied(obl, period_end):
                             required_to_date = allocated
+                        else:
+                            required_to_date = Decimal("0.00")
                     else:
                         if method == "cost_to_cost":
                             actual = Decimal(str(
@@ -57072,7 +57317,7 @@ class DatabaseService:
                             pct = Decimal("1")
 
                         required_to_date = (allocated * pct).quantize(Decimal("0.01"))
-
+                        
                     prev_row = self.fetch_one(
                         f"""
                         SELECT COALESCE(SUM(e.revenue_delta_this_run),0) AS amt

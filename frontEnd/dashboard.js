@@ -1883,6 +1883,9 @@ const ENDPOINTS = {
     obligation: (companyId, obligationId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/obligations/${encodeURIComponent(obligationId)}`,
 
+    satisfyObligation: (cid, obligationId) =>
+      `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/satisfy`,
+
     billings: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}/billings`,
 
@@ -33211,16 +33214,29 @@ function bindAssetRecordsPickerModal({ cid }) {
       return;
     }
 
+    const timing = String(o.recognition_timing || "").toLowerCase();
+    const satisfactionStatus = o.satisfaction_status || "pending";
+    const satisfiedAt = toDateInputValue(o.satisfied_at);
+    const evidenceRef = o.satisfaction_evidence_ref || "";
+
     el.innerHTML = `
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div><span class="text-slate-500">Code:</span> <strong>${esc(o.obligation_code || "")}</strong></div>
         <div><span class="text-slate-500">Timing:</span> <strong>${esc(o.recognition_timing || "")}</strong></div>
         <div><span class="text-slate-500">Name:</span> <strong>${esc(o.obligation_name || "")}</strong></div>
-        <div><span class="text-slate-500">Progress Method:</span> <strong>${esc(o.progress_method || "")}</strong></div>
+        <div><span class="text-slate-500">Trigger:</span> <strong>${esc(o.recognition_trigger || "")}</strong></div>
         <div><span class="text-slate-500">SSP:</span> <strong>${money(o.standalone_selling_price)}</strong></div>
         <div><span class="text-slate-500">Allocated:</span> <strong>${money(o.allocated_transaction_price)}</strong></div>
-        <div><span class="text-slate-500">Expected Cost:</span> <strong>${money(o.expected_total_cost)}</strong></div>
         <div><span class="text-slate-500">Revenue LTD:</span> <strong>${money(o.revenue_to_date)}</strong></div>
+        <div><span class="text-slate-500">Satisfaction Status:</span> <strong>${esc(satisfactionStatus)}</strong></div>
+        ${timing === "point_in_time" ? `
+          <div><span class="text-slate-500">Eligibility Date:</span> <strong>${esc(toDateInputValue(o.recognized_at_point_in_time_date))}</strong></div>
+          <div><span class="text-slate-500">Satisfied At:</span> <strong>${esc(satisfiedAt || "—")}</strong></div>
+          <div><span class="text-slate-500">Evidence Ref:</span> <strong>${esc(evidenceRef || "—")}</strong></div>
+        ` : `
+          <div><span class="text-slate-500">Progress Method:</span> <strong>${esc(o.progress_method || "")}</strong></div>
+          <div><span class="text-slate-500">Expected Cost:</span> <strong>${money(o.expected_total_cost)}</strong></div>
+        `}
       </div>
       <div class="mt-3">
         <div class="text-slate-500 text-xs mb-1">Notes</div>
@@ -33234,21 +33250,27 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     const overTimeBlock = document.getElementById("revOverTimeBlock");
     const pitBlock = document.getElementById("revPointInTimeBlock");
+    const expectedCostWrap = $("revExpectedCost")?.closest("div")?.parentElement || null;
 
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
       pitBlock?.classList.remove("hidden");
+      expectedCostWrap?.classList.add("hidden");
 
       if ($("revProgressMethod")) $("revProgressMethod").value = "";
+      if ($("revExpectedCost")) $("revExpectedCost").value = "0.00";
     } else {
       overTimeBlock?.classList.remove("hidden");
       pitBlock?.classList.add("hidden");
+      expectedCostWrap?.classList.remove("hidden");
 
       if ($("revProgressMethod") && !$("revProgressMethod").value) {
         $("revProgressMethod").value = "cost_to_cost";
       }
-      if ($("revPitDate")) $("revPitDate").value = $("revPitDate").value || "";
-      if ($("revPitTrigger")) $("revPitTrigger").value = "";
+
+      if ($("revSatisfactionStatus")) $("revSatisfactionStatus").value = "pending";
+      if ($("revSatisfiedAt")) $("revSatisfiedAt").value = "";
+      if ($("revSatisfactionEvidenceRef")) $("revSatisfactionEvidenceRef").value = "";
     }
   }
 
@@ -33738,17 +33760,28 @@ function bindAssetRecordsPickerModal({ cid }) {
       "";
 
     $("revObligationName").value = displayName;
-    $("revRecognitionTiming").value = o.recognition_timing || "over_time";
-    $("revProgressMethod").value = o.progress_method || "cost_to_cost";
+    $("revRecognitionTiming").value = o.recognition_timing || "point_in_time";
+    $("revProgressMethod").value = o.progress_method || "";
     if ($("revPitTrigger")) {
       $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
     }
+
     $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
     $("revAllocatedPrice").value = num(o.allocated_transaction_price).toFixed(2);
     $("revExpectedCost").value = num(o.expected_total_cost).toFixed(2);
-    $("revPitDate").value = String(o.recognized_at_point_in_time_date || "").slice(0, 10);
+    $("revPitDate").value = toDateInputValue(o.recognized_at_point_in_time_date);
     $("revDistinctFlag").checked = o.distinct_flag !== false;
     $("revObligationNotes").value = o.notes || "";
+
+    if ($("revSatisfactionStatus")) {
+      $("revSatisfactionStatus").value = o.satisfaction_status || "pending";
+    }
+    if ($("revSatisfiedAt")) {
+      $("revSatisfiedAt").value = toDateInputValue(o.satisfied_at);
+    }
+    if ($("revSatisfactionEvidenceRef")) {
+      $("revSatisfactionEvidenceRef").value = o.satisfaction_evidence_ref || "";
+    }
 
     state.selectedObligation = o?.id ? o : null;
 
@@ -33802,22 +33835,68 @@ function bindAssetRecordsPickerModal({ cid }) {
     };
   }
 
+  function revenueSatisfyEndpoint(cid, obligationId) {
+    return `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/satisfy`;
+  }
+
+  async function markObligationSatisfied() {
+    const cid = state.cid;
+    const obligationId = Number($("revObligationId")?.value || 0) || null;
+    const contractId = Number($("revContractId")?.value || 0) || null;
+
+    if (!cid || !obligationId || !contractId) {
+      throw new Error("Select an obligation first");
+    }
+
+    const payload = {
+      recognition_trigger: $("revPitTrigger")?.value || null,
+      satisfaction_status: $("revSatisfactionStatus")?.value || "satisfied",
+      satisfied_at: $("revSatisfiedAt")?.value || $("revPitDate")?.value || null,
+      satisfaction_evidence_ref: $("revSatisfactionEvidenceRef")?.value?.trim() || null,
+      notes: $("revObligationNotes")?.value || "",
+    };
+
+    const out = await apiFetch(
+      ENDPOINTS?.revenue?.satisfyObligation
+        ? ENDPOINTS.revenue.satisfyObligation(cid, obligationId)
+        : revenueSatisfyEndpoint(cid, obligationId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const saved = out?.data || out || {};
+    await loadObligations(contractId);
+    hydrateObligationForm(saved);
+    renderObligationPreview(saved);
+    setObligationViewMode("preview");
+    setMsg("Obligation satisfaction updated.");
+
+    return out;
+  }
+
   function obligationPayloadFromUI() {
     const rawName = $("revObligationName")?.value?.trim() || "";
     const picked = findRevenueObligationCatalogMeta(rawName);
+    const timing = $("revRecognitionTiming")?.value || "point_in_time";
 
     return {
       obligation_code: $("revObligationCode")?.value?.trim() || picked?.code || "",
       obligation_name: picked?.name || rawName,
-      recognition_timing: $("revRecognitionTiming")?.value || "over_time",
-      progress_method: $("revProgressMethod")?.value || "cost_to_cost",
+      recognition_timing: timing,
+      progress_method: timing === "point_in_time" ? null : ($("revProgressMethod")?.value || "cost_to_cost"),
       standalone_selling_price: num($("revSSP")?.value),
       allocated_transaction_price: num($("revAllocatedPrice")?.value),
-      expected_total_cost: num($("revExpectedCost")?.value),
+      expected_total_cost: timing === "point_in_time" ? 0 : num($("revExpectedCost")?.value),
       recognized_at_point_in_time_date: $("revPitDate")?.value || null,
       recognition_trigger: $("revPitTrigger")?.value || null,
       distinct_flag: !!$("revDistinctFlag")?.checked,
       notes: $("revObligationNotes")?.value || "",
+
+      satisfaction_status: $("revSatisfactionStatus")?.value || "pending",
+      satisfied_at: $("revSatisfiedAt")?.value || null,
+      satisfaction_evidence_ref: $("revSatisfactionEvidenceRef")?.value?.trim() || null,
 
       catalog_item_type: picked?.type || null,
       catalog_item_id: picked?.id || null,
@@ -34024,7 +34103,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         <td class="p-2">${esc(r.obligation_name || "")}</td>
         <td class="p-2">${esc(r.recognition_timing || "")}</td>
         <td class="p-2 text-right">${money(r.allocated_transaction_price)}</td>
-        <td class="p-2 text-right">${money(r.progress_percent || 0)}</td>
+        <td class="p-2">${esc(r.satisfaction_status || (r.recognition_timing === "point_in_time" ? "pending" : "—"))}</td>
         <td class="p-2 text-right">${money(r.revenue_to_date || 0)}</td>
       </tr>
     `).join("");
@@ -35629,6 +35708,13 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revRecognitionTiming")?.addEventListener("change", toggleObligationFields);
 
+    $("revMarkSatisfiedBtn")?.addEventListener("click", async () => {
+      try {
+        await markObligationSatisfied();
+      } catch (e) {
+        setMsg(e?.message || "Mark satisfied failed", "error");
+      }
+    });
 
     $("revSaveObligation")?.addEventListener("click", async () => {
       try { await saveObligation(); } catch (e) { setMsg(e?.message || "Save obligation failed", "error"); }
