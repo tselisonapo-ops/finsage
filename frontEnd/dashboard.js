@@ -33223,6 +33223,53 @@ function bindAssetRecordsPickerModal({ cid }) {
     return "Neutral";
   }
 
+  function buildInvoicePrefillFromContractPreview(c = {}) {
+    return {
+      customer_id: c.customer_id || null,
+      customer_name: c.customer_name || "",
+      revenue_contract_id: c.id || null,
+      revenue_contract_number: c.contract_number || "",
+      revenue_contract_title: c.contract_title || "",
+      invoice_date: new Date().toISOString().slice(0, 10),
+      currency: resolveCurrency(c.contract_currency || "ZAR"),
+      memo: `Invoice for ${c.contract_title || c.contract_number || "contract"}`,
+      line: {
+        item_name: c.contract_title || "Contract billing",
+        description: c.notes || "",
+        quantity: 1,
+        unit_price: Number(c.transaction_price || 0),
+        revenue_obligation_id: null
+      }
+    };
+  }
+
+  async function redirectToInvoiceFromContract(payload) {
+    try {
+      console.log("🚀 [Contract → Invoice Redirect] payload =", payload);
+      window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+      await switchScreen("ar-invoices");
+    } catch (e) {
+      console.warn("[redirectToInvoiceFromContract] failed", e);
+      throw e;
+    }
+  }
+
+  function openObligationsForSelectedContract() {
+    const c = state.selectedContract || null;
+    if (!c?.id) {
+      setMsg("Select a contract first.", "error");
+      return;
+    }
+
+    $("revContractId").value = String(c.id);
+    state.selectedObligation = null;
+    hydrateObligationForm({});
+    renderObligationPreview({});
+    renderObligationContractBanner(c);
+    setObligationViewMode("form");
+    setActiveTab("obligations");
+  }
+
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
@@ -33321,16 +33368,8 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revPreviewDefineObligationsBtn")?.addEventListener("click", () => {
       try {
-        const contract = state.selectedContract || c;
-        if (!contract?.id) throw new Error("Select a contract first.");
-
-        if ($("revContractId")) $("revContractId").value = String(contract.id || "");
-        state.selectedObligation = null;
-        hydrateObligationForm({});
-        renderObligationPreview({});
-        renderObligationContractBanner(contract);
-        setObligationViewMode("form");
-        setActiveTab("obligations");
+        state.selectedContract = state.selectedContract || c;
+        openObligationsForSelectedContract();
       } catch (e) {
         setMsg(e?.message || "Could not open obligations", "error");
       }
@@ -44978,52 +45017,6 @@ function bindAR() {
     };
   }
 
-  function buildInvoicePrefillFromContractPreview(c = {}) {
-    return {
-      customer_id: c.customer_id || null,
-      customer_name: c.customer_name || "",
-      revenue_contract_id: c.id || null,
-      revenue_contract_number: c.contract_number || "",
-      revenue_contract_title: c.contract_title || "",
-      invoice_date: new Date().toISOString().slice(0, 10),
-      currency: resolveCurrency(c.contract_currency || "ZAR"),
-      memo: `Invoice for ${c.contract_title || c.contract_number || "contract"}`,
-      line: {
-        item_name: c.contract_title || "Contract billing",
-        description: c.notes || "",
-        quantity: 1,
-        unit_price: Number(c.transaction_price || 0),
-        revenue_obligation_id: null
-      }
-    };
-  }
-
-  async function redirectToInvoiceFromContract(payload) {
-    try {
-      console.log("🚀 [Contract → Invoice Redirect] payload =", payload);
-      window._PENDING_REVENUE_INVOICE_PREFILL = payload;
-      await switchScreen("ar-invoices");
-    } catch (e) {
-      console.warn("[redirectToInvoiceFromContract] failed", e);
-      throw e;
-    }
-  }
-
-  function openObligationsForSelectedContract() {
-    const c = state.selectedContract || null;
-    if (!c?.id) {
-      setMsg("Select a contract first.", "error");
-      return;
-    }
-
-    $("revContractId").value = String(c.id);
-    state.selectedObligation = null;
-    hydrateObligationForm({});
-    renderObligationPreview({});
-    renderObligationContractBanner(c);
-    setObligationViewMode("form");
-    setActiveTab("obligations");
-  }
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
