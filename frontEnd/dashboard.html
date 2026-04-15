@@ -3667,84 +3667,61 @@ html, body {
                           </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-1">Timing</label>
-                            <select id="revRecognitionTiming" class="w-full border rounded px-3 py-2 text-sm">
-                              <option value="over_time">Over time</option>
-                              <option value="point_in_time">Point in time</option>
-                            </select>
-                          </div>
+                        <div id="revPointInTimeBlock" class="hidden md:col-span-2">
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label class="block text-xs text-slate-500 mb-1">Eligibility Date</label>
+                              <input id="revPitDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                              <div class="mt-1 text-[11px] text-slate-500">
+                                Earliest date the obligation may be recognized, if satisfied.
+                              </div>
+                            </div>
 
-                          <div id="revOverTimeBlock">
-                            <label class="block text-xs text-slate-500 mb-1">Progress Method</label>
-                            <select id="revProgressMethod" class="w-full border rounded px-3 py-2 text-sm">
-                              <option value="cost_to_cost">Cost to cost</option>
-                              <option value="milestone">Milestone</option>
-                              <option value="units">Units</option>
-                              <option value="time_elapsed">Time elapsed</option>
-                              <option value="manual">Manual</option>
-                            </select>
-                            <div class="mt-1 text-[11px] text-slate-500">
-                              Used only for obligations recognized over time.
+                            <div>
+                              <label class="block text-xs text-slate-500 mb-1">Recognition Trigger</label>
+                              <select id="revPitTrigger" class="w-full border rounded px-3 py-2 text-sm">
+                                <option value="">Select trigger...</option>
+                                <option value="customer_acceptance">Customer acceptance</option>
+                                <option value="delivery_completed">Delivery completed</option>
+                                <option value="milestone_certified">Milestone certified</option>
+                                <option value="report_issued">Report issued</option>
+                                <option value="invoice_issued">Invoice issued</option>
+                                <option value="manual_confirmation">Manual confirmation</option>
+                              </select>
                             </div>
                           </div>
 
-                          <div id="revPointInTimeBlock" class="hidden md:col-span-2">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-1">Eligibility Date</label>
-                                <input id="revPitDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                                <div class="mt-1 text-[11px] text-slate-500">
-                                  Earliest date the obligation may be recognized, if satisfied.
-                                </div>
-                              </div>
-
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-1">Recognition Trigger</label>
-                                <select id="revPitTrigger" class="w-full border rounded px-3 py-2 text-sm">
-                                  <option value="">Select trigger...</option>
-                                  <option value="customer_acceptance">Customer acceptance</option>
-                                  <option value="delivery_completed">Delivery completed</option>
-                                  <option value="milestone_certified">Milestone certified</option>
-                                  <option value="report_issued">Report issued</option>
-                                  <option value="invoice_issued">Invoice issued</option>
-                                  <option value="manual_confirmation">Manual confirmation</option>
-                                </select>
-                              </div>
+                          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                            <div>
+                              <label class="block text-xs text-slate-500 mb-1">Satisfaction Status</label>
+                              <select id="revSatisfactionStatus" class="w-full border rounded px-3 py-2 text-sm">
+                                <option value="pending">Pending</option>
+                                <option value="satisfied">Satisfied</option>
+                                <option value="reversed">Reversed</option>
+                              </select>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-1">Satisfaction Status</label>
-                                <select id="revSatisfactionStatus" class="w-full border rounded px-3 py-2 text-sm">
-                                  <option value="pending">Pending</option>
-                                  <option value="satisfied">Satisfied</option>
-                                  <option value="reversed">Reversed</option>
-                                </select>
-                              </div>
-
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-1">Satisfied At</label>
-                                <input id="revSatisfiedAt" type="date" class="w-full border rounded px-3 py-2 text-sm">
-                              </div>
-
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-1">Evidence Ref</label>
-                                <input id="revSatisfactionEvidenceRef" class="w-full border rounded px-3 py-2 text-sm" placeholder="Invoice/report/acceptance ref">
-                              </div>
+                            <div>
+                              <label class="block text-xs text-slate-500 mb-1">Satisfied At</label>
+                              <input id="revSatisfiedAt" type="date" class="w-full border rounded px-3 py-2 text-sm">
                             </div>
 
-                            <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
-                              Point-in-time does not by itself mean the obligation is satisfied. Recognition should follow actual satisfaction status and evidence.
+                            <div>
+                              <label class="block text-xs text-slate-500 mb-1">Evidence Ref</label>
+                              <input id="revSatisfactionEvidenceRef" class="w-full border rounded px-3 py-2 text-sm" placeholder="Invoice/report/acceptance ref">
                             </div>
+                          </div>
 
-                            <div class="mt-3 flex items-center gap-2">
-                              <button id="revMarkSatisfiedBtn" class="btn" type="button">Mark Satisfied</button>
-                            </div>
+                          <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
+                            Point-in-time does not by itself mean the obligation is satisfied. Recognition should follow actual satisfaction status and evidence.
+                          </div>
+
+                          <div class="mt-3 flex items-center gap-2">
+                            <button id="revMarkSatisfiedBtn" class="btn" type="button">Mark Satisfied</button>
                           </div>
                         </div>
-
+                      </div>
+                      
                       <div class="grid grid-cols-2 gap-3">
                         <div>
                           <label class="block text-xs text-slate-500 mb-1">SSP</label>
