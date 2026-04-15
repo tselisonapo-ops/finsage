@@ -33491,6 +33491,44 @@ function bindAssetRecordsPickerModal({ cid }) {
     `;
   }
 
+  function bindContractEditButton() {
+    const btn = document.getElementById("revContractEditBtn");
+    if (!btn) return;
+
+    btn.addEventListener("click", () => {
+      const selected = state.selectedContract || null;
+
+      if (!selected?.id) {
+        setMsg("Select a contract first", "error");
+        return;
+      }
+
+      // 👉 Switch UI: Preview → Form
+      document.getElementById("revContractPreviewWrap")?.classList.add("hidden");
+      document.getElementById("revContractFormWrap")?.classList.remove("hidden");
+
+      // 👉 Hydrate form with selected contract
+      hydrateContractForm(selected);
+
+      // 👉 Toggle buttons (Edit mode)
+      document.getElementById("revSaveContract")?.classList.add("hidden");
+      document.getElementById("revUpdateContract")?.classList.remove("hidden");
+
+      // Optional UX polish
+      document.getElementById("revContractNumber")?.focus();
+    });
+  }
+
+  function bindBackToPreview() {
+    const btn = document.getElementById("revBackToPreviewBtn");
+    if (!btn) return;
+
+    btn.addEventListener("click", () => {
+      document.getElementById("revContractFormWrap")?.classList.add("hidden");
+      document.getElementById("revContractPreviewWrap")?.classList.remove("hidden");
+    });
+  }
+
   function setContractViewMode(mode = "preview") {
     $("revContractPreviewWrap")?.classList.toggle("hidden", mode !== "preview");
     $("revContractFormWrap")?.classList.toggle("hidden", mode !== "form");
@@ -35958,6 +35996,9 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     setActiveTab("contracts");
     await loadContracts();
+    // ✅ ADD THESE HERE
+    bindContractEditButton();
+    bindBackToPreview();
     await loadRevenueCustomers();
     await loadRevenueObligationCatalog?.();   // <-- add this
     bindRevenueObligationCatalogPicker?.();   // <-- add this
