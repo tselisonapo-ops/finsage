@@ -58345,6 +58345,34 @@ class DatabaseService:
         """
         return self.fetch_all(sql, (int(contract_id),)) or []
 
+    def _as_date(self, value):
+        from datetime import date, datetime
+
+        if value in (None, "", 0):
+            return None
+
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+
+        if isinstance(value, datetime):
+            return value.date()
+
+        s = str(value).strip()
+        if not s:
+            return None
+
+        # handle 'YYYY-MM-DD'
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").date()
+        except Exception:
+            pass
+
+        # handle general datetime string
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+        except Exception:
+            return None
+    
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)
