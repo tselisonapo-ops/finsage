@@ -33615,6 +33615,42 @@ function bindAssetRecordsPickerModal({ cid }) {
     `;
   }
 
+  async function refreshSelectedContractDeep() {
+    const c = state.selectedContract;
+    if (!c?.id) return;
+
+    const cid = state.cid;
+
+    try {
+      setMsg("Refreshing contract...");
+
+      // 1. Reload contracts list
+      const data = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`);
+      state.contracts = data?.items || data?.data?.items || data?.data || [];
+
+      // 2. Find updated contract
+      const updated = state.contracts.find(x => Number(x.id) === Number(c.id));
+      if (!updated) return;
+
+      state.selectedContract = updated;
+
+      // 3. Re-render everything
+      renderContractPreview(updated);
+      renderContractKpis(updated);
+
+      await loadObligations(updated.id);
+      await loadRuns();
+      await loadBillingOverview(updated.id);
+      await loadCashOverview(updated.id);
+
+      setMsg("Updated.");
+    } catch (e) {
+      console.warn("refreshSelectedContractDeep failed", e);
+      setMsg("Refresh failed", "error");
+    }
+  }
+  window.refreshSelectedContractDeep = refreshSelectedContractDeep;
+
   function bindContractEditButton() {
     const btn = document.getElementById("revContractEditBtn");
     if (!btn) return;
@@ -34131,7 +34167,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     const saved = out?.data || out || {};
     state.selectedObligation = saved;
-    await loadObligations(contractId);
+    await refreshSelectedContractDeep();
     renderObligationPreview(saved);
     setMsg("Obligation marked satisfied.");
 
@@ -35981,7 +36017,12 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
 
     $("revSaveObligation")?.addEventListener("click", async () => {
-      try { await saveObligation(); } catch (e) { setMsg(e?.message || "Save obligation failed", "error"); }
+      try {
+        await saveObligation();
+        await refreshSelectedContractDeep();
+      } catch (e) {
+        setMsg(e?.message || "Save obligation failed", "error");
+      }
     });
 
     $("revUpdateObligation")?.addEventListener("click", async () => {
@@ -35993,7 +36034,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         renderObligationPreview(state.selectedObligation);
         renderObligationContractBanner(null);
         setObligationViewMode("preview");
-
+        await refreshSelectedContractDeep();
       } catch (e) { 
         setMsg(e?.message || "Update obligation failed", "error"); 
       }
@@ -36015,6 +36056,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         if (contractId) {
           await loadBillingOverview(contractId);
         }
+        await refreshSelectedContractDeep();
       } catch (e) {
         setMsg(e?.message || "Billing failed", "error");
       }
@@ -36047,13 +36089,19 @@ function bindAssetRecordsPickerModal({ cid }) {
 
         await loadCashOverview(payload.contractId);
         await loadContracts();
+        await refreshSelectedContractDeep();
       } catch (e) {
         setMsg(e?.message || "Cash receipt failed", "error");
       }
     });
 
     $("revSaveProgress")?.addEventListener("click", async () => {
-      try { await recordProgress(); } catch (e) { setMsg(e?.message || "Progress update failed", "error"); }
+      try {
+        await recordProgress();
+        await refreshSelectedContractDeep();
+      } catch (e) {
+        setMsg(e?.message || "Progress update failed", "error");
+      }
     });
 
     $("revBtnPreviewRun")?.addEventListener("click", async () => {
@@ -36069,6 +36117,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       try {
         setActiveTab("runs");
         await createRun();
+        await refreshSelectedContractDeep();
       } catch (e) {
         setRunMsg(e?.message || "Create run failed", "error");
       }
@@ -36084,6 +36133,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revRunPostBtn")?.addEventListener("click", async () => {
       try { await postRun(); } catch (e) { setRunMsg(e?.message || "Post failed", "error"); }
+      await refreshSelectedContractDeep();
     });
 
     $("revRunReverseBtn")?.addEventListener("click", async () => {
@@ -36132,6 +36182,28 @@ function bindAssetRecordsPickerModal({ cid }) {
     await loadRuns();
     await openRevenueFromApprovalHandoff();
     await loadRevenueCashBankAccounts();
+
+    const pendingRefreshId = Number(window._FS_REVENUE_REFRESH_CONTRACT_ID || 0) || null;
+    if (pendingRefreshId) {
+      window._FS_REVENUE_REFRESH_CONTRACT_ID = null;
+
+      // if current selection is same contract, deep refresh it
+      if (Number(state.selectedContract?.id || 0) === pendingRefreshId) {
+        await refreshSelectedContractDeep();
+      } else {
+        await loadContracts();
+        const updated = (state.contracts || []).find(x => Number(x.id) === pendingRefreshId);
+        if (updated) {
+          state.selectedContract = updated;
+          renderContractPreview(updated);
+          renderContractKpis(updated);
+          await loadObligations(updated.id);
+          await loadRuns();
+          await loadBillingOverview(updated.id);
+          await loadCashOverview(updated.id);
+        }
+      }
+    }
   };
 
   function buildInvoicePrefillFromRevenueUI(savedObligation = {}) {
@@ -37392,16 +37464,22 @@ async function commitInvoice(action) {
   // ACTION: draft
   // ---------------------------
   if (action === "draft") {
-    // ✅ replaced "clerk only" with policy-driven maker gate
     if (!canDraft) {
       throw new Error("You are not allowed to save draft invoices in this mode.");
     }
 
-    // ✅ Create once if needed, else update once
     await ensureInvoiceRowExistsDraftOnly();
 
+    let savedInv = null;
     if (parseInt(document.getElementById("invId")?.value || "0", 10)) {
-      await saveInvoiceDraft("draft"); // update existing
+      savedInv = await saveInvoiceDraft("draft");
+    }
+
+    const revenueContractId =
+      Number(savedInv?.revenue_contract_id || document.getElementById("invRevenueContractId")?.value || 0) || null;
+
+    if (revenueContractId) {
+      window._FS_REVENUE_REFRESH_CONTRACT_ID = revenueContractId;
     }
 
     return { ok: true, flow: "draft_only" };
@@ -37436,6 +37514,12 @@ async function commitInvoice(action) {
     // if user is not allowed AND company is not auto-posting -> always submit approval
     if (!canApprove && !autoPosts) {
       return await submitInvoiceForApprovalFlow({ cid, invId });
+      const revenueContractId =
+        Number(document.getElementById("invRevenueContractId")?.value || 0) || null;
+
+      if (revenueContractId) {
+        window._FS_REVENUE_REFRESH_CONTRACT_ID = revenueContractId;
+      }
     }
 
     try {
@@ -38008,7 +38092,11 @@ async function postInvoiceAccordingToPolicy(invoiceId) {
 
   showToast?.("Invoice posted ✅");
 
-  // return the truly posted invoice
+  const revenueContractId = Number(finalInv?.revenue_contract_id || 0) || null;
+  if (revenueContractId) {
+    window._FS_REVENUE_REFRESH_CONTRACT_ID = revenueContractId;
+  }
+
   return { ok: true, data: finalInv, post_response: postResWrap };
 }
 

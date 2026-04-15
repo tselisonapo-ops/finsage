@@ -56997,21 +56997,17 @@ class DatabaseService:
 
 
     def _obligation_billed_to_date(self, company_id: int, obligation: dict, period_end, cur=None) -> Decimal:
-        schema = self.company_schema(company_id)
-        oid = int(obligation["id"])
-        pe = self._as_date(period_end)
+        contract = self.get_revenue_contract(company_id, int(obligation["contract_id"]), cur=cur)
+        if not contract:
+            return Decimal("0.00")
 
-        row = self.fetch_one(
-            f"""
-            SELECT COALESCE(SUM(amount), 0) AS amt
-            FROM {schema}.revenue_billing_events
-            WHERE obligation_id = %s
-            AND (%s IS NULL OR event_date <= %s)
-            """,
-            (oid, pe, pe),
+        return self._allocated_obligation_billed_to_date(
+            company_id=company_id,
+            contract=contract,
+            obligation=obligation,
+            period_end=period_end,
             cur=cur,
-        ) or {}
-        return _money2(row.get("amt") or 0)
+        )
 
 
     def _contract_fallback_billed_to_date(self, company_id: int, contract_id: int, period_end, cur=None) -> Decimal:
@@ -57069,39 +57065,18 @@ class DatabaseService:
         )
         delta = _money2(revenue_required_to_date - revenue_previously_recognized)
 
-        billed_to_date = self._obligation_billed_to_date(
+        billed_to_date = self._allocated_obligation_billed_to_date(
             company_id=company_id,
+            contract=contract,
             obligation=obligation,
             period_end=period_end,
             cur=cur,
         )
 
-        # Fallback: if no billing rows were tagged to obligation but contract only has one obligation,
-        # treat all contract billing as belonging to this obligation.
-        if billed_to_date == Decimal("0.00"):
-            cnt = self.fetch_one(
-                f"""
-                SELECT COUNT(*) AS c
-                FROM {self.company_schema(company_id)}.revenue_obligations
-                WHERE contract_id = %s
-                """,
-                (int(contract["id"]),),
-                cur=cur,
-            ) or {}
-            if int(cnt.get("c") or 0) == 1:
-                billed_to_date = self._contract_fallback_billed_to_date(
-                    company_id=company_id,
-                    contract_id=int(contract["id"]),
-                    period_end=period_end,
-                    cur=cur,
-                )
-
         #
         # Position logic for THIS RUN only
         #
-        # cumulative position before this run:
         prev_position = _money2(billed_to_date - revenue_previously_recognized)
-        # cumulative position after this run:
         new_position = _money2(billed_to_date - revenue_required_to_date)
 
         prev_liability = prev_position if prev_position > 0 else Decimal("0.00")
@@ -57113,8 +57088,6 @@ class DatabaseService:
         contract_liability_delta = _money2(prev_liability - new_liability)
         contract_asset_delta = _money2(new_asset - prev_asset)
 
-        # Sanity: for a positive revenue delta, one side should normally be active.
-        # Do not hard fail; just expose values.
         return {
             "company_id": int(company_id),
             "contract_id": int(contract["id"]),
@@ -57548,6 +57521,82 @@ class DatabaseService:
             "billing_count": billing_count,
             "linked_invoice_count": linked_invoice_count,
         }
+
+
+    def _allocated_obligation_billed_to_date(
+        self,
+        company_id: int,
+        contract: dict,
+        obligation: dict,
+        period_end=None,
+        cur=None,
+    ) -> Decimal:
+        """
+        Returns billed-to-date for an obligation using this priority:
+
+        1. Direct obligation-linked billing events
+        2. If none, allocate contract-level billing pool proportionally
+        using allocated_transaction_price / contract transaction_price
+
+        Notes:
+        - Contract-level billing pool means revenue_billing_events where obligation_id IS NULL
+        - period_end is optional; if supplied, only events up to that date are included
+        - Result is rounded to 2 decimals
+        """
+        schema = self.company_schema(company_id)
+        pe = self._as_date(period_end)
+
+        obligation_id = int(obligation["id"])
+        contract_id = int(contract["id"])
+
+        allocated_tp = _money2(obligation.get("allocated_transaction_price") or 0)
+        contract_tp = _money2(contract.get("transaction_price") or 0)
+
+        # ---------------------------------------
+        # 1) Direct billing already tagged to obligation
+        # ---------------------------------------
+        direct_row = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(amount), 0) AS amt
+            FROM {schema}.revenue_billing_events
+            WHERE obligation_id = %s
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (obligation_id, pe, pe),
+            cur=cur,
+        ) or {}
+        direct_billed = _money2(direct_row.get("amt") or 0)
+
+        if direct_billed > Decimal("0.00"):
+            return direct_billed
+
+        # ---------------------------------------
+        # 2) No direct billing: allocate contract-level untagged billing
+        # ---------------------------------------
+        pool_row = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(amount), 0) AS amt
+            FROM {schema}.revenue_billing_events
+            WHERE contract_id = %s
+            AND obligation_id IS NULL
+            AND (%s IS NULL OR event_date <= %s)
+            """,
+            (contract_id, pe, pe),
+            cur=cur,
+        ) or {}
+        contract_level_pool = _money2(pool_row.get("amt") or 0)
+
+        if contract_level_pool <= Decimal("0.00"):
+            return Decimal("0.00")
+
+        if contract_tp <= Decimal("0.00"):
+            return Decimal("0.00")
+
+        if allocated_tp <= Decimal("0.00"):
+            return Decimal("0.00")
+
+        allocated_billed = _money2((contract_level_pool * allocated_tp) / contract_tp)
+        return allocated_billed
 
     def get_revenue_obligation_billing_position(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)

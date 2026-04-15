@@ -5841,6 +5841,31 @@ def create_invoice(cid: int):
         try:
             revenue_contract_id = header.get("revenue_contract_id")
             if revenue_contract_id:
+                obligation_ids = [
+                    l.get("revenue_obligation_id")
+                    for l in inv.get("lines", [])
+                    if l.get("revenue_obligation_id")
+                ]
+
+                if obligation_ids:
+                    billing_amount = float(
+                        sum(
+                            (l.get("net_amount") or 0.0)
+                            for l in inv.get("lines", [])
+                            if l.get("revenue_obligation_id")
+                        )
+                    )
+                    billing_obligation_id = (
+                        int(obligation_ids[0])
+                        if len(set(obligation_ids)) == 1
+                        else None
+                    )
+                else:
+                    billing_amount = float(
+                        sum((l.get("net_amount") or 0.0) for l in inv.get("lines", []))
+                    )
+                    billing_obligation_id = None
+
                 db_service.record_revenue_billing_event(
                     company_id=company_id,
                     contract_id=int(revenue_contract_id),
@@ -5848,19 +5873,8 @@ def create_invoice(cid: int):
                         "event_date": header.get("invoice_date"),
                         "event_type": "invoice",
                         "source_invoice_id": int(invoice_id),
-                        "obligation_id": int(
-                            next(
-                                (l.get("revenue_obligation_id") for l in inv.get("lines", []) if l.get("revenue_obligation_id")),
-                                0
-                            ) or 0
-                        ) or None,
-                        "amount": float(
-                            sum(
-                                (l.get("net_amount") or 0.0)
-                                for l in inv.get("lines", [])
-                                if l.get("revenue_obligation_id")
-                            )
-                        ),
+                        "obligation_id": billing_obligation_id,
+                        "amount": billing_amount,
                         "currency": inv.get("currency") or header.get("currency") or "ZAR",
                         "notes": f"From AR invoice {inv.get('number') or invoice_id}",
                         "payload_json": {
@@ -6390,6 +6404,50 @@ def post_invoice(cid: int, invoice_id: int):
             enforce_credit=enforce_credit,
             require_approved=require_approved,
         )
+
+        revenue_contract_id = inv.get("revenue_contract_id")
+
+        if revenue_contract_id:
+            obligation_ids = [
+                l.get("revenue_obligation_id")
+                for l in inv.get("lines", [])
+                if l.get("revenue_obligation_id")
+            ]
+
+            if obligation_ids:
+                billing_amount = float(
+                    sum(
+                        (l.get("net_amount") or 0.0)
+                        for l in inv.get("lines", [])
+                        if l.get("revenue_obligation_id")
+                    )
+                )
+
+                billing_obligation_id = (
+                    int(obligation_ids[0])
+                    if len(set(obligation_ids)) == 1
+                    else None
+                )
+            else:
+                billing_amount = float(
+                    sum((l.get("net_amount") or 0.0) for l in inv.get("lines", []))
+                )
+                billing_obligation_id = None
+
+            db_service.record_revenue_billing_event(
+                company_id=company_id,
+                contract_id=int(revenue_contract_id),
+                data={
+                    "event_date": inv.get("invoice_date"),
+                    "event_type": "invoice",
+                    "source_invoice_id": int(invoice_id),
+                    "obligation_id": billing_obligation_id,
+                    "amount": billing_amount,
+                    "currency": inv.get("currency") or "ZAR",
+                    "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+                },
+                user_id=int(user.get("id") or 0),
+            )
 
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
         posted["_posted_journal_id"] = journal_id
