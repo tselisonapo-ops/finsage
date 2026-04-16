@@ -118,6 +118,9 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         bottomMargin=10 * mm,
     )
 
+    page_width, _ = A4
+    content_w = page_width - pdf.leftMargin - pdf.rightMargin
+
     styles = getSampleStyleSheet()
 
     styles.add(ParagraphStyle(
@@ -215,9 +218,6 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     story = []
 
-    # ----------------------------
-    # Data extraction
-    # ----------------------------
     company_name = (
         _safe(company.get("name"))
         or _safe(company.get("company_name"))
@@ -259,10 +259,14 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     branch_code = _safe(doc_obj.get("branch_code"))
     swift_code = _safe(doc_obj.get("swift_code"))
 
-    # ----------------------------
-    # Decorative top bars
-    # ----------------------------
-    top_bar = Table([[""]], colWidths=[190 * mm], rowHeights=[12 * mm])
+    # consistent widths
+    gap = 4 * mm
+    half_w = (content_w - gap) / 2.0
+    left_bottom_w = content_w * 0.58
+    right_bottom_w = content_w - left_bottom_w
+
+    # top bars
+    top_bar = Table([[""]], colWidths=[content_w], rowHeights=[12 * mm])
     top_bar.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0F2A3D")),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -272,7 +276,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ]))
     story.append(top_bar)
 
-    accent_bar = Table([[""]], colWidths=[190 * mm], rowHeights=[2 * mm])
+    accent_bar = Table([[""]], colWidths=[content_w], rowHeights=[2 * mm])
     accent_bar.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#2FA4A9")),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -283,9 +287,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     story.append(accent_bar)
     story.append(Spacer(1, 8 * mm))
 
-    # ----------------------------
-    # Header row: logo | title | company block
-    # ----------------------------
+    # header
     logo = _load_logo(company)
     if logo:
         left_cell = logo
@@ -293,19 +295,19 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         left_cell = Table([[""]], colWidths=[28 * mm], rowHeights=[28 * mm])
         left_cell.setStyle(TableStyle([
             ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D6DAD8")),
-            ("ROUNDEDCORNERS", [6, 6, 6, 6]),
             ("BACKGROUND", (0, 0), (-1, -1), colors.white),
         ]))
 
     title_cell = Paragraph(title.upper(), styles["DocTitleCenter"])
 
-    company_lines = []
-    company_lines.append(Paragraph(company_name, ParagraphStyle(
-        "CompanyNameRight",
-        parent=styles["BodyTextBoldRight"],
-        fontSize=10.5,
-        leading=12,
-    )))
+    company_lines = [
+        Paragraph(company_name, ParagraphStyle(
+            "CompanyNameRight",
+            parent=styles["BodyTextBoldRight"],
+            fontSize=10.5,
+            leading=12,
+        ))
+    ]
 
     addr_lines = _split_address_lines(company_address)
     if addr_lines:
@@ -342,37 +344,35 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         company_lines.append(Spacer(1, 4))
         company_lines.append(reg_table)
 
-    header_right = []
-    for item in company_lines:
-        header_right.append([item])
+    header_right = [[item] for item in company_lines]
 
     company_block = Table(header_right, colWidths=[55 * mm])
     company_block.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 
     header_table = Table(
         [[left_cell, title_cell, company_block]],
-        colWidths=[35 * mm, 60 * mm, 95 * mm],
+        colWidths=[35 * mm, content_w - (35 * mm) - (55 * mm), 55 * mm],
     )
     header_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("ALIGN", (2, 0), (2, 0), "RIGHT"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(header_table)
     story.append(Spacer(1, 8 * mm))
 
-    top_sep = Table([[""]], colWidths=[180 * mm], rowHeights=[1.2 * mm])
+    top_sep = Table([[""]], colWidths=[content_w], rowHeights=[1.2 * mm])
     top_sep.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#2FA4A9")),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -383,24 +383,22 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     story.append(top_sep)
     story.append(Spacer(1, 4 * mm))
 
-    # ----------------------------
-    # Bill To box
-    # ----------------------------
+    # bill to
     bill_to_parts = [
         [Paragraph("BILL TO", styles["BoxTitle"])],
         [Paragraph(customer_name or "-", styles["BodyTextBold"])],
     ]
-
     customer_bits = []
     if customer_address:
         customer_bits.append(customer_address.replace("\n", "<br/>"))
     contact_inline = " • ".join([x for x in [customer_phone, customer_email] if x])
     if contact_inline:
         customer_bits.append(contact_inline)
+    bill_to_parts.append([
+        Paragraph("<br/>".join(customer_bits) if customer_bits else "-", styles["BodyTextMuted"])
+    ])
 
-    bill_to_parts.append([Paragraph("<br/>".join(customer_bits) if customer_bits else "-", styles["BodyTextMuted"])])
-
-    bill_to_box = Table(bill_to_parts, colWidths=[82 * mm])
+    bill_to_box = Table(bill_to_parts, colWidths=[half_w])
     bill_to_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D6DAD8")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -410,15 +408,17 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    # Invoice details box
+    label_text = "INVOICE DETAILS" if title.lower() == "invoice" else f"{title.upper()} DETAILS"
+    num_label = "Invoice #" if title.lower() == "invoice" else f"{title} #"
+
     inv_rows = [
-        [Paragraph("Invoice #", styles["BodyTextMuted"]), Paragraph(doc_number, styles["BodyTextBoldRight"])],
+        [Paragraph(num_label, styles["BodyTextMuted"]), Paragraph(doc_number, styles["BodyTextBoldRight"])],
         [Paragraph("Date", styles["BodyTextMuted"]), Paragraph(invoice_date or "-", styles["BodyTextBoldRight"])],
     ]
     if title.lower() == "invoice":
         inv_rows.append([Paragraph("Due", styles["BodyTextMuted"]), Paragraph(due_date or "-", styles["BodyTextBoldRight"])])
 
-    inv_details_table = Table(inv_rows, colWidths=[28 * mm, 46 * mm])
+    inv_details_table = Table(inv_rows, colWidths=[half_w * 0.38, half_w * 0.62 - 16])
     inv_details_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
@@ -429,9 +429,9 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ]))
 
     inv_box = Table([
-        [Paragraph("INVOICE DETAILS", styles["BoxTitle"])],
+        [Paragraph(label_text, styles["BoxTitle"])],
         [inv_details_table],
-    ], colWidths=[82 * mm])
+    ], colWidths=[half_w])
     inv_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D6DAD8")),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
@@ -441,18 +441,18 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
 
-    info_grid = Table([[bill_to_box, inv_box]], colWidths=[88 * mm, 88 * mm])
+    info_grid = Table([[bill_to_box, inv_box]], colWidths=[half_w, half_w])
     info_grid.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(info_grid)
     story.append(Spacer(1, 5 * mm))
 
-    # ----------------------------
-    # Items table
-    # ----------------------------
+    # items table
     lines = _extract_lines(doc_obj)
     line_rows = [[
         Paragraph("ITEM / SERVICE", styles["SmallLabel"]),
@@ -495,9 +495,16 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
             Paragraph("-", styles["BodyTextMuted"]),
         ])
 
+    c1 = content_w * 0.22
+    c2 = content_w * 0.24
+    c3 = content_w * 0.08
+    c4 = content_w * 0.15
+    c5 = content_w * 0.13
+    c6 = content_w - c1 - c2 - c3 - c4 - c5
+
     line_table = Table(
         line_rows,
-        colWidths=[38 * mm, 43 * mm, 12 * mm, 28 * mm, 24 * mm, 31 * mm],
+        colWidths=[c1, c2, c3, c4, c5, c6],
         repeatRows=1,
     )
     line_table.setStyle(TableStyle([
@@ -514,7 +521,6 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    # alternate row fill
     for r in range(2, len(line_rows), 2):
         line_table.setStyle(TableStyle([
             ("BACKGROUND", (0, r), (-1, r), colors.HexColor("#FAFBFB")),
@@ -523,11 +529,8 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     story.append(line_table)
     story.append(Spacer(1, 5 * mm))
 
-    # ----------------------------
-    # Bottom left: payment details + notes
-    # ----------------------------
+    # bottom left
     payment_rows = [[Paragraph("PAYMENT DETAILS", styles["BoxTitle"])]]
-
     payment_lines = []
     if bank_name:
         payment_lines.append(f"<b>Bank:</b> {bank_name}")
@@ -539,12 +542,11 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         payment_lines.append(f"<b>Branch code:</b> {branch_code}")
     if swift_code:
         payment_lines.append(f"<b>SWIFT:</b> {swift_code}")
-
     payment_lines.append(f"<b>Reference:</b> {doc_number}")
 
     payment_rows.append([Paragraph("<br/>".join(payment_lines), styles["BodyTextMuted"])])
 
-    payment_box = Table(payment_rows, colWidths=[100 * mm])
+    payment_box = Table(payment_rows, colWidths=[left_bottom_w])
     payment_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D6DAD8")),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
@@ -560,7 +562,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         notes_box = Table([
             [Paragraph("NOTES", styles["BoxTitle"])],
             [Paragraph(notes.replace("\n", "<br/>"), styles["BodyTextMuted"])],
-        ], colWidths=[100 * mm])
+        ], colWidths=[left_bottom_w])
         notes_box.setStyle(TableStyle([
             ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D6DAD8")),
             ("LEFTPADDING", (0, 0), (-1, -1), 8),
@@ -572,7 +574,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         left_stack_rows.append([Spacer(1, 2 * mm)])
         left_stack_rows.append([notes_box])
 
-    left_stack = Table(left_stack_rows, colWidths=[100 * mm])
+    left_stack = Table(left_stack_rows, colWidths=[left_bottom_w])
     left_stack.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -580,16 +582,17 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 
-    # ----------------------------
-    # Bottom right: totals
-    # ----------------------------
+    # bottom right
     discount_text = f"({_fmt_currency(abs(discount), currency)})" if discount else _fmt_currency(0, currency)
+
+    inner_left = right_bottom_w * 0.42
+    inner_right = right_bottom_w * 0.58 - 16
 
     totals_inner = Table([
         [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_currency(subtotal, currency), styles["BodyTextBoldRight"])],
         [Paragraph("Discount", styles["BodyTextMuted"]), Paragraph(discount_text, styles["BodyTextBoldRight"])],
         [Paragraph("VAT", styles["BodyTextMuted"]), Paragraph(_fmt_currency(vat_total, currency), styles["BodyTextBoldRight"])],
-    ], colWidths=[24 * mm, 42 * mm])
+    ], colWidths=[inner_left, inner_right])
     totals_inner.setStyle(TableStyle([
         ("LINEABOVE", (0, 1), (-1, -1), 0.35, colors.HexColor("#EEF1F3")),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -601,7 +604,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     grand_table = Table([
         [Paragraph("Total", styles["BodyTextBold"]), Paragraph(_fmt_currency(grand_total, currency), styles["TotalBig"])]
-    ], colWidths=[24 * mm, 42 * mm])
+    ], colWidths=[inner_left, inner_right])
     grand_table.setStyle(TableStyle([
         ("LINEABOVE", (0, 0), (-1, 0), 0.7, colors.HexColor("#D6DAD8")),
         ("TOPPADDING", (0, 0), (-1, -1), 8),
@@ -614,7 +617,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         [Paragraph("TOTALS", styles["BoxTitle"])],
         [totals_inner],
         [grand_table],
-    ], colWidths=[74 * mm])
+    ], colWidths=[right_bottom_w])
     totals_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D6DAD8")),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
@@ -624,19 +627,18 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
 
-    bottom_grid = Table([[left_stack, totals_box]], colWidths=[104 * mm, 76 * mm])
+    bottom_grid = Table([[left_stack, totals_box]], colWidths=[left_bottom_w, right_bottom_w])
     bottom_grid.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(bottom_grid)
     story.append(Spacer(1, 6 * mm))
 
-    # ----------------------------
-    # Footer
-    # ----------------------------
-    footer_line = Table([[""]], colWidths=[190 * mm], rowHeights=[0.6 * mm])
+    footer_line = Table([[""]], colWidths=[content_w], rowHeights=[0.6 * mm])
     footer_line.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#D6DAD8")),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
