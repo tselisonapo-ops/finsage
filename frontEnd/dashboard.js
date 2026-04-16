@@ -35928,8 +35928,8 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       throw new Error("Only posted runs can be reversed");
     }
 
-    const reversalDate =
-      String(selectedRun.period_end || $("revRunEnd")?.value || "").slice(0, 10);
+    const rawReversalDate = selectedRun.period_end || $("revRunEnd")?.value || "";
+    const reversalDate = toIsoDate(rawReversalDate);
 
     if (!reversalDate) {
       throw new Error("Missing reversal period date");
