@@ -6011,7 +6011,7 @@ class DatabaseService:
                 FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
                 WHERE c.conname = '{schema}_journal_source_check'
-                  AND n.nspname = '{schema}'
+                AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.journal DROP CONSTRAINT %I',
@@ -6019,47 +6019,48 @@ class DatabaseService:
                 );
             END IF;
 
-        -- recreate with expanded list
-        EXECUTE format(
-        'ALTER TABLE %I.journal
-        ADD CONSTRAINT %I
-        CHECK (
-            source IS NULL
-            OR source = ANY (ARRAY[
-                ''manual'',
-                ''invoice'',
-                ''bill'',
-                ''payment'',
-                ''receipt'',
-                ''credit_note'',
-                ''debit_note'',
-                ''inventory'',
-                ''asset'',
-                ''asset_acquisition'',
-                ''asset_depreciation'',
-                ''asset_revaluation'',
-                ''asset_impairment'',
-                ''asset_disposal'',
-                ''asset_hfs'',
-                ''lease_inception'',
-                ''lease_monthly'',
-                ''lease_payment'',
-                ''lease_modification'',
-                ''lease_termination'',
-                ''loan_origination'',
-                ''loan_payment'',
-                ''loan_reclassification'',
-                ''loan_accrual'',
-                ''loan_restructure'',
-                ''loan_settlement'',
-                ''bank'',
-                ''adjustment'',
-                ''opening_balance'',
-                ''year_end''
-            ]::text[])
-        )',
-        '{schema}', '{schema}_journal_source_check'
-        );
+            -- recreate with expanded list
+            EXECUTE format(
+            'ALTER TABLE %I.journal
+            ADD CONSTRAINT %I
+            CHECK (
+                source IS NULL
+                OR source = ANY (ARRAY[
+                    ''manual'',
+                    ''invoice'',
+                    ''bill'',
+                    ''payment'',
+                    ''receipt'',
+                    ''credit_note'',
+                    ''debit_note'',
+                    ''inventory'',
+                    ''asset'',
+                    ''asset_acquisition'',
+                    ''asset_depreciation'',
+                    ''asset_revaluation'',
+                    ''asset_impairment'',
+                    ''asset_disposal'',
+                    ''asset_hfs'',
+                    ''lease_inception'',
+                    ''lease_monthly'',
+                    ''lease_payment'',
+                    ''lease_modification'',
+                    ''lease_termination'',
+                    ''loan_origination'',
+                    ''loan_payment'',
+                    ''loan_reclassification'',
+                    ''loan_accrual'',
+                    ''loan_restructure'',
+                    ''loan_settlement'',
+                    ''bank'',
+                    ''adjustment'',
+                    ''revenue_run_reversal'',
+                    ''opening_balance'',
+                    ''year_end''
+                ]::text[])
+            )',
+            '{schema}', '{schema}_journal_source_check'
+            );
         END $$;
                 
         DO $$
@@ -58519,20 +58520,20 @@ class DatabaseService:
                 ],
             )
 
+            if not reversed_lines:
+                raise ValueError("Recognition run has no reversal journal lines")
+
             run_period_end = self._as_date(run.get("period_end"))
             if not run_period_end:
                 raise ValueError("Recognition run is missing valid period_end")
 
-            run_ref = f"REV-RUN-{int(run_id)}-REV"
-            run_desc = f"Reverse revenue recognition run {int(run_id)}"
-
             entry = {
                 "date": run_period_end,
-                "ref": run_ref,
-                "description": run_desc,
+                "ref": f"REV-RUN-{int(run_id)}-REV",
+                "description": f"Reverse revenue recognition run {int(run_id)}",
                 "lines": reversed_lines,
-                "source": "revenue_run_reversal",   # changed
-                "source_id": int(run_id),           # same run id is now safe
+                "source": "adjustment",       # allowed by journal source check
+                "source_id": -int(run_id),    # avoids unique clash with original posted run
                 "currency": (run.get("currency") or "ZAR"),
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
@@ -58563,7 +58564,11 @@ class DatabaseService:
 
             conn.commit()
 
-        return {"ok": True, "run_id": int(run_id), "reversal_journal_id": int(journal_id)}
+        return {
+            "ok": True,
+            "run_id": int(run_id),
+            "reversal_journal_id": int(journal_id),
+        }
 
     def list_revenue_contract_versions(self, company_id: int, contract_id: int):
         schema = self.company_schema(company_id)
