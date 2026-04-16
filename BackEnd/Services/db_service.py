@@ -18727,6 +18727,31 @@ class DatabaseService:
         ALTER COLUMN payload_json SET NOT NULL,
         ALTER COLUMN payload_json SET DEFAULT '{{}}'::jsonb;
 
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS contract_position_type TEXT;
+
+        UPDATE {schema}.revenue_contracts
+        SET contract_position_type = 'neutral'
+        WHERE contract_position_type IS NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_revenue_contracts_position_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.revenue_contracts
+                ADD CONSTRAINT %I
+                CHECK (contract_position_type IN (''asset'',''liability'',''neutral''))',
+                '{schema}',
+                '{schema}_revenue_contracts_position_ck'
+                );
+            END IF;
+        END $$;
+
         DO $$
         BEGIN
         IF NOT EXISTS (
