@@ -22,6 +22,43 @@ def _approval_payload_for_run(run: dict) -> dict:
         "period_end": str(run.get("period_end")),
     }
 
+def _normalize_revenue_contract_body(body: dict) -> dict:
+    body = dict(body or {})
+
+    has_financing = bool(body.get("has_significant_financing_component", False))
+
+    payload_json = body.get("payload_json") or {}
+    if not isinstance(payload_json, dict):
+        payload_json = {}
+
+    financing = payload_json.get("financing")
+    if not isinstance(financing, dict):
+        financing = {}
+
+    if has_financing:
+        payload_json["financing"] = {
+            "role": str(financing.get("role") or "").strip().lower(),
+            "rate": float(financing.get("rate") or 0.0),
+            "start_date": financing.get("start_date") or None,
+            "end_date": financing.get("end_date") or None,
+            "notes": str(financing.get("notes") or "").strip(),
+        }
+    else:
+        payload_json["financing"] = None
+        body["financing_component_amount"] = 0.0
+
+    body["payload_json"] = payload_json
+
+    if body.get("contract_currency"):
+        body["contract_currency"] = str(body.get("contract_currency") or "").strip().upper()
+
+    if body.get("billing_method"):
+        body["billing_method"] = str(body.get("billing_method") or "").strip().lower()
+
+    if body.get("status"):
+        body["status"] = str(body.get("status") or "").strip().lower()
+
+    return body
 
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts", methods=["POST", "OPTIONS"])
 @require_auth
@@ -38,7 +75,7 @@ def api_create_revenue_contract(company_id: int):
     if not user_id:
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
-    body = request.get_json(silent=True) or {}
+    body = _normalize_revenue_contract_body(request.get_json(silent=True) or {})
 
     try:
         out = db_service.create_revenue_contract(company_id, body, user_id=user_id)
@@ -200,7 +237,7 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
     if not user_id:
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
-    body = request.get_json(silent=True) or {}
+    body = _normalize_revenue_contract_body(request.get_json(silent=True) or {})
 
     try:
         existing = db_service.get_revenue_contract(int(company_id), int(contract_id))

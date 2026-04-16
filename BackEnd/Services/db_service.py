@@ -55962,6 +55962,8 @@ class DatabaseService:
             if not customer:
                 raise ValueError("Selected customer not found")
 
+            data, financing_component_amount = self._normalize_and_validate_sfc(data)
+
             sql = f"""
             INSERT INTO {schema}.revenue_contracts (
                 company_id, customer_id, contract_number, contract_title, status,
@@ -55994,7 +55996,7 @@ class DatabaseService:
                 float(data.get("transaction_price") or 0.0),
                 float(data.get("variable_consideration_est") or 0.0),
                 float(data.get("variable_consideration_constrained") or 0.0),
-                float(data.get("financing_component_amount") or 0.0),
+                float(financing_component_amount or 0.0),
                 bool(data.get("has_significant_financing_component", False)),
                 bool(data.get("is_over_time", True)),
                 data.get("notes"),
@@ -56034,6 +56036,9 @@ class DatabaseService:
             if not before:
                 raise ValueError("Revenue contract not found")
 
+            # ALWAYS run this (not inside customer_id block)
+            data, financing_component_amount = self._normalize_and_validate_sfc(data, existing=before)
+
             customer_id = data.get("customer_id")
             if customer_id in ("", 0, "0"):
                 customer_id = None
@@ -56047,7 +56052,7 @@ class DatabaseService:
                 )
                 if not customer:
                     raise ValueError("Selected customer not found")
-
+                
             sql = f"""
             UPDATE {schema}.revenue_contracts
             SET
@@ -56085,7 +56090,7 @@ class DatabaseService:
                 float(data["transaction_price"]) if data.get("transaction_price") is not None else None,
                 float(data["variable_consideration_est"]) if data.get("variable_consideration_est") is not None else None,
                 float(data["variable_consideration_constrained"]) if data.get("variable_consideration_constrained") is not None else None,
-                float(data["financing_component_amount"]) if data.get("financing_component_amount") is not None else None,
+                float(financing_component_amount) if data.get("has_significant_financing_component") is not None or data.get("payload_json") is not None else None,
                 data.get("has_significant_financing_component"),
                 data.get("is_over_time"),
                 data.get("notes"),
@@ -56149,6 +56154,78 @@ class DatabaseService:
 
         return row
 
+
+    def _normalize_and_validate_sfc(self, data: dict, existing: dict | None = None) -> tuple[dict, float]:
+        data = dict(data or {})
+
+        existing_payload = (existing or {}).get("payload_json") or {}
+        if not isinstance(existing_payload, dict):
+            existing_payload = {}
+
+        incoming_payload = data.get("payload_json") or {}
+        if not isinstance(incoming_payload, dict):
+            incoming_payload = {}
+
+        payload_json = dict(existing_payload)
+        payload_json.update(incoming_payload)
+
+        has_financing = data.get("has_significant_financing_component")
+        if has_financing is None:
+            has_financing = bool((existing or {}).get("has_significant_financing_component", False))
+        else:
+            has_financing = bool(has_financing)
+
+        raw_fin = payload_json.get("financing")
+        financing = dict(raw_fin or {}) if isinstance(raw_fin, dict) else {}
+
+        if not has_financing:
+            payload_json["financing"] = None
+            data["payload_json"] = payload_json
+            data["financing_component_amount"] = 0.0
+            data["has_significant_financing_component"] = False
+            return data, 0.0
+
+        role = str(financing.get("role") or "").strip().lower()
+
+        try:
+            rate = float(financing.get("rate") or 0.0)
+        except (TypeError, ValueError):
+            raise ValueError("Financing rate must be a valid number.")
+
+        start_date = str(financing.get("start_date") or "").strip()
+        end_date = str(financing.get("end_date") or "").strip()
+        notes = str(financing.get("notes") or "").strip()
+
+        if role not in {"entity_finances_customer", "customer_finances_entity"}:
+            raise ValueError("Invalid financing role.")
+
+        if rate <= 0:
+            raise ValueError("Financing rate must be greater than zero.")
+
+        if not start_date:
+            raise ValueError("Financing start date is required.")
+
+        if not end_date:
+            raise ValueError("Financing end date is required.")
+
+        if start_date >= end_date:
+            raise ValueError("Financing end date must be after start date.")
+
+        financing_component_amount = float(data.get("financing_component_amount") or 0.0)
+
+        payload_json["financing"] = {
+            "role": role,
+            "rate": rate,
+            "start_date": start_date,
+            "end_date": end_date,
+            "notes": notes,
+        }
+
+        data["payload_json"] = payload_json
+        data["has_significant_financing_component"] = True
+        data["financing_component_amount"] = financing_component_amount
+
+        return data, financing_component_amount
 
     def mark_revenue_obligation_satisfied(
         self,
@@ -58647,7 +58724,7 @@ class DatabaseService:
                     """,
                     (oid,),
                 )
-                
+
             conn.commit()
 
         return {

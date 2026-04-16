@@ -33507,6 +33507,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     box.classList.toggle("hidden", !checked);
 
     if (!checked) {
+      if ($("revFinancingRole")) $("revFinancingRole").value = "";
       if ($("revFinancingRate")) $("revFinancingRate").value = "";
       if ($("revFinancingStartDate")) $("revFinancingStartDate").value = "";
       if ($("revFinancingEndDate")) $("revFinancingEndDate").value = "";
@@ -33739,11 +33740,17 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revBillingMethod").value = c.billing_method || "milestone";
     $("revSettlementPattern").value = c?.payload_json?.settlement_pattern || "";
     refreshSettlementPatternHelp();
+
     $("revTransactionPrice").value = num(c.transaction_price).toFixed(2);
     $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
     $("revIsOverTime").checked = !!c.is_over_time;
     $("revHasFinancing").checked = !!c.has_significant_financing_component;
+
     const financing = c?.payload_json?.financing || {};
+
+    if ($("revFinancingRole")) {
+      $("revFinancingRole").value = financing.role || "";
+    }
 
     if ($("revFinancingRate")) {
       $("revFinancingRate").value =
@@ -33763,6 +33770,9 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revFinancingNotes")) {
       $("revFinancingNotes").value = financing.notes || "";
     }
+
+    toggleFinancingFields();
+
     $("revContractNotes").value = c.notes || "";
 
     const im = c?.payload_json?.ifrs15_initial_measurement || {};
@@ -34134,12 +34144,13 @@ function bindAssetRecordsPickerModal({ cid }) {
       notes: $("revContractNotes")?.value || "",
       payload_json: {
         settlement_pattern: $("revSettlementPattern")?.value || "",
-        financing: {
-          rate: hasFinancing ? num($("revFinancingRate")?.value) : null,
-          start_date: hasFinancing ? ($("revFinancingStartDate")?.value || null) : null,
-          end_date: hasFinancing ? ($("revFinancingEndDate")?.value || null) : null,
-          notes: hasFinancing ? ($("revFinancingNotes")?.value || "") : "",
-        },
+        financing: hasFinancing ? {
+          role: $("revFinancingRole")?.value || "",
+          rate: num($("revFinancingRate")?.value),
+          start_date: $("revFinancingStartDate")?.value || null,
+          end_date: $("revFinancingEndDate")?.value || null,
+          notes: $("revFinancingNotes")?.value || "",
+        } : null,
         ifrs15_initial_measurement: {
           collectability_probable: !!$("revChkCollectability")?.checked,
           rights_identifiable: !!$("revChkRights")?.checked,
@@ -35411,14 +35422,16 @@ async function loadLatestRevenueProgressForSelectedObligation() {
   function validateFinancingInputs() {
     if (!$("revHasFinancing")?.checked) return null;
 
+    const role = $("revFinancingRole")?.value || "";
     const rate = num($("revFinancingRate")?.value);
     const start = $("revFinancingStartDate")?.value || "";
     const end = $("revFinancingEndDate")?.value || "";
 
+    if (!role) return "Select financing role.";
     if (!rate || rate <= 0) return "Enter a valid financing rate.";
     if (!start) return "Select financing start date.";
     if (!end) return "Select financing end date.";
-    if (start > end) return "Financing end date cannot be before start date.";
+    if (start >= end) return "Financing end date must be after start date.";
 
     return null;
   }
@@ -35651,15 +35664,34 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     const contractId = Number($("revContractId")?.value || 0) || null;
     if (!cid || !contractId) throw new Error("Select a contract first");
 
+    const criteriaError = validateContractCriteria();
+    if (criteriaError) {
+      throw new Error(criteriaError);
+    }
+
+    const financingError = validateFinancingInputs?.();
+    if (financingError) {
+      throw new Error(financingError);
+    }
+
     const payload = contractPayloadFromUI();
+
     const out = await apiFetch(ENDPOINTS.revenue.contract(cid, contractId), {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
 
     const row = out?.data || out?.after || out;
+
+    state.selectedContract = row;
+
+    renderContractPreview(row);
+    renderContractKpis(row);
+    setContractViewMode("preview");
+
     hydrateContractForm(row);
     await loadContracts();
+
     return row;
   }
 
