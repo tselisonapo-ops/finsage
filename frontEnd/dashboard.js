@@ -32284,7 +32284,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         <td class="px-3 py-2 text-right">${money(p.principal_amount || 0, currency)}</td>
         <td class="px-3 py-2 text-right">${money(p.interest_amount || 0, currency)}</td>
         <td class="px-3 py-2 text-right">${money(p.accrued_interest_amount || 0, currency)}</td>
-        <td class="px-3 py-2"><td>${renderStatusPill(p.status, p)}</td>
+        <td class="px-3 py-2">${renderStatusPill(p.status, p)}</td>
         <td class="px-3 py-2 text-xs text-slate-600">${escapeHtml(paymentWorkflowText(p))}</td>
         <td class="px-3 py-2">
           <div class="flex gap-2 flex-wrap">
@@ -32540,6 +32540,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       LOANS_STATE.loanDetail = data;
 
       fillLoanForm(data.loan || {});
+      renderLoanPreview(data.loan || {});   // <-- missing line
       fillLoanCards(data.loan || {});
       renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
       renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));
@@ -33061,8 +33062,9 @@ function bindAssetRecordsPickerModal({ cid }) {
     };
 
     resetLoanScreenForNewLoan(loan);
-    setLoanTab("loan-overview");
+    renderLoanPreview({}); // optional reset
     setLoanViewMode("form");
+    setLoanTab("loan-overview");
     applyLoanButtonsByMode();
   }
 
