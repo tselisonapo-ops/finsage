@@ -4905,54 +4905,67 @@ html, body {
               <div id="loanList" class="mt-3 space-y-2"></div>
             </aside>
 
-            <section class="card p-4 shadow-sage min-h-[78vh] overflow-hidden flex flex-col">
-              <div class="flex items-center gap-3 flex-wrap">
-                <h3 class="font-bold">Loan Detail</h3>
-                <span id="loanStatusPill" class="pill">New</span>
-                <span id="loanRefPill" class="pill border bg-white hidden"></span>
+          <section class="card p-4 shadow-sage min-h-[78vh] overflow-hidden flex flex-col">
+            <div class="flex items-center gap-3 flex-wrap">
+              <h3 id="loanMainTitle" class="font-bold">Loan Preview</h3>
+              <span id="loanStatusPill" class="pill">New</span>
+              <span id="loanRefPill" class="pill border bg-white hidden"></span>
 
-                <div class="ml-auto flex gap-2 flex-wrap">
-                  <button id="loanRecalcBtn" class="btn">Recalculate Schedule</button>
-                  <button id="loanPreviewBtn" class="btn">Preview Inception</button>
-                  <button id="loanReclassBtn" class="btn">Reclassify</button>
-                  <button id="loanPaymentBtn" class="btn">Record Payment</button>
-                  <button id="loanSaveBtn" class="btn-highlight">Save Loan</button>
-                </div>
+              <div class="ml-auto flex gap-2 flex-wrap">
+                <button id="loanRecalcBtn" class="btn">Recalculate Schedule</button>
+                <button id="loanPreviewBtn" class="btn">Preview Inception</button>
+                <button id="loanReclassBtn" class="btn">Reclassify</button>
+                <button id="loanPaymentBtn" class="btn">Record Payment</button>
+                <button id="loanEditBtn" class="btn">Edit</button>
+                <button id="loanSaveBtn" class="btn-highlight hidden">Save Loan</button>
               </div>
+            </div>
 
-              <div class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-                <div class="rounded-xl border bg-slate-50 p-3">
-                  <div class="text-[11px] text-slate-500">Principal</div>
-                  <div id="loanCardPrincipal" class="text-lg font-bold">0.00</div>
-                </div>
-                <div class="rounded-xl border bg-slate-50 p-3">
-                  <div class="text-[11px] text-slate-500">Outstanding Principal</div>
-                  <div id="loanCardOutstanding" class="text-lg font-bold">0.00</div>
-                </div>
-                <div class="rounded-xl border bg-slate-50 p-3">
-                  <div class="text-[11px] text-slate-500">Projected Interest</div>
-                  <div id="loanCardInterest" class="text-lg font-bold">0.00</div>
-                </div>
-                <div class="rounded-xl border bg-slate-50 p-3">
-                  <div class="text-[11px] text-slate-500">Instalment</div>
-                  <div id="loanCardInstalment" class="text-lg font-bold">0.00</div>
-                </div>
-                <div class="rounded-xl border bg-slate-50 p-3">
-                  <div class="text-[11px] text-slate-500">Next Due</div>
-                  <div id="loanCardNextDue" class="text-lg font-bold">—</div>
-                </div>
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+              <div class="rounded-xl border bg-slate-50 p-3">
+                <div class="text-[11px] text-slate-500">Principal</div>
+                <div id="loanCardPrincipal" class="text-lg font-bold">0.00</div>
               </div>
-
-              <div class="mt-3 flex flex-wrap gap-2">
-                <button data-loan-tab="loan-overview" class="pill border bg-white">Overview</button>
-                <button data-loan-tab="loan-schedule" class="pill border bg-white">Schedule</button>
-                <button data-loan-tab="loan-journal" class="pill border bg-white">Journal Preview</button>
-                <button data-loan-tab="loan-payments" class="pill border bg-white">Payments</button>
-                <button data-loan-tab="loan-docs" class="pill border bg-white">Documents</button>
+              <div class="rounded-xl border bg-slate-50 p-3">
+                <div class="text-[11px] text-slate-500">Outstanding Principal</div>
+                <div id="loanCardOutstanding" class="text-lg font-bold">0.00</div>
               </div>
+              <div class="rounded-xl border bg-slate-50 p-3">
+                <div class="text-[11px] text-slate-500">Projected Interest</div>
+                <div id="loanCardInterest" class="text-lg font-bold">0.00</div>
+              </div>
+              <div class="rounded-xl border bg-slate-50 p-3">
+                <div class="text-[11px] text-slate-500">Instalment</div>
+                <div id="loanCardInstalment" class="text-lg font-bold">0.00</div>
+              </div>
+              <div class="rounded-xl border bg-slate-50 p-3">
+                <div class="text-[11px] text-slate-500">Next Due</div>
+                <div id="loanCardNextDue" class="text-lg font-bold">—</div>
+              </div>
+            </div>
 
-              <div id="loanDetailHost" class="mt-3 grow overflow-auto">
-                <div data-loan-pane="loan-overview" class="space-y-4">
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button data-loan-tab="loan-overview" class="pill border bg-white">Overview</button>
+              <button data-loan-tab="loan-schedule" class="pill border bg-white">Schedule</button>
+              <button data-loan-tab="loan-journal" class="pill border bg-white">Journal Preview</button>
+              <button data-loan-tab="loan-payments" class="pill border bg-white">Payments</button>
+              <button data-loan-tab="loan-docs" class="pill border bg-white">Documents</button>
+            </div>
+
+            <div id="loanDetailHost" class="mt-3 grow overflow-auto">
+
+              <div data-loan-pane="loan-overview" class="space-y-4">
+
+                <div id="loanPreviewMode">
+                  <div id="loanPreviewBody" class="space-y-4">
+                    <div class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
+                      Select a loan from the register to preview it, or click + New to create one.
+                    </div>
+                  </div>
+                </div>
+
+                <div id="loanFormMode" class="hidden space-y-4">
+
                   <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <div>
                       <label class="text-xs text-slate-600">Loan Name *</label>
@@ -5070,6 +5083,12 @@ html, body {
                       <select id="loanBankAccountId" class="w-full border rounded px-3 py-2"></select>
                     </div>
 
+                    <div>
+                      <label class="text-xs text-slate-600">Agreement Reference</label>
+                      <input id="loanAgreementReference" class="w-full border rounded px-3 py-2">
+                    </div>
+                  </div>
+
                   <div id="loanGlAccountsSection" class="hidden">
                     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       <div>
@@ -5104,110 +5123,106 @@ html, body {
                     </div>
                   </div>
 
-                    <div>
-                      <label class="text-xs text-slate-600">Agreement Reference</label>
-                      <input id="loanAgreementReference" class="w-full border rounded px-3 py-2">
-                    </div>
-                  </div>
-
                   <div>
                     <label class="text-xs text-slate-600">Notes</label>
                     <textarea id="loanNotes" class="w-full border rounded px-3 py-2 min-h-[100px]"></textarea>
                   </div>
+
                 </div>
+              </div>
 
-                <div data-loan-pane="loan-schedule" class="hidden">
-                  <div class="overflow-auto border rounded-xl">
-                    <table class="min-w-full text-sm">
-                      <thead class="bg-slate-50 text-slate-600">
-                        <tr>
-                          <th class="text-left px-3 py-2">Period</th>
-                          <th class="text-left px-3 py-2">Due Date</th>
-                          <th class="text-right px-3 py-2">Opening</th>
-                          <th class="text-right px-3 py-2">Payment</th>
-                          <th class="text-right px-3 py-2">Interest</th>
-                          <th class="text-right px-3 py-2">Principal</th>
-                          <th class="text-right px-3 py-2">Closing</th>
-                          <th class="text-left px-3 py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody id="loanScheduleRows"></tbody>
-                    </table>
-                  </div>
+              <div data-loan-pane="loan-schedule" class="hidden">
+                <div class="overflow-auto border rounded-xl">
+                  <table class="min-w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th class="text-left px-3 py-2">Period</th>
+                        <th class="text-left px-3 py-2">Due Date</th>
+                        <th class="text-right px-3 py-2">Opening</th>
+                        <th class="text-right px-3 py-2">Payment</th>
+                        <th class="text-right px-3 py-2">Interest</th>
+                        <th class="text-right px-3 py-2">Principal</th>
+                        <th class="text-right px-3 py-2">Closing</th>
+                        <th class="text-left px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="loanScheduleRows"></tbody>
+                  </table>
                 </div>
+              </div>
 
-                <div data-loan-pane="loan-journal" class="hidden">
-                  <div class="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-3">
-                    <div class="rounded-xl border p-3 bg-slate-50">
-                      <div class="text-xs font-semibold text-slate-600 mb-2">Preview Source</div>
-                      <div class="space-y-2 text-sm">
-                        <button id="loanPreviewInceptionBtn" class="btn w-full">Preview Inception</button>
-                        <button id="loanPreviewLastPaymentBtn" class="btn w-full">Preview Last Payment</button>
-                        <button id="loanPreviewReclassBtn" class="btn w-full">Preview Reclass Info</button>
-                      </div>
-                    </div>
-
-                    <div class="space-y-3">
-                      <div id="loanJournalHeaderCard" class="hidden rounded-xl border bg-slate-50 p-3">
-                        <div class="text-xs font-semibold text-slate-600 mb-2">Journal Header</div>
-                        <div id="loanJournalHeaderMeta" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm"></div>
-                      </div>
-
-                      <div class="rounded-xl border overflow-auto">
-                        <table class="min-w-full text-sm">
-                          <thead class="bg-slate-50 text-slate-600">
-                            <tr>
-                              <th class="text-left px-3 py-2">Account</th>
-                              <th class="text-left px-3 py-2">Description</th>
-                              <th class="text-right px-3 py-2">Debit</th>
-                              <th class="text-right px-3 py-2">Credit</th>
-                            </tr>
-                          </thead>
-                          <tbody id="loanJournalPreviewRows">
-                            <tr>
-                              <td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
+              <div data-loan-pane="loan-journal" class="hidden">
+                <div class="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-3">
+                  <div class="rounded-xl border p-3 bg-slate-50">
+                    <div class="text-xs font-semibold text-slate-600 mb-2">Preview Source</div>
+                    <div class="space-y-2 text-sm">
+                      <button id="loanPreviewInceptionBtn" class="btn w-full">Preview Inception</button>
+                      <button id="loanPreviewLastPaymentBtn" class="btn w-full">Preview Last Payment</button>
+                      <button id="loanPreviewReclassBtn" class="btn w-full">Preview Reclass Info</button>
                     </div>
                   </div>
-                </div>
 
-                <div data-loan-pane="loan-payments" class="hidden">
-                  <div class="flex items-center justify-between mb-3">
-                    <div class="text-sm font-semibold text-slate-700">Payment History</div>
-                    <button id="loanPaymentsRefreshBtn" class="btn">Refresh</button>
-                  </div>
+                  <div class="space-y-3">
+                    <div id="loanJournalHeaderCard" class="hidden rounded-xl border bg-slate-50 p-3">
+                      <div class="text-xs font-semibold text-slate-600 mb-2">Journal Header</div>
+                      <div id="loanJournalHeaderMeta" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm"></div>
+                    </div>
 
-                  <div class="overflow-auto border rounded-xl">
-                    <table class="min-w-full text-sm">
-                      <thead class="bg-slate-50 text-slate-600">
-                        <tr>
-                          <th class="text-left px-3 py-2">Date</th>
-                          <th class="text-left px-3 py-2">Reference</th>
-                          <th class="text-right px-3 py-2">Amount</th>
-                          <th class="text-right px-3 py-2">Principal</th>
-                          <th class="text-right px-3 py-2">Interest</th>
-                          <th class="text-right px-3 py-2">Accrued Interest</th>
-                          <th class="text-left px-3 py-2">Status</th>
-                          <th class="text-left px-3 py-2">Workflow</th> <!-- ✅ ADD THIS -->
-                          <th class="text-left px-3 py-2">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody id="loanPaymentsRows"></tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div data-loan-pane="loan-docs" class="hidden">
-                  <div class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
-                    Documents support can plug in later. Keep this tab for agreement uploads / scans / facility letters.
+                    <div class="rounded-xl border overflow-auto">
+                      <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-600">
+                          <tr>
+                            <th class="text-left px-3 py-2">Account</th>
+                            <th class="text-left px-3 py-2">Description</th>
+                            <th class="text-right px-3 py-2">Debit</th>
+                            <th class="text-right px-3 py-2">Credit</th>
+                          </tr>
+                        </thead>
+                        <tbody id="loanJournalPreviewRows">
+                          <tr>
+                            <td colspan="4" class="px-3 py-6 text-center text-slate-400">No journal preview yet.</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </div>
-            </section>
-          </div>
+
+              <div data-loan-pane="loan-payments" class="hidden">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="text-sm font-semibold text-slate-700">Payment History</div>
+                  <button id="loanPaymentsRefreshBtn" class="btn">Refresh</button>
+                </div>
+
+                <div class="overflow-auto border rounded-xl">
+                  <table class="min-w-full text-sm">
+                    <thead class="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th class="text-left px-3 py-2">Date</th>
+                        <th class="text-left px-3 py-2">Reference</th>
+                        <th class="text-right px-3 py-2">Amount</th>
+                        <th class="text-right px-3 py-2">Principal</th>
+                        <th class="text-right px-3 py-2">Interest</th>
+                        <th class="text-right px-3 py-2">Accrued Interest</th>
+                        <th class="text-left px-3 py-2">Status</th>
+                        <th class="text-left px-3 py-2">Workflow</th>
+                        <th class="text-left px-3 py-2">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="loanPaymentsRows"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div data-loan-pane="loan-docs" class="hidden">
+                <div class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
+                  Documents support can plug in later. Keep this tab for agreement uploads / scans / facility letters.
+                </div>
+              </div>
+
+            </div>
+          </section>
 
           <div id="loanPaymentModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
             <div class="bg-white rounded-2xl shadow-2xl w-[98vw] max-w-6xl h-[92vh] overflow-hidden flex flex-col">
@@ -5323,7 +5338,6 @@ html, body {
             </div>
           </div>
         </section>
-
         <!-- ==================================================
             CATALOG STUDIO (Inventory sub-screens)
             Base screen: inventory
