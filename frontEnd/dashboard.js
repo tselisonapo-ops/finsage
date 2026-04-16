@@ -33058,6 +33058,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     cid: null,
     tab: "contracts",
     contracts: [],
+    contractObligations: [],
     selectedContract: null,
     selectedObligation: null,
     preview: null,
@@ -33586,6 +33587,10 @@ function bindAssetRecordsPickerModal({ cid }) {
       btn.classList.toggle("bg-[var(--fs-navy)]", btn.dataset.revTab === tab);
       btn.classList.toggle("text-white", btn.dataset.revTab === tab);
     });
+
+    if (tab === "progress") {
+      refreshRevenueProgressUIAsync();
+    }
     syncRevenueMainWidthState(); // add this
   }
 
@@ -34132,6 +34137,181 @@ function bindAssetRecordsPickerModal({ cid }) {
     return `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/satisfy`;
   }
 
+  function getProgressEligibleObligations() {
+    const rows = Array.isArray(state.contractObligations) ? state.contractObligations : [];
+    return rows.filter(o => String(o.recognition_timing || "").toLowerCase() === "over_time");
+  }
+
+  function isSelectedObligationProgressEligible() {
+    const o = state.selectedObligation || null;
+    return !!o && String(o.recognition_timing || "").toLowerCase() === "over_time";
+  }
+
+  async function refreshRevenueProgressUIAsync() {
+    const selected = state.selectedObligation || null;
+    if (!selected?.id || !isSelectedObligationProgressEligible()) {
+      refreshRevenueProgressUI();
+      return;
+    }
+
+    const latest = await loadLatestRevenueProgressForSelectedObligation();
+    renderRevenueProgressSummary(selected, latest);
+    const saveBtn = $("revSaveProgress");
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.classList.remove("opacity-60", "cursor-not-allowed");
+    }
+  }
+
+  function refreshRevenueProgressUI() {
+    const saveBtn = $("revSaveProgress");
+    const summary = $("revProgressSummary");
+    const selected = state.selectedObligation || null;
+    const isEligible = isSelectedObligationProgressEligible();
+
+    if (!saveBtn || !summary) return;
+
+    saveBtn.disabled = !isEligible;
+    saveBtn.classList.toggle("opacity-60", !isEligible);
+    saveBtn.classList.toggle("cursor-not-allowed", !isEligible);
+
+    if (!selected?.id) {
+      summary.innerHTML = `<div>Select an over-time obligation to record progress.</div>`;
+      return;
+    }
+
+    if (!isEligible) {
+      summary.innerHTML = `
+        <div class="text-amber-700 font-medium">Progress updates are only allowed for over-time obligations.</div>
+        <div class="text-xs text-slate-500">
+          Selected: <strong>${esc(selected.obligation_code || "")}</strong> ·
+          ${esc(selected.obligation_name || "")} ·
+          Timing: <strong>${esc(selected.recognition_timing || "")}</strong>
+        </div>
+      `;
+      return;
+    }
+
+    renderRevenueProgressSummary(selected);
+  }
+
+function renderRevenueProgressSummary(obligation, latestProgress = null) {
+  const el = $("revProgressSummary");
+  if (!el) return;
+
+  const allocated = num(obligation?.allocated_transaction_price);
+  const revenueLtd = num(obligation?.revenue_to_date);
+  const expectedCost = num(
+    latestProgress?.expected_total_cost ??
+    obligation?.expected_total_cost
+  );
+  const actualCost = num(
+    latestProgress?.actual_cost_to_date ??
+    obligation?.actual_cost_to_date
+  );
+  const progressPct = num(
+    latestProgress?.progress_percent ??
+    obligation?.progress_percent
+  );
+
+  const clampedPct = Math.max(0, Math.min(100, progressPct));
+  const remainingRevenue = Math.max(0, allocated - revenueLtd);
+  const remainingCost = Math.max(0, expectedCost - actualCost);
+
+  el.innerHTML = `
+    <div class="space-y-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-800">
+          ${esc(obligation?.obligation_code || "")} · ${esc(obligation?.obligation_name || "")}
+        </div>
+        <div class="text-xs text-slate-500">
+          Timing: ${esc(obligation?.recognition_timing || "")}
+          ${obligation?.progress_method ? `· Method: ${esc(obligation.progress_method)}` : ""}
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
+          <span>Progress</span>
+          <span>${money(clampedPct)}%</span>
+        </div>
+        <div class="w-full h-3 rounded-full bg-slate-100 overflow-hidden border">
+          <div
+            class="h-full rounded-full transition-all duration-300"
+            style="width:${clampedPct}%; background: linear-gradient(90deg, #0f766e, #14b8a6);"
+          ></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div class="rounded-lg border p-2 bg-slate-50">
+          <div class="text-xs text-slate-500">Allocated Price</div>
+          <div class="font-semibold">${money(allocated)}</div>
+        </div>
+        <div class="rounded-lg border p-2 bg-slate-50">
+          <div class="text-xs text-slate-500">Revenue LTD</div>
+          <div class="font-semibold">${money(revenueLtd)}</div>
+        </div>
+        <div class="rounded-lg border p-2 bg-slate-50">
+          <div class="text-xs text-slate-500">Expected Total Cost</div>
+          <div class="font-semibold">${money(expectedCost)}</div>
+        </div>
+        <div class="rounded-lg border p-2 bg-slate-50">
+          <div class="text-xs text-slate-500">Actual Cost to Date</div>
+          <div class="font-semibold">${money(actualCost)}</div>
+        </div>
+        <div class="rounded-lg border p-2 bg-slate-50">
+          <div class="text-xs text-slate-500">Remaining Revenue</div>
+          <div class="font-semibold">${money(remainingRevenue)}</div>
+        </div>
+        <div class="rounded-lg border p-2 bg-slate-50">
+          <div class="text-xs text-slate-500">Remaining Cost</div>
+          <div class="font-semibold">${money(remainingCost)}</div>
+        </div>
+      </div>
+
+      ${
+        latestProgress
+          ? `
+          <div class="rounded-lg border p-3 bg-white">
+            <div class="text-xs font-semibold text-slate-600 mb-2">Latest Saved Update</div>
+            <div class="text-xs text-slate-500 space-y-1">
+              <div>Period End: <strong>${esc(String(latestProgress.period_end || "").slice(0, 10))}</strong></div>
+              <div>Type: <strong>${esc(latestProgress.update_type || "")}</strong></div>
+              <div>Milestone: <strong>${esc(latestProgress.milestone_code || "—")}</strong></div>
+              <div>Notes: <strong>${esc(latestProgress.notes || "—")}</strong></div>
+            </div>
+          </div>
+        `
+          : `
+          <div class="text-xs text-slate-500">
+            No saved progress update yet for this obligation.
+          </div>
+        `
+      }
+    </div>
+  `;
+}
+
+async function loadLatestRevenueProgressForSelectedObligation() {
+  const cid = state.cid;
+  const obligationId = Number(state.selectedObligation?.id || 0) || null;
+  if (!cid || !obligationId) return null;
+
+  try {
+    const raw = await apiFetch(
+      `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/progress`,
+      { method: "GET" }
+    );
+
+    const items = raw?.items || raw?.data?.items || [];
+    return items.length ? items[0] : null;
+  } catch (e) {
+    console.warn("[Revenue] loadLatestRevenueProgressForSelectedObligation failed", e);
+    return null;
+  }
+}
+
   async function markSelectedObligationSatisfiedFromPreview() {
     const cid = state.cid;
     const selected = state.selectedObligation || null;
@@ -34429,6 +34609,7 @@ function bindAssetRecordsPickerModal({ cid }) {
         renderObligationPreview(row);
         renderObligationContractBanner(null);
         setObligationViewMode("preview");
+        refreshRevenueProgressUIAsync();
       });
     });
   }
@@ -35093,11 +35274,30 @@ function bindAssetRecordsPickerModal({ cid }) {
     try {
       const data = await apiFetch(`${ENDPOINTS.revenue.obligations(cid, contractId)}?list=1`);
       const items = data?.items || data?.data?.items || data?.data || [];
-      renderObligations(items);
-      renderObligationAllocationHint(state.selectedContract, items);
+
+      state.contractObligations = items || [];
+
+      // if currently selected obligation no longer belongs here, clear it
+      const selectedId = Number(state.selectedObligation?.id || 0) || null;
+      if (selectedId) {
+        const stillExists = state.contractObligations.find(x => Number(x.id) === selectedId);
+        if (!stillExists) {
+          state.selectedObligation = null;
+        } else {
+          state.selectedObligation = stillExists;
+        }
+      }
+
+      renderObligations(state.contractObligations);
+      renderObligationAllocationHint(state.selectedContract, state.contractObligations);
+      await refreshRevenueProgressUIAsync();
     } catch (e) {
       console.warn("[Revenue] obligations load failed", e);
+      state.contractObligations = [];
+      state.selectedObligation = null;
       renderObligations([]);
+      renderObligationAllocationHint(state.selectedContract, []);
+      refreshRevenueProgressUI();
     }
   }
 
@@ -36098,8 +36298,20 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revSaveProgress")?.addEventListener("click", async () => {
       try {
-        await recordProgress();
+        if (!isSelectedObligationProgressEligible()) {
+          throw new Error("Progress updates are only allowed for over-time obligations.");
+        }
+
+        const out = await recordProgress();
+
+        if (out?.data?.obligation) {
+          state.selectedObligation = out.data.obligation;
+        }
+
         await refreshSelectedContractDeep();
+        await refreshRevenueProgressUIAsync();
+
+        setMsg("Progress saved.");
       } catch (e) {
         setMsg(e?.message || "Progress update failed", "error");
       }

@@ -829,7 +829,10 @@ def api_record_revenue_cash_event(company_id: int, contract_id: int):
         current_app.logger.exception("record_revenue_cash_event failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/progress", methods=["POST", "OPTIONS"])
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/progress",
+    methods=["GET", "POST", "OPTIONS"]
+)
 @require_auth
 def api_record_revenue_progress_update(company_id: int, obligation_id: int):
     if request.method == "OPTIONS":
@@ -840,11 +843,27 @@ def api_record_revenue_progress_update(company_id: int, obligation_id: int):
     if deny:
         return deny
 
+    if request.method == "GET":
+        try:
+            items = db_service.list_revenue_progress_updates(
+                company_id=int(company_id),
+                obligation_id=int(obligation_id),
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("list_revenue_progress_updates failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
     user_id = _jwt_user_id()
     body = request.get_json(silent=True) or {}
 
     try:
-        out = db_service.record_revenue_progress_update(company_id, obligation_id, body, user_id=user_id)
+        out = db_service.record_revenue_progress_update(
+            company_id,
+            obligation_id,
+            body,
+            user_id=user_id
+        )
 
         try:
             db_service.audit_log(

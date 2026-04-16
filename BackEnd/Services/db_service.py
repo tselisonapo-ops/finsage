@@ -56276,6 +56276,20 @@ class DatabaseService:
 
         return {"before": before, "after": after}
 
+    def list_revenue_progress_updates(self, company_id: int, obligation_id: int, cur=None) -> list[dict]:
+        schema = self.company_schema(company_id)
+        rows = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.revenue_progress_updates
+            WHERE obligation_id = %s
+            ORDER BY period_end DESC, created_at DESC, id DESC
+            """,
+            (int(obligation_id),),
+            cur=cur,
+        ) or []
+        return rows
+
     def add_revenue_obligation(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
@@ -56802,6 +56816,27 @@ class DatabaseService:
             if not obl:
                 raise ValueError("Revenue obligation not found")
 
+            # ✅ Enforce over-time only
+            timing = str(obl.get("recognition_timing") or "").strip().lower()
+            if timing != "over_time":
+                raise ValueError("Progress updates are only allowed for over-time obligations")
+
+            # ✅ Normalise / validate period_end
+            period_end = self._as_date(data.get("period_end"))
+            if not period_end:
+                raise ValueError("period_end is required")
+
+            update_type = (data.get("update_type") or "cost_to_cost").strip().lower()
+
+            # optional numeric values
+            expected_total_cost = float(data["expected_total_cost"]) if data.get("expected_total_cost") is not None else None
+            actual_cost_to_date = float(data["actual_cost_to_date"]) if data.get("actual_cost_to_date") is not None else None
+            progress_percent = float(data["progress_percent"]) if data.get("progress_percent") not in (None, "") else None
+            units_done = float(data["units_done"]) if data.get("units_done") is not None else None
+            units_total = float(data["units_total"]) if data.get("units_total") is not None else None
+            milestone_code = data.get("milestone_code")
+            notes = data.get("notes")
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_progress_updates (
@@ -56828,17 +56863,17 @@ class DatabaseService:
                     int(company_id),
                     int(obl["contract_id"]),
                     int(obligation_id),
-                    data.get("period_end"),
-                    (data.get("update_type") or "cost_to_cost").strip().lower(),
-                    float(data["expected_total_cost"]) if data.get("expected_total_cost") is not None else None,
-                    float(data["actual_cost_to_date"]) if data.get("actual_cost_to_date") is not None else None,
-                    float(data["progress_percent"]) if data.get("progress_percent") is not None else None,
-                    float(data["units_done"]) if data.get("units_done") is not None else None,
-                    float(data["units_total"]) if data.get("units_total") is not None else None,
-                    data.get("milestone_code"),
+                    period_end,  # ✅ use normalised date
+                    update_type,
+                    expected_total_cost,
+                    actual_cost_to_date,
+                    progress_percent,
+                    units_done,
+                    units_total,
+                    milestone_code,
                     int(user_id) if user_id else None,
-                    data.get("notes"),
-                    _json_dumps(data.get("payload_json")),
+                    notes,
+                    _json_dumps(data.get("payload_json") or {}),
                 )
             )
             row = dict(cur.fetchone())
@@ -56849,14 +56884,21 @@ class DatabaseService:
 
             if new_progress is None:
                 method = str(row.get("update_type") or obl.get("progress_method") or "").lower()
+
                 if method == "cost_to_cost":
                     etc = Decimal(str(new_expected or obl.get("expected_total_cost") or 0))
                     atd = Decimal(str(new_actual or obl.get("actual_cost_to_date") or 0))
                     new_progress = float((atd / etc * Decimal("100")) if etc > 0 else Decimal("0"))
+
                 elif method == "units":
                     done = Decimal(str(row.get("units_done") or 0))
                     total = Decimal(str(row.get("units_total") or 0))
                     new_progress = float((done / total * Decimal("100")) if total > 0 else Decimal("0"))
+
+                elif method == "milestone":
+                    # if user didn't supply percent, keep existing unless milestone logic is added later
+                    new_progress = float(obl.get("progress_percent") or 0.0)
+
                 else:
                     new_progress = float(obl.get("progress_percent") or 0.0)
 
