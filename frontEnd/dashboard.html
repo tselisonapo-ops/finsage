@@ -4907,7 +4907,7 @@ html, body {
 
             <section class="card p-4 shadow-sage min-h-[78vh] overflow-hidden flex flex-col">
               <div class="flex items-center gap-3 flex-wrap">
-                <h3 id="loanMainTitle" class="font-bold">Loan Preview</h3>
+                <h3 class="font-bold">Loan Detail</h3>
                 <span id="loanStatusPill" class="pill">New</span>
                 <span id="loanRefPill" class="pill border bg-white hidden"></span>
 
@@ -4916,8 +4916,7 @@ html, body {
                   <button id="loanPreviewBtn" class="btn">Preview Inception</button>
                   <button id="loanReclassBtn" class="btn">Reclassify</button>
                   <button id="loanPaymentBtn" class="btn">Record Payment</button>
-                  <button id="loanEditBtn" class="btn">Edit</button>
-                  <button id="loanSaveBtn" class="btn-highlight hidden">Save Loan</button>
+                  <button id="loanSaveBtn" class="btn-highlight">Save Loan</button>
                 </div>
               </div>
 
@@ -4954,17 +4953,8 @@ html, body {
 
               <div id="loanDetailHost" class="mt-3 grow overflow-auto">
                 <div data-loan-pane="loan-overview" class="space-y-4">
-
-                  <div id="loanPreviewMode">
-                    <div id="loanPreviewBody" class="space-y-4">
-                      <div class="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">
-                        Select a loan from the register to preview it, or click + New to create one.
-                      </div>
-                    </div>
-                  </div>
-
-                  <div id="loanFormMode" class="hidden space-y-4">
-                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div>
                       <label class="text-xs text-slate-600">Loan Name *</label>
                       <input id="loanName" class="w-full border rounded px-3 py-2">
                     </div>
@@ -5079,7 +5069,6 @@ html, body {
                       <label class="text-xs text-slate-600">Linked Bank Account</label>
                       <select id="loanBankAccountId" class="w-full border rounded px-3 py-2"></select>
                     </div>
-                  </div>
 
                   <div id="loanGlAccountsSection" class="hidden">
                     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
