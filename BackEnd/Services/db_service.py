@@ -95,7 +95,7 @@ def _money2(v) -> Decimal:
 
 
 def _pct(self, v) -> Decimal:
-    x = self._d(v)
+    x = _d(v)
     if x < 0:
         x = Decimal("0")
     if x > 100:
@@ -37378,13 +37378,6 @@ class DatabaseService:
         """
         return self.fetch_all(sql, tuple(statuses))
 
-
-    def _d(x) -> Decimal:
-        try:
-            return Decimal(str(x or "0"))
-        except Exception:
-            return Decimal("0")
-
     def get_customer_statement(
         self,
         company_id: int,
@@ -57237,8 +57230,8 @@ class DatabaseService:
             return Decimal("100") if self._point_in_time_satisfied(obligation, period_end) else Decimal("0")
 
         if method == "cost_to_cost":
-            expected_total_cost = self._d(obligation.get("expected_total_cost"))
-            actual_cost_to_date = self._d(obligation.get("actual_cost_to_date"))
+            expected_total_cost = _d(obligation.get("expected_total_cost"))
+            actual_cost_to_date = _d(obligation.get("actual_cost_to_date"))
             if expected_total_cost <= 0:
                 return self._pct(obligation.get("progress_percent") or 0)
             return self._pct((actual_cost_to_date / expected_total_cost) * Decimal("100"))
@@ -57251,8 +57244,8 @@ class DatabaseService:
                 except Exception:
                     payload = {}
 
-            units_done = self._d(payload.get("units_done"))
-            units_total = self._d(payload.get("units_total"))
+            units_done = _d(payload.get("units_done"))
+            units_total = _d(payload.get("units_total"))
             if units_total <= 0:
                 return self._pct(obligation.get("progress_percent") or 0)
             return self._pct((units_done / units_total) * Decimal("100"))
