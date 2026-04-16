@@ -75,7 +75,7 @@ from BackEnd.Services import accounting_classifiers as ac
 from BackEnd.Services.reporting.reporting_helpers import parse_date_arg
 from BackEnd.Services.utils.receipt_token import create_receipt_pdf_token, verify_receipt_pdf_token
 
-from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf, html_to_pdf
+from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf
 from BackEnd.Services.bank_service import BankService
 from BackEnd.Services.receipt_pdf_service import generate_receipt_pdf
 from BackEnd.Services.coa_seed_service import seed_company_coa_once
@@ -7191,8 +7191,9 @@ def email_quote(company_id: int, quote_id: int):
     # ✅ Generate PDF attachment
     # ==============================
     quote["branding"] = db_service.get_company_branding(company_id) or {}
-    html = render_template("quote_pdf.html", quote=quote, company=company, pdf_url="")
-    pdf_bytes = html_to_pdf(html)
+    pdf_bytes = generate_invoice_pdf(quote, company)
+
+    attachments = [(f"quote-{q_no}.pdf", pdf_bytes, "application/pdf")]
 
     attachments = [(f"quote-{q_no}.pdf", pdf_bytes, "application/pdf")]
 
