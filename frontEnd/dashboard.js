@@ -34606,6 +34606,8 @@ async function loadLatestRevenueProgressForSelectedObligation() {
         const row = items.find((x) => Number(x.id) === id);
         if (!row) return;
         state.selectedObligation = row;
+        if ($("revObligationId")) $("revObligationId").value = String(row.id || "");
+
         renderObligationPreview(row);
         renderObligationContractBanner(null);
         setObligationViewMode("preview");
@@ -35288,6 +35290,10 @@ async function loadLatestRevenueProgressForSelectedObligation() {
         }
       }
 
+      if ($("revObligationId")) {
+        $("revObligationId").value = state.selectedObligation?.id ? String(state.selectedObligation.id) : "";
+      }
+
       renderObligations(state.contractObligations);
       renderObligationAllocationHint(state.selectedContract, state.contractObligations);
       await refreshRevenueProgressUIAsync();
@@ -35742,7 +35748,9 @@ async function loadLatestRevenueProgressForSelectedObligation() {
 
   async function recordProgress() {
     const cid = state.cid;
-    const obligationId = Number($("revObligationId")?.value || 0) || null;
+    const obligationId =
+      Number(state.selectedObligation?.id || $("revObligationId")?.value || 0) || null;
+
     if (!cid || !obligationId) throw new Error("Select an obligation first");
 
     const out = await apiFetch(ENDPOINTS.revenue.progress(cid, obligationId), {
