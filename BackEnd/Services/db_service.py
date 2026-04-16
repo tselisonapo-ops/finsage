@@ -58475,14 +58475,35 @@ class DatabaseService:
             )
             if not run:
                 raise ValueError("Recognition run not found")
+
             if str(run.get("status") or "").lower() != "posted":
                 raise ValueError("Only posted runs can be reversed")
+
+            payload_json = run.get("payload_json") or {}
+            if isinstance(payload_json, str):
+                try:
+                    payload_json = json.loads(payload_json)
+                except Exception:
+                    payload_json = {}
+
+            # prevent double reversal
+            existing_reversal_journal_id = payload_json.get("reversal_journal_id")
+            if existing_reversal_journal_id:
+                return {
+                    "ok": True,
+                    "run_id": int(run_id),
+                    "reversal_journal_id": int(existing_reversal_journal_id),
+                    "already_reversed": True,
+                }
 
             entries = self.fetch_all(
                 f"SELECT * FROM {schema}.revenue_recognition_entries WHERE run_id=%s ORDER BY id ASC;",
                 (int(run_id),),
                 cur=cur,
             ) or []
+
+            if not entries:
+                raise ValueError("Recognition run has no entries")
 
             reversed_lines = self._build_revenue_recognition_journal_lines(
                 company_id=company_id,
@@ -58498,19 +58519,21 @@ class DatabaseService:
                 ],
             )
 
-            run_period_end = run.get("period_end")
-            run_ref = f"REV-RUN-{int(run_id)}"
-            run_desc = f"Revenue recognition run {int(run_id)}"
+            run_period_end = self._as_date(run.get("period_end"))
+            if not run_period_end:
+                raise ValueError("Recognition run is missing valid period_end")
+
+            run_ref = f"REV-RUN-{int(run_id)}-REV"
+            run_desc = f"Reverse revenue recognition run {int(run_id)}"
 
             entry = {
                 "date": run_period_end,
                 "ref": run_ref,
                 "description": run_desc,
                 "lines": reversed_lines,
-                "source": "adjustment",
-                "source_id": int(run_id),
+                "source": "revenue_run_reversal",   # changed
+                "source_id": int(run_id),           # same run id is now safe
                 "currency": (run.get("currency") or "ZAR"),
-                # optional engagement fields if you later support them
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
             }
