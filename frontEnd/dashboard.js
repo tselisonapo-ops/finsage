@@ -33462,13 +33462,13 @@ function bindAssetRecordsPickerModal({ cid }) {
         </div>
 
         <div class="flex items-center gap-2">
-          ${canMarkSatisfied ? `<button id="revPreviewMarkSatisfiedBtn" class="btn" type="button">Mark Satisfied</button>` : ``}
-          ${timing === "point_in_time" ? `<button id="revPreviewCreateInvoiceBtn" class="btn-ghost" type="button">Create Invoice</button>` : ``}
+          ${canMarkSatisfied ? `<button id="revOblPreviewMarkSatisfiedBtn" class="btn" type="button">Mark Satisfied</button>` : ``}
+          ${timing === "point_in_time" ? `<button id="revOblPreviewCreateInvoiceBtn" class="btn-ghost" type="button">Create Invoice</button>` : ``}
         </div>
       </div>
     `;
 
-    $("revPreviewMarkSatisfiedBtn")?.addEventListener("click", async () => {
+    $("revOblPreviewMarkSatisfiedBtn")?.addEventListener("click", async () => {
       try {
         await markSelectedObligationSatisfiedFromPreview();
       } catch (e) {
@@ -33476,7 +33476,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       }
     });
 
-    $("revPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
+    $("revOblPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
       try {
         const prefill = buildInvoicePrefillFromRevenueUI(o);
         await redirectToInvoiceFromObligation(prefill);
