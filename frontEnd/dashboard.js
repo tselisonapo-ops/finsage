@@ -31768,6 +31768,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     loanDetail: null,
     bankAccounts: [],
     lastPaymentDraft: null,
+    viewMode: "preview",
   };
 
   function getCid() {
@@ -31882,6 +31883,26 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
 
     termEl.value = term > 0 ? String(term) : "";
+  }
+
+  function setLoanViewMode(mode = "preview") {
+    LOANS_STATE.viewMode = mode;
+
+    const preview = document.getElementById("loanPreviewMode");
+    const form = document.getElementById("loanFormMode");
+    const title = document.getElementById("loanMainTitle");
+    const saveBtn = document.getElementById("loanSaveBtn");
+
+    if (preview) preview.classList.toggle("hidden", mode !== "preview");
+    if (form) form.classList.toggle("hidden", mode !== "form");
+
+    if (title) {
+      title.textContent = mode === "form" ? "Loan Detail" : "Loan Preview";
+    }
+
+    if (saveBtn) {
+      saveBtn.classList.toggle("hidden", mode !== "form");
+    }
   }
 
   function setLoanTab(name) {
@@ -32067,6 +32088,101 @@ function bindAssetRecordsPickerModal({ cid }) {
         if (loanId > 0) await loadLoanDetail(loanId);
       });
     });
+  }
+
+  function renderLoanPreview(loan) {
+    loan = loan || {};
+    const host = document.getElementById("loanPreviewBody");
+    if (!host) return;
+
+    const ccy = getCurrency(loan.currency);
+
+    host.innerHTML = `
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="rounded-xl border bg-slate-50 p-3">
+          <div class="text-[11px] text-slate-500">Loan Name</div>
+          <div class="font-semibold text-slate-800">${escapeHtml(loan.loan_name || "—")}</div>
+        </div>
+        <div class="rounded-xl border bg-slate-50 p-3">
+          <div class="text-[11px] text-slate-500">Loan Reference</div>
+          <div class="font-semibold text-slate-800">${escapeHtml(loan.loan_reference || "—")}</div>
+        </div>
+        <div class="rounded-xl border bg-slate-50 p-3">
+          <div class="text-[11px] text-slate-500">Lender / Loan Holder</div>
+          <div class="font-semibold text-slate-800">${escapeHtml(loan.lender_name || "—")}</div>
+        </div>
+
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Loan Type</div>
+          <div class="font-medium text-slate-800">${escapeHtml(loan.loan_type || "—")}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Start Date</div>
+          <div class="font-medium text-slate-800">${fmtDate(loan.start_date)}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">End Date</div>
+          <div class="font-medium text-slate-800">${fmtDate(loan.maturity_date)}</div>
+        </div>
+
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">First Payment Date</div>
+          <div class="font-medium text-slate-800">${fmtDate(loan.first_payment_date)}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Principal Amount</div>
+          <div class="font-medium text-slate-800">${money(loan.principal_amount || 0, ccy)}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Annual Interest Rate</div>
+          <div class="font-medium text-slate-800">${escapeHtml(String(loan.annual_interest_rate ?? "—"))}</div>
+        </div>
+
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Interest Method</div>
+          <div class="font-medium text-slate-800">${escapeHtml(loan.interest_method || "—")}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Term</div>
+          <div class="font-medium text-slate-800">${escapeHtml(String(loan.term_count ?? "—"))}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Payment Frequency</div>
+          <div class="font-medium text-slate-800">${escapeHtml(loan.payment_frequency || "—")}</div>
+        </div>
+
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Balloon / Residual Amount</div>
+          <div class="font-medium text-slate-800">${money(loan.balloon_amount || 0, ccy)}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Fees / Initiation Costs</div>
+          <div class="font-medium text-slate-800">${money(loan.fees_amount || 0, ccy)}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Opening Accrued Interest</div>
+          <div class="font-medium text-slate-800">${money(loan.accrued_interest_opening || 0, ccy)}</div>
+        </div>
+
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Repayment Holiday Count</div>
+          <div class="font-medium text-slate-800">${escapeHtml(String(loan.repayment_holiday_count ?? 0))}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Variable Rate</div>
+          <div class="font-medium text-slate-800">${loan.variable_rate ? "Yes" : "No"}</div>
+        </div>
+        <div class="rounded-xl border bg-white p-3">
+          <div class="text-[11px] text-slate-500">Currency</div>
+          <div class="font-medium text-slate-800">${escapeHtml(loan.currency || "—")}</div>
+        </div>
+
+        <div class="rounded-xl border bg-white p-3 sm:col-span-2 xl:col-span-3">
+          <div class="text-[11px] text-slate-500">Notes</div>
+          <div class="font-medium text-slate-800 whitespace-pre-wrap">${escapeHtml(loan.notes || "—")}</div>
+        </div>
+      </div>
+    `;
   }
 
   function setLoanGlAccountsVisible(visible) {
@@ -32428,6 +32544,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       renderScheduleRows(data.schedule || [], getCurrency(data.loan?.currency));
       renderPaymentsRows(data.payments || [], getCurrency(data.loan?.currency));
 
+      setLoanViewMode("preview");
       setLoanGlAccountsVisible(false);
       clearMainJournalPreview();
 
@@ -32945,6 +33062,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     resetLoanScreenForNewLoan(loan);
     setLoanTab("loan-overview");
+    setLoanViewMode("form");
     applyLoanButtonsByMode();
   }
 
