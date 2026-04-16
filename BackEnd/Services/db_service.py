@@ -56679,17 +56679,58 @@ class DatabaseService:
                         raise ValueError("Satisfied point-in-time obligations require satisfied_at.")
 
             if timing == "over_time":
-                if progress_method not in {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}:
+                allowed_methods = {"cost_to_cost", "milestone", "units", "time_elapsed", "manual", "units_delivered"}
+                if progress_method not in allowed_methods:
                     raise ValueError("Invalid progress method for over-time obligation.")
 
-                if progress_method == "cost_to_cost" and expected_total_cost <= 0:
-                    raise ValueError("Over-time obligations using cost-to-cost require expected total cost.")
-
+                # Reset point-in-time fields
                 data["recognized_at_point_in_time_date"] = None
                 data["recognition_trigger"] = None
                 satisfaction_status = "pending"
                 satisfied_at = None
                 satisfaction_evidence_ref = None
+
+                # 🔥 DRIVER ENFORCEMENT
+                if progress_method == "cost_to_cost":
+                    if expected_total_cost <= 0:
+                        raise ValueError("Cost-to-cost requires expected total cost.")
+
+                    # keep cost fields, clear everything else
+                    data["progress_percent"] = None
+                    payload_json.pop("units_done", None)
+                    payload_json.pop("units_total", None)
+                    payload_json.pop("milestone_code", None)
+
+                elif progress_method in {"units", "units_delivered"}:
+                    # clear cost + manual
+                    data["expected_total_cost"] = None
+                    data["actual_cost_to_date"] = None
+                    data["progress_percent"] = None
+                    payload_json.pop("milestone_code", None)
+
+                elif progress_method == "manual":
+                    # manual overrides everything
+                    data["expected_total_cost"] = None
+                    data["actual_cost_to_date"] = None
+                    payload_json.pop("units_done", None)
+                    payload_json.pop("units_total", None)
+                    payload_json.pop("milestone_code", None)
+
+                elif progress_method == "milestone":
+                    # milestone drives %
+                    data["expected_total_cost"] = None
+                    data["actual_cost_to_date"] = None
+                    data["progress_percent"] = 0.0  # will be set by milestone updates
+                    payload_json.pop("units_done", None)
+                    payload_json.pop("units_total", None)
+
+                elif progress_method == "time_elapsed":
+                    # time-based method
+                    data["expected_total_cost"] = None
+                    data["actual_cost_to_date"] = None
+                    payload_json.pop("units_done", None)
+                    payload_json.pop("units_total", None)
+                    payload_json.pop("milestone_code", None)
 
             payload_json = dict(before_payload)
 
@@ -56925,26 +56966,101 @@ class DatabaseService:
             if not obl:
                 raise ValueError("Revenue obligation not found")
 
-            # ✅ Enforce over-time only
             timing = str(obl.get("recognition_timing") or "").strip().lower()
             if timing != "over_time":
                 raise ValueError("Progress updates are only allowed for over-time obligations")
 
-            # ✅ Normalise / validate period_end
             period_end = self._as_date(data.get("period_end"))
             if not period_end:
                 raise ValueError("period_end is required")
 
-            update_type = (data.get("update_type") or "cost_to_cost").strip().lower()
+            configured_method = str(obl.get("progress_method") or "cost_to_cost").strip().lower()
+            update_type = (data.get("update_type") or configured_method).strip().lower()
 
-            # optional numeric values
+            if update_type != configured_method:
+                raise ValueError(
+                    f"Progress update type '{update_type}' does not match obligation progress method '{configured_method}'."
+                )
+
             expected_total_cost = float(data["expected_total_cost"]) if data.get("expected_total_cost") is not None else None
             actual_cost_to_date = float(data["actual_cost_to_date"]) if data.get("actual_cost_to_date") is not None else None
             progress_percent = float(data["progress_percent"]) if data.get("progress_percent") not in (None, "") else None
             units_done = float(data["units_done"]) if data.get("units_done") is not None else None
             units_total = float(data["units_total"]) if data.get("units_total") is not None else None
-            milestone_code = data.get("milestone_code")
+            milestone_code = (data.get("milestone_code") or "").strip() or None
             notes = data.get("notes")
+
+            if update_type == "cost_to_cost":
+                if expected_total_cost is None or expected_total_cost <= 0:
+                    raise ValueError("Expected total cost is required for cost-to-cost.")
+                if actual_cost_to_date is None or actual_cost_to_date < 0:
+                    raise ValueError("Actual cost to date is required for cost-to-cost.")
+
+                progress_percent = float(
+                    (Decimal(str(actual_cost_to_date)) / Decimal(str(expected_total_cost))) * Decimal("100")
+                )
+                units_done = None
+                units_total = None
+                milestone_code = None
+
+            elif update_type in {"units", "units_delivered"}:
+                if units_total is None or units_total <= 0:
+                    raise ValueError("Total units is required for units-based progress.")
+                if units_done is None or units_done < 0:
+                    raise ValueError("Units done is required for units-based progress.")
+                if units_done > units_total:
+                    raise ValueError("Units done cannot exceed total units.")
+
+                progress_percent = float(
+                    (Decimal(str(units_done)) / Decimal(str(units_total))) * Decimal("100")
+                )
+                expected_total_cost = None
+                actual_cost_to_date = None
+                milestone_code = None
+
+            elif update_type == "manual":
+                if progress_percent is None:
+                    raise ValueError("Progress percent is required for manual updates.")
+                if progress_percent < 0 or progress_percent > 100:
+                    raise ValueError("Progress percent must be between 0 and 100.")
+
+                expected_total_cost = None
+                actual_cost_to_date = None
+                units_done = None
+                units_total = None
+                milestone_code = None
+
+            elif update_type == "milestone":
+                if not milestone_code:
+                    raise ValueError("Milestone code is required for milestone updates.")
+
+                milestone_map = {
+                    "planning_complete": 25.0,
+                    "execution_complete": 50.0,
+                    "project_complete": 100.0,
+                }
+
+                if milestone_code not in milestone_map:
+                    raise ValueError("Unknown milestone code.")
+
+                progress_percent = milestone_map[milestone_code]
+                expected_total_cost = None
+                actual_cost_to_date = None
+                units_done = None
+                units_total = None
+
+            elif update_type == "time_elapsed":
+                progress_percent = float(data.get("progress_percent") or obl.get("progress_percent") or 0.0)
+                if progress_percent < 0 or progress_percent > 100:
+                    raise ValueError("Progress percent must be between 0 and 100.")
+                expected_total_cost = None
+                actual_cost_to_date = None
+                units_done = None
+                units_total = None
+                milestone_code = None
+
+            else:
+                raise ValueError(f"Unsupported progress method '{update_type}'.")
 
             cur.execute(
                 f"""
@@ -56972,7 +57088,7 @@ class DatabaseService:
                     int(company_id),
                     int(obl["contract_id"]),
                     int(obligation_id),
-                    period_end,  # ✅ use normalised date
+                    period_end,
                     update_type,
                     expected_total_cost,
                     actual_cost_to_date,
@@ -56987,45 +57103,21 @@ class DatabaseService:
             )
             row = dict(cur.fetchone())
 
-            new_expected = row.get("expected_total_cost")
-            new_actual = row.get("actual_cost_to_date")
-            new_progress = row.get("progress_percent")
-
-            if new_progress is None:
-                method = str(row.get("update_type") or obl.get("progress_method") or "").lower()
-
-                if method == "cost_to_cost":
-                    etc = Decimal(str(new_expected or obl.get("expected_total_cost") or 0))
-                    atd = Decimal(str(new_actual or obl.get("actual_cost_to_date") or 0))
-                    new_progress = float((atd / etc * Decimal("100")) if etc > 0 else Decimal("0"))
-
-                elif method == "units":
-                    done = Decimal(str(row.get("units_done") or 0))
-                    total = Decimal(str(row.get("units_total") or 0))
-                    new_progress = float((done / total * Decimal("100")) if total > 0 else Decimal("0"))
-
-                elif method == "milestone":
-                    # if user didn't supply percent, keep existing unless milestone logic is added later
-                    new_progress = float(obl.get("progress_percent") or 0.0)
-
-                else:
-                    new_progress = float(obl.get("progress_percent") or 0.0)
-
             cur.execute(
                 f"""
                 UPDATE {schema}.revenue_obligations
                 SET
-                    expected_total_cost = COALESCE(%s, expected_total_cost),
-                    actual_cost_to_date = COALESCE(%s, actual_cost_to_date),
+                    expected_total_cost = %s,
+                    actual_cost_to_date = %s,
                     progress_percent = %s,
                     updated_at = NOW()
                 WHERE id=%s
                 RETURNING *;
                 """,
                 (
-                    float(new_expected) if new_expected is not None else None,
-                    float(new_actual) if new_actual is not None else None,
-                    float(new_progress or 0.0),
+                    float(expected_total_cost) if expected_total_cost is not None else None,
+                    float(actual_cost_to_date) if actual_cost_to_date is not None else None,
+                    float(progress_percent or 0.0),
                     int(obligation_id),
                 )
             )
@@ -57178,42 +57270,52 @@ class DatabaseService:
         return _money2(row.get("amt") or 0)
 
 
-    def _recognized_to_date_before_period(self, company_id: int, obligation_id: int, period_start, cur=None) -> Decimal:
+    def _recognized_to_date_as_of_period_end(self, company_id: int, obligation_id: int, period_end, cur=None) -> Decimal:
         schema = self.company_schema(company_id)
-        ps = self._as_date(period_start)
+        pe = self._as_date(period_end)
 
-        if ps is None:
+        if pe is None:
             return Decimal("0.00")
 
         row = self.fetch_one(
             f"""
-            SELECT COALESCE(SUM(revenue_delta_this_run), 0) AS amt
+            SELECT COALESCE(SUM(e.revenue_delta_this_run), 0) AS amt
             FROM {schema}.revenue_recognition_entries e
             JOIN {schema}.revenue_recognition_runs r
             ON r.id = e.run_id
             WHERE e.obligation_id = %s
-            AND r.status IN ('draft', 'posted')
-            AND r.period_end < %s
+            AND r.status = 'posted'
+            AND r.period_end <= %s
             """,
-            (int(obligation_id), ps),
+            (int(obligation_id), pe),
             cur=cur,
         ) or {}
+
         return _money2(row.get("amt") or 0)
 
 
     def _calculate_obligation_revenue(self, company_id: int, contract: dict, obligation: dict, period_start, period_end, cur=None) -> dict:
         """
         Core IFRS 15 cumulative calculation for one obligation.
+        Method driver:
+        - cost_to_cost
+        - milestone
+        - units / units_delivered
+        - manual
+        - time_elapsed
+        - point_in_time
         """
         allocated = _money2(obligation.get("allocated_transaction_price") or 0)
         progress_pct = self._obligation_progress_pct(obligation, period_end)
         revenue_required_to_date = _money2((allocated * progress_pct) / Decimal("100"))
-        revenue_previously_recognized = self._recognized_to_date_before_period(
+
+        revenue_previously_recognized = self._recognized_to_date_as_of_period_end(
             company_id=company_id,
             obligation_id=int(obligation["id"]),
-            period_start=period_start,
+            period_end=period_end,
             cur=cur,
         )
+
         delta = _money2(revenue_required_to_date - revenue_previously_recognized)
 
         billed_to_date = self._allocated_obligation_billed_to_date(
@@ -57224,9 +57326,6 @@ class DatabaseService:
             cur=cur,
         )
 
-        #
-        # Position logic for THIS RUN only
-        #
         prev_position = _money2(billed_to_date - revenue_previously_recognized)
         new_position = _money2(billed_to_date - revenue_required_to_date)
 
@@ -57351,19 +57450,6 @@ class DatabaseService:
                     cur=cur,
                 ) or []
 
-                billed_to_date_contract = Decimal(str(
-                    (self.fetch_one(
-                        f"""
-                        SELECT COALESCE(SUM(amount),0) AS amt
-                        FROM {schema}.revenue_billing_events
-                        WHERE contract_id=%s
-                        AND event_date <= %s
-                        """,
-                        (int(c["id"]), period_end),
-                        cur=cur,
-                    ) or {}).get("amt") or 0
-                )).quantize(Decimal("0.01"))
-
                 cash_to_date_contract = Decimal(str(
                     (self.fetch_one(
                         f"""
@@ -57377,114 +57463,24 @@ class DatabaseService:
                     ) or {}).get("amt") or 0
                 )).quantize(Decimal("0.01"))
 
-                obligation_count = len(obligations)
-
                 contract_entries = []
                 contract_rev = Decimal("0.00")
                 contract_ca = Decimal("0.00")
                 contract_cl = Decimal("0.00")
 
                 for obl in obligations:
-                    latest_prog = self.fetch_one(
-                        f"""
-                        SELECT *
-                        FROM {schema}.revenue_progress_updates
-                        WHERE obligation_id=%s
-                        AND period_end <= %s
-                        ORDER BY period_end DESC, id DESC
-                        LIMIT 1
-                        """,
-                        (int(obl["id"]), period_end),
+                    calc = self._calculate_obligation_revenue(
+                        company_id=company_id,
+                        contract=c,
+                        obligation=obl,
+                        period_start=period_start,
+                        period_end=period_end,
                         cur=cur,
-                    ) or {}
+                    )
 
-                    allocated = Decimal(str(obl.get("allocated_transaction_price") or 0)).quantize(Decimal("0.01"))
-                    timing = str(obl.get("recognition_timing") or "over_time").strip().lower()
-                    method = str(obl.get("progress_method") or "cost_to_cost").strip().lower()
-
-                    required_to_date = Decimal("0.00")
-
-                    if timing == "point_in_time":
-                        if self._point_in_time_satisfied(obl, period_end):
-                            required_to_date = allocated
-                        else:
-                            required_to_date = Decimal("0.00")
-                    else:
-                        if method == "cost_to_cost":
-                            actual = Decimal(str(
-                                latest_prog.get("actual_cost_to_date")
-                                or obl.get("actual_cost_to_date")
-                                or 0
-                            ))
-                            expected = Decimal(str(
-                                latest_prog.get("expected_total_cost")
-                                or obl.get("expected_total_cost")
-                                or 0
-                            ))
-                            pct = (actual / expected) if expected > 0 else Decimal("0")
-
-                        elif method in {"units", "units_delivered"}:
-                            done = Decimal(str(latest_prog.get("units_done") or 0))
-                            total = Decimal(str(latest_prog.get("units_total") or 0))
-                            pct = (done / total) if total > 0 else Decimal("0")
-
-                        else:
-                            pct = Decimal(str(
-                                latest_prog.get("progress_percent")
-                                or obl.get("progress_percent")
-                                or 0
-                            )) / Decimal("100")
-
-                        if pct < 0:
-                            pct = Decimal("0")
-                        if pct > 1:
-                            pct = Decimal("1")
-
-                        required_to_date = (allocated * pct).quantize(Decimal("0.01"))
-                        
-                    prev_row = self.fetch_one(
-                        f"""
-                        SELECT COALESCE(SUM(e.revenue_delta_this_run),0) AS amt
-                        FROM {schema}.revenue_recognition_entries e
-                        JOIN {schema}.revenue_recognition_runs r
-                        ON r.id = e.run_id
-                        WHERE e.obligation_id=%s
-                        AND r.status = 'posted'
-                        AND r.period_end < %s
-                        """,
-                        (int(obl["id"]), period_start),
-                        cur=cur,
-                    ) or {}
-                    prev_recognized = Decimal(str(prev_row.get("amt") or 0)).quantize(Decimal("0.01"))
-
-                    delta = (required_to_date - prev_recognized).quantize(Decimal("0.01"))
-
-                    billed_row = self.fetch_one(
-                        f"""
-                        SELECT COALESCE(SUM(amount),0) AS amt
-                        FROM {schema}.revenue_billing_events
-                        WHERE obligation_id=%s
-                        AND event_date <= %s
-                        """,
-                        (int(obl["id"]), period_end),
-                        cur=cur,
-                    ) or {}
-                    billed_to_date = Decimal(str(billed_row.get("amt") or 0)).quantize(Decimal("0.01"))
-
-                    if billed_to_date == Decimal("0.00") and obligation_count == 1:
-                        billed_to_date = billed_to_date_contract
-
-                    prev_position = (billed_to_date - prev_recognized).quantize(Decimal("0.01"))
-                    new_position = (billed_to_date - required_to_date).quantize(Decimal("0.01"))
-
-                    prev_liability = max(prev_position, Decimal("0.00"))
-                    prev_asset = max(-prev_position, Decimal("0.00"))
-
-                    new_liability = max(new_position, Decimal("0.00"))
-                    new_asset = max(-new_position, Decimal("0.00"))
-
-                    cl_delta = (prev_liability - new_liability).quantize(Decimal("0.01"))
-                    ca_delta = (new_asset - prev_asset).quantize(Decimal("0.01"))
+                    delta = Decimal(str(calc["revenue_delta_this_run"])).quantize(Decimal("0.01"))
+                    ca_delta = Decimal(str(calc["contract_asset_delta"])).quantize(Decimal("0.01"))
+                    cl_delta = Decimal(str(calc["contract_liability_delta"])).quantize(Decimal("0.01"))
 
                     if delta == Decimal("0.00") and ca_delta == Decimal("0.00") and cl_delta == Decimal("0.00"):
                         continue
@@ -57506,24 +57502,19 @@ class DatabaseService:
                         "obligation_name": obl.get("obligation_name"),
                         "period_start": period_start_s,
                         "period_end": period_end_s,
-                        "revenue_required_to_date": float(required_to_date),
-                        "revenue_previously_recognized": float(prev_recognized),
-                        "revenue_delta_this_run": float(delta),
-                        "billed_to_date": float(billed_to_date),
+                        "revenue_required_to_date": float(calc["revenue_required_to_date"]),
+                        "revenue_previously_recognized": float(calc["revenue_previously_recognized"]),
+                        "revenue_delta_this_run": float(calc["revenue_delta_this_run"]),
+                        "billed_to_date": float(calc["billed_to_date"]),
                         "cash_received_to_date": float(cash_to_date_contract),
-                        "contract_asset_delta": float(ca_delta),
-                        "contract_liability_delta": float(cl_delta),
+                        "contract_asset_delta": float(calc["contract_asset_delta"]),
+                        "contract_liability_delta": float(calc["contract_liability_delta"]),
                         "source_basis": "system",
                         "notes": None,
                         "validation": validation,
                         "payload_json": {
-                            "timing": timing,
-                            "progress_method": method,
-                            "contract_billed_to_date": float(billed_to_date_contract),
+                            **(calc.get("payload_json") or {}),
                             "contract_cash_to_date": float(cash_to_date_contract),
-                            "latest_progress_id": latest_prog.get("id"),
-                            "previous_position": float(prev_position),
-                            "new_position": float(new_position),
                         },
                     }
 
@@ -57534,7 +57525,6 @@ class DatabaseService:
                     contract_ca += ca_delta
                     contract_cl += cl_delta
 
-                # include contract block only if it has something to recognize
                 if contract_entries:
                     preview_contracts.append({
                         "contract_id": int(c["id"]),
@@ -57562,13 +57552,8 @@ class DatabaseService:
                 "contract_id": int(contract_id) if contract_id else None,
                 "period_start": period_start_s,
                 "period_end": period_end_s,
-
-                # ✅ grouped output first
                 "contracts": preview_contracts,
-
-                # ✅ keep flat entries too for compatibility with existing UI
                 "entries": flat_entries,
-
                 "totals": {
                     "total_revenue_delta": float(total_rev.quantize(Decimal("0.01"))),
                     "total_contract_asset_delta": float(total_ca.quantize(Decimal("0.01"))),
@@ -57874,9 +57859,16 @@ class DatabaseService:
 
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
-        period_start = data.get("period_start")
-        period_end = data.get("period_end")
+        period_start = self._as_date(data.get("period_start"))
+        period_end = self._as_date(data.get("period_end"))
         contract_id = data.get("contract_id")
+
+        if not period_start:
+            raise ValueError("period_start is required")
+        if not period_end:
+            raise ValueError("period_end is required")
+        if period_end < period_start:
+            raise ValueError("period_end cannot be before period_start")
 
         preview = self.preview_revenue_recognition_run(
             company_id=int(company_id),
@@ -57886,6 +57878,31 @@ class DatabaseService:
         )
 
         with self._conn_cursor() as (conn, cur):
+            existing_posted = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.revenue_recognition_runs
+                WHERE (
+                    (%s IS NULL AND contract_id IS NULL)
+                    OR contract_id = %s
+                )
+                AND period_start = %s
+                AND period_end = %s
+                AND status = 'posted'
+                LIMIT 1
+                """,
+                (
+                    int(contract_id) if contract_id else None,
+                    int(contract_id) if contract_id else None,
+                    period_start,
+                    period_end,
+                ),
+                cur=cur,
+            )
+
+            if existing_posted:
+                raise ValueError("A posted recognition run already exists for this scope and period.")
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_recognition_runs (
@@ -57907,7 +57924,7 @@ class DatabaseService:
                     float(preview["totals"]["total_contract_asset_delta"]),
                     float(preview["totals"]["total_contract_liability_delta"]),
                     int(user_id) if user_id else None,
-                    _json_dumps(data.get("payload_json")),
+                    _json_dumps(data.get("payload_json") or {}),
                 )
             )
             run = dict(cur.fetchone())
@@ -57947,7 +57964,7 @@ class DatabaseService:
                         float(e["contract_liability_delta"]),
                         e.get("source_basis") or "system",
                         e.get("notes"),
-                        _json_dumps(e.get("payload_json")),
+                        _json_dumps(e.get("payload_json") or {}),
                     )
                 )
 

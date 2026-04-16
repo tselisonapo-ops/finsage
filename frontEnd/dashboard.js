@@ -33134,6 +33134,23 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revProgressPercent")) $("revProgressPercent").value = p.progress_percent ?? "";
     if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = p.milestone_code || "";
     if ($("revProgressNotes")) $("revProgressNotes").value = p.notes || "";
+
+    toggleRevenueProgressDriverFields();
+  }
+
+  function syncProgressTypeFromSelectedObligation() {
+    const o = state.selectedObligation || null;
+    const progressType = $("revProgressType");
+    if (!o || !progressType) return;
+
+    const method = String(o.progress_method || "cost_to_cost").trim().toLowerCase();
+    progressType.value = method;
+
+    // lock it so user cannot send a mismatched update_type
+    progressType.disabled = true;
+    progressType.classList.add("bg-slate-100", "cursor-not-allowed");
+
+    toggleRevenueProgressDriverFields();
   }
 
   function setRevenueProgressEditMode(editing = false) {
@@ -33469,12 +33486,91 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
   }
 
-  function toggleObligationFields() {
-    const timing = document.getElementById("revRecognitionTiming")?.value;
+  function toggleRevenueProgressDriverFields() {
+    const type = String($("revProgressType")?.value || "cost_to_cost").trim().toLowerCase();
 
-    const overTimeBlock = document.getElementById("revOverTimeBlock");
-    const pitBlock = document.getElementById("revPointInTimeBlock");
+    const expected = $("revProgressExpectedCost");
+    const actual = $("revProgressActualCost");
+    const percent = $("revProgressPercent");
+    const milestone = $("revProgressMilestoneCode");
+
+    const expectedWrap = $("revProgressExpectedCostWrap");
+    const actualWrap = $("revProgressActualCostWrap");
+    const percentWrap = $("revProgressPercentWrap");
+    const milestoneWrap = $("revProgressMilestoneCodeWrap");
+
+    const show = (el, yes) => {
+      if (!el) return;
+      el.classList.toggle("hidden", !yes);
+    };
+
+    const setEnabled = (el, yes) => {
+      if (!el) return;
+      el.disabled = !yes;
+      el.classList.toggle("bg-slate-100", !yes);
+      el.classList.toggle("cursor-not-allowed", !yes);
+    };
+
+    show(expectedWrap, false);
+    show(actualWrap, false);
+    show(percentWrap, false);
+    show(milestoneWrap, false);
+
+    setEnabled(expected, false);
+    setEnabled(actual, false);
+    setEnabled(percent, false);
+    setEnabled(milestone, false);
+
+    if (type === "cost_to_cost") {
+      show(expectedWrap, true);
+      show(actualWrap, true);
+      setEnabled(expected, true);
+      setEnabled(actual, true);
+
+      if (percent) percent.value = "";
+      if (milestone) milestone.value = "";
+    }
+
+    else if (type === "milestone") {
+      show(milestoneWrap, true);
+      setEnabled(milestone, true);
+
+      if (expected) expected.value = "0.00";
+      if (actual) actual.value = "0.00";
+      if (percent) percent.value = "";
+    }
+
+    else if (type === "units" || type === "units_delivered") {
+      if (expected) expected.value = "0.00";
+      if (actual) actual.value = "0.00";
+      if (percent) percent.value = "";
+      if (milestone) milestone.value = "";
+    }
+
+    else if (type === "manual" || type === "time_elapsed") {
+      show(percentWrap, true);
+      setEnabled(percent, true);
+
+      if (expected) expected.value = "0.00";
+      if (actual) actual.value = "0.00";
+      if (milestone) milestone.value = "";
+    }
+  }
+
+  function toggleObligationFields() {
+    const timing = $("revRecognitionTiming")?.value || "point_in_time";
+    const method = $("revProgressMethod")?.value || "cost_to_cost";
+
+    const overTimeBlock = $("revOverTimeBlock");
+    const pitBlock = $("revPointInTimeBlock");
     const expectedCostWrap = $("revExpectedCostWrap");
+
+    const pitTrigger = $("revPitTrigger");
+    const pitDate = $("revPitDate");
+    const satisfactionStatus = $("revSatisfactionStatus");
+    const satisfiedAt = $("revSatisfiedAt");
+    const evidenceType = $("revSatisfactionEvidenceType");
+    const evidenceRef = $("revSatisfactionEvidenceRef");
 
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
@@ -33486,16 +33582,20 @@ function bindAssetRecordsPickerModal({ cid }) {
     } else {
       overTimeBlock?.classList.remove("hidden");
       pitBlock?.classList.add("hidden");
-      expectedCostWrap?.classList.remove("hidden");
 
       if ($("revProgressMethod") && !$("revProgressMethod").value) {
         $("revProgressMethod").value = "cost_to_cost";
       }
 
-      if ($("revSatisfactionStatus")) $("revSatisfactionStatus").value = "pending";
-      if ($("revSatisfiedAt")) $("revSatisfiedAt").value = "";
-      if ($("revSatisfactionEvidenceType")) $("revSatisfactionEvidenceType").value = "";
-      if ($("revSatisfactionEvidenceRef")) $("revSatisfactionEvidenceRef").value = "";
+      // show expected cost only for cost-to-cost
+      expectedCostWrap?.classList.toggle("hidden", method !== "cost_to_cost");
+
+      if (pitTrigger) pitTrigger.value = "";
+      if (pitDate) pitDate.value = "";
+      if (satisfactionStatus) satisfactionStatus.value = "pending";
+      if (satisfiedAt) satisfiedAt.value = "";
+      if (evidenceType) evidenceType.value = "";
+      if (evidenceRef) evidenceRef.value = "";
     }
   }
 
@@ -34123,6 +34223,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
 
     toggleObligationFields();
+    syncProgressTypeFromSelectedObligation();
   }
 
   function contractPayloadFromUI() {
@@ -36368,6 +36469,9 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       }
     });
 
+    $("revProgressMethod")?.addEventListener("change", toggleObligationFields);
+    $("revProgressType")?.addEventListener("change", toggleRevenueProgressDriverFields);
+
     $("revSaveProgress")?.addEventListener("click", async () => {
       try {
         if (!isSelectedObligationProgressEligible()) {
@@ -36444,6 +36548,7 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     });
 
     toggleObligationFields();
+    toggleRevenueProgressDriverFields
   }
 
   let bound = false;

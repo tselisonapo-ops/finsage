@@ -624,9 +624,17 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
     if "recognition_timing" in body and body.get("recognition_timing") is not None:
         body["recognition_timing"] = str(body.get("recognition_timing") or "").strip().lower()
 
-    if "progress_method" in body and body.get("progress_method") is not None:
-        body["progress_method"] = str(body.get("progress_method") or "").strip().lower()
+    allowed_methods = {"cost_to_cost", "milestone", "units", "units_delivered", "manual", "time_elapsed"}
 
+    if "progress_method" in body and body.get("progress_method") is not None:
+        pm = str(body.get("progress_method") or "").strip().lower()
+        if pm not in allowed_methods:
+            return jsonify({
+                "ok": False,
+                "error": f"Invalid progress_method '{pm}'"
+            }), 400
+        body["progress_method"] = pm
+        
     if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
         body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower() or None
 
@@ -894,6 +902,22 @@ def api_record_revenue_progress_update(company_id: int, obligation_id: int):
     user_id = _jwt_user_id()
     body = request.get_json(silent=True) or {}
 
+    user_id = _jwt_user_id()
+    body = request.get_json(silent=True) or {}
+
+    # 🔥 ADD HERE (before calling db_service)
+    obl = db_service.get_revenue_obligation(company_id, obligation_id)
+
+    if obl:
+        configured = str(obl.get("progress_method") or "cost_to_cost").strip().lower()
+        incoming = str(body.get("update_type") or configured).strip().lower()
+
+        if incoming != configured:
+            return jsonify({
+                "ok": False,
+                "error": f"Update type '{incoming}' does not match obligation method '{configured}'"
+            }), 400
+
     try:
         out = db_service.record_revenue_progress_update(
             company_id,
@@ -949,47 +973,6 @@ def api_preview_revenue_recognition_run(company_id: int):
         return jsonify({"ok": True, "data": out}), 200
     except Exception as e:
         current_app.logger.exception("preview_revenue_recognition_run failed")
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/runs", methods=["POST", "OPTIONS"])
-@require_auth
-def api_create_revenue_recognition_run(company_id: int):
-    if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
-
-    payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
-    if deny:
-        return deny
-
-    user_id = _jwt_user_id()
-    body = request.get_json(silent=True) or {}
-
-    try:
-        out = db_service.create_revenue_recognition_run(company_id, body, user_id=user_id)
-
-        try:
-            db_service.audit_log(
-                company_id,
-                actor_user_id=user_id,
-                module="revenue",
-                action="create_revenue_recognition_run",
-                severity="info",
-                entity_type="revenue_run",
-                entity_id=str((out.get("run") or {}).get("id")),
-                entity_ref=f"REV-RUN-{(out.get('run') or {}).get('id')}",
-                before_json={},
-                after_json=out,
-                message=f"Created revenue recognition run {(out.get('run') or {}).get('id')}",
-                source="api",
-            )
-        except Exception:
-            current_app.logger.exception("audit_log failed in api_create_revenue_recognition_run")
-
-        return jsonify({"ok": True, "data": out}), 201
-    except Exception as e:
-        current_app.logger.exception("create_revenue_recognition_run failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
 

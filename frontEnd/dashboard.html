@@ -3614,7 +3614,7 @@ html, body {
                           </div>
                         </div>
                       </div>
-                      
+
                       <textarea id="revContractNotes" class="w-full border rounded px-3 py-2 text-sm" rows="5" placeholder="Contract notes"></textarea>
 
                       <div>
@@ -3992,22 +3992,24 @@ html, body {
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
-                      <div>
+                      <div id="revProgressExpectedCostWrap">
                         <label class="block text-xs text-slate-500 mb-1">Expected Total Cost</label>
                         <input id="revProgressExpectedCost" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
                       </div>
-                      <div>
+
+                      <div id="revProgressActualCostWrap">
                         <label class="block text-xs text-slate-500 mb-1">Actual Cost to Date</label>
                         <input id="revProgressActualCost" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right" value="0.00">
                       </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
-                      <div>
+                      <div id="revProgressPercentWrap">
                         <label class="block text-xs text-slate-500 mb-1">Progress %</label>
                         <input id="revProgressPercent" type="number" step="0.0001" class="w-full border rounded px-3 py-2 text-sm text-right" value="">
                       </div>
-                      <div>
+
+                      <div id="revProgressMilestoneCodeWrap">
                         <label class="block text-xs text-slate-500 mb-1">Milestone Code</label>
                         <input id="revProgressMilestoneCode" class="w-full border rounded px-3 py-2 text-sm">
                       </div>
