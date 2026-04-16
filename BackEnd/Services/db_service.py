@@ -18730,6 +18730,12 @@ class DatabaseService:
         ALTER TABLE {schema}.revenue_contracts
         ADD COLUMN IF NOT EXISTS contract_position_type TEXT;
 
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS contract_position_type TEXT;
+
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS contract_position_amount NUMERIC(18,2);
+
         UPDATE {schema}.revenue_contracts
         SET contract_position_type = 'neutral'
         WHERE contract_position_type IS NULL;
