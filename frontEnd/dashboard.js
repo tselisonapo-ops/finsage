@@ -13611,9 +13611,10 @@ async function reverseManualJournal(journalId, opts = {}) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) throw new Error("No active company");
 
-  const reversalDate = String(opts.date || isoToday()).slice(0, 10);
+  const reversalDate = toIsoDate(opts.date || isoToday());
+  if (!reversalDate) throw new Error("Invalid reversal date");
 
-  // ✅ UX gate (backend also enforces)
+  // UX gate (backend also enforces)
   await assertNotLocked(reversalDate, "gl");
 
   const payload = {
