@@ -94,7 +94,7 @@ def _money2(v) -> Decimal:
     return _d(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _pct(self, v) -> Decimal:
+def _pct(v) -> Decimal:
     x = _d(v)
     if x < 0:
         x = Decimal("0")
@@ -57233,8 +57233,8 @@ class DatabaseService:
             expected_total_cost = _d(obligation.get("expected_total_cost"))
             actual_cost_to_date = _d(obligation.get("actual_cost_to_date"))
             if expected_total_cost <= 0:
-                return self._pct(obligation.get("progress_percent") or 0)
-            return self._pct((actual_cost_to_date / expected_total_cost) * Decimal("100"))
+                return _pct(obligation.get("progress_percent") or 0)
+            return _pct((actual_cost_to_date / expected_total_cost) * Decimal("100"))
 
         if method == "units":
             payload = obligation.get("payload_json") or {}
@@ -57247,11 +57247,11 @@ class DatabaseService:
             units_done = _d(payload.get("units_done"))
             units_total = _d(payload.get("units_total"))
             if units_total <= 0:
-                return self._pct(obligation.get("progress_percent") or 0)
-            return self._pct((units_done / units_total) * Decimal("100"))
+                return _pct(obligation.get("progress_percent") or 0)
+            return _pct((units_done / units_total) * Decimal("100"))
 
         # milestone / manual / time_elapsed / fallback
-        return self._pct(obligation.get("progress_percent") or 0)
+        return _pct(obligation.get("progress_percent") or 0)
 
 
     def _obligation_billed_to_date(self, company_id: int, obligation: dict, period_end, cur=None) -> Decimal:
