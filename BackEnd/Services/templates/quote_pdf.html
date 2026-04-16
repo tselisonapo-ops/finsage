@@ -415,8 +415,7 @@
       <button type="button" class="tbtn" id="btnExportPdf">Export PDF</button>
       <button type="button" class="tbtn" id="btnPrintPdf">Print PDF</button>
       <button type="button" class="tbtn" id="btnSendEmail">Send Email</button>
-      <button type="button" class="tbtn primary"
-        onclick="window.location.href='http://127.0.0.1:5500/dashboard.html?company_id={{ quote.company_id }}'">
+      <button type="button" class="tbtn primary" id="btnCloseQuote">
         Close
       </button>
     </div>
@@ -596,76 +595,76 @@
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const tb = document.getElementById("quoteToolbar");
-  if (!tb) return;
+  document.addEventListener("DOMContentLoaded", () => {
+    const tb = document.getElementById("quoteToolbar");
+    if (!tb) return;
 
-  const pdfUrl    = tb.dataset.pdfUrl || "";
-  const companyId = tb.dataset.companyId;
-  const quoteId   = tb.dataset.quoteId;
+    const pdfUrl = tb.dataset.pdfUrl || "";
+    const companyId = tb.dataset.companyId;
+    const quoteId = tb.dataset.quoteId;
 
-  const btnExport = document.getElementById("btnExportPdf");
-  const btnPrint  = document.getElementById("btnPrintPdf");
-  const btnSend   = document.getElementById("btnSendEmail");
-  const btnClose  = document.getElementById("btnClose");
+    const btnExport = document.getElementById("btnExportPdf");
+    const btnPrint = document.getElementById("btnPrintPdf");
+    const btnSend = document.getElementById("btnSendEmail");
+    const btnClose = document.getElementById("btnCloseQuote");
 
-  if (btnExport) {
-    btnExport.addEventListener("click", () => {
-      if (!pdfUrl) return alert("PDF URL not provided by server.");
-      window.open(pdfUrl, "_blank");
-    });
-  }
+    const API_BASE = window.API_BASE || "";
 
-  if (btnPrint) {
-    btnPrint.addEventListener("click", () => {
-      if (!pdfUrl) return alert("PDF URL not provided by server.");
-      const w = window.open(pdfUrl, "_blank");
-      w?.addEventListener("load", () => { try { w.print(); } catch (e) {} });
-    });
-  }
-
-  const API_BASE = "http://127.0.0.1:5000";
-
-  btnSend.addEventListener("click", async () => {
-    const token = (typeof window.getToken === "function" ? window.getToken() : "") || "";
-    if (!token) {
-      alert("You are not logged in. Please sign in again.");
-      return;
+    if (btnExport) {
+      btnExport.addEventListener("click", () => {
+        if (!pdfUrl) return alert("PDF URL not provided by server.");
+        window.open(pdfUrl, "_blank");
+      });
     }
 
-    try {
-      btnSend.disabled = true;
-      btnSend.textContent = "Sending...";
-
-      const res = await fetch(`${API_BASE}/api/companies/${companyId}/quotes/${quoteId}/email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({}),
+    if (btnPrint) {
+      btnPrint.addEventListener("click", () => {
+        window.print();
       });
+    }
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data?.error || "Failed to send email.");
+    if (btnSend) {
+      btnSend.addEventListener("click", async () => {
+        const token = (typeof window.getToken === "function" ? window.getToken() : "") || "";
+        if (!token) {
+          alert("You are not logged in. Please sign in again.");
+          return;
+        }
 
-      alert(`Email sent ✅ to ${data.sent_to || "customer"}`);
-    } catch (e) {
-      console.error(e);
-      alert("Error sending email.");
-    } finally {
-      btnSend.disabled = false;
-      btnSend.textContent = "Send Email";
+        try {
+          btnSend.disabled = true;
+          btnSend.textContent = "Sending...";
+
+          const res = await fetch(`${API_BASE}/api/companies/${companyId}/quotes/${quoteId}/email`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) return alert(data?.error || "Failed to send email.");
+
+          alert(`Email sent to ${data.sent_to || "customer"}`);
+        } catch (e) {
+          console.error(e);
+          alert("Error sending email.");
+        } finally {
+          btnSend.disabled = false;
+          btnSend.textContent = "Send Email";
+        }
+      });
+    }
+
+    if (btnClose) {
+      btnClose.addEventListener("click", () => {
+        const cid = companyId || "";
+        window.location.href = `/dashboard.html?company_id=${cid}`;
+      });
     }
   });
-
-  if (btnClose) {
-    btnClose.addEventListener("click", () => {
-      const cid = companyId || "{{ quote.company_id }}";
-      window.location.href = `http://127.0.0.1:5500/dashboard.html?company_id=${cid}`;
-    });
-  }
-});
 </script>
 
 <div class="debug-stamp" style="position:fixed;top:6px;left:6px;font-size:10px;color:#f00;z-index:9999;">

@@ -34745,17 +34745,31 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     `).join("");
 
     tb.querySelectorAll(".rev-obl-row").forEach((tr) => {
-      tr.addEventListener("click", () => {
-        const id = Number(tr.dataset.id || 0) || null;
-        const row = items.find((x) => Number(x.id) === id);
-        if (!row) return;
-        state.selectedObligation = row;
-        if ($("revObligationId")) $("revObligationId").value = String(row.id || "");
+      tr.addEventListener("click", async () => {
+        try {
+          const id = Number(tr.dataset.id || 0) || null;
+          if (!id) return;
 
-        renderObligationPreview(row);
-        renderObligationContractBanner(null);
-        setObligationViewMode("preview");
-        refreshRevenueProgressUIAsync();
+          const cid = state.cid;
+          if (!cid) throw new Error("Missing company id");
+
+          const out = await apiFetch(ENDPOINTS.revenue.obligation(cid, id), {
+            method: "GET",
+          });
+
+          const row = out?.data || out;
+          if (!row) throw new Error("Could not load obligation");
+
+          state.selectedObligation = row;
+          if ($("revObligationId")) $("revObligationId").value = String(row.id || "");
+
+          renderObligationPreview(row);
+          renderObligationContractBanner(null);
+          setObligationViewMode("preview");
+          await refreshRevenueProgressUIAsync();
+        } catch (e) {
+          setMsg(e?.message || "Failed to load obligation", "error");
+        }
       });
     });
   }

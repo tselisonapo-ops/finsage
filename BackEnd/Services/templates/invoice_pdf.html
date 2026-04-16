@@ -462,7 +462,7 @@
     <div class="toolbar-actions">
       <button type="button" class="tbtn" id="btnExportPdf">Export PDF</button>
       <button type="button" class="tbtn" id="btnPrintPdf">Print PDF</button>
-      <button type="button" class="tbtn primary" onclick="history.back()">Close</button>
+      <button type="button" class="tbtn primary" id="btnCloseInvoice">Close</button>
     </div>
   </div>
 </div>
@@ -649,29 +649,34 @@
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const tb = document.getElementById("invoiceToolbar");
-  if (!tb) return;
+  document.addEventListener("DOMContentLoaded", () => {
+    const tb = document.getElementById("invoiceToolbar");
+    if (!tb) return;
 
-  const pdfUrl = tb.dataset.pdfUrl || "";
-  const btnExport = document.getElementById("btnExportPdf");
-  const btnPrint  = document.getElementById("btnPrintPdf");
+    const pdfUrl = tb.dataset.pdfUrl || "";
+    const btnExport = document.getElementById("btnExportPdf");
+    const btnPrint  = document.getElementById("btnPrintPdf");
+    const btnClose  = document.getElementById("btnCloseInvoice");
 
-  if (btnExport) {
-    btnExport.addEventListener("click", () => {
-      if (!pdfUrl) return alert("PDF URL not provided by server.");
-      window.open(pdfUrl, "_blank");
-    });
-  }
+    if (btnExport) {
+      btnExport.addEventListener("click", () => {
+        if (!pdfUrl) return alert("PDF URL not provided by server.");
+        window.open(pdfUrl, "_blank");
+      });
+    }
 
-  if (btnPrint) {
-    btnPrint.addEventListener("click", () => {
-      if (!pdfUrl) return alert("PDF URL not provided by server.");
-      const w = window.open(pdfUrl, "_blank");
-      w?.addEventListener("load", () => { try { w.print(); } catch (e) {} });
-    });
-  }
-});
+    if (btnPrint) {
+      btnPrint.addEventListener("click", () => {
+        window.print();
+      });
+    }
+
+    if (btnClose) {
+      btnClose.addEventListener("click", () => {
+        window.location.href = "/dashboard.html";
+      });
+    }
+  });
 </script>
 
 <div class="debug-stamp" style="position:fixed;top:6px;left:6px;font-size:10px;color:#f00;z-index:9999;">

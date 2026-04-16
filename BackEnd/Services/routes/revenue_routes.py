@@ -590,7 +590,7 @@ def api_revenue_runs(company_id: int):
         return jsonify({"ok": False, "error": str(e)}), 400
     
 
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>", methods=["PATCH", "OPTIONS"])
+@revenue_bp.route("/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>", methods=["GET", "PATCH", "OPTIONS"])
 @require_auth
 def api_update_revenue_obligation(company_id: int, obligation_id: int):
     if request.method == "OPTIONS":
@@ -601,6 +601,16 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
     if deny:
         return deny
 
+    if request.method == "GET":
+        try:
+            out = db_service.get_revenue_obligation(int(company_id), int(obligation_id))
+            if not out:
+                return jsonify({"ok": False, "error": "Revenue obligation not found"}), 404
+            return jsonify({"ok": True, "data": out}), 200
+        except Exception as e:
+            current_app.logger.exception("get_revenue_obligation failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
     user_id = _jwt_user_id()
     if not user_id:
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
@@ -610,17 +620,9 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
     if "recognition_timing" in body and body.get("recognition_timing") is not None:
         body["recognition_timing"] = str(body.get("recognition_timing") or "").strip().lower()
 
-    allowed_methods = {"cost_to_cost", "milestone", "units", "units_delivered", "manual", "time_elapsed"}
-
     if "progress_method" in body and body.get("progress_method") is not None:
-        pm = str(body.get("progress_method") or "").strip().lower()
-        if pm not in allowed_methods:
-            return jsonify({
-                "ok": False,
-                "error": f"Invalid progress_method '{pm}'"
-            }), 400
-        body["progress_method"] = pm
-        
+        body["progress_method"] = str(body.get("progress_method") or "").strip().lower()
+
     if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
         body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower() or None
 
@@ -644,7 +646,6 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
         if not body.get("progress_method"):
             body["progress_method"] = "cost_to_cost"
 
-        # clear PIT satisfaction fields for over-time
         body["satisfaction_status"] = "pending"
         body["satisfied_at"] = None
         body["satisfaction_evidence_ref"] = None
@@ -674,7 +675,7 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
     except Exception as e:
         current_app.logger.exception("update_revenue_obligation failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
+    
 @revenue_bp.route(
     "/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/satisfy",
     methods=["POST", "OPTIONS"],
