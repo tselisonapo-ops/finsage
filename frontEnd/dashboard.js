@@ -33061,6 +33061,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     contractObligations: [],
     selectedContract: null,
     selectedObligation: null,
+    progressEditing: null,
     preview: null,
     runs: [],
     revSidebarPinned: false,
@@ -33123,6 +33124,22 @@ function bindAssetRecordsPickerModal({ cid }) {
     } else {
       content.classList.remove("xl:ml-[296px]");
     }
+  }
+
+  function hydrateRevenueProgressForm(p = {}) {
+    if ($("revProgressPeriodEnd")) $("revProgressPeriodEnd").value = toDateInputValue(p.period_end);
+    if ($("revProgressType")) $("revProgressType").value = p.update_type || "cost_to_cost";
+    if ($("revProgressExpectedCost")) $("revProgressExpectedCost").value = num(p.expected_total_cost).toFixed(2);
+    if ($("revProgressActualCost")) $("revProgressActualCost").value = num(p.actual_cost_to_date).toFixed(2);
+    if ($("revProgressPercent")) $("revProgressPercent").value = p.progress_percent ?? "";
+    if ($("revProgressMilestoneCode")) $("revProgressMilestoneCode").value = p.milestone_code || "";
+    if ($("revProgressNotes")) $("revProgressNotes").value = p.notes || "";
+  }
+
+  function setRevenueProgressEditMode(editing = false) {
+    const btn = $("revSaveProgress");
+    if (!btn) return;
+    btn.textContent = editing ? "Update Progress" : "Record Progress";
   }
 
   function setRevenueSidebarPinnedLayout(pinned) {
@@ -34195,103 +34212,118 @@ function bindAssetRecordsPickerModal({ cid }) {
     renderRevenueProgressSummary(selected);
   }
 
-function renderRevenueProgressSummary(obligation, latestProgress = null) {
-  const el = $("revProgressSummary");
-  if (!el) return;
+  function renderRevenueProgressSummary(obligation, latestProgress = null) {
+    const el = $("revProgressSummary");
+    if (!el) return;
 
-  const allocated = num(obligation?.allocated_transaction_price);
-  const revenueLtd = num(obligation?.revenue_to_date);
-  const expectedCost = num(
-    latestProgress?.expected_total_cost ??
-    obligation?.expected_total_cost
-  );
-  const actualCost = num(
-    latestProgress?.actual_cost_to_date ??
-    obligation?.actual_cost_to_date
-  );
-  const progressPct = num(
-    latestProgress?.progress_percent ??
-    obligation?.progress_percent
-  );
+    const allocated = num(obligation?.allocated_transaction_price);
+    const revenueLtd = num(obligation?.revenue_to_date);
+    const expectedCost = num(
+      latestProgress?.expected_total_cost ??
+      obligation?.expected_total_cost
+    );
+    const actualCost = num(
+      latestProgress?.actual_cost_to_date ??
+      obligation?.actual_cost_to_date
+    );
+    const progressPct = num(
+      latestProgress?.progress_percent ??
+      obligation?.progress_percent
+    );
 
-  const clampedPct = Math.max(0, Math.min(100, progressPct));
-  const remainingRevenue = Math.max(0, allocated - revenueLtd);
-  const remainingCost = Math.max(0, expectedCost - actualCost);
+    const clampedPct = Math.max(0, Math.min(100, progressPct));
+    const remainingRevenue = Math.max(0, allocated - revenueLtd);
+    const remainingCost = Math.max(0, expectedCost - actualCost);
 
-  el.innerHTML = `
-    <div class="space-y-3">
-      <div>
-        <div class="text-sm font-semibold text-slate-800">
-          ${esc(obligation?.obligation_code || "")} · ${esc(obligation?.obligation_name || "")}
-        </div>
-        <div class="text-xs text-slate-500">
-          Timing: ${esc(obligation?.recognition_timing || "")}
-          ${obligation?.progress_method ? `· Method: ${esc(obligation.progress_method)}` : ""}
-        </div>
-      </div>
-
-      <div>
-        <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
-          <span>Progress</span>
-          <span>${money(clampedPct)}%</span>
-        </div>
-        <div class="w-full h-3 rounded-full bg-slate-100 overflow-hidden border">
-          <div
-            class="h-full rounded-full transition-all duration-300"
-            style="width:${clampedPct}%; background: linear-gradient(90deg, #0f766e, #14b8a6);"
-          ></div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3 text-sm">
-        <div class="rounded-lg border p-2 bg-slate-50">
-          <div class="text-xs text-slate-500">Allocated Price</div>
-          <div class="font-semibold">${money(allocated)}</div>
-        </div>
-        <div class="rounded-lg border p-2 bg-slate-50">
-          <div class="text-xs text-slate-500">Revenue LTD</div>
-          <div class="font-semibold">${money(revenueLtd)}</div>
-        </div>
-        <div class="rounded-lg border p-2 bg-slate-50">
-          <div class="text-xs text-slate-500">Expected Total Cost</div>
-          <div class="font-semibold">${money(expectedCost)}</div>
-        </div>
-        <div class="rounded-lg border p-2 bg-slate-50">
-          <div class="text-xs text-slate-500">Actual Cost to Date</div>
-          <div class="font-semibold">${money(actualCost)}</div>
-        </div>
-        <div class="rounded-lg border p-2 bg-slate-50">
-          <div class="text-xs text-slate-500">Remaining Revenue</div>
-          <div class="font-semibold">${money(remainingRevenue)}</div>
-        </div>
-        <div class="rounded-lg border p-2 bg-slate-50">
-          <div class="text-xs text-slate-500">Remaining Cost</div>
-          <div class="font-semibold">${money(remainingCost)}</div>
-        </div>
-      </div>
-
-      ${
-        latestProgress
-          ? `
-          <div class="rounded-lg border p-3 bg-white">
-            <div class="text-xs font-semibold text-slate-600 mb-2">Latest Saved Update</div>
-            <div class="text-xs text-slate-500 space-y-1">
-              <div>Period End: <strong>${esc(String(latestProgress.period_end || "").slice(0, 10))}</strong></div>
-              <div>Type: <strong>${esc(latestProgress.update_type || "")}</strong></div>
-              <div>Milestone: <strong>${esc(latestProgress.milestone_code || "—")}</strong></div>
-              <div>Notes: <strong>${esc(latestProgress.notes || "—")}</strong></div>
-            </div>
+    el.innerHTML = `
+      <div class="space-y-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-800">
+            ${esc(obligation?.obligation_code || "")} · ${esc(obligation?.obligation_name || "")}
           </div>
-        `
-          : `
           <div class="text-xs text-slate-500">
-            No saved progress update yet for this obligation.
+            Timing: ${esc(obligation?.recognition_timing || "")}
+            ${obligation?.progress_method ? `· Method: ${esc(obligation.progress_method)}` : ""}
           </div>
-        `
-      }
-    </div>
-  `;
-}
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between text-xs text-slate-500 mb-1">
+            <span>Progress</span>
+            <span>${money(clampedPct)}%</span>
+          </div>
+          <div class="w-full h-3 rounded-full bg-slate-100 overflow-hidden border">
+            <div
+              class="h-full rounded-full transition-all duration-300"
+              style="width:${clampedPct}%; background: linear-gradient(90deg, #0f766e, #14b8a6);"
+            ></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="rounded-lg border p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">Allocated Price</div>
+            <div class="font-semibold">${money(allocated)}</div>
+          </div>
+          <div class="rounded-lg border p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">Revenue LTD</div>
+            <div class="font-semibold">${money(revenueLtd)}</div>
+          </div>
+          <div class="rounded-lg border p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">Expected Total Cost</div>
+            <div class="font-semibold">${money(expectedCost)}</div>
+          </div>
+          <div class="rounded-lg border p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">Actual Cost to Date</div>
+            <div class="font-semibold">${money(actualCost)}</div>
+          </div>
+          <div class="rounded-lg border p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">Remaining Revenue</div>
+            <div class="font-semibold">${money(remainingRevenue)}</div>
+          </div>
+          <div class="rounded-lg border p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">Remaining Cost</div>
+            <div class="font-semibold">${money(remainingCost)}</div>
+          </div>
+        </div>
+
+        ${
+          latestProgress
+            ? `
+            <div class="rounded-lg border p-3 bg-white">
+              <div class="text-xs font-semibold text-slate-600 mb-2">Latest Saved Update</div>
+              <div class="text-xs text-slate-500 space-y-1">
+                <div>Period End: <strong>${esc(String(latestProgress.period_end || "").slice(0, 10))}</strong></div>
+                <div>Type: <strong>${esc(latestProgress.update_type || "")}</strong></div>
+                <div>Milestone: <strong>${esc(latestProgress.milestone_code || "—")}</strong></div>
+                <div>Notes: <strong>${esc(latestProgress.notes || "—")}</strong></div>
+              </div>
+
+              <div class="mt-3">
+                <button id="revEditLatestProgressBtn" type="button" class="btn-ghost text-xs">
+                  Edit Latest
+                </button>
+              </div>
+            </div>
+          `
+            : `
+            <div class="text-xs text-slate-500">
+              No saved progress update yet for this obligation.
+            </div>
+          `
+        }
+      </div>
+    `;
+    const editBtn = $("revEditLatestProgressBtn");
+    if (editBtn && latestProgress) {
+      editBtn.addEventListener("click", () => {
+        state.progressEditing = latestProgress;
+        hydrateRevenueProgressForm(latestProgress);
+        setRevenueProgressEditMode(true);
+        setMsg("Editing latest progress update.");
+      });
+    }
+  }
 
 async function loadLatestRevenueProgressForSelectedObligation() {
   const cid = state.cid;
@@ -36312,17 +36344,35 @@ async function loadLatestRevenueProgressForSelectedObligation() {
 
         const out = await recordProgress();
 
-        if (out?.data?.obligation) {
-          state.selectedObligation = out.data.obligation;
+        const savedProgress = out?.data?.progress_update || out?.progress_update || null;
+        const savedObligation = out?.data?.obligation || out?.obligation || null;
+
+        if (savedObligation) {
+          state.selectedObligation = savedObligation;
+          if ($("revObligationId")) $("revObligationId").value = String(savedObligation.id || "");
+        }
+
+        if (savedProgress) {
+          state.progressEditing = savedProgress;
+          hydrateRevenueProgressForm(savedProgress);
+          setRevenueProgressEditMode(true);
         }
 
         await refreshSelectedContractDeep();
         await refreshRevenueProgressUIAsync();
 
-        setMsg("Progress saved.");
+        setMsg(savedProgress ? "Progress updated." : "Progress saved.");
       } catch (e) {
         setMsg(e?.message || "Progress update failed", "error");
       }
+    });
+
+    $("revEditLatestProgressBtn")?.addEventListener("click", () => {
+      if (!latestProgress) return;
+      state.progressEditing = latestProgress;
+      hydrateRevenueProgressForm(latestProgress);
+      setRevenueProgressEditMode(true);
+      setMsg("Editing latest progress update.");
     });
 
     $("revBtnPreviewRun")?.addEventListener("click", async () => {
