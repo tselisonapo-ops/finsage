@@ -55976,6 +55976,8 @@ class DatabaseService:
 
 
     def create_revenue_contract(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
+        import json
+
         schema = self.company_schema(company_id)
 
         customer_id = data.get("customer_id")
@@ -56039,23 +56041,43 @@ class DatabaseService:
             row = dict(cur.fetchone())
             row["customer_name"] = customer.get("name")
 
+            contract_ref = (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
+
+            payload_json = row.get("payload_json") or {}
+            if isinstance(payload_json, str):
+                try:
+                    payload_json = json.loads(payload_json)
+                except Exception:
+                    payload_json = {}
+
+            engagement_id = payload_json.get("engagement_id") or data.get("engagement_id")
+
+            if engagement_id:
+                try:
+                    self.upsert_engagement_posting_activity(
+                        cur,
+                        company_id=int(company_id),
+                        engagement_id=int(engagement_id),
+                        posting_date=row.get("contract_date") or row.get("start_date"),
+                        module_name="revenue",
+                        event_type="created",
+                        reference_no=contract_ref,
+                        description=f"Created revenue contract {contract_ref}",
+                        prepared_by_user_id=int(user_id) if user_id else None,
+                        reviewer_user_id=None,
+                        status=str(row.get("status") or "draft"),
+                        amount=float(row.get("transaction_price") or 0.0),
+                        currency_code=(row.get("contract_currency") or "ZAR"),
+                        source_table="revenue_contracts",
+                        source_id=int(row["id"]),
+                        notes="Revenue contract created",
+                        created_by_user_id=int(user_id) if user_id else None,
+                        updated_by_user_id=int(user_id) if user_id else None,
+                    )
+                except Exception:
+                    pass
+
             conn.commit()
-
-        contract_ref = (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
-
-        try:
-            self.log_engagement_activity(
-                company_id=int(company_id),
-                actor_user_id=int(user_id or 0) or None,
-                module="revenue",
-                action="create_contract",
-                entity_type="revenue_contract",
-                entity_id=str(row["id"]),
-                entity_ref=contract_ref,
-                message=f"Created revenue contract {contract_ref}",
-            )
-        except Exception:
-            pass
 
         return row
 
@@ -57807,6 +57829,7 @@ class DatabaseService:
         # ---------------------------------------
         return _money2(direct_billed + allocated_share)
 
+
     def get_revenue_obligation_billing_position(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)
 
@@ -57856,6 +57879,39 @@ class DatabaseService:
             "billed_to_date": float(billed_to_date),
             "remaining_to_bill": float(remaining_to_bill),
         }
+
+    def get_revenue_obligation(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.revenue_obligations
+            WHERE id = %s
+            """,
+            (int(obligation_id),),
+            cur=cur,
+        )
+
+        if not row:
+            return None
+
+        # normalize important fields
+        row = dict(row)
+
+        row["progress_method"] = (
+            str(row.get("progress_method") or "cost_to_cost")
+            .strip()
+            .lower()
+        )
+
+        row["recognition_timing"] = (
+            str(row.get("recognition_timing") or "point_in_time")
+            .strip()
+            .lower()
+        )
+
+        return row
 
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
@@ -58019,6 +58075,42 @@ class DatabaseService:
             )
             after = dict(cur.fetchone())
 
+            contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
+
+            payload_json = after.get("payload_json") or {}
+            if isinstance(payload_json, str):
+                try:
+                    payload_json = json.loads(payload_json)
+                except Exception:
+                    payload_json = {}
+
+            engagement_id = payload_json.get("engagement_id")
+
+            if engagement_id:
+                try:
+                    self.upsert_engagement_posting_activity(
+                        cur,
+                        company_id=int(company_id),
+                        engagement_id=int(engagement_id),
+                        posting_date=after.get("approved_at") or after.get("contract_date") or after.get("start_date"),
+                        module_name="revenue",
+                        event_type="approved",
+                        reference_no=contract_ref,
+                        description=f"Approved revenue contract {contract_ref}",
+                        prepared_by_user_id=after.get("created_by_user_id"),
+                        reviewer_user_id=int(user_id) if user_id else None,
+                        status="approved",
+                        amount=float(after.get("transaction_price") or 0.0),
+                        currency_code=(after.get("contract_currency") or "ZAR"),
+                        source_table="revenue_contracts",
+                        source_id=int(after["id"]),
+                        notes="Revenue contract approved",
+                        created_by_user_id=after.get("created_by_user_id"),
+                        updated_by_user_id=int(user_id) if user_id else None,
+                    )
+                except Exception:
+                    pass
+
             conn.commit()
 
         contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
@@ -58038,20 +58130,7 @@ class DatabaseService:
                 message=f"Approved revenue contract {contract_ref}",
                 source="approval",
             )
-        except Exception:
-            pass
 
-        try:
-            self.log_engagement_activity(
-                company_id=int(company_id),
-                actor_user_id=int(user_id or 0) or None,
-                module="revenue",
-                action="approve_contract",
-                entity_type="revenue_contract",
-                entity_id=str(after["id"]),
-                entity_ref=contract_ref,
-                message=f"Approved revenue contract {contract_ref}",
-            )
         except Exception:
             pass
 
@@ -58109,7 +58188,6 @@ class DatabaseService:
             if status_before not in {"approved", "active", "pending_approval", "draft"}:
                 raise ValueError(f"Revenue contract cannot be modified from status '{status_before}'")
 
-            # preserve current values if not supplied
             customer_id = patch.get("customer_id", before.get("customer_id"))
             customer_id = int(customer_id) if customer_id not in (None, "", 0, "0") else None
             if customer_id is None:
@@ -58174,10 +58252,47 @@ class DatabaseService:
             after = dict(cur.fetchone())
             after["customer_name"] = customer.get("name")
 
+            contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
+
+            # structured engagement posting activity
+            engagement_id = None
+            pj = after.get("payload_json") or {}
+            if isinstance(pj, str):
+                try:
+                    pj = json.loads(pj)
+                except Exception:
+                    pj = {}
+            if isinstance(pj, dict):
+                engagement_id = pj.get("engagement_id")
+
+            if engagement_id:
+                try:
+                    self.upsert_engagement_posting_activity(
+                        cur,
+                        company_id=int(company_id),
+                        engagement_id=int(engagement_id),
+                        posting_date=after.get("contract_date") or after.get("start_date"),
+                        module_name="revenue",
+                        event_type="modified",
+                        reference_no=contract_ref,
+                        description=f"Applied approved modification to revenue contract {contract_ref}",
+                        prepared_by_user_id=after.get("created_by_user_id"),
+                        reviewer_user_id=int(user_id) if user_id else None,
+                        status=str(after.get("status") or "active"),
+                        amount=float(after.get("transaction_price") or 0.0),
+                        currency_code=(after.get("contract_currency") or "ZAR"),
+                        source_table="revenue_contracts",
+                        source_id=int(after["id"]),
+                        notes="Approved revenue contract modification applied",
+                        created_by_user_id=after.get("created_by_user_id"),
+                        updated_by_user_id=int(user_id) if user_id else None,
+                    )
+                except Exception:
+                    pass
+
             conn.commit()
 
         try:
-            contract_ref = (after.get("contract_number") or f"REV-CON-{after.get('id')}").strip()
             self.audit_log(
                 int(company_id),
                 actor_user_id=int(user_id or 0) or None,
@@ -58189,21 +58304,6 @@ class DatabaseService:
                 entity_ref=contract_ref,
                 before_json=before,
                 after_json=after,
-                message=f"Applied approved modification to revenue contract {contract_ref}",
-                source="approval",
-            )
-        except Exception:
-            pass
-
-        try:
-            self.log_engagement_activity(
-                company_id=int(company_id),
-                actor_user_id=int(user_id or 0) or None,
-                module="revenue",
-                action="apply_contract_modification",
-                entity_type="revenue_contract",
-                entity_id=str(after["id"]),
-                entity_ref=(after.get("contract_number") or f"REV-CON-{after.get('id')}").strip(),
                 message=f"Applied approved modification to revenue contract {contract_ref}",
                 source="approval",
             )
@@ -58353,6 +58453,7 @@ class DatabaseService:
     def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
         from decimal import Decimal
         from datetime import date
+        import json
 
         schema = self.company_schema(company_id)
 
@@ -58373,7 +58474,6 @@ class DatabaseService:
             if str(run.get("status") or "").lower() != "draft":
                 raise ValueError("Only draft runs can be posted")
 
-            # 🔒 Period lock gate
             run_period_end = run.get("period_end")
             if not run_period_end:
                 raise ValueError("Recognition run is missing period_end")
@@ -58403,7 +58503,6 @@ class DatabaseService:
             if not jlines:
                 raise ValueError("Recognition run has no journal lines")
 
-            run_period_end = run.get("period_end")
             run_ref = f"REV-RUN-{int(run_id)}"
             run_desc = f"Revenue recognition run {int(run_id)}"
 
@@ -58415,7 +58514,6 @@ class DatabaseService:
                 "source": "adjustment",
                 "source_id": int(run_id),
                 "currency": (run.get("currency") or "ZAR"),
-                # optional engagement fields if you later support them
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
             }
@@ -58487,8 +58585,7 @@ class DatabaseService:
                                 ON r.id = e.run_id
                                 WHERE e.contract_id = c.id
                                 AND r.status = 'posted'
-                            ), 0) > 0
-                                THEN 'liability'
+                            ), 0) > 0 THEN 'liability'
                             WHEN COALESCE((
                                 SELECT SUM(e.revenue_delta_this_run)
                                 FROM {schema}.revenue_recognition_entries e
@@ -58496,8 +58593,7 @@ class DatabaseService:
                                 ON r.id = e.run_id
                                 WHERE e.contract_id = c.id
                                 AND r.status = 'posted'
-                            ), 0) - COALESCE(c.billed_to_date, 0) > 0
-                                THEN 'asset'
+                            ), 0) - COALESCE(c.billed_to_date, 0) > 0 THEN 'asset'
                             ELSE 'neutral'
                         END,
 
@@ -58556,33 +58652,55 @@ class DatabaseService:
                     (oid,),
                 )
 
-            cur.execute(
-                f"""
-                UPDATE {schema}.revenue_recognition_runs
-                SET status='posted',
-                    journal_id=%s,
-                    posted_by_user_id=%s,
-                    posted_at=NOW()
-                WHERE id=%s
-                """,
-                (int(journal_id), int(user_id or 0) or None, int(run_id))
-            )
+            # structured engagement posting activity per contract if engagement_id exists
+            for cid in contract_ids:
+                contract = self.fetch_one(
+                    f"""
+                    SELECT *
+                    FROM {schema}.revenue_contracts
+                    WHERE id=%s
+                    LIMIT 1
+                    """,
+                    (cid,),
+                    cur=cur,
+                ) or {}
+
+                pj = contract.get("payload_json") or {}
+                if isinstance(pj, str):
+                    try:
+                        pj = json.loads(pj)
+                    except Exception:
+                        pj = {}
+
+                engagement_id = pj.get("engagement_id") if isinstance(pj, dict) else None
+                if not engagement_id:
+                    continue
+
+                try:
+                    self.upsert_engagement_posting_activity(
+                        cur,
+                        company_id=int(company_id),
+                        engagement_id=int(engagement_id),
+                        posting_date=run_period_end,
+                        module_name="revenue",
+                        event_type="posted",
+                        reference_no=run_ref,
+                        description=run_desc,
+                        prepared_by_user_id=run.get("requested_by_user_id"),
+                        reviewer_user_id=int(user_id) if user_id else None,
+                        status="posted",
+                        amount=float(run.get("total_revenue_delta") or 0.0),
+                        currency_code=(run.get("currency") or contract.get("contract_currency") or "ZAR"),
+                        source_table="revenue_recognition_runs",
+                        source_id=int(run_id),
+                        notes=f"Revenue recognition run posted for contract {contract.get('contract_number') or cid}",
+                        created_by_user_id=run.get("requested_by_user_id"),
+                        updated_by_user_id=int(user_id) if user_id else None,
+                    )
+                except Exception:
+                    pass
 
             conn.commit()
-
-        try:
-            self.log_engagement_activity(
-                company_id=int(company_id),
-                actor_user_id=int(user_id or 0) or None,
-                module="revenue",
-                action="post_recognition_run",
-                entity_type="revenue_run",
-                entity_id=str(run_id),
-                entity_ref=_revenue_run_ref(run_id),
-                message=f"Posted revenue recognition run {run_id}",
-            )
-        except Exception:
-            pass
 
         return {
             "ok": True,

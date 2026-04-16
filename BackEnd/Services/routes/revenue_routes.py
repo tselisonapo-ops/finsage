@@ -369,20 +369,6 @@ def api_create_revenue_contract_version(company_id: int, contract_id: int):
         )
 
         try:
-            db_service.log_engagement_activity(
-                company_id=int(company_id),
-                actor_user_id=int(user_id or 0) or None,
-                module="revenue",
-                action="create_contract_version",
-                entity_type="revenue_contract_version",
-                entity_id=str(out["id"]),
-                entity_ref=f"{contract_id}/v{out.get('version_no')}",
-                message=f"Created revenue contract version v{out.get('version_no')}",
-            )
-        except Exception:
-            pass
-
-        try:
             db_service.audit_log(
                 company_id,
                 actor_user_id=user_id,
@@ -1085,20 +1071,6 @@ def api_post_revenue_recognition_run(company_id: int, run_id: int):
             )
         except Exception:
             current_app.logger.exception("audit_log failed in api_post_revenue_recognition_run")
-
-        try:
-            db_service.log_engagement_activity(
-                company_id=int(company_id),
-                actor_user_id=int(user_id),
-                module="revenue",
-                action="post_recognition_run",
-                entity_type="revenue_run",
-                entity_id=str(run_id),
-                entity_ref=f"REV-RUN-{run_id}",
-                message=f"Posted revenue recognition run {run_id}",
-            )
-        except Exception:
-            current_app.logger.exception("engagement activity failed in api_post_revenue_recognition_run")
 
         return jsonify({"ok": True, "data": out}), 200
 
