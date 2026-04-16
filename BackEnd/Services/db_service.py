@@ -58562,6 +58562,92 @@ class DatabaseService:
                 )
             )
 
+            contract_ids = sorted({int(e["contract_id"]) for e in entries if e.get("contract_id")})
+            obligation_ids = sorted({int(e["obligation_id"]) for e in entries if e.get("obligation_id")})
+
+            for cid in contract_ids:
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.revenue_contracts c
+                    SET
+                        recognized_revenue_to_date = COALESCE((
+                            SELECT SUM(e.revenue_delta_this_run)
+                            FROM {schema}.revenue_recognition_entries e
+                            JOIN {schema}.revenue_recognition_runs r
+                              ON r.id = e.run_id
+                            WHERE e.contract_id = c.id
+                              AND r.status = 'posted'
+                        ), 0),
+
+                        contract_liability_balance = GREATEST(
+                            COALESCE(c.billed_to_date, 0) - COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                  ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                  AND r.status = 'posted'
+                            ), 0),
+                            0
+                        ),
+
+                        contract_asset_balance = GREATEST(
+                            COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                  ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                  AND r.status = 'posted'
+                            ), 0) - COALESCE(c.billed_to_date, 0),
+                            0
+                        ),
+
+                        revenue_status = CASE
+                            WHEN COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                  ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                  AND r.status = 'posted'
+                            ), 0) <= 0 THEN 'not_started'
+                            WHEN COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                  ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                  AND r.status = 'posted'
+                            ), 0) >= c.transaction_price THEN 'fully_recognized'
+                            ELSE 'in_progress'
+                        END,
+
+                        updated_at = NOW()
+                    WHERE c.id = %s
+                    """,
+                    (cid,),
+                )
+
+            for oid in obligation_ids:
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.revenue_obligations o
+                    SET
+                        revenue_to_date = COALESCE((
+                            SELECT SUM(e.revenue_delta_this_run)
+                            FROM {schema}.revenue_recognition_entries e
+                            JOIN {schema}.revenue_recognition_runs r
+                              ON r.id = e.run_id
+                            WHERE e.obligation_id = o.id
+                              AND r.status = 'posted'
+                        ), 0),
+                        updated_at = NOW()
+                    WHERE o.id = %s
+                    """,
+                    (oid,),
+                )
+                
             conn.commit()
 
         return {
