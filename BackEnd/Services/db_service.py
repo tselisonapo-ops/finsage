@@ -57627,13 +57627,15 @@ class DatabaseService:
         Returns billed-to-date for an obligation using this priority:
 
         1. Direct obligation-linked billing events
-        2. If none, allocate contract-level billing pool proportionally
-        using allocated_transaction_price / contract transaction_price
+        2. Plus proportional share of contract-level billing pool
+        using allocated_transaction_price / total allocated obligation price
 
         Notes:
         - Contract-level billing pool means revenue_billing_events where obligation_id IS NULL
         - period_end is optional; if supplied, only events up to that date are included
-        - Result is rounded to 2 decimals
+        - This supports mixed cases:
+            * some billing tagged directly to obligation
+            * some billing posted only at contract level
         """
         schema = self.company_schema(company_id)
         pe = self._as_date(period_end)
@@ -57642,10 +57644,12 @@ class DatabaseService:
         contract_id = int(contract["id"])
 
         allocated_tp = _money2(obligation.get("allocated_transaction_price") or 0)
-        contract_tp = _money2(contract.get("transaction_price") or 0)
+
+        if allocated_tp <= Decimal("0.00"):
+            return Decimal("0.00")
 
         # ---------------------------------------
-        # 1) Direct billing already tagged to obligation
+        # 1) Direct obligation billing
         # ---------------------------------------
         direct_row = self.fetch_one(
             f"""
@@ -57657,13 +57661,11 @@ class DatabaseService:
             (obligation_id, pe, pe),
             cur=cur,
         ) or {}
+
         direct_billed = _money2(direct_row.get("amt") or 0)
 
-        if direct_billed > Decimal("0.00"):
-            return direct_billed
-
         # ---------------------------------------
-        # 2) No direct billing: allocate contract-level untagged billing
+        # 2) Contract-level billing pool (untagged)
         # ---------------------------------------
         pool_row = self.fetch_one(
             f"""
@@ -57676,19 +57678,40 @@ class DatabaseService:
             (contract_id, pe, pe),
             cur=cur,
         ) or {}
+
         contract_level_pool = _money2(pool_row.get("amt") or 0)
 
         if contract_level_pool <= Decimal("0.00"):
-            return Decimal("0.00")
+            return direct_billed
 
-        if contract_tp <= Decimal("0.00"):
-            return Decimal("0.00")
+        # ---------------------------------------
+        # 3) Total allocation basis from obligations
+        #    Use obligation allocations, not contract.transaction_price
+        # ---------------------------------------
+        alloc_row = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(allocated_transaction_price), 0) AS total_allocated
+            FROM {schema}.revenue_obligations
+            WHERE contract_id = %s
+            """,
+            (contract_id,),
+            cur=cur,
+        ) or {}
 
-        if allocated_tp <= Decimal("0.00"):
-            return Decimal("0.00")
+        total_allocated = _money2(alloc_row.get("total_allocated") or 0)
 
-        allocated_billed = _money2((contract_level_pool * allocated_tp) / contract_tp)
-        return allocated_billed
+        if total_allocated <= Decimal("0.00"):
+            return direct_billed
+
+        # ---------------------------------------
+        # 4) Proportional allocation of contract-level pool
+        # ---------------------------------------
+        allocated_share = _money2((contract_level_pool * allocated_tp) / total_allocated)
+
+        # ---------------------------------------
+        # 5) Final billed to date = direct + allocated pool share
+        # ---------------------------------------
+        return _money2(direct_billed + allocated_share)
 
     def get_revenue_obligation_billing_position(self, company_id: int, obligation_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)
@@ -58306,23 +58329,62 @@ class DatabaseService:
                             AND r.status = 'posted'
                         ), 0),
 
-                        contract_asset_balance = COALESCE((
-                            SELECT SUM(e.contract_asset_delta)
-                            FROM {schema}.revenue_recognition_entries e
-                            JOIN {schema}.revenue_recognition_runs r
-                            ON r.id = e.run_id
-                            WHERE e.contract_id = c.id
-                            AND r.status = 'posted'
-                        ), 0),
+                        contract_liability_balance = GREATEST(
+                            COALESCE(c.billed_to_date, 0) - COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
+                            ), 0),
+                            0
+                        ),
 
-                        contract_liability_balance = COALESCE((
-                            SELECT -SUM(e.contract_liability_delta)
-                            FROM {schema}.revenue_recognition_entries e
-                            JOIN {schema}.revenue_recognition_runs r
-                            ON r.id = e.run_id
-                            WHERE e.contract_id = c.id
-                            AND r.status = 'posted'
-                        ), 0),
+                        contract_asset_balance = GREATEST(
+                            COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
+                            ), 0) - COALESCE(c.billed_to_date, 0),
+                            0
+                        ),
+
+                        contract_position_type = CASE
+                            WHEN COALESCE(c.billed_to_date, 0) - COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
+                            ), 0) > 0
+                                THEN 'liability'
+                            WHEN COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
+                            ), 0) - COALESCE(c.billed_to_date, 0) > 0
+                                THEN 'asset'
+                            ELSE 'neutral'
+                        END,
+
+                        contract_position_amount = ABS(
+                            COALESCE(c.billed_to_date, 0) - COALESCE((
+                                SELECT SUM(e.revenue_delta_this_run)
+                                FROM {schema}.revenue_recognition_entries e
+                                JOIN {schema}.revenue_recognition_runs r
+                                ON r.id = e.run_id
+                                WHERE e.contract_id = c.id
+                                AND r.status = 'posted'
+                            ), 0)
+                        ),
 
                         revenue_status = CASE
                             WHEN COALESCE((
@@ -58333,7 +58395,6 @@ class DatabaseService:
                                 WHERE e.contract_id = c.id
                                 AND r.status = 'posted'
                             ), 0) <= 0 THEN 'not_started'
-
                             WHEN COALESCE((
                                 SELECT SUM(e.revenue_delta_this_run)
                                 FROM {schema}.revenue_recognition_entries e
@@ -58342,12 +58403,11 @@ class DatabaseService:
                                 WHERE e.contract_id = c.id
                                 AND r.status = 'posted'
                             ), 0) >= c.transaction_price THEN 'fully_recognized'
-
                             ELSE 'in_progress'
                         END,
 
                         updated_at = NOW()
-                    WHERE c.id=%s
+                    WHERE c.id = %s
                     """,
                     (cid,),
                 )
