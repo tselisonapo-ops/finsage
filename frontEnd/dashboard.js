@@ -11677,12 +11677,24 @@ function ensureVatScreen() {
   let section = document.getElementById("screen-vat");
   if (!section) {
     console.log("ensureVatScreen: creating #screen-vat dynamically");
-    const main = document.querySelector("main") || document.body;
+
+    const screensHost =
+      document.getElementById("screensHost") ||
+      document.querySelector("main > #screensHost") ||
+      document.querySelector("main .w-full") ||
+      document.querySelector("main") ||
+      document.body;
 
     section = document.createElement("section");
     section.id = "screen-vat";
     section.className = "screen";
-    main.appendChild(section);
+
+    const reportsScreen = document.getElementById("screen-reports");
+    if (reportsScreen && reportsScreen.parentNode === screensHost) {
+      reportsScreen.insertAdjacentElement("afterend", section);
+    } else {
+      screensHost.appendChild(section);
+    }
   }
 
   if (section.dataset.initialised === "1") return;
