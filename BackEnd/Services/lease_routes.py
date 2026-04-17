@@ -288,7 +288,7 @@ def _parse_lease_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     go_live_date = _parse_date(data.get("go_live_date"), "go_live_date", required=False)
 
     start_date = _parse_date(data.get("start_date"), "start_date", required=True)
-    end_date   = _parse_date(data.get("end_date"), "end_date", required=True)
+    end_date = _parse_date(data.get("end_date"), "end_date", required=True)
     if end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
 
@@ -321,24 +321,17 @@ def _parse_lease_payload(data: Dict[str, Any]) -> Dict[str, Any]:
             return default
 
     initial_direct_costs = _float_or_default("initial_direct_costs", 0.0)
-    residual_value       = _float_or_default("residual_value", 0.0)
-    vat_rate             = _float_or_default("vat_rate", 0.0)
+    residual_value = _float_or_default("residual_value", 0.0)
+    vat_rate = _float_or_default("vat_rate", 0.0)
 
     rou_asset_account = (data.get("rou_asset_account") or "").strip()
     if not rou_asset_account:
         raise ValueError("rou_asset_account is required.")
 
-    # legacy (optional but keep for backward compatibility)
+    # legacy single field
     lease_liability_account = (data.get("lease_liability_account") or "").strip()
 
-    # preferred split accounts
-    lease_liability_current_account = (data.get("lease_liability_current_account") or "").strip()
-    lease_liability_non_current_account = (data.get("lease_liability_non_current_account") or "").strip()
-
-    # legacy (optional but keep for backward compatibility)
-    lease_liability_account = (data.get("lease_liability_account") or "").strip()
-
-    # preferred split accounts
+    # preferred split fields
     lease_liability_current_account = (data.get("lease_liability_current_account") or "").strip()
     lease_liability_non_current_account = (data.get("lease_liability_non_current_account") or "").strip()
 
@@ -355,9 +348,9 @@ def _parse_lease_payload(data: Dict[str, Any]) -> Dict[str, Any]:
             "Provide lease_liability_current_account (or lease_liability_account)."
         )
 
-    interest_expense_account      = data.get("interest_expense_account") or None
-    depreciation_expense_account  = data.get("depreciation_expense_account") or None
-    direct_costs_offset_account   = data.get("direct_costs_offset_account") or None
+    interest_expense_account = data.get("interest_expense_account") or None
+    depreciation_expense_account = data.get("depreciation_expense_account") or None
+    direct_costs_offset_account = data.get("direct_costs_offset_account") or None
 
     return {
         "lease_name": lease_name,
@@ -373,16 +366,10 @@ def _parse_lease_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "initial_direct_costs": initial_direct_costs,
         "residual_value": residual_value,
         "vat_rate": vat_rate,
-
         "rou_asset_account": rou_asset_account,
-
-        # ✅ keep legacy key (optional, but nice for older clients)
         "lease_liability_account": lease_liability_account,
-
-        # ✅ NEW keys
         "lease_liability_current_account": lease_liability_current_account,
         "lease_liability_non_current_account": lease_liability_non_current_account,
-
         "interest_expense_account": interest_expense_account,
         "depreciation_expense_account": depreciation_expense_account,
         "direct_costs_offset_account": direct_costs_offset_account,
