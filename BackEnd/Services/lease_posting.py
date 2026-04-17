@@ -92,6 +92,10 @@ def build_lessee_opening_journal(
                 return s
         return ""
 
+    print("[LEASE DEBUG] legacy_liab_raw =", legacy_liab_raw, flush=True)
+    print("[LEASE DEBUG] lease_defaults =", lease_defaults, flush=True)
+    print("[LEASE DEBUG] liab_cur_raw before resolve =", liab_cur_raw, flush=True)
+    print("[LEASE DEBUG] liab_ncur_raw before resolve =", liab_ncur_raw, flush=True)
     def resolve_posting(raw_code: str) -> str:
         """
         raw_code can be a posting code OR a template_code.
@@ -100,7 +104,9 @@ def build_lessee_opening_journal(
         c = (raw_code or "").strip()
         if not c:
             raise ValueError("Missing required account code.")
+        print(f"[LEASE DEBUG] resolve_posting raw_code={c}", flush=True)
         row = db_service.get_account_row_for_posting(company_id, c)
+        print(f"[LEASE DEBUG] resolve_posting row={row}", flush=True)
         if not row:
             raise ValueError(f"Account '{c}' not found in company COA (code/template_code).")
         posting = (row[1] or "").strip()

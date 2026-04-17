@@ -335,16 +335,24 @@ def _parse_lease_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     lease_liability_current_account = (data.get("lease_liability_current_account") or "").strip()
     lease_liability_non_current_account = (data.get("lease_liability_non_current_account") or "").strip()
 
-    # fallback to legacy
+    # legacy (optional but keep for backward compatibility)
+    lease_liability_account = (data.get("lease_liability_account") or "").strip()
+
+    # preferred split accounts
+    lease_liability_current_account = (data.get("lease_liability_current_account") or "").strip()
+    lease_liability_non_current_account = (data.get("lease_liability_non_current_account") or "").strip()
+
+    # legacy single-account fallback applies only to current
     if not lease_liability_current_account and lease_liability_account:
         lease_liability_current_account = lease_liability_account
-    if not lease_liability_non_current_account and lease_liability_account:
-        lease_liability_non_current_account = lease_liability_account
 
-    if not lease_liability_current_account or not lease_liability_non_current_account:
+    # leave non-current blank so builder can use company defaults
+    if not lease_liability_non_current_account:
+        lease_liability_non_current_account = ""
+
+    if not lease_liability_current_account:
         raise ValueError(
-            "Provide lease_liability_current_account and lease_liability_non_current_account "
-            "(or lease_liability_account)."
+            "Provide lease_liability_current_account (or lease_liability_account)."
         )
 
     interest_expense_account      = data.get("interest_expense_account") or None
