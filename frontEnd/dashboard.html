@@ -6629,7 +6629,8 @@ html, body {
         </section>
 
         <!-- Bank Setup – Accounts Clerk -->
-        <section id="screen-bank-setup" class="screen">
+      <section id="screen-bank-setup" class="screen">
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div class="card p-4 max-w-3xl">
             <h3 class="font-bold mb-3">Bank Setup</h3>
             <p class="text-sm text-slate-600 mb-3">
@@ -6637,83 +6638,53 @@ html, body {
               These accounts will be used by Cashbook, Bank Reconciliation and invoices.
             </p>
 
-            <!-- Bank setup form -->
             <form id="bankSetupForm" class="grid gap-3 sm:grid-cols-2 mb-4">
+              <input type="hidden" id="bankId" />
+
               <div class="sm:col-span-2">
                 <label class="block text-xs text-slate-500 mb-1">Label</label>
-                <input
-                  id="bankName"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                  placeholder="Main Current Account"
-                />
+                <input id="bankName" class="border rounded px-2 py-1 w-full text-sm" placeholder="Main Current Account" />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Bank name</label>
-                <input
-                  id="bankBankName"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                  placeholder="FNB, Standard Bank…"
-                />
+                <input id="bankBankName" class="border rounded px-2 py-1 w-full text-sm" placeholder="FNB, Standard Bank…" />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Account name</label>
-                <input
-                  id="bankAccountName"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                  placeholder="FinSphere Solutions (Pty) Ltd"
-                />
+                <input id="bankAccountName" class="border rounded px-2 py-1 w-full text-sm" placeholder="FinSphere Solutions (Pty) Ltd" />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Account number</label>
-                <input
-                  id="bankAccountNumber"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                />
+                <input id="bankAccountNumber" class="border rounded px-2 py-1 w-full text-sm" />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Branch code</label>
-                <input
-                  id="bankBranchCode"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                />
+                <input id="bankBranchCode" class="border rounded px-2 py-1 w-full text-sm" />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">SWIFT</label>
-                <input
-                  id="bankSwiftCode"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                />
+                <input id="bankSwiftCode" class="border rounded px-2 py-1 w-full text-sm" />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Currency</label>
-                <input
-                  id="bankCurrency"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                  value="ZAR"
-                />
+                <input id="bankCurrency" class="border rounded px-2 py-1 w-full text-sm" value="ZAR" />
               </div>
 
               <div>
-                <label class="block text-xs text-slate-500 mb-1">
-                  Ledger account code (GL)
-                </label>
-                <input
-                  id="bankLedgerCode"
-                  class="border rounded px-2 py-1 w-full text-sm"
-                  placeholder="1000"
-                />
+                <label class="block text-xs text-slate-500 mb-1">Ledger account code (GL)</label>
+                <input id="bankLedgerCode" class="border rounded px-2 py-1 w-full text-sm" placeholder="BS_CA_1000" />
                 <p class="mt-1 text-[11px] text-slate-400">
-                  This should be the GL account you used for opening balance (e.g. 1000).
+                  Use the bank control GL account, typically <b>BS_CA_1000</b>.
                 </p>
               </div>
 
-              <div class="flex items-center gap-2 mt-2">
+              <div class="flex items-center gap-2 mt-2 sm:col-span-2">
                 <label class="flex items-center gap-1 text-xs">
                   <input type="checkbox" id="bankDefaultReceipts" class="h-3 w-3" />
                   Default for receipts
@@ -6724,10 +6695,9 @@ html, body {
                 </label>
               </div>
 
-              <div class="sm:col-span-2 mt-2">
-                <button type="submit" class="btn">
-                  Save bank account
-                </button>
+              <div class="sm:col-span-2 mt-2 flex gap-2">
+                <button type="submit" id="bankSaveBtn" class="btn">Save bank account</button>
+                <button type="button" id="bankCancelEditBtn" class="btn btn-secondary hidden">Cancel edit</button>
               </div>
             </form>
 
@@ -6735,13 +6705,18 @@ html, body {
 
             <h4 class="font-semibold mb-2 text-sm">Existing bank accounts</h4>
             <div id="bankSetupList" class="text-sm text-slate-600">
-              <!-- filled by JS -->
-              <div class="text-xs text-slate-400">
-                No bank accounts yet. Add one above.
-              </div>
+              <div class="text-xs text-slate-400">No bank accounts yet. Add one above.</div>
             </div>
           </div>
-        </section>
+
+          <aside class="card p-4">
+            <h4 class="font-semibold mb-3 text-sm">Bank Preview</h4>
+            <div id="bankPreview" class="text-sm text-slate-500">
+              Select a bank account from the list to preview it here.
+            </div>
+          </aside>
+        </div>
+      </section>
 
         <section id="screen-help" class="screen hidden">
           <div class="max-w-5xl mx-auto p-6 space-y-6">

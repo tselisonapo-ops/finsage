@@ -304,8 +304,9 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         Paragraph(company_name, ParagraphStyle(
             "CompanyNameRight",
             parent=styles["BodyTextBoldRight"],
-            fontSize=10.5,
-            leading=12,
+            fontSize=12.5,
+            leading=14,
+            leftIndent=6,   # 👈 THIS shifts it slightly right
         ))
     ]
 
@@ -322,7 +323,14 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     reg_vat_rows = []
     if company_reg:
         reg_vat_rows.append([
-            Paragraph("Reg #", styles["SmallMuted"]),
+            styles.add(ParagraphStyle(
+                name="SmallMuted",
+                parent=styles["Normal"],
+                fontName="Helvetica",
+                fontSize=8.5,
+                leading=9,   # 👈 was 11
+                textColor=colors.HexColor("#6B7280"),
+            )),
             Paragraph(company_reg, styles["BodyTextBoldRight"]),
         ])
     if company_vat:
@@ -332,16 +340,16 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ])
 
     if reg_vat_rows:
-        reg_table = Table(reg_vat_rows, colWidths=[16 * mm, 34 * mm], hAlign="RIGHT")
+        reg_table = Table(reg_vat_rows, colWidths=[10 * mm, 40 * mm], hAlign="RIGHT")
         reg_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("ALIGN", (1, 0), (1, -1), "RIGHT"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 1),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
-        company_lines.append(Spacer(1, 4))
+        company_lines.append(Spacer(1, 2))
         company_lines.append(reg_table)
 
     header_right = [[item] for item in company_lines]

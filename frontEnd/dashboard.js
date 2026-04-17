@@ -1851,6 +1851,11 @@ const ENDPOINTS = {
 
     // --- Banking ---
     bankAccounts: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts`,
+    bankAccountById: (companyId, bankAccountId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts/${encodeURIComponent(bankAccountId)}`,
+    bankAccountUpdate: (companyId, bankAccountId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_accounts/${encodeURIComponent(bankAccountId)}`,
+
     bankStatements: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements`,
     bankStatementLines: (companyId, stmtId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(stmtId)}`,
@@ -1858,7 +1863,6 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/import?bank_account_id=${encodeURIComponent(bankAccountId)}`,
     bankStatementPost: (companyId, stmtId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_statements/${encodeURIComponent(stmtId)}/post`,
-
     // --- Bank Reconciliation ---
     bankReconsCreate: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bank_reconciliations`,
@@ -15632,41 +15636,80 @@ function populateAccountSelects() {
 }
 
 async function bindBankSetupScreen() {
-  // Optional root guard if you have a dedicated container for this screen
   const root = document.getElementById("screen-bank-setup");
   if (root) {
     if (root.dataset.bound === "1") return;
     root.dataset.bound = "1";
   }
 
-  // We support either a <form id="bankSetupForm"> or a separate save button.
   const form = document.getElementById("bankSetupForm");
   const saveBtn = document.getElementById("bankSaveBtn");
+  const cancelEditBtn = document.getElementById("bankCancelEditBtn");
 
-  // If neither exists, nothing to do.
   if (!form && !saveBtn) return;
 
-  // Initial load of accounts + list
   await refreshBankAccounts();
   renderBankSetupList();
+  renderBankPreview(null);
 
-  // Helper to read form fields into payload
   function collectBankFormPayload() {
     return {
-      name:                 document.getElementById("bankName")?.value.trim() || "",
-      bank_name:            document.getElementById("bankBankName")?.value.trim() || "",
-      account_name:         document.getElementById("bankAccountName")?.value.trim() || "",
-      account_number:       document.getElementById("bankAccountNumber")?.value.trim() || "",
-      branch_code:          document.getElementById("bankBranchCode")?.value.trim() || "",
-      swift_code:           document.getElementById("bankSwiftCode")?.value.trim() || "",
+      name: document.getElementById("bankName")?.value.trim() || "",
+      bank_name: document.getElementById("bankBankName")?.value.trim() || "",
+      account_name: document.getElementById("bankAccountName")?.value.trim() || "",
+      account_number: document.getElementById("bankAccountNumber")?.value.trim() || "",
+      branch_code: document.getElementById("bankBranchCode")?.value.trim() || "",
+      swift_code: document.getElementById("bankSwiftCode")?.value.trim() || "",
       currency:
         document.getElementById("bankCurrency")?.value.trim() ||
         CURRENT_COMPANY?.currency ||
         "ZAR",
-      ledger_account_code:  document.getElementById("bankLedgerCode")?.value.trim() || "",
-      is_default_receipts:  !!document.getElementById("bankDefaultReceipts")?.checked,
-      is_default_payments:  !!document.getElementById("bankDefaultPayments")?.checked,
+      ledger_account_code: document.getElementById("bankLedgerCode")?.value.trim() || "",
+      is_default_receipts: !!document.getElementById("bankDefaultReceipts")?.checked,
+      is_default_payments: !!document.getElementById("bankDefaultPayments")?.checked,
     };
+  }
+
+  function resetBankForm() {
+    document.getElementById("bankId").value = "";
+    document.getElementById("bankName").value = "";
+    document.getElementById("bankBankName").value = "";
+    document.getElementById("bankAccountName").value = "";
+    document.getElementById("bankAccountNumber").value = "";
+    document.getElementById("bankBranchCode").value = "";
+    document.getElementById("bankSwiftCode").value = "";
+    document.getElementById("bankCurrency").value = CURRENT_COMPANY?.currency || "ZAR";
+    document.getElementById("bankLedgerCode").value = "BS_CA_1000";
+    document.getElementById("bankDefaultReceipts").checked = false;
+    document.getElementById("bankDefaultPayments").checked = false;
+
+    if (saveBtn) saveBtn.textContent = "Save bank account";
+    cancelEditBtn?.classList.add("hidden");
+  }
+
+  function fillBankForm(bank) {
+    if (!bank) return;
+    document.getElementById("bankId").value = bank.id || "";
+    document.getElementById("bankName").value = bank.name || "";
+    document.getElementById("bankBankName").value = bank.bank_name || "";
+    document.getElementById("bankAccountName").value = bank.account_name || "";
+    document.getElementById("bankAccountNumber").value = bank.account_number || "";
+    document.getElementById("bankBranchCode").value = bank.branch_code || "";
+    document.getElementById("bankSwiftCode").value = bank.swift_code || "";
+    document.getElementById("bankCurrency").value = bank.currency || CURRENT_COMPANY?.currency || "ZAR";
+    document.getElementById("bankLedgerCode").value = bank.ledger_account_code || "BS_CA_1000";
+    document.getElementById("bankDefaultReceipts").checked = !!bank.is_default_receipts;
+    document.getElementById("bankDefaultPayments").checked = !!bank.is_default_payments;
+
+    if (saveBtn) saveBtn.textContent = "Update bank account";
+    cancelEditBtn?.classList.remove("hidden");
+  }
+
+  async function loadBankIntoPreview(bankId) {
+    const cid = getActiveCompanyId();
+    if (!cid || !bankId) return;
+    const bank = await apiFetch(`/api/companies/${cid}/bank_accounts/${bankId}`);
+    renderBankPreview(bank);
   }
 
   async function handleSave(e) {
@@ -15678,30 +15721,50 @@ async function bindBankSetupScreen() {
       return;
     }
 
+    const bankId = document.getElementById("bankId")?.value?.trim();
     const payload = collectBankFormPayload();
 
-    if (!payload.name || !payload.bank_name || !payload.account_number) {
-      alert("Name, bank name and account number are required.");
+    if (!payload.name || !payload.bank_name || !payload.account_name || !payload.account_number) {
+      alert("Label, bank name, account name and account number are required.");
       return;
     }
 
-    await apiFetch(ENDPOINTS.bankAccounts(cid), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    alert("Bank account saved.");
-
-    // Refresh global cache + both screens that depend on it
-    await refreshBankAccounts();
-    renderBankSetupList();  // Bank Setup list
-    if (typeof loadBankAccounts === "function") {
-      await loadBankAccounts(); // Banking & Cashbook dropdown + cashbook
+    if (!payload.ledger_account_code) {
+      payload.ledger_account_code = "BS_CA_1000";
     }
+
+    if (bankId) {
+      await apiFetch(`/api/companies/${cid}/bank_accounts/${bankId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      alert("Bank account updated.");
+    } else {
+      await apiFetch(ENDPOINTS.bankAccounts(cid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      alert("Bank account saved.");
+    }
+
+    await refreshBankAccounts();
+    renderBankSetupList();
+
+    if (typeof loadBankAccounts === "function") {
+      await loadBankAccounts();
+    }
+
+    if (bankId) {
+      await loadBankIntoPreview(bankId);
+    } else {
+      renderBankPreview(null);
+    }
+
+    resetBankForm();
   }
 
-  // Wire either <form> submit or dedicated Save button (or both), but only once
   if (form && form.dataset.bound !== "1") {
     form.dataset.bound = "1";
     form.addEventListener("submit", handleSave);
@@ -15711,6 +15774,16 @@ async function bindBankSetupScreen() {
     saveBtn.dataset.bound = "1";
     saveBtn.addEventListener("click", handleSave);
   }
+
+  if (cancelEditBtn && cancelEditBtn.dataset.bound !== "1") {
+    cancelEditBtn.dataset.bound = "1";
+    cancelEditBtn.addEventListener("click", () => {
+      resetBankForm();
+      renderBankPreview(null);
+    });
+  }
+
+  resetBankForm();
 }
 
 window.bindBankSetupScreen = bindBankSetupScreen;
@@ -15720,28 +15793,29 @@ window.bindBankSetupScreen = bindBankSetupScreen;
 function renderBankSetupList() {
   const host =
     document.getElementById("bankSetupList") ||
-    document.getElementById("bankAccountsList"); // support both ids
+    document.getElementById("bankAccountsList");
   if (!host) return;
 
   const accounts = BANK_ACCOUNTS_CACHE || [];
 
   if (!accounts.length) {
-    host.innerHTML =
-      '<div class="text-xs text-slate-400">No bank accounts yet.</div>';
+    host.innerHTML = '<div class="text-xs text-slate-400">No bank accounts yet.</div>';
     return;
   }
 
-  host.innerHTML = accounts
-    .map(
-      (a) => `
-      <div class="border rounded px-2 py-1 mb-2 flex justify-between items-center">
+  host.innerHTML = accounts.map((a) => `
+    <button
+      type="button"
+      class="w-full border rounded px-3 py-2 mb-2 text-left hover:bg-slate-50"
+      onclick="selectBankSetupAccount(${Number(a.id)})"
+    >
+      <div class="flex justify-between items-start gap-3">
         <div>
-          <div class="font-medium text-sm">
+          <div class="font-medium text-sm underline-offset-2 hover:underline">
             ${a.name || "(No label)"} ${a.bank_name ? `(${a.bank_name})` : ""}
           </div>
           <div class="text-xs text-slate-500">
-            ${a.account_number || ""} · ${a.currency || ""} ·
-            GL ${a.ledger_account_code || "not linked"}
+            ${a.account_number || ""} · ${a.currency || ""} · GL ${a.ledger_account_code || "BS_CA_1000"}
           </div>
         </div>
         <div class="text-[10px] text-slate-400 text-right">
@@ -15749,9 +15823,9 @@ function renderBankSetupList() {
           ${a.is_default_receipts && a.is_default_payments ? " · " : ""}
           ${a.is_default_payments ? "Payments" : ""}
         </div>
-      </div>`
-    )
-    .join("");
+      </div>
+    </button>
+  `).join("");
 }
 
 function setInvoiceFormMode(mode, status) {
@@ -15767,6 +15841,107 @@ function setInvoiceFormMode(mode, status) {
   document.getElementById("invSaveDraftBtn").disabled = isReadOnly;
   document.getElementById("invPostBtn").disabled = isReadOnly; // or role-based
 }
+
+function renderBankPreview(bank) {
+  const host = document.getElementById("bankPreview");
+  if (!host) return;
+
+  if (!bank) {
+    host.innerHTML = `<div class="text-sm text-slate-500">
+      Select a bank account from the list to preview it here.
+    </div>`;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="space-y-2 text-sm">
+      <div>
+        <div class="text-xs text-slate-500">Label</div>
+        <div class="font-medium">${bank.name || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Bank</div>
+        <div>${bank.bank_name || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Account name</div>
+        <div>${bank.account_name || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Account number</div>
+        <div>${bank.account_number || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Branch code</div>
+        <div>${bank.branch_code || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">SWIFT</div>
+        <div>${bank.swift_code || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Currency</div>
+        <div>${bank.currency || "-"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">GL code</div>
+        <div>${bank.ledger_account_code || "BS_CA_1000"}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500">Defaults</div>
+        <div>
+          ${bank.is_default_receipts ? "Receipts" : ""}
+          ${bank.is_default_receipts && bank.is_default_payments ? " · " : ""}
+          ${bank.is_default_payments ? "Payments" : ""}
+          ${!bank.is_default_receipts && !bank.is_default_payments ? "-" : ""}
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button type="button" class="btn" onclick="editBankSetupAccount(${Number(bank.id)})">
+          Edit
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+window.renderBankPreview = renderBankPreview;
+
+async function selectBankSetupAccount(bankId) {
+  const cid = getActiveCompanyId();
+  if (!cid) return;
+  const bank = await apiFetch(`/api/companies/${cid}/bank_accounts/${bankId}`);
+  renderBankPreview(bank);
+}
+
+window.selectBankSetupAccount = selectBankSetupAccount;
+
+async function editBankSetupAccount(bankId) {
+  const cid = getActiveCompanyId();
+  if (!cid) return;
+  const bank = await apiFetch(`/api/companies/${cid}/bank_accounts/${bankId}`);
+  renderBankPreview(bank);
+
+  document.getElementById("bankId").value = bank.id || "";
+  document.getElementById("bankName").value = bank.name || "";
+  document.getElementById("bankBankName").value = bank.bank_name || "";
+  document.getElementById("bankAccountName").value = bank.account_name || "";
+  document.getElementById("bankAccountNumber").value = bank.account_number || "";
+  document.getElementById("bankBranchCode").value = bank.branch_code || "";
+  document.getElementById("bankSwiftCode").value = bank.swift_code || "";
+  document.getElementById("bankCurrency").value = bank.currency || "ZAR";
+  document.getElementById("bankLedgerCode").value = bank.ledger_account_code || "BS_CA_1000";
+  document.getElementById("bankDefaultReceipts").checked = !!bank.is_default_receipts;
+  document.getElementById("bankDefaultPayments").checked = !!bank.is_default_payments;
+
+  const saveBtn = document.getElementById("bankSaveBtn");
+  const cancelEditBtn = document.getElementById("bankCancelEditBtn");
+  if (saveBtn) saveBtn.textContent = "Update bank account";
+  cancelEditBtn?.classList.remove("hidden");
+}
+
+window.editBankSetupAccount = editBankSetupAccount;
 
 // ✅ Call these from your existing bindBankScreen() once
 function bindBankScreen() {

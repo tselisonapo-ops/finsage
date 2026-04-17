@@ -8172,6 +8172,31 @@ def create_bank_account(company_id: int):
     )
     return jsonify(acc), 201
 
+@app.route("/api/companies/<int:company_id>/bank_accounts/<int:bank_account_id>", methods=["GET"])
+@require_auth
+def get_bank_account(company_id: int, bank_account_id: int):
+    payload = request.jwt_payload
+    if payload.get("company_id") not in (None, company_id):
+        return jsonify({"error": "Forbidden"}), 403
+
+    row = db_service.get_company_bank_account(company_id, bank_account_id)
+    if not row:
+        return jsonify({"error": "Bank account not found"}), 404
+    return jsonify(row), 200
+
+@app.route("/api/companies/<int:company_id>/bank_accounts/<int:bank_account_id>", methods=["PUT", "PATCH"])
+@require_auth
+def update_bank_account(company_id: int, bank_account_id: int):
+    payload = request.jwt_payload
+    if payload.get("company_id") not in (None, company_id):
+        return jsonify({"error": "Forbidden"}), 403
+
+    body = request.get_json(force=True, silent=True) or {}
+    row = db_service.update_company_bank_account(company_id, bank_account_id, body)
+    if not row:
+        return jsonify({"error": "Bank account not found"}), 404
+    return jsonify(row), 200
+
 @app.route("/api/companies/<int:cid>/inventory/items", methods=["POST"])
 @require_auth
 def create_inventory_item(cid: int):

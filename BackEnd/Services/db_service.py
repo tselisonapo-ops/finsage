@@ -36113,6 +36113,43 @@ class DatabaseService:
         """
         return self.fetch_one(sql)
 
+    def update_company_bank_account(self, company_id: int, bank_account_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        UPDATE {schema}.company_bank_accounts
+        SET
+            name = %s,
+            bank_name = %s,
+            account_name = %s,
+            account_number = %s,
+            branch_code = %s,
+            swift_code = %s,
+            currency = %s,
+            ledger_account_code = %s,
+            is_default_receipts = %s,
+            is_default_payments = %s
+        WHERE id = %s
+        AND company_id = %s
+        RETURNING *;
+        """
+
+        params = (
+            payload.get("name"),
+            payload.get("bank_name"),
+            payload.get("account_name"),
+            payload.get("account_number"),
+            payload.get("branch_code"),
+            payload.get("swift_code"),
+            payload.get("currency"),
+            payload.get("ledger_account_code"),
+            bool(payload.get("is_default_receipts")),
+            bool(payload.get("is_default_payments")),
+            bank_account_id,
+            company_id,
+        )
+        return self.fetch_one(sql, params) or {}
+
     def get_default_payments_bank_account(self, company_id: int) -> Optional[Dict[str, Any]]:
         """
         Returns the default bank account for supplier payments, if any.
