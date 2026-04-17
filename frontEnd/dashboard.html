@@ -5268,6 +5268,24 @@ html, body {
                     <input id="loanPaymentDescription" class="w-full border rounded px-3 py-2">
                   </div>
 
+                  <div>
+                    <label class="text-xs text-slate-600">Payment Type</label>
+                    <select id="loanPaymentType" class="w-full border rounded px-3 py-2">
+                      <option value="standard">Standard Payment</option>
+                      <option value="prepayment">Prepayment / Advance</option>
+                    </select>
+                  </div>
+
+                  <div id="loanPaymentTargetWrap" class="hidden">
+                    <label class="text-xs text-slate-600">Target Schedule</label>
+                    <select id="loanPaymentTargetScheduleId" class="w-full border rounded px-3 py-2">
+                      <option value="">Apply by system order</option>
+                    </select>
+                    <div class="mt-1 text-[11px] text-slate-500">
+                      Use this only for intentional prepayment. Standard payments should follow the earliest open schedule.
+                    </div>
+                  </div>
+
                   <label class="inline-flex items-center gap-2 text-sm">
                     <input id="loanPaymentAutoSplit" type="checkbox" checked>
                     <span>Auto-calculate split</span>

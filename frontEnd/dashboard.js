@@ -32697,6 +32697,52 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function fillLoanPaymentScheduleOptions(scheduleRows = []) {
+    const sel = $("#loanPaymentTargetScheduleId");
+    if (!sel) return;
+
+    const openRows = (Array.isArray(scheduleRows) ? scheduleRows : [])
+      .filter(r => ["open", "partial"].includes(String(r?.payment_status || "").toLowerCase()))
+      .sort((a, b) => {
+        const ad = String(a?.due_date || "");
+        const bd = String(b?.due_date || "");
+        if (ad !== bd) return ad.localeCompare(bd);
+        return Number(a?.period_no || 0) - Number(b?.period_no || 0);
+      });
+
+    sel.innerHTML = [
+      `<option value="">Apply by system order</option>`,
+      ...openRows.map(r => `
+        <option value="${r.id}">
+          Period ${r.period_no || "?"} — ${fmtDate(r.due_date)}
+        </option>
+      `)
+    ].join("");
+  }
+
+  function syncLoanPaymentTypeUI() {
+    const typeEl = $("#loanPaymentType");
+    const wrap = $("#loanPaymentTargetWrap");
+    const targetEl = $("#loanPaymentTargetScheduleId");
+    const autoSplitEl = $("#loanPaymentAutoSplit");
+
+    if (!typeEl || !wrap || !targetEl) return;
+
+    const paymentType = String(typeEl.value || "standard").toLowerCase();
+    const showTarget = paymentType === "prepayment";
+
+    wrap.classList.toggle("hidden", !showTarget);
+
+    if (!showTarget) {
+      targetEl.value = "";
+    }
+
+    if (autoSplitEl) {
+      autoSplitEl.checked = true;
+      autoSplitEl.disabled = true;
+    }
+  }
+
   function openLoanPaymentModal() {
     const loan = LOANS_STATE.loanDetail?.loan;
     if (!loan?.id) return alert("Select a loan first.");
@@ -32708,7 +32754,14 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("#loanPaymentReference").value = "";
     $("#loanPaymentDescription").value = `Loan payment - ${loan.loan_name || ""}`;
     $("#loanPaymentAutoSplit").checked = true;
+    $("#loanPaymentAutoSplit").disabled = true;
     $("#loanPaymentNotes").value = "";
+
+    const typeEl = $("#loanPaymentType");
+    if (typeEl) typeEl.value = "standard";
+
+    fillLoanPaymentScheduleOptions(LOANS_STATE.loanDetail?.schedule || []);
+    syncLoanPaymentTypeUI();
 
     fillPaymentCards({});
     renderPaymentModalAllocations([], getCurrency(loan.currency));
@@ -32730,13 +32783,18 @@ function bindAssetRecordsPickerModal({ cid }) {
     const loanId = LOANS_STATE.currentLoanId;
     if (!cid || !loanId) return alert("Select a loan first.");
 
+    const paymentType = ($("#loanPaymentType")?.value || "standard").trim().toLowerCase();
+    const rawTarget = $("#loanPaymentTargetScheduleId")?.value;
+
     const payload = {
       payment_date: $("#loanPaymentDate")?.value || null,
       amount_paid: Number($("#loanPaymentAmount")?.value || 0),
       bank_account_id: Number($("#loanPaymentBankAccountId")?.value || 0) || null,
       reference: ($("#loanPaymentReference")?.value || "").trim(),
       description: ($("#loanPaymentDescription")?.value || "").trim(),
-      auto_calculate_split: !!$("#loanPaymentAutoSplit")?.checked,
+      auto_calculate_split: true,
+      payment_type: paymentType,
+      target_schedule_id: rawTarget ? Number(rawTarget) : null,
       notes: ($("#loanPaymentNotes")?.value || "").trim() || null,
     };
 
@@ -32744,6 +32802,13 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!(payload.amount_paid > 0)) return alert("Amount paid must be greater than zero.");
     if (!payload.bank_account_id) return alert("Bank account is required.");
 
+    if (!["standard", "prepayment"].includes(paymentType)) {
+      return alert("Select a valid payment type.");
+    }
+
+    if (paymentType === "standard" && rawTarget) {
+      return alert("Standard payments cannot target a future schedule. Use Prepayment instead.");
+    }
     try {
       const json = await window.apiFetch(ENDPOINTS.loans.paymentsCreate(cid, loanId), {
         method: "POST",
@@ -32988,7 +33053,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       }
 
       LOANS_STATE.lastPaymentDraft = null;
-      
+
       await loadLoanDetail(LOANS_STATE.currentLoanId);
       await renderLoanRegister();
       setLoanTab("loan-payments");
@@ -33002,6 +33067,9 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function getLoanPaymentPreviewPayload() {
+    const paymentType = ($("#loanPaymentType")?.value || "standard").trim().toLowerCase();
+    const rawTarget = $("#loanPaymentTargetScheduleId")?.value;
+
     return {
       loan_id: LOANS_STATE.currentLoanId,
       payment_date: $("#loanPaymentDate")?.value || null,
@@ -33009,7 +33077,9 @@ function bindAssetRecordsPickerModal({ cid }) {
       bank_account_id: Number($("#loanPaymentBankAccountId")?.value || 0) || null,
       reference: ($("#loanPaymentReference")?.value || "").trim(),
       description: ($("#loanPaymentDescription")?.value || "").trim(),
-      auto_calculate_split: !!$("#loanPaymentAutoSplit")?.checked,
+      auto_calculate_split: true,
+      payment_type: paymentType,
+      target_schedule_id: rawTarget ? Number(rawTarget) : null,
       notes: ($("#loanPaymentNotes")?.value || "").trim() || null,
     };
   }
@@ -33106,7 +33176,10 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
 
     $("#loanPaymentModalCloseBtn")?.addEventListener("click", closeLoanPaymentModal);
-
+    $("#loanPaymentType")?.addEventListener("change", () => {
+      syncLoanPaymentTypeUI();
+    });
+    
     $("#loanPaymentSaveBtn")?.addEventListener("click", async () => {
       await saveLoanPaymentDraft({ autoPost: false });
     });

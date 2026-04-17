@@ -381,6 +381,21 @@ def api_create_loan_payment(company_id: int, loan_id: int):
         notes = raw.get("notes")
         auto_calculate_split = bool(raw.get("auto_calculate_split", True))
 
+        payment_type = (raw.get("payment_type") or "standard").strip().lower()
+        if payment_type not in {"standard", "prepayment"}:
+            return jsonify({"ok": False, "error": "payment_type must be 'standard' or 'prepayment'"}), 400
+
+        target_schedule_id = raw.get("target_schedule_id")
+        if target_schedule_id not in ("", None):
+            try:
+                raw["target_schedule_id"] = int(target_schedule_id)
+            except Exception:
+                return jsonify({"ok": False, "error": "target_schedule_id must be an integer"}), 400
+        else:
+            raw["target_schedule_id"] = None
+
+        raw["payment_type"] = payment_type
+        
         try:
             bank_account_id = int(bank_account_id) if bank_account_id is not None else None
         except Exception:

@@ -15893,6 +15893,8 @@ class DatabaseService:
         ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
         ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS notes TEXT;
         ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS meta_json JSONB;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS payment_type TEXT;
+        ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS target_schedule_id INT;
 
         UPDATE {schema}.loan_payments
         SET company_id = {company_id}
@@ -15910,6 +15912,14 @@ class DatabaseService:
         ALTER TABLE {schema}.loan_payments
         ALTER COLUMN updated_at SET NOT NULL,
         ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        UPDATE {schema}.loan_payments
+        SET payment_type = COALESCE(NULLIF(payment_type,''), 'standard')
+        WHERE payment_type IS NULL OR payment_type = '';
+
+        ALTER TABLE {schema}.loan_payments
+        ALTER COLUMN payment_type SET NOT NULL,
+        ALTER COLUMN payment_type SET DEFAULT 'standard';
 
         UPDATE {schema}.loan_payments
         SET auto_calculate_split = COALESCE(auto_calculate_split, TRUE),
@@ -15963,8 +15973,9 @@ class DatabaseService:
                     AND accrued_interest_amount >= 0
                     AND fees_amount >= 0
                     AND penalties_amount >= 0
-                    AND allocation_method IN (''schedule_order'',''manual'')
-                    AND status IN (''draft'',''approved'',''posted'',''void'',''reversed'')
+                    AND allocation_method IN ('schedule_order','manual')
+                    AND payment_type IN ('standard','prepayment')
+                    AND status IN ('draft','approved','posted','void','reversed')
                  )',
                 '{schema}', '{schema}_loan_payments_valid_ck'
             );
@@ -31003,6 +31014,85 @@ class DatabaseService:
         cols = [d[0] for d in cur.description]
         return dict(zip(cols, row))
 
+    def _validate_loan_payment_targeting(
+        self,
+        cur,
+        company_id: int,
+        *,
+        loan_id: int,
+        payment_type: str,
+        target_schedule_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        ptype = (payment_type or "standard").strip().lower()
+        if ptype not in {"standard", "prepayment"}:
+            raise ValueError("payment_type must be 'standard' or 'prepayment'")
+
+        cur.execute(f"""
+            SELECT id, due_date, period_no, payment_status
+            FROM {schema}.loan_schedules
+            WHERE company_id=%s
+            AND loan_id=%s
+            AND payment_status IN ('open','partial')
+            ORDER BY due_date ASC, period_no ASC, id ASC
+            LIMIT 1
+        """, (company_id, loan_id))
+        first_open = cur.fetchone()
+
+        if not first_open:
+            return {
+                "payment_type": ptype,
+                "earliest_open_schedule_id": None,
+                "earliest_open_due_date": None,
+                "target_schedule_id": None,
+                "target_is_future": False,
+            }
+
+        if isinstance(first_open, dict):
+            earliest_id = first_open["id"]
+            earliest_due = first_open["due_date"]
+        else:
+            earliest_id = first_open[0]
+            earliest_due = first_open[1]
+
+        target_id = int(target_schedule_id) if target_schedule_id else None
+        target_is_future = False
+
+        if target_id:
+            cur.execute(f"""
+                SELECT id, due_date, period_no, payment_status
+                FROM {schema}.loan_schedules
+                WHERE company_id=%s
+                AND loan_id=%s
+                AND id=%s
+                LIMIT 1
+            """, (company_id, loan_id, target_id))
+            target = cur.fetchone()
+            if not target:
+                raise ValueError("target_schedule_id not found for this loan")
+
+            if isinstance(target, dict):
+                target_due = target["due_date"]
+            else:
+                target_due = target[1]
+
+            target_is_future = (target_id != earliest_id)
+
+            if ptype == "standard" and target_is_future:
+                raise ValueError(
+                    "Cannot post a standard payment to a future schedule. "
+                    "Use prepayment flow instead."
+                )
+
+        return {
+            "payment_type": ptype,
+            "earliest_open_schedule_id": earliest_id,
+            "earliest_open_due_date": earliest_due,
+            "target_schedule_id": target_id,
+            "target_is_future": target_is_future,
+        }
+
     def _allocate_loan_payment(self, cur, company_id: int, *, payment_id: int):
         schema = self.company_schema(company_id)
 
@@ -31023,6 +31113,27 @@ class DatabaseService:
 
         loan_id = p["loan_id"]
         amount_left = _money(p["amount_paid"])
+
+        payment_type = (p.get("payment_type") or "standard").strip().lower()
+        if payment_type not in {"standard", "prepayment"}:
+            payment_type = "standard"
+
+        target_schedule_id = p.get("target_schedule_id")
+        if target_schedule_id in ("", None):
+            target_schedule_id = None
+        else:
+            try:
+                target_schedule_id = int(target_schedule_id)
+            except Exception:
+                raise ValueError("Invalid target_schedule_id on payment record")
+
+        self._validate_loan_payment_targeting(
+            cur,
+            company_id,
+            loan_id=int(loan_id),
+            payment_type=payment_type,
+            target_schedule_id=target_schedule_id,
+        )
 
         cur.execute(f"""
             DELETE FROM {schema}.loan_payment_allocations
@@ -31050,15 +31161,27 @@ class DatabaseService:
             amount_left -= alloc
             ord_no += 1
 
-        cur.execute(f"""
-            SELECT *
-            FROM {schema}.loan_schedules
-            WHERE company_id=%s
-            AND loan_id=%s
-            AND payment_status IN ('open','partial')
-            ORDER BY due_date ASC, period_no ASC
-            FOR UPDATE
-        """, (company_id, loan_id))
+        if payment_type == "prepayment":
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_schedules
+                WHERE company_id=%s
+                AND loan_id=%s
+                AND payment_status IN ('open','partial')
+                ORDER BY due_date ASC, period_no ASC
+                FOR UPDATE
+            """, (company_id, loan_id))
+        else:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_schedules
+                WHERE company_id=%s
+                AND loan_id=%s
+                AND payment_status IN ('open','partial')
+                ORDER BY due_date ASC, period_no ASC
+                FOR UPDATE
+            """, (company_id, loan_id))
+
         rows = cur.fetchall() or []
         cols = [d[0] for d in cur.description]
         schedule_rows = [
@@ -31153,7 +31276,28 @@ class DatabaseService:
         if bank_account_id <= 0:
             raise ValueError("bank_account_id is required")
 
+        payment_type = (data.get("payment_type") or "standard").strip().lower()
+        if payment_type not in {"standard", "prepayment"}:
+            raise ValueError("payment_type must be 'standard' or 'prepayment'")
+
+        target_schedule_id = data.get("target_schedule_id")
+        if target_schedule_id in ("", None):
+            target_schedule_id = None
+        else:
+            try:
+                target_schedule_id = int(target_schedule_id)
+            except Exception:
+                raise ValueError("target_schedule_id must be an integer")
+
         with conn.cursor() as cur:
+            self._validate_loan_payment_targeting(
+                cur,
+                company_id,
+                loan_id=int(loan_id),
+                payment_type=payment_type,
+                target_schedule_id=target_schedule_id,
+            )
+
             cur.execute(f"""
                 INSERT INTO {schema}.loan_payments (
                     company_id,
@@ -31165,12 +31309,14 @@ class DatabaseService:
                     description,
                     auto_calculate_split,
                     allocation_method,
+                    payment_type,
+                    target_schedule_id,
                     status,
                     created_by,
                     notes,
                     meta_json
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             """, (
                 company_id,
@@ -31182,6 +31328,8 @@ class DatabaseService:
                 (data.get("description") or "").strip() or None,
                 bool(data.get("auto_calculate_split", True)),
                 "schedule_order" if bool(data.get("auto_calculate_split", True)) else "manual",
+                payment_type,
+                target_schedule_id,
                 "draft",
                 user_id,
                 (data.get("notes") or "").strip() or None,
@@ -31195,7 +31343,7 @@ class DatabaseService:
 
             if bool(data.get("auto_calculate_split", True)):
                 self._allocate_loan_payment(cur, company_id, payment_id=payment_id)
-                
+
         conn.commit()
         return self.get_loan_payment_full(conn, company_id, payment_id)
 
@@ -31236,6 +31384,8 @@ class DatabaseService:
                 "reference": payment.get("reference"),
                 "description": payment.get("description"),
                 "auto_calculate_split": payment.get("auto_calculate_split", True),
+                "payment_type": payment.get("payment_type"),
+                "target_schedule_id": payment.get("target_schedule_id"),
                 "principal_amount": payment.get("principal_amount"),
                 "interest_amount": payment.get("interest_amount"),
                 "accrued_interest_amount": payment.get("accrued_interest_amount"),
@@ -31737,8 +31887,27 @@ class DatabaseService:
             if payment["status"] not in {"draft", "approved"}:
                 raise ValueError(f"cannot post payment in status '{payment['status']}'")
 
+            self._validate_loan_payment_targeting(
+                cur,
+                company_id,
+                loan_id=int(payment["loan_id"]),
+                payment_type=(payment.get("payment_type") or "standard"),
+                target_schedule_id=payment.get("target_schedule_id"),
+            )
+
             self._allocate_loan_payment(cur, company_id, payment_id=payment_id)
 
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_payments
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+            """, (company_id, payment_id))
+            payment_row = cur.fetchone()
+            payment_cols = [d[0] for d in cur.description]
+            payment = self._row_to_dict(payment_row, payment_cols)
+            
         preview_data = {
             "loan_id": payment.get("loan_id"),
             "payment_date": payment.get("payment_date"),
