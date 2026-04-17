@@ -57492,49 +57492,6 @@ class DatabaseService:
 
         return {"progress_update": row, "obligation": obligation}
 
-    def _get_revenue_setup_accounts(self, company_id: int) -> dict:
-        """
-        Resolve IFRS 15 posting accounts by role / mapping, not raw company settings.
-        """
-        acct_map = self.resolve_ifrs15_accounts(company_id) or {}
-        print("[IFRS15 ACCOUNTS]", acct_map, flush=True)
-
-        revenue_code = (
-            acct_map.get("contract_revenue_account")
-            or acct_map.get("revenue_code")
-            or acct_map.get("revenue")
-            or acct_map.get("revenue_account_code")
-            or ""
-        ).strip()
-
-        contract_asset_code = (
-            acct_map.get("contract_asset_account")
-            or acct_map.get("contract_asset_code")
-            or acct_map.get("contract_asset")
-            or acct_map.get("contract_asset_account_code")
-            or ""
-        ).strip()
-
-        contract_liability_code = (
-            acct_map.get("contract_liability_account")
-            or acct_map.get("contract_liability_code")
-            or acct_map.get("contract_liability")
-            or acct_map.get("contract_liability_account_code")
-            or ""
-        ).strip()
-
-        if not revenue_code:
-            raise ValueError("Revenue control code is not configured")
-        if not contract_asset_code:
-            raise ValueError("Contract asset control code is not configured")
-        if not contract_liability_code:
-            raise ValueError("Contract liability control code is not configured")
-
-        return {
-            "revenue_code": revenue_code,
-            "contract_asset_code": contract_asset_code,
-            "contract_liability_code": contract_liability_code,
-        }
 
     def _point_in_time_satisfied(self, obligation: dict, period_end) -> bool:
         pe = self._as_date(period_end)
@@ -58480,6 +58437,170 @@ class DatabaseService:
 
         return after
 
+    def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
+        from decimal import Decimal, ROUND_HALF_UP
+
+        acct = self._get_revenue_setup_accounts(company_id, entries=entries)
+
+        revenue_code = acct["revenue_code"]
+        contract_asset_code = acct.get("contract_asset_code")
+        contract_liability_code = acct.get("contract_liability_code")
+
+        def q2(v) -> Decimal:
+            return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        def add_line(bucket: list[dict], account_code: str, debit=0, credit=0, memo: str = ""):
+            if not account_code:
+                raise ValueError(f"Missing account code for journal line: {memo}")
+            d = q2(debit)
+            c = q2(credit)
+            if d == Decimal("0.00") and c == Decimal("0.00"):
+                return
+            bucket.append({
+                "account_code": account_code,
+                "debit": float(d),
+                "credit": float(c),
+                "memo": memo,
+            })
+
+        jlines: list[dict] = []
+
+        for e in entries:
+            delta = q2(e.get("revenue_delta_this_run"))
+            ca = q2(e.get("contract_asset_delta"))
+            cl = q2(e.get("contract_liability_delta"))
+
+            print("[revenue_run] ENTRY DEBUG:", {
+                "obligation_id": e.get("obligation_id"),
+                "delta": str(delta),
+                "contract_asset_delta": str(ca),
+                "contract_liability_delta": str(cl),
+            }, flush=True)
+
+            ref = (
+                e.get("obligation_code")
+                or e.get("obligation_name")
+                or str(e.get("obligation_id") or "")
+            ).strip()
+
+            if delta == Decimal("0.00") and ca == Decimal("0.00") and cl == Decimal("0.00"):
+                continue
+
+            # 1) Never allow both sides at once
+            if ca != Decimal("0.00") and cl != Decimal("0.00"):
+                raise ValueError(
+                    f"Recognition entry cannot hit both contract asset and liability in same line for obligation {ref}"
+                )
+
+            # 2) Delta must reconcile to exactly one side
+            side_total = abs(ca) + abs(cl)
+            if delta != Decimal("0.00") and side_total != abs(delta):
+                raise ValueError(
+                    f"Recognition entry mismatch for obligation {ref}: "
+                    f"revenue_delta_this_run={delta}, contract_asset_delta={ca}, contract_liability_delta={cl}"
+                )
+
+            # 3) Sign consistency checks
+            if delta > Decimal("0.00"):
+                if ca < Decimal("0.00") or cl < Decimal("0.00"):
+                    raise ValueError(
+                        f"Positive revenue delta cannot have negative contract position delta for obligation {ref}"
+                    )
+
+                if cl > Decimal("0.00"):
+                    amt = cl
+                    add_line(
+                        jlines,
+                        contract_liability_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Revenue recognition release {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Revenue recognized {ref}",
+                    )
+
+                elif ca > Decimal("0.00"):
+                    amt = ca
+                    add_line(
+                        jlines,
+                        contract_asset_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Unbilled revenue recognized {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Revenue recognized {ref}",
+                    )
+
+                else:
+                    raise ValueError(
+                        f"Positive revenue delta with no asset/liability movement for obligation {ref}"
+                    )
+
+            elif delta < Decimal("0.00"):
+                if ca > Decimal("0.00") or cl > Decimal("0.00"):
+                    raise ValueError(
+                        f"Negative revenue delta cannot have positive contract position delta for obligation {ref}"
+                    )
+
+                if cl < Decimal("0.00"):
+                    amt = abs(cl)
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Revenue reversal {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        contract_liability_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Reverse liability release {ref}",
+                    )
+
+                elif ca < Decimal("0.00"):
+                    amt = abs(ca)
+                    add_line(
+                        jlines,
+                        revenue_code,
+                        debit=amt,
+                        credit=0,
+                        memo=f"Revenue reversal {ref}",
+                    )
+                    add_line(
+                        jlines,
+                        contract_asset_code,
+                        debit=0,
+                        credit=amt,
+                        memo=f"Reverse unbilled revenue {ref}",
+                    )
+
+                else:
+                    raise ValueError(
+                        f"Negative revenue delta with no asset/liability movement for obligation {ref}"
+                    )
+
+        total_debits = sum(q2(x.get("debit")) for x in jlines)
+        total_credits = sum(q2(x.get("credit")) for x in jlines)
+        if total_debits != total_credits:
+            raise ValueError(
+                f"Recognition journal is out of balance: debits={total_debits} credits={total_credits}"
+            )
+
+        print("[revenue_run] FINAL JOURNAL LINES:", jlines, flush=True)
+        return jlines
+
     def apply_revenue_contract_modification(
         self,
         company_id: int,
@@ -58659,141 +58780,67 @@ class DatabaseService:
             "after": after,
         }
 
-    def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
-        from decimal import Decimal, ROUND_HALF_UP
+    def _get_revenue_setup_accounts(self, company_id: int, entries: list[dict] | None = None) -> dict:
+        """
+        Resolve IFRS 15 posting accounts by role / mapping, not raw company settings.
 
-        acct = self._get_revenue_setup_accounts(company_id)
+        Validation is contextual:
+        - revenue_code is always required for recognition posting
+        - contract_asset_code is required only if any entry hits contract asset
+        - contract_liability_code is required only if any entry hits contract liability
+        """
+        acct_map = self.resolve_ifrs15_accounts(company_id) or {}
+        print("[IFRS15 ACCOUNTS]", acct_map, flush=True)
 
-        revenue_code = acct["revenue_code"]
-        contract_asset_code = acct["contract_asset_code"]
-        contract_liability_code = acct["contract_liability_code"]
+        revenue_code = (
+            acct_map.get("contract_revenue_account")
+            or acct_map.get("revenue_code")
+            or acct_map.get("revenue")
+            or acct_map.get("revenue_account_code")
+            or ""
+        ).strip()
 
-        def q2(v) -> Decimal:
-            return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        contract_asset_code = (
+            acct_map.get("contract_asset_account")
+            or acct_map.get("contract_asset_code")
+            or acct_map.get("contract_asset")
+            or acct_map.get("contract_asset_account_code")
+            or ""
+        ).strip()
 
-        def add_line(bucket: list[dict], account_code: str, debit=0, credit=0, memo: str = ""):
-            d = q2(debit)
-            c = q2(credit)
-            if d == Decimal("0.00") and c == Decimal("0.00"):
-                return
-            bucket.append({
-                "account_code": account_code,
-                "debit": float(d),
-                "credit": float(c),
-                "memo": memo,
-            })
+        contract_liability_code = (
+            acct_map.get("contract_liability_account")
+            or acct_map.get("contract_liability_code")
+            or acct_map.get("contract_liability")
+            or acct_map.get("contract_liability_account_code")
+            or ""
+        ).strip()
 
-        jlines: list[dict] = []
+        needs_contract_asset = False
+        needs_contract_liability = False
 
-        for e in entries:
-            delta = q2(e.get("revenue_delta_this_run"))
-            ca = q2(e.get("contract_asset_delta"))
-            cl = q2(e.get("contract_liability_delta"))
+        for e in (entries or []):
+            ca = float(e.get("contract_asset_delta") or 0)
+            cl = float(e.get("contract_liability_delta") or 0)
 
-            # 👇 ADD HERE
-            print("[revenue_run] ENTRY DEBUG:", {
-                "obligation_id": e.get("obligation_id"),
-                "delta": str(delta),
-                "contract_asset_delta": str(ca),
-                "contract_liability_delta": str(cl),
-            }, flush=True)
+            if abs(ca) > 0:
+                needs_contract_asset = True
+            if abs(cl) > 0:
+                needs_contract_liability = True
 
-            ref = (
-                e.get("obligation_code")
-                or e.get("obligation_name")
-                or str(e.get("obligation_id") or "")
-            ).strip()
+        if not revenue_code:
+            raise ValueError("Revenue control code is not configured")
+        if needs_contract_asset and not contract_asset_code:
+            raise ValueError("Contract asset control code is not configured")
+        if needs_contract_liability and not contract_liability_code:
+            raise ValueError("Contract liability control code is not configured")
 
-            if delta == Decimal("0.00") and ca == Decimal("0.00") and cl == Decimal("0.00"):
-                continue
-
-            # Positive revenue recognition
-            if delta > Decimal("0.00"):
-                # release deferred / contract liability
-                if cl > Decimal("0.00"):
-                    amt = cl
-                    add_line(
-                        jlines,
-                        contract_liability_code,
-                        debit=amt,
-                        credit=0,
-                        memo=f"Revenue recognition release {ref}",
-                    )
-                    add_line(
-                        jlines,
-                        revenue_code,
-                        debit=0,
-                        credit=amt,
-                        memo=f"Revenue recognized {ref}",
-                    )
-
-                # recognize unbilled revenue / contract asset
-                if ca > Decimal("0.00"):
-                    amt = ca
-                    add_line(
-                        jlines,
-                        contract_asset_code,
-                        debit=amt,
-                        credit=0,
-                        memo=f"Unbilled revenue recognized {ref}",
-                    )
-                    add_line(
-                        jlines,
-                        revenue_code,
-                        debit=0,
-                        credit=amt,
-                        memo=f"Revenue recognized {ref}",
-                    )
-
-            # Negative revenue catch-up / reversal
-            elif delta < Decimal("0.00"):
-                # recreate liability / reverse prior release
-                if cl < Decimal("0.00"):
-                    amt = abs(cl)
-                    add_line(
-                        jlines,
-                        revenue_code,
-                        debit=amt,
-                        credit=0,
-                        memo=f"Revenue reversal {ref}",
-                    )
-                    add_line(
-                        jlines,
-                        contract_liability_code,
-                        debit=0,
-                        credit=amt,
-                        memo=f"Reverse liability release {ref}",
-                    )
-
-                # reverse unbilled revenue / contract asset
-                if ca < Decimal("0.00"):
-                    amt = abs(ca)
-                    add_line(
-                        jlines,
-                        revenue_code,
-                        debit=amt,
-                        credit=0,
-                        memo=f"Revenue reversal {ref}",
-                    )
-                    add_line(
-                        jlines,
-                        contract_asset_code,
-                        debit=0,
-                        credit=amt,
-                        memo=f"Reverse unbilled revenue {ref}",
-                    )
-
-        total_debits = sum(q2(x.get("debit")) for x in jlines)
-        total_credits = sum(q2(x.get("credit")) for x in jlines)
-        if total_debits != total_credits:
-            raise ValueError(
-                f"Recognition journal is out of balance: debits={total_debits} credits={total_credits}"
-            )
-
-        # 👇 ADD THIS HERE
-        print("[revenue_run] FINAL JOURNAL LINES:", jlines, flush=True)
-        return jlines
-
+        return {
+            "revenue_code": revenue_code,
+            "contract_asset_code": contract_asset_code,
+            "contract_liability_code": contract_liability_code,
+        }
+    
     def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
         from decimal import Decimal
         from datetime import date
