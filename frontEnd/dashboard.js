@@ -43147,65 +43147,6 @@ function bindARPanels() {
   /* =========================================
   * Main Customers binder
   * =======================================*/
-function bindCustomers() { 
-  const screen = document.getElementById("screen-customers");
-  if (screen && screen.dataset.bound === "1") return;
-  if (screen) screen.dataset.bound = "1";
-
-  const listHost  = $("#custList");
-  const search    = $("#custSearch");
-  const btnNew    = $("#custNewBtn");
-  const formHost  = $("#custFormHost");
-  const filterSel = $("#custFilter");   // ⭐ new
-  if (!listHost || !formHost) return;
-
-  (async function primeCompanyPolicy() {
-    try {
-      const cid = companyId?.() || window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-      if (cid) await loadCompanyProfile(cid);   // ✅ this fills CURRENT_COMPANY from backend
-    } catch (e) {
-      console.warn("Could not load company profile before customers:", e);
-    }
-  })();
-
-  (async function ensureCompanyLoaded() {
-    const cid =
-      (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
-      (typeof CURRENT_COMPANY_ID !== "undefined" ? CURRENT_COMPANY_ID : null);
-
-    if (cid) {
-      try {
-        await loadCompanyProfile(cid); // sets CURRENT_COMPANY + COMPANY_PROFILE
-      } catch (e) {
-        console.warn("Could not load company profile:", e);
-      }
-    }
-  })();
-
-  // 🔹 Unified loader from backend → globals + local
-  async function loadCustomers() {
-    try {
-      CUSTOMERS = await fetchCustomersFromBackend(true); // backend
-      customers = CUSTOMERS;
-
-      // 🔹 keep a local cache for other screens (like Invoices)
-      if (Array.isArray(customers)) {
-        store.set(K.CUSTOMERS, customers);
-      }
-
-      renderList();
-      fillCounterpartyLists();
-      fillInvoiceCustomerList();
-
-      if (!currentId && customers.length) {
-        currentId = String(customers[0].id);
-        renderCurrent();
-      }
-    } catch (err) {
-      console.error("loadCustomers error:", err);
-    }
-  }
-
   function renderCustomerApprovalUI(c) {
     const host = document.getElementById("custFormHost");
     if (!host) return;
@@ -43272,6 +43213,66 @@ function bindCustomers() {
     }
   }
   window.renderCustomerApprovalUI = renderCustomerApprovalUI;
+
+
+function bindCustomers() { 
+  const screen = document.getElementById("screen-customers");
+  if (screen && screen.dataset.bound === "1") return;
+  if (screen) screen.dataset.bound = "1";
+
+  const listHost  = $("#custList");
+  const search    = $("#custSearch");
+  const btnNew    = $("#custNewBtn");
+  const formHost  = $("#custFormHost");
+  const filterSel = $("#custFilter");   // ⭐ new
+  if (!listHost || !formHost) return;
+
+  (async function primeCompanyPolicy() {
+    try {
+      const cid = companyId?.() || window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+      if (cid) await loadCompanyProfile(cid);   // ✅ this fills CURRENT_COMPANY from backend
+    } catch (e) {
+      console.warn("Could not load company profile before customers:", e);
+    }
+  })();
+
+  (async function ensureCompanyLoaded() {
+    const cid =
+      (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
+      (typeof CURRENT_COMPANY_ID !== "undefined" ? CURRENT_COMPANY_ID : null);
+
+    if (cid) {
+      try {
+        await loadCompanyProfile(cid); // sets CURRENT_COMPANY + COMPANY_PROFILE
+      } catch (e) {
+        console.warn("Could not load company profile:", e);
+      }
+    }
+  })();
+
+  // 🔹 Unified loader from backend → globals + local
+  async function loadCustomers() {
+    try {
+      CUSTOMERS = await fetchCustomersFromBackend(true); // backend
+      customers = CUSTOMERS;
+
+      // 🔹 keep a local cache for other screens (like Invoices)
+      if (Array.isArray(customers)) {
+        store.set(K.CUSTOMERS, customers);
+      }
+
+      renderList();
+      fillCounterpartyLists();
+      fillInvoiceCustomerList();
+
+      if (!currentId && customers.length) {
+        currentId = String(customers[0].id);
+        renderCurrent();
+      }
+    } catch (err) {
+      console.error("loadCustomers error:", err);
+    }
+  }
 
   function renderList() {
     const listHost = $("#custList");
@@ -53735,28 +53736,44 @@ function bindVendors() {
 
   function renderCurrent() {
     if (!currentId) {
-      const blank = { id: null, contacts: [], is_active: true, credit_status: "draft" };
-      writeForm(blank);
-      window.renderCustomerApprovalUI(blank); // ✅ shows Draft badge + disables request button until saved
-      $("#custStatus") && ($("#custStatus").textContent = "New");
+      writeForm({
+        id: null,
+        contacts: [],
+        is_active: true,
+        vendor_status: "active",
+        compliance_status: "draft",
+      });
+
+      const pill = document.getElementById("vendStatus");
+      if (pill) pill.textContent = "New";
+
+      showRightPanel(false);
       return;
     }
 
-    const c = customers.find((x) => String(x.id) === String(currentId));
-    if (!c) {
-      const blank = { id: null, contacts: [], is_active: true, credit_status: "draft" };
-      writeForm(blank);
-      window.renderCustomerApprovalUI(blank);
-      $("#custStatus") && ($("#custStatus").textContent = "New");
+    const v = vendors.find((x) => String(x.id) === String(currentId));
+    if (!v) {
+      writeForm({
+        id: null,
+        contacts: [],
+        is_active: true,
+        vendor_status: "active",
+        compliance_status: "draft",
+      });
+
+      const pill = document.getElementById("vendStatus");
+      if (pill) pill.textContent = "New";
+
+      showRightPanel(false);
       return;
     }
 
-    writeForm(c);
+    writeForm(v);
 
-    // ✅ Ensure the approval bar updates when switching customers
-    window.renderCustomerApprovalUI(c);
+    const pill = document.getElementById("vendStatus");
+    if (pill) pill.textContent = (v.is_active === false ? "Archived" : "Saved");
 
-    $("#custStatus") && ($("#custStatus").textContent = "Saved");
+    showRightPanel(!!v.id);
   }
 
   // -------------------
