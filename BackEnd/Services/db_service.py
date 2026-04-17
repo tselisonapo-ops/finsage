@@ -57003,6 +57003,9 @@ class DatabaseService:
                 except Exception:
                     before_payload = {}
 
+            # FIX: initialize payload_json before any payload_json.pop(...)
+            payload_json = dict(before_payload)
+
             pit_trigger = (
                 data.get("recognition_trigger")
                 if "recognition_trigger" in data
@@ -57055,33 +57058,28 @@ class DatabaseService:
                 if progress_method not in allowed_methods:
                     raise ValueError("Invalid progress method for over-time obligation.")
 
-                # Reset point-in-time fields
                 data["recognized_at_point_in_time_date"] = None
                 data["recognition_trigger"] = None
                 satisfaction_status = "pending"
                 satisfied_at = None
                 satisfaction_evidence_ref = None
 
-                # 🔥 DRIVER ENFORCEMENT
                 if progress_method == "cost_to_cost":
                     if expected_total_cost <= 0:
                         raise ValueError("Cost-to-cost requires expected total cost.")
 
-                    # keep cost fields, clear everything else
                     data["progress_percent"] = None
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method in {"units", "units_delivered"}:
-                    # clear cost + manual
                     data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
                     data["progress_percent"] = None
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method == "manual":
-                    # manual overrides everything
                     data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
                     payload_json.pop("units_done", None)
@@ -57089,22 +57087,18 @@ class DatabaseService:
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method == "milestone":
-                    # milestone drives %
                     data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
-                    data["progress_percent"] = 0.0  # will be set by milestone updates
+                    data["progress_percent"] = 0.0
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
 
                 elif progress_method == "time_elapsed":
-                    # time-based method
                     data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
                     payload_json.pop("milestone_code", None)
-
-            payload_json = dict(before_payload)
 
             if "payload_json" in data and isinstance(data.get("payload_json"), dict):
                 payload_json.update(data.get("payload_json") or {})
