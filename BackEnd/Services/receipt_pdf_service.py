@@ -4,7 +4,7 @@ from decimal import Decimal
 from flask import render_template
 
 from BackEnd.Services.db_service import db_service
-from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf  # ✅ SAME helper
+from BackEnd.Services.invoice_pdf_service import generate_receipt_pdf  # ✅ SAME helper
 
 def generate_receipt_pdf(company_id: int, receipt_id: int) -> bytes:
     receipt = db_service.get_receipt_by_id(company_id, receipt_id)
@@ -75,4 +75,4 @@ def generate_receipt_pdf(company_id: int, receipt_id: int) -> bytes:
         "logo_path": receipt.get("logo_path"),
     }
 
-    return generate_invoice_pdf(receipt_ctx, company_ctx)
+    return generate_receipt_pdf(receipt_ctx, company_ctx)
