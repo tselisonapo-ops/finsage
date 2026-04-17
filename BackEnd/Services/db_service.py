@@ -30595,6 +30595,7 @@ class DatabaseService:
             ))
 
         conn.commit()
+        
         return self.get_loan_full(conn, company_id, loan_id)
 
     def create_loan(self, conn, company_id: int, *, data: dict, user_id=None):
@@ -31002,8 +31003,17 @@ class DatabaseService:
                 company_id,
                 loan_id,
             ))
-
+            
         conn.commit()
+
+        if needs_schedule_refresh:
+            return self.generate_loan_schedule(
+                conn,
+                company_id,
+                loan_id=loan_id,
+                user_id=user_id,
+            )
+
         return self.get_loan_full(conn, company_id, loan_id)
 
     def _row_to_dict_from_cursor(self, cur, row):
@@ -31907,7 +31917,7 @@ class DatabaseService:
             payment_row = cur.fetchone()
             payment_cols = [d[0] for d in cur.description]
             payment = self._row_to_dict(payment_row, payment_cols)
-            
+
         preview_data = {
             "loan_id": payment.get("loan_id"),
             "payment_date": payment.get("payment_date"),

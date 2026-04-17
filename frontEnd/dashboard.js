@@ -33122,6 +33122,18 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function editCurrentLoan() {
+    const loan = LOANS_STATE.loanDetail?.loan;
+    if (!loan?.id) {
+      return alert("Select a loan first.");
+    }
+
+    fillLoanForm(loan);
+    setLoanViewMode("form");
+    setLoanTab("loan-overview");
+    setLoanGlAccountsVisible(false);
+  }
+
   function createNewLoan() {
     const loan = newLoanTemplate();
 
@@ -33154,7 +33166,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("#loanRecalcBtn")?.addEventListener("click", recalculateLoanSchedule);
     $("#loanReclassBtn")?.addEventListener("click", reclassifyLoan);
     $("#loanPaymentBtn")?.addEventListener("click", openLoanPaymentModal);
-
+    $("#loanEditBtn")?.addEventListener("click", editCurrentLoan);
     // term auto-calc
     $("#loanStartDate")?.addEventListener("change", calculateLoanTerm);
     $("#loanEndDate")?.addEventListener("change", calculateLoanTerm);
@@ -33179,7 +33191,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("#loanPaymentType")?.addEventListener("change", () => {
       syncLoanPaymentTypeUI();
     });
-    
+
     $("#loanPaymentSaveBtn")?.addEventListener("click", async () => {
       await saveLoanPaymentDraft({ autoPost: false });
     });
