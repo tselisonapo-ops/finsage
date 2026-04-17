@@ -2155,27 +2155,28 @@ html, body {
             </aside>
 
             <!-- MIDDLE: editor -->
-            <section class="card p-4 shadow-sage h-screen overflow-hidden flex flex-col">
-              <div class="flex items-center gap-3">
-                <h3 class="font-bold">Vendor</h3>
-                <span id="vendStatus" class="pill">New</span>
-                <div class="ml-auto flex gap-2">
-                  <button id="vendArchiveBtn" class="btn">Archive</button>
-                  <button id="vendSaveBtn" class="btn-highlight">Save</button>
+            <section class="card p-4 shadow-sage h-screen flex flex-col">
+              <div class="flex-shrink-0">
+                <div class="flex items-center gap-3">
+                  <h3 class="font-bold">Vendor</h3>
+                  <span id="vendStatus" class="pill">New</span>
+                  <div class="ml-auto flex gap-2">
+                    <button id="vendArchiveBtn" class="btn">Archive</button>
+                    <button id="vendSaveBtn" class="btn-highlight">Save</button>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <button data-tab="v-basics"   class="pill border bg-white">Basics</button>
+                  <button data-tab="v-address"  class="pill border bg-white">Billing & Remit</button>
+                  <button data-tab="v-contacts" class="pill border bg-white">Contacts</button>
+                  <button data-tab="v-tax"      class="pill border bg-white">Tax</button>
+                  <button data-tab="v-terms"    class="pill border bg-white">Terms</button>
+                  <button data-tab="v-notes"    class="pill border bg-white">Notes & Tags</button>
                 </div>
               </div>
 
-              <!-- Tabs -->
-              <div class="mt-3 flex flex-wrap gap-2">
-                <button data-tab="v-basics"   class="pill border bg-white">Basics</button>
-                <button data-tab="v-address"  class="pill border bg-white">Billing & Remit</button>
-                <button data-tab="v-contacts" class="pill border bg-white">Contacts</button>
-                <button data-tab="v-tax"      class="pill border bg-white">Tax</button>
-                <button data-tab="v-terms"    class="pill border bg-white">Terms</button>
-                <button data-tab="v-notes"    class="pill border bg-white">Notes & Tags</button>
-              </div>
-
-              <div id="vendFormHost" class="mt-3 grow overflow-auto">
+              <div id="vendFormHost" class="mt-3 flex-grow overflow-auto">>
 
                 <!-- BASICS -->
                 <div data-pane="v-basics" class="grid gap-3 sm:grid-cols-2">
