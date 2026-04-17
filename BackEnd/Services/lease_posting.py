@@ -92,10 +92,6 @@ def build_lessee_opening_journal(
                 return s
         return ""
 
-    print("[LEASE DEBUG] legacy_liab_raw =", legacy_liab_raw, flush=True)
-    print("[LEASE DEBUG] lease_defaults =", lease_defaults, flush=True)
-    print("[LEASE DEBUG] liab_cur_raw before resolve =", liab_cur_raw, flush=True)
-    print("[LEASE DEBUG] liab_ncur_raw before resolve =", liab_ncur_raw, flush=True)
     def resolve_posting(raw_code: str) -> str:
         """
         raw_code can be a posting code OR a template_code.
@@ -127,6 +123,10 @@ def build_lessee_opening_journal(
 
     # Legacy fallback: only current may use the old single liability field.
     legacy_liab_raw = (getattr(lease, "lease_liability_account", None) or "").strip()
+
+    print("[LEASE DEBUG] legacy_liab_raw =", legacy_liab_raw, flush=True)
+    print("[LEASE DEBUG] liab_cur_raw before fallback =", liab_cur_raw, flush=True)
+    print("[LEASE DEBUG] liab_ncur_raw before fallback =", liab_ncur_raw, flush=True)
 
     if not liab_cur_raw and legacy_liab_raw:
         liab_cur_raw = legacy_liab_raw
