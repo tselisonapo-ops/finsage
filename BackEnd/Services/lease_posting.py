@@ -119,24 +119,42 @@ def build_lessee_opening_journal(
         lease_defaults.get("liability_noncurrent"),
     )
 
-    # Legacy fallback (if you still pass only one liability account)
+    # Legacy fallback: only current may use the old single liability field.
     legacy_liab_raw = (getattr(lease, "lease_liability_account", None) or "").strip()
-    if not liab_cur_raw:
-        liab_cur_raw = legacy_liab_raw
-    if not liab_ncur_raw:
-        liab_ncur_raw = legacy_liab_raw
 
+    if not liab_cur_raw and legacy_liab_raw:
+        liab_cur_raw = legacy_liab_raw
+
+    # Non-current MUST come from defaults/settings (no fallback to legacy)
+    if not liab_ncur_raw:
+        liab_ncur_raw = (lease_defaults.get("liability_noncurrent") or "").strip()
+
+    # ----------------------------
+    # VALIDATION (MUST BE OUTSIDE)
+    # ----------------------------
     if not rou_raw:
         raise ValueError("ROU asset account is required (wizard or company settings).")
-    if not liab_cur_raw or not liab_ncur_raw:
-        raise ValueError(
-            "Lease liability accounts are required (current + non-current) or provide lease_liability_account."
-        )
+
+    if not liab_cur_raw:
+        raise ValueError("Lease liability current account is required.")
+
+    if not liab_ncur_raw:
+        raise ValueError("Lease liability non-current account is required.")
 
     rou_acct = resolve_posting(rou_raw)
     liab_cur_acct = resolve_posting(liab_cur_raw)
     liab_ncur_acct = resolve_posting(liab_ncur_raw)
 
+    if not liab_cur_acct.startswith("BS_CL_"):
+        raise ValueError(
+            f"Lease liability current account must be BS_CL_*, got '{liab_cur_acct}'."
+        )
+
+    if not liab_ncur_acct.startswith("BS_NCL_"):
+        raise ValueError(
+            f"Lease liability non-current account must be BS_NCL_*, got '{liab_ncur_acct}'."
+        )
+    
     # ----------------------------
     # 3) Build lines
     # ----------------------------
