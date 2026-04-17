@@ -57693,7 +57693,7 @@ class DatabaseService:
             },
         }
 
-    def resolve_ifrs15_accounts(self, company_id: int, cur=None) -> dict:
+    def resolve_ifrs15_accounts(self, company_id: int, cur=None, strict: bool = True) -> dict:
         schema = self.company_schema(company_id)
 
         rows = self.fetch_all(
@@ -57701,35 +57701,110 @@ class DatabaseService:
             SELECT code, role, name, section, category, standard, posting
             FROM {schema}.coa
             WHERE posting = TRUE
-            AND role IN ('CONTRACT_ASSET', 'CONTRACT_LIABILITY', 'CONTRACT_REVENUE')
             """,
             (),
             cur=cur,
         ) or []
 
-        by_role = {}
+        def norm(v) -> str:
+            return str(v or "").strip()
+
+        def norm_upper(v) -> str:
+            return norm(v).upper()
+
+        by_role: dict[str, str] = {}
+
+        # 1) First preference: explicit role mappings
         for r in rows:
-            role = (r.get("role") or "").strip().upper()
-            code = (r.get("code") or "").strip()
-            if role and code and role not in by_role:
+            role = norm_upper(r.get("role"))
+            code = norm(r.get("code"))
+            if role in {"CONTRACT_ASSET", "CONTRACT_LIABILITY", "CONTRACT_REVENUE"} and code and role not in by_role:
                 by_role[role] = code
+
+        # 2) Fallback: infer from account metadata if role is blank/not maintained
+        if "CONTRACT_ASSET" not in by_role:
+            for r in rows:
+                code = norm(r.get("code"))
+                name = norm_upper(r.get("name"))
+                section = norm_upper(r.get("section"))
+                category = norm_upper(r.get("category"))
+                standard = norm_upper(r.get("standard"))
+
+                if not code:
+                    continue
+
+                if (
+                    "CONTRACT ASSET" in name
+                    or category == "CONTRACT ASSET"
+                    or section == "CONTRACT ASSET"
+                    or standard == "IFRS15_CONTRACT_ASSET"
+                    or code.startswith("BS_CA_1716")
+                ):
+                    by_role["CONTRACT_ASSET"] = code
+                    break
+
+        if "CONTRACT_LIABILITY" not in by_role:
+            for r in rows:
+                code = norm(r.get("code"))
+                name = norm_upper(r.get("name"))
+                section = norm_upper(r.get("section"))
+                category = norm_upper(r.get("category"))
+                standard = norm_upper(r.get("standard"))
+
+                if not code:
+                    continue
+
+                if (
+                    "CONTRACT LIABILITY" in name
+                    or "DEFERRED REVENUE" in name
+                    or category == "CONTRACT LIABILITY"
+                    or section == "CONTRACT LIABILITY"
+                    or standard == "IFRS15_CONTRACT_LIABILITY"
+                    or code.startswith("BS_CL_2700")
+                ):
+                    by_role["CONTRACT_LIABILITY"] = code
+                    break
+
+        if "CONTRACT_REVENUE" not in by_role:
+            for r in rows:
+                code = norm(r.get("code"))
+                name = norm_upper(r.get("name"))
+                section = norm_upper(r.get("section"))
+                category = norm_upper(r.get("category"))
+                standard = norm_upper(r.get("standard"))
+
+                if not code:
+                    continue
+
+                if (
+                    "CONTRACT REVENUE" in name
+                    or category == "CONTRACT REVENUE"
+                    or section == "CONTRACT REVENUE"
+                    or standard == "IFRS15_CONTRACT_REVENUE"
+                    or code.startswith("PL_REV_")
+                ):
+                    by_role["CONTRACT_REVENUE"] = code
+                    break
 
         missing = [
             role for role in ("CONTRACT_ASSET", "CONTRACT_LIABILITY", "CONTRACT_REVENUE")
             if role not in by_role
         ]
-        if missing:
+
+        print("[IFRS15 RESOLVER MATCHED]", by_role, flush=True)
+        print("[IFRS15 RESOLVER MISSING]", missing, flush=True)
+
+        if strict and missing:
             raise ValueError(f"Missing IFRS 15 posting account(s): {', '.join(missing)}")
 
         return {
-            "revenue_code": by_role["CONTRACT_REVENUE"],
-            "contract_asset_code": by_role["CONTRACT_ASSET"],
-            "contract_liability_code": by_role["CONTRACT_LIABILITY"],
+            "revenue_code": by_role.get("CONTRACT_REVENUE", ""),
+            "contract_asset_code": by_role.get("CONTRACT_ASSET", ""),
+            "contract_liability_code": by_role.get("CONTRACT_LIABILITY", ""),
 
-            # optional aliases
-            "contract_revenue_account": by_role["CONTRACT_REVENUE"],
-            "contract_asset_account": by_role["CONTRACT_ASSET"],
-            "contract_liability_account": by_role["CONTRACT_LIABILITY"],
+            "contract_revenue_account": by_role.get("CONTRACT_REVENUE", ""),
+            "contract_asset_account": by_role.get("CONTRACT_ASSET", ""),
+            "contract_liability_account": by_role.get("CONTRACT_LIABILITY", ""),
         }
 
     def preview_revenue_recognition_run(self, company_id: int, period_start, period_end, contract_id: int | None = None) -> dict:
@@ -58789,7 +58864,7 @@ class DatabaseService:
         - contract_asset_code is required only if any entry hits contract asset
         - contract_liability_code is required only if any entry hits contract liability
         """
-        acct_map = self.resolve_ifrs15_accounts(company_id) or {}
+        acct_map = self.resolve_ifrs15_accounts(company_id, strict=False) or {}
         print("[IFRS15 ACCOUNTS]", acct_map, flush=True)
 
         revenue_code = (
