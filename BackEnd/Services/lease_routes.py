@@ -645,6 +645,101 @@ def create_lease(company_id: int):
     except Exception as e:
         return jsonify({"error": "Internal server error", "details": str(e), "step": step, "lease_id": lease_id, "journal_id": journal_id}), 500
 
+@bp.route(
+    "/api/companies/<int:company_id>/leases/<int:lease_id>/direct-costs/paid",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def post_lease_direct_cost_paid(company_id: int, lease_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = getattr(request, "jwt_payload", {}) or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    user_id = payload.get("user_id") or payload.get("sub")
+    user_id = int(user_id) if user_id is not None else None
+    if not user_id:
+        return jsonify({"error": "AUTH|missing_user_id"}), 401
+
+    user = db_service.get_user_context(
+        user_id=user_id,
+        company_id=company_id,
+        delegated_fallback=getattr(g, "current_user", None),
+    )
+    if not user:
+        return jsonify({"error": "User has no access to this company"}), 403
+
+    g.current_user = user
+    g.company_id = int(company_id)
+    g.user_id = user_id
+
+    try:
+        raw = request.get_json(silent=True) or {}
+        if not isinstance(raw, dict):
+            return jsonify({"error": "JSON body must be an object"}), 400
+
+        payment_date = (raw.get("payment_date") or "").strip()
+        bank_account_id = raw.get("bank_account_id")
+        amount = raw.get("amount")
+        vat_rate = raw.get("vat_rate", 0)
+        reference = raw.get("reference")
+        description = raw.get("description")
+        rou_asset_account = (raw.get("rou_asset_account") or "BS_NCA_1610").strip()
+
+        if not payment_date:
+            return jsonify({"error": "payment_date is required (YYYY-MM-DD)"}), 400
+        try:
+            payment_date_d = datetime.strptime(payment_date, "%Y-%m-%d").date()
+        except Exception:
+            return jsonify({"error": "payment_date must be YYYY-MM-DD"}), 400
+
+        try:
+            bank_account_id = int(bank_account_id) if bank_account_id is not None else None
+        except Exception:
+            bank_account_id = None
+        if not bank_account_id:
+            return jsonify({"error": "bank_account_id is required"}), 400
+
+        try:
+            amount = float(amount)
+        except Exception:
+            amount = 0.0
+        if amount <= 0:
+            return jsonify({"error": "amount must be greater than 0"}), 400
+
+        try:
+            vat_rate = float(vat_rate or 0)
+        except Exception:
+            vat_rate = 0.0
+
+        result = db_service.post_lease_direct_cost_paid(
+            company_id=int(company_id),
+            lease_id=int(lease_id),
+            payment_date=payment_date_d,
+            bank_account_id=bank_account_id,
+            amount=amount,
+            vat_rate=vat_rate,
+            rou_asset_account=rou_asset_account,
+            reference=reference,
+            description=description,
+            user_id=user_id,
+        )
+
+        return jsonify({"ok": True, **result}), 200
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        current_app.logger.exception("post_lease_direct_cost_paid error")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+    
 @bp.route("/api/companies/<int:company_id>/leases", methods=["GET", "OPTIONS"])
 @require_auth
 def list_leases(company_id: int):

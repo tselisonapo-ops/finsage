@@ -102,8 +102,15 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
 
   const [preview, setPreview] = useState<LeasePreviewResponse | null>(null);
   const [result, setResult] = useState<LeaseCreateResponse | null>(null);
-
+  const [showDirectCostPrompt, setShowDirectCostPrompt] = useState(false);
+  const [directCostAction, setDirectCostAction] = useState<"ap_bill" | "paid" | "skip" | null>(null);
   const isExisting = mode === "existing";
+
+  const [bankAccounts, setBankAccounts] = useState<Array<{ id: number; bank_name?: string; account_name?: string; account_number_masked?: string; ledger_account_code?: string }>>([]);
+  const [loadingBankAccounts, setLoadingBankAccounts] = useState(false);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("");
+  const [directCostPaidDate, setDirectCostPaidDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [showPaidCapture, setShowPaidCapture] = useState(false);
 
   const [form, setForm] = useState<LeaseWizardPayloadWithLessor>({
     lease_name: "",
@@ -324,12 +331,120 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       const data = await createLease(form as LeaseWizardPayload);
       setResult(data);
       setStep(3);
+
+      if (Number(form.initial_direct_costs || 0) > 0) {
+        setShowDirectCostPrompt(true);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message || "Save failed" : "Save failed");
     } finally {
       setLoading(false);
     }
   };
+
+  async function loadCompanyBankAccounts() {
+    try {
+      setLoadingBankAccounts(true);
+      const data = await apiFetch(`/api/companies/${companyId}/bank_accounts`, {
+        method: "GET",
+      });
+
+      const rows = Array.isArray(data) ? data : (data?.rows || data?.items || []);
+      setBankAccounts(rows);
+    } catch (err) {
+      console.error("Failed to load bank accounts", err);
+      setError(err instanceof Error ? err.message : "Failed to load bank accounts");
+    } finally {
+      setLoadingBankAccounts(false);
+    }
+  }
+
+  function closeDirectCostPrompt() {
+    setShowDirectCostPrompt(false);
+    setShowPaidCapture(false);
+    setSelectedBankAccountId("");
+    setDirectCostAction(null);
+  }
+
+  function handleDirectCostCreateApBill() {
+    const action = "ap_bill";
+    setDirectCostAction(action);
+    setShowDirectCostPrompt(false);
+
+    const params = new URLSearchParams({
+      source: "lease",
+      action,
+      lease_name: form.lease_name || "",
+      lessor_id: String(form.lessor_id || ""),
+      amount: String(Number(form.initial_direct_costs || 0)),
+      vat_rate: String(Number(form.vat_rate || 0)),
+      asset_account: form.rou_asset_account || "BS_NCA_1610",
+      description: `Initial direct cost - ${form.lease_name || "Lease"}`,
+      reference: form.reference || "",
+      company_id: String(companyId),
+    });
+
+    window.location.href = `/dashboard.html#screen-ap?${params.toString()}`;
+  }
+
+  async function handleDirectCostPaidNow() {
+    setDirectCostAction("paid");
+    setShowPaidCapture(true);
+
+    if (!bankAccounts.length) {
+      await loadCompanyBankAccounts();
+    }
+  }
+
+  function handleDirectCostSkip() {
+    setDirectCostAction("skip");
+    setShowDirectCostPrompt(false);
+    setShowPaidCapture(false);
+
+    alert("Initial direct cost marked as pending capture.");
+  }
+
+  async function submitDirectCostPaidNow() {
+    try {
+      if (!result?.lease_id) {
+        throw new Error("Lease must be saved before posting direct cost payment.");
+      }
+
+      if (!selectedBankAccountId) {
+        throw new Error("Select a bank account.");
+      }
+
+      const payload = {
+        lease_id: result.lease_id,
+        payment_date: directCostPaidDate,
+        bank_account_id: Number(selectedBankAccountId),
+        amount: Number(form.initial_direct_costs || 0),
+        vat_rate: Number(form.vat_rate || 0),
+        rou_asset_account: form.rou_asset_account || "BS_NCA_1610",
+        reference: form.reference || null,
+        description: `Initial direct cost - ${form.lease_name || "Lease"}`,
+      };
+
+      const resp = await apiFetch(
+        `/api/companies/${companyId}/leases/${result.lease_id}/direct-costs/paid`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      console.log("Direct cost paid posting result", resp);
+
+      setShowDirectCostPrompt(false);
+      setShowPaidCapture(false);
+      setSelectedBankAccountId("");
+      setDirectCostAction(null);
+      alert("Initial direct cost posted as paid.");
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to post direct cost payment.");
+    }
+  }
 
   const renderStep1 = () => (
     <div className="lease-step lease-step-1">
@@ -749,10 +864,23 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
           <li>Opening ROU asset: {result.opening_rou_asset.toFixed(2)}</li>
         </ul>
 
+        {directCostAction && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="label">Initial direct cost action</div>
+            <div className="value" style={{ fontSize: "0.95rem" }}>
+              {directCostAction === "ap_bill" && "Create AP Bill selected"}
+              {directCostAction === "paid" && "Record as Paid selected"}
+              {directCostAction === "skip" && "Skip for now selected"}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={() => {
             setPreview(null);
             setResult(null);
+            setDirectCostAction(null);
+            setShowDirectCostPrompt(false);
             setStep(1);
           }}
         >
@@ -762,12 +890,137 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     );
   };
 
+  const renderDirectCostPrompt = () => {
+    if (!showDirectCostPrompt) return null;
+
+    return (
+      <div className="lease-direct-cost-modal-backdrop">
+        <div className="lease-direct-cost-modal">
+          <h3>Initial direct costs detected</h3>
+          <p>
+            This lease includes initial direct costs of{" "}
+            <strong>{Number(form.initial_direct_costs || 0).toFixed(2)}</strong>.
+          </p>
+
+          {!showPaidCapture ? (
+            <>
+              <p>How would you like to capture them?</p>
+
+              {directCostAction && (
+                <p style={{ fontSize: 12, opacity: 0.7 }}>
+                  Current selection: {directCostAction}
+                </p>
+              )}
+
+              <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
+                <button onClick={handleDirectCostCreateApBill}>
+                  Create AP Bill
+                </button>
+
+                <button onClick={handleDirectCostPaidNow}>
+                  Record as Paid
+                </button>
+
+                <button onClick={handleDirectCostSkip}>
+                  Skip for now
+                </button>
+
+                <button onClick={closeDirectCostPrompt}>
+                  Close
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                Select the bank account that funded this cost, then confirm the payment posting.
+              </p>
+
+              {directCostAction && (
+                <p style={{ fontSize: 12, opacity: 0.7 }}>
+                  Current selection: {directCostAction}
+                </p>
+              )}
+
+              <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+                    Bank account
+                  </label>
+                  <select
+                    value={selectedBankAccountId}
+                    onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">Select bank account...</option>
+                    {bankAccounts.map((b) => (
+                      <option key={b.id} value={String(b.id)}>
+                        {b.bank_name || "Bank"} - {b.account_name || "Account"}
+                        {b.account_number_masked ? ` (${b.account_number_masked})` : ""}
+                        {b.ledger_account_code ? ` - ${b.ledger_account_code}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+                    Payment date
+                  </label>
+                  <input
+                    type="date"
+                    value={directCostPaidDate}
+                    onChange={(e) => setDirectCostPaidDate(e.target.value)}
+                    style={{ width: "100%" }}
+                  />
+                </div>
+
+                {loadingBankAccounts && (
+                  <p style={{ fontSize: 12, opacity: 0.7 }}>
+                    Loading bank accounts...
+                  </p>
+                )}
+
+                <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                  <button
+                    onClick={submitDirectCostPaidNow}
+                    disabled={loadingBankAccounts || !selectedBankAccountId}
+                  >
+                    Post paid direct cost
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowPaidCapture(false);
+                      setSelectedBankAccountId("");
+                      setDirectCostAction(null);
+                    }}
+                  >
+                    Back
+                  </button>
+
+                  <button onClick={closeDirectCostPrompt}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="lease-wizard" data-mode={mode}>
-      {step === 1 && renderStep1()}
-      {step === 2 && renderStep2()}
-      {step === 3 && renderStep3()}
-    </div>
+    <>
+      <div className="lease-wizard" data-mode={mode}>
+        {step === 1 && renderStep1()}
+        {step === 2 && renderStep2()}
+        {step === 3 && renderStep3()}
+      </div>
+
+      {renderDirectCostPrompt()}
+    </>
   );
 };
 

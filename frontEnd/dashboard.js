@@ -54788,6 +54788,114 @@ function bindAP() {
   }
   window.writeBillForm = writeBillForm;
 
+  function getLeaseApPrefillFromUrl() {
+    try {
+      const hash = window.location.hash || "";
+      const qIndex = hash.indexOf("?");
+      if (qIndex < 0) return null;
+
+      const qs = hash.slice(qIndex + 1);
+      const p = new URLSearchParams(qs);
+
+      if (p.get("source") !== "lease") return null;
+      if (p.get("action") !== "ap_bill") return null;
+
+      return {
+        source: p.get("source") || "",
+        action: p.get("action") || "",
+        lease_name: p.get("lease_name") || "",
+        lessor_id: p.get("lessor_id") || "",
+        vendor_id: p.get("vendor_id") || "",
+        vendor_name: p.get("vendor_name") || "",
+        amount: Number(p.get("amount") || 0),
+        vat_rate: Number(p.get("vat_rate") || 0),
+        asset_account: p.get("asset_account") || "BS_NCA_1610",
+        description: p.get("description") || "",
+        reference: p.get("reference") || "",
+        company_id: p.get("company_id") || "",
+      };
+    } catch (e) {
+      console.warn("Failed to parse lease AP prefill from URL:", e);
+      return null;
+    }
+  }
+
+  window.getLeaseApPrefillFromUrl = getLeaseApPrefillFromUrl;
+
+  function applyLeaseApPrefill(prefill) {
+    if (!prefill) return false;
+
+    const amount = Number(prefill.amount || 0);
+    const vatRate = Number(prefill.vat_rate || 0);
+
+    const root = typeof getBillRoot === "function" ? getBillRoot() : document;
+
+    // Clear existing bill first
+    if (typeof window.clearBillForm === "function") {
+      window.clearBillForm({ keepCurrency: true });
+    }
+
+    const vendorId = String(prefill.vendor_id || prefill.lessor_id || "").trim();
+
+    // Try to resolve vendor name from cache if only id was passed
+    let vendorName = String(prefill.vendor_name || "").trim();
+    if (!vendorName && vendorId) {
+      const list = Array.isArray(window.VENDORS_CACHE) ? window.VENDORS_CACHE : [];
+      const hit = list.find(v => String(v.id) === vendorId);
+      if (hit) vendorName = String(hit.name || "").trim();
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    window.writeBillForm?.({
+      vendor_id: /^\d+$/.test(vendorId) ? parseInt(vendorId, 10) : null,
+      vendorName,
+      bill_date: today,
+      currency: window.CURRENT_COMPANY?.currency || "ZAR",
+      number: "",
+      notes: `Lease direct cost capture${prefill.reference ? " | Ref: " + prefill.reference : ""}`,
+    });
+
+    const memoEl = root.querySelector("#billMemo");
+    if (memoEl) {
+      memoEl.value = prefill.description || `Initial direct cost - ${prefill.lease_name || "Lease"}`;
+    }
+
+    const vatEnabledEl = root.querySelector("#apBillVatEnabled");
+    if (vatEnabledEl) vatEnabledEl.checked = vatRate > 0;
+
+    const vatModeEl = root.querySelector("#apBillVatMode");
+    if (vatModeEl && !vatModeEl.value) vatModeEl.value = "exclusive";
+
+    const linesBody = root.querySelector("#billLines");
+    if (linesBody) linesBody.innerHTML = "";
+
+    window.addBillLine?.({
+      item_name: "Lease Direct Cost",
+      description: prefill.description || `Initial direct cost - ${prefill.lease_name || "Lease"}`,
+      quantity: 1,
+      unit_price: amount,
+      account_code: prefill.asset_account || "BS_NCA_1610",
+      vat_code: vatRate > 0 ? (vatRate === 15 ? "STANDARD" : "CUSTOM") : "ZERO",
+      vat_rate: vatRate,
+    });
+
+    // Force vendor hidden id sync if needed
+    const vendorInput = root.querySelector("#billVendor");
+    if (vendorInput) {
+      vendorInput.dispatchEvent(new Event("input", { bubbles: true }));
+      vendorInput.dispatchEvent(new Event("change", { bubbles: true }));
+      vendorInput.dispatchEvent(new Event("blur", { bubbles: true }));
+    }
+
+    window.recalcBill?.({ force: true });
+    window.saveBillDraftToLocal?.();
+
+    return true;
+  }
+
+  window.applyLeaseApPrefill = applyLeaseApPrefill;
+
   // =========================
   // Local draft save/load (kept)
   // =========================
@@ -56084,11 +56192,11 @@ function bindBillVendorIdSync() {
   input.dataset.bound = "1";
 
   function syncVendor() {
-    const name = input.value.trim();
-    const list = window._AP_VENDOR_CACHE || [];
+    const name = (input.value || "").trim().toLowerCase();
+    const list = Array.isArray(window.VENDORS_CACHE) ? window.VENDORS_CACHE : [];
 
     const match = list.find(v =>
-      (v.name || "").toLowerCase() === name.toLowerCase()
+      String(v.name || "").trim().toLowerCase() === name
     );
 
     hidden.value = match ? String(match.id) : "";
@@ -56099,6 +56207,7 @@ function bindBillVendorIdSync() {
 }
 
 window.VENDORS_CACHE = window.VENDORS_CACHE || [];
+
 
 async function fetchVendorsFromBackend(includeInactive = false) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
@@ -57453,6 +57562,11 @@ async function initPayablesScreen() {
   await fillBillVendorList?.();        // ✅ datalist for billVendor input
   await loadAPPostingAccounts?.();     // ✅ AP_POSTING_ACCOUNTS_CACHE (for payment/posting)
   await renderApVendorList?.({ closeOnPick: true }); // ✅ left pane vendors
+
+  const leasePrefill = window.getLeaseApPrefillFromUrl?.();
+  if (leasePrefill) {
+    window.applyLeaseApPrefill?.(leasePrefill);
+  }
 }
 
 function renderBillViewerSidePane(bill, modalEl) {

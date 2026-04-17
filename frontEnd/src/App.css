@@ -529,3 +529,22 @@ button {
     display: none;
   }
 }
+
+.lease-direct-cost-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.lease-direct-cost-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  width: 420px;
+  max-width: 92vw;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+}

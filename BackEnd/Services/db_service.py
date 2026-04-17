@@ -9877,6 +9877,36 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_payments_idx
         ON {schema}.company_bank_accounts(company_id, is_default_payments);
 
+        SELECT company_id, account_number, COUNT(*)
+        FROM {schema}.company_bank_accounts
+        GROUP BY company_id, account_number
+        HAVING COUNT(*) > 1;
+
+        DELETE FROM {schema}.company_bank_accounts a
+        USING {schema}.company_bank_accounts b
+        WHERE a.id > b.id
+        AND a.company_id = b.company_id
+        AND a.account_number = b.account_number;
+
+        DO $uq_company_bank_accounts_account$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_company_bank_accounts_account_uniq'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.company_bank_accounts
+                    ADD CONSTRAINT %I
+                    UNIQUE (company_id, account_number)',
+                    '{schema}',
+                    '{schema}_company_bank_accounts_account_uniq'
+                );
+            END IF;
+        END $uq_company_bank_accounts_account$;
+
         -- ==================================================
         -- LEASES
         -- ==================================================
@@ -24403,6 +24433,150 @@ class DatabaseService:
             return lease_id
 
 
+    def post_lease_direct_cost_paid(
+        self,
+        *,
+        company_id: int,
+        lease_id: int,
+        payment_date,
+        bank_account_id: int,
+        amount: float,
+        vat_rate: float = 0.0,
+        rou_asset_account: str = "BS_NCA_1610",
+        reference: str | None = None,
+        description: str | None = None,
+        user_id: int | None = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                # 1) Validate lease exists
+                cur.execute(
+                    f"""
+                    SELECT id, lease_name
+                    FROM {schema}.leases
+                    WHERE id = %s
+                    """,
+                    (lease_id,),
+                )
+                lease = cur.fetchone()
+                if not lease:
+                    raise ValueError("Lease not found")
+
+                lease_name = lease.get("lease_name") if isinstance(lease, dict) else lease[1]
+
+                # 2) Validate bank account + linked ledger account
+                cur.execute(
+                    f"""
+                    SELECT id, bank_name, account_name, ledger_account_code
+                    FROM {schema}.company_bank_accounts
+                    WHERE id = %s
+                    """,
+                    (bank_account_id,),
+                )
+                bank = cur.fetchone()
+                if not bank:
+                    raise ValueError("Bank account not found")
+
+                bank_gl = bank.get("ledger_account_code") if isinstance(bank, dict) else bank[3]
+                if not bank_gl:
+                    raise ValueError("Selected bank account is not linked to a ledger account")
+
+                gross = Decimal(str(amount or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if gross <= 0:
+                    raise ValueError("Amount must be greater than zero")
+
+                rate = Decimal(str(vat_rate or 0))
+                # Frontend passes 0.15, not 15
+                if rate > 1:
+                    rate = rate / Decimal("100")
+
+                if rate > 0:
+                    net = (gross / (Decimal("1.0") + rate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    vat = (gross - net).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                else:
+                    net = gross
+                    vat = Decimal("0.00")
+
+                je_desc = description or f"Lease initial direct cost paid - {lease_name}"
+                je_ref = (reference or "").strip() or f"LEASE-DC-{lease_id}"
+
+                lines = [
+                    {
+                        "account_code": rou_asset_account or "BS_NCA_1610",
+                        "debit": float(net),
+                        "credit": 0.0,
+                        "memo": f"{je_desc} - ROU asset component",
+                    }
+                ]
+
+                if vat > 0:
+                    lines.append({
+                        "account_code": "BS_CA_1410",
+                        "debit": float(vat),
+                        "credit": 0.0,
+                        "memo": f"{je_desc} - VAT input",
+                    })
+
+                lines.append({
+                    "account_code": bank_gl,
+                    "debit": 0.0,
+                    "credit": float(gross),
+                    "memo": f"{je_desc} - paid from bank",
+                })
+
+                entry = {
+                    "date": payment_date.isoformat() if hasattr(payment_date, "isoformat") else str(payment_date),
+                    "ref": je_ref,
+                    "description": je_desc,
+                    "source": "lease_direct_cost_paid",
+                    "source_id": int(lease_id),
+                    "created_by_user_id": user_id,
+                    "updated_by_user_id": user_id,
+                    "gross_amount": float(gross),
+                    "currency": "ZAR",
+                    "lines": lines,
+                }
+
+                journal_id = self.post_journal_with_overdraft(company_id, entry)
+
+                # Optional but recommended:
+                # store capture status back on lease if columns exist
+                try:
+                    cur.execute(
+                        f"""
+                        UPDATE {schema}.leases
+                        SET
+                            direct_cost_capture_status = %s,
+                            direct_cost_capture_journal_id = %s,
+                            direct_cost_capture_bank_account_id = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        ("paid", journal_id, bank_account_id, lease_id),
+                    )
+                except Exception:
+                    # ignore if columns do not exist yet
+                    pass
+
+                conn.commit()
+
+                return {
+                    "lease_id": int(lease_id),
+                    "journal_id": int(journal_id),
+                    "bank_account_id": int(bank_account_id),
+                    "bank_gl_account_code": bank_gl,
+                    "gross_amount": float(gross),
+                    "net_amount": float(net),
+                    "vat_amount": float(vat),
+                    "status": "paid",
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
+
     def list_lease_schedule_for_month(self, company_id: int, as_of: date, cur=None):
         schema = f"company_{company_id}"
 
@@ -31003,7 +31177,7 @@ class DatabaseService:
                 company_id,
                 loan_id,
             ))
-            
+
         conn.commit()
 
         if needs_schedule_refresh:

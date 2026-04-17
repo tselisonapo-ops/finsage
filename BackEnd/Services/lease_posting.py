@@ -25,10 +25,17 @@ def build_lessee_opening_journal(
     """
     Build Day-1 / transition opening journal for IFRS 16 lessee.
 
-    - Resolves template/raw codes -> actual posting codes using company_{id}.coa
-      via db_service.get_account_row_for_posting().
-    - Uses wizard payload accounts as overrides; otherwise falls back to
-      public.company_account_settings lease defaults via db_service.get_lease_posting_accounts().
+    IMPORTANT:
+    Initial direct costs are NO LONGER offset inside the opening lease journal.
+    They must be captured later via:
+      - AP bill, or
+      - direct cash/bank payment workflow.
+
+    Therefore:
+      opening journal = core lease only
+      Dr ROU asset (excluding uncaptured direct costs)
+      Cr Lease liability current
+      Cr Lease liability non-current
     """
     lease = result.lease_input
     mode = (mode or "inception").lower()
@@ -47,10 +54,21 @@ def build_lessee_opening_journal(
 
     if mode == "existing":
         liab_amt = round(float(liability_at_date(result, as_of)), 2)
-        rou_amt = round(liab_amt + direct_costs, 2)
+
+        # ✅ core opening journal excludes uncaptured direct costs
+        rou_amt = round(liab_amt, 2)
+
     else:
         liab_amt = round(float(result.opening_lease_liability), 2)
-        rou_amt = round(float(result.opening_rou_asset), 2)
+
+        full_rou_amt = round(float(result.opening_rou_asset), 2)
+
+        # ✅ remove direct costs from opening journal
+        rou_amt = round(full_rou_amt - direct_costs, 2)
+
+        # protect against negative rounding edge cases
+        if rou_amt < 0:
+            rou_amt = 0.0
 
     # Split liability into CL/NCL at as_of
     cur_amt, ncur_amt = _liability_split_current_noncurrent(result, as_of)
@@ -85,15 +103,21 @@ def build_lessee_opening_journal(
         row = db_service.get_account_row_for_posting(company_id, c)
         if not row:
             raise ValueError(f"Account '{c}' not found in company COA (code/template_code).")
-        posting = (row[1] or "").strip()  # ✅ row[1] is posting code (your function)
+        posting = (row[1] or "").strip()
         if not posting:
             raise ValueError(f"Resolved posting code blank for '{c}'")
         return posting
 
     # Wizard overrides (if present) else settings defaults
     rou_raw = _pick(getattr(lease, "rou_asset_account", None), lease_defaults.get("roa"))
-    liab_cur_raw = _pick(getattr(lease, "lease_liability_current_account", None), lease_defaults.get("liability_current"))
-    liab_ncur_raw = _pick(getattr(lease, "lease_liability_non_current_account", None), lease_defaults.get("liability_noncurrent"))
+    liab_cur_raw = _pick(
+        getattr(lease, "lease_liability_current_account", None),
+        lease_defaults.get("liability_current"),
+    )
+    liab_ncur_raw = _pick(
+        getattr(lease, "lease_liability_non_current_account", None),
+        lease_defaults.get("liability_noncurrent"),
+    )
 
     # Legacy fallback (if you still pass only one liability account)
     legacy_liab_raw = (getattr(lease, "lease_liability_account", None) or "").strip()
@@ -109,20 +133,16 @@ def build_lessee_opening_journal(
             "Lease liability accounts are required (current + non-current) or provide lease_liability_account."
         )
 
-    # Direct cost offset (only required if direct_costs > 0)
-    offset_raw = (getattr(lease, "direct_costs_offset_account", None) or "").strip()
-
     rou_acct = resolve_posting(rou_raw)
     liab_cur_acct = resolve_posting(liab_cur_raw)
     liab_ncur_acct = resolve_posting(liab_ncur_raw)
-    offset_acct = resolve_posting(offset_raw) if offset_raw else ""
 
     # ----------------------------
     # 3) Build lines
     # ----------------------------
     lines: List[Dict[str, Any]] = []
 
-    # DR ROU asset
+    # DR ROU asset (core lease only; excludes uncaptured direct costs)
     lines.append({
         "account_code": rou_acct,
         "description": desc,
@@ -147,25 +167,9 @@ def build_lessee_opening_journal(
             "credit": ncur_amt,
         })
 
-    # CR Direct costs offset (cash/AP/accrual) — only if direct costs exist
-    if direct_costs > 0:
-        if not offset_acct:
-            msg = (
-                "initial_direct_costs > 0 but direct_costs_offset_account is missing. "
-                "IFRS 16 requires recognising the offset (cash/AP) on Day 1."
-            )
-            dr = round(sum(float(l["debit"]) for l in lines), 2)
-            cr = round(sum(float(l["credit"]) for l in lines), 2)
-            if strict:
-                raise ValueError(msg)
-            return {"journal_lines": lines, "dr_total": dr, "cr_total": cr, "error": msg}
-
-        lines.append({
-            "account_code": offset_acct,
-            "description": desc + " – initial direct costs",
-            "debit": 0.0,
-            "credit": direct_costs,
-        })
+    # ✅ REMOVED:
+    # No direct cost offset line is posted here anymore.
+    # Direct costs must be captured later through AP or cash/bank flow.
 
     # ----------------------------
     # 4) Balance check
