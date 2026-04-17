@@ -31936,12 +31936,18 @@ class DatabaseService:
                 LIMIT 1
             """, (company_id, loan_row["id"]))
 
-            sched = cur.fetchone()
+            row = cur.fetchone()
+            cols = [d[0] for d in cur.description] if cur.description else []
 
-        if not sched:
+        if not row:
             raise ValueError("No open schedule found for amortised loan")
 
-        sched = dict(sched)
+        if isinstance(row, dict):
+            sched = row
+        elif hasattr(row, "keys"):
+            sched = dict(row)
+        else:
+            sched = dict(zip(cols, row))
 
         remaining_interest = _money(sched["scheduled_interest"] - sched["paid_interest"])
         remaining_principal = _money(sched["scheduled_principal"] - sched["paid_principal"])
@@ -31950,12 +31956,10 @@ class DatabaseService:
         payment = _money(payment_row["amount_paid"])
 
         if payment > total_due:
-            # extra payment → reduce principal
             extra = payment - total_due
             principal = remaining_principal + extra
             interest = remaining_interest
         else:
-            # proportional split
             ratio = payment / total_due if total_due > 0 else Decimal("0")
             interest = _money(remaining_interest * ratio)
             principal = _money(payment - interest)
