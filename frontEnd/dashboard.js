@@ -32987,6 +32987,8 @@ function bindAssetRecordsPickerModal({ cid }) {
         throw new Error(json?.error || "Failed to post payment");
       }
 
+      LOANS_STATE.lastPaymentDraft = null;
+      
       await loadLoanDetail(LOANS_STATE.currentLoanId);
       await renderLoanRegister();
       setLoanTab("loan-payments");
@@ -33110,8 +33112,13 @@ function bindAssetRecordsPickerModal({ cid }) {
     });
 
     $("#loanPaymentPostBtn")?.addEventListener("click", async () => {
-      const draft = await saveLoanPaymentDraft({ autoPost: false });
-      const paymentId = draft?.payment?.id;
+      let paymentId = LOANS_STATE.lastPaymentDraft?.payment?.id || null;
+
+      if (!paymentId) {
+        const draft = await saveLoanPaymentDraft({ autoPost: false });
+        paymentId = draft?.payment?.id || null;
+      }
+
       if (paymentId) {
         await postLoanPayment(paymentId);
         closeLoanPaymentModal();
