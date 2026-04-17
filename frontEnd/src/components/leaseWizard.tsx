@@ -329,12 +329,16 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     setLoading(true);
     try {
       const data = await createLease(form as LeaseWizardPayload);
+      const directCost = Number(form.initial_direct_costs || 0);
+
       setResult(data);
       setStep(3);
 
-      if (Number(form.initial_direct_costs || 0) > 0) {
-        setShowDirectCostPrompt(true);
-      }
+      setTimeout(() => {
+        if (directCost > 0) {
+          setShowDirectCostPrompt(true);
+        }
+      }, 50);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message || "Save failed" : "Save failed");
     } finally {
@@ -881,6 +885,9 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
             setResult(null);
             setDirectCostAction(null);
             setShowDirectCostPrompt(false);
+            setShowPaidCapture(false);
+            setSelectedBankAccountId("");
+            setError(null);
             setStep(1);
           }}
         >
