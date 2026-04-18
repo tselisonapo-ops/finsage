@@ -403,21 +403,64 @@ def build_cashflow_indirect_v2(
 
         resolved_noncash_accounts: List[str] = []
 
-        # --- Get depreciation/amortisation directly from P&L ---
+        noncash_lines: List[Dict[str, Any]] = []
+                # --- Get depreciation/amortisation directly from P&L ---
         noncash_addback = 0.0
+        pnl_lines = pnl.get("lines") or []
+        noncash_lines: List[Dict[str, Any]] = []
+        resolved_noncash_accounts: List[str] = []
+
+        adjustment_lines: List[Dict[str, Any]] = []
+        adjustments_total = 0.0
+        resolved_adjustments: List[str] = []
+
         pnl_lines = pnl.get("lines") or []
 
         for ln in pnl_lines:
-            name = str(ln.get("name") or "").lower()
+            raw_name = str(ln.get("name") or "").strip() or "Adjustment"
+            name = raw_name.lower()
             amount = float(ln.get("amount") or 0.0)
 
+            adj_amt = None
+
+            # --- NON-CASH ITEMS ---
             if (
                 "depreciation" in name
                 or "amortisation" in name
                 or "amortization" in name
+                or "lease amortization" in name
             ):
-                noncash_addback += abs(amount)
-                resolved_noncash_accounts.append(name)
+                adj_amt = abs(amount)
+
+            # --- LOSS ON DISPOSAL (ADD BACK) ---
+            elif "loss on disposal" in name or "disposal loss" in name:
+                adj_amt = abs(amount)
+
+            # --- GAIN ON DISPOSAL (DEDUCT) ---
+            elif "gain on disposal" in name or "disposal gain" in name:
+                adj_amt = -abs(amount)
+
+            # --- FINANCE COSTS / INTEREST EXPENSE (ADD BACK) ---
+            elif (
+                "interest expense" in name
+                or "finance cost" in name
+                or "finance costs" in name
+            ):
+                adj_amt = abs(amount)
+
+            # --- INTEREST INCOME (DEDUCT) ---
+            elif "interest income" in name:
+                adj_amt = -abs(amount)
+
+            # --- CAPTURE IF MATCHED ---
+            if adj_amt is not None:
+                adjustments_total += adj_amt
+                resolved_adjustments.append(raw_name)
+
+                adjustment_lines.append({
+                    "account_name": raw_name,
+                    "amount": adj_amt,
+                })
 
         dep_journal_exists = any(
             str(j.get("source") or "").lower() == "asset_depreciation"
@@ -464,7 +507,7 @@ def build_cashflow_indirect_v2(
         vat_effect         = -wc["vat"]
         payables_effect    = +wc["payables"]
 
-        operating_profit_before_wc = net_profit + noncash_addback
+        operating_profit_before_wc = net_profit + adjustments_total
         cash_generated_from_ops = (
             operating_profit_before_wc
             + receivables_effect
@@ -501,10 +544,14 @@ def build_cashflow_indirect_v2(
                     "values": _val(
                         0.0,
                         0.0,
-                        noncash_addback,
+                        adjustments_total,
                         ws_show_total=False,
                         ws_show_breakdown=True,
                     ),
+                    "detail": {
+                        "cur": adjustment_lines,
+                        "pri": [],
+                    },
                 },
                 {
                     "code": "OP_BEFORE_WC",
@@ -600,7 +647,16 @@ def build_cashflow_indirect_v2(
         else:
             lines = [
                 {"code":"NET_PROFIT", "name":"Net profit / (loss)", "row_type": "normal", "values": _val(net_profit, 0.0)},
-                {"code":"NONCASH", "name":"Adjust for:", "row_type": "normal", "values": _val(noncash_addback, 0.0)},
+                {
+                    "code":"NONCASH",
+                    "name":"Depreciation / amortisation / other non-cash items",
+                    "row_type":"normal",
+                    "values": _val(noncash_addback, 0.0),
+                    "detail": {
+                        "cur": noncash_lines,
+                        "pri": [],
+                    },
+                },
                 {"code":"WC_AR", "name":"Change in receivables", "row_type": "normal", "values": _val(receivables_effect, 0.0)},
                 {"code":"WC_AP", "name":"Change in payables", "row_type": "normal", "values": _val(payables_effect, 0.0)},
                 {"code":"WC_INV", "name":"Change in inventory", "row_type": "normal", "values": _val(inventory_effect, 0.0)},

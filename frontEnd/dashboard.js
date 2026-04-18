@@ -17920,11 +17920,13 @@ function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
     ? opLines.map((ln, idx) => {
         const code = String(ln?.code || "");
         const rawName = ln?.name || ln?.code || "";
-
         const amt = Number(ln?.values?.cur ?? ln?.values?.tot ?? 0);
         const { inflow, outflow } = splitInOut(amt);
 
-        // Insert "Adjust for:" heading BEFORE non-cash
+        const detailCur = Array.isArray(ln?.detail?.cur) ? ln.detail.cur : [];
+        const detailId = `cf-noncash-${idx}-${Math.random().toString(36).slice(2, 8)}`;
+        const hasDetail = code === "NONCASH" && detailCur.length > 0;
+
         const heading =
           code === "NONCASH"
             ? `
@@ -17936,22 +17938,43 @@ function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
             `
             : "";
 
-        // Indentation logic
+        const arrow = hasDetail ? `<span id="${detailId}-icon" class="inline-block mr-1">▸</span>` : "";
+
         const displayName =
           idx === 0
-            ? esc(rawName) // Net profit
+            ? esc(rawName)
             : code === "NONCASH"
-              ? esc(rawName) // show full text for noncash
+              ? `${arrow}${esc(rawName)}`
               : `&nbsp;&nbsp;&nbsp;&nbsp;${esc(rawName)}`;
 
-        return `
-          ${heading}
-          <tr class="border-b border-slate-100">
+        const mainRow = `
+          <tr class="border-b border-slate-100 ${hasDetail ? "cursor-pointer" : ""}"
+              ${hasDetail ? `onclick="(function(){ const box=document.getElementById('${detailId}'); const icon=document.getElementById('${detailId}-icon'); const open=box.style.display==='table-row-group'; box.style.display=open?'none':'table-row-group'; if(icon) icon.textContent=open?'▸':'▾'; })()"` : ""}>
             <td class="py-[2px] pr-3">${displayName}</td>
             <td class="py-[2px] text-right tabular-nums">${inflow ? fmtAmt(inflow) : ""}</td>
             <td class="py-[2px] text-right tabular-nums">${outflow ? fmtAmt(outflow) : ""}</td>
           </tr>
         `;
+
+        const detailRows = hasDetail
+          ? `
+            <tbody id="${detailId}" style="display:none;">
+              ${detailCur.map(d => {
+                const dAmt = Number(d?.amount || 0);
+                const parts = splitInOut(dAmt);
+                return `
+                  <tr class="border-b border-slate-50 bg-slate-50/40">
+                    <td class="py-[2px] pr-3 pl-8 text-slate-600">${esc(d?.account_name || "Non-cash item")}</td>
+                    <td class="py-[2px] text-right tabular-nums text-slate-600">${parts.inflow ? fmtAmt(parts.inflow) : ""}</td>
+                    <td class="py-[2px] text-right tabular-nums text-slate-600">${parts.outflow ? fmtAmt(parts.outflow) : ""}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          `
+          : "";
+
+        return `${heading}${mainRow}${detailRows}`;
       }).join("")
     : `<tr><td colspan="3" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
 
@@ -18070,9 +18093,12 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
     return (v == null || v === "") ? "" : fmtAmt(Number(v || 0));
   }
 
-  function row(name, values, { rowType = "normal" } = {}) {
+  function row(name, values, { rowType = "normal", detail = null, rowCode = "", rowId = "" } = {}) {
     const brk = values?.[colA.key];
     const tot = values?.[colB.key];
+    const detailCur = Array.isArray(detail?.cur) ? detail.cur : [];
+    const hasDetail = rowCode === "NONCASH" && detailCur.length > 0;
+    const safeId = rowId || `cf-row-${Math.random().toString(36).slice(2, 8)}`;
 
     // HEADER (e.g. "Adjustments for:")
     if (rowType === "header") {
@@ -18097,7 +18123,7 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
       `;
     }
 
-    // FINAL TOTAL (bold)
+    // FINAL TOTAL
     if (rowType === "total") {
       return `
         <tr class="border-t border-slate-300 font-bold">
@@ -18109,16 +18135,34 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
       `;
     }
 
-    // BREAKDOWN (ONLY breakdown column)
+    // BREAKDOWN rows, optionally expandable
     if (rowType === "breakdown") {
-      return `
-        <tr class="border-b border-slate-100">
-          <td class="py-[2px] pr-3 pl-5">${esc(name)}</td>
+      const arrow = hasDetail ? `<span id="${safeId}-icon" class="inline-block mr-1">▸</span>` : "";
+
+      const mainRow = `
+        <tr class="border-b border-slate-100 ${hasDetail ? "cursor-pointer" : ""}"
+            ${hasDetail ? `onclick="(function(){const el=document.getElementById('${safeId}');const ic=document.getElementById('${safeId}-icon');const open=el.style.display==='table-row-group';el.style.display=open?'none':'table-row-group';if(ic) ic.textContent=open?'▸':'▾';})()"` : ""}>
+          <td class="py-[2px] pr-3 pl-5">${arrow}${esc(name)}</td>
           <td class="text-right">${brk ? fmtAmt(brk) : ""}</td>
           <td></td>
           ${colC ? `<td></td>` : ""}
         </tr>
       `;
+
+      const detailRows = hasDetail ? `
+        <tbody id="${safeId}" style="display:none;">
+          ${detailCur.map(d => `
+            <tr class="border-b border-slate-50 bg-slate-50/40">
+              <td class="py-[2px] pr-3 pl-9 text-slate-600">${esc(d?.account_name || "Adjustment")}</td>
+              <td class="text-right text-slate-600">${d?.amount ? fmtAmt(Number(d.amount)) : ""}</td>
+              <td></td>
+              ${colC ? `<td></td>` : ""}
+            </tr>
+          `).join("")}
+        </tbody>
+      ` : "";
+
+      return `${mainRow}${detailRows}`;
     }
 
     // DEFAULT (fallback)
@@ -18146,10 +18190,15 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
     const lines = Array.isArray(sec?.lines) ? sec.lines : [];
 
     const rows = lines.length
-      ? lines.map(ln => row(
+      ? lines.map((ln, idx) => row(
           ln?.name || ln?.code || "",
           ln?.values,
-          { rowType: ln?.row_type || "normal" }
+          {
+            rowType: ln?.row_type || "normal",
+            detail: ln?.detail || null,
+            rowCode: String(ln?.code || ""),
+            rowId: `${sec?.key || "sec"}-${idx}`
+          }
         )).join("")
       : `<tr><td colspan="${colC ? 4 : 3}" class="text-xs text-slate-400 py-2">No data.</td></tr>`;
 
