@@ -109,17 +109,12 @@ def _load_logo(company: dict, max_w=32 * mm, max_h=32 * mm):
 
     logo_url = (
         _safe(company.get("logo_url"))
-        or _safe(company.get("branding_logo_url"))  # 🔥 KEY FIX
+        or _safe(company.get("branding_logo_url"))
     )
 
-    if not logo and logo_url and logo_url.startswith("/uploads/company_logos/"):
-        filename = os.path.basename(logo_url)
-        logo = os.path.join(
-            current_app.root_path,
-            "uploads",
-            "company_logos",
-            filename,
-        )
+    if not logo and logo_url:
+        rel_url = logo_url.lstrip("/")
+        logo = os.path.join(current_app.root_path, rel_url)
 
     print("LOGO DEBUG url:", logo_url)
     print("LOGO DEBUG path:", logo)
@@ -135,8 +130,7 @@ def _load_logo(company: dict, max_w=32 * mm, max_h=32 * mm):
     except Exception as e:
         print("LOGO DEBUG load failed:", e)
         return None
-
-
+    
 # -------------------------------------------------
 # Main builder
 # -------------------------------------------------
@@ -294,7 +288,9 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     due_date = _safe(doc_obj.get("due_date"))
     currency = (
         _safe(doc_obj.get("currency"))
+        or _safe(doc_obj.get("company_currency"))
         or _safe(company.get("currency"))
+        or _safe(company.get("company_currency"))
         or ""
     )
     notes = _safe(doc_obj.get("notes"))
