@@ -135,7 +135,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         spaceBefore=0,
     ))
     styles.add(ParagraphStyle(
-        name="SmallMuted",
+        name="FS_SmallMuted",
         parent=styles["Normal"],
         fontName="Helvetica",
         fontSize=8.5,
@@ -143,8 +143,8 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         textColor=colors.HexColor("#6B7280"),
     ))
     styles.add(ParagraphStyle(
-        name="SmallMutedRight",
-        parent=styles["SmallMuted"],
+        name="FS_SmallMutedRight",
+        parent=styles["FS_SmallMuted"], 
         alignment=TA_RIGHT,
     ))
     styles.add(ParagraphStyle(
@@ -313,29 +313,22 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     addr_lines = _split_address_lines(company_address)
     if addr_lines:
         company_lines.append(Spacer(1, 2))
-        company_lines.append(Paragraph("<br/>".join(addr_lines), styles["SmallMutedRight"]))
+        company_lines.append(Paragraph("<br/>".join(addr_lines), styles["FS_SmallMutedRight"]))
 
     contact_bits = [x for x in [company_phone, company_email] if x]
     if contact_bits:
         company_lines.append(Spacer(1, 3))
-        company_lines.append(Paragraph("<br/>".join(contact_bits), styles["SmallMutedRight"]))
+        company_lines.append(Paragraph("<br/>".join(contact_bits), styles["FS_SmallMutedRight"]))
 
     reg_vat_rows = []
     if company_reg:
         reg_vat_rows.append([
-            styles.add(ParagraphStyle(
-                name="SmallMuted",
-                parent=styles["Normal"],
-                fontName="Helvetica",
-                fontSize=8.5,
-                leading=9,   # 👈 was 11
-                textColor=colors.HexColor("#6B7280"),
-            )),
+            Paragraph("Reg", styles["FS_SmallMuted"]),
             Paragraph(company_reg, styles["BodyTextBoldRight"]),
         ])
     if company_vat:
         reg_vat_rows.append([
-            Paragraph("VAT", styles["SmallMuted"]),
+            Paragraph("VAT", styles["FS_SmallMuted"]),
             Paragraph(company_vat, styles["BodyTextBoldRight"]),
         ])
 
