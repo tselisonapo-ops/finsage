@@ -419,10 +419,10 @@ def build_cashflow_indirect_v2(
                 noncash_addback += abs(amount)
                 resolved_noncash_accounts.append(name)
 
-                dep_journal_exists = any(
-                    str(j.get("source") or "").lower() == "asset_depreciation"
-                    for j in journals
-                )
+        dep_journal_exists = any(
+            str(j.get("source") or "").lower() == "asset_depreciation"
+            for j in journals
+        )
 
         if dep_journal_exists and not resolved_noncash_accounts:
             raise RuntimeError(
