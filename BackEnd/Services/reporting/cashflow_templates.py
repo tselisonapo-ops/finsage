@@ -389,6 +389,23 @@ def build_cashflow_indirect_v2(
         # TODO: hook this to IAS16/IAS38 tags later
         noncash_addback = 0.0
 
+        journals = get_journals_period_fn(company_id, df, dt)
+
+        for j in journals:
+            if str(j.get("source") or "").lower() == "asset_depreciation":
+                lines = j.get("journal_lines") or []
+                for ln in lines:
+                    acc = str(ln.get("account") or ln.get("account_code") or "")
+
+                    debit = float(ln.get("debit") or 0.0)
+
+                    # ✅ ONLY include depreciation expense accounts
+                    if debit > 0 and (
+                        acc.startswith("PL_OPEX_71")   # depreciation range
+                        or "depreciation" in (ln.get("description") or "").lower()
+                    ):
+                        noncash_addback += debit
+
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
 
         for code in all_codes:
@@ -567,6 +584,19 @@ def build_cashflow_indirect_v2(
 
     ctx = get_company_context_fn(company_id) or {}
 
+    # --- ADD THIS BLOCK HERE (just before return) ---
+    delta_cash_pri = 0.0
+    if has_prior:
+        tb_open_rows_pri = get_trial_balance_asof_fn(company_id, None, prior_from - timedelta(days=1)) or []
+        tb_close_rows_pri = get_trial_balance_asof_fn(company_id, None, prior_to) or []
+        opening_cash_pri = float(ac.cash_position_amount(tb_open_rows_pri))
+        closing_cash_pri = float(ac.cash_position_amount(tb_close_rows_pri))
+        delta_cash_pri = closing_cash_pri - opening_cash_pri
+
+    delta_cash = closing_cash - opening_cash
+    reconciliation_gap = delta_cash - net_cur
+    reconciliation_gap_pri = delta_cash_pri - net_pri
+
     return {
         "meta": {
             "company_id": company_id,
@@ -577,7 +607,7 @@ def build_cashflow_indirect_v2(
             "basis": basis,
             "compare": compare_mode,
             "method": "indirect",
-            "preview_columns": preview_columns,  # ✅ NEW
+            "preview_columns": preview_columns,
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
             "prior_period": {"from": prior_from.isoformat(), "to": prior_to.isoformat()} if has_prior else None,
         },
@@ -594,5 +624,15 @@ def build_cashflow_indirect_v2(
         "net_change": {
             "label": "Net change in cash and cash equivalents",
             "values": _val(net_cur, net_pri)
+        },
+        "reconciliation": {
+            "delta_from_tb": {
+                "label": "Net change per TB (closing - opening)",
+                "values": _val(delta_cash, delta_cash_pri),
+            },
+            "gap": {
+                "label": "Reconciliation gap (TB delta - cashflow net change)",
+                "values": _val(reconciliation_gap, reconciliation_gap_pri),
+            },
         },
     }

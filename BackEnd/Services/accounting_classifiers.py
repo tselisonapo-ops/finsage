@@ -795,38 +795,131 @@ def _classify_cf_section(row: Dict[str, Any]) -> str:
 
 def _classify_cf_section_from_tb(row: Dict[str, Any]) -> str:
     """
-    Map TB classification + keywords -> cashflow section.
-    operating | investing | financing
+    Classify a TB row into: operating | investing | financing
+
+    Goal:
+    - stay aligned with _classify_cf_section()
+    - prefer stable metadata first
+    - use keywords only as fallback
     """
-    kind = _classify_tb_row(row)
-    text = _norm_text(row.get("section"), row.get("category"), row.get("name"))
 
-    if kind == "asset":
-        if any(k in text for k in (
-            "property, plant", "plant", "equipment", "ppe",
-            "construction equipment", "motor vehicle", "vehicle",
-            "intangible", "goodwill", "investment property", "long-term investment"
-        )):
-            return "investing"
+    def _s(v: Any) -> str:
+        return str(v or "").strip()
 
-        if any(k in text for k in ("vat", "tax", "sars", "input vat", "vat receivable")):
-            return "operating"
+    def _low(v: Any) -> str:
+        return _s(v).lower()
 
+    def _norm_text(*parts: Any) -> str:
+        return " ".join([_low(p) for p in parts if _s(p)]).strip()
+
+    def _boolish(v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        return _low(v) in ("1", "true", "t", "yes", "y", "on")
+
+    def _account_name(r: Dict[str, Any]) -> str:
+        return _s(
+            r.get("account_name")
+            or r.get("name")
+            or r.get("account")
+            or r.get("account_code")
+            or r.get("code")
+        )
+
+    # 1) explicit tag wins
+    tagged = _low(row.get("cf_section"))
+    if tagged in ("operating", "investing", "financing"):
+        return tagged
+
+    # 2) explicit working capital wins
+    if _boolish(row.get("is_working_capital")):
         return "operating"
+
+    # 3) bucket hints
+    b = _low(row.get("cf_bucket"))
+
+    if b in (
+        "loan_principal", "borrowings", "debt", "lease_principal",
+        "equity", "dividends", "share_capital", "owner_drawings"
+    ):
+        return "financing"
+
+    if b in (
+        "capex", "ppe", "intangible", "software", "asset_purchase",
+        "asset_sale", "investment", "long_term_investment"
+    ):
+        return "investing"
+
+    if b in (
+        "receivables", "payables", "inventory", "vat", "tax",
+        "interest", "interest_paid", "interest_received",
+        "operating"
+    ):
+        return "operating"
+
+    # 4) code family hints
+    code = _s(row.get("code") or row.get("account") or row.get("account_code"))
+    code_family = _low(row.get("code_family"))
+
+    if not code_family and code.count("_") >= 2:
+        parts = code.split("_")
+        code_family = f"{parts[0].lower()}_{parts[1].lower()}"
+
+    text = _norm_text(
+        row.get("section"),
+        row.get("category"),
+        _account_name(row),
+        row.get("standard"),
+    )
+
+    if code_family in ("bs_eq", "bs_ncl"):
+        return "financing"
+
+    if code_family in ("bs_nca",):
+        return "investing"
+
+    if code_family in ("bs_ca", "bs_cl"):
+        if any(k in text for k in (
+            "loan", "borrow", "lease liability", "debenture",
+            "note payable", "hire purchase", "overdraft"
+        )):
+            return "financing"
+        return "operating"
+
+    # 5) fallback from TB kind
+    kind = _classify_tb_row(row)
 
     if kind == "equity":
         return "financing"
 
     if kind == "liability":
         if any(k in text for k in (
-            "loan", "overdraft", "bank loan", "lease liability",
-            "hire purchase", "hp", "debenture", "note payable", "borrow"
+            "loan", "borrow", "lease liability", "debenture",
+            "note payable", "hire purchase", "overdraft"
         )):
             return "financing"
         return "operating"
 
-    return "operating"
+    if kind == "asset":
+        if any(k in text for k in (
+            "property, plant", "plant", "equipment", "ppe",
+            "construction equipment", "motor vehicle", "vehicle",
+            "intangible", "software", "goodwill",
+            "investment property", "long-term investment",
+            "land", "building"
+        )):
+            return "investing"
 
+        if any(k in text for k in (
+            "receivable", "debtors", "accounts receivable",
+            "trade receivable", "inventory", "stock",
+            "vat", "tax", "sars", "input vat", "vat receivable"
+        )):
+            return "operating"
+
+        return "operating"
+
+    return "operating"
 
 def cash_position_amount(tb_rows: List[Dict[str, Any]]) -> Decimal:
     """
