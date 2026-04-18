@@ -17898,15 +17898,61 @@ function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
   const opTotal = Number(op?.totals?.cur ?? 0);
   const invTotal = Number(inv?.totals?.cur ?? 0);
   const finTotal = Number(fin?.totals?.cur ?? 0);
-  const netTotal = Number(stmt?.net_change?.values?.cur ?? 0);
-  const openingTotal = Number(stmt?.opening_balance?.values?.cur ?? 0);
-  const closingTotal = Number(stmt?.closing_balance?.values?.cur ?? 0);
+  const netTotal = Number(stmt?.net_change?.values?.cur ?? stmt?.net_change?.values?.tot ?? 0);
+  const openingTotal = Number(stmt?.opening_balance?.values?.cur ?? stmt?.opening_balance?.values?.tot ?? 0);
+  const closingTotal = Number(stmt?.closing_balance?.values?.cur ?? stmt?.closing_balance?.values?.tot ?? 0);
 
+  const reconDelta = Number(
+    stmt?.reconciliation?.delta_from_tb?.values?.cur ??
+    stmt?.reconciliation?.delta_from_tb?.values?.tot ??
+    0
+  );
+
+  const reconGap = Number(
+    stmt?.reconciliation?.gap?.values?.cur ??
+    stmt?.reconciliation?.gap?.values?.tot ??
+    0
+  );
   const investingDetails = detailList(inv);
   const financingDetails = detailList(fin);
 
   const opRows = opLines.length
-    ? opLines.map(ln => renderRow(ln?.name || ln?.code || "", ln?.values?.cur)).join("")
+    ? opLines.map((ln, idx) => {
+        const code = String(ln?.code || "");
+        const rawName = ln?.name || ln?.code || "";
+
+        const amt = Number(ln?.values?.cur ?? ln?.values?.tot ?? 0);
+        const { inflow, outflow } = splitInOut(amt);
+
+        // Insert "Adjust for:" heading BEFORE non-cash
+        const heading =
+          code === "NONCASH"
+            ? `
+              <tr>
+                <td colspan="3" class="pt-1 pb-1 text-slate-700 font-semibold">
+                  Adjust for:
+                </td>
+              </tr>
+            `
+            : "";
+
+        // Indentation logic
+        const displayName =
+          idx === 0
+            ? esc(rawName) // Net profit
+            : code === "NONCASH"
+              ? esc(rawName) // show full text for noncash
+              : `&nbsp;&nbsp;&nbsp;&nbsp;${esc(rawName)}`;
+
+        return `
+          ${heading}
+          <tr class="border-b border-slate-100">
+            <td class="py-[2px] pr-3">${displayName}</td>
+            <td class="py-[2px] text-right tabular-nums">${inflow ? fmtAmt(inflow) : ""}</td>
+            <td class="py-[2px] text-right tabular-nums">${outflow ? fmtAmt(outflow) : ""}</td>
+          </tr>
+        `;
+      }).join("")
     : `<tr><td colspan="3" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
 
   const invRows = investingDetails.length
@@ -17964,6 +18010,18 @@ function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
 
               ${renderTotal(stmt?.opening_balance?.label || "Opening cash and cash equivalents", openingTotal)}
               ${renderTotal(stmt?.closing_balance?.label || "Closing cash and cash equivalents", closingTotal)}
+
+              <tr><td colspan="3" class="py-2"></td></tr>
+
+              ${renderTotal(
+                stmt?.reconciliation?.delta_from_tb?.label || "Net change per TB (closing - opening)",
+                reconDelta
+              )}
+
+              ${renderTotal(
+                stmt?.reconciliation?.gap?.label || "Reconciliation gap (TB delta - cashflow net change)",
+                reconGap
+              )}
             </tbody>
           </table>
         </div>
@@ -18012,13 +18070,64 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
     return (v == null || v === "") ? "" : fmtAmt(Number(v || 0));
   }
 
-  function row(name, values, { bold=false } = {}) {
+  function row(name, values, { rowType = "normal" } = {}) {
+    const brk = values?.[colA.key];
+    const tot = values?.[colB.key];
+
+    // HEADER (e.g. "Adjustments for:")
+    if (rowType === "header") {
+      return `
+        <tr>
+          <td colspan="${colC ? 4 : 3}" class="pt-2 pb-1 text-slate-700 font-semibold">
+            ${esc(name)}
+          </td>
+        </tr>
+      `;
+    }
+
+    // SUBTOTAL (ONLY total column)
+    if (rowType === "subtotal") {
+      return `
+        <tr class="border-t border-slate-200 font-semibold">
+          <td class="py-[3px] pr-3">${esc(name)}</td>
+          <td class="text-right"></td>
+          <td class="text-right">${tot ? fmtAmt(tot) : ""}</td>
+          ${colC ? `<td></td>` : ""}
+        </tr>
+      `;
+    }
+
+    // FINAL TOTAL (bold)
+    if (rowType === "total") {
+      return `
+        <tr class="border-t border-slate-300 font-bold">
+          <td class="py-[4px] pr-3">${esc(name)}</td>
+          <td></td>
+          <td class="text-right">${tot ? fmtAmt(tot) : ""}</td>
+          ${colC ? `<td></td>` : ""}
+        </tr>
+      `;
+    }
+
+    // BREAKDOWN (ONLY breakdown column)
+    if (rowType === "breakdown") {
+      return `
+        <tr class="border-b border-slate-100">
+          <td class="py-[2px] pr-3 pl-5">${esc(name)}</td>
+          <td class="text-right">${brk ? fmtAmt(brk) : ""}</td>
+          <td></td>
+          ${colC ? `<td></td>` : ""}
+        </tr>
+      `;
+    }
+
+    // DEFAULT (fallback)
     return `
-      <tr class="border-b border-slate-100 ${bold ? "font-semibold" : ""}">
+      <tr class="border-b border-slate-100">
         <td class="py-[2px] pr-3">${esc(name)}</td>
-        <td class="py-[2px] text-right tabular-nums">${tdVal(values, colA.key)}</td>
-        <td class="py-[2px] text-right tabular-nums">${tdVal(values, colB.key)}</td>
-        ${colC ? `<td class="py-[2px] text-right tabular-nums">${tdVal(values, colC.key)}</td>` : ""}
+        <td class="text-right">${brk ? fmtAmt(brk) : ""}</td>
+        <td class="text-right">${tot ? fmtAmt(tot) : ""}</td>
+        ${colC ? `<td></td>` : ""}
       </tr>
     `;
   }
@@ -18035,13 +18144,15 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
 
   function renderSection(sec, title) {
     const lines = Array.isArray(sec?.lines) ? sec.lines : [];
+
     const rows = lines.length
-      ? lines.map(ln => row(ln?.name || ln?.code || "", ln?.values, {
-          bold: String(ln?.code || "").startsWith("SUB_") || String(ln?.code || "").startsWith("SUB")
-        })).join("")
+      ? lines.map(ln => row(
+          ln?.name || ln?.code || "",
+          ln?.values,
+          { rowType: ln?.row_type || "normal" }
+        )).join("")
       : `<tr><td colspan="${colC ? 4 : 3}" class="text-xs text-slate-400 py-2">No data.</td></tr>`;
 
-    // totals can be omitted if you already include a SUB row in lines
     return `${sectionHeader(title)}${rows}`;
   }
 

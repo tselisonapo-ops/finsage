@@ -337,20 +337,28 @@ def build_cashflow_indirect_v2(
     prior_to = cfg["prior_to"]
     columns = cfg["columns"]
 
-    def _val(cur_amt: float, pri_amt: float = 0.0, brk_amt: Optional[float] = None) -> Dict[str, float]:
+    def _val(
+        cur_amt: float = 0.0,
+        pri_amt: float = 0.0,
+        brk_amt: Optional[float] = None,
+        *,
+        ws_show_total: bool = False,
+        ws_show_breakdown: bool = False,
+    ) -> Dict[str, float]:
         if is_ws_2:
             return {
-                "brk": float(abs(brk_amt if brk_amt is not None else cur_amt)),
-                "tot": float(cur_amt),
+                "brk": float(brk_amt if ws_show_breakdown else 0.0),
+                "tot": float(cur_amt if ws_show_total else 0.0),
             }
         if is_ws_3:
-            return {"brk": 0.0, "tot": float(cur_amt), "var": float(cur_amt)}  # var can be used later
+            return {
+                "brk": float(brk_amt if ws_show_breakdown else 0.0),
+                "tot": float(cur_amt if ws_show_total else 0.0),
+                "var": 0.0,
+            }
         if not has_prior:
             return {"cur": float(cur_amt)}
         return {"cur": float(cur_amt), "pri": float(pri_amt), "delta": float(cur_amt - pri_amt)}
-
-    # ...keep the rest of your indirect method code unchanged...
-    # Just ensure meta.compare uses compare_mode (already normalized) at the end.
 
     def _tb_map(as_of: date) -> Dict[str, Dict[str, Any]]:
         rows = get_trial_balance_asof_fn(company_id, None, as_of) or []
@@ -389,13 +397,11 @@ def build_cashflow_indirect_v2(
             "vat": 0.0,
         }
 
-        # Resolve non-cash depreciation/amortisation from TB / COA metadata
         def _is_depr_or_amort_row(r: Dict[str, Any]) -> bool:
             code = str(r.get("code") or r.get("account") or r.get("account_code") or "").strip().upper()
             name = str(r.get("name") or "").strip().lower()
             category = str(r.get("category") or "").strip().lower()
             section = str(r.get("section") or "").strip().lower()
-
             text = " ".join([code.lower(), name, category, section])
 
             return (
@@ -424,10 +430,9 @@ def build_cashflow_indirect_v2(
             dr_open = float(r_open.get("debit") or r_open.get("debit_total") or 0.0)
             cr_open = float(r_open.get("credit") or r_open.get("credit_total") or 0.0)
 
-            # P&L expense movement for depreciation/amortisation accounts
             delta = (dr_close - cr_close) - (dr_open - cr_open)
-
             noncash_addback += delta
+
             resolved_noncash_accounts.append(
                 str(row_any.get("code") or row_any.get("account") or row_any.get("account_code") or "")
             )
@@ -449,7 +454,6 @@ def build_cashflow_indirect_v2(
             r_open = tb_open.get(code) or {}
             row_any = r_close if r_close else r_open
 
-            # ignore cash/bank balances in WC movement
             if row_any and ac._is_cash_bank(row_any):
                 continue
 
@@ -478,25 +482,172 @@ def build_cashflow_indirect_v2(
         vat_effect         = -wc["vat"]
         payables_effect    = +wc["payables"]
 
-        net_operating = (
-            net_profit
-            + noncash_addback
+        operating_profit_before_wc = net_profit + noncash_addback
+        cash_generated_from_ops = (
+            operating_profit_before_wc
             + receivables_effect
             + payables_effect
             + inventory_effect
             + vat_effect
         )
+        net_operating = cash_generated_from_ops
 
-        lines = [
-            {"code":"NET_PROFIT", "name":"Net profit / (loss)", "values": _val(net_profit, 0.0, abs(net_profit))},
-            {"code":"NONCASH", "name":"Add back: Non-cash items (Depreciation etc.)", "values": _val(noncash_addback, 0.0, abs(noncash_addback))},
-            {"code":"WC_AR", "name":"Change in receivables", "values": _val(receivables_effect, 0.0, abs(receivables_effect))},
-            {"code":"WC_AP", "name":"Change in payables", "values": _val(payables_effect, 0.0, abs(payables_effect))},
-            {"code":"WC_INV", "name":"Change in inventory", "values": _val(inventory_effect, 0.0, abs(inventory_effect))},
-            {"code":"WC_VAT", "name":"Change in VAT / tax balances", "values": _val(vat_effect, 0.0, abs(vat_effect))},
-        ]
+        if is_ws_2 or is_ws_3:
+            lines = [
+                {
+                    "code": "NET_PROFIT",
+                    "name": "Net profit / (loss)",
+                    "row_type": "total",
+                    "values": _val(
+                        net_profit,
+                        0.0,
+                        0.0,
+                        ws_show_total=True,
+                        ws_show_breakdown=False,
+                    ),
+                },
+                {
+                    "code": "ADJUST_HDR",
+                    "name": "Adjustments for:",
+                    "row_type": "header",
+                    "values": _val(0.0, 0.0, 0.0),
+                },
+                {
+                    "code": "NONCASH",
+                    "name": "Depreciation / amortisation / other non-cash items",
+                    "row_type": "breakdown",
+                    "values": _val(
+                        0.0,
+                        0.0,
+                        noncash_addback,
+                        ws_show_total=False,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "OP_BEFORE_WC",
+                    "name": "Operating profit before working capital changes",
+                    "row_type": "subtotal",
+                    "values": _val(
+                        operating_profit_before_wc,
+                        0.0,
+                        0.0,
+                        ws_show_total=True,
+                        ws_show_breakdown=False,
+                    ),
+                },
+                {
+                    "code": "WC_HDR",
+                    "name": "Changes in working capital:",
+                    "row_type": "header",
+                    "values": _val(0.0, 0.0, 0.0),
+                },
+                {
+                    "code": "WC_AR",
+                    "name": "Change in receivables",
+                    "row_type": "breakdown",
+                    "values": _val(
+                        0.0,
+                        0.0,
+                        receivables_effect,
+                        ws_show_total=False,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "WC_INV",
+                    "name": "Change in inventory",
+                    "row_type": "breakdown",
+                    "values": _val(
+                        0.0,
+                        0.0,
+                        inventory_effect,
+                        ws_show_total=False,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "WC_AP",
+                    "name": "Change in payables",
+                    "row_type": "breakdown",
+                    "values": _val(
+                        0.0,
+                        0.0,
+                        payables_effect,
+                        ws_show_total=False,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "WC_VAT",
+                    "name": "Change in VAT / tax balances",
+                    "row_type": "breakdown",
+                    "values": _val(
+                        0.0,
+                        0.0,
+                        vat_effect,
+                        ws_show_total=False,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "CASH_GEN_OPS",
+                    "name": "Cash generated from operations",
+                    "row_type": "subtotal",
+                    "values": _val(
+                        cash_generated_from_ops,
+                        0.0,
+                        0.0,
+                        ws_show_total=True,
+                        ws_show_breakdown=False,
+                    ),
+                },
+                {
+                    "code": "NET_CASH_OP",
+                    "name": "Net cash from operating activities",
+                    "row_type": "total",
+                    "values": _val(
+                        net_operating,
+                        0.0,
+                        0.0,
+                        ws_show_total=True,
+                        ws_show_breakdown=False,
+                    ),
+                },
+            ]
+        else:
+            lines = [
+                {"code":"NET_PROFIT", "name":"Net profit / (loss)", "row_type": "normal", "values": _val(net_profit, 0.0)},
+                {"code":"NONCASH", "name":"Adjust for:", "row_type": "normal", "values": _val(noncash_addback, 0.0)},
+                {"code":"WC_AR", "name":"Change in receivables", "row_type": "normal", "values": _val(receivables_effect, 0.0)},
+                {"code":"WC_AP", "name":"Change in payables", "row_type": "normal", "values": _val(payables_effect, 0.0)},
+                {"code":"WC_INV", "name":"Change in inventory", "row_type": "normal", "values": _val(inventory_effect, 0.0)},
+                {"code":"WC_VAT", "name":"Change in VAT / tax balances", "row_type": "normal", "values": _val(vat_effect, 0.0)},
+            ]
 
-        return {"total": net_operating, "lines": lines}
+        return {
+            "total": net_operating,
+            "lines": lines,
+            "groups": {
+                "adjustments_for": [
+                    {
+                        "code": "NONCASH",
+                        "name": "Depreciation / amortisation / other non-cash items",
+                        "amount": noncash_addback,
+                    }
+                ],
+                "working_capital": [
+                    {"code": "WC_AR", "name": "Change in receivables", "amount": receivables_effect},
+                    {"code": "WC_INV", "name": "Change in inventory", "amount": inventory_effect},
+                    {"code": "WC_AP", "name": "Change in payables", "amount": payables_effect},
+                    {"code": "WC_VAT", "name": "Change in VAT / tax balances", "amount": vat_effect},
+                ],
+            },
+            "subtotals": {
+                "operating_profit_before_wc": operating_profit_before_wc,
+                "cash_generated_from_ops": cash_generated_from_ops,
+            },
+        }
 
     def _cash_journal_sections(df: date, dt: date) -> Dict[str, Any]:
         journals = get_journals_period_fn(company_id, df, dt)
@@ -567,9 +718,15 @@ def build_cashflow_indirect_v2(
 
     operating = {
         "key": "operating",
-        "label": "Net cash from operating activities (Indirect method)",
+        "label": "Cash flows from operating activities",
         "lines": op_cur["lines"],
-        "totals": _val(float(op_cur["total"]), float(op_pri["total"]) if has_prior and op_pri else 0.0, 0.0)
+        "totals": _val(
+            float(op_cur["total"]),
+            float(op_pri["total"]) if has_prior and op_pri else 0.0,
+            0.0,
+            ws_show_total=True if (is_ws_2 or is_ws_3) else False,
+            ws_show_breakdown=False,
+        ),
     }
 
     investing_total_cur = float(jf_cur["totals"]["investing"])
@@ -584,14 +741,27 @@ def build_cashflow_indirect_v2(
         investing_lines.append({
             "code": "DETAIL",
             "name": row.get("account_name") or row.get("description") or "Investing item",
-            "values": _val(cur_amt, 0.0, abs(cur_amt)),
+            "row_type": "breakdown" if (is_ws_2 or is_ws_3) else "normal",
+            "values": _val(
+                0.0 if (is_ws_2 or is_ws_3) else cur_amt,
+                0.0,
+                cur_amt,
+                ws_show_total=False,
+                ws_show_breakdown=True if (is_ws_2 or is_ws_3) else False,
+            ),
         })
 
     investing = {
         "key": "investing",
-        "label": "Net cash from investing activities",
+        "label": "Cash flows from investing activities",
         "lines": investing_lines,
-        "totals": _val(investing_total_cur, investing_total_pri, 0.0)
+        "totals": _val(
+            investing_total_cur,
+            investing_total_pri,
+            0.0,
+            ws_show_total=True if (is_ws_2 or is_ws_3) else False,
+            ws_show_breakdown=False,
+        ),
     }
 
     financing_lines = []
@@ -600,14 +770,27 @@ def build_cashflow_indirect_v2(
         financing_lines.append({
             "code": "DETAIL",
             "name": row.get("account_name") or row.get("description") or "Financing item",
-            "values": _val(cur_amt, 0.0, abs(cur_amt)),
+            "row_type": "breakdown" if (is_ws_2 or is_ws_3) else "normal",
+            "values": _val(
+                0.0 if (is_ws_2 or is_ws_3) else cur_amt,
+                0.0,
+                cur_amt,
+                ws_show_total=False,
+                ws_show_breakdown=True if (is_ws_2 or is_ws_3) else False,
+            ),
         })
 
     financing = {
         "key": "financing",
-        "label": "Net cash from financing activities",
+        "label": "Cash flows from financing activities",
         "lines": financing_lines,
-        "totals": _val(financing_total_cur, financing_total_pri, 0.0)
+        "totals": _val(
+            financing_total_cur,
+            financing_total_pri,
+            0.0,
+            ws_show_total=True if (is_ws_2 or is_ws_3) else False,
+            ws_show_breakdown=False,
+        ),
     }
 
     net_cur = float(op_cur["total"]) + investing_total_cur + financing_total_cur
@@ -653,15 +836,33 @@ def build_cashflow_indirect_v2(
         "sections": [operating, investing, financing],
         "opening_balance": {
             "label": "Opening cash and cash equivalents",
-            "values": _val(opening_cash, 0.0, 0.0)
+            "values": _val(
+                opening_cash,
+                0.0,
+                0.0,
+                ws_show_total=True if (is_ws_2 or is_ws_3) else False,
+                ws_show_breakdown=False,
+            )
         },
         "closing_balance": {
             "label": "Closing cash and cash equivalents",
-            "values": _val(closing_cash, 0.0, 0.0)
+            "values": _val(
+                closing_cash,
+                0.0,
+                0.0,
+                ws_show_total=True if (is_ws_2 or is_ws_3) else False,
+                ws_show_breakdown=False,
+            )
         },
         "net_change": {
             "label": "Net change in cash and cash equivalents",
-            "values": _val(net_cur, net_pri, 0.0)
+            "values": _val(
+                net_cur,
+                net_pri,
+                0.0,
+                ws_show_total=True if (is_ws_2 or is_ws_3) else False,
+                ws_show_breakdown=False,
+            )
         },
         "reconciliation": {
             "delta_from_tb": {
