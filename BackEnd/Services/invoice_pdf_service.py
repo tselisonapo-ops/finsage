@@ -43,7 +43,16 @@ def _extract_customer_name(obj) -> str:
 def _extract_lines(obj) -> list:
     if not isinstance(obj, dict):
         return []
-    lines = obj.get("lines") or obj.get("invoice_lines") or obj.get("quote_lines") or []
+    lines = (
+        obj.get("lines")
+        or obj.get("invoice_lines")
+        or obj.get("quote_lines")
+        or obj.get("line_items")
+        or obj.get("invoice_items")
+        or obj.get("items")
+        or obj.get("invoiceItems")
+        or []
+    )
     return lines if isinstance(lines, list) else []
 
 def _extract_company_address(company: dict) -> str:
@@ -304,9 +313,9 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         Paragraph(company_name, ParagraphStyle(
             "CompanyNameRight",
             parent=styles["BodyTextBoldRight"],
-            fontSize=12.5,
-            leading=14,
-            leftIndent=6,   # 👈 THIS shifts it slightly right
+            fontSize=13.5,
+            leading=15,
+            leftIndent=2,
         ))
     ]
 
@@ -333,9 +342,10 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ])
 
     if reg_vat_rows:
-        reg_table = Table(reg_vat_rows, colWidths=[10 * mm, 40 * mm], hAlign="RIGHT")
+        reg_table = Table(reg_vat_rows, colWidths=[7 * mm, 41 * mm], hAlign="RIGHT")
         reg_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (0, -1), "RIGHT"),
             ("ALIGN", (1, 0), (1, -1), "RIGHT"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -347,7 +357,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     header_right = [[item] for item in company_lines]
 
-    company_block = Table(header_right, colWidths=[55 * mm])
+    company_block = Table(header_right, colWidths=[48 * mm])
     company_block.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -359,7 +369,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     header_table = Table(
         [[left_cell, title_cell, company_block]],
-        colWidths=[35 * mm, content_w - (35 * mm) - (55 * mm), 55 * mm],
+        colWidths=[35 * mm, content_w - (35 * mm) - (48 * mm), 48 * mm],
     )
     header_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),

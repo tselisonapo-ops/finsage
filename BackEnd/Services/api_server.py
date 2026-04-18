@@ -7466,6 +7466,21 @@ Kind regards,
     html_body = f"<pre style='font-family:system-ui,monospace'>{text_body}</pre>"
     subject = f"Invoice {inv_no} from {company_name}"
 
+    # 🔍 DEBUG HERE (before PDF build)
+    print("[INVOICE EMAIL PDF KEYS]", sorted(inv.keys()), flush=True)
+    print(
+        "[INVOICE EMAIL PDF LINES CHECK]",
+        {
+            "lines": len(inv.get("lines") or []),
+            "invoice_lines": len(inv.get("invoice_lines") or []),
+            "quote_lines": len(inv.get("quote_lines") or []),
+            "line_items": len(inv.get("line_items") or []),
+            "invoice_items": len(inv.get("invoice_items") or []),
+            "items": len(inv.get("items") or []),
+        },
+        flush=True,
+    )
+
     try:
         pdf_bytes = generate_invoice_pdf(inv, company=company)
     except Exception as e:

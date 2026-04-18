@@ -48485,7 +48485,7 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         });
-        alert("Receipt email queued ✅");
+        alert("Receipt email sent ✅");
       } catch (err) {
         console.error(err);
         alert(err?.message || "Receipt email failed.");
