@@ -36392,7 +36392,41 @@ class DatabaseService:
         except Exception:
             row["payment_status"] = "unpaid"
 
+        row["lines"] = self.get_invoice_lines(company_id, invoice_id)
+
         return row
+
+
+    def get_invoice_lines(self, company_id: int, invoice_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        SELECT
+            id,
+            company_id,
+            invoice_id,
+            line_no,
+            item_name,
+            description,
+            account_code,
+            quantity,
+            unit_price,
+            discount_amount,
+            net_amount,
+            vat_rate,
+            vat_amount,
+            total_amount,
+            item_type,
+            item_id,
+            item_code,
+            vat_code,
+            revenue_obligation_id
+        FROM {schema}.invoice_lines
+        WHERE company_id = %s
+        AND invoice_id = %s
+        ORDER BY line_no, id;
+        """
+        return self.fetch_all(sql, (int(company_id), int(invoice_id))) or []
 
     def mark_invoice_sent(self, company_id: int, invoice_id: int) -> None:
         """
