@@ -77,7 +77,7 @@ from BackEnd.Services.utils.receipt_token import create_receipt_pdf_token, verif
 
 from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf
 from BackEnd.Services.bank_service import BankService
-from BackEnd.Services.receipt_pdf_service import generate_receipt_pdf
+from BackEnd.Services.receipt_pdf_service import build_receipt_pdf
 from BackEnd.Services.coa_seed_service import seed_company_coa_once
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services.period_core import resolve_company_period, resolve_compare_period
@@ -753,7 +753,7 @@ Kind regards,
     subject = f"Receipt {receipt_no} from {company_name}"
 
     try:
-        pdf_bytes = generate_receipt_pdf(company_id, receipt_id)
+        pdf_bytes = build_receipt_pdf(company_id, receipt_id)
     except Exception as e:
         current_app.logger.exception("Failed to generate receipt PDF")
         return jsonify({"error": "Failed to generate receipt PDF", "detail": str(e)}), 500
