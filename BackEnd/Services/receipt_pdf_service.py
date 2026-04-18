@@ -77,3 +77,5 @@ def build_receipt_pdf(company_id: int, receipt_id: int) -> bytes:
     }
 
     return render_receipt_pdf(receipt_ctx, company_ctx)
+
+generate_receipt_pdf = build_receipt_pdf
