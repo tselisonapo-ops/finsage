@@ -168,21 +168,23 @@
 
     .company-name-right{
       font-weight:900 !important;
-      font-size:16px;   /* +2 exactly as you wanted */
+      font-size:18px;   /* +2 exactly as you wanted */
       color:var(--ink);
       margin-bottom:4px;
     }
 
     .company-details{
-      display:block;          /* ⬅ important */
-      text-align:right;       /* ⬅ align with company name */
+      display:block;
+      text-align:left;
       margin-top:2px;
+      width:190px;
     }
 
     .company-addr-right{
       font-size:11px;
       color:var(--muted);
       line-height:1.45;
+      text-align:left;
     }
 
     .company-contacts-right{
@@ -190,6 +192,7 @@
       font-size:11px;
       color:var(--muted);
       line-height:1.45;
+      text-align:left;
     }
     .company-contacts-right .line{
       display:block;
@@ -197,23 +200,18 @@
 
     .company-ids-right{
       margin-top:8px;
-      text-align:right;
+      text-align:left;
     }
 
     .company-ids-right > div{
-      display:inline-flex;     /* ⬅ not full width */
-      justify-content:flex-end;
+      display:flex;
       gap:6px;
+      margin-bottom:2px;
     }
 
     .id-label{
-      min-width:auto;
-      margin-right:4px;  /* 👈 single-space feel */
       color:var(--muted);
-    }
-
-    .id-val{
-      font-weight:800;
+      min-width:28px;
     }
 
     .id-val{
