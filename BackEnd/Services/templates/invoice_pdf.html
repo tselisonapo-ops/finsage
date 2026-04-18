@@ -177,7 +177,7 @@
       display:block;
       text-align:left;
       margin-top:2px;
-      width:190px;
+      width:180px;
     }
 
     .company-addr-right{
@@ -205,13 +205,14 @@
 
     .company-ids-right > div{
       display:flex;
-      gap:6px;
+      align-items:baseline;
+      gap:4px;
       margin-bottom:2px;
     }
 
     .id-label{
       color:var(--muted);
-      min-width:28px;
+      min-width:24px;
     }
 
     .id-val{
@@ -462,7 +463,13 @@
 {% set addr_raw = b.address or c_addr or "" %}
 
 {# logo url (supports dict keys + absolute conversion) #}
-{% set logo = (company.get('logo_url') or b.logo_url or '') %}
+{% set logo = (
+  company.get('logo_url')
+  or company.get('branding_logo_url')
+  or b.logo_url
+  or invoice.branding_logo_url
+  or ''
+) %}
 {% if logo and logo.startswith('/') %}
   {% set logo = request.host_url.rstrip('/') ~ logo %}
 {% endif %}
