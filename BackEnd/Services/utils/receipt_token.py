@@ -32,4 +32,3 @@ def verify_receipt_pdf_token(token: str) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
     
-

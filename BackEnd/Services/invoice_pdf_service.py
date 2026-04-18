@@ -94,23 +94,46 @@ def _para(text, style, fallback="-"):
     return Paragraph(txt.replace("\n", "<br/>") if txt else fallback, style)
 
 def _load_logo(company: dict, max_w=32 * mm, max_h=32 * mm):
-    """
-    ReportLab Image only if local file path exists.
-    Skip remote URLs because cPanel/ReportLab often won't fetch them reliably.
-    """
     import os
+    from flask import current_app
 
-    logo = _safe(company.get("logo_path")) or _safe(company.get("logo_file")) or _safe(company.get("logo_local_path"))
-    if not logo:
-        return None
-    if not os.path.exists(logo):
+    logo = (
+        _safe(company.get("logo_path"))
+        or _safe(company.get("logo_file"))
+        or _safe(company.get("logo_local_path"))
+        or _safe(company.get("logo"))
+        or _safe(company.get("company_logo"))
+        or _safe(company.get("attachment_path"))
+        or _safe(company.get("logo_attachment_path"))
+    )
+
+    logo_url = (
+        _safe(company.get("logo_url"))
+        or _safe(company.get("branding_logo_url"))  # 🔥 KEY FIX
+    )
+
+    if not logo and logo_url and logo_url.startswith("/uploads/company_logos/"):
+        filename = os.path.basename(logo_url)
+        logo = os.path.join(
+            current_app.root_path,
+            "uploads",
+            "company_logos",
+            filename,
+        )
+
+    print("LOGO DEBUG url:", logo_url)
+    print("LOGO DEBUG path:", logo)
+
+    if not logo or not os.path.exists(logo):
+        print("LOGO DEBUG missing file:", logo)
         return None
 
     try:
         img = Image(logo)
         img._restrictSize(max_w, max_h)
         return img
-    except Exception:
+    except Exception as e:
+        print("LOGO DEBUG load failed:", e)
         return None
 
 
