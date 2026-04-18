@@ -17787,8 +17787,24 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
     ? opLines.map(ln => row(ln?.name || ln?.code || "", ln?.values)).join("")
     : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
 
-  const invTotalRow = row(inv?.label || "Net cash from investing activities", inv?.totals);
-  const finTotalRow = row(fin?.label || "Net cash from financing activities", fin?.totals);
+  const invRows = (inv?.lines || []).length
+    ? (inv?.lines || []).map(ln => row(ln?.name || ln?.code || "", ln?.values)).join("")
+    : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No investing activity.</td></tr>`;
+
+  const invBlock = `
+    ${sectionHeader("Cash flows from investing activities")}
+    ${invRows}
+    ${row(inv?.label || "Net cash from investing activities", inv?.totals)}
+  `;
+  const finRows = (fin?.lines || []).length
+    ? (fin?.lines || []).map(ln => row(ln?.name || ln?.code || "", ln?.values)).join("")
+    : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No financing activity.</td></tr>`;
+
+  const finBlock = `
+    ${sectionHeader("Cash flows from financing activities")}
+    ${finRows}
+    ${row(fin?.label || "Net cash from financing activities", fin?.totals)}
+  `;
   const netRow = row(stmt?.net_change?.label || "Net change in cash and cash equivalents", stmt?.net_change?.values);
 
   return `
@@ -17814,13 +17830,11 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
 
               <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              ${sectionHeader("Cash flows from investing activities")}
-              ${invTotalRow}
+              ${invBlock}
 
               <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              ${sectionHeader("Cash flows from financing activities")}
-              ${finTotalRow}
+              ${finBlock}
 
               <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 

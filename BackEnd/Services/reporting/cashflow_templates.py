@@ -337,9 +337,12 @@ def build_cashflow_indirect_v2(
     prior_to = cfg["prior_to"]
     columns = cfg["columns"]
 
-    def _val(cur_amt: float, pri_amt: float = 0.0) -> Dict[str, float]:
+    def _val(cur_amt: float, pri_amt: float = 0.0, brk_amt: Optional[float] = None) -> Dict[str, float]:
         if is_ws_2:
-            return {"brk": 0.0, "tot": float(cur_amt)}
+            return {
+                "brk": float(abs(brk_amt if brk_amt is not None else cur_amt)),
+                "tot": float(cur_amt),
+            }
         if is_ws_3:
             return {"brk": 0.0, "tot": float(cur_amt), "var": float(cur_amt)}  # var can be used later
         if not has_prior:
@@ -485,12 +488,12 @@ def build_cashflow_indirect_v2(
         )
 
         lines = [
-        {"code":"NET_PROFIT", "name":"Net profit / (loss)", "values": _val(net_profit, 0.0)},
-        {"code":"NONCASH", "name":"Add back: Non-cash items (Depreciation etc.)", "values": _val(noncash_addback, 0.0)},
-        {"code":"WC_AR", "name":"Change in receivables", "values": _val(receivables_effect, 0.0)},
-        {"code":"WC_AP", "name":"Change in payables", "values": _val(payables_effect, 0.0)},
-        {"code":"WC_INV", "name":"Change in inventory", "values": _val(inventory_effect, 0.0)},
-        {"code":"WC_VAT", "name":"Change in VAT / tax balances", "values": _val(vat_effect, 0.0)},
+            {"code":"NET_PROFIT", "name":"Net profit / (loss)", "values": _val(net_profit, 0.0, abs(net_profit))},
+            {"code":"NONCASH", "name":"Add back: Non-cash items (Depreciation etc.)", "values": _val(noncash_addback, 0.0, abs(noncash_addback))},
+            {"code":"WC_AR", "name":"Change in receivables", "values": _val(receivables_effect, 0.0, abs(receivables_effect))},
+            {"code":"WC_AP", "name":"Change in payables", "values": _val(payables_effect, 0.0, abs(payables_effect))},
+            {"code":"WC_INV", "name":"Change in inventory", "values": _val(inventory_effect, 0.0, abs(inventory_effect))},
+            {"code":"WC_VAT", "name":"Change in VAT / tax balances", "values": _val(vat_effect, 0.0, abs(vat_effect))},
         ]
 
         return {"total": net_operating, "lines": lines}
@@ -566,7 +569,7 @@ def build_cashflow_indirect_v2(
         "key": "operating",
         "label": "Net cash from operating activities (Indirect method)",
         "lines": op_cur["lines"],
-        "totals": _val(float(op_cur["total"]), float(op_pri["total"]) if has_prior and op_pri else 0.0),
+        "totals": _val(float(op_cur["total"]), float(op_pri["total"]) if has_prior and op_pri else 0.0, 0.0)
     }
 
     investing_total_cur = float(jf_cur["totals"]["investing"])
@@ -578,17 +581,17 @@ def build_cashflow_indirect_v2(
     investing_lines = []
     for row in jf_cur["lines"]["investing"]:
         cur_amt = float(row.get("amount") or 0.0)
-    investing_lines.append({
-        "code": "DETAIL",
-        "name": row.get("account_name") or row.get("description") or "Investing item",
-        "values": _val(cur_amt, 0.0),
-    })
+        investing_lines.append({
+            "code": "DETAIL",
+            "name": row.get("account_name") or row.get("description") or "Investing item",
+            "values": _val(cur_amt, 0.0, abs(cur_amt)),
+        })
 
     investing = {
         "key": "investing",
         "label": "Net cash from investing activities",
         "lines": investing_lines,
-        "totals": _val(investing_total_cur, investing_total_pri),
+        "totals": _val(investing_total_cur, investing_total_pri, 0.0)
     }
 
     financing_lines = []
@@ -597,18 +600,14 @@ def build_cashflow_indirect_v2(
         financing_lines.append({
             "code": "DETAIL",
             "name": row.get("account_name") or row.get("description") or "Financing item",
-            "values": _val(cur_amt, 0.0),
-            "detail": {
-                "cur": [row],
-                "pri": [],
-            },
+            "values": _val(cur_amt, 0.0, abs(cur_amt)),
         })
 
     financing = {
         "key": "financing",
         "label": "Net cash from financing activities",
         "lines": financing_lines,
-        "totals": _val(financing_total_cur, financing_total_pri),
+        "totals": _val(financing_total_cur, financing_total_pri, 0.0)
     }
 
     net_cur = float(op_cur["total"]) + investing_total_cur + financing_total_cur
@@ -654,24 +653,24 @@ def build_cashflow_indirect_v2(
         "sections": [operating, investing, financing],
         "opening_balance": {
             "label": "Opening cash and cash equivalents",
-            "values": _val(opening_cash, 0.0)
+            "values": _val(opening_cash, 0.0, 0.0)
         },
         "closing_balance": {
             "label": "Closing cash and cash equivalents",
-            "values": _val(closing_cash, 0.0)
+            "values": _val(closing_cash, 0.0, 0.0)
         },
         "net_change": {
             "label": "Net change in cash and cash equivalents",
-            "values": _val(net_cur, net_pri)
+            "values": _val(net_cur, net_pri, 0.0)
         },
         "reconciliation": {
             "delta_from_tb": {
                 "label": "Net change per TB (closing - opening)",
-                "values": _val(delta_cash, delta_cash_pri),
+                "values": _val(delta_cash, delta_cash_pri, 0.0)
             },
             "gap": {
                 "label": "Reconciliation gap (TB delta - cashflow net change)",
-                "values": _val(reconciliation_gap, reconciliation_gap_pri),
+                "values": _val(reconciliation_gap, reconciliation_gap_pri, 0.0)
             },
         },
     }
