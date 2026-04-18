@@ -158,10 +158,10 @@
     }
 
     .company-right{
-      text-align:left;
+      text-align:right;
       padding-top:2px;
-      padding-left:10px;
-      padding-right:0;
+      padding-right:12px;
+      padding-left:0;
     }
 
     .company-name-right{
@@ -172,11 +172,10 @@
     }
 
     .company-details{
-      display:block;
+      display:inline-block;
       text-align:left;
       margin-top:0;
-      width:auto;
-      max-width:210px;
+      width:190px;
     }
 
     .company-addr-right{
@@ -647,15 +646,15 @@
               <div class="totals">
                 <div class="stitle">Totals ({{ ccy }})</div>
                 <table class="totals-kv">
-                  <tr><td>Subtotal</td><td>{{ money(invoice.subtotal_amount) }}</td></tr>
-                  <tr><td>Discount</td><td>{{ money_paren(invoice.discount_amount) }}</td></tr>
-                  <tr><td>VAT</td><td>{{ money(invoice.vat_amount) }}</td></tr>
+                  <tr><td>Subtotal</td><td>{{ ccy }} {{ money(invoice.subtotal_amount) }}</td></tr>
+                  <tr><td>Discount</td><td>{{ ccy }} {{ money_paren(invoice.discount_amount) }}</td></tr>
+                  <tr><td>VAT</td><td>{{ ccy }} {{ money(invoice.vat_amount) }}</td></tr>
                 </table>
 
                 <table class="grand-row">
                   <tr>
                     <td class="glabel">Total</td>
-                    <td class="gamt">{{ money(invoice.total_amount or invoice.total) }}</td>
+                    <td class="gamt">{{ ccy }} {{ money(invoice.total_amount or invoice.total) }}</td>
                   </tr>
                 </table>                  
               </div>
