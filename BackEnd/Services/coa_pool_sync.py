@@ -82,7 +82,7 @@ def sync_company_coa_from_pool(
         "2610",  # Lease Liability - Current
         "2620",  # Lease Liability - Non-Current
         "7110",  # Lease interest expense (your mapped code)
-        "6017",  # Lease amortization expense
+        "6119",  # Lease amortization expense
         "1590",  # ROU accum depreciation placeholder
         "1000",
     }
@@ -122,7 +122,7 @@ def sync_company_coa_from_pool(
         "BS_CL_2610",
         "BS_NCL_2620",
         "PL_OPEX_7110",
-        "PL_OPEX_6017",
+        "PL_OPEX_6119",
         "BS_NCA_1590",
     }
 
@@ -186,7 +186,7 @@ def sync_company_coa_from_pool(
     AND p.template_code::text NOT IN (
         '1410','2310','2300','2105','9002','2200','2325','2350','1730','2360','2215','5305','1500',
         '1000','8010','8011',
-        '1610','2610','2620','7110','6017','1590', '1000'
+        '1610','2610','2620','7110','6119','1590', '1000'
     )
     AND (
         p.template_code_scoped LIKE %s
@@ -390,7 +390,7 @@ def sync_company_coa_from_pool(
             )
 
             is_lease_amort = (
-                tc == "6017"
+                tc == "6119"
                 or ("lease amortization" in txt)
                 or ("lease amortisation" in txt)
                 or ("depreciation" in txt and "lease" in txt)
@@ -461,7 +461,7 @@ def sync_company_coa_from_pool(
             if is_lease_interest and "PL_OPEX_7110" in existing_codes:
                 skipped_controls += 1; existing_scoped.add(tcs); continue
 
-            if is_lease_amort and "PL_OPEX_6017" in existing_codes:
+            if is_lease_amort and "PL_OPEX_6119" in existing_codes:
                 skipped_controls += 1; existing_scoped.add(tcs); continue
 
             if is_rou_accum_depr and "BS_NCA_1590" in existing_codes:

@@ -59,7 +59,7 @@ const ACCOUNT_LABELS: Record<string, string> = {
   BS_CL_2610: "Lease Liability - Current",
   BS_NCL_2620: "Lease Liability - Non-Current",
   PL_OPEX_7110: "Interest Expense",
-  PL_OPEX_6017: "Lease Amortization",
+  PL_OPEX_6119: "Lease Amortization",
   BS_CL_2200: "Direct costs offset",
   PL_OPEX_6019: "Interest Expense (alt)", // keep if you use 6019 in UI
 };

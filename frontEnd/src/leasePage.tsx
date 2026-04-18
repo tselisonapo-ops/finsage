@@ -24,7 +24,7 @@ const LeasePage: React.FC = () => {
             defaultLeaseLiabilityAccount="BS_CL_2610"
             defaultRouAssetAccount="BS_NCA_1610"
             defaultInterestExpenseAccount="PL_OPEX_6019"
-            defaultDepreciationExpenseAccount="PL_OPEX_6017"
+            defaultDepreciationExpenseAccount="PL_OPEX_6119"
             defaultDirectCostOffsetAccount="BS_CL_2200" // or a better specific one you create
           />
         </div>

@@ -397,50 +397,32 @@ def build_cashflow_indirect_v2(
             "vat": 0.0,
         }
 
-        def _is_depr_or_amort_row(r: Dict[str, Any]) -> bool:
-            code = str(r.get("code") or r.get("account") or r.get("account_code") or "").strip().upper()
-            name = str(r.get("name") or "").strip().lower()
-            category = str(r.get("category") or "").strip().lower()
-            section = str(r.get("section") or "").strip().lower()
-            text = " ".join([code.lower(), name, category, section])
-
-            return (
-                "depreciation" in text
-                or "amortization" in text
-                or "amortisation" in text
-                or category == "depreciation & amortization"
-            )
-
         noncash_addback = 0.0
         journals = get_journals_period_fn(company_id, df, dt)
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
 
         resolved_noncash_accounts: List[str] = []
 
-        for code in all_codes:
-            r_close = tb_close.get(code) or {}
-            r_open = tb_open.get(code) or {}
-            row_any = r_close if r_close else r_open
+        # --- Get depreciation/amortisation directly from P&L ---
+        noncash_addback = 0.0
+        pnl_lines = pnl.get("lines") or []
 
-            if not _is_depr_or_amort_row(row_any):
-                continue
+        for ln in pnl_lines:
+            name = str(ln.get("name") or "").lower()
+            amount = float(ln.get("amount") or 0.0)
 
-            dr_close = float(r_close.get("debit") or r_close.get("debit_total") or 0.0)
-            cr_close = float(r_close.get("credit") or r_close.get("credit_total") or 0.0)
-            dr_open = float(r_open.get("debit") or r_open.get("debit_total") or 0.0)
-            cr_open = float(r_open.get("credit") or r_open.get("credit_total") or 0.0)
+            if (
+                "depreciation" in name
+                or "amortisation" in name
+                or "amortization" in name
+            ):
+                noncash_addback += abs(amount)
+                resolved_noncash_accounts.append(name)
 
-            delta = (dr_close - cr_close) - (dr_open - cr_open)
-            noncash_addback += delta
-
-            resolved_noncash_accounts.append(
-                str(row_any.get("code") or row_any.get("account") or row_any.get("account_code") or "")
-            )
-
-        dep_journal_exists = any(
-            str(j.get("source") or "").lower() == "asset_depreciation"
-            for j in journals
-        )
+                dep_journal_exists = any(
+                    str(j.get("source") or "").lower() == "asset_depreciation"
+                    for j in journals
+                )
 
         if dep_journal_exists and not resolved_noncash_accounts:
             raise RuntimeError(

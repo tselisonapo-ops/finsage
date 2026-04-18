@@ -844,8 +844,8 @@ REQUIRED_CONTROL_TEMPLATES = {
     },
 
     # Lease amortization expense exists
-    "6017": {
-        "code": "PL_OPEX_6017",
+    "6119": {
+        "code": "PL_OPEX_6119",
         "name": "Lease Amortization",
         "section": "Expense",
         "category": "Depreciation & Amortization",
@@ -3474,7 +3474,7 @@ class DatabaseService:
 
         # IMPORTANT: you told me to use "7110" for lease interest expense
         lease_interest_def = REQUIRED_CONTROL_TEMPLATES["7110"]["code"]  # (your control map)
-        lease_amort_def    = REQUIRED_CONTROL_TEMPLATES["6017"]["code"]  # PL_OPEX_6017
+        lease_amort_def    = REQUIRED_CONTROL_TEMPLATES["6119"]["code"]  # PL_OPEX_6119
         lease_accum_def    = REQUIRED_CONTROL_TEMPLATES["1590"]["code"]  # BS_NCA_1590 (placeholder)
 
         sql = """
@@ -3748,7 +3748,7 @@ class DatabaseService:
             REQUIRED_CONTROL_TEMPLATES["2610"]["code"],  # Lease Liab Current
             REQUIRED_CONTROL_TEMPLATES["2620"]["code"],  # Lease Liab Non-current
             REQUIRED_CONTROL_TEMPLATES["7110"]["code"],  # Lease Lease Interest Expense"(your chosen)
-            REQUIRED_CONTROL_TEMPLATES["6017"]["code"],  # Lease Amortization
+            REQUIRED_CONTROL_TEMPLATES["6119"]["code"],  # Lease Amortization
             REQUIRED_CONTROL_TEMPLATES["1590"]["code"],  # Accum Dep placeholder
 
             REQUIRED_CONTROL_TEMPLATES["1000"]["code"],
@@ -4340,7 +4340,7 @@ class DatabaseService:
                 code_numeric=7110,
             ),
             dict(
-                code="PL_OPEX_6017",
+                code="PL_OPEX_6119",
                 name="Lease Amortization",
                 section="Expense",
                 category="Depreciation & Amortization",
@@ -4352,13 +4352,13 @@ class DatabaseService:
                 is_working_capital=False,
                 is_cash_equiv=False,
                 is_non_cash_addback=True,
-                template_code="6017",
+                template_code="6119",
                 code_family="PL_OPEX",
-                code_numeric=6017,
+                code_numeric=6119,
             ),
             dict(
                 code="BS_NCA_1590",
-                name="Accumulated Depreciation - Equipment (placeholder for ROU Accum Dep)",
+                name="Accumulated Depreciation - Right-of-Use Asset",
                 section="Asset",
                 category="Accumulated Depreciation",
                 description="Contra-asset placeholder for ROU accumulated depreciation",
@@ -4413,7 +4413,7 @@ class DatabaseService:
             "2610": "BS_CL_2610",
             "2620": "BS_NCL_2620",
             "7110": "PL_OPEX_7110",
-            "6017": "PL_OPEX_6017",
+            "6119": "PL_OPEX_6119",
             "1590": "BS_NCA_1590",
             "1000": "BS_CA_1000",
         }
@@ -4633,7 +4633,7 @@ class DatabaseService:
         if key == "LEASE_INTEREST_EXP":
             return _resolve_candidate(settings.get("lease_interest_expense_code"), "7110")
         if key == "LEASE_AMORTIZATION":
-            return _resolve_candidate(settings.get("lease_amortization_code"), "6017")
+            return _resolve_candidate(settings.get("lease_amortization_code"), "6119")
         if key == "LEASE_ACCUM_DEPR":
             return _resolve_candidate(settings.get("lease_accumulated_depreciation_code"), "1590")
 
@@ -20671,7 +20671,7 @@ class DatabaseService:
             "2610": "BS_CL_2610",
             "2620": "BS_NCL_2620",
             "7110": "PL_OPEX_7110",
-            "6017": "PL_OPEX_6017",
+            "6119": "PL_OPEX_6119",
             "1590": "BS_NCA_1590",
         }
 
@@ -20741,7 +20741,7 @@ class DatabaseService:
             "BS_CL_2610",
             "BS_NCL_2620",
             "PL_OPEX_7110",
-            "PL_OPEX_6017",
+            "PL_OPEX_6119",
             "BS_NCA_1590",
 
             "BS_EQ_3100",
@@ -20849,7 +20849,7 @@ class DatabaseService:
                 'BS_CL_2610',
                 'BS_NCL_2620',
                 'PL_OPEX_7110',
-                'PL_OPEX_6017',
+                'PL_OPEX_6119',
                 'BS_NCA_1590',
 
                 'BS_EQ_3100',
@@ -24840,7 +24840,7 @@ class DatabaseService:
             REQUIRED_CONTROL_TEMPLATES["2610"]["code"],
             REQUIRED_CONTROL_TEMPLATES["2620"]["code"],
             REQUIRED_CONTROL_TEMPLATES["7110"]["code"],
-            REQUIRED_CONTROL_TEMPLATES["6017"]["code"],
+            REQUIRED_CONTROL_TEMPLATES["6119"]["code"],
             REQUIRED_CONTROL_TEMPLATES["1590"]["code"],
             REQUIRED_CONTROL_TEMPLATES["1410"]["code"],   # ✅ VAT input
             int(company_id),
