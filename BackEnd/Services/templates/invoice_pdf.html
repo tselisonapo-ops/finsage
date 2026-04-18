@@ -133,12 +133,11 @@
     }
     .header-table td{ vertical-align:top; }
 
-    /* 3 columns (PDF-safe) */
+    /* 3 columns aligned like PDF builder */
     .h-left  { width:22%; }
     .h-mid   { width:33%; text-align:center; }
-    .h-right { width:45%; text-align:right; }
+    .h-right { width:45%; text-align:left; }
 
-    /* Bigger logo + slightly lower */
     .logo-box{
       width:110px;
       height:110px;
@@ -146,7 +145,9 @@
       border-radius:16px;
       background:#fff;
       overflow:hidden;
-      display:inline-block;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
       margin-top:10px;
     }
     .logo-box img{
@@ -156,18 +157,26 @@
       display:block;
     }
 
-    /* Right column: anchored right; details left under name */
     .company-right{
-      text-align:right;
+      text-align:left;
       padding-top:2px;
-      padding-right:12px;
+      padding-left:10px;
+      padding-right:0;
+    }
+
+    .company-name-right{
+      font-weight:900 !important;
+      font-size:14px;
+      color:var(--ink);
+      margin-bottom:6px;
     }
 
     .company-details{
-      display:inline-block;
+      display:block;
       text-align:left;
-      margin-top:6px;
-      width:190px;
+      margin-top:0;
+      width:auto;
+      max-width:210px;
     }
 
     .company-addr-right{
@@ -182,7 +191,9 @@
       color:var(--muted);
       line-height:1.45;
     }
-    .company-contacts-right .line{ display:block; } /* phone then email */
+    .company-contacts-right .line{
+      display:block;
+    }
 
     .company-ids-right{
       margin-top:8px;
@@ -190,13 +201,15 @@
       color:var(--ink);
       line-height:1.35;
     }
+
     .company-ids-right > div{
       display:flex;
+      justify-content:flex-start;
       gap:10px;
     }
 
     .id-label{
-      min-width:56px;   /* ⬅ gives labels breathing room */
+      min-width:42px;
       color:var(--muted);
     }
 
@@ -257,15 +270,24 @@
     table.lines thead th{
       background:#F4F6F7 !important;
       border-bottom:1px solid #D6DAD8 !important;
-      padding:9px 8px;
+      padding:6px 8px;
       text-transform:uppercase;
       letter-spacing:.3px;
       font-size:11px;
-      text-align:left;
       color:#0F2A3D !important;
       white-space:nowrap;
+      vertical-align:middle;
     }
 
+    table.lines th.qty,
+    table.lines th.unit,
+    table.lines th.vat{
+      text-align:center !important;
+    }
+
+    table.lines th.total{
+      text-align:right !important;
+    }
     table.lines tbody td{
       border-top:1px solid #EEF1F3;
       padding:9px 8px;
@@ -339,12 +361,6 @@
       font-weight:800;
       color:#0F2A3D;
       white-space:nowrap;
-    }
-
-    .company-name-right{
-      font-weight:900 !important;
-      font-size:14px;
-      color:var(--ink);
     }
 
     .grand{
@@ -506,21 +522,31 @@
                     </div>
                   {% endif %}
 
-                  <div class="company-contacts-right">
-                    {% set phone_out = b.contact_phone or c_phone %}
-                    {% set email_out = b.contact_email or c_email %}
-                    {% if phone_out %}<span class="line">{{ phone_out }}</span>{% endif %}
-                    {% if email_out %}<span class="line">{{ email_out }}</span>{% endif %}
-                  </div>
+                  {% set phone_out = b.contact_phone or c_phone %}
+                  {% set email_out = b.contact_email or c_email %}
+                  {% if phone_out or email_out %}
+                    <div class="company-contacts-right">
+                      {% if phone_out %}<span class="line">{{ phone_out }}</span>{% endif %}
+                      {% if email_out %}<span class="line">{{ email_out }}</span>{% endif %}
+                    </div>
+                  {% endif %}
 
-                  <div class="company-ids-right">
-                    {% if b.reg_no or c_reg %}
-                      <div><span class="id-label">Reg #</span><span class="id-val">{{ b.reg_no or c_reg }}</span></div>
-                    {% endif %}
-                    {% if b.vat_no or c_vat %}
-                      <div><span class="id-label">VAT</span><span class="id-val">{{ b.vat_no or c_vat }}</span></div>
-                    {% endif %}
-                  </div>
+                  {% if b.reg_no or c_reg or b.vat_no or c_vat %}
+                    <div class="company-ids-right">
+                      {% if b.reg_no or c_reg %}
+                        <div>
+                          <span class="id-label">Reg</span>
+                          <span class="id-val">{{ b.reg_no or c_reg }}</span>
+                        </div>
+                      {% endif %}
+                      {% if b.vat_no or c_vat %}
+                        <div>
+                          <span class="id-label">VAT</span>
+                          <span class="id-val">{{ b.vat_no or c_vat }}</span>
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% endif %}
                 </div>
               </div>
             </td>
@@ -580,9 +606,9 @@
                   <td><div class="item-name">{{ ln.item_name or "—" }}</div></td>
                   <td>{% if ln.description %}<div class="item-desc">{{ ln.description }}</div>{% endif %}</td>
                   <td class="qty">{{ qty_int(ln.quantity) }}</td>
-                  <td class="unit">{{ ccy }} {{ money(ln.unit_price) }}</td>
-                  <td class="vat">{{ ccy }} {{ money(ln.vat_amount) }}</td>
-                  <td class="total">{{ ccy }} {{ money(ln.total_amount) }}</td>
+                  <td class="unit">{{ money(ln.unit_price) }}</td>
+                  <td class="vat">{{ money(ln.vat_amount) }}</td>
+                  <td class="total">{{ money(ln.total_amount) }}</td>
                 </tr>
               {% endfor %}
             {% else %}
@@ -619,17 +645,17 @@
 
             <td class="bottom-right">
               <div class="totals">
-                <div class="stitle">Totals</div>
+                <div class="stitle">Totals ({{ ccy }})</div>
                 <table class="totals-kv">
-                  <tr><td>Subtotal</td><td>{{ ccy }} {{ money(invoice.subtotal_amount) }}</td></tr>
-                  <tr><td>Discount</td><td>{{ ccy }} {{ money_paren(invoice.discount_amount) }}</td></tr>
-                  <tr><td>VAT</td><td>{{ ccy }} {{ money(invoice.vat_amount) }}</td></tr>
+                  <tr><td>Subtotal</td><td>{{ money(invoice.subtotal_amount) }}</td></tr>
+                  <tr><td>Discount</td><td>{{ money_paren(invoice.discount_amount) }}</td></tr>
+                  <tr><td>VAT</td><td>{{ money(invoice.vat_amount) }}</td></tr>
                 </table>
 
                 <table class="grand-row">
                   <tr>
                     <td class="glabel">Total</td>
-                    <td class="gamt">{{ ccy }} {{ money(invoice.total_amount or invoice.total) }}</td>
+                    <td class="gamt">{{ money(invoice.total_amount or invoice.total) }}</td>
                   </tr>
                 </table>                  
               </div>
