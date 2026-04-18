@@ -22,8 +22,13 @@ from reportlab.platypus import (
 def _money(x) -> float:
     return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-def _fmt_currency(amount, currency="ZAR") -> str:
-    return f"{currency} {_money(amount):,.2f}"
+def _fmt_currency(amount, currency=None) -> str:
+    curr = _safe(currency) or ""
+    value = f"{_money(amount):,.2f}"
+    return f"{curr} {value}".strip()
+
+def _fmt_amount(amount) -> str:
+    return f"{_money(amount):,.2f}"
 
 def _safe(value, default="") -> str:
     if value is None:
@@ -153,7 +158,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ))
     styles.add(ParagraphStyle(
         name="FS_SmallMutedRight",
-        parent=styles["FS_SmallMuted"], 
+        parent=styles["FS_SmallMuted"],
         alignment=TA_LEFT,
     ))
     styles.add(ParagraphStyle(
@@ -254,7 +259,11 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     invoice_date = _safe(doc_obj.get("invoice_date") or doc_obj.get("date"))
     due_date = _safe(doc_obj.get("due_date"))
-    currency = _safe(doc_obj.get("currency"), "ZAR")
+    currency = (
+        _safe(doc_obj.get("currency"))
+        or _safe(company.get("currency"))
+        or ""
+    )
     notes = _safe(doc_obj.get("notes"))
 
     subtotal = _money(doc_obj.get("subtotal_amount") or doc_obj.get("net_amount") or 0)
@@ -297,6 +306,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     story.append(Spacer(1, 8 * mm))
 
     # header
+    # header
     logo = _load_logo(company)
     if logo:
         left_cell = logo
@@ -309,62 +319,56 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     title_cell = Paragraph(title.upper(), styles["DocTitleCenter"])
 
+    company_name_style = ParagraphStyle(
+        "CompanyNameLeft",
+        parent=styles["BodyTextBold"],
+        fontSize=13.5,
+        leading=16,
+        alignment=TA_LEFT,
+        leftIndent=0,
+        spaceAfter=3,
+    )
+
+    company_value_style = ParagraphStyle(
+        "CompanyValueLeft",
+        parent=styles["BodyTextBold"],
+        alignment=TA_LEFT,
+    )
+
     company_lines = [
-        Paragraph(company_name, ParagraphStyle(
-            "CompanyNameRight",
-            parent=styles["BodyTextBoldRight"],
-            fontSize=13.5,
-            leading=15,
-            leftIndent=2,
-        ))
+        [Paragraph(company_name, company_name_style)]
     ]
 
     addr_lines = _split_address_lines(company_address)
     if addr_lines:
-        company_lines.append(Spacer(1, 2))
-        company_lines.append(Paragraph("<br/>".join(addr_lines), styles["FS_SmallMutedRight"]))
+        company_lines.append([
+            Paragraph("<br/>".join(addr_lines), styles["FS_SmallMutedRight"])
+        ])
 
     contact_bits = [x for x in [company_phone, company_email] if x]
     if contact_bits:
-        company_lines.append(Spacer(1, 3))
-        company_lines.append(Paragraph("<br/>".join(contact_bits), styles["FS_SmallMutedRight"]))
+        company_lines.append([
+            Paragraph("<br/>".join(contact_bits), styles["FS_SmallMutedRight"])
+        ])
 
-    reg_vat_rows = []
     if company_reg:
-        reg_vat_rows.append([
-            Paragraph("Reg", styles["FS_SmallMuted"]),
-            Paragraph(company_reg, styles["BodyTextBoldRight"]),
+        company_lines.append([
+            Paragraph(f"<b>Reg:</b> {company_reg}", company_value_style)
         ])
+
     if company_vat:
-        reg_vat_rows.append([
-            Paragraph("VAT", styles["FS_SmallMuted"]),
-            Paragraph(company_vat, styles["BodyTextBoldRight"]),
+        company_lines.append([
+            Paragraph(f"<b>VAT:</b> {company_vat}", company_value_style)
         ])
 
-    if reg_vat_rows:
-        reg_table = Table(reg_vat_rows, colWidths=[7 * mm, 41 * mm], hAlign="RIGHT")
-        reg_table.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("ALIGN", (0, 0), (0, -1), "RIGHT"),
-            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
-        company_lines.append(Spacer(1, 2))
-        company_lines.append(reg_table)
-
-    header_right = [[item] for item in company_lines]
-
-    company_block = Table(header_right, colWidths=[48 * mm])
+    company_block = Table(company_lines, colWidths=[48 * mm])
     company_block.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
 
     header_table = Table(
@@ -373,6 +377,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     )
     header_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (0, 0), "LEFT"),
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
         ("ALIGN", (2, 0), (2, 0), "LEFT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -491,9 +496,9 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
             Paragraph(item_name, styles["BodyTextBold"]),
             Paragraph(desc or "", styles["BodyTextMuted"]),
             Paragraph(qty_text, ParagraphStyle("qty_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
-            Paragraph(_fmt_currency(unit_price, currency).replace(" ", "&nbsp;"), ParagraphStyle("unit_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
-            Paragraph(_fmt_currency(vat_amount, currency).replace(" ", "&nbsp;"), ParagraphStyle("vat_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
-            Paragraph(_fmt_currency(total_amount, currency), ParagraphStyle("total_right", parent=styles["BodyTextSmall"], alignment=TA_RIGHT)),
+            Paragraph(_fmt_amount(unit_price), ParagraphStyle("unit_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
+            Paragraph(_fmt_amount(vat_amount), ParagraphStyle("vat_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
+            Paragraph(_fmt_amount(total_amount), ParagraphStyle("total_right", parent=styles["BodyTextSmall"], alignment=TA_RIGHT)),
         ])
 
     if len(line_rows) == 1:
@@ -594,15 +599,15 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ]))
 
     # bottom right
-    discount_text = f"({_fmt_currency(abs(discount), currency)})" if discount else _fmt_currency(0, currency)
+    discount_text = f"({_fmt_amount(abs(discount))})" if discount else _fmt_amount(0)
 
     inner_left = right_bottom_w * 0.42
     inner_right = right_bottom_w * 0.58
 
     totals_inner = Table([
-        [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_currency(subtotal, currency), styles["BodyTextBoldRight"])],
+        [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_amount(subtotal), styles["BodyTextBoldRight"])],
         [Paragraph("Discount", styles["BodyTextMuted"]), Paragraph(discount_text, styles["BodyTextBoldRight"])],
-        [Paragraph("VAT", styles["BodyTextMuted"]), Paragraph(_fmt_currency(vat_total, currency), styles["BodyTextBoldRight"])],
+        [Paragraph("VAT", styles["BodyTextMuted"]), Paragraph(_fmt_amount(vat_total), styles["BodyTextBoldRight"])],
     ], colWidths=[inner_left, inner_right])
     totals_inner.setStyle(TableStyle([
         ("LINEABOVE", (0, 1), (-1, -1), 0.35, colors.HexColor("#EEF1F3")),
@@ -614,7 +619,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ]))
 
     grand_table = Table([
-        [Paragraph("Total", styles["BodyTextBold"]), Paragraph(_fmt_currency(grand_total, currency), styles["TotalBig"])]
+        [Paragraph("Total", styles["BodyTextBold"]), Paragraph(_fmt_amount(grand_total), styles["TotalBig"])]
     ], colWidths=[inner_left, inner_right])
     grand_table.setStyle(TableStyle([
         ("LINEABOVE", (0, 0), (-1, 0), 0.7, colors.HexColor("#D6DAD8")),
@@ -625,7 +630,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ]))
 
     totals_box = Table([
-        [Paragraph("TOTALS", styles["BoxTitle"])],
+        [Paragraph(f"TOTALS ({currency})", styles["BoxTitle"])],
         [totals_inner],
         [grand_table],
     ], colWidths=[right_bottom_w])
