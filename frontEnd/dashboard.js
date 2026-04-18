@@ -41583,7 +41583,15 @@ function wireQuotesScreen() {
 
     tr.innerHTML = `
       <td class="px-3 py-2">
-        <input class="q-item w-full border rounded px-2 py-1" value="${escapeHtml(line.item_name || "")}">
+        <input
+          class="q-item q-item-pick w-full border rounded px-2 py-1"
+          list="quoteItemCatalogList"
+          value="${escapeHtml(line.item_name || "")}"
+          placeholder="Select or type item/service"
+        >
+        <input type="hidden" class="q-item-type" value="">
+        <input type="hidden" class="q-item-id" value="">
+        <input type="hidden" class="q-item-code" value="">
       </td>
 
       <td class="px-3 py-2">
@@ -41630,7 +41638,8 @@ function wireQuotesScreen() {
     // ✅ fill revenue dropdown now
     const sel = tr.querySelector(".q-acct");
     fillRevenueSelect(sel, line.account_code);
-
+    setQuoteLineCatalogMeta(tr, null);
+    bindQuoteLineItemPicker(tr);
     // delete line
     tr.querySelector(".q-del").addEventListener("click", () => {
       tr.remove();
@@ -41649,6 +41658,123 @@ function wireQuotesScreen() {
 
     return tr;
   }
+
+  // --------------------------------------
+  // Quote Item Catalog (services + inventory)
+  // --------------------------------------
+  window._QUOTE_ITEM_CATALOG = window._QUOTE_ITEM_CATALOG || {};
+  window._QUOTE_ITEM_CATALOG.byValue = window._QUOTE_ITEM_CATALOG.byValue || new Map();
+  window._QUOTE_ITEM_CATALOG.byCode  = window._QUOTE_ITEM_CATALOG.byCode  || new Map();
+  window._QUOTE_ITEM_CATALOG.byName  = window._QUOTE_ITEM_CATALOG.byName  || new Map();
+
+  async function loadQuoteItemCatalog() {
+    const dl = document.getElementById("quoteItemCatalogList");
+    if (!dl) return window._QUOTE_ITEM_CATALOG;
+
+    const byValue = window._QUOTE_ITEM_CATALOG.byValue;
+    const byCode  = window._QUOTE_ITEM_CATALOG.byCode;
+    const byName  = window._QUOTE_ITEM_CATALOG.byName;
+
+    byValue.clear();
+    byCode.clear();
+    byName.clear();
+    dl.innerHTML = "";
+
+    const safe = (v) => String(v ?? "").replace(/\|/g, "/").trim();
+    const norm = (s) => String(s || "").trim().toLowerCase();
+
+    const addOpt = (meta) => {
+      const type = safe(meta.type);
+      const id   = safe(meta.id);
+      const code = safe(meta.code);
+      const name = safe(meta.name);
+
+      const friendly = code ? `${name} (${code})` : name;
+
+      const opt = document.createElement("option");
+      opt.value = friendly;
+      opt.dataset.type = type;
+      opt.dataset.id = id ? String(id) : "";
+      opt.dataset.code = code || "";
+      opt.dataset.name = name || "";
+      opt.dataset.price = meta.price != null ? String(meta.price) : "";
+      opt.dataset.revenue_account = meta.revenue_account || "";
+      opt.dataset.vat_code = meta.vat_code || "";
+
+      dl.appendChild(opt);
+
+      byValue.set(friendly, meta);
+      if (code) byCode.set(norm(code), meta);
+      if (name) byName.set(norm(name), meta);
+      if (code && name) byValue.set(`${code} - ${name}`, meta);
+    };
+
+    // Services
+    let serviceItems = [];
+    try {
+      const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+      serviceItems = await window.apiListServiceItems?.(cid) || [];
+    } catch (e) {
+      console.warn("[Quotes] service catalog load failed", e);
+    }
+
+    serviceItems.forEach(s => addOpt({
+      type: "service",
+      id: s.id ?? s.service_id ?? null,
+      code: s.code || s.sku || "",
+      name: s.name || s.description || "Service",
+      price: Number(s.price || s.unit_price || 0),
+      revenue_account: s.revenue_account || s.income_account || null,
+      vat_code: s.vat_code || null,
+    }));
+
+    // Inventory
+    if (window.isInventoryEnabledForCompany?.()) {
+      let invItems = [];
+      try {
+        if (typeof window.ensureInvItemCache === "function") {
+          await window.ensureInvItemCache();
+        }
+        invItems = await (window.apiListInventoryItems?.() || []);
+      } catch (e) {
+        console.warn("[Quotes] inventory catalog load failed", e);
+      }
+
+      invItems.forEach(i => addOpt({
+        type: "inventory",
+        id: i.id ?? i.item_id ?? null,
+        code: i.sku || i.code || "",
+        name: i.name || "Item",
+        price: Number(i.sales_price || i.price || 0),
+        revenue_account: i.income_account || i.revenue_account || null,
+        vat_code: i.vat_code || null,
+      }));
+    }
+
+    return window._QUOTE_ITEM_CATALOG;
+  }
+  window.loadQuoteItemCatalog = loadQuoteItemCatalog;
+
+  function parseQuoteCatalogValue(v) {
+    const s = String(v || "").trim();
+    if (!s) return null;
+
+    const cat = window._QUOTE_ITEM_CATALOG;
+    if (!cat) return null;
+
+    const direct = cat.byValue?.get(s);
+    if (direct) return direct;
+
+    const k = s.toLowerCase();
+    const byCode = cat.byCode?.get(k);
+    if (byCode) return byCode;
+
+    const byName = cat.byName?.get(k);
+    if (byName) return byName;
+
+    return null; // free text still allowed
+  }
+  window.parseQuoteCatalogValue = parseQuoteCatalogValue;
 
   async function renderQuoteLines(lines) {
     await ensureRevenueAccountsLoaded();
@@ -41736,6 +41862,114 @@ function wireQuotesScreen() {
     selectedLineIndex = -1;
   }
   window.clearQuoteFormToTemplate = clearQuoteFormToTemplate
+
+  function setQuoteLineCatalogMeta(row, metaOrNull) {
+    const t = row.querySelector(".q-item-type");
+    const id = row.querySelector(".q-item-id");
+    const code = row.querySelector(".q-item-code");
+
+    if (!t || !id || !code) return;
+
+    if (!metaOrNull) {
+      t.value = "gl";
+      id.value = "";
+      code.value = "";
+      return;
+    }
+
+    t.value = metaOrNull.type || "gl";
+    id.value = metaOrNull.id != null ? String(metaOrNull.id) : "";
+    code.value = metaOrNull.code || "";
+  }
+  window.setQuoteLineCatalogMeta = setQuoteLineCatalogMeta;
+
+  function bindQuoteLineItemPicker(row) {
+    if (!row || row.dataset.quoteItemPickBound === "1") return;
+    row.dataset.quoteItemPickBound = "1";
+
+    const pick = row.querySelector(".q-item-pick");
+    if (!pick) return;
+
+    const descEl  = row.querySelector(".q-desc");
+    const priceEl = row.querySelector(".q-price");
+    const acctEl  = row.querySelector(".q-acct");
+    const vatEl   = row.querySelector(".q-vat");
+
+    if (priceEl && !priceEl.dataset.bound) {
+      priceEl.dataset.bound = "1";
+      priceEl.addEventListener("input", () => (row.dataset.priceTouched = "1"));
+      priceEl.addEventListener("change", () => (row.dataset.priceTouched = "1"));
+    }
+
+    if (acctEl && !acctEl.dataset.bound) {
+      acctEl.dataset.bound = "1";
+      acctEl.addEventListener("change", () => (row.dataset.acctTouched = "1"));
+    }
+
+    if (vatEl && !vatEl.dataset.bound) {
+      vatEl.dataset.bound = "1";
+      vatEl.addEventListener("input", () => (row.dataset.vatTouched = "1"));
+      vatEl.addEventListener("change", () => (row.dataset.vatTouched = "1"));
+    }
+
+    const applyMeta = (meta) => {
+      setQuoteLineCatalogMeta(row, meta);
+
+      if (descEl && !String(descEl.value || "").trim()) {
+        descEl.value = meta.name || "";
+      }
+
+      const curPrice = Number(String(priceEl?.value || "0").replace(/,/g, "")) || 0;
+      if (priceEl && row.dataset.priceTouched !== "1" && curPrice === 0 && meta.price != null) {
+        priceEl.value = String(meta.price);
+      }
+
+      if (acctEl && row.dataset.acctTouched !== "1" && meta.revenue_account && !acctEl.value) {
+        acctEl.value = String(meta.revenue_account);
+      }
+
+      const vatMap = {
+        STANDARD: 15,
+        ZERO: 0,
+        EXEMPT: 0,
+      };
+
+      const curVat = Number(String(vatEl?.value || "0").replace(/,/g, "")) || 0;
+      const metaVatRaw = String(meta.vat_code || "").trim().toUpperCase();
+      const mappedVat =
+        metaVatRaw in vatMap ? vatMap[metaVatRaw] : Number(meta.vat_code);
+
+      if (
+        vatEl &&
+        row.dataset.vatTouched !== "1" &&
+        (curVat === 0 || curVat === 15) &&
+        Number.isFinite(mappedVat)
+      ) {
+        vatEl.value = String(mappedVat);
+      }
+
+      recalcQuoteTotals();
+    };
+
+    const clearMeta = () => {
+      setQuoteLineCatalogMeta(row, null);
+    };
+
+    const resolve = () => {
+      const meta = parseQuoteCatalogValue(pick.value);
+      if (meta) applyMeta(meta);
+      else clearMeta();
+    };
+
+    pick.addEventListener("change", resolve);
+    pick.addEventListener("blur", resolve);
+    pick.addEventListener("input", () => {
+      const meta = parseQuoteCatalogValue(pick.value);
+      if (meta) applyMeta(meta);
+      else clearMeta();
+    });
+  }
+  window.bindQuoteLineItemPicker = bindQuoteLineItemPicker;
 
   // --- Save Draft (create or update) ---
   async function saveDraftQuote({ clearAfterCreate = true, keepCustomer = true } = {}) {
@@ -41950,6 +42184,15 @@ window.enterQuotesScreen = async function enterQuotesScreen() {
     console.log("[Quotes] renderQuotesCustomerList called");
   } catch (e) {
     console.warn("[Quotes] renderQuotesCustomerList failed", e);
+  }
+
+  try {
+    window._QUOTE_ITEM_CATALOG_READY =
+      window._QUOTE_ITEM_CATALOG_READY || window.loadQuoteItemCatalog?.();
+
+    await window._QUOTE_ITEM_CATALOG_READY;
+  } catch (e) {
+    console.warn("[Quotes] item catalog load failed", e);
   }
 
   // 2) Populate quote customer datalist from CUSTOMER_CACHE
