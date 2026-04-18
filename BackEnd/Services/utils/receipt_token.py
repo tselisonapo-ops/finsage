@@ -31,3 +31,5 @@ def verify_receipt_pdf_token(token: str) -> Optional[Dict[str, Any]]:
         return {"company_id": company_id, "receipt_id": receipt_id, "exp": exp}
     except Exception:
         return None
+    
+

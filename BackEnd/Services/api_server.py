@@ -6977,6 +6977,14 @@ def invoice_pdf(company_id: int, invoice_id: int):
         (company_id,),
     ) or {}
 
+    logo_url = company.get("logo_url")
+
+    if logo_url and logo_url.startswith("/uploads/company_logos/"):
+        filename = os.path.basename(logo_url)
+        local_path = os.path.join(current_app.root_path, "uploads", "company_logos", filename)
+
+        company["logo_path"] = local_path  # 🔥 THIS is the key fix
+
     try:
         pdf_bytes = generate_invoice_pdf(inv, company=company)
 
@@ -7271,7 +7279,10 @@ def upload_company_logo(company_id: int):
     # URL served by endpoint below
     logo_url = f"/uploads/company_logos/{filename}"
 
-    branding = db_service.upsert_company_branding(company_id, {"logo_url": logo_url})
+    branding = db_service.upsert_company_branding(company_id, {
+        "logo_url": logo_url,
+        "logo_path": path,
+    })
     db_service.audit_log(
         company_id=company_id,
         actor_user_id=actor_user_id,

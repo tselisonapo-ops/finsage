@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from flask import Blueprint, jsonify, request, make_response, current_app, render_template, url_for
-
+import os
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.emailer import send_mail
@@ -122,6 +122,14 @@ Kind regards,
 """
     html_body = f"<pre style='font-family:system-ui,monospace'>{text_body}</pre>"
     subject = f"Receipt {receipt_no} from {company_name}"
+
+    logo_url = company.get("logo_url")
+
+    if logo_url and logo_url.startswith("/uploads/company_logos/"):
+        filename = os.path.basename(logo_url)
+        local_path = os.path.join(current_app.root_path, "uploads", "company_logos", filename)
+
+        company["logo_path"] = local_path
 
     try:
         pdf_bytes = build_receipt_pdf(company_id, receipt_id)
