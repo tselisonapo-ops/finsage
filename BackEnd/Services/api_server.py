@@ -6977,15 +6977,21 @@ def invoice_pdf(company_id: int, invoice_id: int):
         (company_id,),
     ) or {}
 
-    logo_url = company.get("logo_url")
-
+    logo_url = (company.get("logo_url") or "").strip()
     if logo_url and logo_url.startswith("/uploads/company_logos/"):
         filename = os.path.basename(logo_url)
-        local_path = os.path.join(current_app.root_path, "uploads", "company_logos", filename)
+        company["logo_path"] = os.path.join(
+            current_app.root_path,
+            "uploads",
+            "company_logos",
+            filename,
+        )
 
-        company["logo_path"] = local_path  # 🔥 THIS is the key fix
-
+    print("EMAIL PDF logo_url:", company.get("logo_url"), flush=True)
+    print("EMAIL PDF logo_path:", company.get("logo_path"), flush=True)
+    print("EMAIL PDF logo exists:", os.path.exists(company.get("logo_path") or ""), flush=True)
     try:
+        
         pdf_bytes = generate_invoice_pdf(inv, company=company)
 
         if not pdf_bytes or not isinstance(pdf_bytes, (bytes, bytearray)):
