@@ -154,7 +154,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     styles.add(ParagraphStyle(
         name="FS_SmallMutedRight",
         parent=styles["FS_SmallMuted"], 
-        alignment=TA_RIGHT,
+        alignment=TA_LEFT,
     ))
     styles.add(ParagraphStyle(
         name="SmallLabel",
@@ -359,7 +359,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
     company_block = Table(header_right, colWidths=[48 * mm])
     company_block.setStyle(TableStyle([
-        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -374,7 +374,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     header_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ALIGN", (1, 0), (1, 0), "CENTER"),
-        ("ALIGN", (2, 0), (2, 0), "RIGHT"),
+        ("ALIGN", (2, 0), (2, 0), "LEFT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -491,8 +491,8 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
             Paragraph(item_name, styles["BodyTextBold"]),
             Paragraph(desc or "", styles["BodyTextMuted"]),
             Paragraph(qty_text, ParagraphStyle("qty_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
-            Paragraph(_fmt_currency(unit_price, currency), ParagraphStyle("unit_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
-            Paragraph(_fmt_currency(vat_amount, currency), ParagraphStyle("vat_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
+            Paragraph(_fmt_currency(unit_price, currency).replace(" ", "&nbsp;"), ParagraphStyle("unit_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
+            Paragraph(_fmt_currency(vat_amount, currency).replace(" ", "&nbsp;"), ParagraphStyle("vat_center", parent=styles["BodyTextSmall"], alignment=TA_CENTER)),
             Paragraph(_fmt_currency(total_amount, currency), ParagraphStyle("total_right", parent=styles["BodyTextSmall"], alignment=TA_RIGHT)),
         ])
 
@@ -506,12 +506,12 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
             Paragraph("-", styles["BodyTextMuted"]),
         ])
 
-    c1 = content_w * 0.22
-    c2 = content_w * 0.24
-    c3 = content_w * 0.08
-    c4 = content_w * 0.15
-    c5 = content_w * 0.13
-    c6 = content_w - c1 - c2 - c3 - c4 - c5
+    c1 = content_w * 0.20   # item
+    c2 = content_w * 0.26   # description
+    c3 = content_w * 0.07   # qty
+    c4 = content_w * 0.17   # unit (bigger)
+    c5 = content_w * 0.10   # vat (smaller)
+    c6 = content_w - c1 - c2 - c3 - c4 - c5  # total (bigger)
 
     line_table = Table(
         line_rows,
@@ -597,7 +597,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     discount_text = f"({_fmt_currency(abs(discount), currency)})" if discount else _fmt_currency(0, currency)
 
     inner_left = right_bottom_w * 0.42
-    inner_right = right_bottom_w * 0.58 - 16
+    inner_right = right_bottom_w * 0.58
 
     totals_inner = Table([
         [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_currency(subtotal, currency), styles["BodyTextBoldRight"])],
