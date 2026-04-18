@@ -386,27 +386,60 @@ def build_cashflow_indirect_v2(
             "vat": 0.0,
         }
 
-        # TODO: hook this to IAS16/IAS38 tags later
+        # Resolve non-cash depreciation/amortisation from TB / COA metadata
+        def _is_depr_or_amort_row(r: Dict[str, Any]) -> bool:
+            code = str(r.get("code") or r.get("account") or r.get("account_code") or "").strip().upper()
+            name = str(r.get("name") or "").strip().lower()
+            category = str(r.get("category") or "").strip().lower()
+            section = str(r.get("section") or "").strip().lower()
+
+            text = " ".join([code.lower(), name, category, section])
+
+            return (
+                "depreciation" in text
+                or "amortization" in text
+                or "amortisation" in text
+                or category == "depreciation & amortization"
+            )
+
         noncash_addback = 0.0
-
         journals = get_journals_period_fn(company_id, df, dt)
-
-        for j in journals:
-            if str(j.get("source") or "").lower() == "asset_depreciation":
-                lines = j.get("journal_lines") or []
-                for ln in lines:
-                    acc = str(ln.get("account") or ln.get("account_code") or "")
-
-                    debit = float(ln.get("debit") or 0.0)
-
-                    # ✅ ONLY include depreciation expense accounts
-                    if debit > 0 and (
-                        acc.startswith("PL_OPEX_71")   # depreciation range
-                        or "depreciation" in (ln.get("description") or "").lower()
-                    ):
-                        noncash_addback += debit
-
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
+
+        resolved_noncash_accounts: List[str] = []
+
+        for code in all_codes:
+            r_close = tb_close.get(code) or {}
+            r_open = tb_open.get(code) or {}
+            row_any = r_close if r_close else r_open
+
+            if not _is_depr_or_amort_row(row_any):
+                continue
+
+            dr_close = float(r_close.get("debit") or r_close.get("debit_total") or 0.0)
+            cr_close = float(r_close.get("credit") or r_close.get("credit_total") or 0.0)
+            dr_open = float(r_open.get("debit") or r_open.get("debit_total") or 0.0)
+            cr_open = float(r_open.get("credit") or r_open.get("credit_total") or 0.0)
+
+            # P&L expense movement for depreciation/amortisation accounts
+            delta = (dr_close - cr_close) - (dr_open - cr_open)
+
+            noncash_addback += delta
+            resolved_noncash_accounts.append(
+                str(row_any.get("code") or row_any.get("account") or row_any.get("account_code") or "")
+            )
+
+        dep_journal_exists = any(
+            str(j.get("source") or "").lower() == "asset_depreciation"
+            for j in journals
+        )
+
+        if dep_journal_exists and not resolved_noncash_accounts:
+            raise RuntimeError(
+                f"Cash flow rendering blocked: asset_depreciation journals exist for company {company_id}, "
+                f"but no depreciation/amortisation account could be resolved from TB/COA metadata "
+                f"for period {df} to {dt}."
+            )
 
         for code in all_codes:
             r_close = tb_close.get(code) or {}
@@ -542,33 +575,39 @@ def build_cashflow_indirect_v2(
     investing_total_pri = float(jf_pri["totals"]["investing"]) if has_prior and jf_pri else 0.0
     financing_total_pri = float(jf_pri["totals"]["financing"]) if has_prior and jf_pri else 0.0
 
+    investing_lines = []
+    for row in jf_cur["lines"]["investing"]:
+        cur_amt = float(row.get("amount") or 0.0)
+    investing_lines.append({
+        "code": "DETAIL",
+        "name": row.get("account_name") or row.get("description") or "Investing item",
+        "values": _val(cur_amt, 0.0),
+    })
+
     investing = {
         "key": "investing",
         "label": "Net cash from investing activities",
-        "lines": [{
-            "code": "DETAIL",
-            "name": "Details",
-            "values": _val(investing_total_cur, investing_total_pri),
-            "detail": {
-                "cur": jf_cur["lines"]["investing"],
-                "pri": jf_pri["lines"]["investing"] if has_prior and jf_pri else [],
-            },
-        }],
+        "lines": investing_lines,
         "totals": _val(investing_total_cur, investing_total_pri),
     }
+
+    financing_lines = []
+    for row in jf_cur["lines"]["financing"]:
+        cur_amt = float(row.get("amount") or 0.0)
+        financing_lines.append({
+            "code": "DETAIL",
+            "name": row.get("account_name") or row.get("description") or "Financing item",
+            "values": _val(cur_amt, 0.0),
+            "detail": {
+                "cur": [row],
+                "pri": [],
+            },
+        })
 
     financing = {
         "key": "financing",
         "label": "Net cash from financing activities",
-        "lines": [{
-            "code": "DETAIL",
-            "name": "Details",
-            "values": _val(financing_total_cur, financing_total_pri),
-            "detail": {
-                "cur": jf_cur["lines"]["financing"],
-                "pri": jf_pri["lines"]["financing"] if has_prior and jf_pri else [],
-            },
-        }],
+        "lines": financing_lines,
         "totals": _val(financing_total_cur, financing_total_pri),
     }
 
