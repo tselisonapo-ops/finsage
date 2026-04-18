@@ -7480,15 +7480,34 @@ Kind regards,
         flush=True,
     )
 
+    # primary recipient
     send_mail(
         to_email=to_email,
         subject=subject,
         html_body=html_body,
         text_body=text_body,
         attachments=attachments,
-        cc=",".join(cc_emails) if cc_emails else None,
-        bcc=",".join(bcc_emails) if bcc_emails else None,
     )
+
+    # customer company email gets a visible copy
+    for cc in cc_emails:
+        send_mail(
+            to_email=cc,
+            subject=f"Copy: {subject}",
+            html_body=html_body,
+            text_body=text_body,
+            attachments=attachments,
+        )
+
+    # internal recipients get hidden-style separate copies
+    for bcc in bcc_emails:
+        send_mail(
+            to_email=bcc,
+            subject=f"Internal copy: {subject}",
+            html_body=html_body,
+            text_body=text_body,
+            attachments=attachments,
+        )
 
     print(
         "[INVOICE EMAIL SEND DONE]",
