@@ -229,7 +229,17 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         parent=styles["FooterText"],
         fontName="Helvetica-Bold",
     ))
+    styles.add(ParagraphStyle(
+        name="HeaderCenter",
+        parent=styles["SmallLabel"],
+        alignment=TA_CENTER,
+    ))
 
+    styles.add(ParagraphStyle(
+        name="HeaderRight",
+        parent=styles["SmallLabel"],
+        alignment=TA_RIGHT,
+    ))
     story = []
 
     company_name = (
@@ -473,10 +483,10 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     line_rows = [[
         Paragraph("ITEM / SERVICE", styles["SmallLabel"]),
         Paragraph("DESCRIPTION", styles["SmallLabel"]),
-        Paragraph("QTY", styles["SmallLabel"]),
-        Paragraph("UNIT", styles["SmallLabel"]),
-        Paragraph("VAT", styles["SmallLabel"]),
-        Paragraph("TOTAL", styles["SmallLabel"]),
+        Paragraph("QTY", styles["HeaderCenter"]),
+        Paragraph("UNIT", styles["HeaderCenter"]),
+        Paragraph("VAT", styles["HeaderCenter"]),
+        Paragraph("TOTAL", styles["HeaderRight"]),
     ]]
 
     for line in lines:
@@ -530,9 +540,6 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("LINEABOVE", (0, 1), (-1, -1), 0.35, colors.HexColor("#EEF1F3")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
 
-        # 🔥 HEADER ALIGNMENT
-        ("ALIGN", (2, 0), (4, 0), "CENTER"),
-        ("ALIGN", (5, 0), (5, 0), "RIGHT"),
 
         # DATA ALIGNMENT
         ("ALIGN", (2, 1), (4, -1), "CENTER"),
@@ -540,8 +547,8 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
 
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, 0), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
     ]))
 
     for r in range(2, len(line_rows), 2):
