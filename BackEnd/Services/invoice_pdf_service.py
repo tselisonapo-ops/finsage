@@ -601,8 +601,11 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     # bottom right
     discount_text = f"({_fmt_amount(abs(discount))})" if discount else _fmt_amount(0)
 
-    inner_left = right_bottom_w * 0.42
-    inner_right = right_bottom_w * 0.58
+    totals_box_pad = 16  # 8 left + 8 right padding inside totals_box
+    totals_content_w = right_bottom_w - totals_box_pad
+
+    inner_left = totals_content_w * 0.42
+    inner_right = totals_content_w - inner_left
 
     totals_inner = Table([
         [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_amount(subtotal), styles["BodyTextBoldRight"])],
@@ -616,6 +619,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
 
     grand_table = Table([
