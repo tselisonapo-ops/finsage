@@ -152,6 +152,8 @@ Kind regards,
         subject=subject,
         html_body=html_body,
         text_body=text_body,
+        from_name=f"{company_name} via FinSage",
+        reply_to=tenant_company_email,
         attachments=attachments,
     )
 
@@ -162,6 +164,8 @@ Kind regards,
             subject=f"Copy: {subject}",
             html_body=html_body,
             text_body=text_body,
+            from_name=f"{company_name} via FinSage",
+            reply_to=tenant_company_email,
             attachments=attachments,
         )
 
@@ -172,6 +176,8 @@ Kind regards,
             subject=f"Internal copy: {subject}",
             html_body=html_body,
             text_body=text_body,
+            from_name=f"{company_name} via FinSage",
+            reply_to=tenant_company_email,
             attachments=attachments,
         )
 

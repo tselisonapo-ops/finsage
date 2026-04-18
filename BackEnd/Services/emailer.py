@@ -10,6 +10,7 @@ import smtplib
 import mimetypes
 from pathlib import Path
 from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Optional, Iterable, Union, Tuple
 
 # Attachment can be:
@@ -26,9 +27,11 @@ def _cfg():
     mail_from = os.getenv("MAIL_FROM", user)
     return host, port, user, pwd, mail_from
 
+
 def _ensure_config(host: str, user: str, pwd: str, mail_from: str):
     if not host or not user or not pwd or not mail_from:
         raise RuntimeError("SMTP not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM.")
+
 
 def _add_attachments(msg: EmailMessage, attachments: Optional[Iterable[Attachment]]):
     if not attachments:
@@ -60,6 +63,7 @@ def send_mail(
     subject: str,
     html_body: str,
     text_body: str = "",
+    from_name: Optional[str] = None,
     reply_to: Optional[str] = None,
     attachments: Optional[Iterable[Attachment]] = None,
     timeout: int = 20,
@@ -69,7 +73,7 @@ def send_mail(
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = mail_from
+    msg["From"] = formataddr((from_name or "FinSage", mail_from))
     msg["To"] = to_email
     if reply_to:
         msg["Reply-To"] = reply_to

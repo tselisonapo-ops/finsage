@@ -7139,6 +7139,11 @@ def email_quote(company_id: int, quote_id: int):
         (company_id,),
     ) or {}
 
+    tenant_company_email = (
+        company.get("company_email")
+        or quote.get("company_email")
+        or None
+    )
     # ==============================
     # Format helpers
     # ==============================
@@ -7208,22 +7213,24 @@ def email_quote(company_id: int, quote_id: int):
 
     attachments = [(f"quote-{q_no}.pdf", pdf_bytes, "application/pdf")]
 
-    attachments = [(f"quote-{q_no}.pdf", pdf_bytes, "application/pdf")]
-
     send_mail(
         to_email=to_email,
         subject=subject,
         html_body=html_body,
         text_body=text_body,
+        from_name=f"{company_name} via FinSage",
+        reply_to=tenant_company_email,
         attachments=attachments,
     )
 
     for cc in cc_emails:
         send_mail(
             to_email=cc,
-            subject=f"CC: {subject}",
+            subject=f"Copy: {subject}",
             html_body=html_body,
             text_body=text_body,
+            from_name=f"{company_name} via FinSage",
+            reply_to=tenant_company_email,
             attachments=attachments,
         )
 
@@ -7518,6 +7525,8 @@ Kind regards,
         subject=subject,
         html_body=html_body,
         text_body=text_body,
+        from_name=f"{company_name} via FinSage",
+        reply_to=tenant_company_email,
         attachments=attachments,
     )
 
@@ -7528,6 +7537,8 @@ Kind regards,
             subject=f"Copy: {subject}",
             html_body=html_body,
             text_body=text_body,
+            from_name=f"{company_name} via FinSage",
+            reply_to=tenant_company_email,
             attachments=attachments,
         )
 
@@ -7538,6 +7549,8 @@ Kind regards,
             subject=f"Internal copy: {subject}",
             html_body=html_body,
             text_body=text_body,
+            from_name=f"{company_name} via FinSage",
+            reply_to=tenant_company_email,
             attachments=attachments,
         )
 
