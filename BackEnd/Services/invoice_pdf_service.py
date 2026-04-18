@@ -640,10 +640,12 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     inner_left = totals_content_w * 0.42
     inner_right = totals_content_w - inner_left
 
+    discount_text = f"({_fmt_currency(abs(discount), currency)})" if discount else _fmt_currency(0, currency)
+
     totals_inner = Table([
-        [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_amount(subtotal), styles["BodyTextBoldRight"])],
+        [Paragraph("Subtotal", styles["BodyTextMuted"]), Paragraph(_fmt_currency(subtotal, currency), styles["BodyTextBoldRight"])],
         [Paragraph("Discount", styles["BodyTextMuted"]), Paragraph(discount_text, styles["BodyTextBoldRight"])],
-        [Paragraph("VAT", styles["BodyTextMuted"]), Paragraph(_fmt_amount(vat_total), styles["BodyTextBoldRight"])],
+        [Paragraph("VAT", styles["BodyTextMuted"]), Paragraph(_fmt_currency(vat_total, currency), styles["BodyTextBoldRight"])],
     ], colWidths=[inner_left, inner_right])
     totals_inner.setStyle(TableStyle([
         ("LINEABOVE", (0, 1), (-1, -1), 0.35, colors.HexColor("#EEF1F3")),
@@ -656,7 +658,7 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
     ]))
 
     grand_table = Table([
-        [Paragraph("Total", styles["BodyTextBold"]), Paragraph(_fmt_amount(grand_total), styles["TotalBig"])]
+        [Paragraph("Total", styles["BodyTextBold"]), Paragraph(_fmt_currency(grand_total, currency), styles["TotalBig"])]
     ], colWidths=[inner_left, inner_right])
     grand_table.setStyle(TableStyle([
         ("LINEABOVE", (0, 0), (-1, 0), 0.7, colors.HexColor("#D6DAD8")),
