@@ -529,8 +529,15 @@ def _build_document(title: str, doc_obj: dict, company: dict | None = None) -> b
         ("LINEBELOW", (0, 0), (-1, 0), 0.7, colors.HexColor("#D6DAD8")),
         ("LINEABOVE", (0, 1), (-1, -1), 0.35, colors.HexColor("#EEF1F3")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+
+        # 🔥 HEADER ALIGNMENT
+        ("ALIGN", (2, 0), (4, 0), "CENTER"),
+        ("ALIGN", (5, 0), (5, 0), "RIGHT"),
+
+        # DATA ALIGNMENT
         ("ALIGN", (2, 1), (4, -1), "CENTER"),
         ("ALIGN", (5, 1), (5, -1), "RIGHT"),
+
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
