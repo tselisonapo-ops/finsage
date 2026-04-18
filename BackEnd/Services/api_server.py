@@ -7368,13 +7368,8 @@ def email_invoice(company_id: int, invoice_id: int):
         return jsonify({"error": "Invoice not found"}), 404
 
     preferred = (body.get("to_email") or "").strip() or None
-    contact_email = _first_contact_email(inv)
-
-    to_email = preferred or contact_email or inv.get("customer_email") or inv.get("company_email")
-    if not to_email:
-        return jsonify({"error": "Customer has no email."}), 400
-
-    cc_emails = get_company_emails_by_role(company_id, cc_role) if cc_role else []
+    contact_email = (_first_contact_email(inv) or "").strip() or None
+    customer_company_email = (inv.get("customer_email") or "").strip() or None
 
     company = db_service.fetch_one(
         """
@@ -7395,6 +7390,51 @@ def email_invoice(company_id: int, invoice_id: int):
         """,
         (company_id,),
     ) or {}
+
+    tenant_company_email = (inv.get("company_email") or company.get("company_email") or "").strip() or None
+
+    # To = customer contact person first
+    to_email = preferred or contact_email or customer_company_email or tenant_company_email
+    if not to_email:
+        return jsonify({"error": "Customer has no email."}), 400
+
+    # CC = customer company email (if different from To)
+    cc_emails = []
+    if customer_company_email and customer_company_email.lower() != to_email.lower():
+        cc_emails.append(customer_company_email)
+
+    # BCC = tenant company email + role emails
+    role_emails = get_company_emails_by_role(company_id, cc_role) if cc_role else []
+    bcc_emails = []
+
+    if tenant_company_email and tenant_company_email.lower() != to_email.lower() and tenant_company_email.lower() not in {x.lower() for x in cc_emails}:
+        bcc_emails.append(tenant_company_email)
+
+    seen = {to_email.lower(), *[x.lower() for x in cc_emails], *[x.lower() for x in bcc_emails]}
+    for e in role_emails:
+        e = (e or "").strip()
+        if not e:
+            continue
+        if e.lower() in seen:
+            continue
+        bcc_emails.append(e)
+        seen.add(e.lower())
+
+    print(
+        "[INVOICE EMAIL RESOLVE]",
+        {
+            "preferred": preferred,
+            "contact_email": contact_email,
+            "customer_company_email": customer_company_email,
+            "tenant_company_email": tenant_company_email,
+            "final_to": to_email,
+            "cc": cc_emails,
+            "bcc": bcc_emails,
+            "invoice_id": invoice_id,
+            "company_id": company_id,
+        },
+        flush=True,
+    )
 
     def _fmt(d):
         if isinstance(d, (datetime, date)):
@@ -7422,7 +7462,7 @@ Amount due    : {currency} {total:,.2f}
 Kind regards,
 {company_name}
 """
-    
+
     html_body = f"<pre style='font-family:system-ui,monospace'>{text_body}</pre>"
     subject = f"Invoice {inv_no} from {company_name}"
 
@@ -7434,22 +7474,27 @@ Kind regards,
 
     attachments = [(f"invoice-{inv_no}.pdf", pdf_bytes, "application/pdf")]
 
+    print(
+        "[INVOICE EMAIL SEND START]",
+        {"to": to_email, "cc": cc_emails, "bcc": bcc_emails, "subject": subject},
+        flush=True,
+    )
+
     send_mail(
         to_email=to_email,
         subject=subject,
         html_body=html_body,
         text_body=text_body,
         attachments=attachments,
+        cc=",".join(cc_emails) if cc_emails else None,
+        bcc=",".join(bcc_emails) if bcc_emails else None,
     )
 
-    for cc in cc_emails:
-        send_mail(
-            to_email=cc,
-            subject=f"CC: {subject}",
-            html_body=html_body,
-            text_body=text_body,
-            attachments=attachments,
-        )
+    print(
+        "[INVOICE EMAIL SEND DONE]",
+        {"to": to_email, "cc": cc_emails, "bcc": bcc_emails, "invoice_id": invoice_id},
+        flush=True,
+    )
 
     db_service.mark_invoice_sent(company_id, invoice_id)
     db_service.audit_log(
@@ -7467,6 +7512,7 @@ Kind regards,
         after_json={
             "to": to_email,
             "cc": cc_emails,
+            "bcc": bcc_emails,
             "subject": subject,
             "source": "preferred" if preferred else ("contacts" if contact_email else "fallback"),
             "attachment": f"invoice-{inv_no}.pdf",
@@ -7474,7 +7520,7 @@ Kind regards,
         },
         message="Invoice emailed successfully",
     )
-    return jsonify({"ok": True}), 200
+    return jsonify({"ok": True, "to_email": to_email, "cc": cc_emails, "bcc": bcc_emails}), 200
 
 @app.route("/api/companies/<int:company_id>/trial_balance_mini", methods=["GET"])
 @require_auth

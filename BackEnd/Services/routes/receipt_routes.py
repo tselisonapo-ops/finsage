@@ -29,27 +29,8 @@ def _send_receipt_email(company_id: int, receipt_id: int, actor_user_id: int, bo
         return jsonify({"error": "Receipt not found"}), 404
 
     preferred = (body.get("to_email") or "").strip() or None
-    customer_email = rcpt.get("customer_email")
-    company_email = rcpt.get("company_email")
-    to_email = preferred or customer_email or company_email
-
-    print(
-        "[RECEIPT EMAIL RESOLVE]",
-        {
-            "preferred": preferred,
-            "customer_email": customer_email,
-            "company_email": company_email,
-            "final_to": to_email,
-            "receipt_id": receipt_id,
-            "company_id": company_id,
-        },
-        flush=True,
-    )
-
-    if not to_email:
-        return jsonify({"error": "Customer has no email."}), 400
-
-    cc_emails = get_company_emails_by_role(company_id, cc_role) if cc_role else []
+    contact_email = (rcpt.get("customer_email") or "").strip() or None
+    customer_company_email = (rcpt.get("customer_company_email") or rcpt.get("customer_email_company") or "").strip() or None
 
     company = db_service.fetch_one(
         """
@@ -70,6 +51,51 @@ def _send_receipt_email(company_id: int, receipt_id: int, actor_user_id: int, bo
         """,
         (company_id,),
     ) or {}
+
+    tenant_company_email = (rcpt.get("company_email") or company.get("company_email") or "").strip() or None
+
+    # To = customer contact person first
+    to_email = preferred or contact_email or customer_company_email or tenant_company_email
+    if not to_email:
+        return jsonify({"error": "Customer has no email."}), 400
+
+    # CC = customer company email (if different from To)
+    cc_emails = []
+    if customer_company_email and customer_company_email.lower() != to_email.lower():
+        cc_emails.append(customer_company_email)
+
+    # BCC = tenant company email + role emails
+    role_emails = get_company_emails_by_role(company_id, cc_role) if cc_role else []
+    bcc_emails = []
+
+    if tenant_company_email and tenant_company_email.lower() != to_email.lower() and tenant_company_email.lower() not in {x.lower() for x in cc_emails}:
+        bcc_emails.append(tenant_company_email)
+
+    seen = {to_email.lower(), *[x.lower() for x in cc_emails], *[x.lower() for x in bcc_emails]}
+    for e in role_emails:
+        e = (e or "").strip()
+        if not e:
+            continue
+        if e.lower() in seen:
+            continue
+        bcc_emails.append(e)
+        seen.add(e.lower())
+
+    print(
+        "[RECEIPT EMAIL RESOLVE]",
+        {
+            "preferred": preferred,
+            "contact_email": contact_email,
+            "customer_company_email": customer_company_email,
+            "tenant_company_email": tenant_company_email,
+            "final_to": to_email,
+            "cc": cc_emails,
+            "bcc": bcc_emails,
+            "receipt_id": receipt_id,
+            "company_id": company_id,
+        },
+        flush=True,
+    )
 
     def _fmt(d):
         if isinstance(d, (datetime, date)):
@@ -106,7 +132,11 @@ Kind regards,
 
     attachments = [(f"receipt-{receipt_no}.pdf", pdf_bytes, "application/pdf")]
 
-    print("[RECEIPT EMAIL SEND START]", {"to": to_email, "subject": subject}, flush=True)
+    print(
+        "[RECEIPT EMAIL SEND START]",
+        {"to": to_email, "cc": cc_emails, "bcc": bcc_emails, "subject": subject},
+        flush=True,
+    )
 
     send_mail(
         to_email=to_email,
@@ -114,18 +144,15 @@ Kind regards,
         html_body=html_body,
         text_body=text_body,
         attachments=attachments,
+        cc=",".join(cc_emails) if cc_emails else None,
+        bcc=",".join(bcc_emails) if bcc_emails else None,
     )
 
-    print("[RECEIPT EMAIL SEND DONE]", {"to": to_email, "receipt_id": receipt_id}, flush=True)
-
-    for cc in cc_emails:
-        send_mail(
-            to_email=cc,
-            subject=f"CC: {subject}",
-            html_body=html_body,
-            text_body=text_body,
-            attachments=attachments,
-        )
+    print(
+        "[RECEIPT EMAIL SEND DONE]",
+        {"to": to_email, "cc": cc_emails, "bcc": bcc_emails, "receipt_id": receipt_id},
+        flush=True,
+    )
 
     db_service.audit_log(
         company_id=company_id,
@@ -142,14 +169,15 @@ Kind regards,
         after_json={
             "to": to_email,
             "cc": cc_emails,
+            "bcc": bcc_emails,
             "subject": subject,
-            "source": "preferred" if preferred else "fallback",
+            "source": "preferred" if preferred else ("contacts" if contact_email else "fallback"),
             "attachment": f"receipt-{receipt_no}.pdf",
             "pdf_builder": "reportlab",
         },
         message="Receipt emailed successfully",
     )
-    return jsonify({"ok": True}), 200
+    return jsonify({"ok": True, "to_email": to_email, "cc": cc_emails, "bcc": bcc_emails}), 200
 
 
 @receipts_bp.route("/api/companies/<int:company_id>/invoices/<int:invoice_id>/receipt/email", methods=["POST"])
