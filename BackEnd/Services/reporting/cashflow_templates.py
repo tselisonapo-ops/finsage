@@ -397,19 +397,9 @@ def build_cashflow_indirect_v2(
             "vat": 0.0,
         }
 
-        noncash_addback = 0.0
         journals = get_journals_period_fn(company_id, df, dt)
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
-
-        resolved_noncash_accounts: List[str] = []
-
-        noncash_lines: List[Dict[str, Any]] = []
-                # --- Get depreciation/amortisation directly from P&L ---
-        noncash_addback = 0.0
-        pnl_lines = pnl.get("lines") or []
-        noncash_lines: List[Dict[str, Any]] = []
-        resolved_noncash_accounts: List[str] = []
-
+        # --- Get depreciation/amortisation directly from P&L --
         adjustment_lines: List[Dict[str, Any]] = []
         adjustments_total = 0.0
         resolved_adjustments: List[str] = []
@@ -423,36 +413,30 @@ def build_cashflow_indirect_v2(
 
             adj_amt = None
 
-            # --- NON-CASH ITEMS ---
-            if (
-                "depreciation" in name
-                or "amortisation" in name
-                or "amortization" in name
-                or "lease amortization" in name
-            ):
+            # --- NON-CASH (DEPRECIATION / AMORTISATION) ---
+            if any(k in name for k in ["depreciation", "amort", "rou"]):
                 adj_amt = abs(amount)
 
-            # --- LOSS ON DISPOSAL (ADD BACK) ---
-            elif "loss on disposal" in name or "disposal loss" in name:
+            # --- LOSS ON DISPOSAL ---
+            elif "loss" in name and "disposal" in name:
                 adj_amt = abs(amount)
 
-            # --- GAIN ON DISPOSAL (DEDUCT) ---
-            elif "gain on disposal" in name or "disposal gain" in name:
+            # --- GAIN ON DISPOSAL ---
+            elif "gain" in name and "disposal" in name:
                 adj_amt = -abs(amount)
 
-            # --- FINANCE COSTS / INTEREST EXPENSE (ADD BACK) ---
-            elif (
-                "interest expense" in name
-                or "finance cost" in name
-                or "finance costs" in name
-            ):
+            # --- FINANCE COSTS / INTEREST EXPENSE ---
+            elif any(k in name for k in ["interest", "finance cost", "finance costs"]):
+                # decide sign based on wording
+                if "income" in name:
+                    adj_amt = -abs(amount)
+                else:
+                    adj_amt = abs(amount)
+
+            # --- FX (optional but recommended) ---
+            elif "exchange" in name or "fx" in name:
                 adj_amt = abs(amount)
 
-            # --- INTEREST INCOME (DEDUCT) ---
-            elif "interest income" in name:
-                adj_amt = -abs(amount)
-
-            # --- CAPTURE IF MATCHED ---
             if adj_amt is not None:
                 adjustments_total += adj_amt
                 resolved_adjustments.append(raw_name)
@@ -467,7 +451,7 @@ def build_cashflow_indirect_v2(
             for j in journals
         )
 
-        if dep_journal_exists and not resolved_noncash_accounts:
+        if dep_journal_exists and not resolved_adjustments:
             raise RuntimeError(
                 f"Cash flow rendering blocked: asset_depreciation journals exist for company {company_id}, "
                 f"but no depreciation/amortisation account could be resolved from TB/COA metadata "
@@ -648,15 +632,22 @@ def build_cashflow_indirect_v2(
             lines = [
                 {"code":"NET_PROFIT", "name":"Net profit / (loss)", "row_type": "normal", "values": _val(net_profit, 0.0)},
                 {
-                    "code":"NONCASH",
-                    "name":"Depreciation / amortisation / other non-cash items",
-                    "row_type":"normal",
-                    "values": _val(noncash_addback, 0.0),
+                    "code": "NONCASH",
+                    "name": "Depreciation / amortisation / other non-cash items",
+                    "row_type": "breakdown",
+                    "values": _val(
+                        0.0,
+                        0.0,
+                        adjustments_total,
+                        ws_show_total=False,
+                        ws_show_breakdown=True,
+                    ),
                     "detail": {
-                        "cur": noncash_lines,
+                        "cur": adjustment_lines,
                         "pri": [],
                     },
                 },
+           
                 {"code":"WC_AR", "name":"Change in receivables", "row_type": "normal", "values": _val(receivables_effect, 0.0)},
                 {"code":"WC_AP", "name":"Change in payables", "row_type": "normal", "values": _val(payables_effect, 0.0)},
                 {"code":"WC_INV", "name":"Change in inventory", "row_type": "normal", "values": _val(inventory_effect, 0.0)},
@@ -671,7 +662,8 @@ def build_cashflow_indirect_v2(
                     {
                         "code": "NONCASH",
                         "name": "Depreciation / amortisation / other non-cash items",
-                        "amount": noncash_addback,
+                        "amount": adjustments_total,
+                        "detail": adjustment_lines,
                     }
                 ],
                 "working_capital": [

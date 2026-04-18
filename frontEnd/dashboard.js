@@ -18236,10 +18236,10 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
               ${renderSection(fin, "Cash flows from financing activities")}
               <tr><td colspan="${colC ? 4 : 3}" class="py-2"></td></tr>
 
-              ${row(stmt?.net_change?.label || "Net change in cash and cash equivalents", net, { bold: true })}
+              ${row(stmt?.net_change?.label || "Net change in cash and cash equivalents", net, { rowType: "total" })}
               <tr><td colspan="${colC ? 4 : 3}" class="py-2"></td></tr>
-              ${row(stmt?.opening_balance?.label || "Opening cash and cash equivalents", open, { bold: true })}
-              ${row(stmt?.closing_balance?.label || "Closing cash and cash equivalents", close, { bold: true })}
+              ${row(stmt?.opening_balance?.label || "Opening cash and cash equivalents", open, { rowType: "total" })}
+              ${row(stmt?.closing_balance?.label || "Closing cash and cash equivalents", close, { rowType: "total" })}
             </tbody>
           </table>
         </div>
