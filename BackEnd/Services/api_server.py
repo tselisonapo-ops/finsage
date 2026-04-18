@@ -700,8 +700,21 @@ def _send_receipt_email(company_id: int, receipt_id: int, actor_user_id: int, bo
         return jsonify({"error": "Receipt not found"}), 404
 
     preferred = (body.get("to_email") or "").strip() or None
-    to_email = preferred or rcpt.get("customer_email") or rcpt.get("company_email")
+    customer_email = rcpt.get("customer_email")
+    company_email = rcpt.get("company_email")
+
+    to_email = preferred or customer_email or company_email
+
+    current_app.logger.warning(
+        "RECEIPT EMAIL resolve: preferred=%s | customer_email=%s | company_email=%s | final_to=%s",
+        preferred,
+        customer_email,
+        company_email,
+        to_email,
+    )
+
     if not to_email:
+        current_app.logger.warning("RECEIPT EMAIL failed: no recipient resolved")
         return jsonify({"error": "Customer has no email."}), 400
 
     cc_emails = get_company_emails_by_role(company_id, cc_role) if cc_role else []
@@ -760,6 +773,8 @@ Kind regards,
 
     attachments = [(f"receipt-{receipt_no}.pdf", pdf_bytes, "application/pdf")]
 
+    current_app.logger.warning("RECEIPT EMAIL to=%s subject=%s receipt_id=%s", to_email, subject, receipt_id)
+
     send_mail(
         to_email=to_email,
         subject=subject,
@@ -767,6 +782,8 @@ Kind regards,
         text_body=text_body,
         attachments=attachments,
     )
+
+    current_app.logger.warning("RECEIPT EMAIL queued/sent to=%s receipt_id=%s", to_email, receipt_id)
 
     for cc in cc_emails:
         send_mail(
