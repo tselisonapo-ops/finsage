@@ -399,61 +399,65 @@ def build_cashflow_indirect_v2(
 
         journals = get_journals_period_fn(company_id, df, dt)
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
-        # --- Get depreciation/amortisation directly from P&L --
+        
+        # --- Get depreciation/amortisation from TB + COA metadata ---
         adjustment_lines: List[Dict[str, Any]] = []
         adjustments_total = 0.0
         resolved_adjustments: List[str] = []
 
-        pnl_lines = pnl.get("lines") or []
+        all_codes = set(tb_open.keys()) | set(tb_close.keys())
 
-        for ln in pnl_lines:
-            meta = ac.resolve_account_cf_meta({
-                **ln,
-                "category": ln.get("category") or ln.get("section") or "",
-                "section": ln.get("section") or "",
-                "account_name": ln.get("name"),
-            })
-            raw_name = str(ln.get("name") or ln.get("account_name") or ln.get("code") or "").strip() or "Adjustment"
-            amount = float(
-                ln.get("amount")
-                or ln.get("value")
-                or ln.get("closing_balance")
-                or 0.0
-            )
+        for code in all_codes:
+            r_close = tb_close.get(code) or {}
+            r_open = tb_open.get(code) or {}
+            row_any = r_close if r_close else r_open
+
+            if not row_any:
+                continue
+
+            meta = ac.resolve_account_cf_meta(row_any)
             role = str(meta.get("role") or "").lower()
             bucket = str(meta.get("bucket") or "").lower()
+            name = str(
+                row_any.get("name")
+                or row_any.get("account_name")
+                or row_any.get("code")
+                or code
+            ).strip()
+
+            kind_close = _kind_from_row(r_close) if r_close else _kind_from_row(r_open)
+            bal_close = _bs_signed(kind_close, r_close)
+            bal_open = _bs_signed(kind_close, r_open)
+            delta = bal_close - bal_open
 
             adj_amt = None
 
-            # non-cash depreciation / amortisation
-            if bucket in ("depreciation", "amortization") or role.startswith("depreciation_expense") or role.startswith("amortisation_expense"):
-                adj_amt = abs(amount)
+            if (
+                bucket in ("depreciation", "amortization")
+                or role.startswith("depreciation_expense")
+                or role.startswith("amortisation_expense")
+            ):
+                adj_amt = abs(delta)
 
-            # gains / losses on disposal
-            elif "loss" in raw_name.lower() and "disposal" in raw_name.lower():
-                adj_amt = abs(amount)
-            elif "gain" in raw_name.lower() and "disposal" in raw_name.lower():
-                adj_amt = -abs(amount)
+            elif "loss" in name.lower() and "disposal" in name.lower():
+                adj_amt = abs(delta)
 
-            # finance costs
-            elif role in ("loan_interest_expense", "lease_interest_expense") or "finance cost" in raw_name.lower() or "interest expense" in raw_name.lower():
-                adj_amt = abs(amount)
+            elif "gain" in name.lower() and "disposal" in name.lower():
+                adj_amt = -abs(delta)
 
-            # fx
-            elif "exchange" in raw_name.lower() or "fx" in raw_name.lower():
-                adj_amt = abs(amount)
+            elif role in ("loan_interest_expense", "lease_interest_expense"):
+                adj_amt = abs(delta)
 
             if adj_amt is not None and abs(adj_amt) > 0.000001:
                 adjustments_total += adj_amt
-                resolved_adjustments.append(raw_name)
+                resolved_adjustments.append(name)
                 adjustment_lines.append({
-                    "account_name": raw_name,
+                    "account_name": name,
                     "amount": adj_amt,
-                    "code": ln.get("code") or ln.get("account") or "",
+                    "code": code,
                     "role": role,
                     "bucket": bucket,
                 })
-                
 
         dep_journal_exists = any(
             str(j.get("source") or "").lower() == "asset_depreciation"

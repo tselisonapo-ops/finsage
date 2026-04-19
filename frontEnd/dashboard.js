@@ -18213,7 +18213,15 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
         )).join("")
       : `<tr><td colspan="${colC ? 4 : 3}" class="text-xs text-slate-400 py-2">No data.</td></tr>`;
 
-    return `${sectionHeader(title)}${rows}`;
+    const totalRow = sec?.totals
+      ? row(
+          sec?.label || title,
+          sec.totals,
+          { rowType: "total" }
+        )
+      : "";
+
+    return `${sectionHeader(title)}${rows}${totalRow}`;
   }
 
   // footer rows should be in "tot"
