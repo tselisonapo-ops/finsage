@@ -17530,47 +17530,7 @@ async function renderCashFlow(periodKey = CURRENT_PERIOD_KEY) {
   }
 }
 
-function renderCashFlowFullHtml(stmt, { periodLabel = "", preview_columns = 1, cols_mode = 1 } = {}) {
-  const meta = stmt?.meta || {};
-  const method = String(meta.method || "direct").toLowerCase();     // direct|indirect
-  const basis  = String(meta.basis  || "external").toLowerCase();   // external|management
-  const pv = Number(preview_columns || meta.preview_columns || 1);  // 1|2
-  const cm = Number(cols_mode || meta.cols_mode || 1);              // 1|2|3
 
-  const isMgmt = (basis === "management" || basis === "internal");
-  const isIndirect = (method === "indirect");
-
-  // ---------- INDIRECT ----------
-  if (isIndirect) {
-    if (isMgmt) {
-      // ✅ choose mgmt indirect renderer by cols_mode (if you have 2-col + 3-col)
-      if (cm === 3 && typeof window.renderCashFlowIndirectMgmt3ColHtml === "function") {
-        return window.renderCashFlowIndirectMgmt3ColHtml(stmt, { periodLabel });
-      }
-      if (typeof window.renderCashFlowIndirectMgmt2ColHtml === "function") {
-        return window.renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel });
-      }
-    }
-
-    // fallback existing indirect renderers
-    if (pv === 2 && typeof window.renderCashFlowIndirect2ColHtml === "function") {
-      return window.renderCashFlowIndirect2ColHtml(stmt, { periodLabel });
-    }
-    if (typeof window.renderCashFlowIndirectFullHtml === "function") {
-      return window.renderCashFlowIndirectFullHtml(stmt, { periodLabel });
-    }
-  }
-
-  // ---------- DIRECT ----------
-  if (pv === 2 && typeof window.renderCashFlowDirect2ColHtml === "function") {
-    return window.renderCashFlowDirect2ColHtml(stmt, { periodLabel });
-  }
-  if (typeof window.renderCashFlowDirectFullHtml === "function") {
-    return window.renderCashFlowDirectFullHtml(stmt, { periodLabel });
-  }
-
-  return `<pre class="text-[11px] whitespace-pre-wrap">${esc(JSON.stringify(stmt, null, 2))}</pre>`;
-}
 
 
 function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
@@ -17763,11 +17723,63 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
     }).join("");
   }
 
-  function row(name, values) {
+  function row(name, values, { rowType = "normal", detail = null, rowId = "" } = {}) {
+    const cur = values?.cur;
+    const detailCur = Array.isArray(detail?.cur) ? detail.cur : [];
+    const hasDetail = detailCur.length > 0;
+    const safeId = rowId || `cf-row-${Math.random().toString(36).slice(2, 8)}`;
+    const arrow = hasDetail ? `<span id="${safeId}-icon" class="inline-block mr-1">▸</span>` : "";
+
+    if (rowType === "header") {
+      return `
+        <tr>
+          <td class="pt-2 pb-1 text-slate-700 font-semibold">${esc(name)}</td>
+          <td class="text-right"></td>
+        </tr>
+      `;
+    }
+
+    if (rowType === "subtotal") {
+      return `
+        <tr class="border-t border-slate-200 font-semibold">
+          <td class="py-[3px] pr-3">${esc(name)}</td>
+          <td class="text-right">${cur != null ? fmtAmt(cur) : ""}</td>
+        </tr>
+      `;
+    }
+
+    if (rowType === "total") {
+      return `
+        <tr class="border-t border-slate-300 font-bold">
+          <td class="py-[4px] pr-3">${esc(name)}</td>
+          <td class="text-right">${cur != null ? fmtAmt(cur) : ""}</td>
+        </tr>
+      `;
+    }
+
+    if (rowType === "breakdown") {
+      const mainRow = `
+        <tr class="border-b border-slate-100 ${hasDetail ? "cursor-pointer cf-toggle-row" : ""}"
+            ${hasDetail ? `data-toggle-id="${safeId}"` : ""}>
+          <td class="py-[2px] pr-3">${arrow}${esc(name)}</td>
+          <td class="text-right">${cur != null ? fmtAmt(cur) : ""}</td>
+        </tr>
+      `;
+
+      const detailRows = hasDetail ? detailCur.map(d => `
+        <tr data-parent="${safeId}" style="display:none;" class="border-b border-slate-50 bg-slate-50/40">
+          <td class="py-[2px] pr-3 pl-8 text-slate-600">${esc(d?.account_name || "Adjustment")}</td>
+          <td class="text-right text-slate-600">${d?.amount != null ? fmtAmt(Number(d.amount)) : ""}</td>
+        </tr>
+      `).join("") : "";
+
+      return `${mainRow}${detailRows}`;
+    }
+
     return `
       <tr class="border-b border-slate-100">
         <td class="py-[2px] pr-3">${esc(name)}</td>
-        ${valsTd(values)}
+        <td class="text-right">${cur != null ? fmtAmt(cur) : ""}</td>
       </tr>
     `;
   }
@@ -17784,11 +17796,31 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
 
   const opLines = Array.isArray(op?.lines) ? op.lines : [];
   const opRows = opLines.length
-    ? opLines.map(ln => row(ln?.name || ln?.code || "", ln?.values)).join("")
+    ? opLines.map((ln, idx) =>
+        row(
+          ln?.name || ln?.code || "",
+          ln?.values,
+          {
+            rowType: ln?.row_type || "normal",
+            detail: ln?.detail || null,
+            rowId: `op-${idx}`
+          }
+        )
+      ).join("")
     : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
 
   const invRows = (inv?.lines || []).length
-    ? (inv?.lines || []).map(ln => row(ln?.name || ln?.code || "", ln?.values)).join("")
+    ? (inv?.lines || []).map((ln, idx) =>
+        row(
+          ln?.name || ln?.code || "",
+          ln?.values,
+          {
+            rowType: ln?.row_type || "normal",
+            detail: ln?.detail || null,
+            rowId: `inv-${idx}`
+          }
+        )
+      )
     : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No investing activity.</td></tr>`;
 
   const invBlock = `
@@ -17797,7 +17829,17 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
     ${row(inv?.label || "Net cash from investing activities", inv?.totals)}
   `;
   const finRows = (fin?.lines || []).length
-    ? (fin?.lines || []).map(ln => row(ln?.name || ln?.code || "", ln?.values)).join("")
+    ? (fin?.lines || []).map((ln, idx) =>
+        row(
+          ln?.name || ln?.code || "",
+          ln?.values,
+          {
+            rowType: ln?.row_type || "normal",
+            detail: ln?.detail || null,
+            rowId: `fin-${idx}`
+          }
+        )
+      )
     : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No financing activity.</td></tr>`;
 
   const finBlock = `
@@ -17838,13 +17880,85 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
 
               <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              <tr class="font-semibold border-t border-slate-300">${netRow}</tr>
+              ${row(
+                stmt?.net_change?.label || "Net change in cash and cash equivalents",
+                stmt?.net_change?.values,
+                { rowType: "total" }
+              )}
+
+              ${row(
+                stmt?.opening_balance?.label || "Opening cash and cash equivalents",
+                stmt?.opening_balance?.values,
+                { rowType: "normal" }
+              )}
+
+              ${row(
+                stmt?.closing_balance?.label || "Closing cash and cash equivalents",
+                stmt?.closing_balance?.values,
+                { rowType: "normal" }
+              )}
+
+              <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
+
+              ${row(
+                stmt?.reconciliation?.delta_from_tb?.label || "Net change per TB",
+                stmt?.reconciliation?.delta_from_tb?.values,
+                { rowType: "total" }
+              )}
+
+              ${row(
+                stmt?.reconciliation?.gap?.label || "Reconciliation gap",
+                stmt?.reconciliation?.gap?.values,
+                { rowType: "total" }
+              )}
             </tbody>
           </table>
         </div>
       </div>
     </div>
   `;
+}
+
+function renderCashFlowFullHtml(stmt, { periodLabel = "", preview_columns = 1, cols_mode = 1 } = {}) {
+  const meta = stmt?.meta || {};
+  const method = String(meta.method || "direct").toLowerCase();     // direct|indirect
+  const basis  = String(meta.basis  || "external").toLowerCase();   // external|management
+  const pv = Number(preview_columns || meta.preview_columns || 1);  // 1|2
+  const cm = Number(cols_mode || meta.cols_mode || 1);              // 1|2|3
+
+  const isMgmt = (basis === "management" || basis === "internal");
+  const isIndirect = (method === "indirect");
+
+  // ---------- INDIRECT ----------
+  if (isIndirect) {
+    if (isMgmt) {
+      // ✅ choose mgmt indirect renderer by cols_mode (if you have 2-col + 3-col)
+      if (cm === 3 && typeof window.renderCashFlowIndirectMgmt3ColHtml === "function") {
+        return window.renderCashFlowIndirectMgmt3ColHtml(stmt, { periodLabel });
+      }
+      if (typeof window.renderCashFlowIndirectMgmt2ColHtml === "function") {
+        return window.renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel });
+      }
+    }
+
+    // fallback existing indirect renderers
+    if (pv === 2 && typeof window.renderCashFlowIndirect2ColHtml === "function") {
+      return window.renderCashFlowIndirect2ColHtml(stmt, { periodLabel });
+    }
+    if (typeof window.renderCashFlowIndirectFullHtml === "function") {
+      return window.renderCashFlowIndirectFullHtml(stmt, { periodLabel });
+    }
+  }
+
+  // ---------- DIRECT ----------
+  if (pv === 2 && typeof window.renderCashFlowDirect2ColHtml === "function") {
+    return window.renderCashFlowDirect2ColHtml(stmt, { periodLabel });
+  }
+  if (typeof window.renderCashFlowDirectFullHtml === "function") {
+    return window.renderCashFlowDirectFullHtml(stmt, { periodLabel });
+  }
+
+  return `<pre class="text-[11px] whitespace-pre-wrap">${esc(JSON.stringify(stmt, null, 2))}</pre>`;
 }
 
 function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
@@ -18075,6 +18189,14 @@ document.addEventListener("click", (e) => {
   const id = tr.getAttribute("data-toggle-id");
   if (!id) return;
 
+  toggleRow(id);
+});
+
+document.addEventListener("click", (e) => {
+  const tr = e.target.closest(".cf-toggle-row");
+  if (!tr) return;
+  const id = tr.getAttribute("data-toggle-id");
+  if (!id) return;
   toggleRow(id);
 });
 
