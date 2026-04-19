@@ -57725,6 +57725,8 @@ class DatabaseService:
         )
 
         delta = _money2(revenue_required_to_date - revenue_previously_recognized)
+        if delta < Decimal("0.00"):
+            delta = Decimal("0.00")
 
         billed_to_date = self._allocated_obligation_billed_to_date(
             company_id=company_id,
@@ -57952,6 +57954,34 @@ class DatabaseService:
                 contract_cl = Decimal("0.00")
 
                 for obl in obligations:
+                    allocated = _money2(obl.get("allocated_transaction_price") or 0)
+                    recognized_to_date = _money2(obl.get("revenue_to_date") or 0)
+                    timing = str(obl.get("recognition_timing") or "").strip().lower()
+                    satisfaction_status = str(obl.get("satisfaction_status") or "").strip().lower()
+
+                    print("REV PREVIEW OBLIGATION STATE", {
+                        "contract_id": int(c["id"]),
+                        "obligation_id": int(obl["id"]),
+                        "timing": timing,
+                        "allocated": str(allocated),
+                        "recognized_to_date": str(recognized_to_date),
+                        "satisfaction_status": satisfaction_status,
+                        "period_start": str(period_start),
+                        "period_end": str(period_end),
+                    })
+
+                    # skip fully recognized point-in-time obligations
+                    if timing == "point_in_time" and (
+                        recognized_to_date >= allocated
+                        or satisfaction_status in {"satisfied", "completed"}
+                    ):
+                        print("REV PREVIEW SKIP PIT COMPLETE", {
+                            "contract_id": int(c["id"]),
+                            "obligation_id": int(obl["id"]),
+                            "reason": "point_in_time_already_completed",
+                        })
+                        continue
+
                     existing = self.fetch_one(
                         f"""
                         SELECT e.id, e.run_id, r.status
@@ -57960,14 +57990,22 @@ class DatabaseService:
                         ON r.id = e.run_id
                         WHERE e.contract_id = %s
                         AND e.obligation_id = %s
-                        AND e.period_start = %s
-                        AND e.period_end = %s
+                        AND e.period_start = %s::date
+                        AND e.period_end = %s::date
                         AND r.status IN ('draft', 'posted')
                         LIMIT 1
                         """,
-                        (int(c["id"]), int(obl["id"]), period_start, period_end),
+                        (int(c["id"]), int(obl["id"]), str(period_start), str(period_end)),
                         cur=cur,
                     )
+
+                    print("REV PREVIEW EXISTING CHECK", {
+                        "contract_id": int(c["id"]),
+                        "obligation_id": int(obl["id"]),
+                        "period_start": str(period_start),
+                        "period_end": str(period_end),
+                        "existing": existing,
+                    })
 
                     if existing:
                         continue
@@ -57984,6 +58022,10 @@ class DatabaseService:
                     delta = Decimal(str(calc["revenue_delta_this_run"])).quantize(Decimal("0.01"))
                     ca_delta = Decimal(str(calc["contract_asset_delta"])).quantize(Decimal("0.01"))
                     cl_delta = Decimal(str(calc["contract_liability_delta"])).quantize(Decimal("0.01"))
+
+                    if delta < Decimal("0.00"):
+                        delta = Decimal("0.00")
+                        calc["revenue_delta_this_run"] = float(delta)
 
                     if delta == Decimal("0.00") and ca_delta == Decimal("0.00") and cl_delta == Decimal("0.00"):
                         continue
