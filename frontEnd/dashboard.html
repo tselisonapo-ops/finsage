@@ -3873,18 +3873,6 @@ html, body {
                       Select an obligation to view billing information.
                     </div>
 
-                    <div id="revBillingPreviewWrap" class="hidden space-y-3">
-                      <div class="grid grid-cols-2 gap-3 text-sm">
-                        <div><span class="text-slate-500">Obligation:</span> <strong id="revBillPrevObligationName">—</strong></div>
-                        <div><span class="text-slate-500">Settlement:</span> <strong id="revBillPrevSettlementPattern">—</strong></div>
-                        <div><span class="text-slate-500">Timing:</span> <strong id="revBillPrevTiming">—</strong></div>
-                        <div><span class="text-slate-500">Progress Method:</span> <strong id="revBillPrevProgressMethod">—</strong></div>
-                        <div><span class="text-slate-500">Recognised to date:</span> <strong id="revBillPrevRecognised">0.00</strong></div>
-                        <div><span class="text-slate-500">Already billed:</span> <strong id="revBillPrevBilled">0.00</strong></div>
-                        <div><span class="text-slate-500">Available to bill:</span> <strong id="revBillPrevAvailable">0.00</strong></div>
-                        <div><span class="text-slate-500">Latest run:</span> <strong id="revBillPrevRun">—</strong></div>
-                      </div>
-
                       <div id="revBillingRevenueBeforeWrap" class="hidden space-y-3">
                         <div class="grid grid-cols-2 gap-3 text-sm">
                           <div><span class="text-slate-500">Obligation:</span> <strong id="revBillPrevObligationName">—</strong></div>
@@ -3898,12 +3886,6 @@ html, body {
                         </div>
 
                         <div id="revBillingPreviewInvoiceMsg" class="text-xs text-slate-500"></div>
-
-                        <div class="flex items-center gap-2">
-                          <button id="revCreateBillingInvoice" class="btn" type="button">Create Invoice</button>
-                          <button id="revOpenBillingInvoice" class="btn-ghost hidden" type="button">Open Invoice</button>
-                        </div>
-                      </div>
 
                       <div id="revBillingBeforeRevenueWrap" class="hidden space-y-3">
                         <div class="grid grid-cols-2 gap-3 text-sm">
@@ -3919,8 +3901,6 @@ html, body {
                           Billing is contract-first for this settlement pattern. Revenue is recognised later against the billed amount.
                         </div>
                       </div>
-
-                      <div id="revBillingPreviewInvoiceMsg" class="text-xs text-slate-500"></div>
 
                       <div class="mt-3 border rounded-lg overflow-hidden">
                         <div class="px-3 py-2 bg-slate-50 border-b">

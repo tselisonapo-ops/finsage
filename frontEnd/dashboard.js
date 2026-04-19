@@ -35799,6 +35799,11 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     const openBtn = $("revOpenBillingInvoice");
     const createBtn = $("revCreateBillingInvoice");
 
+    const setText = (id, value) => {
+      const el = $(id);
+      if (el) el.textContent = value;
+    };
+
     if (!emptyEl || !wrapEl) return;
 
     if (!p) {
@@ -35823,28 +35828,30 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     }
 
     if (pattern === "revenue_before_billing") {
-      $("revBillPrevObligationName").textContent = p.obligation_name || "—";
-      $("revBillPrevSettlementPattern").textContent = p.settlement_pattern || "—";
-      $("revBillPrevTiming").textContent = p.recognition_timing || "—";
-      $("revBillPrevProgressMethod").textContent = p.progress_method || "—";
-      $("revBillPrevRecognised").textContent = money(p.recognized_to_date_preview || 0);
-      $("revBillPrevBilled").textContent = money(p.billed_to_date || 0);
-      $("revBillPrevAvailable").textContent = money(p.available_to_bill || 0);
+      setText("revBillPrevObligationName", p.obligation_name || "—");
+      setText("revBillPrevSettlementPattern", p.settlement_pattern || "—");
+      setText("revBillPrevTiming", p.recognition_timing || "—");
+      setText("revBillPrevProgressMethod", p.progress_method || "—");
+      setText("revBillPrevRecognised", money(p.recognized_to_date_preview || 0));
+      setText("revBillPrevBilled", money(p.billed_to_date || 0));
+      setText("revBillPrevAvailable", money(p.available_to_bill || 0));
 
       const runLabel = p.latest_recognition?.run_id
         ? `Run ${p.latest_recognition.run_id} (${p.latest_recognition.run_status || "draft"})`
         : "—";
-      $("revBillPrevRun").textContent = runLabel;
+      setText("revBillPrevRun", runLabel);
 
       const hasLinkedInvoice = !!p.linked_invoice?.invoice_id;
       const canCreate = !!p.ui?.can_create_invoice;
 
-      $("revBillingPreviewInvoiceMsg").textContent =
+      setText(
+        "revBillingPreviewInvoiceMsg",
         hasLinkedInvoice
           ? `Already billed on invoice ${p.linked_invoice.invoice_number || "#" + p.linked_invoice.invoice_id}.`
           : canCreate
             ? "Recognised work is available to bill."
-            : "No recognised amount is currently available to bill.";
+            : "No recognised amount is currently available to bill."
+      );
 
       if (openBtn) {
         openBtn.classList.toggle("hidden", !hasLinkedInvoice);
@@ -35887,20 +35894,24 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     }
 
     else if (pattern === "billing_before_revenue") {
-      $("revBillHistObligationName").textContent = p.obligation_name || "—";
-      $("revBillHistSettlementPattern").textContent = p.settlement_pattern || "—";
-      $("revBillHistAllocated").textContent = money(p.allocated_transaction_price || 0);
-      $("revBillHistBilled").textContent = money(p.billed_to_date || 0);
-      $("revBillHistRecognised").textContent = money(p.recognized_to_date_posted || 0);
+      setText("revBillHistObligationName", p.obligation_name || "—");
+      setText("revBillHistSettlementPattern", p.settlement_pattern || "—");
+      setText("revBillHistAllocated", money(p.allocated_transaction_price || 0));
+      setText("revBillHistBilled", money(p.billed_to_date || 0));
+      setText("revBillHistRecognised", money(p.recognized_to_date_posted || 0));
 
       const diff = Number(p.billed_to_date || 0) - Number(p.recognized_to_date_posted || 0);
-      $("revBillHistPosition").textContent =
+      setText(
+        "revBillHistPosition",
         diff > 0 ? `Liability ${money(diff)}`
         : diff < 0 ? `Asset ${money(Math.abs(diff))}`
-        : "Neutral";
+        : "Neutral"
+      );
 
-      $("revBillingBeforeRevenueMsg").textContent =
-        "Billing is ahead of revenue for this obligation/contract. Use Billing Overview and linked invoices to track allocation; do not create invoices from recognition preview here.";
+      setText(
+        "revBillingBeforeRevenueMsg",
+        "Billing is ahead of revenue for this obligation/contract. Use Billing Overview and linked invoices to track allocation; do not create invoices from recognition preview here."
+      );
 
       if (openBtn) {
         const hasLinkedInvoice = !!p.linked_invoice?.invoice_id;
