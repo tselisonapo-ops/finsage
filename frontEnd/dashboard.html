@@ -3867,10 +3867,10 @@ html, body {
 
                   <!-- Billable Preview -->
                   <div class="card p-3 border">
-                    <div class="font-semibold text-sm mb-2">Billing Preview</div>
+                    <div id="revBillingCardTitle" class="font-semibold text-sm mb-2">Billing</div>
 
                     <div id="revBillingPreviewEmpty" class="text-sm text-slate-500">
-                      Select an over-time obligation to view recognised revenue available to bill.
+                      Select an obligation to view billing information.
                     </div>
 
                     <div id="revBillingPreviewWrap" class="hidden space-y-3">
@@ -3883,6 +3883,41 @@ html, body {
                         <div><span class="text-slate-500">Already billed:</span> <strong id="revBillPrevBilled">0.00</strong></div>
                         <div><span class="text-slate-500">Available to bill:</span> <strong id="revBillPrevAvailable">0.00</strong></div>
                         <div><span class="text-slate-500">Latest run:</span> <strong id="revBillPrevRun">—</strong></div>
+                      </div>
+
+                      <div id="revBillingRevenueBeforeWrap" class="hidden space-y-3">
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                          <div><span class="text-slate-500">Obligation:</span> <strong id="revBillPrevObligationName">—</strong></div>
+                          <div><span class="text-slate-500">Settlement:</span> <strong id="revBillPrevSettlementPattern">—</strong></div>
+                          <div><span class="text-slate-500">Timing:</span> <strong id="revBillPrevTiming">—</strong></div>
+                          <div><span class="text-slate-500">Progress Method:</span> <strong id="revBillPrevProgressMethod">—</strong></div>
+                          <div><span class="text-slate-500">Recognised to date:</span> <strong id="revBillPrevRecognised">0.00</strong></div>
+                          <div><span class="text-slate-500">Already billed:</span> <strong id="revBillPrevBilled">0.00</strong></div>
+                          <div><span class="text-slate-500">Available to bill:</span> <strong id="revBillPrevAvailable">0.00</strong></div>
+                          <div><span class="text-slate-500">Latest run:</span> <strong id="revBillPrevRun">—</strong></div>
+                        </div>
+
+                        <div id="revBillingPreviewInvoiceMsg" class="text-xs text-slate-500"></div>
+
+                        <div class="flex items-center gap-2">
+                          <button id="revCreateBillingInvoice" class="btn" type="button">Create Invoice</button>
+                          <button id="revOpenBillingInvoice" class="btn-ghost hidden" type="button">Open Invoice</button>
+                        </div>
+                      </div>
+
+                      <div id="revBillingBeforeRevenueWrap" class="hidden space-y-3">
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                          <div><span class="text-slate-500">Obligation:</span> <strong id="revBillHistObligationName">—</strong></div>
+                          <div><span class="text-slate-500">Settlement:</span> <strong id="revBillHistSettlementPattern">—</strong></div>
+                          <div><span class="text-slate-500">Allocated price:</span> <strong id="revBillHistAllocated">0.00</strong></div>
+                          <div><span class="text-slate-500">Billed to date:</span> <strong id="revBillHistBilled">0.00</strong></div>
+                          <div><span class="text-slate-500">Recognised to date:</span> <strong id="revBillHistRecognised">0.00</strong></div>
+                          <div><span class="text-slate-500">Contract position:</span> <strong id="revBillHistPosition">—</strong></div>
+                        </div>
+
+                        <div id="revBillingBeforeRevenueMsg" class="text-xs text-slate-500">
+                          Billing is contract-first for this settlement pattern. Revenue is recognised later against the billed amount.
+                        </div>
                       </div>
 
                       <div id="revBillingPreviewInvoiceMsg" class="text-xs text-slate-500"></div>
