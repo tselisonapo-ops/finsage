@@ -405,8 +405,6 @@ def build_cashflow_indirect_v2(
         adjustments_total = 0.0
         resolved_adjustments: List[str] = []
 
-        all_codes = set(tb_open.keys()) | set(tb_close.keys())
-
         for code in all_codes:
             r_close = tb_close.get(code) or {}
             r_open = tb_open.get(code) or {}
@@ -426,8 +424,14 @@ def build_cashflow_indirect_v2(
             ).strip()
 
             kind = _kind_from_row(r_close) if r_close else _kind_from_row(r_open)
-            bal_close = _bs_signed(kind, r_close)
-            bal_open = _bs_signed(kind, r_open)
+
+            if kind in ("asset", "liability", "equity"):
+                bal_close = _bs_signed(kind, r_close)
+                bal_open = _bs_signed(kind, r_open)
+            else:
+                bal_close = ac._pnl_amount(r_close) if r_close else 0.0
+                bal_open = ac._pnl_amount(r_open) if r_open else 0.0
+
             delta = bal_close - bal_open
 
             adj_amt = None
