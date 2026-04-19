@@ -18057,7 +18057,9 @@ function toggleRow(id) {
   const rows = document.querySelectorAll(`[data-parent="${id}"]`);
   const icon = document.getElementById(`${id}-icon`);
 
-  const isOpen = rows[0]?.style.display !== "none";
+  if (!rows.length) return;
+
+  const isOpen = rows[0].style.display !== "none";
 
   rows.forEach(r => {
     r.style.display = isOpen ? "none" : "table-row";
@@ -18065,6 +18067,16 @@ function toggleRow(id) {
 
   if (icon) icon.textContent = isOpen ? "▸" : "▾";
 }
+
+document.addEventListener("click", (e) => {
+  const tr = e.target.closest(".cf-toggle-row");
+  if (!tr) return;
+
+  const id = tr.getAttribute("data-toggle-id");
+  if (!id) return;
+
+  toggleRow(id);
+});
 
 function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
   const meta = stmt?.meta || {};
@@ -18152,12 +18164,12 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
     if (rowType === "breakdown") {
       const arrow = hasDetail ? `<span id="${safeId}-icon" class="inline-block mr-1">▸</span>` : "";
 
-      const mainRow = `
-        <tr class="border-b border-slate-100 ${hasDetail ? "cursor-pointer" : ""}"
-            ${hasDetail ? `onclick="toggleRow('${safeId}')"` : ""}>
+    const mainRow = `
+      <tr class="border-b border-slate-100 ${hasDetail ? "cursor-pointer cf-toggle-row" : ""}"
+          ${hasDetail ? `data-toggle-id="${safeId}"` : ""}>
           <td class="py-[2px] pr-3 pl-5">${arrow}${esc(name)}</td>
           <td class="text-right">${brk ? fmtAmt(brk) : ""}</td>
-          <td></td>
+          <td class="text-right">${tot ? fmtAmt(tot) : ""}</td>
           ${colC ? `<td></td>` : ""}
         </tr>
       `;

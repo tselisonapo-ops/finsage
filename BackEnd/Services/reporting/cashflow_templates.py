@@ -648,28 +648,64 @@ def build_cashflow_indirect_v2(
             ]
         else:
             lines = [
-                {"code":"NET_PROFIT", "name":"Net profit / (loss)", "row_type": "normal", "values": _val(net_profit, 0.0)},
+                {
+                    "code": "NET_PROFIT",
+                    "name": "Net profit / (loss)",
+                    "row_type": "normal",
+                    "values": _val(net_profit, 0.0),
+                },
+                {
+                    "code": "ADJUST_HDR",
+                    "name": "Adjustments for:",
+                    "row_type": "header",
+                    "values": _val(0.0, 0.0),
+                },
                 {
                     "code": "NONCASH",
                     "name": "Non-cash and other operating adjustments",
                     "row_type": "breakdown",
-                    "values": _val(
-                        0.0,
-                        0.0,
-                        adjustments_total,
-                        ws_show_total=False,
-                        ws_show_breakdown=True,
-                    ),
+                    "values": _val(adjustments_total, 0.0),
                     "detail": {
                         "cur": adjustment_lines,
                         "pri": [],
                     },
                 },
-           
-                {"code":"WC_AR", "name":"Change in receivables", "row_type": "normal", "values": _val(receivables_effect, 0.0)},
-                {"code":"WC_AP", "name":"Change in payables", "row_type": "normal", "values": _val(payables_effect, 0.0)},
-                {"code":"WC_INV", "name":"Change in inventory", "row_type": "normal", "values": _val(inventory_effect, 0.0)},
-                {"code":"WC_VAT", "name":"Change in VAT / tax balances", "row_type": "normal", "values": _val(vat_effect, 0.0)},
+                {
+                    "code": "OP_BEFORE_WC",
+                    "name": "Operating profit before working capital changes",
+                    "row_type": "subtotal",
+                    "values": _val(operating_profit_before_wc, 0.0),
+                },
+                {
+                    "code": "WC_HDR",
+                    "name": "Changes in working capital:",
+                    "row_type": "header",
+                    "values": _val(0.0, 0.0),
+                },
+                {
+                    "code": "WC_AR",
+                    "name": "Change in receivables",
+                    "row_type": "normal",
+                    "values": _val(receivables_effect, 0.0),
+                },
+                {
+                    "code": "WC_AP",
+                    "name": "Change in payables",
+                    "row_type": "normal",
+                    "values": _val(payables_effect, 0.0),
+                },
+                {
+                    "code": "WC_INV",
+                    "name": "Change in inventory",
+                    "row_type": "normal",
+                    "values": _val(inventory_effect, 0.0),
+                },
+                {
+                    "code": "WC_VAT",
+                    "name": "Change in VAT / tax balances",
+                    "row_type": "normal",
+                    "values": _val(vat_effect, 0.0),
+                },
             ]
 
         return {
