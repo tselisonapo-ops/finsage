@@ -36050,6 +36050,21 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     }
   }
 
+  async function loadSelectedObligationBillablePreview() {
+    const cid = activeCid();
+    const obligationId = Number(state.selectedObligation?.id || 0) || null;
+
+    if (!cid || !obligationId) return null;
+
+    const raw = await apiFetch(
+      ENDPOINTS.revenue.billablePreview(cid, obligationId),
+      { method: "GET" }
+    );
+
+    return raw?.data || raw || null;
+  }
+  window.loadSelectedObligationBillablePreview  = loadSelectedObligationBillablePreview ;
+  
   function refreshRevenueObligationActions() {
     const hasContract = !!Number($("revContractId")?.value || 0);
     const btn = $("revSaveObligation");
@@ -47591,19 +47606,6 @@ function bindAR() {
   }
   window.loadInvoiceLineObligationsFromContract = loadInvoiceLineObligationsFromContract;
 
-  async function loadSelectedObligationBillablePreview() {
-    const cid = activeCid();
-    const obligationId = Number(state.selectedObligation?.id || 0) || null;
-
-    if (!cid || !obligationId) return null;
-
-    const raw = await apiFetch(
-      ENDPOINTS.revenue.billablePreview(cid, obligationId),
-      { method: "GET" }
-    );
-
-    return raw?.data || raw || null;
-  }
 
   async function applyObligationBillingToLine(row) {
     const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
