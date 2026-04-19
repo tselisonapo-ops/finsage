@@ -425,28 +425,29 @@ def build_cashflow_indirect_v2(
                 or code
             ).strip()
 
-            kind_close = _kind_from_row(r_close) if r_close else _kind_from_row(r_open)
-            bal_close = _bs_signed(kind_close, r_close)
-            bal_open = _bs_signed(kind_close, r_open)
+            kind = _kind_from_row(r_close) if r_close else _kind_from_row(r_open)
+            bal_close = _bs_signed(kind, r_close)
+            bal_open = _bs_signed(kind, r_open)
             delta = bal_close - bal_open
 
             adj_amt = None
 
-            if (
-                bucket in ("depreciation", "amortization")
-                or role.startswith("depreciation_expense")
-                or role.startswith("amortisation_expense")
-            ):
-                adj_amt = abs(delta)
+            # only expense-side accounts belong in operating adjustments
+            if kind == "expense":
+                if (
+                    role.startswith("depreciation_expense")
+                    or role.startswith("amortisation_expense")
+                ):
+                    adj_amt = abs(delta)
 
-            elif "loss" in name.lower() and "disposal" in name.lower():
-                adj_amt = abs(delta)
+                elif "loss" in name.lower() and "disposal" in name.lower():
+                    adj_amt = abs(delta)
 
-            elif "gain" in name.lower() and "disposal" in name.lower():
-                adj_amt = -abs(delta)
+                elif "gain" in name.lower() and "disposal" in name.lower():
+                    adj_amt = -abs(delta)
 
-            elif role in ("loan_interest_expense", "lease_interest_expense"):
-                adj_amt = abs(delta)
+                elif role in ("loan_interest_expense", "lease_interest_expense"):
+                    adj_amt = abs(delta)
 
             if adj_amt is not None and abs(adj_amt) > 0.000001:
                 adjustments_total += adj_amt
@@ -536,7 +537,7 @@ def build_cashflow_indirect_v2(
                 },
                 {
                     "code": "NONCASH",
-                    "name": "Depreciation / amortisation / other non-cash items",
+                    "name": "Non-cash and other operating adjustments",
                     "row_type": "breakdown",
                     "values": _val(
                         adjustments_total,
@@ -646,7 +647,7 @@ def build_cashflow_indirect_v2(
                 {"code":"NET_PROFIT", "name":"Net profit / (loss)", "row_type": "normal", "values": _val(net_profit, 0.0)},
                 {
                     "code": "NONCASH",
-                    "name": "Depreciation / amortisation / other non-cash items",
+                    "name": "Non-cash and other operating adjustments",
                     "row_type": "breakdown",
                     "values": _val(
                         0.0,
@@ -674,7 +675,7 @@ def build_cashflow_indirect_v2(
                 "adjustments_for": [
                     {
                         "code": "NONCASH",
-                        "name": "Depreciation / amortisation / other non-cash items",
+                        "name": "Non-cash and other operating adjustments",
                         "amount": adjustments_total,
                         "detail": adjustment_lines,
                     }
