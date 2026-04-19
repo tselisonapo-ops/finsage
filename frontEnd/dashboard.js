@@ -17919,47 +17919,7 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
   `;
 }
 
-function renderCashFlowFullHtml(stmt, { periodLabel = "", preview_columns = 1, cols_mode = 1 } = {}) {
-  const meta = stmt?.meta || {};
-  const method = String(meta.method || "direct").toLowerCase();     // direct|indirect
-  const basis  = String(meta.basis  || "external").toLowerCase();   // external|management
-  const pv = Number(preview_columns || meta.preview_columns || 1);  // 1|2
-  const cm = Number(cols_mode || meta.cols_mode || 1);              // 1|2|3
 
-  const isMgmt = (basis === "management" || basis === "internal");
-  const isIndirect = (method === "indirect");
-
-  // ---------- INDIRECT ----------
-  if (isIndirect) {
-    if (isMgmt) {
-      // ✅ choose mgmt indirect renderer by cols_mode (if you have 2-col + 3-col)
-      if (cm === 3 && typeof window.renderCashFlowIndirectMgmt3ColHtml === "function") {
-        return window.renderCashFlowIndirectMgmt3ColHtml(stmt, { periodLabel });
-      }
-      if (typeof window.renderCashFlowIndirectMgmt2ColHtml === "function") {
-        return window.renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel });
-      }
-    }
-
-    // fallback existing indirect renderers
-    if (pv === 2 && typeof window.renderCashFlowIndirect2ColHtml === "function") {
-      return window.renderCashFlowIndirect2ColHtml(stmt, { periodLabel });
-    }
-    if (typeof window.renderCashFlowIndirectFullHtml === "function") {
-      return window.renderCashFlowIndirectFullHtml(stmt, { periodLabel });
-    }
-  }
-
-  // ---------- DIRECT ----------
-  if (pv === 2 && typeof window.renderCashFlowDirect2ColHtml === "function") {
-    return window.renderCashFlowDirect2ColHtml(stmt, { periodLabel });
-  }
-  if (typeof window.renderCashFlowDirectFullHtml === "function") {
-    return window.renderCashFlowDirectFullHtml(stmt, { periodLabel });
-  }
-
-  return `<pre class="text-[11px] whitespace-pre-wrap">${esc(JSON.stringify(stmt, null, 2))}</pre>`;
-}
 
 function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
   const meta = stmt?.meta || {};
@@ -18166,6 +18126,47 @@ function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
     </div>
   `;
 }
+function renderCashFlowFullHtml(stmt, { periodLabel = "", preview_columns = 1, cols_mode = 1 } = {}) {
+  const meta = stmt?.meta || {};
+  const method = String(meta.method || "direct").toLowerCase();     // direct|indirect
+  const basis  = String(meta.basis  || "external").toLowerCase();   // external|management
+  const pv = Number(preview_columns || meta.preview_columns || 1);  // 1|2
+  const cm = Number(cols_mode || meta.cols_mode || 1);              // 1|2|3
+
+  const isMgmt = (basis === "management" || basis === "internal");
+  const isIndirect = (method === "indirect");
+
+  // ---------- INDIRECT ----------
+  if (isIndirect) {
+    if (isMgmt) {
+      // ✅ choose mgmt indirect renderer by cols_mode (if you have 2-col + 3-col)
+      if (cm === 3 && typeof window.renderCashFlowIndirectMgmt3ColHtml === "function") {
+        return window.renderCashFlowIndirectMgmt3ColHtml(stmt, { periodLabel });
+      }
+      if (typeof window.renderCashFlowIndirectMgmt2ColHtml === "function") {
+        return window.renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel });
+      }
+    }
+
+    // fallback existing indirect renderers
+    if (pv === 2 && typeof window.renderCashFlowIndirect2ColHtml === "function") {
+      return window.renderCashFlowIndirect2ColHtml(stmt, { periodLabel });
+    }
+    if (typeof window.renderCashFlowIndirectFullHtml === "function") {
+      return window.renderCashFlowIndirectFullHtml(stmt, { periodLabel });
+    }
+  }
+
+  // ---------- DIRECT ----------
+  if (pv === 2 && typeof window.renderCashFlowDirect2ColHtml === "function") {
+    return window.renderCashFlowDirect2ColHtml(stmt, { periodLabel });
+  }
+  if (typeof window.renderCashFlowDirectFullHtml === "function") {
+    return window.renderCashFlowDirectFullHtml(stmt, { periodLabel });
+  }
+
+  return `<pre class="text-[11px] whitespace-pre-wrap">${esc(JSON.stringify(stmt, null, 2))}</pre>`;
+}
 
 function toggleRow(id) {
   const rows = document.querySelectorAll(`[data-parent="${id}"]`);
@@ -18189,14 +18190,6 @@ document.addEventListener("click", (e) => {
   const id = tr.getAttribute("data-toggle-id");
   if (!id) return;
 
-  toggleRow(id);
-});
-
-document.addEventListener("click", (e) => {
-  const tr = e.target.closest(".cf-toggle-row");
-  if (!tr) return;
-  const id = tr.getAttribute("data-toggle-id");
-  if (!id) return;
   toggleRow(id);
 });
 
