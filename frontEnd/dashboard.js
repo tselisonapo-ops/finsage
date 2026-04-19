@@ -34481,24 +34481,42 @@ function bindAssetRecordsPickerModal({ cid }) {
     try {
       setMsg("Refreshing contract...");
 
-      // 1. Reload contracts list
+      const selectedObligationId = Number(state.selectedObligation?.id || 0) || null;
+
       const data = await apiFetch(`${ENDPOINTS.revenue.contracts(cid)}?limit=100`);
       state.contracts = data?.items || data?.data?.items || data?.data || [];
 
-      // 2. Find updated contract
       const updated = state.contracts.find(x => Number(x.id) === Number(c.id));
       if (!updated) return;
 
       state.selectedContract = updated;
 
-      // 3. Re-render everything
       renderContractPreview(updated);
       renderContractKpis(updated);
 
       await loadObligations(updated.id);
+
+      // restore selected obligation after obligations reload
+      if (selectedObligationId && Array.isArray(state.contractObligations)) {
+        const selected = state.contractObligations.find(
+          x => Number(x.id) === Number(selectedObligationId)
+        );
+        if (selected) {
+          state.selectedObligation = selected;
+          if ($("revObligationId")) {
+            $("revObligationId").value = String(selected.id || "");
+          }
+          renderObligationPreview(selected);
+        }
+      }
+
       await loadRuns();
       await loadBillingOverview(updated.id);
       await loadCashOverview(updated.id);
+
+      if (state.tab === "billings") {
+        await refreshRevenueBillingPreviewAsync();
+      }
 
       setMsg("Updated.");
     } catch (e) {
@@ -35508,12 +35526,32 @@ async function loadLatestRevenueProgressForSelectedObligation() {
           if (!row) throw new Error("Could not load obligation");
 
           state.selectedObligation = row;
-          if ($("revObligationId")) $("revObligationId").value = String(row.id || "");
+          
+          console.log("[Revenue] selected obligation", {
+            id: row.id,
+            code: row.obligation_code,
+            name: row.obligation_name,
+            tab: state.tab,
+          });
+
+          if ($("revObligationId")) {
+            $("revObligationId").value = String(row.id || "");
+          }
 
           renderObligationPreview(row);
           renderObligationContractBanner(null);
           setObligationViewMode("preview");
+
+          // existing progress refresh
           await refreshRevenueProgressUIAsync();
+
+          // NEW: billing depends on selected obligation too
+          if (state.tab === "billings") {
+            await refreshRevenueBillingPreviewAsync();
+          }
+
+          // optional: useful feedback while testing
+          setMsg(`Selected obligation ${row.obligation_code || row.id}.`);
         } catch (e) {
           setMsg(e?.message || "Failed to load obligation", "error");
         }
