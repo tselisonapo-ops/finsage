@@ -600,8 +600,11 @@ def _asset_group_name(name: str) -> str:
 # ============================================================
 
 def _is_cash_bank(row: Dict[str, Any]) -> bool:
-    text = _norm_text(row.get("section"), row.get("category"), _account_name(row))
+    meta = resolve_account_cf_meta(row)
+    if meta["bucket"] == "cash":
+        return True
 
+    text = _norm_text(row.get("section"), row.get("category"), _account_name(row))
     cash_keywords = (
         "cash and bank", "cash & bank", "cash at bank", "bank account",
         "cash equivalents", "cash equivalent", "petty cash",
@@ -610,27 +613,23 @@ def _is_cash_bank(row: Dict[str, Any]) -> bool:
     if any(k in text for k in cash_keywords):
         return True
 
-    if "cash" in text and "cash flow" not in text:
-        return True
-
-    # Code fallback
     code = _account_code(row)
     try:
         code_int = int(code)
     except (ValueError, TypeError):
         code_int = None
 
-    if code_int is not None:
-        # Tune to your COA ranges
-        if 1000 <= code_int <= 1099:
-            return True
+    if code_int is not None and 1000 <= code_int <= 1099:
+        return True
 
     return False
 
-
 def _is_overdraft(row: Dict[str, Any]) -> bool:
-    text = _norm_text(row.get("section"), row.get("category"), _account_name(row))
+    meta = resolve_account_cf_meta(row)
+    if meta["bucket"] == "overdraft":
+        return True
 
+    text = _norm_text(row.get("section"), row.get("category"), _account_name(row))
     if any(k in text for k in ("overdraft", "bank overdraft", "facility", "bank facility", "revolver")):
         return True
 
@@ -646,280 +645,57 @@ def _is_overdraft(row: Dict[str, Any]) -> bool:
     return 2100 <= code_int <= 2199
 
 def _classify_cf_section(row: Dict[str, Any]) -> str:
-    """
-    Classify a JOURNAL LINE into: operating | investing | financing | none | ignore
-
-    Intended for journal lines returned by GetJournalsPeriodFn.
-
-    Priority order:
-      1) Explicit tag in row['cf_section'] (if valid)
-      2) Cash/bank lines => ignore (cash leg is not the "classified" leg)
-      3) Strong flags: is_cash_equiv, is_working_capital
-      4) cf_bucket hints (if you use buckets like capex, loan_principal, etc.)
-      5) code_family / reporting code prefix hints
-      6) keyword heuristics over (section/category/name)
-    """
-
-    def _s(v: Any) -> str:
-        return str(v or "").strip()
-
-    def _low(v: Any) -> str:
-        return _s(v).lower()
-
-    def _account_name(r: Dict[str, Any]) -> str:
-        # best-effort: journal lines often vary in naming keys
-        return _s(
-            r.get("account_name")
-            or r.get("name")
-            or r.get("account")
-            or r.get("account_code")
-            or r.get("code")
-        )
-
-    def _norm_text(*parts: Any) -> str:
-        return " ".join([_low(p) for p in parts if _s(p)]).strip()
-
-    def _boolish(v: Any) -> bool:
-        if isinstance(v, bool):
-            return v
-        s = _low(v)
-        return s in ("1", "true", "t", "yes", "y", "on")
-
-    # ---------------------------
-    # 1) Respect explicit tags
-    # ---------------------------
-    tagged = _low(row.get("cf_section"))
-    if tagged in ("operating", "investing", "financing", "none"):
-        return tagged
-
-    # ---------------------------
-    # 2) Ignore cash/bank lines
-    # ---------------------------
-    # Use your existing cash detector if you have one.
-    # If not available in this module, you can replace with your own logic.
-    try:
-        if _is_cash_bank(row):   # <-- your existing helper
-            return "ignore"
-    except Exception:
-        # fallback cash detection if _is_cash_bank isn't in scope
-        t = _norm_text(row.get("category"), row.get("section"), _account_name(row))
-        if any(k in t for k in ("cash", "bank", "petty cash", "overdraft")) and "receivable" not in t:
-            return "ignore"
-
-    # Strong flag: explicit cash equiv rows should not be classified as noncash legs
-    if _boolish(row.get("is_cash_equiv")):
+    if _is_cash_bank(row):
         return "ignore"
 
-    # Working capital movements are operating by definition in most normal cashflow layouts
-    if _boolish(row.get("is_working_capital")):
-        return "operating"
+    meta = resolve_account_cf_meta(row)
+    section = (meta.get("section") or "").lower()
+    if section in ("operating", "investing", "financing", "none"):
+        return section
 
-    # ---------------------------
-    # 3) cf_bucket hints (if present)
-    # ---------------------------
-    b = _low(row.get("cf_bucket"))
-
-    # Financing buckets (examples — match your own bucket names)
-    if b in (
-        "loan_principal", "borrowings", "debt", "lease_principal",
-        "equity", "dividends", "share_capital", "owner_drawings"
-    ):
-        return "financing"
-
-    # Investing buckets
-    if b in (
-        "capex", "ppe", "intangible", "software", "asset_purchase",
-        "asset_sale", "investment", "long_term_investment"
-    ):
-        return "investing"
-
-    # Operating buckets (explicit)
-    if b in (
-        "receivables", "payables", "inventory", "vat", "tax",
-        "interest", "interest_paid", "interest_received",
-        "operating"
-    ):
-        return "operating"
-
-    # ---------------------------
-    # 4) code_family / reporting code hints
-    # ---------------------------
-    code_family = _low(row.get("code_family"))
-    code = _s(row.get("code"))
-
-    # If code_family isn't stored on journal lines, derive from reporting code: "BS_NCL_2400" -> "BS_NCL"
-    if not code_family and code.count("_") >= 2:
-        parts = code.split("_")
-        code_family = f"{parts[0].lower()}_{parts[1].lower()}"  # e.g. bs_ncl
-
-    # If it looks like equity or non-current liability, it's often financing
-    if code_family in ("bs_eq", "bs_ncl"):
-        return "financing"
-
-    # If it looks like non-current assets, it's often investing
-    if code_family in ("bs_nca",):
-        return "investing"
-
-    # Current assets/liabilities are usually operating (WC) unless known financing debt
-    if code_family in ("bs_ca", "bs_cl"):
-        # allow debt-like terms to override to financing
-        t = _norm_text(row.get("section"), row.get("category"), _account_name(row))
-        if any(k in t for k in ("loan", "borrow", "lease liability", "debenture", "note payable", "hire purchase")):
-            return "financing"
-        return "operating"
-
-    # ---------------------------
-    # 5) keyword heuristics (last resort)
-    # ---------------------------
-    text = _norm_text(row.get("section"), row.get("category"), _account_name(row), row.get("standard"))
-
-    # Financing keywords
-    if any(k in text for k in (
-        "loan", "borrow", "overdraft", "lease liability",
-        "debenture", "note payable", "hire purchase",
-        "share capital", "equity", "dividend", "drawings"
-    )):
-        return "financing"
-
-    # Investing keywords
-    if any(k in text for k in (
-        "property, plant", "plant", "equipment", "ppe",
-        "intangible", "software", "vehicle", "motor vehicle",
-        "land", "building", "investment property",
-        "long-term investment", "capitalised", "capitalized"
-    )):
-        return "investing"
-
-    # Otherwise operating
     return "operating"
 
 def _classify_cf_section_from_tb(row: Dict[str, Any]) -> str:
-    """
-    Classify a TB row into: operating | investing | financing
+    meta = resolve_account_cf_meta(row)
+    section = (meta.get("section") or "").lower()
+    if section in ("operating", "investing", "financing"):
+        return section
 
-    Goal:
-    - stay aligned with _classify_cf_section()
-    - prefer stable metadata first
-    - use keywords only as fallback
-    """
-
-    def _s(v: Any) -> str:
-        return str(v or "").strip()
-
-    def _low(v: Any) -> str:
-        return _s(v).lower()
-
-    def _norm_text(*parts: Any) -> str:
-        return " ".join([_low(p) for p in parts if _s(p)]).strip()
-
-    def _boolish(v: Any) -> bool:
-        if isinstance(v, bool):
-            return v
-        return _low(v) in ("1", "true", "t", "yes", "y", "on")
-
-    def _account_name(r: Dict[str, Any]) -> str:
-        return _s(
-            r.get("account_name")
-            or r.get("name")
-            or r.get("account")
-            or r.get("account_code")
-            or r.get("code")
-        )
-
-    # 1) explicit tag wins
-    tagged = _low(row.get("cf_section"))
-    if tagged in ("operating", "investing", "financing"):
-        return tagged
-
-    # 2) explicit working capital wins
-    if _boolish(row.get("is_working_capital")):
-        return "operating"
-
-    # 3) bucket hints
-    b = _low(row.get("cf_bucket"))
-
-    if b in (
-        "loan_principal", "borrowings", "debt", "lease_principal",
-        "equity", "dividends", "share_capital", "owner_drawings"
-    ):
-        return "financing"
-
-    if b in (
-        "capex", "ppe", "intangible", "software", "asset_purchase",
-        "asset_sale", "investment", "long_term_investment"
-    ):
-        return "investing"
-
-    if b in (
-        "receivables", "payables", "inventory", "vat", "tax",
-        "interest", "interest_paid", "interest_received",
-        "operating"
-    ):
-        return "operating"
-
-    # 4) code family hints
-    code = _s(row.get("code") or row.get("account") or row.get("account_code"))
-    code_family = _low(row.get("code_family"))
-
-    if not code_family and code.count("_") >= 2:
-        parts = code.split("_")
-        code_family = f"{parts[0].lower()}_{parts[1].lower()}"
-
-    text = _norm_text(
-        row.get("section"),
-        row.get("category"),
-        _account_name(row),
-        row.get("standard"),
-    )
-
-    if code_family in ("bs_eq", "bs_ncl"):
-        return "financing"
-
-    if code_family in ("bs_nca",):
-        return "investing"
-
-    if code_family in ("bs_ca", "bs_cl"):
-        if any(k in text for k in (
-            "loan", "borrow", "lease liability", "debenture",
-            "note payable", "hire purchase", "overdraft"
-        )):
-            return "financing"
-        return "operating"
-
-    # 5) fallback from TB kind
     kind = _classify_tb_row(row)
-
     if kind == "equity":
         return "financing"
 
-    if kind == "liability":
-        if any(k in text for k in (
-            "loan", "borrow", "lease liability", "debenture",
-            "note payable", "hire purchase", "overdraft"
-        )):
-            return "financing"
-        return "operating"
-
-    if kind == "asset":
-        if any(k in text for k in (
-            "property, plant", "plant", "equipment", "ppe",
-            "construction equipment", "motor vehicle", "vehicle",
-            "intangible", "software", "goodwill",
-            "investment property", "long-term investment",
-            "land", "building"
-        )):
-            return "investing"
-
-        if any(k in text for k in (
-            "receivable", "debtors", "accounts receivable",
-            "trade receivable", "inventory", "stock",
-            "vat", "tax", "sars", "input vat", "vat receivable"
-        )):
-            return "operating"
-
-        return "operating"
-
     return "operating"
+
+def resolve_account_cf_meta(row: dict) -> dict:
+    """
+    Single source of truth for cashflow classification.
+    """
+
+    name = row.get("name") or row.get("account_name")
+    category = row.get("category")
+    section = row.get("section")
+    subcategory = row.get("subcategory")
+    standard = row.get("standard")
+
+    # 1. Bucket
+    bucket = row.get("cf_bucket") or _cf_bucket_from_text(
+        name, category, section, subcategory, standard
+    )
+
+    # 2. Section
+    section_cf = row.get("cf_section") or _cf_section_from_bucket(bucket)
+
+    # 3. Role (for precision like depreciation, leases, loans)
+    role = row.get("role") or _coa_role_from_text(
+        name, section, category, subcategory, standard
+    )
+
+    return {
+        "bucket": bucket,
+        "section": section_cf,
+        "role": role,
+    }
 
 def cash_position_amount(tb_rows: List[Dict[str, Any]]) -> Decimal:
     """

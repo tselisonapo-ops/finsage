@@ -407,44 +407,53 @@ def build_cashflow_indirect_v2(
         pnl_lines = pnl.get("lines") or []
 
         for ln in pnl_lines:
-            raw_name = str(ln.get("name") or "").strip() or "Adjustment"
-            name = raw_name.lower()
-            amount = float(ln.get("amount") or 0.0)
+            meta = ac.resolve_account_cf_meta({
+                **ln,
+                "category": ln.get("category") or ln.get("section") or "",
+                "section": ln.get("section") or "",
+                "account_name": ln.get("name"),
+            })
+            raw_name = str(ln.get("name") or ln.get("account_name") or ln.get("code") or "").strip() or "Adjustment"
+            amount = float(
+                ln.get("amount")
+                or ln.get("value")
+                or ln.get("closing_balance")
+                or 0.0
+            )
+            role = str(meta.get("role") or "").lower()
+            bucket = str(meta.get("bucket") or "").lower()
 
             adj_amt = None
 
-            # --- NON-CASH (DEPRECIATION / AMORTISATION) ---
-            if any(k in name for k in ["depreciation", "amort", "rou"]):
+            # non-cash depreciation / amortisation
+            if bucket in ("depreciation", "amortization") or role.startswith("depreciation_expense") or role.startswith("amortisation_expense"):
                 adj_amt = abs(amount)
 
-            # --- LOSS ON DISPOSAL ---
-            elif "loss" in name and "disposal" in name:
+            # gains / losses on disposal
+            elif "loss" in raw_name.lower() and "disposal" in raw_name.lower():
                 adj_amt = abs(amount)
-
-            # --- GAIN ON DISPOSAL ---
-            elif "gain" in name and "disposal" in name:
+            elif "gain" in raw_name.lower() and "disposal" in raw_name.lower():
                 adj_amt = -abs(amount)
 
-            # --- FINANCE COSTS / INTEREST EXPENSE ---
-            elif any(k in name for k in ["interest", "finance cost", "finance costs"]):
-                # decide sign based on wording
-                if "income" in name:
-                    adj_amt = -abs(amount)
-                else:
-                    adj_amt = abs(amount)
-
-            # --- FX (optional but recommended) ---
-            elif "exchange" in name or "fx" in name:
+            # finance costs
+            elif role in ("loan_interest_expense", "lease_interest_expense") or "finance cost" in raw_name.lower() or "interest expense" in raw_name.lower():
                 adj_amt = abs(amount)
 
-            if adj_amt is not None:
+            # fx
+            elif "exchange" in raw_name.lower() or "fx" in raw_name.lower():
+                adj_amt = abs(amount)
+
+            if adj_amt is not None and abs(adj_amt) > 0.000001:
                 adjustments_total += adj_amt
                 resolved_adjustments.append(raw_name)
-
                 adjustment_lines.append({
                     "account_name": raw_name,
                     "amount": adj_amt,
+                    "code": ln.get("code") or ln.get("account") or "",
+                    "role": role,
+                    "bucket": bucket,
                 })
+                
 
         dep_journal_exists = any(
             str(j.get("source") or "").lower() == "asset_depreciation"
@@ -463,27 +472,27 @@ def build_cashflow_indirect_v2(
             r_open = tb_open.get(code) or {}
             row_any = r_close if r_close else r_open
 
-            if row_any and ac._is_cash_bank(row_any):
+            if not row_any:
                 continue
 
-            name_txt = (r_close.get("name") or r_open.get("name") or "").lower()
-            sec_txt = (r_close.get("section") or r_open.get("section") or "").lower()
-            cat_txt = (r_close.get("category") or r_open.get("category") or "").lower()
-            text = " ".join([sec_txt, cat_txt, name_txt])
+            if ac._is_cash_bank(row_any):
+                continue
+
+            meta = ac.resolve_account_cf_meta(row_any)
+            bucket = str(meta.get("bucket") or "").lower()
 
             kind_close = _kind_from_row(r_close) if r_close else _kind_from_row(r_open)
             bal_close = _bs_signed(kind_close, r_close)
             bal_open = _bs_signed(kind_close, r_open)
-
             delta = bal_close - bal_open
 
-            if any(k in text for k in ["receivable", "debtors", "accounts receivable", "trade receivable"]):
+            if bucket == "receivables":
                 wc["receivables"] += delta
-            elif any(k in text for k in ["payable", "creditor", "accounts payable", "trade payable", "accrual", "accrued"]):
+            elif bucket in ("payables", "grni_control", "unallocated_receipts", "deferred_revenue"):
                 wc["payables"] += delta
-            elif any(k in text for k in ["inventory", "stock"]):
+            elif bucket == "inventory":
                 wc["inventory"] += delta
-            elif any(k in text for k in ["vat", "tax", "sars", "input vat", "output vat"]):
+            elif bucket in ("vat_input", "vat_output", "tax_payable", "tax_receivable"):
                 wc["vat"] += delta
 
         receivables_effect = -wc["receivables"]
@@ -526,10 +535,10 @@ def build_cashflow_indirect_v2(
                     "name": "Depreciation / amortisation / other non-cash items",
                     "row_type": "breakdown",
                     "values": _val(
-                        0.0,
-                        0.0,
                         adjustments_total,
-                        ws_show_total=False,
+                        adjustments_total,
+                        adjustments_total,
+                        ws_show_total=True,
                         ws_show_breakdown=True,
                     ),
                     "detail": {
@@ -715,6 +724,7 @@ def build_cashflow_indirect_v2(
                     continue
 
                 sec_totals[sec] += adj
+                meta = ac.resolve_account_cf_meta(ln)
                 sec_lines[sec].append({
                     "date": j.get("date"),
                     "ref": j.get("ref"),
@@ -722,8 +732,11 @@ def build_cashflow_indirect_v2(
                     "account_name": ln.get("account_name") or ln.get("name") or (ln.get("account") or ln.get("account_code") or ""),
                     "memo": ln.get("memo") or "",
                     "amount": adj,
+                    "cf_bucket": meta.get("bucket"),
+                    "cf_role": meta.get("role"),
+                    "cf_section": meta.get("section"),
+                    "account_code": ln.get("account") or ln.get("account_code") or ln.get("code") or "",
                 })
-
         return {"totals": sec_totals, "lines": sec_lines}
 
     # Current
