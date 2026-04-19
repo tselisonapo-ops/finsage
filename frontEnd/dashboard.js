@@ -18053,6 +18053,19 @@ function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
   `;
 }
 
+function toggleRow(id) {
+  const rows = document.querySelectorAll(`[data-parent="${id}"]`);
+  const icon = document.getElementById(`${id}-icon`);
+
+  const isOpen = rows[0]?.style.display !== "none";
+
+  rows.forEach(r => {
+    r.style.display = isOpen ? "none" : "table-row";
+  });
+
+  if (icon) icon.textContent = isOpen ? "▸" : "▾";
+}
+
 function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
   const meta = stmt?.meta || {};
   const company  = meta.company_name || "Company";
@@ -18097,7 +18110,7 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
     const brk = values?.[colA.key];
     const tot = values?.[colB.key];
     const detailCur = Array.isArray(detail?.cur) ? detail.cur : [];
-    const hasDetail = rowCode === "NONCASH" && detailCur.length > 0;
+    const hasDetail = detailCur.length > 0;
     const safeId = rowId || `cf-row-${Math.random().toString(36).slice(2, 8)}`;
 
     // HEADER (e.g. "Adjustments for:")
@@ -18141,7 +18154,7 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
 
       const mainRow = `
         <tr class="border-b border-slate-100 ${hasDetail ? "cursor-pointer" : ""}"
-            ${hasDetail ? `onclick="(function(){const el=document.getElementById('${safeId}');const ic=document.getElementById('${safeId}-icon');const open=el.style.display==='table-row-group';el.style.display=open?'none':'table-row-group';if(ic) ic.textContent=open?'▸':'▾';})()"` : ""}>
+            ${hasDetail ? `onclick="toggleRow('${safeId}')"` : ""}>
           <td class="py-[2px] pr-3 pl-5">${arrow}${esc(name)}</td>
           <td class="text-right">${brk ? fmtAmt(brk) : ""}</td>
           <td></td>
@@ -18150,16 +18163,14 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
       `;
 
       const detailRows = hasDetail ? `
-        <tbody id="${safeId}" style="display:none;">
-          ${detailCur.map(d => `
-            <tr class="border-b border-slate-50 bg-slate-50/40">
-              <td class="py-[2px] pr-3 pl-9 text-slate-600">${esc(d?.account_name || "Adjustment")}</td>
-              <td class="text-right text-slate-600">${d?.amount ? fmtAmt(Number(d.amount)) : ""}</td>
-              <td></td>
-              ${colC ? `<td></td>` : ""}
-            </tr>
-          `).join("")}
-        </tbody>
+        ${detailCur.map(d => `
+          <tr data-parent="${safeId}" style="display:none;" class="border-b border-slate-50 bg-slate-50/40">
+            <td class="py-[2px] pr-3 pl-9 text-slate-600">${esc(d?.account_name || "Adjustment")}</td>
+            <td class="text-right text-slate-600">${d?.amount ? fmtAmt(Number(d.amount)) : ""}</td>
+            <td></td>
+            ${colC ? `<td></td>` : ""}
+          </tr>
+        `).join("")}
       ` : "";
 
       return `${mainRow}${detailRows}`;
@@ -18247,6 +18258,7 @@ function renderCashFlowIndirectMgmt2ColHtml(stmt, { periodLabel = "" } = {}) {
     </div>
   `;
 }
+
 
 function renderCashFlowDirect2ColHtml(stmt, { periodLabel = "" } = {}) {
   const meta = stmt?.meta || {};
