@@ -59585,7 +59585,191 @@ class DatabaseService:
             return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
         except Exception:
             return None
-    
+        
+    def _get_latest_revenue_obligation_invoice_link(
+        self,
+        company_id: int,
+        obligation_id: int,
+        cur=None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                rbe.id AS billing_event_id,
+                rbe.source_invoice_id AS invoice_id,
+                rbe.event_date,
+                rbe.amount,
+                rbe.currency,
+                i.number AS invoice_number,
+                i.status AS invoice_status
+            FROM {schema}.revenue_billing_events rbe
+            LEFT JOIN {schema}.invoices i
+            ON i.id = rbe.source_invoice_id
+            WHERE rbe.obligation_id = %s
+            AND rbe.source_invoice_id IS NOT NULL
+            ORDER BY rbe.event_date DESC, rbe.id DESC
+            LIMIT 1
+            """,
+            (int(obligation_id),),
+            cur=cur,
+        )
+        return row or None
+
+
+    def get_revenue_obligation_billable_preview(
+        self,
+        company_id: int,
+        obligation_id: int,
+        cur=None,
+    ) -> dict | None:
+        from decimal import Decimal
+        import json
+
+        schema = self.company_schema(company_id)
+
+        obligation = self.get_revenue_obligation(int(company_id), int(obligation_id), cur=cur)
+        if not obligation:
+            return None
+
+        contract_id = int(obligation.get("contract_id") or 0)
+        if not contract_id:
+            return None
+
+        contract = self.get_revenue_contract(int(company_id), contract_id, cur=cur)
+        if not contract:
+            return None
+
+        payload = contract.get("payload_json") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+
+        settlement_pattern = str(payload.get("settlement_pattern") or "").strip().lower()
+        timing = str(obligation.get("recognition_timing") or "").strip().lower()
+        progress_method = str(obligation.get("progress_method") or "").strip().lower() or None
+
+        billed_stats = self._obligation_billing_validation_stats(
+            company_id=int(company_id),
+            contract=contract,
+            obligation=obligation,
+            period_end=None,
+            cur=cur,
+        )
+
+        billed_to_date = Decimal(str(billed_stats.get("billed_to_date") or 0)).quantize(Decimal("0.01"))
+
+        latest_recognition = self.fetch_one(
+            f"""
+            SELECT
+                e.id,
+                e.run_id,
+                e.period_start,
+                e.period_end,
+                e.revenue_required_to_date,
+                e.revenue_previously_recognized,
+                e.revenue_delta_this_run,
+                e.contract_asset_delta,
+                e.contract_liability_delta,
+                r.status AS run_status,
+                r.posted_at,
+                r.created_at
+            FROM {schema}.revenue_recognition_entries e
+            JOIN {schema}.revenue_recognition_runs r
+            ON r.id = e.run_id
+            WHERE e.obligation_id = %s
+            AND r.status IN ('draft', 'posted')
+            ORDER BY
+                CASE WHEN r.status = 'posted' THEN 0 ELSE 1 END,
+                COALESCE(r.posted_at, r.created_at) DESC,
+                e.id DESC
+            LIMIT 1
+            """,
+            (int(obligation_id),),
+            cur=cur,
+        ) or {}
+
+        recognized_to_date_posted = Decimal(str(obligation.get("revenue_to_date") or 0)).quantize(Decimal("0.01"))
+
+        recognized_to_date_preview = recognized_to_date_posted
+        if latest_recognition:
+            recognized_to_date_preview = Decimal(
+                str(
+                    latest_recognition.get("revenue_required_to_date")
+                    if latest_recognition.get("revenue_required_to_date") is not None
+                    else obligation.get("revenue_to_date") or 0
+                )
+            ).quantize(Decimal("0.01"))
+
+        available_to_bill = (recognized_to_date_preview - billed_to_date).quantize(Decimal("0.01"))
+        if available_to_bill < Decimal("0.00"):
+            available_to_bill = Decimal("0.00")
+
+        linked_invoice = self._get_latest_revenue_obligation_invoice_link(
+            company_id=int(company_id),
+            obligation_id=int(obligation_id),
+            cur=cur,
+        )
+
+        return {
+            "company_id": int(company_id),
+            "contract_id": contract_id,
+            "contract_number": contract.get("contract_number"),
+            "contract_title": contract.get("contract_title"),
+            "customer_id": contract.get("customer_id"),
+            "contract_currency": contract.get("contract_currency") or "ZAR",
+            "settlement_pattern": settlement_pattern or None,
+
+            "obligation_id": int(obligation.get("id")),
+            "obligation_code": obligation.get("obligation_code"),
+            "obligation_name": obligation.get("obligation_name"),
+            "recognition_timing": timing,
+            "progress_method": progress_method,
+            "allocated_transaction_price": float(obligation.get("allocated_transaction_price") or 0.0),
+
+            "recognized_to_date_posted": float(recognized_to_date_posted),
+            "recognized_to_date_preview": float(recognized_to_date_preview),
+            "billed_to_date": float(billed_to_date),
+            "available_to_bill": float(available_to_bill),
+
+            "latest_recognition": {
+                "entry_id": int(latest_recognition["id"]) if latest_recognition.get("id") else None,
+                "run_id": int(latest_recognition["run_id"]) if latest_recognition.get("run_id") else None,
+                "run_status": latest_recognition.get("run_status"),
+                "period_start": str(latest_recognition.get("period_start")) if latest_recognition.get("period_start") else None,
+                "period_end": str(latest_recognition.get("period_end")) if latest_recognition.get("period_end") else None,
+                "revenue_required_to_date": float(latest_recognition.get("revenue_required_to_date") or 0.0),
+                "revenue_previously_recognized": float(latest_recognition.get("revenue_previously_recognized") or 0.0),
+                "revenue_delta_this_run": float(latest_recognition.get("revenue_delta_this_run") or 0.0),
+                "contract_asset_delta": float(latest_recognition.get("contract_asset_delta") or 0.0),
+                "contract_liability_delta": float(latest_recognition.get("contract_liability_delta") or 0.0),
+            } if latest_recognition else None,
+
+            "linked_invoice": {
+                "billing_event_id": int(linked_invoice["billing_event_id"]) if linked_invoice.get("billing_event_id") else None,
+                "invoice_id": int(linked_invoice["invoice_id"]) if linked_invoice.get("invoice_id") else None,
+                "invoice_number": linked_invoice.get("invoice_number"),
+                "invoice_status": linked_invoice.get("invoice_status"),
+                "event_date": str(linked_invoice.get("event_date")) if linked_invoice.get("event_date") else None,
+                "amount": float(linked_invoice.get("amount") or 0.0),
+                "currency": linked_invoice.get("currency"),
+            } if linked_invoice else None,
+
+            "ui": {
+                "view_only": bool(timing == "over_time" and settlement_pattern == "revenue_before_billing"),
+                "has_linked_invoice": bool(linked_invoice and linked_invoice.get("invoice_id")),
+                "can_create_invoice": bool(
+                    timing == "over_time"
+                    and settlement_pattern == "revenue_before_billing"
+                    and available_to_bill > Decimal("0.00")
+                    and not (linked_invoice and linked_invoice.get("invoice_id"))
+                ),
+            },
+        }
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

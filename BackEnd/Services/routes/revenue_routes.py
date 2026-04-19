@@ -1210,3 +1210,30 @@ def api_reverse_revenue_recognition_run(company_id: int, run_id: int):
     except Exception as e:
         current_app.logger.exception("reverse_revenue_recognition_run failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/billable_preview",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_get_revenue_obligation_billable_preview(company_id: int, obligation_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.get_revenue_obligation_billable_preview(
+            company_id=int(company_id),
+            obligation_id=int(obligation_id),
+        )
+        if not out:
+            return jsonify({"ok": False, "error": "Revenue obligation not found"}), 404
+
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("get_revenue_obligation_billable_preview failed")
+        return jsonify({"ok": False, "error": str(e)}), 400

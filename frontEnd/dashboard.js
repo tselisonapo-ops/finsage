@@ -1960,6 +1960,9 @@ const ENDPOINTS = {
 
     reverseRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/runs/${encodeURIComponent(runId)}/reverse`,
+
+    billablePreview: (cid, obligationId) => 
+      `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/billable_preview`,
   },
 
   supportUser: {
@@ -10668,6 +10671,7 @@ async function getDashboardSnapshot(periodKey = "this_month") {
     })
   );
 }
+
 
 async function renderRevenueExpenseChart(periodKey = "this_month") {
   const canvas = document.getElementById("cashChart");
@@ -34426,6 +34430,10 @@ function bindAssetRecordsPickerModal({ cid }) {
       btn.classList.toggle("text-white", btn.dataset.revTab === tab);
     });
 
+    if (tab === "billings") {
+      refreshRevenueBillingPreviewAsync();
+    }
+
     if (tab === "progress") {
       refreshRevenueProgressUIAsync();
     }
@@ -35765,6 +35773,92 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     });
   }
 
+  function renderRevenueBillingPreview(p = null) {
+    const emptyEl = $("revBillingPreviewEmpty");
+    const wrapEl = $("revBillingPreviewWrap");
+    const openBtn = $("revOpenBillingInvoice");
+    const createBtn = $("revCreateBillingInvoice");
+    const msgEl = $("revBillingPreviewInvoiceMsg");
+
+    if (!emptyEl || !wrapEl) return;
+
+    if (!p) {
+      emptyEl.classList.remove("hidden");
+      wrapEl.classList.add("hidden");
+      if (msgEl) msgEl.textContent = "";
+      if (openBtn) openBtn.classList.add("hidden");
+      if (createBtn) createBtn.disabled = true;
+      return;
+    }
+
+    emptyEl.classList.add("hidden");
+    wrapEl.classList.remove("hidden");
+
+    $("revBillPrevObligationName").textContent = p.obligation_name || "—";
+    $("revBillPrevSettlementPattern").textContent = p.settlement_pattern || "—";
+    $("revBillPrevTiming").textContent = p.recognition_timing || "—";
+    $("revBillPrevProgressMethod").textContent = p.progress_method || "—";
+    $("revBillPrevRecognised").textContent = money(p.recognized_to_date_preview || 0);
+    $("revBillPrevBilled").textContent = money(p.billed_to_date || 0);
+    $("revBillPrevAvailable").textContent = money(p.available_to_bill || 0);
+
+    const runLabel = p.latest_recognition?.run_id
+      ? `Run ${p.latest_recognition.run_id} (${p.latest_recognition.run_status || "draft"})`
+      : "—";
+    $("revBillPrevRun").textContent = runLabel;
+
+    const hasLinkedInvoice = !!p.linked_invoice?.invoice_id;
+    const canCreate = !!p.ui?.can_create_invoice;
+
+    if (msgEl) {
+      if (hasLinkedInvoice) {
+        msgEl.textContent = `Already billed on invoice ${p.linked_invoice.invoice_number || "#" + p.linked_invoice.invoice_id}.`;
+      } else if (!canCreate) {
+        msgEl.textContent = "No recognised amount is currently available to bill.";
+      } else {
+        msgEl.textContent = "This preview is view-only. Create the invoice in AR for the recognised amount available to bill.";
+      }
+    }
+
+    if (openBtn) {
+      openBtn.classList.toggle("hidden", !hasLinkedInvoice);
+      openBtn.onclick = async () => {
+        if (!p.linked_invoice?.invoice_id) return;
+        await switchScreen("ar-invoices");
+        await window.loadInvoiceIntoForm?.(p.linked_invoice.invoice_id);
+      };
+    }
+
+    if (createBtn) {
+      createBtn.disabled = !canCreate;
+      createBtn.onclick = async () => {
+        if (!canCreate) return;
+
+        const payload = {
+          customer_id: p.customer_id,
+          customer_name: state.selectedContract?.customer_name || "",
+          revenue_contract_id: p.contract_id,
+          revenue_contract_number: p.contract_number || "",
+          revenue_contract_title: p.contract_title || "",
+          revenue_obligation_id: p.obligation_id,
+          revenue_obligation_name: p.obligation_name || "",
+          invoice_date: new Date().toISOString().slice(0, 10),
+          currency: p.contract_currency || "ZAR",
+          memo: `Invoice for recognised work done on ${p.obligation_name || "obligation"}${p.contract_number ? ` (${p.contract_number})` : ""}`,
+          line: {
+            item_name: p.obligation_name || "Service",
+            description: `Recognised revenue available to bill for ${p.obligation_name || "obligation"}`,
+            quantity: 1,
+            unit_price: Number(p.available_to_bill || 0),
+            revenue_obligation_id: p.obligation_id,
+          }
+        };
+
+        await redirectToInvoiceFromRevenueBilling(payload);
+      };
+    }
+  }
+
   function renderObligationContractBanner(contract) {
     const el = $("revObligationContractBanner");
     if (!el) return;
@@ -35967,6 +36061,38 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     btn.title = hasContract ? "" : "Select a contract first";
   }
 
+  async function refreshRevenueBillingPreviewAsync() {
+    try {
+      const c = state.selectedContract || null;
+      const o = state.selectedObligation || null;
+
+      if (!c?.id) {
+        renderRevenueBillingPreview(null);
+        return;
+      }
+
+      await loadBillingOverview(c.id);
+
+      if (!o?.id) {
+        renderRevenueBillingPreview(null);
+        return;
+      }
+
+      if (String(o.recognition_timing || "").toLowerCase() !== "over_time") {
+        renderRevenueBillingPreview(null);
+        setMsg("Select an over-time obligation to preview billable recognised revenue.");
+        return;
+      }
+
+      const preview = await loadSelectedObligationBillablePreview();
+      renderRevenueBillingPreview(preview);
+    } catch (e) {
+      console.warn("[refreshRevenueBillingPreviewAsync] failed", e);
+      renderRevenueBillingPreview(null);
+      setMsg(e?.message || "Could not load billing preview", "error");
+    }
+  }
+
   function renderObligationAllocationHint(contract, obligations = []) {
     const used = obligations.reduce((s, o) => s + Number(o.allocated_transaction_price || 0), 0);
     const total = Number(contract?.transaction_price || 0);
@@ -36132,6 +36258,17 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       console.log("✅ [Redirect] DONE");
     } catch (e) {
       console.warn("[redirectToInvoiceFromObligation] failed", e);
+    }
+  }
+
+  async function redirectToInvoiceFromRevenueBilling(payload) {
+    try {
+      console.log("🚀 [Revenue Billing → Invoice Redirect] payload =", payload);
+      window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+      await switchScreen("ar-invoices");
+    } catch (e) {
+      console.warn("[redirectToInvoiceFromRevenueBilling] failed", e);
+      throw e;
     }
   }
 
@@ -37158,13 +37295,58 @@ async function loadLatestRevenueProgressForSelectedObligation() {
 
     $("revSaveBilling")?.addEventListener("click", async () => {
       try {
-        await recordBilling();
-
-        const contractId = Number($("revContractId")?.value || 0) || null;
-        if (contractId) {
-          await loadBillingOverview(contractId);
+        const selected = state.selectedObligation || null;
+        if (!selected?.id) {
+          throw new Error("Select an obligation first.");
         }
-        await refreshSelectedContractDeep();
+
+        if (String(selected.recognition_timing || "").toLowerCase() !== "over_time") {
+          throw new Error("Billing preview from this button is only for over-time obligations.");
+        }
+
+        const preview = await loadSelectedObligationBillablePreview();
+        if (!preview) {
+          throw new Error("Could not load billable preview.");
+        }
+
+        if (!preview.ui?.view_only) {
+          throw new Error("This obligation is not using revenue-before-billing preview mode.");
+        }
+
+        if (preview.linked_invoice?.invoice_id) {
+          window.showToast?.(
+            `Already billed on invoice ${preview.linked_invoice.invoice_number || "#" + preview.linked_invoice.invoice_id}`,
+            "warning"
+          );
+          return;
+        }
+
+        if (!(Number(preview.available_to_bill || 0) > 0)) {
+          throw new Error("No recognized amount is currently available to bill.");
+        }
+
+        const payload = {
+          customer_id: preview.customer_id,
+          customer_name: state.selectedContract?.customer_name || "",
+          revenue_contract_id: preview.contract_id,
+          revenue_contract_number: preview.contract_number || "",
+          revenue_contract_title: preview.contract_title || "",
+          revenue_obligation_id: preview.obligation_id,
+          revenue_obligation_name: preview.obligation_name || "",
+          invoice_date: new Date().toISOString().slice(0, 10),
+          currency: preview.contract_currency || "ZAR",
+          memo: `Invoice for recognised work done on ${preview.obligation_name || "obligation"}${preview.contract_number ? ` (${preview.contract_number})` : ""}`,
+          line: {
+            item_name: preview.obligation_name || "Service",
+            description: `Recognised revenue available to bill for ${preview.obligation_name || "obligation"}`,
+            quantity: 1,
+            unit_price: Number(preview.available_to_bill || 0),
+            revenue_obligation_id: preview.obligation_id,
+          }
+        };
+
+        window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+        await switchScreen("ar-invoices");
       } catch (e) {
         setMsg(e?.message || "Billing failed", "error");
       }
@@ -39956,21 +40138,15 @@ async function loadInvoiceIntoForm(invoiceId) {
   window._INV_LOADING = true;
   window._INV_TOTALS_LOCKED = true;
 
-  // ✅ use your endpoint style (singular)
   const res = await apiFetch(ENDPOINTS.invoice(cid, invoiceId), { method: "GET" });
-
-  // ✅ unwrap {ok:true, data:{...}}
   const inv = res?.data || res || {};
   const $ = (id) => document.getElementById(id);
 
-  // ---------- header ----------
   $("invId") && ($("invId").value = inv.id || "");
   $("invCustomerName") && ($("invCustomerName").value = inv.customer_name || "");
   $("invCustomerId") && ($("invCustomerId").value = inv.customer_id || "");
-
   $("invNumber") && ($("invNumber").value = inv.number || "");
 
-  // ✅ FIX: proper date format
   const invDateISO = toISODateInput(inv.invoice_date);
   $("invDate") && ($("invDate").value = invDateISO);
 
@@ -39980,7 +40156,6 @@ async function loadInvoiceIntoForm(invoiceId) {
   $("invCurrency") && ($("invCurrency").value = inv.currency || "ZAR");
   $("invTerms") && ($("invTerms").value = inv.terms || $("invTerms").value || "Due on receipt");
 
-  // ✅ Revenue account default (try stored field, else use first line revenue)
   const headerRevSel =
     $("invRevenueAccount") || $("invRevenue") || $("revenueAccount");
 
@@ -39992,16 +40167,12 @@ async function loadInvoiceIntoForm(invoiceId) {
 
   setSelectIfOptionExists(headerRevSel, defaultRevCode);
 
-  // ✅ Bank account selection:
-  // 1) Prefer bank_account_id (if you store it)
-  // 2) If null, try bank_id ONLY if your dropdown options match bank_id
   const bankSel = $("invoiceBankAccount");
   if (bankSel) {
     const ok1 = setSelectIfOptionExists(bankSel, inv.bank_account_id);
     if (!ok1) setSelectIfOptionExists(bankSel, inv.bank_id);
   }
 
-  // discount fields (keep yours)
   if ($("invDisc")) {
     const rate = Number(inv.discount_rate ?? 0) || 0;
     $("invDisc").value = String(rate * 100 || 0);
@@ -40016,7 +40187,17 @@ async function loadInvoiceIntoForm(invoiceId) {
   $("invMemo") && ($("invMemo").value = inv.notes || "");
   $("invStatus") && ($("invStatus").textContent = inv.status || "draft");
 
-  // ---------- lines ----------
+  // restore linked revenue contract
+  const invRevenueContractEl = $("invRevenueContractId");
+  if (invRevenueContractEl) {
+    invRevenueContractEl.value = inv.revenue_contract_id ? String(inv.revenue_contract_id) : "";
+  }
+
+  // make sure contract/obligation UI is visible when invoice is revenue-linked
+  window.toggleInvoiceContractUI?.({
+    hasCustomerContracts: !!inv.revenue_contract_id
+  });
+
   const tbody = document.querySelector("#invLines");
   if (tbody) tbody.innerHTML = "";
 
@@ -40026,21 +40207,20 @@ async function loadInvoiceIntoForm(invoiceId) {
       description: ln.description,
       quantity: ln.quantity,
       unit_price: ln.unit_price,
-
-      // ✅ revenue account per line
       account_code: ln.account_code,
       revenue_obligation_id: ln.revenue_obligation_id || null,
-      // ✅ vat fields (your addLine may expect vat_rate)
       vat_rate: ln.vat_rate,
       vatCode: ln.vat_code || ln.vatCode,
-
-      // display amounts (optional)
       vat_amount: ln.vat_amount,
       total_amount: ln.total_amount,
     });
   });
 
-  // ---------- totals ----------
+  window.toggleInvoiceObligationUI?.({
+    hasRevenueContract: !!inv.revenue_contract_id,
+    hasObligation: !!(inv.lines || []).some(ln => ln.revenue_obligation_id)
+  });
+
   $("sumSubtotal") && ($("sumSubtotal").textContent = String(inv.subtotal_amount ?? "0.00"));
   $("sumVat") && ($("sumVat").textContent = String(inv.vat_amount ?? "0.00"));
   $("sumTotal") && ($("sumTotal").textContent = String(inv.total_amount ?? inv.total ?? "0.00"));
@@ -44816,15 +44996,20 @@ async function loadDraftInvoices() {
 function readInvoiceForm() {
   const customerName = document.getElementById("invCustomerName")?.value || "";
   const customerId   = document.getElementById("invCustomerId")?.value || null;
-  
+
   const invoiceDate  = document.getElementById("invDate")?.value || "";
   const terms        = document.getElementById("invTerms")?.value || "Due on receipt";
-  const dueDate      = document.getElementById("invDueDate")?.value || ""; // if you have it
+  const dueDate      = document.getElementById("invDueDate")?.value || "";
   const number       = document.getElementById("invNumber")?.value || "";
   const currency     = document.getElementById("invCurrency")?.value || "ZAR";
   const notes        = document.getElementById("invMemo")?.value || "";
 
   const invId        = document.getElementById("invId")?.value || "";
+
+  const revenueContractIdRaw =
+    document.getElementById("invRevenueContractId")?.value || "";
+  const revenue_contract_id =
+    revenueContractIdRaw ? Number(revenueContractIdRaw) : null;
 
   const linesBody = document.getElementById("invLines");
   const rows = Array.from(linesBody?.querySelectorAll("tr.inv-line-row, tr") || []);
@@ -44834,11 +45019,13 @@ function readInvoiceForm() {
     (document.getElementById("invDefaultVat")?.value || "STANDARD").trim().toUpperCase();
 
   const lines = rows.map((row) => {
-    const item = row.querySelector(".inv-desc")?.value || "";       // ✅ Item/Service
-    const desc = row.querySelector(".inv-service")?.value || "";    // ✅ Description
-    const acct = row.querySelector(".inv-acct")?.value || "";       // ✅ Revenue account
+    const item = row.querySelector(".inv-desc")?.value || "";
+    const desc = row.querySelector(".inv-service")?.value || "";
+    const acct = row.querySelector(".inv-acct")?.value || "";
+
     const obligationIdRaw = row.querySelector(".inv-obligation")?.value || "";
     const revenue_obligation_id = obligationIdRaw ? Number(obligationIdRaw) : null;
+
     const qty  = parseFloat(row.querySelector(".inv-qty")?.value || "0") || 0;
     const unit = parseFloat(row.querySelector(".inv-price")?.value || "0") || 0;
 
@@ -44865,21 +45052,20 @@ function readInvoiceForm() {
     const descClean = desc.trim();
 
     return {
-      line_no: 0, // backend can set; optional
-      item_name: itemClean,                              // ✅ maps to DB item_name
-      description: (descClean || itemClean || "—"),      // ✅ maps to DB description (NOT NULL)
+      line_no: 0,
+      item_name: itemClean,
+      description: (descClean || itemClean || "—"),
       account_code: acct || null,
       revenue_obligation_id,
       quantity: qty,
       unit_price: unit,
       net_amount: +net.toFixed(2),
-      vat_rate: vatRate,                                 // ✅ numeric
+      vat_rate: vatRate,
       vat_amount: vatAmt,
-      total_amount: total                                // ✅ DB column is total_amount
+      total_amount: total
     };
   }).filter(l => (l.item_name || l.description) && l.net_amount >= 0);
 
-  // header totals based on your recalcInvoice()
   const totals = window.recalcInvoice?.() || {};
   const disc = parseFloat(document.getElementById("invDisc")?.value || "0") || 0;
   const other = parseFloat(document.getElementById("invOther")?.value || "0") || 0;
@@ -44888,20 +45074,17 @@ function readInvoiceForm() {
     id: invId || null,
     customer_id: customerId ? Number(customerId) : null,
     customer_name: customerName,
-    revenue_contract_id: document.getElementById("invRevenueContractId")?.value || null,
+    revenue_contract_id,
     number,
-    invoice_date: invoiceDate,         // ✅ DB column
-    due_date: dueDate || null,         // ✅ DB column
+    invoice_date: invoiceDate,
+    due_date: dueDate || null,
     currency,
-
+    terms,
     notes,
-
-    discount_amount: +disc.toFixed(2), // ✅ DB column exists
-    // "other" not in your invoices table; either store it in notes or add column
+    discount_amount: +disc.toFixed(2),
     subtotal_amount: +((totals.subtotalAfterDisc ?? 0)).toFixed(2),
     vat_amount: +((totals.vatTotal ?? 0)).toFixed(2),
     total_amount: +((totals.grandTotal ?? 0)).toFixed(2),
-
     status: "draft",
     lines
   };
@@ -47408,6 +47591,20 @@ function bindAR() {
   }
   window.loadInvoiceLineObligationsFromContract = loadInvoiceLineObligationsFromContract;
 
+  async function loadSelectedObligationBillablePreview() {
+    const cid = activeCid();
+    const obligationId = Number(state.selectedObligation?.id || 0) || null;
+
+    if (!cid || !obligationId) return null;
+
+    const raw = await apiFetch(
+      ENDPOINTS.revenue.billablePreview(cid, obligationId),
+      { method: "GET" }
+    );
+
+    return raw?.data || raw || null;
+  }
+
   async function applyObligationBillingToLine(row) {
     const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
     if (!cid || !row) return;
@@ -47422,13 +47619,15 @@ function bindAR() {
 
     try {
       const res = await apiFetch(
-        ENDPOINTS.revenue.billingPosition(cid, obligationId),
+        ENDPOINTS.revenue.billablePreview(cid, obligationId),
         { method: "GET" }
       );
       const pos = res?.data || res;
       if (!pos) return;
 
-      const remaining = Number(pos.remaining_to_bill || 0) || 0;
+      const amountToBill =
+        Number(pos.available_to_bill ?? pos.remaining_to_bill ?? 0) || 0;
+
       const obligationName = String(pos.obligation_name || "").trim();
 
       if (descEl && (!descEl.value || !descEl.value.trim()) && obligationName) {
@@ -47440,12 +47639,17 @@ function bindAR() {
       if (priceEl) {
         const current = Number(String(priceEl.value || "0").replace(/,/g, "")) || 0;
         if (current === 0 || row.dataset.priceTouched !== "1") {
-          priceEl.value = remaining.toFixed(2);
+          priceEl.value = amountToBill.toFixed(2);
         }
       }
 
-      if (remaining <= 0) {
-        window.showToast?.("Selected obligation appears fully billed already.", "warning");
+      if (pos.linked_invoice?.invoice_id) {
+        window.showToast?.(
+          `Already billed on invoice ${pos.linked_invoice.invoice_number || "#" + pos.linked_invoice.invoice_id}`,
+          "warning"
+        );
+      } else if (amountToBill <= 0) {
+        window.showToast?.("No recognised amount is currently available to bill.", "warning");
       }
 
       window.recalcInvoice?.({ force: true });
