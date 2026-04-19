@@ -58091,6 +58091,21 @@ class DatabaseService:
                     total_ca += contract_ca
                     total_cl += contract_cl
 
+                journal_preview_lines = self._build_revenue_recognition_journal_lines(
+                    company_id=int(company_id),
+                    run={
+                        "company_id": int(company_id),
+                        "contract_id": int(contract_id) if contract_id else None,
+                        "period_start": period_start_s,
+                        "period_end": period_end_s,
+                        "status": "draft",
+                        "run_scope": "contract" if contract_id else "company",
+                        "total_revenue_delta": float(total_rev.quantize(Decimal("0.01"))),
+                        "total_contract_asset_delta": float(total_ca.quantize(Decimal("0.01"))),
+                        "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
+                    },
+                    entries=flat_entries,
+                )
             return {
                 "ok": True,
                 "scope": "contract" if contract_id else "company",
@@ -58099,6 +58114,7 @@ class DatabaseService:
                 "period_end": period_end_s,
                 "contracts": preview_contracts,
                 "entries": flat_entries,
+                "journal_lines": journal_preview_lines,   # ADD THIS
                 "totals": {
                     "total_revenue_delta": float(total_rev.quantize(Decimal("0.01"))),
                     "total_contract_asset_delta": float(total_ca.quantize(Decimal("0.01"))),
@@ -58456,6 +58472,9 @@ class DatabaseService:
             contract_id=int(contract_id) if contract_id else None,
         )
 
+        run_payload = dict(data.get("payload_json") or {})
+        run_payload["journal_lines"] = preview.get("journal_lines") or []
+
         with self._conn_cursor() as (conn, cur):
             existing_posted = self.fetch_one(
                 f"""
@@ -58503,7 +58522,7 @@ class DatabaseService:
                     float(preview["totals"]["total_contract_asset_delta"]),
                     float(preview["totals"]["total_contract_liability_delta"]),
                     int(user_id) if user_id else None,
-                    _json_dumps(data.get("payload_json") or {}),
+                    _json_dumps(run_payload),
                 )
             )
             run = dict(cur.fetchone())
@@ -59108,11 +59127,15 @@ class DatabaseService:
             if not entries:
                 raise ValueError("Recognition run has no entries")
 
-            jlines = self._build_revenue_recognition_journal_lines(
-                company_id,
-                run=run,
-                entries=entries,
-            )
+            pj = run.get("payload_json") or {}
+            if isinstance(pj, str):
+                try:
+                    import json
+                    pj = json.loads(pj)
+                except Exception:
+                    pj = {}
+
+            jlines = (pj or {}).get("journal_lines") or []
             if not jlines:
                 raise ValueError("Recognition run has no journal lines")
 
