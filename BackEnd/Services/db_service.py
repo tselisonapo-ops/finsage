@@ -57664,12 +57664,26 @@ class DatabaseService:
         return _money2(row.get("amt") or 0)
 
 
-    def _recognized_to_date_as_of_period_end(self, company_id: int, obligation_id: int, period_end, cur=None) -> Decimal:
+    def _recognized_to_date_as_of_period_end(
+        self,
+        company_id: int,
+        obligation_id: int,
+        period_end,
+        cur=None,
+        exclude_run_id: int | None = None,
+    ) -> Decimal:
         schema = self.company_schema(company_id)
         pe = self._as_date(period_end)
 
         if pe is None:
             return Decimal("0.00")
+
+        params = [int(obligation_id), pe]
+        extra = ""
+
+        if exclude_run_id is not None:
+            extra = "AND r.id <> %s"
+            params.append(int(exclude_run_id))
 
         row = self.fetch_one(
             f"""
@@ -57678,15 +57692,15 @@ class DatabaseService:
             JOIN {schema}.revenue_recognition_runs r
             ON r.id = e.run_id
             WHERE e.obligation_id = %s
-            AND r.status = 'posted'
+            AND r.status IN ('draft', 'posted')
             AND r.period_end <= %s
+            {extra}
             """,
-            (int(obligation_id), pe),
+            tuple(params),
             cur=cur,
         ) or {}
 
         return _money2(row.get("amt") or 0)
-
 
     def _calculate_obligation_revenue(self, company_id: int, contract: dict, obligation: dict, period_start, period_end, cur=None) -> dict:
         """
@@ -57938,6 +57952,26 @@ class DatabaseService:
                 contract_cl = Decimal("0.00")
 
                 for obl in obligations:
+                    existing = self.fetch_one(
+                        f"""
+                        SELECT e.id, e.run_id, r.status
+                        FROM {schema}.revenue_recognition_entries e
+                        JOIN {schema}.revenue_recognition_runs r
+                        ON r.id = e.run_id
+                        WHERE e.contract_id = %s
+                        AND e.obligation_id = %s
+                        AND e.period_start = %s
+                        AND e.period_end = %s
+                        AND r.status IN ('draft', 'posted')
+                        LIMIT 1
+                        """,
+                        (int(c["id"]), int(obl["id"]), period_start, period_end),
+                        cur=cur,
+                    )
+
+                    if existing:
+                        continue
+
                     calc = self._calculate_obligation_revenue(
                         company_id=company_id,
                         contract=c,
