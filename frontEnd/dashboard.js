@@ -33990,6 +33990,35 @@ function bindAssetRecordsPickerModal({ cid }) {
     sidebar.dataset.boundRoll = "1";
   }
 
+  async function ensureSelectedObligationForBilling() {
+    if (state.selectedObligation?.id) {
+      return state.selectedObligation;
+    }
+
+    const cid = state.cid || activeCid();
+    const obligationId = Number($("revObligationId")?.value || 0) || null;
+
+    if (!cid || !obligationId) return null;
+
+    try {
+      const out = await apiFetch(
+        ENDPOINTS.revenue.obligation(cid, obligationId),
+        { method: "GET" }
+      );
+
+      const row = out?.data || out || null;
+      if (row?.id) {
+        state.selectedObligation = row;
+        return row;
+      }
+
+      return null;
+    } catch (e) {
+      console.warn("[Revenue] ensureSelectedObligationForBilling failed", e);
+      return null;
+    }
+  }
+
   function getExpectedPositionFromSettlementPattern(pattern) {
     const v = String(pattern || "").trim().toLowerCase();
 
@@ -34198,10 +34227,13 @@ function bindAssetRecordsPickerModal({ cid }) {
 
         const activePolicy = getSelectedBillingPolicy();
 
+        state.selectedContract = contract;
+
         if ($("revContractId")) $("revContractId").value = String(contract.id || "");
         if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
         if ($("revCustomerId")) $("revCustomerId").value = String(contract.customer_id || "");
         if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
+        if ($("revObligationId")) $("revObligationId").value = String(state.selectedObligation?.id || "");
 
         if (activePolicy?.requires_obligation_link) {
           setMsg("This contract uses milestone billing. Select the related obligation before saving billing/cash entries.");
@@ -34474,6 +34506,44 @@ function bindAssetRecordsPickerModal({ cid }) {
       return "Commercial substance criteria not satisfied.";
     }
     return null;
+  }
+
+  async function refreshRevenueBillingPreviewAsync() {
+    try {
+      const c = state.selectedContract || null;
+
+      if (!c?.id) {
+        renderRevenueBillingPreview(null);
+        return;
+      }
+
+      await loadBillingOverview(c.id);
+
+      // ✅ recover obligation if state.selectedObligation is empty
+      const o = await ensureSelectedObligationForBilling();
+
+      if (!o?.id) {
+        renderRevenueBillingPreview(null);
+        setMsg("Select an obligation to view billing information.");
+        return;
+      }
+
+      const timing = String(o.recognition_timing || "").toLowerCase();
+      const pattern = String(c?.payload_json?.settlement_pattern || "").toLowerCase();
+
+      if (timing === "point_in_time") {
+        renderRevenueBillingPreview(null);
+        setMsg("Point-in-time invoicing stays on the obligation preview.");
+        return;
+      }
+
+      const preview = await loadSelectedObligationBillablePreview();
+      renderRevenueBillingPreview(preview);
+    } catch (e) {
+      console.warn("[refreshRevenueBillingPreviewAsync] failed", e);
+      renderRevenueBillingPreview(null);
+      setMsg(e?.message || "Could not load billing information", "error");
+    }
   }
 
   function refreshSettlementPatternHelp() {
@@ -35307,7 +35377,12 @@ function bindAssetRecordsPickerModal({ cid }) {
 
 async function loadLatestRevenueProgressForSelectedObligation() {
   const cid = state.cid;
-  const obligationId = Number(state.selectedObligation?.id || 0) || null;
+  const obligationId =
+    Number(
+      state.selectedObligation?.id ||
+      $("revObligationId")?.value ||
+      0
+    ) || null;
   if (!cid || !obligationId) return null;
 
   try {
@@ -36304,44 +36379,7 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     btn.title = hasContract ? "" : "Select a contract first";
   }
 
-  async function refreshRevenueBillingPreviewAsync() {
-    try {
-      const c = state.selectedContract || null;
-      const o = state.selectedObligation || null;
 
-      if (!c?.id) {
-        renderRevenueBillingPreview(null);
-        return;
-      }
-
-      await loadBillingOverview(c.id);
-
-      if (!o?.id) {
-        renderRevenueBillingPreview(null);
-        setMsg("Select an obligation to view billing information.");
-        return;
-      }
-
-      const timing = String(o.recognition_timing || "").toLowerCase();
-      const pattern = String(c?.payload_json?.settlement_pattern || "").toLowerCase();
-
-      // point in time stays on obligation preview, not this tab
-      if (timing === "point_in_time") {
-        renderRevenueBillingPreview(null);
-        setMsg("Point-in-time invoicing stays on the obligation preview.");
-        return;
-      }
-
-      // both revenue_before_billing and billing_before_revenue should load a billing preview object
-      const preview = await loadSelectedObligationBillablePreview();
-      renderRevenueBillingPreview(preview);
-
-    } catch (e) {
-      console.warn("[refreshRevenueBillingPreviewAsync] failed", e);
-      renderRevenueBillingPreview(null);
-      setMsg(e?.message || "Could not load billing information", "error");
-    }
-  }
 
   function renderObligationAllocationHint(contract, obligations = []) {
     const used = obligations.reduce((s, o) => s + Number(o.allocated_transaction_price || 0), 0);
