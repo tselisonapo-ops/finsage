@@ -56418,6 +56418,9 @@ class DatabaseService:
 
             data, financing_component_amount = self._normalize_and_validate_sfc(data)
 
+            data, financing_component_amount = self._normalize_and_validate_sfc(data)
+            self._validate_contract_billing_method(data)
+
             sql = f"""
             INSERT INTO {schema}.revenue_contracts (
                 company_id, customer_id, contract_number, contract_title, status,
@@ -56512,6 +56515,9 @@ class DatabaseService:
 
             # ALWAYS run this (not inside customer_id block)
             data, financing_component_amount = self._normalize_and_validate_sfc(data, existing=before)
+
+            data, financing_component_amount = self._normalize_and_validate_sfc(data, existing=before)
+            self._validate_contract_billing_method(data)
 
             customer_id = data.get("customer_id")
             if customer_id in ("", 0, "0"):
@@ -56628,7 +56634,90 @@ class DatabaseService:
 
         return row
 
+    def _normalize_revenue_contract_body(body: dict) -> dict:
+        body = dict(body or {})
 
+        has_financing = bool(body.get("has_significant_financing_component", False))
+
+        payload_json = body.get("payload_json") or {}
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+
+        financing = payload_json.get("financing")
+        if not isinstance(financing, dict):
+            financing = {}
+
+        if has_financing:
+            payload_json["financing"] = {
+                "role": str(financing.get("role") or "").strip().lower(),
+                "rate": float(financing.get("rate") or 0.0),
+                "start_date": financing.get("start_date") or None,
+                "end_date": financing.get("end_date") or None,
+                "notes": str(financing.get("notes") or "").strip(),
+            }
+        else:
+            payload_json["financing"] = None
+            body["financing_component_amount"] = 0.0
+
+        if body.get("contract_currency"):
+            body["contract_currency"] = str(body.get("contract_currency") or "").strip().upper()
+
+        billing_method = str(body.get("billing_method") or "").strip().lower() or "milestone"
+        body["billing_method"] = billing_method
+
+        billing_cfg = payload_json.get("billing_config") or {}
+        if not isinstance(billing_cfg, dict):
+            billing_cfg = {}
+
+        raw_billing_day = billing_cfg.get("billing_day")
+        try:
+            billing_day = int(raw_billing_day) if raw_billing_day not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            raise ValueError("billing_config.billing_day must be a valid integer.")
+
+        payload_json["billing_config"] = {
+            "method": billing_method,
+            "periodicity": str(billing_cfg.get("periodicity") or "").strip().lower() or None,
+            "billing_day": billing_day,
+            "auto_allocate_contract_pool": bool(billing_cfg.get("auto_allocate_contract_pool", True)),
+            "allow_obligation_override": bool(billing_cfg.get("allow_obligation_override", False)),
+            "milestone_basis": str(billing_cfg.get("milestone_basis") or "obligation").strip().lower(),
+            "notes": str(billing_cfg.get("notes") or "").strip() or None,
+        }
+
+        if body.get("status"):
+            body["status"] = str(body.get("status") or "").strip().lower()
+
+        body["payload_json"] = payload_json
+        return body
+    
+    VALID_CONTRACT_BILLING_METHODS = {"milestone", "progress", "periodic", "manual"}
+
+    def _validate_contract_billing_method(self, data: dict):
+        method = str(data.get("billing_method") or "").strip().lower()
+        if method not in self.VALID_CONTRACT_BILLING_METHODS:
+            raise ValueError(
+                "Invalid contract billing_method. Use milestone, progress, periodic, or manual."
+            )
+
+        payload_json = data.get("payload_json") or {}
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+
+        billing_cfg = payload_json.get("billing_config") or {}
+        if not isinstance(billing_cfg, dict):
+            billing_cfg = {}
+
+        if method == "periodic":
+            periodicity = str(billing_cfg.get("periodicity") or "").strip().lower()
+            if periodicity not in {"weekly", "monthly", "quarterly", "annual"}:
+                raise ValueError("Periodic contracts require billing_config.periodicity.")
+
+        if method == "milestone":
+            milestone_basis = str(billing_cfg.get("milestone_basis") or "obligation").strip().lower()
+            if milestone_basis not in {"obligation", "custom"}:
+                raise ValueError("Milestone contracts require valid milestone_basis.")
+            
     def _normalize_and_validate_sfc(self, data: dict, existing: dict | None = None) -> tuple[dict, float]:
         data = dict(data or {})
 
@@ -56867,6 +56956,9 @@ class DatabaseService:
             if float(contract.get("recognized_revenue_to_date") or 0.0) > 0:
                 raise ValueError("Cannot add obligations after revenue recognition has started")
 
+            # NEW: apply contract-level billing rules to obligation payload
+            data = self._validate_obligation_against_contract(contract, data)
+
             existing = self.fetch_one(
                 f"""
                 SELECT COALESCE(SUM(allocated_transaction_price), 0) AS total_allocated
@@ -57030,6 +57122,8 @@ class DatabaseService:
         return row
 
     def update_revenue_obligation(self, company_id: int, obligation_id: int, data: dict, user_id: int | None = None) -> dict:
+        import json
+
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
@@ -57040,6 +57134,13 @@ class DatabaseService:
             )
             if not before:
                 raise ValueError("Revenue obligation not found")
+
+            contract = self.get_revenue_contract(company_id, int(before["contract_id"]), cur=cur)
+            if not contract:
+                raise ValueError("Parent revenue contract not found")
+
+            # NEW: apply contract-level billing rules to obligation payload
+            data = self._validate_obligation_against_contract(contract, data)
 
             timing = (
                 data.get("recognition_timing")
@@ -57074,7 +57175,6 @@ class DatabaseService:
                 except Exception:
                     before_payload = {}
 
-            # FIX: initialize payload_json before any payload_json.pop(...)
             payload_json = dict(before_payload)
 
             pit_trigger = (
@@ -57240,10 +57340,154 @@ class DatabaseService:
 
         return {"before": before, "after": after}
 
+    def _validate_obligation_against_contract(self, contract: dict, data: dict):
+        contract_method = str(contract.get("billing_method") or "milestone").strip().lower()
+
+        payload_json = data.get("payload_json") or {}
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+        else:
+            payload_json = dict(payload_json)
+
+        if contract_method == "milestone":
+            milestone_code = str(payload_json.get("milestone_code") or "").strip()
+            obligation_name = str(data.get("obligation_name") or "").strip()
+            if not milestone_code and not obligation_name:
+                raise ValueError(
+                    "Milestone-billed contracts require each obligation to represent or reference a milestone."
+                )
+
+        if contract_method == "periodic":
+            payload_json["billing_source"] = payload_json.get("billing_source") or "contract"
+
+        if contract_method == "manual":
+            payload_json["billing_source"] = payload_json.get("billing_source") or "manual"
+
+        data["payload_json"] = payload_json
+        return data
+
+    def get_revenue_contract_billing_policy(self, company_id: int, contract_id: int, cur=None) -> dict:
+        contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
+        if not contract:
+            raise ValueError("Revenue contract not found")
+
+        payload_json = contract.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            import json
+            try:
+                payload_json = json.loads(payload_json)
+            except Exception:
+                payload_json = {}
+
+        billing_cfg = payload_json.get("billing_config") or {}
+        method = str(contract.get("billing_method") or "milestone").strip().lower()
+
+        return {
+            "contract_id": int(contract["id"]),
+            "billing_method": method,
+            "billing_config": billing_cfg,
+            "is_contract_level_primary": method in {"periodic", "manual", "progress"},
+            "requires_obligation_link": method == "milestone",
+            "allows_contract_pool_billing": method in {"progress", "periodic", "manual"},
+        }
+
     def record_revenue_billing_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        import json
+
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
+            contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
+            if not contract:
+                raise ValueError("Revenue contract not found")
+
+            method = str(contract.get("billing_method") or "milestone").strip().lower()
+            if method not in {"milestone", "progress", "periodic", "manual"}:
+                raise ValueError(f"Unsupported contract billing method '{method}'")
+
+            obligation_id = data.get("obligation_id")
+            if obligation_id in ("", 0, "0"):
+                obligation_id = None
+            elif obligation_id is not None:
+                obligation_id = int(obligation_id)
+
+            amount = float(data.get("amount") or 0.0)
+            event_type = (data.get("event_type") or "invoice").strip().lower()
+
+            if amount == 0:
+                raise ValueError("Billing amount must be non-zero")
+
+            currency = (data.get("currency") or contract.get("contract_currency") or "ZAR").strip().upper()
+
+            payload_json = data.get("payload_json") or {}
+            if isinstance(payload_json, str):
+                try:
+                    payload_json = json.loads(payload_json)
+                except Exception:
+                    payload_json = {}
+            elif not isinstance(payload_json, dict):
+                payload_json = {}
+            else:
+                payload_json = dict(payload_json)
+
+            contract_payload = contract.get("payload_json") or {}
+            if isinstance(contract_payload, str):
+                try:
+                    contract_payload = json.loads(contract_payload)
+                except Exception:
+                    contract_payload = {}
+            elif not isinstance(contract_payload, dict):
+                contract_payload = {}
+
+            billing_cfg = contract_payload.get("billing_config") or {}
+            if not isinstance(billing_cfg, dict):
+                billing_cfg = {}
+
+            allow_obligation_override = bool(billing_cfg.get("allow_obligation_override", False))
+
+            obligation_row = None
+            if obligation_id is not None:
+                obligation_row = self.fetch_one(
+                    f"""
+                    SELECT id, company_id, contract_id, obligation_code, obligation_name
+                    FROM {schema}.revenue_obligations
+                    WHERE id=%s
+                    LIMIT 1
+                    """,
+                    (int(obligation_id),),
+                    cur=cur,
+                )
+                if not obligation_row:
+                    raise ValueError("Selected obligation was not found")
+                if int(obligation_row.get("company_id") or 0) != int(company_id):
+                    raise ValueError("Selected obligation does not belong to this company")
+                if int(obligation_row.get("contract_id") or 0) != int(contract_id):
+                    raise ValueError("Selected obligation does not belong to this contract")
+
+            if method == "milestone":
+                if obligation_id is None:
+                    raise ValueError("Milestone billing requires an obligation-linked billing event.")
+                payload_json["billing_level"] = "obligation"
+
+            elif method == "periodic":
+                if obligation_id is not None and not allow_obligation_override:
+                    obligation_id = None
+                payload_json["billing_level"] = "contract" if obligation_id is None else "obligation"
+
+            elif method == "manual":
+                payload_json["billing_level"] = "contract" if obligation_id is None else "obligation"
+
+            elif method == "progress":
+                payload_json["billing_level"] = "contract" if obligation_id is None else "obligation"
+
+            payload_json["contract_billing_method"] = method
+            payload_json["effective_obligation_id"] = obligation_id
+            payload_json["posted_via"] = "record_revenue_billing_event"
+
+            if obligation_row:
+                payload_json["obligation_code"] = obligation_row.get("obligation_code")
+                payload_json["obligation_name"] = obligation_row.get("obligation_name")
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_billing_events (
@@ -57256,14 +57500,14 @@ class DatabaseService:
                 (
                     int(company_id),
                     int(contract_id),
-                    data.get("obligation_id"),
+                    int(obligation_id) if obligation_id is not None else None,
                     data.get("event_date"),
-                    (data.get("event_type") or "invoice").strip().lower(),
+                    event_type,
                     data.get("source_invoice_id"),
-                    float(data.get("amount") or 0.0),
-                    (data.get("currency") or "ZAR").strip().upper(),
+                    amount,
+                    currency,
                     data.get("notes"),
-                    _json_dumps(data.get("payload_json")),
+                    _json_dumps(payload_json),
                 )
             )
             row = dict(cur.fetchone())
@@ -57272,28 +57516,34 @@ class DatabaseService:
                 f"""
                 UPDATE {schema}.revenue_contracts
                 SET billed_to_date = COALESCE((
-                        SELECT SUM(amount) FROM {schema}.revenue_billing_events WHERE contract_id=%s
+                        SELECT SUM(amount)
+                        FROM {schema}.revenue_billing_events
+                        WHERE contract_id = %s
                     ), 0),
                     billing_status = CASE
                         WHEN COALESCE((
-                            SELECT SUM(amount) FROM {schema}.revenue_billing_events WHERE contract_id=%s
+                            SELECT SUM(amount)
+                            FROM {schema}.revenue_billing_events
+                            WHERE contract_id = %s
                         ), 0) <= 0 THEN 'unbilled'
                         WHEN COALESCE((
-                            SELECT SUM(amount) FROM {schema}.revenue_billing_events WHERE contract_id=%s
+                            SELECT SUM(amount)
+                            FROM {schema}.revenue_billing_events
+                            WHERE contract_id = %s
                         ), 0) >= transaction_price THEN 'fully_billed'
                         ELSE 'partially_billed'
                     END,
                     updated_at = NOW()
-                WHERE id=%s
+                WHERE id = %s
+                RETURNING *;
                 """,
                 (int(contract_id), int(contract_id), int(contract_id), int(contract_id)),
             )
+            updated_contract = dict(cur.fetchone())
 
-            contract = self.get_revenue_contract(company_id, contract_id, cur=cur)
             conn.commit()
 
-        return {"event": row, "contract": contract}
-
+        return {"event": row, "contract": updated_contract}
 
     def record_revenue_cash_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)

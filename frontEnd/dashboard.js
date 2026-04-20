@@ -1963,6 +1963,9 @@ const ENDPOINTS = {
 
     billablePreview: (cid, obligationId) => 
       `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/billable_preview`,
+
+    billingPolicy: (cid, contractId) =>
+      `${API_BASE}/api/companies/${cid}/revenue/contracts/${contractId}/billing-policy`,
   },
 
   supportUser: {
@@ -33784,6 +33787,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     contracts: [],
     contractObligations: [],
     selectedContract: null,
+    selectedContractBillingPolicy: null,
     selectedObligation: null,
     progressEditing: null,
     preview: null,
@@ -33860,6 +33864,31 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revProgressNotes")) $("revProgressNotes").value = p.notes || "";
 
     toggleRevenueProgressDriverFields();
+  }
+
+  async function loadSelectedContractBillingPolicy() {
+    const cid = state.cid;
+    const contractId = Number(state.selectedContract?.id || 0);
+
+    if (!cid || !contractId) {
+      state.selectedContractBillingPolicy = null;
+      return null;
+    }
+
+    try {
+      const out = await apiFetch(
+        ENDPOINTS.revenue.billingPolicy(cid, contractId),
+        { method: "GET" }
+      );
+
+      const policy = out?.data || out || null;
+      state.selectedContractBillingPolicy = policy;
+      return policy;
+    } catch (e) {
+      console.warn("[Revenue] loadSelectedContractBillingPolicy failed", e);
+      state.selectedContractBillingPolicy = null;
+      return null;
+    }
   }
 
   function syncProgressTypeFromSelectedObligation() {
@@ -34052,6 +34081,27 @@ function bindAssetRecordsPickerModal({ cid }) {
       c?.payload_json?.settlement_pattern || ""
     );
 
+    const policy = getSelectedBillingPolicy();
+
+    let billingHint = "";
+    if (policy?.requires_obligation_link) {
+      billingHint = "Invoices must be created from an obligation for this contract.";
+    } else if (policy?.billing_method === "periodic") {
+      billingHint = "This contract can bill at contract level.";
+    } else if (policy?.billing_method === "manual") {
+      billingHint = "This contract allows contract-level or obligation-level billing.";
+    } else if (policy?.billing_method === "progress") {
+      billingHint = "This contract allows contract-level or obligation-level billing.";
+    }
+
+    const billingHintHtml = billingHint
+      ? `
+        <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          ${esc(billingHint)}
+        </div>
+      `
+      : "";
+
     el.innerHTML = `
       <div class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -34073,6 +34123,8 @@ function bindAssetRecordsPickerModal({ cid }) {
           <div class="text-slate-500 text-xs mb-1">Notes</div>
           <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
         </div>
+
+        ${billingHintHtml}
 
         <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
           <button
@@ -34102,12 +34154,37 @@ function bindAssetRecordsPickerModal({ cid }) {
       </div>
     `;
 
+    const createBtn = $("revPreviewCreateInvoiceBtn");
+    if (createBtn) {
+      if (policy?.requires_obligation_link) {
+        createBtn.textContent = "Invoice via Obligation";
+        createBtn.title = "Milestone billing requires an obligation-linked invoice";
+      } else if (policy?.billing_method === "periodic") {
+        createBtn.textContent = "Create Contract Invoice";
+        createBtn.title = "Periodic billing defaults to contract-level billing";
+      } else {
+        createBtn.textContent = "Create Invoice";
+        createBtn.title = "";
+      }
+    }
+
     $("revPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
       try {
         const contract = state.selectedContract || c;
         if (!contract?.id) throw new Error("Select a contract first.");
 
+        const activePolicy = getSelectedBillingPolicy();
+
+        if (requiresObligationForInvoice()) {
+          throw new Error(
+            "This contract uses milestone billing. Select an obligation first, then create the invoice from the obligation preview."
+          );
+        }
+
         const prefill = buildInvoicePrefillFromContractPreview(contract);
+        prefill.billing_policy = activePolicy?.billing_method || null;
+        prefill.billing_level = "contract";
+
         await redirectToInvoiceFromContract(prefill);
       } catch (e) {
         setMsg(e?.message || "Invoice redirect failed", "error");
@@ -34119,13 +34196,20 @@ function bindAssetRecordsPickerModal({ cid }) {
         const contract = state.selectedContract || c;
         if (!contract?.id) throw new Error("Select a contract first.");
 
+        const activePolicy = getSelectedBillingPolicy();
+
         if ($("revContractId")) $("revContractId").value = String(contract.id || "");
         if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
         if ($("revCustomerId")) $("revCustomerId").value = String(contract.customer_id || "");
         if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
 
+        if (activePolicy?.requires_obligation_link) {
+          setMsg("This contract uses milestone billing. Select the related obligation before saving billing/cash entries.");
+        } else {
+          setMsg("Enter payment details, then save the cash receipt.");
+        }
+
         setActiveTab("billings");
-        setMsg("Enter payment details, then save the cash receipt.");
       } catch (e) {
         setMsg(e?.message || "Could not open payment flow", "error");
       }
@@ -34207,7 +34291,12 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("revOblPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
       try {
+        const policy = getSelectedBillingPolicy();
         const prefill = buildInvoicePrefillFromRevenueUI(o);
+
+        prefill.billing_policy = policy?.billing_method || null;
+        prefill.billing_level = "obligation";
+
         await redirectToInvoiceFromObligation(prefill);
       } catch (e) {
         setMsg(e?.message || "Invoice redirect failed", "error");
@@ -34491,12 +34580,14 @@ function bindAssetRecordsPickerModal({ cid }) {
 
       state.selectedContract = updated;
 
+      // NEW
+      await loadSelectedContractBillingPolicy();
+
       renderContractPreview(updated);
       renderContractKpis(updated);
 
       await loadObligations(updated.id);
 
-      // restore selected obligation after obligations reload
       if (selectedObligationId && Array.isArray(state.contractObligations)) {
         const selected = state.contractObligations.find(
           x => Number(x.id) === Number(selectedObligationId)
@@ -34808,6 +34899,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     return items;
   }
   window.loadRevenueObligationCatalog = loadRevenueObligationCatalog;
+
 
   function findRevenueObligationCatalogMeta(rawValue) {
     const v = String(rawValue || "").trim();
@@ -35435,6 +35527,9 @@ async function loadLatestRevenueProgressForSelectedObligation() {
         state.selectedContract = row;
         state.selectedObligation = null;
 
+        // ✅ NEW: load billing policy when user selects contract
+        await loadSelectedContractBillingPolicy();
+
         // reset obligation ui when switching contracts
         hydrateObligationForm({});
         renderObligationPreview({});
@@ -35465,6 +35560,24 @@ async function loadLatestRevenueProgressForSelectedObligation() {
         await loadCashOverview(row.id);
       });
     });
+  }
+
+  function getSelectedBillingPolicy() {
+    return state.selectedContractBillingPolicy || null;
+  }
+
+  function canCreateInvoiceAtContractLevel() {
+    const policy = getSelectedBillingPolicy();
+    if (!policy) return true; // safe fallback
+
+    return !policy.requires_obligation_link;
+  }
+
+  function requiresObligationForInvoice() {
+    const policy = getSelectedBillingPolicy();
+    if (!policy) return false;
+
+    return !!policy.requires_obligation_link;
   }
 
   function renderVersionList(items = []) {
@@ -36362,18 +36475,30 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       }
 
       const payload = {
-        customerId,
-        customerName,
-        contractId,
-        contractNumber,
-        contractTitle,
-        obligationId,
-        obligationName,
-        obligationNotes,
-        allocatedPrice,
+        // 🔹 customer
+        customer_id: customerId,
+        customer_name: customerName,
+
+        // 🔹 contract
+        revenue_contract_id: contractId,
+        revenue_contract_number: contractNumber,
+        revenue_contract_title: contractTitle,
+
+        // 🔹 obligation
+        revenue_obligation_id: obligationId,
+        revenue_obligation_name: obligationName,
+        revenue_obligation_notes: obligationNotes,
+
+        // 🔹 billing control (NEW)
+        billing_policy: state.selectedContractBillingPolicy?.billing_method || null,
+        billing_level: "obligation",
+
+        // 🔹 invoice basics
+        invoice_date: invoiceDate,
         currency,
-        invoiceDate,
+
         memo: `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`,
+
         line: {
           item_name: obligationName || "Service",
           description: obligationNotes || contractTitle || "",
@@ -37740,6 +37865,10 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       revenue_obligation_id: obligationId,
       revenue_obligation_name: obligationName,
       revenue_obligation_notes: obligationNotes,
+
+      // 🔹 NEW (important)
+      billing_policy: state.selectedContractBillingPolicy?.billing_method || null,
+      billing_level: "obligation",
 
       invoice_date: satisfactionDate || new Date().toISOString().slice(0, 10),
       currency,

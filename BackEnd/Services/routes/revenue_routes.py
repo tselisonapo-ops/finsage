@@ -1237,3 +1237,27 @@ def api_get_revenue_obligation_billable_preview(company_id: int, obligation_id: 
     except Exception as e:
         current_app.logger.exception("get_revenue_obligation_billable_preview failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+    
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>/billing-policy",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_get_revenue_contract_billing_policy(company_id: int, contract_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.get_revenue_contract_billing_policy(
+            company_id=int(company_id),
+            contract_id=int(contract_id),
+        )
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("get_revenue_contract_billing_policy failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
