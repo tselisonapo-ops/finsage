@@ -34302,109 +34302,137 @@ function bindAssetRecordsPickerModal({ cid }) {
     return data;
   }
 
-  function renderContractPreview(c = {}) {
-    const el = $("revContractPreviewBody");
-    if (!el) return;
+function renderContractPreview(c = {}) {
+  const el = $("revContractPreviewBody");
+  if (!el) return;
 
-    if (!c?.id) {
-      el.innerHTML = `
-        <div class="text-sm text-slate-500">
-          Select a contract from the left to preview it, or click New Contract to create one.
-        </div>
-      `;
-      return;
-    }
-
-    const expectedPosition = getExpectedPositionFromSettlementPattern(
-      c?.payload_json?.settlement_pattern || ""
-    );
-
-    const policy = getSelectedBillingPolicy();
-
-    let billingHint = "";
-    if (policy?.requires_obligation_link) {
-      billingHint = "Invoices must be created from an obligation for this contract.";
-    } else if (policy?.billing_method === "periodic") {
-      billingHint = "This contract can bill at contract level.";
-    } else if (policy?.billing_method === "manual") {
-      billingHint = "This contract allows contract-level or obligation-level billing.";
-    } else if (policy?.billing_method === "progress") {
-      billingHint = "This contract allows contract-level or obligation-level billing.";
-    }
-
-    const billingHintHtml = billingHint
-      ? `
-        <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-          ${esc(billingHint)}
-        </div>
-      `
-      : "";
-
+  if (!c?.id) {
     el.innerHTML = `
-      <div class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
-          <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
-          <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
-          <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
-          <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
-          <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
-          <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
-          <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
-          <div><span class="text-slate-500">Expected Position:</span> <strong>${esc(expectedPosition)}</strong></div>
-          <div><span class="text-slate-500">Current Position:</span> <strong>${esc(getCurrentPositionFromContract(c))}</strong></div>
-          <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
-          <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
-        </div>
-
-        <div>
-          <div class="text-slate-500 text-xs mb-1">Notes</div>
-          <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
-        </div>
-
-        ${billingHintHtml}
-
-        <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
-          <button
-            id="revPreviewCreateInvoiceBtn"
-            type="button"
-            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-          >
-            Create Invoice
-          </button>
-
-          <button
-            id="revPreviewRecordPaymentBtn"
-            type="button"
-            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-          >
-            Record Payment
-          </button>
-
-          <button
-            id="revPreviewDefineObligationsBtn"
-            type="button"
-            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-          >
-            Define Obligations
-          </button>
-
-          <button
-            id="revPreviewRecalcBtn"
-            type="button"
-            class="px-3 py-2 text-sm rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100"
-          >
-            Recalculate Revenue
-          </button>
-        </div>
+      <div class="text-sm text-slate-500">
+        Select a contract from the left to preview it, or click New Contract to create one.
       </div>
     `;
+    return;
+  }
+
+  const expectedPosition = getExpectedPositionFromSettlementPattern(
+    c?.payload_json?.settlement_pattern || ""
+  );
+
+  const policy = getSelectedBillingPolicy();
+
+  const billingCfg = c?.payload_json?.billing_config || {};
+  const milestoneBasis = billingCfg.milestone_basis || "obligation";
+  const periodicity = billingCfg.periodicity || "";
+  const billingDay = billingCfg.billing_day ?? "";
+  const allowOverride = !!billingCfg.allow_obligation_override;
+  const autoAllocate = billingCfg.auto_allocate_contract_pool !== false;
+  const billingNotes = billingCfg.notes || "";
+
+  let billingHint = "";
+  if (policy?.billing_method === "milestone") {
+    if (milestoneBasis === "obligation") {
+      billingHint = "This contract uses obligation-based milestones. Each obligation acts as a billing milestone.";
+    } else {
+      billingHint = "This contract uses custom billing milestones. Billing milestones may differ from the obligation structure.";
+    }
+  } else if (policy?.billing_method === "periodic") {
+    billingHint = "This contract can bill at contract level using the configured period schedule.";
+  } else if (policy?.billing_method === "manual") {
+    billingHint = "This contract allows manual billing decisions at contract or obligation level.";
+  } else if (policy?.billing_method === "progress") {
+    billingHint = "This contract uses contract-level progress billing and can coordinate over-time billing across obligations.";
+  }
+
+  const billingHintHtml = billingHint
+    ? `
+      <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+        ${esc(billingHint)}
+      </div>
+    `
+    : "";
+
+  el.innerHTML = `
+    <div class="space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
+        <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
+        <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
+        <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
+        <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
+        <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
+        <div><span class="text-slate-500">Milestone Basis:</span> <strong>${esc(c.billing_method === "milestone" ? milestoneBasis : "—")}</strong></div>
+        <div><span class="text-slate-500">Periodicity:</span> <strong>${esc(c.billing_method === "periodic" ? periodicity : "—")}</strong></div>
+        <div><span class="text-slate-500">Billing Day:</span> <strong>${esc(c.billing_method === "periodic" && billingDay ? String(billingDay) : "—")}</strong></div>
+        <div><span class="text-slate-500">Allow Override:</span> <strong>${allowOverride ? "Yes" : "No"}</strong></div>
+        <div><span class="text-slate-500">Auto Allocate:</span> <strong>${autoAllocate ? "Yes" : "No"}</strong></div>
+        <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
+        <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
+        <div><span class="text-slate-500">Expected Position:</span> <strong>${esc(expectedPosition)}</strong></div>
+        <div><span class="text-slate-500">Current Position:</span> <strong>${esc(getCurrentPositionFromContract(c))}</strong></div>
+        <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
+        <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
+      </div>
+
+      <div>
+        <div class="text-slate-500 text-xs mb-1">Notes</div>
+        <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
+      </div>
+
+      ${
+        billingNotes
+          ? `
+            <div>
+              <div class="text-slate-500 text-xs mb-1">Billing Notes</div>
+              <div class="border rounded p-3 bg-slate-50">${esc(billingNotes)}</div>
+            </div>
+          `
+          : ""
+      }
+
+      ${billingHintHtml}
+
+      <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
+        <button
+          id="revPreviewCreateInvoiceBtn"
+          type="button"
+          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+        >
+          Create Invoice
+        </button>
+
+        <button
+          id="revPreviewRecordPaymentBtn"
+          type="button"
+          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+        >
+          Record Payment
+        </button>
+
+        <button
+          id="revPreviewDefineObligationsBtn"
+          type="button"
+          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+        >
+          Define Obligations
+        </button>
+
+        <button
+          id="revPreviewRecalcBtn"
+          type="button"
+          class="px-3 py-2 text-sm rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100"
+        >
+          Recalculate Revenue
+        </button>
+      </div>
+    </div>
+  `;
 
     const createBtn = $("revPreviewCreateInvoiceBtn");
     if (createBtn) {
-      if (policy?.requires_obligation_link) {
+      if (policy?.billing_method === "milestone" && milestoneBasis === "obligation") {
         createBtn.textContent = "Invoice via Obligation";
-        createBtn.title = "Milestone billing requires an obligation-linked invoice";
+        createBtn.title = "Milestone billing with obligation basis requires an obligation-linked invoice";
       } else if (policy?.billing_method === "periodic") {
         createBtn.textContent = "Create Contract Invoice";
         createBtn.title = "Periodic billing defaults to contract-level billing";
@@ -34421,15 +34449,16 @@ function bindAssetRecordsPickerModal({ cid }) {
 
         const activePolicy = getSelectedBillingPolicy();
 
-        if (requiresObligationForInvoice()) {
+        if (policy?.billing_method === "milestone" && milestoneBasis === "obligation" && requiresObligationForInvoice()) {
           throw new Error(
-            "This contract uses milestone billing. Select an obligation first, then create the invoice from the obligation preview."
+            "This contract uses obligation-based milestone billing. Select an obligation first, then create the invoice from the obligation preview."
           );
         }
 
         const prefill = buildInvoicePrefillFromContractPreview(contract);
         prefill.billing_policy = activePolicy?.billing_method || null;
         prefill.billing_level = "contract";
+        prefill.milestone_basis = milestoneBasis;
 
         await redirectToInvoiceFromContract(prefill);
       } catch (e) {
@@ -34452,8 +34481,8 @@ function bindAssetRecordsPickerModal({ cid }) {
         if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
         if ($("revObligationId")) $("revObligationId").value = String(state.selectedObligation?.id || "");
 
-        if (activePolicy?.requires_obligation_link) {
-          setMsg("This contract uses milestone billing. Select the related obligation before saving billing/cash entries.");
+        if (activePolicy?.billing_method === "milestone" && milestoneBasis === "obligation") {
+          setMsg("This contract uses obligation-based milestone billing. Select the related obligation before saving billing/cash entries.");
         } else {
           setMsg("Enter payment details, then save the cash receipt.");
         }
@@ -34559,6 +34588,38 @@ function bindAssetRecordsPickerModal({ cid }) {
         setMsg(e?.message || "Invoice redirect failed", "error");
       }
     });
+  }
+
+  function refreshMilestoneBasisUX() {
+    const billingMethod = $("revBillingMethod")?.value || "milestone";
+    const basis = $("revMilestoneBasis")?.value || "obligation";
+    const help = $("revMilestoneBasisHelp");
+
+    if (help) {
+      if (billingMethod !== "milestone") {
+        help.textContent = "";
+      } else if (basis === "obligation") {
+        help.textContent = "Each obligation acts as a billing milestone. Invoicing should normally link to an obligation.";
+      } else {
+        help.textContent = "Billing milestones may be tracked separately from obligations. Use custom milestone references and allow override where needed.";
+      }
+    }
+
+    // Suggested defaults/behavior
+    if (billingMethod === "milestone" && basis === "obligation") {
+      if ($("revAllowObligationOverride")) {
+        $("revAllowObligationOverride").checked = false;
+      }
+      if ($("revAutoAllocateContractPool")) {
+        $("revAutoAllocateContractPool").checked = false;
+      }
+    }
+
+    if (billingMethod === "milestone" && basis === "custom") {
+      if ($("revAllowObligationOverride")) {
+        $("revAllowObligationOverride").checked = true;
+      }
+    }
   }
 
   function toggleRevenueProgressDriverFields() {
@@ -34720,19 +34781,23 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   function toggleBillingConfig() {
     const method = $("revBillingMethod")?.value || "milestone";
+    const basis = $("revMilestoneBasis")?.value || "obligation";
 
     const wrap = $("revBillingConfigWrap");
     const periodicFields = $("revPeriodicFields");
     const milestoneFields = $("revMilestoneFields");
-    const overrideBox = $("revAllowObligationOverride")?.closest("label")?.parentElement;
-    const notesBox = $("revBillingConfigNotes")?.closest("div");
+    const help = $("revMilestoneBasisHelp");
 
     if (!wrap) return;
 
+    // show wrapper whenever billing method is selected
     wrap.classList.remove("hidden");
+
+    // hide all method-specific blocks first
     periodicFields?.classList.add("hidden");
     milestoneFields?.classList.add("hidden");
 
+    // show only the relevant block
     if (method === "periodic") {
       periodicFields?.classList.remove("hidden");
     }
@@ -34741,18 +34806,48 @@ function bindAssetRecordsPickerModal({ cid }) {
       milestoneFields?.classList.remove("hidden");
     }
 
-    // defaults by method
+    // method defaults
     if (method === "progress") {
-      if ($("revSettlementPattern")) $("revSettlementPattern").value = "revenue_before_billing";
-      if ($("revAutoAllocateContractPool")) $("revAutoAllocateContractPool").checked = true;
+      if ($("revSettlementPattern")) {
+        $("revSettlementPattern").value = "revenue_before_billing";
+      }
+      if ($("revAutoAllocateContractPool")) {
+        $("revAutoAllocateContractPool").checked = true;
+      }
     }
 
     if (method === "periodic") {
-      if ($("revAutoAllocateContractPool")) $("revAutoAllocateContractPool").checked = true;
+      if ($("revAutoAllocateContractPool")) {
+        $("revAutoAllocateContractPool").checked = true;
+      }
     }
 
+    // milestone-basis behavior
     if (method === "milestone") {
-      if ($("revAllowObligationOverride")) $("revAllowObligationOverride").checked = false;
+      if (basis === "obligation") {
+        if ($("revAllowObligationOverride")) {
+          $("revAllowObligationOverride").checked = false;
+        }
+        if ($("revAutoAllocateContractPool")) {
+          $("revAutoAllocateContractPool").checked = false;
+        }
+        if (help) {
+          help.textContent =
+            "Each obligation acts as a billing milestone. Invoicing should normally link to an obligation.";
+        }
+      } else {
+        if ($("revAllowObligationOverride")) {
+          $("revAllowObligationOverride").checked = true;
+        }
+        if (help) {
+          help.textContent =
+            "Billing milestones may be tracked separately from obligations. Custom milestone references can drive billing.";
+        }
+      }
+    } else {
+      if (help) {
+        help.textContent = "";
+      }
     }
   }
 
@@ -37771,6 +37866,10 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       toggleBillingConfig();
     });
 
+    $("revMilestoneBasis")?.addEventListener("change", () => {
+      toggleBillingConfig();
+    });
+    
     $("revSettlementPattern")?.addEventListener("change", refreshSettlementPatternHelp);
 
     $("revHasFinancing")?.addEventListener("change", toggleFinancingFields);

@@ -56677,9 +56677,10 @@ class DatabaseService:
             if float(contract.get("recognized_revenue_to_date") or 0.0) > 0:
                 raise ValueError("Cannot add obligations after revenue recognition has started")
 
-            # NEW: apply contract-level billing rules to obligation payload
+            # apply contract-level billing rules + progress payload rules
             data = self._validate_obligation_against_contract(contract, data)
             data = self._validate_obligation_progress_payload(data)
+
             existing = self.fetch_one(
                 f"""
                 SELECT COALESCE(SUM(allocated_transaction_price), 0) AS total_allocated
@@ -56770,6 +56771,39 @@ class DatabaseService:
                 satisfaction_confirmed_by_user_id = None
 
             payload_json = dict(data.get("payload_json") or {})
+
+            # preserve contract billing context exactly as set by validator
+            contract_payload = contract.get("payload_json") or {}
+            if not isinstance(contract_payload, dict):
+                contract_payload = {}
+            billing_cfg = contract_payload.get("billing_config") or {}
+            if not isinstance(billing_cfg, dict):
+                billing_cfg = {}
+
+            payload_json["milestone_basis"] = (
+                payload_json.get("milestone_basis")
+                or billing_cfg.get("milestone_basis")
+                or "obligation"
+            )
+
+            contract_method = str(contract.get("billing_method") or "milestone").strip().lower()
+            if not payload_json.get("billing_source"):
+                if contract_method == "periodic":
+                    payload_json["billing_source"] = "contract"
+                elif contract_method == "progress":
+                    payload_json["billing_source"] = "contract"
+                elif contract_method == "manual":
+                    payload_json["billing_source"] = "manual"
+                elif contract_method == "milestone" and payload_json.get("milestone_basis") == "custom":
+                    payload_json["billing_source"] = "custom_milestone"
+                else:
+                    payload_json["billing_source"] = "obligation"
+
+            # final milestone check after full normalization
+            if progress_method == "milestone":
+                if payload_json.get("milestone_basis") == "custom" and not str(payload_json.get("milestone_code") or "").strip():
+                    raise ValueError("Custom milestone obligations require milestone_code.")
+
             payload_json["catalog_item_type"] = data.get("catalog_item_type")
             payload_json["catalog_item_id"] = data.get("catalog_item_id")
             payload_json["catalog_item_code"] = data.get("catalog_item_code")
@@ -56860,9 +56894,9 @@ class DatabaseService:
             if not contract:
                 raise ValueError("Parent revenue contract not found")
 
-            # NEW: apply contract-level billing rules to obligation payload
             data = self._validate_obligation_against_contract(contract, data)
             data = self._validate_obligation_progress_payload(data)
+
             timing = (
                 data.get("recognition_timing")
                 if data.get("recognition_timing") not in (None, "")
@@ -56897,6 +56931,32 @@ class DatabaseService:
                     before_payload = {}
 
             payload_json = dict(before_payload)
+
+            contract_payload = contract.get("payload_json") or {}
+            if not isinstance(contract_payload, dict):
+                contract_payload = {}
+            billing_cfg = contract_payload.get("billing_config") or {}
+            if not isinstance(billing_cfg, dict):
+                billing_cfg = {}
+
+            payload_json["milestone_basis"] = (
+                payload_json.get("milestone_basis")
+                or billing_cfg.get("milestone_basis")
+                or "obligation"
+            )
+
+            contract_method = str(contract.get("billing_method") or "milestone").strip().lower()
+            if not payload_json.get("billing_source"):
+                if contract_method == "periodic":
+                    payload_json["billing_source"] = "contract"
+                elif contract_method == "progress":
+                    payload_json["billing_source"] = "contract"
+                elif contract_method == "manual":
+                    payload_json["billing_source"] = "manual"
+                elif contract_method == "milestone" and payload_json.get("milestone_basis") == "custom":
+                    payload_json["billing_source"] = "custom_milestone"
+                else:
+                    payload_json["billing_source"] = "obligation"
 
             pit_trigger = (
                 data.get("recognition_trigger")
@@ -56979,11 +57039,21 @@ class DatabaseService:
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method == "milestone":
+                    milestone_basis = payload_json.get("milestone_basis") or "obligation"
+
                     data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
                     data["progress_percent"] = 0.0
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
+
+                    if milestone_basis == "obligation":
+                        effective_name = (data.get("obligation_name") or before.get("obligation_name") or "").strip()
+                        if not effective_name:
+                            raise ValueError("Obligation-based milestone requires obligation_name.")
+                    else:
+                        if not str(payload_json.get("milestone_code") or "").strip():
+                            raise ValueError("Custom milestone progress requires payload_json.milestone_code.")
 
                 elif progress_method == "time_elapsed":
                     data["expected_total_cost"] = None
@@ -56994,6 +57064,25 @@ class DatabaseService:
 
             if "payload_json" in data and isinstance(data.get("payload_json"), dict):
                 payload_json.update(data.get("payload_json") or {})
+
+            # preserve contract context again after update merge
+            payload_json["milestone_basis"] = (
+                payload_json.get("milestone_basis")
+                or billing_cfg.get("milestone_basis")
+                or "obligation"
+            )
+
+            if not payload_json.get("billing_source"):
+                if contract_method == "periodic":
+                    payload_json["billing_source"] = "contract"
+                elif contract_method == "progress":
+                    payload_json["billing_source"] = "contract"
+                elif contract_method == "manual":
+                    payload_json["billing_source"] = "manual"
+                elif contract_method == "milestone" and payload_json.get("milestone_basis") == "custom":
+                    payload_json["billing_source"] = "custom_milestone"
+                else:
+                    payload_json["billing_source"] = "obligation"
 
             if "catalog_item_type" in data:
                 payload_json["catalog_item_type"] = data.get("catalog_item_type")
@@ -57404,24 +57493,60 @@ class DatabaseService:
     def _validate_obligation_against_contract(self, contract: dict, data: dict):
         contract_method = str(contract.get("billing_method") or "milestone").strip().lower()
 
+        contract_payload = contract.get("payload_json") or {}
+        if not isinstance(contract_payload, dict):
+            contract_payload = {}
+
+        contract_billing_cfg = contract_payload.get("billing_config") or {}
+        if not isinstance(contract_billing_cfg, dict):
+            contract_billing_cfg = {}
+
+        milestone_basis = str(
+            contract_billing_cfg.get("milestone_basis") or "obligation"
+        ).strip().lower()
+
         payload_json = data.get("payload_json") or {}
         if not isinstance(payload_json, dict):
             payload_json = {}
         else:
             payload_json = dict(payload_json)
 
-        if contract_method == "milestone":
-            milestone_code = str(payload_json.get("milestone_code") or "").strip()
-            obligation_name = str(data.get("obligation_name") or "").strip()
-            if not milestone_code and not obligation_name:
-                raise ValueError(
-                    "Milestone-billed contracts require each obligation to represent or reference a milestone."
-                )
+        obligation_name = str(data.get("obligation_name") or "").strip()
+        milestone_code = str(payload_json.get("milestone_code") or "").strip()
+        billing_source = str(payload_json.get("billing_source") or "").strip().lower()
 
-        if contract_method == "periodic":
+        if contract_method == "milestone":
+            payload_json["milestone_basis"] = milestone_basis
+
+            if milestone_basis == "obligation":
+                # obligation itself is the billing milestone
+                if not obligation_name:
+                    raise ValueError(
+                        "Obligation-based milestone contracts require each obligation to have an obligation_name."
+                    )
+
+                payload_json["billing_source"] = payload_json.get("billing_source") or "obligation"
+
+                # optional cleanup: custom milestone reference is not primary here
+                if not milestone_code:
+                    payload_json.pop("milestone_code", None)
+
+            elif milestone_basis == "custom":
+                # billing milestone can differ from obligation structure
+                if not milestone_code and not obligation_name:
+                    raise ValueError(
+                        "Custom milestone-billed contracts require either payload_json.milestone_code or obligation_name."
+                    )
+
+                payload_json["billing_source"] = payload_json.get("billing_source") or "custom_milestone"
+
+        elif contract_method == "periodic":
             payload_json["billing_source"] = payload_json.get("billing_source") or "contract"
 
-        if contract_method == "manual":
+        elif contract_method == "progress":
+            payload_json["billing_source"] = payload_json.get("billing_source") or "contract"
+
+        elif contract_method == "manual":
             payload_json["billing_source"] = payload_json.get("billing_source") or "manual"
 
         data["payload_json"] = payload_json
