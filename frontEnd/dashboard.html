@@ -3984,6 +3984,9 @@ html, body {
                       Select an obligation to view billing information.
                     </div>
 
+                    <!-- REQUIRED wrapper: JS expects this -->
+                    <div id="revBillingPreviewWrap" class="hidden space-y-3">
+
                       <div id="revBillingRevenueBeforeWrap" class="hidden space-y-3">
                         <div class="grid grid-cols-2 gap-3 text-sm">
                           <div><span class="text-slate-500">Obligation:</span> <strong id="revBillPrevObligationName">—</strong></div>
@@ -3997,6 +4000,7 @@ html, body {
                         </div>
 
                         <div id="revBillingPreviewInvoiceMsg" class="text-xs text-slate-500"></div>
+                      </div>
 
                       <div id="revBillingBeforeRevenueWrap" class="hidden space-y-3">
                         <div class="grid grid-cols-2 gap-3 text-sm">
