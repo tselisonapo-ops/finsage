@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g, current_app, make_response
 from sqlalchemy import String
+import psycopg2
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 from .invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.credit_policy import (
@@ -13,6 +14,9 @@ from BackEnd.Services.credit_policy import (
                             )
 from BackEnd.Services.company import company_policy
 from BackEnd.Services.db_service import db_service
+from BackEnd.Services.assets.ppe_db import get_conn
+from BackEnd.Services.assets import service as ppe_service
+from BackEnd.Services.assets import posting as asset_posting
 
 # import your helpers: _corsify, _deny_if_wrong_company, db_service
 
@@ -61,6 +65,29 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
         if not (bill.get("number") or "").strip():
             raise ValueError("VENDOR_INVOICE_NUMBER_REQUIRED|Vendor invoice number is required before approving/posting this bill")
 
+    asset_acq_id = bill.get("asset_acquisition_id")
+    if asset_acq_id:
+        schema = f"company_{int(company_id)}"
+        try:
+            acq_rows = db_service.fetch_all(
+                f"""
+                SELECT id, asset_id, funding_source, posted_journal_id
+                FROM {schema}.asset_acquisitions
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+                """,
+                (int(company_id), int(asset_acq_id)),
+            ) or []
+        except Exception:
+            acq_rows = []
+
+        acq = acq_rows[0] if acq_rows else None
+        if acq:
+            funding = (acq.get("funding_source") or "").strip().lower()
+            if funding == "vendor_credit":
+                raise ValueError(
+                    "ASSET_ACQUISITION_LINKED|Vendor-credit asset bills must post via asset acquisition, not normal AP bill journal."
+                )
     # -----------------------------
     # 1) Controls
     # -----------------------------
@@ -540,6 +567,10 @@ def api_bills(company_id: int):
             "other_amount": data.get("other_amount"),
             "discount_amount": data.get("discount_amount"),
             "discount_rate": data.get("discount_rate"),
+
+            # NEW
+            "asset_id": data.get("asset_id"),
+            "asset_acquisition_id": data.get("asset_acquisition_id"),
         }
 
     lines = data.get("lines") or []
@@ -573,6 +604,22 @@ def api_bills(company_id: int):
         header["vendor_id"] = int(vendor_id)
     except Exception:
         return jsonify({"ok": False, "error": f"vendor_id must be an integer, got {vendor_id!r}"}), 400
+
+    try:
+        if header.get("asset_id") not in (None, "", 0, "0"):
+            header["asset_id"] = int(header["asset_id"])
+        else:
+            header["asset_id"] = None
+
+        if header.get("asset_acquisition_id") not in (None, "", 0, "0"):
+            header["asset_acquisition_id"] = int(header["asset_acquisition_id"])
+        else:
+            header["asset_acquisition_id"] = None
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "error": "asset_id and asset_acquisition_id must be integers when provided"
+        }), 400
 
     number = (header.get("number") or "").strip()
     bill_status = (header.get("status") or "draft").strip().lower()
@@ -746,6 +793,106 @@ def api_bill_post(company_id: int, bill_id: int):
         if not number:
             return jsonify({"ok": False, "error": "Vendor invoice number is required before posting"}), 400
 
+        asset_id = bill.get("asset_id")
+        asset_acq_id = bill.get("asset_acquisition_id")
+
+        if asset_id and asset_acq_id:
+            with get_conn(company_id) as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    acq = ppe_service.get_acquisition(cur, company_id, int(asset_acq_id))
+                    if not acq:
+                        return jsonify({"ok": False, "error": "Linked asset acquisition not found"}), 400
+
+                    # consistency check
+                    if int(acq.get("asset_id") or 0) != int(asset_id):
+                        return jsonify({"ok": False, "error": "Bill asset_id does not match linked acquisition asset_id"}), 400
+
+                    funding = (acq.get("funding_source") or "").strip().lower()
+                    already_posted = bool(acq.get("posted_journal_id"))
+
+                    # --------------------------------------------------
+                    # Vendor-credit linked acquisition:
+                    # use acquisition posting as source of truth
+                    # --------------------------------------------------
+                    if funding == "vendor_credit":
+                        if already_posted:
+                            return jsonify({
+                                "ok": False,
+                                "error": "Linked vendor-credit asset acquisition is already posted. Normal bill GL posting is blocked."
+                            }), 400
+
+                        # Patch missing posting fields from bill
+                        ppe_service.patch_acquisition_posting_fields(
+                            cur,
+                            company_id,
+                            int(asset_acq_id),
+                            posting_date=bill.get("bill_date"),
+                            reference=(bill.get("number") or "").strip() or None,
+                        )
+
+                        user = getattr(g, "current_user", {}) or {}
+                        jid = asset_posting.post_acquisition(
+                            cur,
+                            company_id,
+                            int(asset_acq_id),
+                            user=user,
+                        )
+
+                        # mark bill as approved / linked document, not GL-posted as a bill
+                        schema = f"company_{int(company_id)}"
+                        cur.execute(f"""
+                            UPDATE {schema}.bills
+                            SET status='approved',
+                                notes = COALESCE(notes, '') || CASE
+                                    WHEN COALESCE(notes, '') = '' THEN ''
+                                    ELSE E'\n'
+                                END || %s,
+                                updated_at=NOW()
+                            WHERE id=%s
+                        """, (
+                            f"Linked to asset acquisition {asset_acq_id}; GL posted via acquisition journal {jid}.",
+                            int(bill_id),
+                        ))
+
+                        conn.commit()
+
+                        try:
+                            actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
+                            db_service.audit_log(
+                                company_id,
+                                actor_user_id=actor_user_id,
+                                module="ap",
+                                action="post_bill_via_asset_acquisition",
+                                severity="info",
+                                entity_type="bill",
+                                entity_id=str(bill_id),
+                                entity_ref=bill.get("number") or f"BILL-{bill_id}",
+                                before_json={"bill_status": bill.get("status")},
+                                after_json={
+                                    "asset_id": int(asset_id),
+                                    "asset_acquisition_id": int(asset_acq_id),
+                                    "acquisition_journal_id": int(jid),
+                                },
+                                message=f"Bill {bill.get('number') or bill_id} posted via asset acquisition {asset_acq_id}",
+                                source="api",
+                            )
+                        except Exception:
+                            current_app.logger.exception("audit_log failed in asset-linked bill posting")
+
+                        return jsonify({
+                            "ok": True,
+                            "journal_id": jid,
+                            "mode": "asset_acquisition",
+                            "asset_id": int(asset_id),
+                            "asset_acquisition_id": int(asset_acq_id),
+                        }), 200
+
+                    # --------------------------------------------------
+                    # GRNI linked acquisition:
+                    # let normal GRNI bill logic continue
+                    # --------------------------------------------------
+                    elif funding == "grni":
+                        pass
         # ✅ require GRNI link before posting inventory bills (if GRNI is configured)
         settings = db_service.get_company_account_settings(company_id) or {}
         grni_raw = (settings.get("grni_control_code") or settings.get("ppv_control_code") or "").strip()

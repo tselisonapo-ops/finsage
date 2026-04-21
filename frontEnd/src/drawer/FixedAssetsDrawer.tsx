@@ -14,11 +14,22 @@ function todayIso(): string {
 
 function readPostingDateFromArgs(args: FixedAssetsDrawerOpenArgs | null): string {
   const d = args?.defaults || {};
+  const ctx = (window as unknown as {
+    __FS_POSTING_CONTEXT__?: {
+      posting_date?: string;
+      postingDate?: string;
+      date?: string;
+    };
+  }).__FS_POSTING_CONTEXT__;
+
   return String(
+    d.posting_date ||
     d.postingDate ||
+    d.date ||
     d.acquisitionDate ||
-    (window as unknown as { __FS_POSTING_CONTEXT__?: { posting_date?: string } })
-      .__FS_POSTING_CONTEXT__?.posting_date ||
+    ctx?.posting_date ||
+    ctx?.postingDate ||
+    ctx?.date ||
     ""
   ).trim();
 }
@@ -358,8 +369,12 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
    *  ----------------------------- */
   function buildAcqPayload(assetId: number | string) {
     const amount = Number(form.cost || 0);
-    const postingDate = readPostingDateFromArgs(args);
+    const postingDate = String(
+      form.posting_date || readPostingDateFromArgs(args) || form.acquisition_date || ""
+    ).trim();
     const journalRef = readJournalRefFromArgs(args);
+
+    if (!postingDate) throw new Error("Posting date is required.");
 
     const funding =
       fundingSource === "bank" || fundingSource === "cash"
@@ -372,7 +387,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     const payload: Record<string, unknown> = {
       acquisition_date: form.acquisition_date,
-      posting_date: postingDate || form.acquisition_date,
+      posting_date: postingDate,
       amount,
       funding_source: funding,
       reference: sourceDocRef?.trim() || journalRef || `ASSET-${String(assetId)}`,
@@ -466,19 +481,17 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     setForm({
       entry_mode: "acquisition",
+      posting_date: String(defaults.posting_date || defaults.postingDate || postingDate || ""),
 
       asset_code: String(defaults.assetCode || ""),
       asset_name: String(defaults.assetName || ""),
       asset_class: String(defaults.assetClass || ""),
       category: String(defaults.category || ""),
-
       location: String(defaults.location || ""),
       serial_no: String(defaults.serialNo || ""),
       notes: String(defaults.notes || ""),
-
       acquisition_date: String(defaults.acquisitionDate || postingDate || todayIso()),
       available_for_use_date: String(defaults.availableForUseDate || ""),
-
       cost: Number(defaults.cost || 0),
       residual_value: Number(defaults.residualValue || 0),
 
@@ -489,7 +502,6 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
       depreciation_method: (String(defaults.depreciationMethod || "SL") as DepreciationMethod),
       useful_life_months: Number(defaults.usefulLifeMonths || 60),
-
       rb_rate_percent: defaults.rbRatePercent == null ? null : Number(defaults.rbRatePercent),
       uop_usage_mode: ((defaults.uopUsageMode as UopUsageMode) || "DELTA"),
       uop_opening_reading: defaults.uopOpeningReading == null ? null : Number(defaults.uopOpeningReading),
@@ -596,39 +608,52 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     if (!form.asset_class.trim()) return setErr("Asset class is required.");
     if (!form.acquisition_date) return setErr("Acquisition date is required.");
 
-    if (Number(form.cost) <= 0) return setErr(isOpeningBalance ? "Historical cost must be greater than 0." : "Cost must be greater than 0.");
+    const resolvedPostingDate =
+      String(form.posting_date || readPostingDateFromArgs(args) || form.acquisition_date || "").trim();
+
+    if (!resolvedPostingDate) {
+      return setErr("Posting date is required before creating acquisition draft.");
+    }
+
+    if (Number(form.cost) <= 0) {
+      return setErr(isOpeningBalance ? "Historical cost must be greater than 0." : "Cost must be greater than 0.");
+    }
 
     if (isOpeningBalance) {
       if (!String(form.opening_as_at || "").trim()) return setErr("Opening as at is required.");
       if (Number(form.opening_accum_dep || 0) < 0) return setErr("Accumulated depreciation cannot be negative.");
       if (Number(form.opening_impairment || 0) < 0) return setErr("Opening impairment cannot be negative.");
-      if (Number(form.opening_accum_dep || 0) > Number(form.cost || 0))
+      if (Number(form.opening_accum_dep || 0) > Number(form.cost || 0)) {
         return setErr("Accumulated depreciation cannot exceed historical cost.");
+      }
     } else {
-      if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !selectedVendorId)
+      if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !selectedVendorId) {
         return setErr("Select a vendor.");
+      }
 
-      if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !sourceDocRef.trim())
+      if ((fundingSource === "vendor_credit" || fundingSource === "grni") && !sourceDocRef.trim()) {
         return setErr(fundingSource === "vendor_credit" ? "Invoice number is required." : "GRN / receipt reference is required.");
+      }
 
-      if ((fundingSource === "bank" || fundingSource === "cash") && !selectedBankId)
+      if ((fundingSource === "bank" || fundingSource === "cash") && !selectedBankId) {
         return setErr("Select a bank account.");
+      }
 
-      if (fundingSource === "other" && !otherCreditAccountCode.trim())
+      if (fundingSource === "other" && !otherCreditAccountCode.trim()) {
         return setErr("Credit account code is required for Other.");
+      }
     }
 
     setSaving(true);
 
     try {
       const companyId = args.companyId;
-      const postingDate = readPostingDateFromArgs(args);
       const journalRef = readJournalRefFromArgs(args);
 
       const payload: CreateAssetPayload = {
         ...form,
         entry_mode: entryMode,
-        posting_date: postingDate || null,
+        posting_date: resolvedPostingDate,
         reference: journalRef || null,
         category: form.category?.trim() ? form.category.trim() : null,
         location: form.location?.trim() ? form.location.trim() : null,

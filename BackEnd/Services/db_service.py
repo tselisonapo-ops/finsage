@@ -19322,6 +19322,12 @@ class DatabaseService:
         ALTER TABLE {schema}.bills
         ADD COLUMN IF NOT EXISTS other_amount NUMERIC(18,2) DEFAULT 0;
 
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS asset_id INT NULL;
+
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS asset_acquisition_id INT NULL;
+
         DO $$
         BEGIN
         IF EXISTS (
@@ -19400,6 +19406,51 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_bills_posted_journal_id_idx
         ON {schema}.bills(posted_journal_id);
 
+        CREATE INDEX IF NOT EXISTS {schema}_bills_asset_id_idx
+        ON {schema}.bills(asset_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_bills_asset_acquisition_id_idx
+        ON {schema}.bills(asset_acquisition_id);
+
+        DO $fk_bills_asset$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_bills_asset'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.bills
+                    ADD CONSTRAINT fk_bills_asset
+                    FOREIGN KEY (asset_id)
+                    REFERENCES %I.assets(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END $fk_bills_asset$;
+
+        DO $fk_bills_asset_acq$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_bills_asset_acquisition'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.bills
+                    ADD CONSTRAINT fk_bills_asset_acquisition
+                    FOREIGN KEY (asset_acquisition_id)
+                    REFERENCES %I.asset_acquisitions(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END $fk_bills_asset_acq$;
 
         -- ==================================================
         -- AP: Bill lines
@@ -33449,9 +33500,10 @@ class DatabaseService:
                 INSERT INTO {schema}.bills (
                     company_id, vendor_id, number, bill_date, due_date, currency,
                     subtotal_amount, discount_amount, discount_rate, vat_amount, total_amount,
-                    other_amount, status, notes
+                    other_amount, status, notes,
+                    asset_id, asset_acquisition_id
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id;
                 """,
                 (
@@ -33469,6 +33521,8 @@ class DatabaseService:
                     other,
                     header.get("status") or "draft",
                     header.get("notes"),
+                    header.get("asset_id"),
+                    header.get("asset_acquisition_id"),
                 ),
             )
             row = cur.fetchone()
@@ -33748,6 +33802,8 @@ class DatabaseService:
                     subtotal_amount=%s, discount_amount=%s, discount_rate=%s,
                     vat_amount=%s, total_amount=%s, status=%s, notes=%s,
                     other_amount=%s,
+                    asset_id=%s,
+                    asset_acquisition_id=%s,
                     updated_at=NOW()
                 WHERE company_id=%s AND id=%s;
                 """,
@@ -33765,6 +33821,8 @@ class DatabaseService:
                     new_status,
                     header.get("notes"),
                     other,
+                    header.get("asset_id"),
+                    header.get("asset_acquisition_id"),                    
                     int(company_id),
                     int(bill_id),
                 ),
@@ -34120,6 +34178,27 @@ class DatabaseService:
 
         return journal_id
 
+    def post_bill_to_gl(
+        self,
+        company_id: int,
+        bill_id: int,
+        *,
+        jlines: list[dict] = None,
+        build_mode: str = "auto",   # auto|normal|inventory|erp
+        cur=None,
+    ) -> int:
+        if cur is not None:
+            return self._post_bill_to_gl_cur(company_id, bill_id, jlines=jlines, build_mode=build_mode, cur=cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            try:
+                jid = self._post_bill_to_gl_cur(company_id, bill_id, jlines=jlines, cur=_cur)
+                conn.commit()
+                return jid
+            except Exception:
+                conn.rollback()
+                raise
+
     def validate_invoice_stock_before_post(
         self,
         company_id: int,
@@ -34221,26 +34300,7 @@ class DatabaseService:
             raise ValueError("validate_invoice_stock_before_post requires an active DB cursor/transaction (cur)")
         return _run(cur)
 
-    def post_bill_to_gl(
-        self,
-        company_id: int,
-        bill_id: int,
-        *,
-        jlines: list[dict] = None,
-        build_mode: str = "auto",   # auto|normal|inventory|erp
-        cur=None,
-    ) -> int:
-        if cur is not None:
-            return self._post_bill_to_gl_cur(company_id, bill_id, jlines=jlines, build_mode=build_mode, cur=cur)
 
-        with self._conn_cursor() as (conn, _cur):
-            try:
-                jid = self._post_bill_to_gl_cur(company_id, bill_id, jlines=jlines, cur=_cur)
-                conn.commit()
-                return jid
-            except Exception:
-                conn.rollback()
-                raise
 
     def get_bill_with_relations(self, company_id: int, bill_id: int) -> Optional[Dict[str, Any]]:
         schema = self.company_schema(company_id)

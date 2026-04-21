@@ -1037,6 +1037,32 @@ def create_acquisition(cur, company_id, asset_id, payload):
 
     row = cur.fetchone()
     return (row.get("id") if isinstance(row, dict) else row[0])
+def patch_acquisition_posting_fields(cur, company_id, acq_id, *, posting_date=None, reference=None):
+    schema = company_schema(company_id)
+
+    sets = []
+    params = []
+
+    if posting_date:
+        sets.append("posting_date = COALESCE(posting_date, %s)")
+        params.append(posting_date)
+
+    if reference:
+        sets.append("reference = COALESCE(NULLIF(reference, ''), %s)")
+        params.append(reference)
+
+    if not sets:
+        return False
+
+    params.extend([company_id, acq_id])
+
+    cur.execute(_q(schema, f"""
+      UPDATE {{schema}}.asset_acquisitions
+      SET {", ".join(sets)}
+      WHERE company_id=%s AND id=%s
+    """), tuple(params))
+
+    return cur.rowcount > 0
 
 def list_acquisitions(cur, company_id, asset_id):
     schema = company_schema(company_id)
@@ -1046,6 +1072,27 @@ def list_acquisitions(cur, company_id, asset_id):
       ORDER BY acquisition_date DESC, id DESC
     """), (company_id, asset_id))
     return fetchall(cur)
+
+def get_latest_acquisition_for_asset(cur, company_id, asset_id):
+    schema = company_schema(company_id)
+    cur.execute(_q(schema, """
+      SELECT *
+      FROM {schema}.asset_acquisitions
+      WHERE company_id=%s AND asset_id=%s
+      ORDER BY acquisition_date DESC, id DESC
+      LIMIT 1
+    """), (company_id, asset_id))
+    return fetchone(cur)
+
+def get_acquisition(cur, company_id, acq_id):
+    schema = company_schema(company_id)
+    cur.execute(_q(schema, """
+      SELECT *
+      FROM {schema}.asset_acquisitions
+      WHERE company_id=%s AND id=%s
+      LIMIT 1
+    """), (company_id, acq_id))
+    return fetchone(cur)
 
 # -------------------------
 # DEPRECIATION (CRUD)

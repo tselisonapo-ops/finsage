@@ -359,6 +359,8 @@ def _audit_safe(
     except Exception:
         current_app.logger.exception("audit_log failed (non-fatal)")
 
+
+
 @ppe_bp.route("/api/companies/<int:company_id>/asset-acquisitions/<int:acq_id>/journal-preview", methods=["GET", "OPTIONS"])
 @require_auth
 def acquisition_journal_preview(company_id, acq_id):
