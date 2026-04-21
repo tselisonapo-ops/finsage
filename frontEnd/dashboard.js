@@ -34695,7 +34695,6 @@ function renderContractPreview(c = {}) {
 
   function toggleObligationFields() {
     const timing = $("revRecognitionTiming")?.value || "point_in_time";
-    const method = $("revProgressMethod")?.value || "cost_to_cost";
 
     const overTimeBlock = $("revOverTimeBlock");
     const pitBlock = $("revPointInTimeBlock");
@@ -34712,7 +34711,6 @@ function renderContractPreview(c = {}) {
     const evidenceType = $("revSatisfactionEvidenceType");
     const evidenceRef = $("revSatisfactionEvidenceRef");
 
-    // hide all method-specific blocks first
     expectedCostWrap?.classList.add("hidden");
     unitsBlock?.classList.add("hidden");
     manualBlock?.classList.add("hidden");
@@ -34736,24 +34734,18 @@ function renderContractPreview(c = {}) {
         $("revProgressMethod").value = "cost_to_cost";
       }
 
-      // method-specific UI
+      const method = $("revProgressMethod")?.value || "cost_to_cost";
+
       if (method === "cost_to_cost") {
         expectedCostWrap?.classList.remove("hidden");
-      }
-
-      if (method === "units" || method === "units_delivered") {
+      } else if (method === "units" || method === "units_delivered") {
         unitsBlock?.classList.remove("hidden");
-      }
-
-      if (method === "manual" || method === "time_elapsed") {
+      } else if (method === "manual" || method === "time_elapsed") {
         manualBlock?.classList.remove("hidden");
-      }
-
-      if (method === "milestone") {
+      } else if (method === "milestone") {
         milestoneBlock?.classList.remove("hidden");
       }
 
-      // clear PIT-only fields
       if (pitTrigger) pitTrigger.value = "";
       if (pitDate) pitDate.value = "";
       if (satisfactionStatus) satisfactionStatus.value = "pending";
