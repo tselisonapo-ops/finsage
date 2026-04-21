@@ -47,17 +47,36 @@ def _normalize_revenue_contract_body(body: dict) -> dict:
         payload_json["financing"] = None
         body["financing_component_amount"] = 0.0
 
-    body["payload_json"] = payload_json
-
     if body.get("contract_currency"):
         body["contract_currency"] = str(body.get("contract_currency") or "").strip().upper()
 
-    if body.get("billing_method"):
-        body["billing_method"] = str(body.get("billing_method") or "").strip().lower()
+    billing_method = str(body.get("billing_method") or "").strip().lower() or "milestone"
+    body["billing_method"] = billing_method
+
+    billing_cfg = payload_json.get("billing_config") or {}
+    if not isinstance(billing_cfg, dict):
+        billing_cfg = {}
+
+    raw_billing_day = billing_cfg.get("billing_day")
+    try:
+        billing_day = int(raw_billing_day) if raw_billing_day not in (None, "", 0, "0") else None
+    except (TypeError, ValueError):
+        raise ValueError("billing_config.billing_day must be a valid integer.")
+
+    payload_json["billing_config"] = {
+        "method": billing_method,
+        "periodicity": str(billing_cfg.get("periodicity") or "").strip().lower() or None,
+        "billing_day": billing_day,
+        "auto_allocate_contract_pool": bool(billing_cfg.get("auto_allocate_contract_pool", True)),
+        "allow_obligation_override": bool(billing_cfg.get("allow_obligation_override", False)),
+        "milestone_basis": str(billing_cfg.get("milestone_basis") or "obligation").strip().lower(),
+        "notes": str(billing_cfg.get("notes") or "").strip() or None,
+    }
 
     if body.get("status"):
         body["status"] = str(body.get("status") or "").strip().lower()
 
+    body["payload_json"] = payload_json
     return body
 
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts", methods=["POST", "OPTIONS"])
@@ -481,6 +500,92 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
         current_app.logger.exception("add_revenue_obligation failed")
         return jsonify({"ok": False, "error": str(e)}), 400
     
+@revenue_bp.route("/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>", methods=["GET", "PATCH", "OPTIONS"])
+@require_auth
+def api_update_revenue_obligation(company_id: int, obligation_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            out = db_service.get_revenue_obligation(int(company_id), int(obligation_id))
+            if not out:
+                return jsonify({"ok": False, "error": "Revenue obligation not found"}), 404
+            return jsonify({"ok": True, "data": out}), 200
+        except Exception as e:
+            current_app.logger.exception("get_revenue_obligation failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
+
+    body = request.get_json(silent=True) or {}
+
+    if "recognition_timing" in body and body.get("recognition_timing") is not None:
+        body["recognition_timing"] = str(body.get("recognition_timing") or "").strip().lower()
+
+    if "progress_method" in body and body.get("progress_method") is not None:
+        body["progress_method"] = str(body.get("progress_method") or "").strip().lower()
+
+    if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
+        body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower() or None
+
+    if "satisfaction_status" in body and body.get("satisfaction_status") is not None:
+        body["satisfaction_status"] = str(body.get("satisfaction_status") or "").strip().lower()
+
+    if "satisfaction_evidence_ref" in body and body.get("satisfaction_evidence_ref") is not None:
+        body["satisfaction_evidence_ref"] = str(body.get("satisfaction_evidence_ref") or "").strip() or None
+
+    timing = body.get("recognition_timing")
+
+    if timing == "point_in_time":
+        body["progress_method"] = None
+        body["expected_total_cost"] = 0.0
+        body["actual_cost_to_date"] = 0.0
+        body["progress_percent"] = 0.0
+
+    elif timing == "over_time":
+        body["recognized_at_point_in_time_date"] = None
+        body["recognition_trigger"] = None
+        if not body.get("progress_method"):
+            body["progress_method"] = "cost_to_cost"
+
+        body["satisfaction_status"] = "pending"
+        body["satisfied_at"] = None
+        body["satisfaction_evidence_ref"] = None
+
+    try:
+        out = db_service.update_revenue_obligation(company_id, obligation_id, body, user_id=user_id)
+
+        try:
+            db_service.audit_log(
+                company_id,
+                actor_user_id=user_id,
+                module="revenue",
+                action="update_revenue_obligation",
+                severity="info",
+                entity_type="revenue_obligation",
+                entity_id=str(obligation_id),
+                entity_ref=(out.get("after") or {}).get("obligation_code"),
+                before_json=out.get("before") or {},
+                after_json=out.get("after") or {},
+                message=f"Updated revenue obligation {(out.get('after') or {}).get('obligation_code')}",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception("audit_log failed in api_update_revenue_obligation")
+
+        return jsonify({"ok": True, "data": out.get("after"), "before": out.get("before")}), 200
+    except Exception as e:
+        current_app.logger.exception("update_revenue_obligation failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts", methods=["GET", "POST", "OPTIONS"])
 @require_auth
 def api_revenue_contracts(company_id: int):
@@ -590,92 +695,7 @@ def api_revenue_runs(company_id: int):
         return jsonify({"ok": False, "error": str(e)}), 400
     
 
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>", methods=["GET", "PATCH", "OPTIONS"])
-@require_auth
-def api_update_revenue_obligation(company_id: int, obligation_id: int):
-    if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
 
-    payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
-    if deny:
-        return deny
-
-    if request.method == "GET":
-        try:
-            out = db_service.get_revenue_obligation(int(company_id), int(obligation_id))
-            if not out:
-                return jsonify({"ok": False, "error": "Revenue obligation not found"}), 404
-            return jsonify({"ok": True, "data": out}), 200
-        except Exception as e:
-            current_app.logger.exception("get_revenue_obligation failed")
-            return jsonify({"ok": False, "error": str(e)}), 400
-
-    user_id = _jwt_user_id()
-    if not user_id:
-        return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
-
-    body = request.get_json(silent=True) or {}
-
-    if "recognition_timing" in body and body.get("recognition_timing") is not None:
-        body["recognition_timing"] = str(body.get("recognition_timing") or "").strip().lower()
-
-    if "progress_method" in body and body.get("progress_method") is not None:
-        body["progress_method"] = str(body.get("progress_method") or "").strip().lower()
-
-    if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
-        body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower() or None
-
-    if "satisfaction_status" in body and body.get("satisfaction_status") is not None:
-        body["satisfaction_status"] = str(body.get("satisfaction_status") or "").strip().lower()
-
-    if "satisfaction_evidence_ref" in body and body.get("satisfaction_evidence_ref") is not None:
-        body["satisfaction_evidence_ref"] = str(body.get("satisfaction_evidence_ref") or "").strip() or None
-
-    timing = body.get("recognition_timing")
-
-    if timing == "point_in_time":
-        body["progress_method"] = None
-        body["expected_total_cost"] = 0.0
-        body["actual_cost_to_date"] = 0.0
-        body["progress_percent"] = 0.0
-
-    elif timing == "over_time":
-        body["recognized_at_point_in_time_date"] = None
-        body["recognition_trigger"] = None
-        if not body.get("progress_method"):
-            body["progress_method"] = "cost_to_cost"
-
-        body["satisfaction_status"] = "pending"
-        body["satisfied_at"] = None
-        body["satisfaction_evidence_ref"] = None
-
-    try:
-        out = db_service.update_revenue_obligation(company_id, obligation_id, body, user_id=user_id)
-
-        try:
-            db_service.audit_log(
-                company_id,
-                actor_user_id=user_id,
-                module="revenue",
-                action="update_revenue_obligation",
-                severity="info",
-                entity_type="revenue_obligation",
-                entity_id=str(obligation_id),
-                entity_ref=(out.get("after") or {}).get("obligation_code"),
-                before_json=out.get("before") or {},
-                after_json=out.get("after") or {},
-                message=f"Updated revenue obligation {(out.get('after') or {}).get('obligation_code')}",
-                source="api",
-            )
-        except Exception:
-            current_app.logger.exception("audit_log failed in api_update_revenue_obligation")
-
-        return jsonify({"ok": True, "data": out.get("after"), "before": out.get("before")}), 200
-    except Exception as e:
-        current_app.logger.exception("update_revenue_obligation failed")
-        return jsonify({"ok": False, "error": str(e)}), 400
-    
 @revenue_bp.route(
     "/api/companies/<int:company_id>/revenue/obligations/<int:obligation_id>/satisfy",
     methods=["POST", "OPTIONS"],

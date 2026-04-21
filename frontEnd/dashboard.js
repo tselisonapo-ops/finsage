@@ -34193,6 +34193,31 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revDistinctFlag").checked = o.distinct_flag !== false;
     $("revObligationNotes").value = o.notes || "";
 
+    if ($("revUnitsDone")) {
+      $("revUnitsDone").value =
+        pj.units_done != null && pj.units_done !== ""
+          ? Number(pj.units_done)
+          : "";
+    }
+
+    if ($("revUnitsTotal")) {
+      $("revUnitsTotal").value =
+        pj.units_total != null && pj.units_total !== ""
+          ? Number(pj.units_total)
+          : "";
+    }
+
+    if ($("revManualPercent")) {
+      $("revManualPercent").value =
+        o.progress_percent != null && o.progress_percent !== ""
+          ? Number(o.progress_percent)
+          : "";
+    }
+
+    if ($("revMilestoneCode")) {
+      $("revMilestoneCode").value = pj.milestone_code || "";
+    }
+
     state.selectedObligation = o?.id ? o : null;
 
     const hint = $("revObligationCatalogHint");
@@ -34699,11 +34724,12 @@ function bindAssetRecordsPickerModal({ cid }) {
     const wrap = $("revBillingConfigWrap");
     const periodicFields = $("revPeriodicFields");
     const milestoneFields = $("revMilestoneFields");
+    const overrideBox = $("revAllowObligationOverride")?.closest("label")?.parentElement;
+    const notesBox = $("revBillingConfigNotes")?.closest("div");
 
     if (!wrap) return;
 
     wrap.classList.remove("hidden");
-
     periodicFields?.classList.add("hidden");
     milestoneFields?.classList.add("hidden");
 
@@ -34713,6 +34739,20 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (method === "milestone") {
       milestoneFields?.classList.remove("hidden");
+    }
+
+    // defaults by method
+    if (method === "progress") {
+      if ($("revSettlementPattern")) $("revSettlementPattern").value = "revenue_before_billing";
+      if ($("revAutoAllocateContractPool")) $("revAutoAllocateContractPool").checked = true;
+    }
+
+    if (method === "periodic") {
+      if ($("revAutoAllocateContractPool")) $("revAutoAllocateContractPool").checked = true;
+    }
+
+    if (method === "milestone") {
+      if ($("revAllowObligationOverride")) $("revAllowObligationOverride").checked = false;
     }
   }
 
@@ -35004,6 +35044,36 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revSettlementPattern").value = c?.payload_json?.settlement_pattern || "";
     refreshSettlementPatternHelp();
 
+    const billingCfg = c?.payload_json?.billing_config || {};
+
+    if ($("revPeriodicity")) {
+      $("revPeriodicity").value = billingCfg.periodicity || "";
+    }
+
+    if ($("revBillingDay")) {
+      $("revBillingDay").value =
+        billingCfg.billing_day != null && billingCfg.billing_day !== ""
+          ? Number(billingCfg.billing_day)
+          : "";
+    }
+
+    if ($("revMilestoneBasis")) {
+      $("revMilestoneBasis").value = billingCfg.milestone_basis || "obligation";
+    }
+
+    if ($("revAllowObligationOverride")) {
+      $("revAllowObligationOverride").checked = !!billingCfg.allow_obligation_override;
+    }
+
+    if ($("revAutoAllocateContractPool")) {
+      $("revAutoAllocateContractPool").checked =
+        billingCfg.auto_allocate_contract_pool !== false;
+    }
+
+    if ($("revBillingConfigNotes")) {
+      $("revBillingConfigNotes").value = billingCfg.notes || "";
+    }
+
     $("revTransactionPrice").value = num(c.transaction_price).toFixed(2);
     $("revVariableConstrained").value = num(c.variable_consideration_constrained).toFixed(2);
     $("revIsOverTime").checked = !!c.is_over_time;
@@ -35035,6 +35105,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
 
     toggleFinancingFields();
+    toggleBillingConfig();
 
     $("revContractNotes").value = c.notes || "";
 
@@ -35310,6 +35381,12 @@ function bindAssetRecordsPickerModal({ cid }) {
     const hasFinancing = !!$("revHasFinancing")?.checked;
     const billingMethod = $("revBillingMethod")?.value || "milestone";
 
+    const rawBillingDay = $("revBillingDay")?.value;
+    const billingDay =
+      rawBillingDay != null && String(rawBillingDay).trim() !== ""
+        ? Number(rawBillingDay)
+        : null;
+
     return {
       customer_id: Number($("revCustomerId")?.value || 0) || null,
       contract_number: $("revContractNumber")?.value?.trim() || "",
@@ -35329,8 +35406,11 @@ function bindAssetRecordsPickerModal({ cid }) {
         billing_config: {
           method: billingMethod,
           periodicity: $("revPeriodicity")?.value || null,
-          billing_day: Number($("revBillingDay")?.value || 0) || null,
-          milestone_basis: $("revMilestoneBasis")?.value || "obligation"
+          billing_day: Number.isFinite(billingDay) ? billingDay : null,
+          milestone_basis: $("revMilestoneBasis")?.value || "obligation",
+          allow_obligation_override: !!$("revAllowObligationOverride")?.checked,
+          auto_allocate_contract_pool: !!$("revAutoAllocateContractPool")?.checked,
+          notes: $("revBillingConfigNotes")?.value?.trim() || null,
         },
         financing: hasFinancing ? {
           role: $("revFinancingRole")?.value || "",
@@ -35619,30 +35699,81 @@ async function loadLatestRevenueProgressForSelectedObligation() {
   function obligationPayloadFromUI() {
     const rawName = $("revObligationName")?.value?.trim() || "";
     const picked = findRevenueObligationCatalogMeta(rawName);
+
     const timing = $("revRecognitionTiming")?.value || "point_in_time";
+    const method =
+      timing === "point_in_time"
+        ? null
+        : ($("revProgressMethod")?.value || "cost_to_cost");
 
     const evidenceType = $("revSatisfactionEvidenceType")?.value || null;
+
+    const payload_json = {
+      satisfaction_evidence_type: evidenceType,
+    };
+
+    if (timing === "point_in_time") {
+      payload_json.recognition_trigger = $("revPitTrigger")?.value || null;
+    }
+
+    if (timing === "over_time") {
+      if (method === "units" || method === "units_delivered") {
+        payload_json.units_done = Number($("revUnitsDone")?.value || 0) || 0;
+        payload_json.units_total = Number($("revUnitsTotal")?.value || 0) || 0;
+      }
+
+      if (method === "milestone") {
+        payload_json.milestone_code = $("revMilestoneCode")?.value?.trim() || "";
+      }
+    }
 
     return {
       obligation_code: $("revObligationCode")?.value?.trim() || picked?.code || "",
       obligation_name: picked?.name || rawName,
       recognition_timing: timing,
-      progress_method: timing === "point_in_time" ? null : ($("revProgressMethod")?.value || "cost_to_cost"),
+      progress_method: method,
       standalone_selling_price: num($("revSSP")?.value),
       allocated_transaction_price: num($("revAllocatedPrice")?.value),
-      expected_total_cost: timing === "point_in_time" ? 0 : num($("revExpectedCost")?.value),
-      recognized_at_point_in_time_date: $("revPitDate")?.value || null,
-      recognition_trigger: $("revPitTrigger")?.value || null,
+
+      expected_total_cost:
+        timing === "over_time" && method === "cost_to_cost"
+          ? num($("revExpectedCost")?.value)
+          : null,
+
+      progress_percent:
+        timing === "over_time" && (method === "manual" || method === "time_elapsed")
+          ? num($("revManualPercent")?.value)
+          : null,
+
+      recognized_at_point_in_time_date:
+        timing === "point_in_time"
+          ? ($("revPitDate")?.value || null)
+          : null,
+
+      recognition_trigger:
+        timing === "point_in_time"
+          ? ($("revPitTrigger")?.value || null)
+          : null,
+
       distinct_flag: !!$("revDistinctFlag")?.checked,
       notes: $("revObligationNotes")?.value || "",
 
-      satisfaction_status: $("revSatisfactionStatus")?.value || "pending",
-      satisfied_at: $("revSatisfiedAt")?.value || null,
-      satisfaction_evidence_ref: $("revSatisfactionEvidenceRef")?.value?.trim() || null,
+      satisfaction_status:
+        timing === "point_in_time"
+          ? ($("revSatisfactionStatus")?.value || "pending")
+          : "pending",
 
-      payload_json: {
-        satisfaction_evidence_type: evidenceType,
-      },
+      satisfied_at:
+        timing === "point_in_time"
+          ? ($("revSatisfiedAt")?.value || null)
+          : null,
+
+      satisfaction_evidence_ref:
+        timing === "point_in_time"
+          ? ($("revSatisfactionEvidenceRef")?.value?.trim() || null)
+          : null,
+
+      payload_json,
 
       catalog_item_type: picked?.type || null,
       catalog_item_id: picked?.id || null,
