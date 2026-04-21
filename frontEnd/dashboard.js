@@ -34615,6 +34615,10 @@ function bindAssetRecordsPickerModal({ cid }) {
     const pitBlock = $("revPointInTimeBlock");
     const expectedCostWrap = $("revExpectedCostWrap");
 
+    const unitsBlock = $("revUnitsBlock");
+    const manualBlock = $("revManualPercentBlock");
+    const milestoneBlock = $("revMilestoneCodeBlock");
+
     const pitTrigger = $("revPitTrigger");
     const pitDate = $("revPitDate");
     const satisfactionStatus = $("revSatisfactionStatus");
@@ -34622,13 +34626,22 @@ function bindAssetRecordsPickerModal({ cid }) {
     const evidenceType = $("revSatisfactionEvidenceType");
     const evidenceRef = $("revSatisfactionEvidenceRef");
 
+    // hide all method-specific blocks first
+    expectedCostWrap?.classList.add("hidden");
+    unitsBlock?.classList.add("hidden");
+    manualBlock?.classList.add("hidden");
+    milestoneBlock?.classList.add("hidden");
+
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
       pitBlock?.classList.remove("hidden");
-      expectedCostWrap?.classList.add("hidden");
 
       if ($("revProgressMethod")) $("revProgressMethod").value = "";
       if ($("revExpectedCost")) $("revExpectedCost").value = "0.00";
+      if ($("revUnitsDone")) $("revUnitsDone").value = "";
+      if ($("revUnitsTotal")) $("revUnitsTotal").value = "";
+      if ($("revManualPercent")) $("revManualPercent").value = "";
+      if ($("revMilestoneCode")) $("revMilestoneCode").value = "";
     } else {
       overTimeBlock?.classList.remove("hidden");
       pitBlock?.classList.add("hidden");
@@ -34637,9 +34650,24 @@ function bindAssetRecordsPickerModal({ cid }) {
         $("revProgressMethod").value = "cost_to_cost";
       }
 
-      // show expected cost only for cost-to-cost
-      expectedCostWrap?.classList.toggle("hidden", method !== "cost_to_cost");
+      // method-specific UI
+      if (method === "cost_to_cost") {
+        expectedCostWrap?.classList.remove("hidden");
+      }
 
+      if (method === "units" || method === "units_delivered") {
+        unitsBlock?.classList.remove("hidden");
+      }
+
+      if (method === "manual" || method === "time_elapsed") {
+        manualBlock?.classList.remove("hidden");
+      }
+
+      if (method === "milestone") {
+        milestoneBlock?.classList.remove("hidden");
+      }
+
+      // clear PIT-only fields
       if (pitTrigger) pitTrigger.value = "";
       if (pitDate) pitDate.value = "";
       if (satisfactionStatus) satisfactionStatus.value = "pending";
@@ -34662,6 +34690,29 @@ function bindAssetRecordsPickerModal({ cid }) {
       if ($("revFinancingStartDate")) $("revFinancingStartDate").value = "";
       if ($("revFinancingEndDate")) $("revFinancingEndDate").value = "";
       if ($("revFinancingNotes")) $("revFinancingNotes").value = "";
+    }
+  }
+
+  function toggleBillingConfig() {
+    const method = $("revBillingMethod")?.value || "milestone";
+
+    const wrap = $("revBillingConfigWrap");
+    const periodicFields = $("revPeriodicFields");
+    const milestoneFields = $("revMilestoneFields");
+
+    if (!wrap) return;
+
+    wrap.classList.remove("hidden");
+
+    periodicFields?.classList.add("hidden");
+    milestoneFields?.classList.add("hidden");
+
+    if (method === "periodic") {
+      periodicFields?.classList.remove("hidden");
+    }
+
+    if (method === "milestone") {
+      milestoneFields?.classList.remove("hidden");
     }
   }
 
@@ -35257,6 +35308,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
   function contractPayloadFromUI() {
     const hasFinancing = !!$("revHasFinancing")?.checked;
+    const billingMethod = $("revBillingMethod")?.value || "milestone";
 
     return {
       customer_id: Number($("revCustomerId")?.value || 0) || null,
@@ -35266,7 +35318,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       contract_date: $("revContractDate")?.value || null,
       start_date: $("revStartDate")?.value || null,
       end_date: $("revEndDate")?.value || null,
-      billing_method: $("revBillingMethod")?.value || "milestone",
+      billing_method: billingMethod,
       transaction_price: num($("revTransactionPrice")?.value),
       variable_consideration_constrained: num($("revVariableConstrained")?.value),
       has_significant_financing_component: hasFinancing,
@@ -35274,6 +35326,12 @@ function bindAssetRecordsPickerModal({ cid }) {
       notes: $("revContractNotes")?.value || "",
       payload_json: {
         settlement_pattern: $("revSettlementPattern")?.value || "",
+        billing_config: {
+          method: billingMethod,
+          periodicity: $("revPeriodicity")?.value || null,
+          billing_day: Number($("revBillingDay")?.value || 0) || null,
+          milestone_basis: $("revMilestoneBasis")?.value || "obligation"
+        },
         financing: hasFinancing ? {
           role: $("revFinancingRole")?.value || "",
           rate: num($("revFinancingRate")?.value),
@@ -37572,11 +37630,14 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     });
 
     $("revBillingMethod")?.addEventListener("change", () => {
-      const bm = $("revBillingMethod").value;
+      const bm = $("revBillingMethod")?.value || "milestone";
 
       if (bm === "progress") {
         $("revSettlementPattern").value = "revenue_before_billing";
+        refreshSettlementPatternHelp?.();
       }
+
+      toggleBillingConfig();
     });
 
     $("revSettlementPattern")?.addEventListener("change", refreshSettlementPatternHelp);
