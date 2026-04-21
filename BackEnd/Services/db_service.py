@@ -60059,6 +60059,47 @@ class DatabaseService:
             "reversal_journal_id": int(journal_id),
         }
 
+    def recalc_single_revenue_contract(self, company_id: int, contract_id: int, cur=None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, inner_cur):
+            use_cur = cur or inner_cur
+
+            obligations = self.fetch_all(
+                f"SELECT id FROM {schema}.revenue_obligations WHERE contract_id = %s",
+                (int(contract_id),),
+                cur=use_cur,
+            ) or []
+
+            obligation_ids = [int(r["id"]) for r in obligations if r.get("id")]
+
+            self.recalc_revenue_state(
+                company_id=company_id,
+                contract_ids=[int(contract_id)],
+                obligation_ids=obligation_ids,
+                cur=use_cur,
+            )
+
+            contract = self.get_revenue_contract(company_id, int(contract_id), cur=use_cur)
+            refreshed_obligations = self.fetch_all(
+                f"""
+                SELECT *
+                FROM {schema}.revenue_obligations
+                WHERE contract_id = %s
+                ORDER BY id
+                """,
+                (int(contract_id),),
+                cur=use_cur,
+            ) or []
+
+            if cur is None:
+                conn.commit()
+
+            return {
+                "contract": contract,
+                "obligations": refreshed_obligations,
+            }
+    
     def recalc_revenue_state(
         self,
         company_id: int,
