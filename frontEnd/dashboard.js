@@ -34126,6 +34126,91 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function hydrateObligationForm(o = {}) {
+    const pj = o?.payload_json || {};
+
+    const catalogItemLabel =
+      o.catalog_item_label ??
+      pj.catalog_item_label ??
+      "";
+
+    const catalogItemType =
+      o.catalog_item_type ??
+      pj.catalog_item_type ??
+      "";
+
+    const catalogItemCode =
+      o.catalog_item_code ??
+      pj.catalog_item_code ??
+      "";
+
+    const vatCode =
+      o.vat_code ??
+      pj.vat_code ??
+      "";
+
+    const evidenceType =
+      o.satisfaction_evidence_type ??
+      pj.satisfaction_evidence_type ??
+      "";
+
+    $("revObligationId").value = o.id || "";
+    $("revObligationCode").value = o.obligation_code || catalogItemCode || "";
+
+    const displayName =
+      catalogItemLabel ||
+      o.obligation_name ||
+      "";
+
+    $("revObligationName").value = displayName;
+    $("revRecognitionTiming").value = o.recognition_timing || "point_in_time";
+    $("revProgressMethod").value = o.progress_method || "";
+
+    if ($("revPitTrigger")) {
+      $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
+    }
+
+    if ($("revSatisfactionStatus")) {
+      $("revSatisfactionStatus").value = o.satisfaction_status || "pending";
+    }
+
+    if ($("revSatisfiedAt")) {
+      $("revSatisfiedAt").value = toDateInputValue(o.satisfied_at);
+    }
+
+    if ($("revSatisfactionEvidenceType")) {
+      $("revSatisfactionEvidenceType").value = evidenceType || "";
+    }
+
+    if ($("revSatisfactionEvidenceRef")) {
+      $("revSatisfactionEvidenceRef").value = o.satisfaction_evidence_ref || "";
+    }
+
+    $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
+    $("revAllocatedPrice").value = num(o.allocated_transaction_price).toFixed(2);
+    $("revExpectedCost").value = num(o.expected_total_cost).toFixed(2);
+    $("revPitDate").value = toDateInputValue(o.recognized_at_point_in_time_date);
+    $("revDistinctFlag").checked = o.distinct_flag !== false;
+    $("revObligationNotes").value = o.notes || "";
+
+    state.selectedObligation = o?.id ? o : null;
+
+    const hint = $("revObligationCatalogHint");
+    if (hint) {
+      const parts = [
+        catalogItemType ? `Type: ${catalogItemType}` : "",
+        catalogItemCode ? `Code: ${catalogItemCode}` : "",
+        vatCode ? `VAT: ${vatCode}` : "",
+      ].filter(Boolean);
+
+      hint.textContent = parts.join(" • ");
+      hint.classList.toggle("hidden", !parts.length);
+    }
+
+    toggleObligationFields();
+    syncProgressTypeFromSelectedObligation();
+  }
+
   function openObligationsForSelectedContract() {
     const c = state.selectedContract || null;
     if (!c?.id) {
@@ -34133,13 +34218,17 @@ function bindAssetRecordsPickerModal({ cid }) {
       return;
     }
 
-    $("revContractId").value = String(c.id);
+    if ($("revContractId")) $("revContractId").value = String(c.id || "");
+    if ($("revContractNumber")) $("revContractNumber").value = c.contract_number || "";
+    if ($("revCustomerId")) $("revCustomerId").value = String(c.customer_id || "");
+
     state.selectedObligation = null;
     hydrateObligationForm({});
     renderObligationPreview({});
     renderObligationContractBanner(c);
     setObligationViewMode("form");
     setActiveTab("obligations");
+    refreshRevenueObligationActions();
   }
 
   async function recalcSelectedRevenueContract() {
@@ -35165,90 +35254,6 @@ function bindAssetRecordsPickerModal({ cid }) {
     input.dataset.boundCatalog = "1";
   }
 
-  function hydrateObligationForm(o = {}) {
-    const pj = o?.payload_json || {};
-
-    const catalogItemLabel =
-      o.catalog_item_label ??
-      pj.catalog_item_label ??
-      "";
-
-    const catalogItemType =
-      o.catalog_item_type ??
-      pj.catalog_item_type ??
-      "";
-
-    const catalogItemCode =
-      o.catalog_item_code ??
-      pj.catalog_item_code ??
-      "";
-
-    const vatCode =
-      o.vat_code ??
-      pj.vat_code ??
-      "";
-
-    const evidenceType =
-      o.satisfaction_evidence_type ??
-      pj.satisfaction_evidence_type ??
-      "";
-
-    $("revObligationId").value = o.id || "";
-    $("revObligationCode").value = o.obligation_code || catalogItemCode || "";
-
-    const displayName =
-      catalogItemLabel ||
-      o.obligation_name ||
-      "";
-
-    $("revObligationName").value = displayName;
-    $("revRecognitionTiming").value = o.recognition_timing || "point_in_time";
-    $("revProgressMethod").value = o.progress_method || "";
-
-    if ($("revPitTrigger")) {
-      $("revPitTrigger").value = o.recognition_trigger || pj.recognition_trigger || "";
-    }
-
-    if ($("revSatisfactionStatus")) {
-      $("revSatisfactionStatus").value = o.satisfaction_status || "pending";
-    }
-
-    if ($("revSatisfiedAt")) {
-      $("revSatisfiedAt").value = toDateInputValue(o.satisfied_at);
-    }
-
-    if ($("revSatisfactionEvidenceType")) {
-      $("revSatisfactionEvidenceType").value = evidenceType || "";
-    }
-
-    if ($("revSatisfactionEvidenceRef")) {
-      $("revSatisfactionEvidenceRef").value = o.satisfaction_evidence_ref || "";
-    }
-
-    $("revSSP").value = num(o.standalone_selling_price).toFixed(2);
-    $("revAllocatedPrice").value = num(o.allocated_transaction_price).toFixed(2);
-    $("revExpectedCost").value = num(o.expected_total_cost).toFixed(2);
-    $("revPitDate").value = toDateInputValue(o.recognized_at_point_in_time_date);
-    $("revDistinctFlag").checked = o.distinct_flag !== false;
-    $("revObligationNotes").value = o.notes || "";
-
-    state.selectedObligation = o?.id ? o : null;
-
-    const hint = $("revObligationCatalogHint");
-    if (hint) {
-      const parts = [
-        catalogItemType ? `Type: ${catalogItemType}` : "",
-        catalogItemCode ? `Code: ${catalogItemCode}` : "",
-        vatCode ? `VAT: ${vatCode}` : "",
-      ].filter(Boolean);
-
-      hint.textContent = parts.join(" • ");
-      hint.classList.toggle("hidden", !parts.length);
-    }
-
-    toggleObligationFields();
-    syncProgressTypeFromSelectedObligation();
-  }
 
   function contractPayloadFromUI() {
     const hasFinancing = !!$("revHasFinancing")?.checked;
@@ -36480,7 +36485,12 @@ async function loadLatestRevenueProgressForSelectedObligation() {
   window.loadSelectedObligationBillablePreview  = loadSelectedObligationBillablePreview ;
   
   function refreshRevenueObligationActions() {
-    const hasContract = !!Number($("revContractId")?.value || 0);
+    const hasContract = !!Number(
+      $("revContractId")?.value ||
+      state.selectedContract?.id ||
+      0
+    );
+
     const btn = $("revSaveObligation");
     if (!btn) return;
 
@@ -36488,6 +36498,11 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     btn.classList.toggle("opacity-60", !hasContract);
     btn.classList.toggle("cursor-not-allowed", !hasContract);
     btn.title = hasContract ? "" : "Select a contract first";
+
+    // keep hidden field in sync too
+    if (hasContract && $("revContractId") && !$("revContractId").value) {
+      $("revContractId").value = String(state.selectedContract?.id || "");
+    }
   }
 
 
