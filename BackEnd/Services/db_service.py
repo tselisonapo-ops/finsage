@@ -17517,7 +17517,7 @@ class DatabaseService:
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
             customer_id INT NOT NULL REFERENCES {schema}.customers(id),
-            revenue_contract_id INT NULL
+            revenue_contract_id INT NULL,
             number TEXT NULL, -- draft-friendly
             invoice_date DATE NOT NULL,
             due_date DATE NULL,
@@ -17647,7 +17647,7 @@ class DatabaseService:
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
             invoice_id INT NOT NULL,
-            revenue_obligation_id INT NULL
+            revenue_obligation_id INT NULL,
             line_no INT NOT NULL,
             item_name TEXT NULL,
             description TEXT NOT NULL,
@@ -19066,18 +19066,6 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-            ALTER TABLE {schema}.revenue_obligations
-            ADD COLUMN IF NOT EXISTS satisfaction_status TEXT NOT NULL DEFAULT 'pending';
-
-            ALTER TABLE {schema}.revenue_obligations
-            ADD COLUMN IF NOT EXISTS satisfied_at DATE NULL;
-
-            ALTER TABLE {schema}.revenue_obligations
-            ADD COLUMN IF NOT EXISTS satisfaction_evidence_ref TEXT NULL;
-
-            ALTER TABLE {schema}.revenue_obligations
-            ADD COLUMN IF NOT EXISTS satisfaction_confirmed_by_user_id BIGINT NULL;
-
             CONSTRAINT {schema}_revenue_obligations_timing_chk
             CHECK (
                 (
@@ -19116,19 +19104,16 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.revenue_obligations
-        ADD CONSTRAINT {schema}_revenue_obligations_satisfaction_chk
-        CHECK (
-            (
-                recognition_timing = 'over_time'
-                AND satisfaction_status = 'pending'
-                AND satisfied_at IS NULL
-            )
-            OR
-            (
-                recognition_timing = 'point_in_time'
-                AND satisfaction_status IN ('pending', 'satisfied', 'reversed')
-            )
-        );
+        ADD COLUMN IF NOT EXISTS satisfaction_status TEXT NOT NULL DEFAULT 'pending';
+
+        ALTER TABLE {schema}.revenue_obligations
+        ADD COLUMN IF NOT EXISTS satisfied_at DATE NULL;
+
+        ALTER TABLE {schema}.revenue_obligations
+        ADD COLUMN IF NOT EXISTS satisfaction_evidence_ref TEXT NULL;
+
+        ALTER TABLE {schema}.revenue_obligations
+        ADD COLUMN IF NOT EXISTS satisfaction_confirmed_by_user_id BIGINT NULL;
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_obligations_code_uq
         ON {schema}.revenue_obligations(contract_id, obligation_code);
@@ -19950,12 +19935,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v48")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v49")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=48,
+                    migration_version=49,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
