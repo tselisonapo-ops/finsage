@@ -3606,25 +3606,48 @@ html, body {
                         </div>
 
                         <div id="revMilestoneFields" class="hidden">
-                          <label class="block text-xs text-slate-500 mb-1">Milestone Basis</label>
+                          <div class="flex items-center gap-2 mb-1">
+                            <label for="revMilestoneBasis" class="block text-xs text-slate-500">Milestone Basis</label>
+
+                            <button
+                              type="button"
+                              class="rev-info-trigger inline-flex items-center justify-center w-4 h-4 rounded-full border border-slate-300 text-[10px] text-slate-500 bg-white hover:bg-slate-50"
+                              data-info-key="milestone_basis"
+                              aria-label="More info about Milestone Basis"
+                            >i</button>
+                          </div>
+
                           <select id="revMilestoneBasis" class="w-full border rounded px-3 py-2 text-sm">
                             <option value="obligation">Obligation</option>
                             <option value="custom">Custom</option>
                           </select>
+
                           <div id="revMilestoneBasisHelp" class="mt-2 text-[11px] text-slate-500"></div>
                         </div>
                       </div>      
 
                       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                        <label class="flex items-center gap-2 text-sm">
+                        <div class="flex items-center gap-2 text-sm">
                           <input id="revAllowObligationOverride" type="checkbox">
-                          <span>Allow obligation override</span>
-                        </label>
+                          <label for="revAllowObligationOverride" class="select-none">Allow obligation override</label>
+                          <button
+                            type="button"
+                            class="rev-info-trigger inline-flex items-center justify-center w-4 h-4 rounded-full border border-slate-300 text-[10px] text-slate-500 bg-white hover:bg-slate-50"
+                            data-info-key="allow_obligation_override"
+                            aria-label="More info about Allow obligation override"
+                          >i</button>
+                        </div>
 
-                        <label class="flex items-center gap-2 text-sm">
+                        <div class="flex items-center gap-2 text-sm">
                           <input id="revAutoAllocateContractPool" type="checkbox" checked>
-                          <span>Auto allocate contract-level billing</span>
-                        </label>
+                          <label for="revAutoAllocateContractPool" class="select-none">Auto allocate contract-level billing</label>
+                          <button
+                            type="button"
+                            class="rev-info-trigger inline-flex items-center justify-center w-4 h-4 rounded-full border border-slate-300 text-[10px] text-slate-500 bg-white hover:bg-slate-50"
+                            data-info-key="auto_allocate_contract_pool"
+                            aria-label="More info about Auto allocate contract-level billing"
+                          >i</button>
+                        </div>
                       </div>
 
                       <div class="mt-3">
@@ -3745,6 +3768,10 @@ html, body {
                         </div>
                       </div>
 
+                      <div
+                        id="revInfoTooltip"
+                        class="hidden fixed z-[120] max-w-[320px] rounded-lg border border-slate-200 bg-white shadow-lg px-3 py-2 text-xs text-slate-700"
+                      ></div>                      
                       <div class="card p-3 border">
                         <div class="font-semibold text-sm mb-2">Contract Versions</div>
                         <div id="revVersionList" class="space-y-2 text-sm text-slate-700"></div>

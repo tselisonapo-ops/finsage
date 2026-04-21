@@ -34821,6 +34821,113 @@ function renderContractPreview(c = {}) {
     }
   }
 
+  function getRevenueInfoText(key) {
+    const texts = {
+      milestone_basis:
+        "Milestone Basis controls what drives billing milestones. Obligation means each obligation acts as a billing milestone. Custom means billing can follow separately defined milestones instead of strict obligation structure.",
+
+      allow_obligation_override:
+        "Allow obligation override lets billing bypass strict obligation-linked invoicing. Keep this off for clean milestone-obligation control. Turn it on when custom billing flexibility or exception handling is needed.",
+
+      auto_allocate_contract_pool:
+        "Auto allocate contract-level billing tells the system to automatically split contract-level billing across obligations using allocation logic. Keep it off when billing must stay manual or remain unallocated until reviewed."
+    };
+
+    return texts[key] || "";
+  }
+
+  function hideRevenueInfoTooltip() {
+    const tip = $("revInfoTooltip");
+    if (!tip) return;
+    tip.classList.add("hidden");
+    tip.innerHTML = "";
+  }
+
+  function showRevenueInfoTooltip(triggerEl, key) {
+    const tip = $("revInfoTooltip");
+    if (!tip || !triggerEl) return;
+
+    const text = getRevenueInfoText(key);
+    if (!text) {
+      hideRevenueInfoTooltip();
+      return;
+    }
+
+    tip.textContent = text;
+    tip.classList.remove("hidden");
+
+    const rect = triggerEl.getBoundingClientRect();
+    const tipWidth = 320;
+    const gap = 10;
+
+    let left = rect.left + window.scrollX;
+    let top = rect.bottom + window.scrollY + gap;
+
+    const maxLeft = window.scrollX + window.innerWidth - tipWidth - 12;
+    if (left > maxLeft) left = maxLeft;
+    if (left < 12) left = 12;
+
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  }
+
+  function bindRevenueInfoTooltips() {
+    const root = $("revContractFormWrap");
+    if (!root || root.dataset.boundInfoTooltips === "1") return;
+
+    root.addEventListener("mouseover", (e) => {
+      const btn = e.target.closest(".rev-info-trigger");
+      if (!btn) return;
+      showRevenueInfoTooltip(btn, btn.dataset.infoKey || "");
+    });
+
+    root.addEventListener("mouseout", (e) => {
+      const btn = e.target.closest(".rev-info-trigger");
+      if (!btn) return;
+      hideRevenueInfoTooltip();
+    });
+
+    root.addEventListener("focusin", (e) => {
+      const btn = e.target.closest(".rev-info-trigger");
+      if (!btn) return;
+      showRevenueInfoTooltip(btn, btn.dataset.infoKey || "");
+    });
+
+    root.addEventListener("focusout", (e) => {
+      const btn = e.target.closest(".rev-info-trigger");
+      if (!btn) return;
+      hideRevenueInfoTooltip();
+    });
+
+    root.addEventListener("click", (e) => {
+      const btn = e.target.closest(".rev-info-trigger");
+      if (!btn) return;
+
+      e.preventDefault();
+      const tip = $("revInfoTooltip");
+      const isOpen = tip && !tip.classList.contains("hidden") && tip.textContent === getRevenueInfoText(btn.dataset.infoKey || "");
+
+      if (isOpen) {
+        hideRevenueInfoTooltip();
+      } else {
+        showRevenueInfoTooltip(btn, btn.dataset.infoKey || "");
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      const insideTrigger = e.target.closest(".rev-info-trigger");
+      const insideTooltip = e.target.closest("#revInfoTooltip");
+      if (!insideTrigger && !insideTooltip) {
+        hideRevenueInfoTooltip();
+      }
+    });
+
+    window.addEventListener("scroll", hideRevenueInfoTooltip, true);
+    window.addEventListener("resize", hideRevenueInfoTooltip);
+
+    root.dataset.boundInfoTooltips = "1";
+  }
+
   function toggleBillingConfig() {
     const method = $("revBillingMethod")?.value || "milestone";
     const basis = $("revMilestoneBasis")?.value || "obligation";
@@ -38278,6 +38385,7 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       bindRevenueScreenEvents();
       bindRevenueContractActions();
       bindRevenueSidebarRollDown();
+      bindRevenueInfoTooltips();   // ✅ ADD HERE
       bound = true;
     }
 
