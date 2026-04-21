@@ -6504,6 +6504,315 @@ class DatabaseService:
             ON {schema}.customer_company_links(customer_id, linked_company_id, link_type)
             WHERE is_active = TRUE;
 
+        -- ==================================================
+        -- VENDORS  ✅ (expanded)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.vendors (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+
+            external_code TEXT NULL,
+            name TEXT NOT NULL,
+            email TEXT NULL,
+            phone TEXT NULL,
+            remit_address TEXT NULL,
+            country TEXT NULL,
+
+            tax_number TEXT NULL,
+            vat_number TEXT NULL,
+            registration_no TEXT NULL,
+            wht_percent NUMERIC(6,2) NULL,
+            payment_terms TEXT NULL,
+
+            vendor_status TEXT NOT NULL DEFAULT 'active',
+            on_hold TEXT NULL,
+
+            notes TEXT NULL,
+            tags TEXT NULL,
+            contacts JSONB NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            approved_by_user_id INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            -- ✅ Bank details (single/default bank account shortcut)
+            bank_name TEXT NULL,
+            branch_code TEXT NULL,
+            account_name TEXT NULL,
+            account_number TEXT NULL,
+            account_type TEXT NULL,
+            bank_currency TEXT NULL,
+            swift_code TEXT NULL,
+
+            -- ✅ Compliance tracking
+            compliance_status TEXT NOT NULL DEFAULT 'draft',         -- draft|pending|verified|blocked
+            compliance_required BOOLEAN NOT NULL DEFAULT FALSE,
+            missing_docs JSONB NOT NULL DEFAULT '[]'::jsonb,         -- ["cipc","bank_proof",...]
+            compliance_updated_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- ✅ Safe additive evolution (legacy DBs)
+        ALTER TABLE {schema}.vendors
+        ADD COLUMN IF NOT EXISTS compliance_status TEXT;
+
+        ALTER TABLE {schema}.vendors
+        ADD COLUMN IF NOT EXISTS compliance_required BOOLEAN;
+
+        ALTER TABLE {schema}.vendors
+        ADD COLUMN IF NOT EXISTS missing_docs JSONB;
+
+        ALTER TABLE {schema}.vendors
+        ADD COLUMN IF NOT EXISTS compliance_updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.vendors
+        SET compliance_status = COALESCE(compliance_status, 'draft'),
+            compliance_required = COALESCE(compliance_required, FALSE),
+            missing_docs = COALESCE(missing_docs, '[]'::jsonb)
+        WHERE compliance_status IS NULL
+        OR compliance_required IS NULL
+        OR missing_docs IS NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN compliance_status SET DEFAULT 'draft',
+        ALTER COLUMN compliance_status SET NOT NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN compliance_required SET DEFAULT FALSE,
+        ALTER COLUMN compliance_required SET NOT NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN missing_docs SET DEFAULT '[]'::jsonb,
+        ALTER COLUMN missing_docs SET NOT NULL;
+
+        -- --------------------------------------------------
+        -- Indexes / Uniqueness
+        -- --------------------------------------------------
+        CREATE INDEX IF NOT EXISTS {schema}_vendors_company_idx
+        ON {schema}.vendors(company_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_vendors_name_email_uniq
+        ON {schema}.vendors(company_id, LOWER(COALESCE(name,'')), LOWER(COALESCE(email,'')));
+
+        CREATE INDEX IF NOT EXISTS {schema}_vendors_status_idx
+        ON {schema}.vendors(company_id, vendor_status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_vendors_active_idx
+        ON {schema}.vendors(company_id, is_active);
+
+        CREATE INDEX IF NOT EXISTS {schema}_vendors_compliance_idx
+        ON {schema}.vendors(company_id, compliance_status);
+
+        -- --------------------------------------------------
+        -- SAFE ADDITIVE ALTERs (legacy tenants)
+        -- --------------------------------------------------
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS registration_no TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS wht_percent NUMERIC(6,2) NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS on_hold TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS notes TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS tags TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS contacts JSONB NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
+
+        -- ✅ Bank fields (legacy safety)
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS bank_name TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS branch_code TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS account_name TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS account_number TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS account_type TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS bank_currency TEXT NULL;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS swift_code TEXT NULL;
+
+        -- ✅ Compliance fields (legacy safety)
+        -- NOTE: adding NOT NULL columns can fail on some PG versions depending on defaults.
+        -- The pattern below is safe: add if missing, backfill, then set default/not null.
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS compliance_status TEXT;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS compliance_required BOOLEAN;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS missing_docs JSONB;
+        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS compliance_updated_at TIMESTAMPTZ NULL;
+
+        UPDATE {schema}.vendors
+        SET compliance_status = COALESCE(compliance_status, 'draft')
+        WHERE compliance_status IS NULL;
+
+        UPDATE {schema}.vendors
+        SET compliance_required = COALESCE(compliance_required, FALSE)
+        WHERE compliance_required IS NULL;
+
+        UPDATE {schema}.vendors
+        SET missing_docs = COALESCE(missing_docs, '[]'::jsonb)
+        WHERE missing_docs IS NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN compliance_status SET DEFAULT 'draft';
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN compliance_required SET DEFAULT FALSE;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN missing_docs SET DEFAULT '[]'::jsonb;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN compliance_status SET NOT NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN compliance_required SET NOT NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN missing_docs SET NOT NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN on_hold SET DEFAULT 'no';
+
+        UPDATE {schema}.vendors
+        SET on_hold = 'no'
+        WHERE on_hold IS NULL;
+
+        -- --------------------------------------------------
+        -- Defaults/backfills for frontend stability
+        -- --------------------------------------------------
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN contacts SET DEFAULT '[]'::jsonb;
+
+        UPDATE {schema}.vendors
+        SET contacts = '[]'::jsonb
+        WHERE contacts IS NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN tags SET DEFAULT '';
+
+        UPDATE {schema}.vendors
+        SET tags = ''
+        WHERE tags IS NULL;
+
+        ALTER TABLE {schema}.vendors
+        ALTER COLUMN notes SET DEFAULT '';
+
+        UPDATE {schema}.vendors
+        SET notes = ''
+        WHERE notes IS NULL;
+
+
+        -- ==================================================
+        -- OPTIONAL: Vendor Bank Accounts (multi-account support)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.vendor_bank_accounts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            vendor_id INT NOT NULL REFERENCES {schema}.vendors(id) ON DELETE CASCADE,
+
+            bank_name TEXT NULL,
+            branch_code TEXT NULL,
+            account_name TEXT NULL,
+            account_number TEXT NULL,
+            account_type TEXT NULL,      -- cheque/savings/current
+            currency TEXT NULL,          -- ZAR/USD/etc
+            swift_code TEXT NULL,        -- international
+            iban TEXT NULL,              -- optional
+            is_default BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = '{schema}'
+                AND table_name = 'vendor_bank_accounts'
+            ) THEN
+                EXECUTE format(
+                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_bank_accounts(company_id, vendor_id)',
+                '{schema}_vba_company_vendor_idx',
+                '{schema}'
+                );
+
+                EXECUTE format(
+                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_bank_accounts(company_id, vendor_id, is_default)',
+                '{schema}_vba_company_vendor_default_idx',
+                '{schema}'
+                );
+            END IF;
+        END $$;
+
+        -- ==================================================
+        -- OPTIONAL: Vendor Documents (compliance attachments)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.vendor_documents (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            vendor_id INT NOT NULL REFERENCES {schema}.vendors(id) ON DELETE CASCADE,
+
+            doc_type TEXT NOT NULL,                     -- cipc|bank_proof|tax_pin|vat_cert|id_copy|...
+            file_name TEXT NULL,
+            file_url TEXT NULL,                         -- or storage_key
+            status TEXT NOT NULL DEFAULT 'uploaded',     -- uploaded|approved|rejected|expired
+            uploaded_by INT NULL,
+            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            reviewed_by INT NULL,
+            reviewed_at TIMESTAMPTZ NULL,
+            notes TEXT NULL
+        );
+
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = '{schema}'
+                AND table_name = 'vendor_documents'
+            ) THEN
+                EXECUTE format(
+                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_documents(company_id, vendor_id)',
+                '{schema}_vendor_docs_company_vendor_idx',
+                '{schema}'
+                );
+
+                EXECUTE format(
+                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_documents(company_id, vendor_id, doc_type)',
+                '{schema}_vendor_docs_company_vendor_type_idx',
+                '{schema}'
+                );
+            END IF;
+        END $$;
+
+                DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_vendor_fk'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (vendor_id) REFERENCES %I.vendors(id)
+            ON DELETE SET NULL',
+            '{schema}', '{schema}_inv_tx_vendor_fk', '{schema}'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_po_fk'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (po_id) REFERENCES %I.purchase_orders(id)
+            ON DELETE SET NULL',
+            '{schema}', '{schema}_inv_tx_po_fk', '{schema}'
+            );
+        END IF;
+        END $$;
 
         -- ==================================================
         -- VENDORS: user FK
@@ -12364,6 +12673,75 @@ class DatabaseService:
         END $$;
 
         -- ==================================================
+        -- Assets -> Vendors
+        -- ==================================================
+        DO $fk_assets_supplier$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_assets_supplier'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.assets
+                    ADD CONSTRAINT fk_assets_supplier
+                    FOREIGN KEY (supplier_id)
+                    REFERENCES %I.vendors(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END $fk_assets_supplier$;
+
+        -- ==================================================
+        -- Asset acquisitions -> Vendors
+        -- ==================================================
+        DO $fk_asset_acq_supplier$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_asset_acq_supplier'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_acquisitions
+                    ADD CONSTRAINT fk_asset_acq_supplier
+                    FOREIGN KEY (supplier_id)
+                    REFERENCES %I.vendors(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END $fk_asset_acq_supplier$;
+
+        -- ==================================================
+        -- Asset acquisitions -> Assets
+        -- ==================================================
+        DO $fk_asset_acq_asset$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_asset_acq_asset'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_acquisitions
+                    ADD CONSTRAINT fk_asset_acq_asset
+                    FOREIGN KEY (asset_id)
+                    REFERENCES %I.assets(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END $fk_asset_acq_asset$;
+
+        -- ==================================================
         -- ASSET DEPRECIATION RUNS (posted movements)
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.asset_depreciation (
@@ -17038,315 +17416,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_pos_item_map_barcode_idx
         ON {schema}.pos_item_map(company_id, barcode);
 
-        -- ==================================================
-        -- VENDORS  ✅ (expanded)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.vendors (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-
-            external_code TEXT NULL,
-            name TEXT NOT NULL,
-            email TEXT NULL,
-            phone TEXT NULL,
-            remit_address TEXT NULL,
-            country TEXT NULL,
-
-            tax_number TEXT NULL,
-            vat_number TEXT NULL,
-            registration_no TEXT NULL,
-            wht_percent NUMERIC(6,2) NULL,
-            payment_terms TEXT NULL,
-
-            vendor_status TEXT NOT NULL DEFAULT 'active',
-            on_hold TEXT NULL,
-
-            notes TEXT NULL,
-            tags TEXT NULL,
-            contacts JSONB NULL,
-
-            is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            approved_by_user_id INT NULL,
-            approved_at TIMESTAMPTZ NULL,
-
-            -- ✅ Bank details (single/default bank account shortcut)
-            bank_name TEXT NULL,
-            branch_code TEXT NULL,
-            account_name TEXT NULL,
-            account_number TEXT NULL,
-            account_type TEXT NULL,
-            bank_currency TEXT NULL,
-            swift_code TEXT NULL,
-
-            -- ✅ Compliance tracking
-            compliance_status TEXT NOT NULL DEFAULT 'draft',         -- draft|pending|verified|blocked
-            compliance_required BOOLEAN NOT NULL DEFAULT FALSE,
-            missing_docs JSONB NOT NULL DEFAULT '[]'::jsonb,         -- ["cipc","bank_proof",...]
-            compliance_updated_at TIMESTAMPTZ NULL,
-
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        -- ✅ Safe additive evolution (legacy DBs)
-        ALTER TABLE {schema}.vendors
-        ADD COLUMN IF NOT EXISTS compliance_status TEXT;
-
-        ALTER TABLE {schema}.vendors
-        ADD COLUMN IF NOT EXISTS compliance_required BOOLEAN;
-
-        ALTER TABLE {schema}.vendors
-        ADD COLUMN IF NOT EXISTS missing_docs JSONB;
-
-        ALTER TABLE {schema}.vendors
-        ADD COLUMN IF NOT EXISTS compliance_updated_at TIMESTAMPTZ;
-
-        UPDATE {schema}.vendors
-        SET compliance_status = COALESCE(compliance_status, 'draft'),
-            compliance_required = COALESCE(compliance_required, FALSE),
-            missing_docs = COALESCE(missing_docs, '[]'::jsonb)
-        WHERE compliance_status IS NULL
-        OR compliance_required IS NULL
-        OR missing_docs IS NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN compliance_status SET DEFAULT 'draft',
-        ALTER COLUMN compliance_status SET NOT NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN compliance_required SET DEFAULT FALSE,
-        ALTER COLUMN compliance_required SET NOT NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN missing_docs SET DEFAULT '[]'::jsonb,
-        ALTER COLUMN missing_docs SET NOT NULL;
-
-        -- --------------------------------------------------
-        -- Indexes / Uniqueness
-        -- --------------------------------------------------
-        CREATE INDEX IF NOT EXISTS {schema}_vendors_company_idx
-        ON {schema}.vendors(company_id);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_vendors_name_email_uniq
-        ON {schema}.vendors(company_id, LOWER(COALESCE(name,'')), LOWER(COALESCE(email,'')));
-
-        CREATE INDEX IF NOT EXISTS {schema}_vendors_status_idx
-        ON {schema}.vendors(company_id, vendor_status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_vendors_active_idx
-        ON {schema}.vendors(company_id, is_active);
-
-        CREATE INDEX IF NOT EXISTS {schema}_vendors_compliance_idx
-        ON {schema}.vendors(company_id, compliance_status);
-
-        -- --------------------------------------------------
-        -- SAFE ADDITIVE ALTERs (legacy tenants)
-        -- --------------------------------------------------
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS registration_no TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS wht_percent NUMERIC(6,2) NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS on_hold TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS notes TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS tags TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS contacts JSONB NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
-
-        -- ✅ Bank fields (legacy safety)
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS bank_name TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS branch_code TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS account_name TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS account_number TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS account_type TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS bank_currency TEXT NULL;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS swift_code TEXT NULL;
-
-        -- ✅ Compliance fields (legacy safety)
-        -- NOTE: adding NOT NULL columns can fail on some PG versions depending on defaults.
-        -- The pattern below is safe: add if missing, backfill, then set default/not null.
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS compliance_status TEXT;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS compliance_required BOOLEAN;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS missing_docs JSONB;
-        ALTER TABLE {schema}.vendors ADD COLUMN IF NOT EXISTS compliance_updated_at TIMESTAMPTZ NULL;
-
-        UPDATE {schema}.vendors
-        SET compliance_status = COALESCE(compliance_status, 'draft')
-        WHERE compliance_status IS NULL;
-
-        UPDATE {schema}.vendors
-        SET compliance_required = COALESCE(compliance_required, FALSE)
-        WHERE compliance_required IS NULL;
-
-        UPDATE {schema}.vendors
-        SET missing_docs = COALESCE(missing_docs, '[]'::jsonb)
-        WHERE missing_docs IS NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN compliance_status SET DEFAULT 'draft';
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN compliance_required SET DEFAULT FALSE;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN missing_docs SET DEFAULT '[]'::jsonb;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN compliance_status SET NOT NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN compliance_required SET NOT NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN missing_docs SET NOT NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN on_hold SET DEFAULT 'no';
-
-        UPDATE {schema}.vendors
-        SET on_hold = 'no'
-        WHERE on_hold IS NULL;
-
-        -- --------------------------------------------------
-        -- Defaults/backfills for frontend stability
-        -- --------------------------------------------------
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN contacts SET DEFAULT '[]'::jsonb;
-
-        UPDATE {schema}.vendors
-        SET contacts = '[]'::jsonb
-        WHERE contacts IS NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN tags SET DEFAULT '';
-
-        UPDATE {schema}.vendors
-        SET tags = ''
-        WHERE tags IS NULL;
-
-        ALTER TABLE {schema}.vendors
-        ALTER COLUMN notes SET DEFAULT '';
-
-        UPDATE {schema}.vendors
-        SET notes = ''
-        WHERE notes IS NULL;
-
-
-        -- ==================================================
-        -- OPTIONAL: Vendor Bank Accounts (multi-account support)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.vendor_bank_accounts (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            vendor_id INT NOT NULL REFERENCES {schema}.vendors(id) ON DELETE CASCADE,
-
-            bank_name TEXT NULL,
-            branch_code TEXT NULL,
-            account_name TEXT NULL,
-            account_number TEXT NULL,
-            account_type TEXT NULL,      -- cheque/savings/current
-            currency TEXT NULL,          -- ZAR/USD/etc
-            swift_code TEXT NULL,        -- international
-            iban TEXT NULL,              -- optional
-            is_default BOOLEAN NOT NULL DEFAULT TRUE,
-
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = '{schema}'
-                AND table_name = 'vendor_bank_accounts'
-            ) THEN
-                EXECUTE format(
-                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_bank_accounts(company_id, vendor_id)',
-                '{schema}_vba_company_vendor_idx',
-                '{schema}'
-                );
-
-                EXECUTE format(
-                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_bank_accounts(company_id, vendor_id, is_default)',
-                '{schema}_vba_company_vendor_default_idx',
-                '{schema}'
-                );
-            END IF;
-        END $$;
-
-        -- ==================================================
-        -- OPTIONAL: Vendor Documents (compliance attachments)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.vendor_documents (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            vendor_id INT NOT NULL REFERENCES {schema}.vendors(id) ON DELETE CASCADE,
-
-            doc_type TEXT NOT NULL,                     -- cipc|bank_proof|tax_pin|vat_cert|id_copy|...
-            file_name TEXT NULL,
-            file_url TEXT NULL,                         -- or storage_key
-            status TEXT NOT NULL DEFAULT 'uploaded',     -- uploaded|approved|rejected|expired
-            uploaded_by INT NULL,
-            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            reviewed_by INT NULL,
-            reviewed_at TIMESTAMPTZ NULL,
-            notes TEXT NULL
-        );
-
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = '{schema}'
-                AND table_name = 'vendor_documents'
-            ) THEN
-                EXECUTE format(
-                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_documents(company_id, vendor_id)',
-                '{schema}_vendor_docs_company_vendor_idx',
-                '{schema}'
-                );
-
-                EXECUTE format(
-                'CREATE INDEX IF NOT EXISTS %I ON %I.vendor_documents(company_id, vendor_id, doc_type)',
-                '{schema}_vendor_docs_company_vendor_type_idx',
-                '{schema}'
-                );
-            END IF;
-        END $$;
-
-                DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_vendor_fk'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (vendor_id) REFERENCES %I.vendors(id)
-            ON DELETE SET NULL',
-            '{schema}', '{schema}_inv_tx_vendor_fk', '{schema}'
-            );
-        END IF;
-        END $$;
-
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_po_fk'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (po_id) REFERENCES %I.purchase_orders(id)
-            ON DELETE SET NULL',
-            '{schema}', '{schema}_inv_tx_po_fk', '{schema}'
-            );
-        END IF;
-        END $$;
 
         -- ==================================================
         -- BANK STATEMENTS
@@ -19881,12 +19950,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v47")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v48")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=47,
+                    migration_version=48,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
