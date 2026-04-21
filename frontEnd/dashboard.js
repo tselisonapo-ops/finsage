@@ -1966,6 +1966,9 @@ const ENDPOINTS = {
 
     billingPolicy: (cid, contractId) =>
       `${API_BASE}/api/companies/${cid}/revenue/contracts/${contractId}/billing-policy`,
+ 
+    recalcContract: (cid, contractId) =>
+      `${API_BASE}/api/companies/${cid}/revenue/contracts/${contractId}/recalc`,
   },
 
   supportUser: {
@@ -33891,6 +33894,52 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  async function recalcSelectedRevenueContract() {
+    const cid = state.cid || activeCid();
+    const contractId = Number(state.selectedContract?.id || $("revContractId")?.value || 0) || null;
+
+    if (!cid || !contractId) {
+      throw new Error("Select a contract first.");
+    }
+
+    setMsg("Recalculating revenue state...");
+
+    const out = await apiFetch(
+      ENDPOINTS.revenue.recalcContract(cid, contractId),
+      { method: "POST" }
+    );
+
+    const data = out?.data || out || null;
+
+    // optional: if backend returned refreshed objects, keep them immediately
+    if (data?.contract) {
+      state.selectedContract = data.contract;
+    }
+
+    if (Array.isArray(data?.obligations) && state.selectedObligation?.id) {
+      const updatedSelected = data.obligations.find(
+        x => Number(x.id) === Number(state.selectedObligation.id)
+      );
+      if (updatedSelected) {
+        state.selectedObligation = updatedSelected;
+        if ($("revObligationId")) $("revObligationId").value = String(updatedSelected.id || "");
+      }
+    }
+
+    await refreshSelectedContractDeep();
+
+    if (state.tab === "billings") {
+      await refreshRevenueBillingPreviewAsync();
+    }
+
+    if (state.tab === "progress") {
+      await refreshRevenueProgressUIAsync();
+    }
+
+    setMsg("Revenue state recalculated.");
+    return data;
+  }
+
   function syncProgressTypeFromSelectedObligation() {
     const o = state.selectedObligation || null;
     const progressType = $("revProgressType");
@@ -34093,6 +34142,52 @@ function bindAssetRecordsPickerModal({ cid }) {
     setActiveTab("obligations");
   }
 
+  async function recalcSelectedRevenueContract() {
+    const cid = state.cid || activeCid();
+    const contractId = Number(state.selectedContract?.id || $("revContractId")?.value || 0) || null;
+
+    if (!cid || !contractId) {
+      throw new Error("Select a contract first.");
+    }
+
+    setMsg("Recalculating revenue state...");
+
+    const out = await apiFetch(
+      ENDPOINTS.revenue.recalcContract(cid, contractId),
+      { method: "POST" }
+    );
+
+    const data = out?.data || out || null;
+
+    // optional: if backend returned refreshed objects, keep them immediately
+    if (data?.contract) {
+      state.selectedContract = data.contract;
+    }
+
+    if (Array.isArray(data?.obligations) && state.selectedObligation?.id) {
+      const updatedSelected = data.obligations.find(
+        x => Number(x.id) === Number(state.selectedObligation.id)
+      );
+      if (updatedSelected) {
+        state.selectedObligation = updatedSelected;
+        if ($("revObligationId")) $("revObligationId").value = String(updatedSelected.id || "");
+      }
+    }
+
+    await refreshSelectedContractDeep();
+
+    if (state.tab === "billings") {
+      await refreshRevenueBillingPreviewAsync();
+    }
+
+    if (state.tab === "progress") {
+      await refreshRevenueProgressUIAsync();
+    }
+
+    setMsg("Revenue state recalculated.");
+    return data;
+  }
+
   function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
@@ -34179,6 +34274,14 @@ function bindAssetRecordsPickerModal({ cid }) {
           >
             Define Obligations
           </button>
+
+          <button
+            id="revPreviewRecalcBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100"
+          >
+            Recalculate Revenue
+          </button>
         </div>
       </div>
     `;
@@ -34253,6 +34356,14 @@ function bindAssetRecordsPickerModal({ cid }) {
         openObligationsForSelectedContract();
       } catch (e) {
         setMsg(e?.message || "Could not open obligations", "error");
+      }
+    });
+
+    $("revPreviewRecalcBtn")?.addEventListener("click", async () => {
+      try {
+        await recalcSelectedRevenueContract();
+      } catch (e) {
+        setMsg(e?.message || "Recalculation failed", "error");
       }
     });
   }
