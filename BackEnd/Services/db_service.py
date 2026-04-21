@@ -16372,22 +16372,21 @@ class DatabaseService:
                 );
             END IF;
 
-            EXECUTE format(
-                'ALTER TABLE %I.loan_payments
-                 ADD CONSTRAINT %I
-                 CHECK (
+            EXECUTE format($sql$
+                ALTER TABLE %I.loan_payments
+                ADD CONSTRAINT %I
+                CHECK (
                     amount_paid > 0
                     AND principal_amount >= 0
                     AND interest_amount >= 0
                     AND accrued_interest_amount >= 0
                     AND fees_amount >= 0
                     AND penalties_amount >= 0
-                    AND allocation_method IN ('schedule_order','manual')
-                    AND payment_type IN ('standard','prepayment')
-                    AND status IN ('draft','approved','posted','void','reversed')
-                 )',
-                '{schema}', '{schema}_loan_payments_valid_ck'
-            );
+                    AND COALESCE(allocation_method,'') IN ('schedule_order','manual')
+                    AND COALESCE(payment_type,'') IN ('standard','prepayment')
+                    AND COALESCE(status,'') IN ('draft','approved','posted','void','reversed')
+                )
+            $sql$, '{schema}', '{schema}_loan_payments_valid_ck');
         END $ck_loan_payments$;
 
         CREATE INDEX IF NOT EXISTS {schema}_loan_payments_loan_date_idx
@@ -19935,12 +19934,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v49")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v50")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=49,
+                    migration_version=50,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
