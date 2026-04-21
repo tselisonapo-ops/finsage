@@ -34779,6 +34779,52 @@ function renderContractPreview(c = {}) {
     }
   }
 
+  function refreshPeriodicBillingUX() {
+    const periodicity = $("revPeriodicity")?.value || "";
+
+    const weekdayWrap = $("revBillingWeekdayWrap");
+    const dayWrap = $("revBillingDayWrap");
+    const monthWrap = $("revBillingMonthWrap");
+    const dayHelp = $("revBillingDayHelp");
+
+    weekdayWrap?.classList.add("hidden");
+    dayWrap?.classList.add("hidden");
+    monthWrap?.classList.add("hidden");
+
+    if (dayHelp) dayHelp.textContent = "";
+
+    if (periodicity === "weekly") {
+      weekdayWrap?.classList.remove("hidden");
+
+      if ($("revBillingDay")) $("revBillingDay").value = "";
+      if ($("revBillingMonth")) $("revBillingMonth").value = "";
+    }
+
+    if (periodicity === "monthly") {
+      dayWrap?.classList.remove("hidden");
+      if (dayHelp) dayHelp.textContent = "Day of month (1–31).";
+
+      if ($("revBillingWeekday")) $("revBillingWeekday").value = "";
+      if ($("revBillingMonth")) $("revBillingMonth").value = "";
+    }
+
+    if (periodicity === "quarterly") {
+      dayWrap?.classList.remove("hidden");
+      if (dayHelp) dayHelp.textContent = "Day of billing month within the quarter (1–31).";
+
+      if ($("revBillingWeekday")) $("revBillingWeekday").value = "";
+      if ($("revBillingMonth")) $("revBillingMonth").value = "";
+    }
+
+    if (periodicity === "annual") {
+      monthWrap?.classList.remove("hidden");
+      dayWrap?.classList.remove("hidden");
+      if (dayHelp) dayHelp.textContent = "Day of the selected billing month (1–31).";
+
+      if ($("revBillingWeekday")) $("revBillingWeekday").value = "";
+    }
+  }
+
   function toggleBillingConfig() {
     const method = $("revBillingMethod")?.value || "milestone";
     const basis = $("revMilestoneBasis")?.value || "obligation";
@@ -34790,14 +34836,10 @@ function renderContractPreview(c = {}) {
 
     if (!wrap) return;
 
-    // show wrapper whenever billing method is selected
     wrap.classList.remove("hidden");
-
-    // hide all method-specific blocks first
     periodicFields?.classList.add("hidden");
     milestoneFields?.classList.add("hidden");
 
-    // show only the relevant block
     if (method === "periodic") {
       periodicFields?.classList.remove("hidden");
     }
@@ -34806,7 +34848,6 @@ function renderContractPreview(c = {}) {
       milestoneFields?.classList.remove("hidden");
     }
 
-    // method defaults
     if (method === "progress") {
       if ($("revSettlementPattern")) {
         $("revSettlementPattern").value = "revenue_before_billing";
@@ -34822,7 +34863,6 @@ function renderContractPreview(c = {}) {
       }
     }
 
-    // milestone-basis behavior
     if (method === "milestone") {
       if (basis === "obligation") {
         if ($("revAllowObligationOverride")) {
@@ -34849,6 +34889,8 @@ function renderContractPreview(c = {}) {
         help.textContent = "";
       }
     }
+
+    refreshPeriodicBillingUX();
   }
 
   function applyRevenueSetupDefaults() {
@@ -35154,6 +35196,17 @@ function renderContractPreview(c = {}) {
 
     if ($("revMilestoneBasis")) {
       $("revMilestoneBasis").value = billingCfg.milestone_basis || "obligation";
+    }
+
+    if ($("revBillingWeekday")) {
+      $("revBillingWeekday").value = billingCfg.billing_weekday || "";
+    }
+
+    if ($("revBillingMonth")) {
+      $("revBillingMonth").value =
+        billingCfg.billing_month != null && billingCfg.billing_month !== ""
+          ? String(billingCfg.billing_month)
+          : "";
     }
 
     if ($("revAllowObligationOverride")) {
@@ -35498,15 +35551,23 @@ function renderContractPreview(c = {}) {
       notes: $("revContractNotes")?.value || "",
       payload_json: {
         settlement_pattern: $("revSettlementPattern")?.value || "",
-        billing_config: {
-          method: billingMethod,
-          periodicity: $("revPeriodicity")?.value || null,
-          billing_day: Number.isFinite(billingDay) ? billingDay : null,
-          milestone_basis: $("revMilestoneBasis")?.value || "obligation",
-          allow_obligation_override: !!$("revAllowObligationOverride")?.checked,
-          auto_allocate_contract_pool: !!$("revAutoAllocateContractPool")?.checked,
-          notes: $("revBillingConfigNotes")?.value?.trim() || null,
-        },
+          billing_config: {
+            method: billingMethod,
+            periodicity: $("revPeriodicity")?.value || null,
+            billing_day: (() => {
+              const raw = $("revBillingDay")?.value;
+              return raw != null && String(raw).trim() !== "" ? Number(raw) : null;
+            })(),
+            billing_weekday: $("revBillingWeekday")?.value || null,
+            billing_month: (() => {
+              const raw = $("revBillingMonth")?.value;
+              return raw != null && String(raw).trim() !== "" ? Number(raw) : null;
+            })(),
+            milestone_basis: $("revMilestoneBasis")?.value || "obligation",
+            allow_obligation_override: !!$("revAllowObligationOverride")?.checked,
+            auto_allocate_contract_pool: !!$("revAutoAllocateContractPool")?.checked,
+            notes: $("revBillingConfigNotes")?.value?.trim() || null,
+          },
         financing: hasFinancing ? {
           role: $("revFinancingRole")?.value || "",
           rate: num($("revFinancingRate")?.value),
@@ -37867,9 +37928,15 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     });
 
     $("revMilestoneBasis")?.addEventListener("change", () => {
+
       toggleBillingConfig();
+      refreshPeriodicBillingUX();
     });
     
+    $("revPeriodicity")?.addEventListener("change", () => {
+      refreshPeriodicBillingUX();
+    });
+
     $("revSettlementPattern")?.addEventListener("change", refreshSettlementPatternHelp);
 
     $("revHasFinancing")?.addEventListener("change", toggleFinancingFields);

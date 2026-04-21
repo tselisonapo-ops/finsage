@@ -3565,9 +3565,43 @@ html, body {
                             </select>
                           </div>
 
-                          <div>
+                          <div id="revBillingWeekdayWrap" class="hidden">
+                            <label class="block text-xs text-slate-500 mb-1">Billing Weekday</label>
+                            <select id="revBillingWeekday" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="">Select weekday</option>
+                              <option value="monday">Monday</option>
+                              <option value="tuesday">Tuesday</option>
+                              <option value="wednesday">Wednesday</option>
+                              <option value="thursday">Thursday</option>
+                              <option value="friday">Friday</option>
+                              <option value="saturday">Saturday</option>
+                              <option value="sunday">Sunday</option>
+                            </select>
+                          </div>
+
+                          <div id="revBillingDayWrap" class="hidden">
                             <label class="block text-xs text-slate-500 mb-1">Billing Day</label>
                             <input id="revBillingDay" type="number" min="1" max="31" class="w-full border rounded px-3 py-2 text-sm">
+                            <div id="revBillingDayHelp" class="mt-1 text-[11px] text-slate-500"></div>
+                          </div>
+
+                          <div id="revBillingMonthWrap" class="hidden">
+                            <label class="block text-xs text-slate-500 mb-1">Billing Month</label>
+                            <select id="revBillingMonth" class="w-full border rounded px-3 py-2 text-sm">
+                              <option value="">Select month</option>
+                              <option value="1">January</option>
+                              <option value="2">February</option>
+                              <option value="3">March</option>
+                              <option value="4">April</option>
+                              <option value="5">May</option>
+                              <option value="6">June</option>
+                              <option value="7">July</option>
+                              <option value="8">August</option>
+                              <option value="9">September</option>
+                              <option value="10">October</option>
+                              <option value="11">November</option>
+                              <option value="12">December</option>
+                            </select>
                           </div>
                         </div>
 
@@ -3578,7 +3612,6 @@ html, body {
                             <option value="custom">Custom</option>
                           </select>
                           <div id="revMilestoneBasisHelp" class="mt-2 text-[11px] text-slate-500"></div>
-                          <div id="revMilestoneFields" class="hidden"></div>
                         </div>
                       </div>      
 

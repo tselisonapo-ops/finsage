@@ -66,10 +66,35 @@ def _normalize_revenue_contract_body(body: dict) -> dict:
     payload_json["billing_config"] = {
         "method": billing_method,
         "periodicity": str(billing_cfg.get("periodicity") or "").strip().lower() or None,
-        "billing_day": billing_day,
-        "auto_allocate_contract_pool": bool(billing_cfg.get("auto_allocate_contract_pool", True)),
-        "allow_obligation_override": bool(billing_cfg.get("allow_obligation_override", False)),
-        "milestone_basis": str(billing_cfg.get("milestone_basis") or "obligation").strip().lower(),
+
+        "billing_day": (
+            int(billing_cfg.get("billing_day"))
+            if billing_cfg.get("billing_day") not in (None, "", 0, "0")
+            else None
+        ),
+
+        "billing_weekday": (
+            str(billing_cfg.get("billing_weekday") or "").strip().lower() or None
+        ),
+
+        "billing_month": (
+            int(billing_cfg.get("billing_month"))
+            if billing_cfg.get("billing_month") not in (None, "", 0, "0")
+            else None
+        ),
+
+        "auto_allocate_contract_pool": bool(
+            billing_cfg.get("auto_allocate_contract_pool", True)
+        ),
+
+        "allow_obligation_override": bool(
+            billing_cfg.get("allow_obligation_override", False)
+        ),
+
+        "milestone_basis": str(
+            billing_cfg.get("milestone_basis") or "obligation"
+        ).strip().lower(),
+
         "notes": str(billing_cfg.get("notes") or "").strip() or None,
     }
 

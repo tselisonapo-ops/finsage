@@ -57269,9 +57269,22 @@ class DatabaseService:
 
         if method == "periodic":
             periodicity = str(billing_cfg.get("periodicity") or "").strip().lower()
+
             if periodicity not in {"weekly", "monthly", "quarterly", "annual"}:
                 raise ValueError("Periodic contracts require billing_config.periodicity.")
 
+            if periodicity == "weekly":
+                if not billing_cfg.get("billing_weekday"):
+                    raise ValueError("Weekly periodic billing requires billing_weekday.")
+
+            if periodicity in {"monthly", "quarterly"}:
+                if not billing_cfg.get("billing_day"):
+                    raise ValueError("Monthly/Quarterly billing requires billing_day.")
+
+            if periodicity == "annual":
+                if not billing_cfg.get("billing_day") or not billing_cfg.get("billing_month"):
+                    raise ValueError("Annual billing requires billing_month and billing_day.")
+                
         if method == "milestone":
             milestone_basis = str(billing_cfg.get("milestone_basis") or "obligation").strip().lower()
             if milestone_basis not in {"obligation", "custom"}:
