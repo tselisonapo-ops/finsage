@@ -6044,6 +6044,7 @@ class DatabaseService:
                     ''lease_inception'',
                     ''lease_monthly'',
                     ''lease_payment'',
+                    ''lease_direct_cost_paid'',
                     ''lease_modification'',
                     ''lease_termination'',
                     ''loan_origination'',
