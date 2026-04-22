@@ -393,12 +393,15 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
     settings = db_service.get_company_account_settings(company_id) or {}
     grni_raw = (settings.get("grni_control_code") or settings.get("ppv_control_code") or "").strip()
 
-    if grni_raw:
-        links = bill.get("grni_links") or []
-        linked_amt = sum(float(x.get("amount") or 0) for x in links)
-        if linked_amt <= 0:
-            raise Exception("Link this bill to a Goods Receipt (GRNI) before posting.")
+    links = bill.get("grni_links") or []
+    has_grni_rows = isinstance(links, list) and len(links) > 0
+    linked_amt = sum(float(x.get("amount") or 0) for x in links)
 
+    # Enforce GRNI matching only for bills that actually carry GRNI link rows.
+    # Normal AP bills must not be blocked just because a GRNI account exists in settings.
+    if grni_raw and has_grni_rows and linked_amt <= 0:
+        raise Exception("Link this bill to a Goods Receipt (GRNI) before posting.")
+    
     built = build_bill_journal_lines(bill, company_id)
     jid = db_service.post_bill_to_gl(company_id, bill_id, jlines=built["lines"])
 
