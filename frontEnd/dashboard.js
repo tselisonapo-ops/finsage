@@ -55863,25 +55863,34 @@ function bindBillVendorGuards() {
   vendEl.dataset.grniBound = "1";
 
   vendEl.addEventListener("change", () => {
-    // ✅ prevent recursion when clearBillForm triggers change events
     if (window._BILL_CLEARING) return;
 
-    // ✅ don't clear links while applyGrniToBillForm is auto-setting vendor
+    // don't interfere while programmatically applying GRNI
     if (window._AP_APPLYING_GRNI) {
-      if (Array.isArray(window._BILL_GRNI_LINKS) && window._BILL_GRNI_LINKS.length) {
-        console.log("[GRNI] Vendor changed during apply; skip clearing");
-      }
       return;
     }
 
-    // 🧹 clear linked GRNs if vendor changes (user-driven)
+    // don't interfere while programmatically loading/prefilling a bill
+    if (window._BILL_LOADING) {
+      return;
+    }
+
+    const hasGrniLinks =
+      (Array.isArray(window._BILL_GRNI_LINKS) && window._BILL_GRNI_LINKS.length > 0) ||
+      !!document.getElementById("billGrniLinksJson")?.value &&
+      document.getElementById("billGrniLinksJson").value !== "[]";
+
+    // only clear the form if this bill is actually GRNI-linked
+    if (!hasGrniLinks) {
+      return;
+    }
+
+    // clear linked GRNs if vendor changes on a GRNI-linked bill
     window._BILL_GRNI_LINKS = [];
 
-    // ✅ also clear hidden json so readBillForm doesn't re-load old link
     const hid = document.getElementById("billGrniLinksJson");
     if (hid) hid.value = "[]";
 
-    // ✅ clear the bill form so a new GRN can fill it cleanly
     window._BILL_CLEARING = true;
     try {
       window.clearBillForm?.({ keepCurrency: true });
@@ -55889,7 +55898,7 @@ function bindBillVendorGuards() {
       window._BILL_CLEARING = false;
     }
 
-    console.log("[GRNI] Cleared links + cleared bill due to vendor change");
+    console.log("[GRNI] Cleared links + cleared bill due to vendor change on GRNI-linked bill");
   });
 }
 
