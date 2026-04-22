@@ -7017,7 +7017,9 @@ def invoice_view(company_id: int, invoice_id: int):
     if not invoice:
         return jsonify({"error": "Invoice not found"}), 404
 
-    invoice["branding"] = db_service.get_company_branding(company_id) or {}
+    branding = db_service.get_company_branding(company_id) or {}
+    invoice["branding"] = branding
+    invoice["branding_logo_url"] = branding.get("logo_url") or ""
 
     token = create_invoice_pdf_token(company_id=company_id, invoice_id=invoice_id, ttl_seconds=120)
 
@@ -7029,7 +7031,6 @@ def invoice_view(company_id: int, invoice_id: int):
         _external=True
     )
 
-    # ✅ fetch company for logo/address/etc
     company = db_service.fetch_one(
         """
         SELECT
@@ -7044,16 +7045,22 @@ def invoice_view(company_id: int, invoice_id: int):
         (company_id,),
     ) or {}
 
+    # prefer branding logo over companies.logo_url
+    company["branding_logo_url"] = branding.get("logo_url") or ""
+    if not company.get("logo_url"):
+        company["logo_url"] = branding.get("logo_url") or ""
+
     logger.debug("company in view=%s type=%s", company, type(company))
+    logger.debug("branding in view=%s", branding)
+    logger.debug("resolved logo=%s", company.get("logo_url") or company.get("branding_logo_url") or invoice.get("branding_logo_url"))
 
     html = render_template(
         "invoice_pdf.html",
         invoice=invoice,
-        company=company,      # ✅ IMPORTANT
+        company=company,
         pdf_url=pdf_url
     )
     return make_response(html, 200)
-
 
 @app.route("/api/companies/<int:company_id>/invoices/<int:invoice_id>/view_token", methods=["POST"])
 @require_auth
