@@ -308,6 +308,106 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
         },
     }
 
+def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict | None = None):
+    bill = db_service.get_bill_full(company_id, bill_id)
+    if not bill:
+        raise Exception("Bill not found")
+
+    number = (bill.get("number") or "").strip()
+    if not number:
+        raise Exception("Vendor invoice number is required before posting")
+
+    asset_id = bill.get("asset_id")
+    asset_acq_id = bill.get("asset_acquisition_id")
+
+    # --------------------------------------------------
+    # Asset-linked flow
+    # --------------------------------------------------
+    if asset_id and asset_acq_id:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                acq = ppe_service.get_acquisition(cur, company_id, int(asset_acq_id))
+                if not acq:
+                    raise Exception("Linked asset acquisition not found")
+
+                if int(acq.get("asset_id") or 0) != int(asset_id):
+                    raise Exception("Bill asset_id does not match linked acquisition asset_id")
+
+                funding = (acq.get("funding_source") or "").strip().lower()
+                already_posted = bool(acq.get("posted_journal_id"))
+
+                # vendor_credit -> use acquisition posting as source of truth
+                if funding == "vendor_credit":
+                    if already_posted:
+                        raise Exception(
+                            "Linked vendor-credit asset acquisition is already posted. Normal bill GL posting is blocked."
+                        )
+
+                    ppe_service.patch_acquisition_posting_fields(
+                        cur,
+                        company_id,
+                        int(asset_acq_id),
+                        posting_date=bill.get("bill_date"),
+                        reference=number or None,
+                    )
+
+                    user = getattr(g, "current_user", {}) or {}
+                    jid = asset_posting.post_acquisition(
+                        cur,
+                        company_id,
+                        int(asset_acq_id),
+                        user=user,
+                    )
+
+                    schema = f"company_{int(company_id)}"
+                    cur.execute(f"""
+                        UPDATE {schema}.bills
+                        SET status='approved',
+                            notes = COALESCE(notes, '') || CASE
+                                WHEN COALESCE(notes, '') = '' THEN ''
+                                ELSE E'\n'
+                            END || %s,
+                            updated_at=NOW()
+                        WHERE id=%s
+                    """, (
+                        f"Linked to asset acquisition {asset_acq_id}; GL posted via acquisition journal {jid}.",
+                        int(bill_id),
+                    ))
+
+                    conn.commit()
+
+                    return {
+                        "journal_id": int(jid),
+                        "mode": "asset_acquisition",
+                        "asset_id": int(asset_id),
+                        "asset_acquisition_id": int(asset_acq_id),
+                    }
+
+                # grni -> continue into normal AP flow
+                elif funding == "grni":
+                    pass
+
+    # --------------------------------------------------
+    # Normal / GRNI bill flow
+    # --------------------------------------------------
+    settings = db_service.get_company_account_settings(company_id) or {}
+    grni_raw = (settings.get("grni_control_code") or settings.get("ppv_control_code") or "").strip()
+
+    if grni_raw:
+        links = bill.get("grni_links") or []
+        linked_amt = sum(float(x.get("amount") or 0) for x in links)
+        if linked_amt <= 0:
+            raise Exception("Link this bill to a Goods Receipt (GRNI) before posting.")
+
+    built = build_bill_journal_lines(bill, company_id)
+    jid = db_service.post_bill_to_gl(company_id, bill_id, jlines=built["lines"])
+
+    return {
+        "journal_id": int(jid),
+        "mode": "normal_bill",
+        "built": built,
+    }
+
 def vendor_compliance_check(company_id: int, vendor_id: int, *, cur=None) -> dict:
     """
     Returns vendor compliance assessment + docs status.
@@ -549,9 +649,6 @@ def api_bills(company_id: int):
 
     data = request.get_json(silent=True) or {}
 
-    # Accept both shapes:
-    # 1) {"header": {...}, "lines": [...]}
-    # 2) {"vendor_id": ..., "bill_date": ..., "lines": [...]}
     raw_header = data.get("header")
     if isinstance(raw_header, dict) and raw_header:
         header = dict(raw_header)
@@ -567,8 +664,6 @@ def api_bills(company_id: int):
             "other_amount": data.get("other_amount"),
             "discount_amount": data.get("discount_amount"),
             "discount_rate": data.get("discount_rate"),
-
-            # NEW
             "asset_id": data.get("asset_id"),
             "asset_acquisition_id": data.get("asset_acquisition_id"),
         }
@@ -593,10 +688,12 @@ def api_bills(company_id: int):
     header["discount_rate"] = _to_float(header.get("discount_rate"), 0.0)
 
     vendor_id = header.get("vendor_id")
-    if vendor_id is None or vendor_id == "":
+    if vendor_id in (None, ""):
         return jsonify({"ok": False, "error": "vendor_id is required"}), 400
+
     if not header.get("bill_date"):
         return jsonify({"ok": False, "error": "bill_date is required"}), 400
+
     if not isinstance(lines, list) or not lines:
         return jsonify({"ok": False, "error": "At least one bill line is required"}), 400
 
@@ -690,12 +787,11 @@ def api_bills(company_id: int):
             if not can_post_bills(user, company_profile, mode):
                 return jsonify({"ok": False, "error": "Not allowed to post bills"}), 403
 
-            bill = db_service.get_bill_full(company_id, bid)
-            built = build_bill_journal_lines(bill, company_id)
-            jid = db_service.post_bill_to_gl(company_id, bid, jlines=built["lines"])
+            result = post_bill_with_asset_awareness(company_id, bid, payload)
 
             out = db_service.get_bill_full(company_id, bid) or {}
-            out["_posted_journal_id"] = jid
+            out["_posted_journal_id"] = result.get("journal_id")
+            out["_posting_mode"] = result.get("mode")
 
             try:
                 actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
@@ -709,7 +805,7 @@ def api_bills(company_id: int):
                     entity_id=str(bid),
                     entity_ref=out.get("number") or f"BILL-{bid}",
                     before_json={},
-                    after_json={"posted_journal_id": int(jid)},
+                    after_json={"posted_journal_id": int(result.get("journal_id") or 0)},
                     message=f"Posted bill {out.get('number') or bid}",
                     source="api",
                 )
@@ -725,7 +821,7 @@ def api_bills(company_id: int):
         current_app.logger.exception("create bill failed")
         return jsonify({"ok": False, "error": str(ex)}), 400
     
-@ap_bp.route("/api/companies/<int:company_id>/bills/<int:bill_id>/post", methods=["POST","OPTIONS"])
+@ap_bp.route("/api/companies/<int:company_id>/bills/<int:bill_id>/post", methods=["POST", "OPTIONS"])
 @require_auth
 def api_bill_post(company_id: int, bill_id: int):
     if request.method == "OPTIONS":
@@ -742,6 +838,8 @@ def api_bill_post(company_id: int, bill_id: int):
 
     try:
         bill = db_service.get_bill_full(company_id, bill_id)
+        if not bill:
+            return jsonify({"ok": False, "error": "Bill not found"}), 404
 
         # ==========================================================
         # APPROVAL GATE: Bill posting
@@ -758,7 +856,6 @@ def api_bill_post(company_id: int, bill_id: int):
         )
 
         if mode in {"assisted", "controlled"} and ap_review_enabled:
-
             payload_jwt = getattr(request, "jwt_payload", {}) or {}
             actor_user_id = int(payload_jwt.get("user_id") or payload_jwt.get("sub") or 0)
 
@@ -784,130 +881,9 @@ def api_bill_post(company_id: int, bill_id: int):
             )
 
             return jsonify({"ok": False, "error": "APPROVAL_REQUIRED", "approval_request": req}), 202
-        
-        if not bill:
-            return jsonify({"ok": False, "error": "Bill not found"}), 404
 
-        # ✅ enforce vendor invoice number before posting
-        number = (bill.get("number") or "").strip()
-        if not number:
-            return jsonify({"ok": False, "error": "Vendor invoice number is required before posting"}), 400
+        result = post_bill_with_asset_awareness(company_id, bill_id, payload)
 
-        asset_id = bill.get("asset_id")
-        asset_acq_id = bill.get("asset_acquisition_id")
-
-        if asset_id and asset_acq_id:
-            with get_conn(company_id) as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    acq = ppe_service.get_acquisition(cur, company_id, int(asset_acq_id))
-                    if not acq:
-                        return jsonify({"ok": False, "error": "Linked asset acquisition not found"}), 400
-
-                    # consistency check
-                    if int(acq.get("asset_id") or 0) != int(asset_id):
-                        return jsonify({"ok": False, "error": "Bill asset_id does not match linked acquisition asset_id"}), 400
-
-                    funding = (acq.get("funding_source") or "").strip().lower()
-                    already_posted = bool(acq.get("posted_journal_id"))
-
-                    # --------------------------------------------------
-                    # Vendor-credit linked acquisition:
-                    # use acquisition posting as source of truth
-                    # --------------------------------------------------
-                    if funding == "vendor_credit":
-                        if already_posted:
-                            return jsonify({
-                                "ok": False,
-                                "error": "Linked vendor-credit asset acquisition is already posted. Normal bill GL posting is blocked."
-                            }), 400
-
-                        # Patch missing posting fields from bill
-                        ppe_service.patch_acquisition_posting_fields(
-                            cur,
-                            company_id,
-                            int(asset_acq_id),
-                            posting_date=bill.get("bill_date"),
-                            reference=(bill.get("number") or "").strip() or None,
-                        )
-
-                        user = getattr(g, "current_user", {}) or {}
-                        jid = asset_posting.post_acquisition(
-                            cur,
-                            company_id,
-                            int(asset_acq_id),
-                            user=user,
-                        )
-
-                        # mark bill as approved / linked document, not GL-posted as a bill
-                        schema = f"company_{int(company_id)}"
-                        cur.execute(f"""
-                            UPDATE {schema}.bills
-                            SET status='approved',
-                                notes = COALESCE(notes, '') || CASE
-                                    WHEN COALESCE(notes, '') = '' THEN ''
-                                    ELSE E'\n'
-                                END || %s,
-                                updated_at=NOW()
-                            WHERE id=%s
-                        """, (
-                            f"Linked to asset acquisition {asset_acq_id}; GL posted via acquisition journal {jid}.",
-                            int(bill_id),
-                        ))
-
-                        conn.commit()
-
-                        try:
-                            actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
-                            db_service.audit_log(
-                                company_id,
-                                actor_user_id=actor_user_id,
-                                module="ap",
-                                action="post_bill_via_asset_acquisition",
-                                severity="info",
-                                entity_type="bill",
-                                entity_id=str(bill_id),
-                                entity_ref=bill.get("number") or f"BILL-{bill_id}",
-                                before_json={"bill_status": bill.get("status")},
-                                after_json={
-                                    "asset_id": int(asset_id),
-                                    "asset_acquisition_id": int(asset_acq_id),
-                                    "acquisition_journal_id": int(jid),
-                                },
-                                message=f"Bill {bill.get('number') or bill_id} posted via asset acquisition {asset_acq_id}",
-                                source="api",
-                            )
-                        except Exception:
-                            current_app.logger.exception("audit_log failed in asset-linked bill posting")
-
-                        return jsonify({
-                            "ok": True,
-                            "journal_id": jid,
-                            "mode": "asset_acquisition",
-                            "asset_id": int(asset_id),
-                            "asset_acquisition_id": int(asset_acq_id),
-                        }), 200
-
-                    # --------------------------------------------------
-                    # GRNI linked acquisition:
-                    # let normal GRNI bill logic continue
-                    # --------------------------------------------------
-                    elif funding == "grni":
-                        pass
-        # ✅ require GRNI link before posting inventory bills (if GRNI is configured)
-        settings = db_service.get_company_account_settings(company_id) or {}
-        grni_raw = (settings.get("grni_control_code") or settings.get("ppv_control_code") or "").strip()
-
-        if grni_raw:
-            links = bill.get("grni_links") or []
-            linked_amt = sum(float(x.get("amount") or 0) for x in links)
-            if linked_amt <= 0:
-                return jsonify({"ok": False, "error": "Link this bill to a Goods Receipt (GRNI) before posting."}), 400
-
-        built = build_bill_journal_lines(bill, company_id)
-        jlines = built["lines"]
-
-        jid = db_service.post_bill_to_gl(company_id, bill_id, jlines=jlines)
-        # ✅ AUDIT: bill posted
         try:
             actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
             db_service.audit_log(
@@ -920,19 +896,22 @@ def api_bill_post(company_id: int, bill_id: int):
                 entity_id=str(bill_id),
                 entity_ref=bill.get("number") or f"BILL-{bill_id}",
                 before_json={"status": bill.get("status")},
-                after_json={"journal_id": int(jid)},
+                after_json={"journal_id": int(result.get("journal_id") or 0), "mode": result.get("mode")},
                 message=f"Posted bill {bill.get('number') or bill_id}",
                 source="api",
             )
         except Exception:
             current_app.logger.exception("audit_log failed in api_bill_post")
 
-        return jsonify({"ok": True, "journal_id": jid, "built": built}), 200
+        return jsonify({
+            "ok": True,
+            **result
+        }), 200
 
     except Exception as ex:
         current_app.logger.exception("post bill failed")
         return jsonify({"ok": False, "error": str(ex)}), 400
-
+        
 @ap_bp.route("/api/companies/<int:company_id>/bills/<int:bill_id>", methods=["GET", "PUT", "OPTIONS"])
 @require_auth
 def api_bill_detail(company_id: int, bill_id: int):

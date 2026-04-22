@@ -55893,6 +55893,88 @@ function bindBillVendorGuards() {
   });
 }
 
+async function openBillFromAssetAcquisition(acqId) {
+  const cid = (typeof window.getActiveCompanyId === "function")
+    ? window.getActiveCompanyId()
+    : (window.cid || "0");
+
+  if (!cid || !acqId) throw new Error("Missing company or acquisition id.");
+
+  const res = await apiFetch(`/api/companies/${cid}/asset-acquisitions/${acqId}/bill-prefill`, {
+    method: "GET",
+  });
+
+  const prefill = res?.data || res;
+  if (!prefill) throw new Error("No asset bill prefill returned.");
+
+  if (typeof window.clearBillForm === "function") {
+    window.clearBillForm({ keepCurrency: true });
+  }
+
+  const root = (typeof window.getBillRoot === "function") ? window.getBillRoot() : document;
+
+  // hidden linking fields
+  const assetIdEl = root.querySelector("#billAssetId");
+  const acqIdEl = root.querySelector("#billAssetAcquisitionId");
+  const modeEl = root.querySelector("#billPostingMode");
+
+  if (assetIdEl) assetIdEl.value = String(prefill.asset_id || "");
+  if (acqIdEl) acqIdEl.value = String(prefill.asset_acquisition_id || "");
+  if (modeEl) modeEl.value = String(prefill.posting_mode || "");
+
+  // normal bill form fields
+  window.writeBillForm?.({
+    vendor_id: prefill.vendor_id,
+    vendorName: prefill.vendor_name,
+    number: prefill.number || "",
+    bill_date: new Date().toISOString().slice(0, 10),
+    currency: window.CURRENT_COMPANY?.currency || "ZAR",
+    notes: prefill.notes || "",
+    asset_id: prefill.asset_id,
+    asset_acquisition_id: prefill.asset_acquisition_id,
+    posting_mode: prefill.posting_mode,
+  });
+
+  const linesBody = root.querySelector("#billLines");
+  if (linesBody) linesBody.innerHTML = "";
+
+  window.addBillLine?.({
+    item_name: prefill.asset_code || "Asset acquisition",
+    description: prefill.description || prefill.asset_name || "",
+    quantity: 1,
+    unit_price: Number(prefill.amount || 0),
+    account_code: prefill.asset_account_code || "",
+    vat_code: "STANDARD",
+    vat_rate: 15,
+  });
+
+  // lock account if requested
+  const tr = root.querySelector("#billLines tr");
+  if (tr && prefill.lock_account_code) {
+    const acct = tr.querySelector(".bill-acct");
+    if (acct) {
+      acct.value = String(prefill.asset_account_code || "");
+      acct.disabled = true;
+      acct.dataset.locked = "asset";
+      acct.classList.add("bg-slate-100", "text-slate-500", "cursor-not-allowed");
+    }
+  }
+
+  // lock vendor if requested
+  if (prefill.lock_vendor) {
+    const vendorEl = root.querySelector("#billVendor");
+    const vendorIdEl = root.querySelector("#billVendorId");
+    if (vendorEl) vendorEl.disabled = true;
+    if (vendorIdEl) vendorIdEl.disabled = true;
+  }
+
+  window.recalcBill?.({ force: true });
+  window.saveBillDraftToLocal?.();
+
+  return prefill;
+}
+window.openBillFromAssetAcquisition = openBillFromAssetAcquisition;
+
 function bindAP() {
   const linesBody = document.getElementById("billLines");
   const addBtn    = document.getElementById("billAddLine");
@@ -56505,6 +56587,7 @@ function bindAP() {
       }))
       .filter(x => x.receipt_tx_id > 0 && x.amount > 0);
 
+
     const rows = Array.from(root.querySelectorAll("#billLines tr"));
     const lines = rows.map((row, i) => {
       const item    = row.querySelector(".bill-item")?.value || "";
@@ -56537,6 +56620,17 @@ function bindAP() {
       number: (root.querySelector("#billNumber")?.value || "").trim() || null,
       bill_date: billDateISO,
       due_date: dueISO,
+      asset_id: (() => {
+        const v = (root.querySelector("#billAssetId")?.value || "").trim();
+        return /^\d+$/.test(v) ? parseInt(v, 10) : null;
+      })(),
+
+      asset_acquisition_id: (() => {
+        const v = (root.querySelector("#billAssetAcquisitionId")?.value || "").trim();
+        return /^\d+$/.test(v) ? parseInt(v, 10) : null;
+      })(),
+
+      posting_mode: (root.querySelector("#billPostingMode")?.value || "").trim() || null,
       currency: (root.querySelector("#billCurrency")?.value || "").trim() || null,
       vat_enabled: !!root.querySelector("#apBillVatEnabled")?.checked,
       discount_rate: parseDiscountRate(root.querySelector("#billDisc")?.value),
@@ -56614,6 +56708,9 @@ function bindAP() {
     setVal("billDate", billDate);
     setVal("billDue", dueDate);
     setVal("billCurrency", b.currency || (window.CURRENT_COMPANY?.currency || "ZAR"));
+    setVal("billAssetId", b.asset_id || "");
+    setVal("billAssetAcquisitionId", b.asset_acquisition_id || "");
+    setVal("billPostingMode", b.posting_mode || "");
 
     // ✅ NEW: store GRNI links on the form (hidden)
     try {
@@ -56845,6 +56942,10 @@ function bindAP() {
       subtotal_amount: toNum(t.subtotal_amount, 0),
       vat_amount: toNum(t.vat_amount, 0),
       total_amount: toNum(t.total_amount, 0),
+
+      // NEW
+      asset_id: form.asset_id || null,
+      asset_acquisition_id: form.asset_acquisition_id || null,
     };
 
     const billId = parseInt(root.querySelector("#billId")?.value || "0", 10) || 0;

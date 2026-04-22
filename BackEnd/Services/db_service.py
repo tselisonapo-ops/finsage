@@ -33281,15 +33281,94 @@ class DatabaseService:
 
     def list_vendors(self, company_id: int, include_inactive: bool = False) -> List[Dict[str, Any]]:
         schema = f"company_{company_id}"
-        if include_inactive:
-            return self.fetch_all(f"SELECT * FROM {schema}.vendors ORDER BY name ASC;") or []
-        return self.fetch_all(f"SELECT * FROM {schema}.vendors WHERE is_active = TRUE ORDER BY name ASC;") or []
 
+        where_sql = ""
+        if not include_inactive:
+            where_sql = "WHERE v.is_active = TRUE"
+
+        sql = f"""
+            SELECT
+                v.*,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'asset_id', a.id,
+                            'asset_code', a.asset_code,
+                            'asset_name', a.asset_name,
+                            'status', a.status
+                        )
+                        ORDER BY a.id DESC
+                    )
+                    FROM {schema}.assets a
+                    WHERE a.supplier_id = v.id
+                ), '[]'::json) AS linked_assets,
+
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'acquisition_id', ac.id,
+                            'asset_id', ac.asset_id,
+                            'funding_source', ac.funding_source,
+                            'vendor_invoice_no', ac.vendor_invoice_no,
+                            'grn_no', ac.grn_no,
+                            'reference', ac.reference,
+                            'status', ac.status,
+                            'posted_journal_id', ac.posted_journal_id
+                        )
+                        ORDER BY ac.id DESC
+                    )
+                    FROM {schema}.asset_acquisitions ac
+                    WHERE ac.supplier_id = v.id
+                ), '[]'::json) AS linked_asset_acquisitions
+
+            FROM {schema}.vendors v
+            {where_sql}
+            ORDER BY v.name ASC;
+        """
+        return self.fetch_all(sql) or []
 
     def get_vendor(self, company_id: int, vendor_id: int) -> Optional[Dict[str, Any]]:
         schema = f"company_{company_id}"
-        return self.fetch_one(f"SELECT * FROM {schema}.vendors WHERE id=%s LIMIT 1;", (int(vendor_id),))
+        sql = f"""
+            SELECT
+                v.*,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'asset_id', a.id,
+                            'asset_code', a.asset_code,
+                            'asset_name', a.asset_name,
+                            'status', a.status
+                        )
+                        ORDER BY a.id DESC
+                    )
+                    FROM {schema}.assets a
+                    WHERE a.supplier_id = v.id
+                ), '[]'::json) AS linked_assets,
 
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'acquisition_id', ac.id,
+                            'asset_id', ac.asset_id,
+                            'funding_source', ac.funding_source,
+                            'vendor_invoice_no', ac.vendor_invoice_no,
+                            'grn_no', ac.grn_no,
+                            'reference', ac.reference,
+                            'status', ac.status,
+                            'posted_journal_id', ac.posted_journal_id
+                        )
+                        ORDER BY ac.id DESC
+                    )
+                    FROM {schema}.asset_acquisitions ac
+                    WHERE ac.supplier_id = v.id
+                ), '[]'::json) AS linked_asset_acquisitions
+
+            FROM {schema}.vendors v
+            WHERE v.id = %s
+            LIMIT 1;
+        """
+        return self.fetch_one(sql, (int(vendor_id),))
     def get_vendor_payment_by_id(self, company_id: int, payment_id: int) -> dict | None:
         schema = self.company_schema(company_id)
         return self.fetch_one(

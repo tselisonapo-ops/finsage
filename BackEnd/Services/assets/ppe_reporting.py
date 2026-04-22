@@ -4852,3 +4852,106 @@ def subsequent_measurement_get_update_delete(company_id: int, sm_id: int):
     except Exception as e:
         current_app.logger.exception("subsequent_measurement_get_update_delete failed")
         return _json_error(str(e), 400)
+    
+@ppe_bp.route("/api/companies/<int:company_id>/asset-acquisitions/<int:acq_id>/bill-prefill", methods=["GET", "OPTIONS"])
+@require_auth
+def acquisition_bill_prefill(company_id: int, acq_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                schema = f"company_{int(company_id)}"
+
+                cur.execute(f"""
+                    SELECT
+                        ac.id AS asset_acquisition_id,
+                        ac.asset_id,
+                        ac.supplier_id AS vendor_id,
+                        ac.funding_source,
+                        ac.amount,
+                        ac.vendor_invoice_no,
+                        ac.grn_no,
+                        ac.reference,
+                        ac.status AS acquisition_status,
+                        ac.posted_journal_id AS acquisition_posted_journal_id,
+
+                        a.asset_code,
+                        a.asset_name,
+                        a.asset_account_code,
+                        a.notes AS asset_notes,
+
+                        v.name AS vendor_name,
+                        v.email AS vendor_email,
+                        v.payment_terms
+                    FROM {schema}.asset_acquisitions ac
+                    JOIN {schema}.assets a
+                      ON a.id = ac.asset_id
+                    LEFT JOIN {schema}.vendors v
+                      ON v.id = ac.supplier_id
+                    WHERE ac.company_id = %s
+                      AND ac.id = %s
+                    LIMIT 1
+                """, (company_id, acq_id))
+
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"ok": False, "error": "Asset acquisition not found"}), 404
+
+                funding = (row.get("funding_source") or "").strip().lower()
+                posted = bool(row.get("acquisition_posted_journal_id"))
+
+                prefill = {
+                    "vendor_id": row.get("vendor_id"),
+                    "vendor_name": row.get("vendor_name"),
+                    "vendor_email": row.get("vendor_email"),
+
+                    "asset_id": row.get("asset_id"),
+                    "asset_acquisition_id": row.get("asset_acquisition_id"),
+
+                    "funding_source": funding,
+                    "acquisition_status": row.get("acquisition_status"),
+                    "acquisition_posted_journal_id": row.get("acquisition_posted_journal_id"),
+
+                    "asset_code": row.get("asset_code"),
+                    "asset_name": row.get("asset_name"),
+                    "asset_account_code": row.get("asset_account_code"),
+
+                    "number": row.get("vendor_invoice_no") or row.get("reference") or None,
+                    "vendor_invoice_no": row.get("vendor_invoice_no"),
+                    "grn_no": row.get("grn_no"),
+                    "reference": row.get("reference"),
+
+                    "amount": float(row.get("amount") or 0),
+                    "description": f"{row.get('asset_code') or ''} - {row.get('asset_name') or ''}".strip(" -"),
+                    "notes": row.get("asset_notes"),
+
+                    # UI / posting hints
+                    "posting_mode": (
+                        "post_via_acquisition"
+                        if funding == "vendor_credit" and not posted
+                        else "document_only"
+                        if funding == "vendor_credit" and posted
+                        else "grni_clearing"
+                        if funding == "grni"
+                        else "normal_bill"
+                    ),
+                    "lock_account_code": True,
+                    "lock_vendor": True,
+                }
+
+                return jsonify({"ok": True, "data": prefill}), 200
+
+    except Exception as e:
+        current_app.logger.exception("acquisition_bill_prefill failed")
+        return jsonify({"ok": False, "error": str(e)}), 400

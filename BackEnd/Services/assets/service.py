@@ -1037,6 +1037,7 @@ def create_acquisition(cur, company_id, asset_id, payload):
 
     row = cur.fetchone()
     return (row.get("id") if isinstance(row, dict) else row[0])
+
 def patch_acquisition_posting_fields(cur, company_id, acq_id, *, posting_date=None, reference=None):
     schema = company_schema(company_id)
 
