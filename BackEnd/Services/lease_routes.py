@@ -24,6 +24,7 @@ from .lease_posting import (
 from BackEnd.Services.credit_policy import can_post_leases, lease_review_enabled, lease_action_review_required, lease_policy_flags, normalize_role
 from BackEnd.Services.company import company_policy
 from BackEnd.Services.company_context import get_company_context
+from BackEnd.Services.lease_modification_engine import compute_lease_modification
 
 bp = Blueprint("leases", __name__)
 
@@ -456,6 +457,39 @@ def preview_lease(company_id: int):
         current_app.logger.exception("preview_lease error")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
+
+@bp.route("/api/companies/<int:company_id>/leases/modifications/<int:mod_id>/preview", methods=["POST", "OPTIONS"])
+@require_auth
+def preview_lease_modification(company_id: int, mod_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        user = getattr(g, "current_user", {}) or {}
+        if user.get("company_id") != int(company_id):
+            return jsonify({"error": "Not authorised for this company"}), 403
+
+        mod = db_service.get_lease_modification(int(company_id), int(mod_id))
+        if not mod:
+            return jsonify({"error": "Modification not found"}), 404
+
+        if (mod.get("status") or "").lower() == "posted" or mod.get("posted_journal_id"):
+            return jsonify({"error": "Posted modification cannot be previewed again"}), 409
+
+        out = compute_lease_modification(
+            db_service,
+            int(company_id),
+            modification_id=int(mod_id),
+        )
+
+        return jsonify(out), 200
+
+    except ValueError as e:
+        return jsonify({"error": "Bad request", "details": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("preview_lease_modification error")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+    
 @bp.route("/api/companies/<int:company_id>/leases", methods=["POST", "OPTIONS"])
 @require_auth
 def create_lease(company_id: int):
@@ -1866,11 +1900,7 @@ def post_lease_modification(company_id: int, mod_id: int):
         return _corsify(make_response("", 204))
 
     payload = getattr(request, "jwt_payload", {}) or {}
-    deny = _deny_if_wrong_company(
-        payload,
-        int(company_id),
-        db_service=db_service,
-    )
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
     if deny:
         return deny
 
@@ -1883,7 +1913,7 @@ def post_lease_modification(company_id: int, mod_id: int):
         user_id=user_id,
         company_id=company_id,
         delegated_fallback=getattr(g, "current_user", None),
-    ) 
+    )
     if not user:
         return jsonify({"error": "User has no access to this company"}), 403
 
@@ -1901,20 +1931,24 @@ def post_lease_modification(company_id: int, mod_id: int):
             return jsonify({"error": "Not allowed to post lease modifications", "mode": mode}), 403
 
         with db_service._conn_cursor() as (conn, cur):
-            mod = db_service.get_lease_modification(int(company_id), int(mod_id), cur=cur)
+            mod = db_service.get_lease_modification(int(company_id), int(mod_id))
             if not mod:
                 return jsonify({"error": "Lease modification not found"}), 404
 
-            # ✅ if review is required: request approval and return 409 with approval request
-            if lease_action_review_required(pol, "modification"):
-                lease = db_service.get_lease(int(company_id), int(lease_id)) or {}
-                entity_ref = f"{lease.get('lease_name') or f'Lease {lease_id}'} MOD {mod.get('id')}"
+            lease_id = int(mod.get("lease_id") or 0)
+            if lease_id <= 0:
+                return jsonify({"error": "Invalid lease_id on modification"}), 400
 
+            lease = db_service.get_lease(int(company_id), int(lease_id)) or {}
+            if not lease:
+                return jsonify({"error": "Lease not found"}), 404
+
+            if lease_action_review_required(pol, "modification"):
+                entity_ref = f"{lease.get('lease_name') or f'Lease {lease_id}'} MOD {mod.get('id')}"
                 payload_json = {
                     "lease_id": int(lease_id),
                     "modification_id": int(mod.get("id") or 0),
                 }
-
                 return _approval_required_response(
                     company_id=int(company_id),
                     module="leases",
@@ -1926,18 +1960,10 @@ def post_lease_modification(company_id: int, mod_id: int):
                     currency=(lease.get("currency") or None),
                     payload_json=payload_json,
                 )
-            
-            # ✅ PATCH: approval gate when review is enabled
-            if lease_action_review_required(pol, "modification") and (mod.get("status") or "").lower() != "approved":
-                return jsonify({"error": "LEASE_REVIEW_REQUIRED|modification_not_approved"}), 409
 
             if (mod.get("status") or "").lower() == "posted" or mod.get("posted_journal_id"):
                 return jsonify({"error": "Already posted", "journal_id": mod.get("posted_journal_id")}), 409
 
-            lease_id = int(mod.get("lease_id") or 0)
-            lease = db_service.get_lease(int(company_id), int(lease_id)) or {}
-            if not lease:
-                return jsonify({"error": "Lease not found"}), 404
             if (lease.get("status") or "active").lower() == "terminated":
                 return jsonify({"error": "Lease is terminated; cannot post modification"}), 409
 
@@ -1947,18 +1973,26 @@ def post_lease_modification(company_id: int, mod_id: int):
                 cur=cur,
             )
             if already:
-                try:
-                    db_service.mark_lease_modification_posted(
-                        int(company_id), int(mod_id), int(already["id"]), cur=cur
-                    )
-                except Exception:
-                    pass
+                db_service.mark_lease_modification_posted(
+                    int(company_id),
+                    int(mod_id),
+                    posted_journal_id=int(already["id"]),
+                    posted_by=int(user_id) if user_id else None,
+                )
                 conn.commit()
                 return jsonify({
                     "error": "Already posted",
                     "journal_id": int(already["id"]),
                     "modification_id": int(mod_id)
                 }), 409
+
+            # --- recompute before posting ---
+            calc = compute_lease_modification(
+                db_service,
+                int(company_id),
+                modification_id=int(mod_id),
+                cur=cur,
+            )
 
             lines = db_service.build_lease_modification_journal_lines(
                 int(company_id),
@@ -1975,8 +2009,8 @@ def post_lease_modification(company_id: int, mod_id: int):
                 "date": j_date,
                 "ref": f"LEASE-{lease_id}-MOD-{mod_id}",
                 "description": desc,
-                "gross_amount": float(mod.get("liability_adjustment") or 0.0),
-                "net_amount": float(mod.get("liability_adjustment") or 0.0),
+                "gross_amount": abs(float(calc.get("liability_adjustment") or 0.0)),
+                "net_amount": abs(float(calc.get("liability_adjustment") or 0.0)),
                 "vat_amount": 0.0,
                 "source": "lease_modification",
                 "source_id": int(mod_id),
@@ -1987,11 +2021,34 @@ def post_lease_modification(company_id: int, mod_id: int):
             if journal_id <= 0:
                 raise ValueError("Failed to post modification journal")
 
-            db_service.mark_lease_modification_posted(int(company_id), int(mod_id), int(journal_id), cur=cur)
-            db_service.deactivate_lease_schedule(int(company_id), int(lease_id), cur=cur)
+            revised_schedule = calc.get("revised_schedule") or []
+            if revised_schedule:
+                db_service.replace_lease_schedule_from_modification(
+                    int(company_id),
+                    lease_id=int(lease_id),
+                    modification_id=int(mod_id),
+                    revised_schedule=revised_schedule,
+                    cur=cur,
+                )
+
+            db_service.mark_lease_modification_posted(
+                int(company_id),
+                int(mod_id),
+                posted_journal_id=int(journal_id),
+                posted_by=int(user_id) if user_id else None,
+            )
 
             conn.commit()
-            return jsonify({"ok": True, "journal_id": int(journal_id), "modification_id": int(mod_id)}), 201
+            return jsonify({
+                "ok": True,
+                "journal_id": int(journal_id),
+                "modification_id": int(mod_id),
+                "lease_id": int(lease_id),
+                "liability_adjustment": calc.get("liability_adjustment"),
+                "rou_adjustment": calc.get("rou_adjustment"),
+                "revised_schedule_rows": len(revised_schedule),
+                "journal_lines": lines,
+            }), 201
 
     except ValueError as e:
         msg = str(e) or ""

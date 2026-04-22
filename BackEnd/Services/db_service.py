@@ -26610,6 +26610,326 @@ class DatabaseService:
             {"account_code": roa,  "debit": 0.0, "credit": amt, "memo": memo},
         ]
 
+    def get_lease_carrying_state_as_of(
+        self,
+        company_id: int,
+        *,
+        lease_id: int,
+        as_of: date,
+        cur=None,
+    ) -> Dict[str, Any]:
+        """
+        Returns carrying balances immediately before / at modification date.
+
+        Assumptions:
+        - lease_schedule contains full amortisation rows
+        - rows up to as_of represent the already-consumed portion
+        - remaining rows are future schedule rows
+        """
+        sch = self._sch(company_id)
+
+        lease = self.get_lease(company_id, lease_id)
+        if not lease:
+            raise ValueError("Lease not found")
+
+        rows = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {sch}.lease_schedule
+            WHERE lease_id=%s
+            AND COALESCE(is_active, TRUE)=TRUE
+            ORDER BY period_no ASC, period_start ASC
+            """,
+            (int(lease_id),),
+            cur=cur,
+        ) or []
+
+        if not rows:
+            raise ValueError("Active lease schedule not found")
+
+        opening_rou = float(
+            lease.get("rou_amount")
+            or lease.get("right_of_use_asset")
+            or lease.get("opening_rou_asset")
+            or 0.0
+        )
+
+        liability_before = None
+        accumulated_dep = 0.0
+        remaining_rows: List[Dict[str, Any]] = []
+
+        for row in rows:
+            p_start = row.get("period_start")
+            p_end = row.get("period_end")
+
+            if p_end and p_end <= as_of:
+                accumulated_dep += float(row.get("depreciation") or 0.0)
+                liability_before = float(row.get("closing_liability") or 0.0)
+            else:
+                remaining_rows.append(row)
+
+        if liability_before is None:
+            first = rows[0]
+            liability_before = float(first.get("opening_liability") or 0.0)
+
+        rou_before = round(max(0.0, opening_rou - accumulated_dep), 2)
+
+        return {
+            "lease_id": int(lease_id),
+            "as_of": as_of,
+            "liability_before": round(float(liability_before), 2),
+            "rou_before": rou_before,
+            "accumulated_depreciation": round(accumulated_dep, 2),
+            "remaining_rows": remaining_rows,
+        }
+
+    def save_lease_modification_preview_rows(
+        self,
+        company_id: int,
+        *,
+        modification_id: int,
+        lease_id: int,
+        revised_schedule: List[Dict[str, Any]],
+        cur=None,
+    ) -> None:
+        """
+        Stores preview rows for later posting.
+        You can skip this if you prefer recalculating on post.
+        """
+        sch = self._sch(company_id)
+
+        # Optional preview table:
+        # lease_modification_schedule_preview
+        self.execute(
+            f"DELETE FROM {sch}.lease_modification_schedule_preview WHERE modification_id=%s",
+            (int(modification_id),),
+            cur=cur,
+        )
+
+        for row in revised_schedule:
+            self.execute(
+                f"""
+                INSERT INTO {sch}.lease_modification_schedule_preview (
+                    company_id,
+                    lease_id,
+                    modification_id,
+                    period_no,
+                    period_start,
+                    period_end,
+                    opening_liability,
+                    interest,
+                    payment,
+                    principal,
+                    closing_liability,
+                    depreciation,
+                    vat_portion,
+                    net_payment
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    int(company_id),
+                    int(lease_id),
+                    int(modification_id),
+                    int(row["period_no"]),
+                    row["period_start"],
+                    row["period_end"],
+                    float(row["opening_liability"] or 0.0),
+                    float(row["interest"] or 0.0),
+                    float(row["payment"] or 0.0),
+                    float(row["principal"] or 0.0),
+                    float(row["closing_liability"] or 0.0),
+                    float(row["depreciation"] or 0.0),
+                    float(row.get("vat_portion") or 0.0),
+                    float(row.get("net_payment") or 0.0),
+                ),
+                cur=cur,
+            )
+
+
+    def get_lease_modification_preview_rows(
+        self,
+        company_id: int,
+        *,
+        modification_id: int,
+        cur=None,
+    ) -> List[Dict[str, Any]]:
+        sch = self._sch(company_id)
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {sch}.lease_modification_schedule_preview
+            WHERE modification_id=%s
+            ORDER BY period_no ASC
+            """,
+            (int(modification_id),),
+            cur=cur,
+        ) or []
+
+
+    def compute_lease_modification(
+        self,
+        company_id: int,
+        *,
+        modification_id: int,
+        cur=None,
+    ) -> Dict[str, Any]:
+        mod = self.get_lease_modification(company_id, modification_id, cur=cur)
+        if not mod:
+            raise ValueError("Modification not found")
+
+        lease_id = int(mod.get("lease_id") or 0)
+        lease = self.get_lease(company_id, lease_id, cur=cur)
+        if not lease:
+            raise ValueError("Lease not found")
+
+        if (lease.get("status") or "active").lower() == "terminated":
+            raise ValueError("LEASE_TERMINATED|cannot_modify")
+
+        mod_date = mod.get("modification_date")
+        if not mod_date:
+            raise ValueError("Modification date is required")
+
+        carrying = self.get_lease_carrying_state_as_of(
+            company_id,
+            lease_id=lease_id,
+            as_of=mod_date,
+            cur=cur,
+        )
+
+        new_payment_amount = float(
+            mod.get("new_payment_amount")
+            if mod.get("new_payment_amount") is not None
+            else lease.get("payment_amount") or 0.0
+        )
+        new_annual_rate = float(
+            mod.get("new_annual_rate")
+            if mod.get("new_annual_rate") is not None
+            else lease.get("annual_rate") or 0.0
+        )
+        new_end_date = mod.get("new_end_date") or lease.get("end_date")
+
+        from BackEnd.Services.lease_engine import LeaseInput, build_lease_schedule, schedule_to_json
+
+        revised_input = LeaseInput(
+            company_id=company_id,
+            role="lessee",
+            lease_name=lease.get("lease_name") or f"Lease {lease_id}",
+            start_date=mod_date,
+            end_date=new_end_date,
+            payment_amount=new_payment_amount,
+            payment_frequency=lease.get("payment_frequency") or "monthly",
+            payment_timing=lease.get("payment_timing") or "arrears",
+            annual_rate=new_annual_rate,
+            initial_direct_costs=0.0,
+            residual_value=float(lease.get("residual_value") or 0.0),
+            vat_rate=float(lease.get("vat_rate") or 0.0),
+        )
+
+        revised_result = build_lease_schedule(revised_input)
+        revised_json = schedule_to_json(revised_result)
+
+        liability_before = round(float(carrying["liability_before"]), 2)
+        liability_after  = round(float(revised_result.opening_lease_liability), 2)
+        rou_before       = round(float(carrying["rou_before"]), 2)
+        rou_after        = round(rou_before + (liability_after - liability_before), 2)
+
+        saved = self.set_lease_modification_computed(
+            company_id,
+            modification_id,
+            liability_before=liability_before,
+            liability_after=liability_after,
+            rou_before=rou_before,
+            rou_after=rou_after,
+        )
+
+        return {
+            "modification": saved,
+            "liability_before": liability_before,
+            "liability_after": liability_after,
+            "liability_adjustment": round(liability_after - liability_before, 2),
+            "rou_before": rou_before,
+            "rou_after": rou_after,
+            "rou_adjustment": round(rou_after - rou_before, 2),
+            "revised_schedule": revised_json.get("schedule") or [],
+            "revised_pv_table": revised_json.get("pv_table") or [],
+        }
+
+    def replace_lease_schedule_from_modification(
+        self,
+        company_id: int,
+        *,
+        lease_id: int,
+        modification_id: int,
+        revised_schedule: List[Dict[str, Any]],
+        cur=None,
+    ) -> None:
+        sch = self._sch(company_id)
+
+        mod = self.get_lease_modification(company_id, modification_id)
+        if not mod:
+            raise ValueError("Modification not found")
+
+        mod_date = mod.get("modification_date")
+        if not mod_date:
+            raise ValueError("Modification date missing")
+
+        # Deactivate only future rows from modification date onward
+        self.execute(
+            f"""
+            UPDATE {sch}.lease_schedule
+            SET
+                is_active = FALSE,
+                superseded_by_modification_id = %s
+            WHERE lease_id = %s
+            AND COALESCE(is_active, TRUE)=TRUE
+            AND period_start >= %s
+            """,
+            (int(modification_id), int(lease_id), mod_date),
+            cur=cur,
+        )
+
+        for row in revised_schedule:
+            self.execute(
+                f"""
+                INSERT INTO {sch}.lease_schedule (
+                    company_id,
+                    lease_id,
+                    modification_id,
+                    period_no,
+                    period_start,
+                    period_end,
+                    opening_liability,
+                    interest,
+                    payment,
+                    principal,
+                    closing_liability,
+                    depreciation,
+                    vat_portion,
+                    net_payment,
+                    is_active
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                """,
+                (
+                    int(company_id),
+                    int(lease_id),
+                    int(modification_id),
+                    int(row["period_no"]),
+                    row["period_start"],
+                    row["period_end"],
+                    float(row["opening_liability"] or 0.0),
+                    float(row["interest"] or 0.0),
+                    float(row["payment"] or 0.0),
+                    float(row["principal"] or 0.0),
+                    float(row["closing_liability"] or 0.0),
+                    float(row["depreciation"] or 0.0),
+                    float(row.get("vat_portion") or 0.0),
+                    float(row.get("net_payment") or 0.0),
+                ),
+                cur=cur,
+            )
+        
     def _lease_account_balance_up_to(
         self,
         schema: str,

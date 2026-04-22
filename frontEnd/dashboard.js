@@ -23025,21 +23025,27 @@ window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
     </div>
 
     <div class="border rounded-xl overflow-hidden">
-      <table class="min-w-full text-sm">
-        <thead class="bg-slate-50 border-b">
-          <tr>
-            <th class="text-left p-2 w-[120px]">Date</th>
-            <th class="text-left p-2">Ref</th>
-            <th class="text-right p-2 w-[140px]">Amount</th>
-            <th class="text-right p-2 w-[120px]">Interest</th>
-            <th class="text-right p-2 w-[120px]">Principal</th>
-            <th class="text-left p-2 w-[120px]">Journal</th>
-          </tr>
-        </thead>
-        <tbody id="lpTableBody">
-          <tr><td colspan="6" class="p-3 text-xs text-slate-500">Enter Lease ID and click Load</td></tr>
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="min-w-[820px] w-full text-sm">
+          <thead class="bg-slate-50 border-b">
+            <tr>
+              <th class="text-left p-2 w-[120px]">Date</th>
+              <th class="text-left p-2">Ref</th>
+              <th class="text-right p-2 w-[140px] whitespace-nowrap">Amount</th>
+              <th class="text-right p-2 w-[120px] whitespace-nowrap">Interest</th>
+              <th class="text-right p-2 w-[120px] whitespace-nowrap">Principal</th>
+              <th class="text-left p-2 w-[120px] whitespace-nowrap">Journal</th>
+            </tr>
+          </thead>
+          <tbody id="lpTableBody">
+            <tr>
+              <td colspan="6" class="p-3 text-xs text-slate-500">
+                Enter Lease ID and click Load
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 
@@ -23139,20 +23145,24 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
     </div>
 
     <div class="border rounded-xl overflow-hidden">
-      <table class="min-w-full text-sm">
-        <thead class="bg-slate-50 border-b">
-          <tr>
-            <th class="text-left p-2">Lease</th>
-            <th class="text-left p-2">Lessor</th>
-            <th class="text-left p-2 w-[110px]">Period</th>
-            <th class="text-right p-2 w-[140px]">Due</th>
-            <th class="text-right p-2 w-[160px]">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="lmTableBody">
-          <tr><td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td></tr>
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="min-w-[760px] w-full text-sm">
+          <thead class="bg-slate-50 border-b">
+            <tr>
+              <th class="text-left p-2 whitespace-nowrap">Lease</th>
+              <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+              <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
+              <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
+              <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="lmTableBody">
+            <tr>
+              <td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 
@@ -24502,19 +24512,21 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       </div>
 
       <div class="border rounded-xl overflow-hidden">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 border-b">
-            <tr>
-              <th class="text-left p-2 w-[120px]">Date</th>
-              <th class="text-left p-2">Ref</th>
-              <th class="text-right p-2 w-[140px]">Amount</th>
-              <th class="text-right p-2 w-[120px]">Interest</th>
-              <th class="text-right p-2 w-[120px]">Principal</th>
-              <th class="text-left p-2 w-[120px]">Journal</th>
-            </tr>
-          </thead>
-          <tbody id="lpTableBody"></tbody>
-        </table>
+        <div class="overflow-x-auto">
+          <table class="min-w-[820px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 w-[120px] whitespace-nowrap">Date</th>
+                <th class="text-left p-2 whitespace-nowrap">Ref</th>
+                <th class="text-right p-2 w-[140px] whitespace-nowrap">Amount</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Interest</th>
+                <th class="text-right p-2 w-[120px] whitespace-nowrap">Principal</th>
+                <th class="text-left p-2 w-[120px] whitespace-nowrap">Journal</th>
+              </tr>
+            </thead>
+            <tbody id="lpTableBody"></tbody>
+          </table>
+        </div>
       </div>
       <div id="leasePaymentsMsg" class="text-sm hidden"></div>
     `;
@@ -24622,18 +24634,20 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       </div>
 
       <div class="border rounded-xl overflow-hidden">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 border-b">
-            <tr>
-              <th class="text-left p-2">Lease</th>
-              <th class="text-left p-2">Lessor</th>
-              <th class="text-left p-2 w-[110px]">Period</th>
-              <th class="text-right p-2 w-[140px]">Due</th>
-              <th class="text-right p-2 w-[160px]">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="lmTableBody"></tbody>
-        </table>
+        <div class="overflow-x-auto">
+          <table class="min-w-[760px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">Lease</th>
+                <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+                <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
+                <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
+                <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="lmTableBody"></tbody>
+          </table>
+        </div>
       </div>
     `;
   }
@@ -24900,6 +24914,7 @@ function shouldRequestLeasePaymentApproval() {
 }
 
 async function submitModDraft() {
+  const msg = (id, text, kind = "info") => window.msg?.(id, text, kind);
   const { cid, canPostUi, autoPosts, canApprove, mode } = applyLeaseModalPolicy("mod");
   const leaseId = window.LEASE_UI.state.leaseId;
   if (!cid || !leaseId) return msg("leaseModMsg", "Missing company or lease", "error");
@@ -24910,12 +24925,12 @@ async function submitModDraft() {
   }
 
   const payload = {
-    modification_date: document.getElementById("leaseModDate").value || null,
-    change_type: document.getElementById("leaseModType").value || null,
-    new_payment: document.getElementById("leaseModNewPayment").value || null,
-    new_rate: document.getElementById("leaseModNewRate").value || null,
-    new_end_date: document.getElementById("leaseModNewEnd").value || null,
-    reason: document.getElementById("leaseModReason").value || null,
+    modification_date: document.getElementById("leaseModDate")?.value || null,
+    change_type: (document.getElementById("leaseModType")?.value || "").trim().toLowerCase() || null,
+    new_payment_amount: document.getElementById("leaseModNewPayment")?.value || null,
+    new_annual_rate: document.getElementById("leaseModNewRate")?.value || null,
+    new_end_date: document.getElementById("leaseModNewEnd")?.value || null,
+    reason: document.getElementById("leaseModReason")?.value || null,
   };
 
   if (!payload.modification_date) return msg("leaseModMsg", "Modification date is required", "error");
@@ -25021,99 +25036,175 @@ window.__leaseHide = function(id){
   document.getElementById(id)?.classList.add("hidden");
 };
 
+window.renderLeaseModJournalPreview = function renderLeaseModJournalPreview(data = {}) {
+  const box = document.getElementById("leaseModPreviewBox");
+  if (!box) return;
+
+  const lines = Array.isArray(data?.journal_lines)
+    ? data.journal_lines
+    : Array.isArray(data?.lines)
+    ? data.lines
+    : Array.isArray(data?.preview_journal_lines)
+    ? data.preview_journal_lines
+    : [];
+
+  const fmt = (x) => {
+    const n = Number(x || 0);
+    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const esc = (s) =>
+    String(s ?? "").replace(/[&<>"']/g, (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    }[m]));
+
+  box.classList.remove("hidden");
+
+  box.innerHTML = `
+    <div style="padding:12px;border-bottom:1px solid #eee;background:#f8fafc;position:sticky;top:0;z-index:1">
+      <div style="font-weight:700;font-size:14px">Lease Modification Journal Preview</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px;display:flex;flex-wrap:wrap;gap:14px">
+        <span><b>Journal ID:</b> ${esc(data?.journal_id ?? "")}</span>
+        <span><b>Modification ID:</b> ${esc(data?.modification_id ?? "")}</span>
+        <span><b>Lease ID:</b> ${esc(data?.lease_id ?? "")}</span>
+        <span><b>Liability adj:</b> ${fmt(data?.liability_adjustment)}</span>
+        <span><b>ROU adj:</b> ${fmt(data?.rou_adjustment)}</span>
+      </div>
+    </div>
+
+    <div style="overflow:auto">
+      <table style="width:100%;min-width:760px;border-collapse:collapse">
+        <thead style="position:sticky;top:53px;background:#fff;z-index:1">
+          <tr>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Account</th>
+            <th style="text-align:right;padding:10px;border-bottom:1px solid #e5e7eb">Debit</th>
+            <th style="text-align:right;padding:10px;border-bottom:1px solid #e5e7eb">Credit</th>
+            <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Memo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            lines.length
+              ? lines.map((ln) => `
+                <tr>
+                  <td style="padding:10px;border-bottom:1px solid #f1f5f9;white-space:nowrap">${esc(ln.account_code || "")}</td>
+                  <td style="padding:10px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap">${fmt(ln.debit)}</td>
+                  <td style="padding:10px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap">${fmt(ln.credit)}</td>
+                  <td style="padding:10px;border-bottom:1px solid #f1f5f9;min-width:260px">${esc(ln.memo || "")}</td>
+                </tr>
+              `).join("")
+              : `
+                <tr>
+                  <td colspan="4" style="padding:18px;text-align:center;color:#64748b">
+                    No journal lines returned.
+                  </td>
+                </tr>
+              `
+          }
+        </tbody>
+      </table>
+    </div>
+  `;
+};
+
 // expose ensureModals globally
 window.ensureLeaseModals = window.ensureLeaseModals || function ensureLeaseModals() {
   if (document.getElementById("leaseModModal")) return;
 
   const wrap = document.createElement("div");
   wrap.innerHTML = `
-    <div id="leaseModModal" class="hidden" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.4)">
-      <div style="position:absolute;top:80px;left:50%;transform:translateX(-50%);width:720px;max-width:95vw;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2)">
-        <div style="padding:12px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700">Modify Lease</div>
+    <div id="leaseModModal" class="hidden" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);padding:12px">
+      <div style="
+        position:relative;
+        margin:20px auto;
+        width:min(1200px, 100%);
+        max-width:100%;
+        height:min(92vh, 980px);
+        background:#fff;
+        border:1px solid #ddd;
+        border-radius:16px;
+        box-shadow:0 10px 30px rgba(0,0,0,.2);
+        display:flex;
+        flex-direction:column;
+        overflow:hidden;
+      ">
+        <div style="padding:14px 16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="font-weight:700;font-size:18px">Modify Lease</div>
           <button id="leaseModClose" class="btn">Close</button>
         </div>
 
-        <div style="padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div>
-            <div style="font-size:12px;color:#555">Modification date</div>
-            <input id="leaseModDate" type="date" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px">
-          </div>
-          <div>
-            <div style="font-size:12px;color:#555">Change type</div>
-            <select id="leaseModType" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px">
-              <option value="payment">Payment</option>
-              <option value="term">Term</option>
-              <option value="rate">Rate</option>
-              <option value="scope">Scope</option>
-            </select>
+        <div style="padding:14px 16px;overflow:auto;flex:1">
+          <div style="
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+            gap:12px;
+            margin-bottom:14px;
+          ">
+            <div>
+              <div style="font-size:12px;color:#555;margin-bottom:4px">Modification date</div>
+              <input id="leaseModDate" type="date" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px">
+            </div>
+
+            <div>
+              <div style="font-size:12px;color:#555;margin-bottom:4px">Change type</div>
+              <select id="leaseModType" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px">
+                <option value="payment">Payment</option>
+                <option value="term">Term</option>
+                <option value="rate">Rate</option>
+                <option value="scope">Scope</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </div>
+
+            <div>
+              <div style="font-size:12px;color:#555;margin-bottom:4px">New payment (optional)</div>
+              <input id="leaseModNewPayment" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px" placeholder="e.g. 15000">
+            </div>
+
+            <div>
+              <div style="font-size:12px;color:#555;margin-bottom:4px">New rate % (optional)</div>
+              <input id="leaseModNewRate" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px" placeholder="e.g. 12.5">
+            </div>
+
+            <div>
+              <div style="font-size:12px;color:#555;margin-bottom:4px">New end date (optional)</div>
+              <input id="leaseModNewEnd" type="date" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px">
+            </div>
+
+            <div>
+              <div style="font-size:12px;color:#555;margin-bottom:4px">Reason / notes</div>
+              <input id="leaseModReason" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px" placeholder="Reason...">
+            </div>
           </div>
 
-          <div>
-            <div style="font-size:12px;color:#555">New payment (optional)</div>
-            <input id="leaseModNewPayment" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px" placeholder="e.g. 15000">
-          </div>
-          <div>
-            <div style="font-size:12px;color:#555">New rate % (optional)</div>
-            <input id="leaseModNewRate" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px" placeholder="e.g. 12.5">
-          </div>
+          <div id="leaseModMsg" style="font-size:12px;color:#555;margin-bottom:10px"></div>
 
-          <div>
-            <div style="font-size:12px;color:#555">New end date (optional)</div>
-            <input id="leaseModNewEnd" type="date" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px">
-          </div>
-          <div>
-            <div style="font-size:12px;color:#555">Reason / notes</div>
-            <input id="leaseModReason" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px" placeholder="Reason...">
-          </div>
-        </div>
-
-        <div style="padding:12px">
-          <div id="leaseModMsg" style="font-size:12px;color:#555;margin-bottom:8px"></div>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
             <button id="leaseModSaveDraft" class="btn">Save Draft</button>
             <button id="leaseModPreview" class="btn">Preview</button>
             <button id="leaseModPost" class="btn btn-primary">Post</button>
             <div id="leaseModMeta" style="margin-left:auto;font-size:12px;color:#777"></div>
           </div>
 
-          <pre id="leaseModPreviewBox" class="hidden" style="margin-top:12px;border:1px solid #eee;border-radius:8px;padding:10px;font-size:12px;max-height:260px;overflow:auto"></pre>
-        </div>
-      </div>
-    </div>
-
-    <div id="leaseTermModal" class="hidden" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.4)">
-      <div style="position:absolute;top:80px;left:50%;transform:translateX(-50%);width:720px;max-width:95vw;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2)">
-        <div style="padding:12px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700">Terminate Lease</div>
-          <button id="leaseTermClose" class="btn">Close</button>
-        </div>
-
-        <div style="padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div>
-            <div style="font-size:12px;color:#555">Termination date</div>
-            <input id="leaseTermDate" type="date" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px">
-          </div>
-          <div>
-            <div style="font-size:12px;color:#555">Settlement amount (optional)</div>
-            <input id="leaseTermSettlement" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px" placeholder="e.g. 0">
-          </div>
-          <div style="grid-column:1 / -1">
-            <div style="font-size:12px;color:#555">Reason / notes</div>
-            <input id="leaseTermReason" style="width:100%;border:1px solid #ddd;border-radius:8px;padding:8px" placeholder="Reason...">
-          </div>
-        </div>
-
-        <div style="padding:12px">
-          <div id="leaseTermMsg" style="font-size:12px;color:#555;margin-bottom:8px"></div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button id="leaseTermSaveDraft" class="btn">Save Draft</button>
-            <button id="leaseTermPreview" class="btn">Preview</button>
-            <button id="leaseTermPost" class="btn btn-primary">Post</button>
-            <div id="leaseTermMeta" style="margin-left:auto;font-size:12px;color:#777"></div>
-          </div>
-
-          <pre id="leaseTermPreviewBox" class="hidden" style="margin-top:12px;border:1px solid #eee;border-radius:8px;padding:10px;font-size:12px;max-height:260px;overflow:auto"></pre>
+          <div
+            id="leaseModPreviewBox"
+            class="hidden"
+            style="
+              border:1px solid #e5e7eb;
+              border-radius:12px;
+              background:#fff;
+              min-height:260px;
+              max-height:52vh;
+              overflow:auto;
+              padding:12px;
+              font-size:12px;
+              white-space:normal;
+            "
+          ></div>
         </div>
       </div>
     </div>
@@ -25261,12 +25352,12 @@ async function openLeaseMonthPreviewOnJournal(cid, leaseId, as_of) {
     return `<span class="px-2 py-0.5 rounded text-xs ${cls}">${esc(s)}</span>`;
   }
 
-  function msg(elId, text, type = "info") {
+  window.msg = window.msg || function (elId, text, type = "info") {
     const el = document.getElementById(elId);
     if (!el) return;
     el.className = "text-xs mb-2 " + (type === "error" ? "text-red-600" : "text-slate-600");
     el.textContent = text || "";
-  }
+  };
 
   function show(id) { document.getElementById(id)?.classList.remove("hidden"); }
   function hide(id) { document.getElementById(id)?.classList.add("hidden"); }
@@ -25589,25 +25680,43 @@ async function openLeaseMonthPreviewOnJournal(cid, leaseId, as_of) {
   // ---------------------------
   // Preview helpers (unchanged)
   // ---------------------------
-  async function previewMod() {
-    const cid = getCid();
-    const modId = state._lastModId;
-    if (!cid || !modId) return msg("leaseModMsg", "Save first (need a modification id).", "error");
+  window.previewMod = async function previewMod() {
+    const say = (id, text, kind = "info") => window.msg?.(id, text, kind);
 
-    msg("leaseModMsg", "Previewing...");
-    try {
-      const out = await window.apiFetch(ENDPOINTS.leases.previewModification(cid, modId), {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      const box = document.getElementById("leaseModPreviewBox");
-      box?.classList.remove("hidden");
-      if (box) box.textContent = JSON.stringify(out, null, 2);
-      msg("leaseModMsg", "Preview ready.");
-    } catch (e) {
-      msg("leaseModMsg", e.message || "Preview failed", "error");
+    const ctx = leaseCtx();
+    const modId = Number(window.LEASE_UI?.state?._lastModId || 0);
+
+    if (!ctx.cid || !modId) {
+      return say("leaseModMsg", "Missing company or modification.", "error");
     }
-  }
+
+    say("leaseModMsg", "Calculating preview...");
+
+    try {
+      const out = await window.apiFetch(
+        ENDPOINTS.leases.previewModification(ctx.cid, modId),
+        { method: "POST" }
+      );
+
+      // 👇 IMPORTANT: use renderer instead of raw JSON
+      if (typeof window.renderLeaseModJournalPreview === "function") {
+        window.renderLeaseModJournalPreview(out);
+      } else {
+        // fallback (just in case)
+        const box = document.getElementById("leaseModPreviewBox");
+        if (box) {
+          box.classList.remove("hidden");
+          box.textContent = JSON.stringify(out, null, 2);
+        }
+      }
+
+      say("leaseModMsg", "Preview ready.");
+      return out;
+
+    } catch (e) {
+      say("leaseModMsg", e?.message || "Preview failed", "error");
+    }
+  };
 
   async function previewTerm() {
     const cid = getCid();
@@ -26404,20 +26513,22 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
     <div id="leaseRegisterMsg" class="text-xs hidden mb-2"></div>
 
     <div class="border rounded-xl overflow-hidden">
-      <table class="min-w-full text-sm">
-        <thead class="bg-slate-50 border-b">
-          <tr>
-            <th class="text-left p-2">Lease</th>
-            <th class="text-left p-2">Lessor</th>
-            <th class="text-left p-2 w-[120px]">Start</th>
-            <th class="text-left p-2 w-[120px]">End</th>
-            <th class="text-right p-2 w-[160px]">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="lrTableBody">
-          <tr><td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td></tr>
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="min-w-[760px] w-full text-sm">
+          <thead class="bg-slate-50 border-b">
+            <tr>
+              <th class="text-left p-2 whitespace-nowrap">Lease</th>
+              <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+              <th class="text-left p-2 w-[120px] whitespace-nowrap">Start</th>
+              <th class="text-left p-2 w-[120px] whitespace-nowrap">End</th>
+              <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="lrTableBody">
+            <tr><td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 
@@ -26667,52 +26778,83 @@ window.renderLeaseScreen = async function renderLeaseScreen(opts = {}) {
 // FINAL COMMIT: POST MODIFICATION
 // ============================================================
 window.postMod = async function postMod() {
+  const showMsg = (id, text, kind = "info") => {
+    if (typeof window.msg === "function") return window.msg(id, text, kind);
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = "text-xs mb-2 " + (kind === "error" ? "text-red-600" : "text-slate-600");
+    el.textContent = text || "";
+  };
 
   const ctx = leaseCtx();
-  const leaseId = window.LEASE_UI?.state?.leaseId;
-  const modId   = window.LEASE_UI?.state?._lastModId;
+  const leaseId = Number(window.LEASE_UI?.state?.leaseId || 0);
+  const modId   = Number(window.LEASE_UI?.state?._lastModId || 0);
 
   if (!ctx.cid || !leaseId || !modId) {
-    return msg("leaseModMsg", "Missing company, lease, or modification.", "error");
+    return showMsg("leaseModMsg", "Missing company, lease, or modification.", "error");
   }
 
-  // ----------------------------------------------------------
-  // APPROVAL GATE
-  // ----------------------------------------------------------
   if (!ctx.canApprove) {
-    await window.requestLeaseApproval({
-      cid: ctx.cid,
-      lease_id: leaseId,
-      action: "lease_modify",
-      entity_ref: `Lease ${leaseId}`,
-      payload_json: {
+    try {
+      await window.requestLeaseApproval?.({
+        cid: ctx.cid,
         lease_id: leaseId,
-        mod_id: modId
-      }
-    });
+        action: "lease_modify",
+        entity_ref: `Lease ${leaseId}`,
+        payload_json: {
+          lease_id: leaseId,
+          mod_id: modId
+        }
+      });
 
-    msg("leaseModMsg", "Sent for approval. Go to Control Room → Approvals.", "ok");
-    return;
+      showMsg("leaseModMsg", "Sent for approval. Go to Control Room → Approvals.", "ok");
+      return;
+    } catch (e) {
+      showMsg("leaseModMsg", e?.message || "Failed to send for approval.", "error");
+      return;
+    }
   }
 
-  // ----------------------------------------------------------
-  // NORMAL POST
-  // ----------------------------------------------------------
-  msg("leaseModMsg", "Posting...");
+  showMsg("leaseModMsg", "Posting...");
+
   try {
-    await window.apiFetch(
+    const out = await window.apiFetch(
       ENDPOINTS.leases.postModification(ctx.cid, modId),
       { method: "POST" }
     );
 
-    msg("leaseModMsg", "Posted successfully.", "ok");
+    showMsg("leaseModMsg", "Posted successfully.", "ok");
+
+    const previewPayload = {
+      ...out,
+      journal_lines:
+        out?.journal_lines ||
+        out?.lines ||
+        [
+          {
+            account_code: "ROU Asset",
+            debit: Number(out?.liability_adjustment || 0) > 0 ? Number(out?.liability_adjustment || 0) : 0,
+            credit: Number(out?.liability_adjustment || 0) < 0 ? Math.abs(Number(out?.liability_adjustment || 0)) : 0,
+            memo: "Lease modification adjustment"
+          },
+          {
+            account_code: "Lease Liability",
+            debit: Number(out?.liability_adjustment || 0) < 0 ? Math.abs(Number(out?.liability_adjustment || 0)) : 0,
+            credit: Number(out?.liability_adjustment || 0) > 0 ? Number(out?.liability_adjustment || 0) : 0,
+            memo: "Lease modification adjustment"
+          }
+        ]
+    };
+
+    if (typeof window.renderLeaseModJournalPreview === "function") {
+      window.renderLeaseModJournalPreview(previewPayload);
+    }
+
     await render();
   } catch (e) {
-    msg("leaseModMsg", e?.message || "Post failed.", "error");
+    showMsg("leaseModMsg", e?.message || "Post failed.", "error");
   }
 };
-
-
 
 // ============================================================
 // FINAL COMMIT: POST TERMINATION
@@ -43983,7 +44125,7 @@ async function openQuoteViewer(quoteId, opts = {}) {
   // render preview
   console.log("[openQuoteViewer] before render");
   body.innerHTML = `
-    <div class="bg-white shadow rounded-lg w-full" style="min-height:297mm; padding:16mm;">
+    <div class="bg-white shadow rounded-lg w-full invoice-viewer-sheet">
       <div class="flex items-start justify-between gap-6 border-b pb-4">
         <div>
           <div class="text-xs uppercase text-slate-500">Quotation</div>
@@ -43995,7 +44137,7 @@ async function openQuoteViewer(quoteId, opts = {}) {
           </div>
         </div>
 
-        <div class="min-w-[260px] border rounded-lg p-3 bg-slate-50 text-xs">
+        <div class="w-full md:w-auto md:min-w-[260px] border rounded-lg p-3 bg-slate-50 text-xs">
           <div class="text-[11px] uppercase text-slate-500 mb-2">Customer</div>
           <div class="font-semibold">${esc(q.customer_name || "")}</div>
           <div class="text-xs text-slate-600 mt-1">
@@ -44004,8 +44146,8 @@ async function openQuoteViewer(quoteId, opts = {}) {
         </div>
       </div>
 
-      <div class="mt-5 flex items-start justify-between gap-6">
-        <div class="w-1/2 text-sm">
+      <div class="mt-5 flex flex-col md:flex-row items-start justify-between gap-4">
+        <div class="w-full md:w-1/2 text-sm">
           <div class="text-xs uppercase text-slate-500">Bill To</div>
           <div class="font-semibold text-base">${esc(q.customer_name || "")}</div>
           <div class="text-xs text-slate-600 mt-1 space-y-0.5">
@@ -44016,7 +44158,7 @@ async function openQuoteViewer(quoteId, opts = {}) {
           </div>
         </div>
 
-        <div class="w-1/2 text-sm text-right">
+        <div class="w-full md:w-1/2 text-sm md:text-right">
           <div class="font-extrabold text-xl">${esc(q.company_name || "")}</div>
           <div class="text-xs text-slate-600 mt-1 space-y-0.5">
             <div>${esc(q.branding_address || "")}</div>
@@ -44036,14 +44178,16 @@ async function openQuoteViewer(quoteId, opts = {}) {
 
       <!-- Lines -->
       <div class="mt-6 border rounded overflow-hidden">
-        <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
-          <div class="col-span-3">Item / Service</div>
-          <div class="col-span-5">Description</div>
-          <div class="col-span-1 text-right">Qty</div>
-          <div class="col-span-1 text-right">Unit</div>
-          <div class="col-span-1 text-right">VAT %</div>
-          <div class="col-span-1 text-right">Total</div>
-        </div>
+        <div class="overflow-x-auto">
+          <div class="min-w-[760px]">
+            <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
+              <div class="col-span-3">Item / Service</div>
+              <div class="col-span-5">Description</div>
+              <div class="col-span-1 text-right whitespace-nowrap">Qty</div>
+              <div class="col-span-1 text-right whitespace-nowrap">Unit</div>
+              <div class="col-span-1 text-right whitespace-nowrap">VAT %</div>
+              <div class="col-span-1 text-right whitespace-nowrap">Total</div>
+            </div>
 
         ${(q.lines || []).map(ln => {
           const qty = Number(ln.quantity ?? 0) || 0;
@@ -49466,7 +49610,7 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
             </div>
           </div>
 
-          <div class="min-w-[260px] border rounded-lg p-3 bg-slate-50 text-xs">
+          <div class="w-full md:w-auto md:min-w-[260px] border rounded-lg p-3 bg-slate-50 text-xs">
             <div class="text-[11px] uppercase text-slate-500 mb-2">Customer Summary</div>
             <div class="flex justify-between">
               <span class="text-slate-500">Customer</span>
@@ -49483,8 +49627,8 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
           </div>
         </div>
 
-        <div class="mt-5 flex items-start justify-between gap-6">
-          <div class="w-1/2 text-sm">
+        <div class="mt-5 flex flex-col md:flex-row items-start justify-between gap-4">
+          <div class="w-full md:w-1/2 text-sm">
             <div class="text-xs uppercase text-slate-500">Bill To</div>
             <div class="font-semibold text-base">${esc(inv.customer_name || "")}</div>
             <div class="text-xs text-slate-600 mt-1 space-y-0.5">
@@ -49496,7 +49640,7 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
             </div>
           </div>
 
-          <div class="w-1/2 text-sm text-right">
+          <div class="w-full md:w-1/2 text-sm md:text-right">
             <div class="font-extrabold text-xl">${esc(inv.company_name || "")}</div>
             <div class="text-xs text-slate-600 mt-1 space-y-0.5">
               <div>${esc(inv.branding_address || "")}</div>
@@ -49507,7 +49651,7 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
           </div>
         </div>
 
-        <div class="mt-6 grid grid-cols-2 gap-4 text-sm">
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
             <div><span class="text-slate-500">Invoice #:</span> <b>${esc(inv.number || inv.id)}</b></div>
             <div><span class="text-slate-500">Invoice date:</span> ${esc(inv.invoice_date || "")}</div>
@@ -49527,15 +49671,16 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
         </div>
 
         <div class="mt-6 border rounded overflow-hidden">
-          <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
-            <div class="col-span-3">Item / Service</div>
-            <div class="col-span-4">Description</div>
-            <div class="col-span-1 text-right whitespace-nowrap">Qty</div>
-            <div class="col-span-1 text-right whitespace-nowrap">Unit</div>
-            <div class="col-span-1 text-right whitespace-nowrap">VAT %</div>
-            <div class="col-span-1 text-right whitespace-nowrap">VAT</div>
-            <div class="col-span-1 text-right whitespace-nowrap">Total</div>
-          </div>
+          <div class="overflow-x-auto">
+            <div class="min-w-[760px]">
+              <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
+                <div class="col-span-3">Item / Service</div>
+                <div class="col-span-5">Description</div>
+                <div class="col-span-1 text-right whitespace-nowrap">Qty</div>
+                <div class="col-span-1 text-right whitespace-nowrap">Unit</div>
+                <div class="col-span-1 text-right whitespace-nowrap">VAT %</div>
+                <div class="col-span-1 text-right whitespace-nowrap">Total</div>
+              </div>
 
           ${(inv.lines || []).map(ln => {
             const qtyRaw = toNum(ln.quantity ?? ln.qty, 0);
@@ -58822,8 +58967,8 @@ async function openBillViewer(billId, opts = {}) {
     const lines = Array.isArray(bill.lines) ? bill.lines : [];
 
     body.innerHTML = `
-      <div class="bg-white shadow rounded-lg w-full p-6">
-        <div class="flex items-start justify-between gap-6 border-b pb-4">
+      <div class="bg-white shadow rounded-lg w-full p-4 md:p-6">
+        <div class="flex flex-col md:flex-row items-start justify-between gap-4 border-b pb-4">
           <div>
             <div class="text-xs uppercase text-slate-500">Bill</div>
             <div class="text-xl font-extrabold text-slate-900">#${escapeHtml(String(num))}</div>
@@ -58834,7 +58979,7 @@ async function openBillViewer(billId, opts = {}) {
             </div>
           </div>
 
-          <div class="min-w-[260px] border rounded-lg p-3 bg-slate-50 text-xs">
+          <div class="w-full md:w-auto md:min-w-[260px] border rounded-lg p-3 bg-slate-50 text-xs">
             <div class="text-[11px] uppercase text-slate-500 mb-2">Vendor</div>
             <div class="font-semibold">${escapeHtml(String(vname || ""))}</div>
 
@@ -58849,14 +58994,16 @@ async function openBillViewer(billId, opts = {}) {
         </div>
 
         <div class="mt-4 border rounded overflow-hidden">
-          <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
-            <div class="col-span-3">Item</div>
-            <div class="col-span-5">Description</div>
-            <div class="col-span-1 text-right">Qty</div>
-            <div class="col-span-1 text-right">Unit</div>
-            <div class="col-span-1 text-right">VAT</div>
-            <div class="col-span-1 text-right">Total</div>
-          </div>
+          <div class="overflow-x-auto">
+            <div class="min-w-[720px]">
+              <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
+                <div class="col-span-3">Item</div>
+                <div class="col-span-5">Description</div>
+                <div class="col-span-1 text-right whitespace-nowrap">Qty</div>
+                <div class="col-span-1 text-right whitespace-nowrap">Unit</div>
+                <div class="col-span-1 text-right whitespace-nowrap">VAT</div>
+                <div class="col-span-1 text-right whitespace-nowrap">Total</div>
+              </div>
 
           ${lines.map(ln => {
             const qty = toNum(ln.quantity ?? ln.qty, 0);
