@@ -58709,7 +58709,8 @@ class DatabaseService:
             cur=cur,
         )
 
-        delta = _money2(revenue_required_to_date - revenue_previously_recognized)
+        raw_delta = _money2(revenue_required_to_date - revenue_previously_recognized)
+        delta = raw_delta
         if delta < Decimal("0.00"):
             delta = Decimal("0.00")
 
@@ -58721,8 +58722,12 @@ class DatabaseService:
             cur=cur,
         )
 
+        # Use the ACTUAL recognized position after this run, not the theoretical required one,
+        # otherwise you can get zero revenue delta with non-zero CA/CL movement.
+        recognized_after_this_run = _money2(revenue_previously_recognized + delta)
+
         prev_position = _money2(billed_to_date - revenue_previously_recognized)
-        new_position = _money2(billed_to_date - revenue_required_to_date)
+        new_position = _money2(billed_to_date - recognized_after_this_run)
 
         prev_liability = prev_position if prev_position > 0 else Decimal("0.00")
         prev_asset = -prev_position if prev_position < 0 else Decimal("0.00")
@@ -58733,6 +58738,16 @@ class DatabaseService:
         contract_liability_delta = _money2(prev_liability - new_liability)
         contract_asset_delta = _money2(new_asset - prev_asset)
 
+        if delta == Decimal("0.00") and (
+            contract_asset_delta != Decimal("0.00")
+            or contract_liability_delta != Decimal("0.00")
+        ):
+            raise ValueError(
+                f"Invalid recognition calc for obligation {obligation.get('obligation_code') or obligation.get('id')}: "
+                f"zero revenue delta with contract movement "
+                f"(ca={contract_asset_delta}, cl={contract_liability_delta})"
+            )
+        
         return {
             "company_id": int(company_id),
             "contract_id": int(contract["id"]),
@@ -58993,7 +59008,56 @@ class DatabaseService:
                     })
 
                     if existing:
-                        continue
+                        # If draft exists → reuse it
+                        if existing.get("status") == "draft":
+                            reused = self.fetch_one(
+                                f"""
+                                SELECT *
+                                FROM {schema}.revenue_recognition_entries
+                                WHERE id=%s
+                                """,
+                                (int(existing["id"]),),
+                                cur=cur,
+                            )
+
+                            if reused:
+                                entry = {
+                                    "contract_id": int(reused["contract_id"]),
+                                    "obligation_id": int(reused["obligation_id"]),
+                                    "period_start": period_start_s,
+                                    "period_end": period_end_s,
+                                    "revenue_required_to_date": float(reused["revenue_required_to_date"]),
+                                    "revenue_previously_recognized": float(reused["revenue_previously_recognized"]),
+                                    "revenue_delta_this_run": float(reused["revenue_delta_this_run"]),
+                                    "billed_to_date": float(reused["billed_to_date"]),
+                                    "cash_received_to_date": float(cash_to_date_contract),
+                                    "contract_asset_delta": float(reused["contract_asset_delta"]),
+                                    "contract_liability_delta": float(reused["contract_liability_delta"]),
+                                    "source_basis": reused.get("source_basis") or "system",
+                                    "notes": reused.get("notes"),
+                                    "validation": {},
+                                    "payload_json": reused.get("payload_json") or {},
+                                }
+
+                            # ✅ ADD THIS RIGHT HERE
+                            if entry["revenue_delta_this_run"] == 0 and (
+                                entry["contract_asset_delta"] != 0 or entry["contract_liability_delta"] != 0
+                            ):
+                                raise ValueError(
+                                    f"Invalid draft entry {reused['id']}: zero revenue with contract movement"
+                                )
+                                contract_entries.append(entry)
+                                flat_entries.append(entry)
+
+                                contract_rev += Decimal(str(entry["revenue_delta_this_run"]))
+                                contract_ca += Decimal(str(entry["contract_asset_delta"]))
+                                contract_cl += Decimal(str(entry["contract_liability_delta"]))
+
+                            continue
+
+                        # If already posted → skip
+                        if existing.get("status") == "posted":
+                            continue
 
                     calc = self._calculate_obligation_revenue(
                         company_id=company_id,
