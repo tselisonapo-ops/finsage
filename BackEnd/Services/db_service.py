@@ -59039,13 +59039,15 @@ class DatabaseService:
                                     "payload_json": reused.get("payload_json") or {},
                                 }
 
-                            # ✅ ADD THIS RIGHT HERE
-                            if entry["revenue_delta_this_run"] == 0 and (
-                                entry["contract_asset_delta"] != 0 or entry["contract_liability_delta"] != 0
-                            ):
-                                raise ValueError(
-                                    f"Invalid draft entry {reused['id']}: zero revenue with contract movement"
-                                )
+                                # ✅ VALIDATION (correct placement)
+                                if entry["revenue_delta_this_run"] == 0 and (
+                                    entry["contract_asset_delta"] != 0 or entry["contract_liability_delta"] != 0
+                                ):
+                                    raise ValueError(
+                                        f"Invalid draft entry {reused['id']}: zero revenue with contract movement"
+                                    )
+
+                                # ✅ APPEND (must be OUTSIDE the raise block)
                                 contract_entries.append(entry)
                                 flat_entries.append(entry)
 
@@ -59254,6 +59256,8 @@ class DatabaseService:
 
         return {
             "ok": len(blocking) == 0,
+            "contract_id": contract_id,
+            "obligation_id": obligation_id,
             "blocking": blocking,
             "warnings": warnings,
             "settlement_pattern": settlement_pattern or None,
