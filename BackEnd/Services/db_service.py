@@ -58970,17 +58970,32 @@ class DatabaseService:
                         "period_end": str(period_end),
                     })
 
-                    # skip fully recognized point-in-time obligations
-                    if timing == "point_in_time" and (
-                        recognized_to_date >= allocated
-                        or satisfaction_status in {"satisfied", "completed"}
-                    ):
-                        print("REV PREVIEW SKIP PIT COMPLETE", {
-                            "contract_id": int(c["id"]),
-                            "obligation_id": int(obl["id"]),
-                            "reason": "point_in_time_already_completed",
-                        })
-                        continue
+                    # For point-in-time obligations:
+                    # - skip only if already fully recognized
+                    # - require PIT event date to have occurred by period_end
+                    if timing == "point_in_time":
+                        if recognized_to_date >= allocated:
+                            print("REV PREVIEW SKIP PIT COMPLETE", {
+                                "contract_id": int(c["id"]),
+                                "obligation_id": int(obl["id"]),
+                                "reason": "point_in_time_already_fully_recognized",
+                            })
+                            continue
+
+                        pit_date = obl.get("recognized_at_point_in_time_date")
+                        pit_date_s = str(pit_date) if pit_date is not None else None
+                        period_end_cmp = str(period_end) if period_end is not None else None
+
+                        # Not yet due for recognition
+                        if not pit_date_s or (period_end_cmp and pit_date_s > period_end_cmp):
+                            print("REV PREVIEW SKIP PIT NOT_DUE", {
+                                "contract_id": int(c["id"]),
+                                "obligation_id": int(obl["id"]),
+                                "pit_date": pit_date_s,
+                                "period_end": period_end_cmp,
+                                "reason": "point_in_time_not_due",
+                            })
+                            continue
 
                     existing = self.fetch_one(
                         f"""
@@ -59060,6 +59075,7 @@ class DatabaseService:
                         # If already posted → skip
                         if existing.get("status") == "posted":
                             continue
+
 
                     calc = self._calculate_obligation_revenue(
                         company_id=company_id,
