@@ -8375,6 +8375,35 @@ function toISODate(value) {
 }
 window.toISODate = toISODate
 
+function toIsoDateOnly(value) {
+  if (!value) return "";
+
+  // Already ISO-like: 2026-04-22 or 2026-04-22T10:30:00
+  if (typeof value === "string") {
+    const s = value.trim();
+    const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+
+    // dd/mm/yyyy or dd-mm-yyyy
+    const dmyMatch = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (dmyMatch) {
+      const dd = String(parseInt(dmyMatch[1], 10)).padStart(2, "0");
+      const mm = String(parseInt(dmyMatch[2], 10)).padStart(2, "0");
+      const yyyy = dmyMatch[3];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 window.bindCompanyLogoUploader = function bindCompanyLogoUploader(companyId) {
   const btn = document.getElementById("btnUploadLogo");
   const file = document.getElementById("cpLogoFile");
