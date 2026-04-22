@@ -5258,10 +5258,6 @@ function bindNav() {
     })
   );
 
-  $("#mobileMenu")?.addEventListener("click", () => {
-    $("aside")?.classList.toggle("hidden");
-  });
-
   $("#signinBtn")?.addEventListener("click", handleSigninClick);
 
   $("#logoutBtn")?.addEventListener("click", (e) => {
@@ -41479,20 +41475,14 @@ async function initReceivablesScreen() {
     bindInvoiceViewerModal();
     bindInvoiceAllocatePaymentUI();
     bindInvoiceRecalcButton();
+    bindViewerActivitySheets();
 
-    // Quote
     wireQuotesScreen();
-
-    // bind lookup once
     bindInvoiceCustomerLookup();
   }
 
-  // ensure datalist exists + customers loaded
   await fillInvoiceCustomerList();
-
-  // list pane
   await renderArCustomerList?.({ closeOnPick: true });
-
   await loadRevenueAccountsForInvoice?.();
   await renderDraftInvoiceList?.();
 
@@ -49596,12 +49586,13 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
       else if (isOverdue) agingEl.textContent = `${overdueDays} day(s) overdue`;
       else agingEl.textContent = "Not overdue";
     }
+    syncInvoiceActivitySheet?.();
 
     // ─────────────────────────────────────────────
     // Render invoice preview
     // ─────────────────────────────────────────────
     body.innerHTML = `
-      <div class="bg-white shadow rounded-lg w-full" style="min-height:297mm; padding:16mm;">
+      <div class="bg-white shadow rounded-lg w-full p-4 md:p-6">
         <div class="flex items-start justify-between gap-6 border-b pb-4">
           <div>
             <div class="text-xs uppercase text-slate-500">Invoice</div>
@@ -49678,10 +49669,11 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
             <div class="min-w-[760px]">
               <div class="grid grid-cols-12 bg-slate-50 text-[11px] font-semibold px-3 py-2 border-b">
                 <div class="col-span-3">Item / Service</div>
-                <div class="col-span-5">Description</div>
+                <div class="col-span-4">Description</div>
                 <div class="col-span-1 text-right whitespace-nowrap">Qty</div>
                 <div class="col-span-1 text-right whitespace-nowrap">Unit</div>
                 <div class="col-span-1 text-right whitespace-nowrap">VAT %</div>
+                <div class="col-span-1 text-right whitespace-nowrap">VAT</div>
                 <div class="col-span-1 text-right whitespace-nowrap">Total</div>
               </div>
 
@@ -49726,7 +49718,7 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
         </div>
 
         <div class="mt-4 flex justify-end">
-          <div class="w-[340px] text-sm space-y-1">
+          <div class="w-full md:w-[340px] text-sm space-y-1">
             <div class="flex justify-between"><span class="text-slate-500">Subtotal</span><span>${esc(money(totals.net, ccy))}</span></div>
             <div class="flex justify-between"><span class="text-slate-500">VAT</span><span>${esc(money(totals.vat, ccy))}</span></div>
             <div class="flex justify-between font-semibold text-base border-t pt-2"><span>Total</span><span>${esc(money(totals.total, ccy))}</span></div>
@@ -59067,7 +59059,7 @@ async function openBillViewer(billId, opts = {}) {
 
     // ✅ side pane update (ONE place)
     window.renderBillViewerSidePane?.(bill, modal);
-
+    syncBillActivitySheet?.();
   } catch (e) {
     console.error(e);
     body.innerHTML = `<div class="text-xs text-red-600">Failed to load bill.</div>`;
@@ -59774,27 +59766,24 @@ async function initPayablesScreen() {
   const screen = document.getElementById("screen-ap");
   if (!screen) return;
 
-  // Panels/toggles also usually bind once, but if bindAPPanels() already guards itself, ok.
   bindAPPanels?.();
 
   if (screen.dataset.bound !== "1") {
     screen.dataset.bound = "1";
 
-    bindAP?.();                 // big bindAP (lines+totals+save)
-    bindBillVendorLookup?.();   // ✅ vendor picker pane -> set vendor + open bills list
-    bindBillVendorIdSync?.();   // ✅ input+datalist sync -> hidden vendor_id
-    bindBillViewerModal?.();    // ✅ modal allocate payment + close buttons
-    // bindApBillsFlow?.();      // optional (if you split vendor->bills->viewer)
+    bindAP?.();
+    bindBillVendorLookup?.();
+    bindBillVendorIdSync?.();
+    bindBillViewerModal?.();
+    bindViewerActivitySheets();
   }
 
-  // ---- Data loads / caches (can rerun safely) ----
-  await loadBillAccountsForLines?.();  // ✅ builds BILL_ACCOUNTS_CACHE + maybe prefill selects
-  await fillBillVendorList?.();        // ✅ datalist for billVendor input
-  await loadAPPostingAccounts?.();     // ✅ AP_POSTING_ACCOUNTS_CACHE (for payment/posting)
-  await renderApVendorList?.({ closeOnPick: true }); // ✅ left pane vendors
+  await loadBillAccountsForLines?.();
+  await fillBillVendorList?.();
+  await loadAPPostingAccounts?.();
+  await renderApVendorList?.({ closeOnPick: true });
 
-  // ✅ asset -> AP handoff should happen only AFTER vendor cache is ready
-  await window.consumePendingAssetBillPrefill?.();  
+  await window.consumePendingAssetBillPrefill?.();
 
   const leasePrefill = window.getLeaseApPrefillFromUrl?.();
   if (leasePrefill) {
@@ -59967,6 +59956,75 @@ function renderBillViewerSidePane(bill, modalEl) {
 }
 
 window.renderBillViewerSidePane = renderBillViewerSidePane;
+
+function bindViewerActivitySheets() {
+  if (window.__viewerActivitySheetsBound) return;
+  window.__viewerActivitySheetsBound = true;
+
+  const invBtn = document.getElementById("invViewActivityBtn");
+  const invSheet = document.getElementById("invActivitySheet");
+  const invClose = document.getElementById("invActivitySheetClose");
+
+  invBtn?.addEventListener("click", () => {
+    syncInvoiceActivitySheet();
+    invSheet?.classList.remove("hidden");
+  });
+
+  invClose?.addEventListener("click", () => {
+    invSheet?.classList.add("hidden");
+  });
+
+  invSheet?.addEventListener("click", (e) => {
+    if (e.target === invSheet) invSheet.classList.add("hidden");
+  });
+
+  const billBtn = document.getElementById("billViewActivityBtn");
+  const billSheet = document.getElementById("billActivitySheet");
+  const billClose = document.getElementById("billActivitySheetClose");
+
+  billBtn?.addEventListener("click", () => {
+    syncBillActivitySheet();
+    billSheet?.classList.remove("hidden");
+  });
+
+  billClose?.addEventListener("click", () => {
+    billSheet?.classList.add("hidden");
+  });
+
+  billSheet?.addEventListener("click", (e) => {
+    if (e.target === billSheet) billSheet.classList.add("hidden");
+  });
+}
+
+function syncInvoiceActivitySheet() {
+  const actSrc = document.getElementById("invActivityModal");
+  const agingSrc = document.getElementById("invAgingModal");
+  const actDst = document.getElementById("invActivityMobile");
+  const agingDst = document.getElementById("invAgingMobile");
+
+  if (actSrc && actDst) actDst.innerHTML = actSrc.innerHTML;
+  if (agingSrc && agingDst) agingDst.innerHTML = agingSrc.innerHTML;
+}
+
+function syncBillActivitySheet() {
+  const actSrc = document.getElementById("billActivityModal");
+  const actDst = document.getElementById("billActivityMobile");
+  if (actSrc && actDst) actDst.innerHTML = actSrc.innerHTML;
+
+  const map = [
+    ["billActivityBadge", "billActivityBadgeMobile"],
+    ["billAgingBadge", "billAgingBadgeMobile"],
+    ["billAgingOutstanding", "billAgingOutstandingMobile"],
+    ["billAgingDueDate", "billAgingDueDateMobile"],
+    ["billAgingStatus", "billAgingStatusMobile"],
+  ];
+
+  map.forEach(([srcId, dstId]) => {
+    const src = document.getElementById(srcId);
+    const dst = document.getElementById(dstId);
+    if (src && dst) dst.textContent = src.textContent;
+  });
+}
 
 function safeJsonBody(payload) {
   // if it's already a string, make sure it's not double-stringified

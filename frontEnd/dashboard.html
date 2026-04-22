@@ -49,6 +49,14 @@
     box-shadow:0 8px 24px rgba(0,40,79,.08);
   }
 
+@media (max-width: 1023px){
+  #invoiceViewerModal > div,
+  #billViewerModal > div{
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+}
 
   .chart-wrap{height:320px}
   @media(max-width:768px){
@@ -3293,6 +3301,7 @@ html, body {
                     </div>
 
                     <div class="flex items-center gap-2 flex-wrap">
+                      <button id="invViewActivityBtn" class="btn lg:hidden" type="button">Activity</button>
                       <button id="invViewSend" class="btn-highlight" type="button">Send</button>
                       <button id="invViewAllocatePayment" class="btn" type="button">Allocate payment</button>
                       <button id="invViewEmailReceipt" class="btn" type="button">Email receipt</button>
@@ -3350,7 +3359,8 @@ html, body {
                   </div>
                 </div>
 
-                <aside class="w-full lg:w-[360px] lg:shrink-0 border-t lg:border-t-0 lg:border-l bg-white p-4 space-y-4 overflow-auto max-h-[35vh] lg:max-h-none">
+                <aside id="invViewerAside"
+                  class="hidden lg:block w-[360px] shrink-0 border-l bg-white p-4 space-y-4 overflow-auto">
                   <div class="border rounded-xl p-4">
                     <h5 class="font-semibold">Activity</h5>
                     <div id="invActivityModal" class="mt-2 text-sm space-y-2">
@@ -3363,6 +3373,28 @@ html, body {
                     <div id="invAgingModal" class="mt-2 text-sm text-slate-500">—</div>
                   </div>
                 </aside>
+              </div>
+            </div>
+
+            <div id="invActivitySheet"
+              class="hidden fixed inset-0 z-[110] bg-black/40 lg:hidden">
+              <div class="absolute inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl bg-white shadow-xl overflow-hidden">
+                <div class="flex items-center justify-between px-4 py-3 border-b">
+                  <div class="font-semibold">Invoice activity</div>
+                  <button id="invActivitySheetClose" class="btn" type="button">Close</button>
+                </div>
+
+                <div class="p-4 overflow-auto max-h-[calc(70vh-57px)] space-y-4">
+                  <div class="border rounded-xl p-4">
+                    <h5 class="font-semibold">Activity</h5>
+                    <div id="invActivityMobile" class="mt-2 text-sm space-y-2"></div>
+                  </div>
+
+                  <div class="border rounded-xl p-4">
+                    <h5 class="font-semibold">Aging</h5>
+                    <div id="invAgingMobile" class="mt-2 text-sm text-slate-500"></div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -4921,137 +4953,23 @@ html, body {
                       </div>
 
                       <div class="flex items-center gap-2 flex-wrap">
+                        <button id="billViewActivityBtn" class="btn lg:hidden" type="button">Activity</button>
                         <button id="billViewAllocatePayment" class="btn" type="button">Allocate payment</button>
                         <button id="billViewClose" class="btn" type="button">Close</button>
                       </div>
                     </div>
 
                     <div class="flex-1 min-h-0 overflow-auto bg-slate-50 p-4">
-
-                      <!-- Allocate payment panel -->
                       <div id="billViewPayPanel" class="hidden bg-white border rounded-xl p-3 mb-3">
-
-                        <div class="flex items-center justify-between mb-2 gap-2 flex-wrap">
-                          <div>
-                            <div class="font-semibold text-sm">Pay vendor for this bill</div>
-                            <div class="text-xs text-slate-500">
-                              Create a vendor payment draft, allocate it to this bill, then optionally approve/release.
-                            </div>
-                          </div>
-
-                          <div class="flex items-center gap-2 flex-wrap">
-                            <button id="billViewApprovePayment" class="btn" type="button">Approve</button>
-                            <button id="billViewReleasePayment" class="btn-highlight" type="button">Release</button>
-                            <button id="billViewPayEdit" class="text-xs px-2 py-1 border rounded">Edit</button>
-                            <button id="billViewPayCancel" type="button" class="btn">Close</button>
-                          </div>
-                        </div>
-
-                        <div id="billVendComplianceGate" class="border rounded-lg p-3 bg-slate-50 hidden mb-3">
-                          <div class="flex items-center justify-between gap-2">
-                            <div class="text-sm font-medium">Vendor requirements</div>
-                            <span id="billVendComplianceBadge" class="pill border bg-white">—</span>
-                          </div>
-
-                          <div id="billVendComplianceText" class="mt-1 text-xs text-slate-600">—</div>
-
-                          <div class="mt-2 flex gap-2 flex-wrap">
-                            <button id="billVendFixBtn" type="button" class="btn">View / Upload docs</button>
-                            <button id="billVendBypassBtn" type="button" class="btn hidden">Continue anyway</button>
-                          </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
-                          <div>
-                            <label class="text-xs text-slate-600">Date</label>
-                            <input id="billViewPayDate" type="date" class="w-full border rounded px-2 py-2 text-sm">
-                          </div>
-
-                          <div>
-                            <label class="text-xs text-slate-600">Amount</label>
-                            <div class="relative">
-                              <span id="billViewPayCurrency"
-                                class="absolute inset-y-0 left-2 flex items-center text-slate-500 text-sm pointer-events-none"></span>
-                              <input id="billViewPayAmount" type="text" inputmode="decimal"
-                                class="w-full border rounded px-2 py-2 pl-14 text-sm" placeholder="0.00">
-                            </div>
-                            <div class="text-[11px] text-slate-400 mt-1">
-                              Outstanding: <span id="billViewOutstanding">—</span>
-                            </div>
-                          </div>
-
-                          <div class="sm:col-span-2">
-                            <label class="text-xs text-slate-600">Bank / Cash account</label>
-                            <select id="billViewPayBank" class="w-full border rounded px-2 py-2 text-sm">
-                              <option value="">-- Select bank/cash account --</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label class="text-xs text-slate-600">Reference</label>
-                            <input id="billViewPayRef" class="w-full border rounded px-2 py-2 text-sm" placeholder="EFT-123">
-                          </div>
-
-                          <div class="sm:col-span-6">
-                            <label class="text-xs text-slate-600">Description (optional)</label>
-                            <input id="billViewPayDesc" class="w-full border rounded px-2 py-2 text-sm"
-                              placeholder="Payment for bill INV-...">
-                          </div>
-                        </div>
-
-                        <div class="mt-3 border-t pt-3">
-                          <div class="flex items-center justify-between gap-2 flex-wrap">
-                            <div class="text-sm font-semibold">Withholding Tax (optional)</div>
-                            <label class="text-xs text-slate-600 flex items-center gap-2">
-                              <input id="billViewWhtEnabled" type="checkbox" class="h-4 w-4">
-                              Apply WHT
-                            </label>
-                          </div>
-
-                          <div id="billViewWhtWrap" class="hidden grid grid-cols-1 sm:grid-cols-5 gap-2 mt-2 items-end">
-                            <div>
-                              <label class="text-xs text-slate-600">WHT Rate %</label>
-                              <input id="billViewWhtRate" type="text" inputmode="decimal"
-                                class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. 5">
-                            </div>
-
-                            <div>
-                              <label class="text-xs text-slate-600">WHT Amount</label>
-                              <input id="billViewWhtAmount" type="text" inputmode="decimal"
-                                class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
-                            </div>
-
-                            <div class="sm:col-span-2">
-                              <label class="text-xs text-slate-600">WHT Ledger Code</label>
-                              <input id="billViewWhtLedger" class="w-full border rounded px-2 py-2 text-sm"
-                                placeholder="e.g. 2310 or your WHT control">
-                            </div>
-
-                            <div>
-                              <label class="text-xs text-slate-600">Reason</label>
-                              <input id="billViewWhtReason" class="w-full border rounded px-2 py-2 text-sm"
-                                placeholder="Optional note">
-                            </div>
-
-                            <div class="sm:col-span-5 text-[11px] text-slate-500">
-                              If you don’t apply WHT, leave it off. If you do, you can enter rate OR amount (or both).
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="flex items-center gap-2 mt-3 flex-wrap">
-                          <button id="billViewPaySave" type="button" class="btn-highlight">Create & Allocate</button>
-                          <span id="billViewPayMsg" class="text-xs text-slate-500"></span>
-                        </div>
-
-                        <input type="hidden" id="billViewPaymentId" value="">
+                        ...
                       </div>
 
                       <div id="billViewerBody"></div>
                     </div>
                   </div>
 
-                  <aside class="w-full lg:w-[360px] lg:shrink-0 border-t lg:border-t-0 lg:border-l bg-white p-4 space-y-4 overflow-auto max-h-[35vh] lg:max-h-none">
+                  <aside id="billViewerAside"
+                    class="hidden lg:block w-[360px] shrink-0 border-l bg-white p-4 space-y-4 overflow-auto">
                     <div class="border rounded-xl p-4">
                       <div class="flex items-center justify-between">
                         <h5 class="font-semibold">Activity</h5>
@@ -5090,6 +5008,49 @@ html, body {
                 </div>
               </div>
 
+              <div id="billActivitySheet"
+                class="hidden fixed inset-0 z-[110] bg-black/40 lg:hidden">
+                <div class="absolute inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl bg-white shadow-xl overflow-hidden">
+                  <div class="flex items-center justify-between px-4 py-3 border-b">
+                    <div class="font-semibold">Bill activity</div>
+                    <button id="billActivitySheetClose" class="btn" type="button">Close</button>
+                  </div>
+
+                  <div class="p-4 overflow-auto max-h-[calc(70vh-57px)] space-y-4">
+                    <div class="border rounded-xl p-4">
+                      <div class="flex items-center justify-between">
+                        <h5 class="font-semibold">Activity</h5>
+                        <span id="billActivityBadgeMobile" class="text-xs text-slate-400"></span>
+                      </div>
+                      <div id="billActivityMobile" class="mt-2 text-sm space-y-2"></div>
+                    </div>
+
+                    <div class="border rounded-xl p-4">
+                      <div class="flex items-center justify-between">
+                        <h5 class="font-semibold">Aging</h5>
+                        <span id="billAgingBadgeMobile" class="text-xs text-slate-400">—</span>
+                      </div>
+
+                      <div class="mt-2 text-sm space-y-2">
+                        <div class="flex justify-between">
+                          <span class="text-slate-600">Outstanding</span>
+                          <span id="billAgingOutstandingMobile" class="font-semibold tabular-nums">—</span>
+                        </div>
+
+                        <div class="flex justify-between">
+                          <span class="text-slate-600">Due date</span>
+                          <span id="billAgingDueDateMobile" class="tabular-nums">—</span>
+                        </div>
+
+                        <div class="flex justify-between">
+                          <span class="text-slate-600">Status</span>
+                          <span id="billAgingStatusMobile" class="tabular-nums">—</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
           </div><!-- /apGrid -->
         </section><!-- /screen-ap -->
         
