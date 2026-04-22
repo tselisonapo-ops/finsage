@@ -1746,6 +1746,12 @@ const ENDPOINTS = {
     return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/aging?${q.toString()}`;
   },
 
+  reverseBill: (companyId, billId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/reverse`,
+
+  writeoffBill: (companyId, billId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/writeoff`,
+
   // ==============================
   // Inventory / Catalog Studio
   // ==============================
@@ -61251,12 +61257,9 @@ async function renderAPStatements() {
         try {
           await assertNotLocked(dateStr, "ap");
 
-          if (!ENDPOINTS?.ap?.reverseBill && !ENDPOINTS?.apReverseBill) {
-            throw new Error("Missing ENDPOINTS.ap.reverseBill (or ENDPOINTS.apReverseBill)");
-          }
-
-          const reverseUrl =
-            (ENDPOINTS?.ap?.reverseBill ? ENDPOINTS.ap.reverseBill(companyId, billId) : ENDPOINTS.apReverseBill(companyId, billId));
+          const reverseUrl = ENDPOINTS?.ap?.reverseBill
+            ? ENDPOINTS.ap.reverseBill(companyId, billId)
+            : `/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/reverse`;
 
           const resp = await apiFetch(reverseUrl, {
             method: "POST",

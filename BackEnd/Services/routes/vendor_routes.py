@@ -1804,8 +1804,8 @@ def void_vendor_payment_api(company_id: int, payment_id: int):
         return jsonify({"ok": False, "error": str(e)}), 400
 
 @ap_bp.route(
-  "/api/companies/<int:company_id>/ap/bills/<int:bill_id>/reverse",
-  methods=["POST", "OPTIONS"],
+    "/api/companies/<int:company_id>/ap/bills/<int:bill_id>/reverse",
+    methods=["POST", "OPTIONS"],
 )
 @require_auth
 def reverse_bill_api(company_id: int, bill_id: int):
@@ -1813,34 +1813,34 @@ def reverse_bill_api(company_id: int, bill_id: int):
         return _corsify(make_response("", 204))
 
     payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(
-        payload,
-        int(company_id),
-        db_service=db_service,
-    )
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
     if deny:
         return deny
 
     data = request.get_json(silent=True) or {}
-
-    # ✅ if you ever get string JSON, normalize safely (optional)
     if isinstance(data, str):
         import json
         data = json.loads(data) if data else {}
+
+    current_app.logger.warning(
+        "HIT reverse_bill_api company_id=%s bill_id=%s data=%s",
+        company_id, bill_id, data
+    )
 
     try:
         user = getattr(g, "current_user", None) or {}
         user_id = user.get("id") or payload.get("sub")
         user_id = int(user_id) if user_id is not None else None
 
-        reason = (data.get("reason") or "").strip()
-        reversal_date = (data.get("date") or data.get("reversal_date") or "").strip() or None
+        reason = str(data.get("reason") or "").strip()
+        reversal_date = str(data.get("date") or data.get("reversal_date") or "").strip() or None
 
-        # permission gate (mirror AR rule style)
         cp = company_policy(int(company_id)) or {}
         mode = str(cp.get("mode") or "owner_managed").strip().lower()
         company_profile = cp.get("company") or {}
-        company_role = (user.get("user_role") or user.get("company_role") or "other").strip().lower()
+        company_role = str(
+            user.get("user_role") or user.get("company_role") or "other"
+        ).strip().lower()
 
         if not can_approve_payment(user, company_profile, mode, company_role):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED|reverse_bill"}), 403
