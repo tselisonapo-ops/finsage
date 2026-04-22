@@ -263,6 +263,13 @@
       grid-column: 1 / -1;
   }
 
+  @media (max-width: 1023px){
+    #billViewerModal > div{
+      width: 100vw;
+      height: 100dvh;
+      border-radius: 0;
+    }
+  }
   /* Typography & Accounting */
   .font-serif { font-family: Georgia, serif; }
   .tabular-nums { font-variant-numeric: tabular-nums; }
@@ -543,6 +550,19 @@ html, body {
   }
 }
 
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  .fs-modal-body,
+  .screen,
+  .drawer,
+  .tab-panel,
+  [data-tab-panel] {
+    min-width: 0;
+  }
+}
   #arQuotesPane{
     width:100%;
   }
@@ -3264,13 +3284,14 @@ html, body {
             <div id="invoiceViewerModal"
               data-invoice-id=""
               class="hidden fixed inset-0 z-[100] bg-black/40 items-center justify-center">
-              <div class="w-[95vw] h-[92vh] bg-white rounded-xl shadow-xl overflow-hidden flex">
-                <div class="flex-1 flex flex-col min-w-0">
-                  <div class="flex items-center justify-between px-4 py-3 border-b bg-white">
+              <div class="w-[95vw] h-[92vh] bg-white rounded-xl shadow-xl overflow-hidden flex flex-col lg:flex-row">
+                <div class="flex-1 flex flex-col min-w-0 min-h-0">
+                  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 border-b bg-white">
                     <div class="min-w-0">
                       <div id="invViewTitle" class="font-semibold text-slate-800 truncate">Invoice</div>
                       <div id="invViewSub" class="text-xs text-slate-500 truncate"></div>
                     </div>
+
                     <div class="flex items-center gap-2 flex-wrap">
                       <button id="invViewSend" class="btn-highlight" type="button">Send</button>
                       <button id="invViewAllocatePayment" class="btn" type="button">Allocate payment</button>
@@ -3283,7 +3304,7 @@ html, body {
                     </div>
                   </div>
 
-                  <div class="flex-1 overflow-auto bg-slate-50 p-4">
+                  <div class="flex-1 min-h-0 overflow-auto bg-slate-50 p-4">
                     <div id="invViewPayPanel" class="hidden bg-white border rounded-xl p-3 mb-3">
                       <div class="flex items-center justify-between mb-2">
                         <div class="font-semibold text-sm">Allocate payment</div>
@@ -3329,7 +3350,7 @@ html, body {
                   </div>
                 </div>
 
-                <aside class="w-[360px] shrink-0 border-l bg-white p-4 space-y-4 overflow-auto">
+                <aside class="w-full lg:w-[360px] lg:shrink-0 border-t lg:border-t-0 lg:border-l bg-white p-4 space-y-4 overflow-auto max-h-[35vh] lg:max-h-none">
                   <div class="border rounded-xl p-4">
                     <h5 class="font-semibold">Activity</h5>
                     <div id="invActivityModal" class="mt-2 text-sm space-y-2">
@@ -4891,9 +4912,9 @@ html, body {
                 data-bill-id=""
                 class="hidden fixed inset-0 z-[100] bg-black/40 items-center justify-center">
 
-                <div class="w-[95vw] h-[92vh] bg-white rounded-xl shadow-xl overflow-hidden flex">
-                  <div class="flex-1 flex flex-col min-w-0">
-                    <div class="flex items-center justify-between px-4 py-3 border-b bg-white">
+                <div class="w-[95vw] h-[92vh] bg-white rounded-xl shadow-xl overflow-hidden flex flex-col lg:flex-row">
+                  <div class="flex-1 flex flex-col min-w-0 min-h-0">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 border-b bg-white">
                       <div class="min-w-0">
                         <div id="billViewTitle" class="font-semibold text-slate-800 truncate">Bill</div>
                         <div id="billViewSub" class="text-xs text-slate-500 truncate"></div>
@@ -4905,9 +4926,9 @@ html, body {
                       </div>
                     </div>
 
-                    <div class="flex-1 overflow-auto bg-slate-50 p-4">
+                    <div class="flex-1 min-h-0 overflow-auto bg-slate-50 p-4">
 
-                      <!-- Allocate payment panel (Create Payment + Allocate to Bill) -->
+                      <!-- Allocate payment panel -->
                       <div id="billViewPayPanel" class="hidden bg-white border rounded-xl p-3 mb-3">
 
                         <div class="flex items-center justify-between mb-2 gap-2 flex-wrap">
@@ -4921,12 +4942,11 @@ html, body {
                           <div class="flex items-center gap-2 flex-wrap">
                             <button id="billViewApprovePayment" class="btn" type="button">Approve</button>
                             <button id="billViewReleasePayment" class="btn-highlight" type="button">Release</button>
-                            <button id="billViewPayEdit" class="text-xs px-2 py-1 border rounded ml-2">Edit</button>
+                            <button id="billViewPayEdit" class="text-xs px-2 py-1 border rounded">Edit</button>
                             <button id="billViewPayCancel" type="button" class="btn">Close</button>
                           </div>
                         </div>
 
-                        <!-- ✅ move gate here (full width, clean) -->
                         <div id="billVendComplianceGate" class="border rounded-lg p-3 bg-slate-50 hidden mb-3">
                           <div class="flex items-center justify-between gap-2">
                             <div class="text-sm font-medium">Vendor requirements</div>
@@ -4935,13 +4955,12 @@ html, body {
 
                           <div id="billVendComplianceText" class="mt-1 text-xs text-slate-600">—</div>
 
-                          <div class="mt-2 flex gap-2">
+                          <div class="mt-2 flex gap-2 flex-wrap">
                             <button id="billVendFixBtn" type="button" class="btn">View / Upload docs</button>
                             <button id="billVendBypassBtn" type="button" class="btn hidden">Continue anyway</button>
                           </div>
                         </div>
 
-                        <!-- Main payment fields -->
                         <div class="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
                           <div>
                             <label class="text-xs text-slate-600">Date</label>
@@ -4976,13 +4995,12 @@ html, body {
                           <div class="sm:col-span-6">
                             <label class="text-xs text-slate-600">Description (optional)</label>
                             <input id="billViewPayDesc" class="w-full border rounded px-2 py-2 text-sm"
-                                  placeholder="Payment for bill INV-...">
+                              placeholder="Payment for bill INV-...">
                           </div>
                         </div>
 
-                        <!-- Optional: WHT -->
                         <div class="mt-3 border-t pt-3">
-                          <div class="flex items-center justify-between">
+                          <div class="flex items-center justify-between gap-2 flex-wrap">
                             <div class="text-sm font-semibold">Withholding Tax (optional)</div>
                             <label class="text-xs text-slate-600 flex items-center gap-2">
                               <input id="billViewWhtEnabled" type="checkbox" class="h-4 w-4">
@@ -4994,25 +5012,25 @@ html, body {
                             <div>
                               <label class="text-xs text-slate-600">WHT Rate %</label>
                               <input id="billViewWhtRate" type="text" inputmode="decimal"
-                                    class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. 5">
+                                class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. 5">
                             </div>
 
                             <div>
                               <label class="text-xs text-slate-600">WHT Amount</label>
                               <input id="billViewWhtAmount" type="text" inputmode="decimal"
-                                    class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
+                                class="w-full border rounded px-2 py-2 text-sm" placeholder="0.00">
                             </div>
 
                             <div class="sm:col-span-2">
                               <label class="text-xs text-slate-600">WHT Ledger Code</label>
                               <input id="billViewWhtLedger" class="w-full border rounded px-2 py-2 text-sm"
-                                    placeholder="e.g. 2310 or your WHT control">
+                                placeholder="e.g. 2310 or your WHT control">
                             </div>
 
                             <div>
                               <label class="text-xs text-slate-600">Reason</label>
                               <input id="billViewWhtReason" class="w-full border rounded px-2 py-2 text-sm"
-                                    placeholder="Optional note">
+                                placeholder="Optional note">
                             </div>
 
                             <div class="sm:col-span-5 text-[11px] text-slate-500">
@@ -5021,24 +5039,19 @@ html, body {
                           </div>
                         </div>
 
-                        <div class="flex items-center gap-2 mt-3">
+                        <div class="flex items-center gap-2 mt-3 flex-wrap">
                           <button id="billViewPaySave" type="button" class="btn-highlight">Create & Allocate</button>
                           <span id="billViewPayMsg" class="text-xs text-slate-500"></span>
                         </div>
 
-                        <!-- Hidden: payment id created -->
                         <input type="hidden" id="billViewPaymentId" value="">
                       </div>
 
-                      <!-- Bill preview -->
                       <div id="billViewerBody"></div>
                     </div>
                   </div>
 
-                  <!-- Right side panel (match invoice viewer style) -->
-                  <aside class="w-[360px] shrink-0 border-l bg-white p-4 space-y-4 overflow-auto">
-
-                    <!-- Activity -->
+                  <aside class="w-full lg:w-[360px] lg:shrink-0 border-t lg:border-t-0 lg:border-l bg-white p-4 space-y-4 overflow-auto max-h-[35vh] lg:max-h-none">
                     <div class="border rounded-xl p-4">
                       <div class="flex items-center justify-between">
                         <h5 class="font-semibold">Activity</h5>
@@ -5050,7 +5063,6 @@ html, body {
                       </div>
                     </div>
 
-                    <!-- Aging / Status -->
                     <div class="border rounded-xl p-4">
                       <div class="flex items-center justify-between">
                         <h5 class="font-semibold">Aging</h5>
@@ -5074,13 +5086,9 @@ html, body {
                         </div>
                       </div>
                     </div>
-
                   </aside>
-
                 </div>
-             
-
-            </div>
+              </div>
 
           </div><!-- /apGrid -->
         </section><!-- /screen-ap -->

@@ -24609,7 +24609,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
   // ============================================================
   function renderMonthlyUI(mount) {
     mount.innerHTML = `
-      <div class="flex items-center justify-between gap-3 mb-3">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <div class="text-sm font-semibold">Monthly Due (IFRS 16)</div>
       </div>
 
@@ -24633,20 +24633,22 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         </div>
       </div>
 
-      <div class="border rounded-xl overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="min-w-[760px] w-full text-sm">
-            <thead class="bg-slate-50 border-b">
-              <tr>
-                <th class="text-left p-2 whitespace-nowrap">Lease</th>
-                <th class="text-left p-2 whitespace-nowrap">Lessor</th>
-                <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
-                <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
-                <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="lmTableBody"></tbody>
-          </table>
+      <div class="min-w-0 w-full">
+        <div class="border rounded-xl overflow-hidden">
+          <div class="w-full max-w-full overflow-x-auto">
+            <table class="min-w-[820px] w-full text-sm">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left p-2 whitespace-nowrap">Lease</th>
+                  <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+                  <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
+                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
+                  <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="lmTableBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     `;
@@ -26494,7 +26496,6 @@ window.bindLeaseTabs = function bindLeaseTabs() {
 };
 
 window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
-  // local escape to avoid relying on a missing global escapeHtml()
   const esc = (s) =>
     String(s ?? "").replace(/[&<>"']/g, (m) => ({
       "&": "&amp;",
@@ -26505,29 +26506,31 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
     }[m]));
 
   mount.innerHTML = `
-    <div class="flex items-center justify-between gap-3 mb-3">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
       <div class="text-sm font-semibold">Registered Leases</div>
       <button id="btnLrLoad" class="px-3 py-1.5 rounded bg-slate-900 text-white text-sm">Load</button>
     </div>
 
     <div id="leaseRegisterMsg" class="text-xs hidden mb-2"></div>
 
-    <div class="border rounded-xl overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="min-w-[760px] w-full text-sm">
-          <thead class="bg-slate-50 border-b">
-            <tr>
-              <th class="text-left p-2 whitespace-nowrap">Lease</th>
-              <th class="text-left p-2 whitespace-nowrap">Lessor</th>
-              <th class="text-left p-2 w-[120px] whitespace-nowrap">Start</th>
-              <th class="text-left p-2 w-[120px] whitespace-nowrap">End</th>
-              <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="lrTableBody">
-            <tr><td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td></tr>
-          </tbody>
-        </table>
+    <div class="min-w-0 w-full">
+      <div class="border rounded-xl overflow-hidden">
+        <div class="w-full max-w-full overflow-x-auto">
+          <table class="min-w-[760px] w-full text-sm">
+            <thead class="bg-slate-50 border-b">
+              <tr>
+                <th class="text-left p-2 whitespace-nowrap">Lease</th>
+                <th class="text-left p-2 whitespace-nowrap">Lessor</th>
+                <th class="text-left p-2 w-[120px] whitespace-nowrap">Start</th>
+                <th class="text-left p-2 w-[120px] whitespace-nowrap">End</th>
+                <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="lrTableBody">
+              <tr><td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   `;
