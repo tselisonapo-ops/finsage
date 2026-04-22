@@ -55862,46 +55862,41 @@ function bindBillVendorGuards() {
 
   vendEl.dataset.grniBound = "1";
 
-  vendEl.addEventListener("change", () => {
+  vendEl.addEventListener("change", async () => {
     if (window._BILL_CLEARING) return;
-
-    // don't interfere while programmatically applying GRNI
-    if (window._AP_APPLYING_GRNI) {
-      return;
-    }
-
-    // don't interfere while programmatically loading/prefilling a bill
-    if (window._BILL_LOADING) {
-      return;
-    }
+    if (window._AP_APPLYING_GRNI) return;
+    if (window._BILL_LOADING) return;
 
     const hasGrniLinks =
       (Array.isArray(window._BILL_GRNI_LINKS) && window._BILL_GRNI_LINKS.length > 0) ||
       !!document.getElementById("billGrniLinksJson")?.value &&
       document.getElementById("billGrniLinksJson").value !== "[]";
 
-    // only clear the form if this bill is actually GRNI-linked
-    if (!hasGrniLinks) {
+    // only clear the bill for true GRNI-linked bills
+    if (hasGrniLinks) {
+      window._BILL_GRNI_LINKS = [];
+
+      const hid = document.getElementById("billGrniLinksJson");
+      if (hid) hid.value = "[]";
+
+      window._BILL_CLEARING = true;
+      try {
+        window.clearBillForm?.({ keepCurrency: true });
+      } finally {
+        window._BILL_CLEARING = false;
+      }
+
+      console.log("[GRNI] Cleared links + cleared bill due to vendor change on GRNI-linked bill");
       return;
     }
 
-    // clear linked GRNs if vendor changes on a GRNI-linked bill
-    window._BILL_GRNI_LINKS = [];
-
-    const hid = document.getElementById("billGrniLinksJson");
-    if (hid) hid.value = "[]";
-
-    window._BILL_CLEARING = true;
-    try {
-      window.clearBillForm?.({ keepCurrency: true });
-    } finally {
-      window._BILL_CLEARING = false;
+    // normal vendor change: check for linked asset acquisitions
+    const vendorObj = window.getSelectedVendorObjectFromBillForm?.();
+    if (vendorObj) {
+      await window.maybePromptForVendorLinkedAssetBill?.(vendorObj);
     }
-
-    console.log("[GRNI] Cleared links + cleared bill due to vendor change on GRNI-linked bill");
   });
 }
-
 
 async function openBillFromAssetAcquisition(acqId) {
   const cid = (typeof window.getActiveCompanyId === "function")
@@ -55967,7 +55962,22 @@ async function openBillFromAssetAcquisition(acqId) {
   if (tr && prefill.lock_account_code) {
     const acct = tr.querySelector(".bill-acct");
     if (acct) {
-      acct.value = String(prefill.asset_account_code || "");
+      const code = String(prefill.asset_account_code || "").trim();
+      const label = String(prefill.asset_name || prefill.asset_code || code).trim();
+
+      if (acct.tagName === "SELECT" && code) {
+        let opt = Array.from(acct.options || []).find(o => o.value === code);
+        if (!opt) {
+          opt = document.createElement("option");
+          opt.value = code;
+          opt.textContent = label ? `${label} (${code})` : code;
+          acct.appendChild(opt);
+        }
+        acct.value = code;
+      } else {
+        acct.value = code;
+      }
+
       acct.disabled = true;
       acct.dataset.locked = "asset";
       acct.classList.add("bg-slate-100", "text-slate-500", "cursor-not-allowed");
@@ -56013,6 +56023,92 @@ async function consumePendingAssetBillPrefill() {
 }
 window.consumePendingAssetBillPrefill = consumePendingAssetBillPrefill;
 
+function maybePromptForVendorLinkedAssetBill(vendorObj) {
+  try {
+    if (!vendorObj || !vendorObj.id) return false;
+
+    // avoid repeated prompting for the same vendor/acquisition in one session
+    window._AP_LAST_ASSET_BILL_PROMPT = window._AP_LAST_ASSET_BILL_PROMPT || {};
+
+    const linked = Array.isArray(vendorObj.linked_asset_acquisitions)
+      ? vendorObj.linked_asset_acquisitions
+      : [];
+
+    if (!linked.length) return false;
+
+    // choose first acquisition that still looks bill-worthy
+    const pending = linked.find((x) => {
+      const funding = String(x?.funding_source || "").trim().toLowerCase();
+      const status = String(x?.status || "").trim().toLowerCase();
+      const posted = !!x?.posted_journal_id;
+
+      // you can loosen/tighten this rule later
+      return (
+        x?.acquisition_id &&
+        funding === "vendor_credit" &&
+        !posted &&
+        status !== "cancelled" &&
+        status !== "completed"
+      );
+    });
+
+    if (!pending) return false;
+
+    const promptKey = `${vendorObj.id}:${pending.acquisition_id}`;
+    if (window._AP_LAST_ASSET_BILL_PROMPT[promptKey]) return false;
+
+    window._AP_LAST_ASSET_BILL_PROMPT[promptKey] = true;
+
+    const asset = (Array.isArray(vendorObj.linked_assets) ? vendorObj.linked_assets : [])
+      .find((a) => Number(a?.asset_id || 0) === Number(pending.asset_id || 0));
+
+    const assetLabel = asset?.asset_name
+      ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
+      : `Asset #${pending.asset_id}`;
+
+    const ref = pending.vendor_invoice_no || pending.reference || "";
+    const msg =
+      `This vendor has an unbilled asset acquisition.\n\n` +
+      `Asset: ${assetLabel}\n` +
+      `${ref ? `Reference: ${ref}\n` : ""}` +
+      `\nWould you like to prefill the bill now?`;
+
+    const yes = window.confirm(msg);
+    if (!yes) return false;
+
+    window.openBillFromAssetAcquisition?.(Number(pending.acquisition_id));
+    return true;
+  } catch (e) {
+    console.warn("[AP] maybePromptForVendorLinkedAssetBill failed:", e);
+    return false;
+  }
+}
+window.maybePromptForVendorLinkedAssetBill = maybePromptForVendorLinkedAssetBill;
+
+function getSelectedVendorObjectFromBillForm() {
+  const root = typeof window.getBillRoot === "function" ? window.getBillRoot() : document;
+
+  const vendorId =
+    (root.querySelector("#billVendorId")?.value || "").trim();
+
+  const vendorName =
+    (root.querySelector("#billVendor")?.value || "").trim();
+
+  const list = Array.isArray(window.VENDORS_CACHE) ? window.VENDORS_CACHE : [];
+
+  if (/^\d+$/.test(vendorId)) {
+    const byId = list.find(v => String(v.id) === String(vendorId));
+    if (byId) return byId;
+  }
+
+  if (vendorName) {
+    const byName = list.find(v => String(v.name || "").trim().toLowerCase() === vendorName.toLowerCase());
+    if (byName) return byName;
+  }
+
+  return null;
+}
+window.getSelectedVendorObjectFromBillForm = getSelectedVendorObjectFromBillForm;
 
 function bindAP() {
   const linesBody = document.getElementById("billLines");
