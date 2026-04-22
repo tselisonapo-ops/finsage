@@ -736,7 +736,9 @@ def api_bills(company_id: int):
 
     if dup:
         dup_status = (dup.get("status") or "").strip().lower()
-        if dup_status not in ("draft", "void", "written_off"):
+
+        # Allow reuse if previous bill is reversed
+        if dup_status not in ("draft", "void", "written_off", "reversed"):
             return jsonify({
                 "ok": False,
                 "error": "This vendor invoice number already exists for that vendor",
@@ -1014,9 +1016,7 @@ def api_bill_detail(company_id: int, bill_id: int):
     if dup:
         dup_status = (dup.get("status") or "").strip().lower()
 
-        if dup_status in ("draft", "void", "written_off"):
-            pass
-        else:
+        if dup_status not in ("draft", "void", "written_off", "reversed"):
             return jsonify({
                 "ok": False,
                 "error": "This vendor invoice number already exists for that vendor",

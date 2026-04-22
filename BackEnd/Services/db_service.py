@@ -34102,7 +34102,7 @@ class DatabaseService:
                 if not (header.get("number") or "").strip():
                     raise ValueError("Vendor invoice number is required before approving/posting this bill")
 
-            LOCKED = {"posted", "paid", "void", "cancelled"}
+            LOCKED = {"posted", "paid", "void", "cancelled", "reversed"}
             if st in LOCKED:
                 raise ValueError(f"Cannot edit bill in status '{st}'")
 
