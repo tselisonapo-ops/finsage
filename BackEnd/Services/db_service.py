@@ -36057,15 +36057,24 @@ class DatabaseService:
                     self.update_trial_balance(company_id, rev_line, cur=cur)
 
                 # 7) Mark original journal + reversal journal (same as AR)
-                cur.execute(
-                    f"UPDATE {schema}.journal SET reversed_journal_id=%s WHERE id=%s;",
-                    (reversal_journal_id, posted_journal_id),
-                )
+
+                # Original → points to reversal
                 cur.execute(
                     f"""
                     UPDATE {schema}.journal
-                    SET is_reversal=TRUE, reversed_journal_id=%s
-                    WHERE id=%s;
+                    SET reversed_by_journal_id = %s
+                    WHERE id = %s;
+                    """,
+                    (reversal_journal_id, posted_journal_id),
+                )
+
+                # Reversal → points back to original
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.journal
+                    SET is_reversal = TRUE,
+                        reversal_of_journal_id = %s
+                    WHERE id = %s;
                     """,
                     (posted_journal_id, reversal_journal_id),
                 )
@@ -40273,15 +40282,24 @@ class DatabaseService:
                     self.update_trial_balance(company_id, rev_line, cur=cur)
 
                 # 7) Mark original journal + reversal journal
-                cur.execute(
-                    f"UPDATE {schema}.journal SET reversed_journal_id=%s WHERE id=%s;",
-                    (reversal_journal_id, posted_journal_id),
-                )
+
+                # Original → points to reversal
                 cur.execute(
                     f"""
                     UPDATE {schema}.journal
-                    SET is_reversal=TRUE, reversed_journal_id=%s
-                    WHERE id=%s;
+                    SET reversed_by_journal_id = %s
+                    WHERE id = %s;
+                    """,
+                    (reversal_journal_id, posted_journal_id),
+                )
+
+                # Reversal → points back to original
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.journal
+                    SET is_reversal = TRUE,
+                        reversal_of_journal_id = %s
+                    WHERE id = %s;
                     """,
                     (posted_journal_id, reversal_journal_id),
                 )
