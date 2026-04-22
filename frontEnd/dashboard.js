@@ -55923,6 +55923,10 @@ async function openBillFromAssetAcquisition(acqId) {
   if (acqIdEl) acqIdEl.value = String(prefill.asset_acquisition_id || "");
   if (modeEl) modeEl.value = String(prefill.posting_mode || "");
 
+  if (!Array.isArray(window.VENDORS_CACHE) || window.VENDORS_CACHE.length === 0) {
+    await window.fillBillVendorList?.();
+  }
+
   // normal bill form fields
   window.writeBillForm?.({
     vendor_id: prefill.vendor_id,
@@ -56723,11 +56727,15 @@ function bindAP() {
     if (vendorEl) {
       if (vendorEl.tagName === "SELECT") {
         vendorEl.value = vId;
-        vendorEl.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!window._BILL_LOADING) {
+          vendorEl.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       } else {
         vendorEl.value = vName;
-        vendorEl.dispatchEvent(new Event("input", { bubbles: true }));
-        vendorEl.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!window._BILL_LOADING) {
+          vendorEl.dispatchEvent(new Event("input", { bubbles: true }));
+          vendorEl.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       }
     }
     setVal("billNumber", b.number || "");
@@ -57177,11 +57185,6 @@ function bindAP() {
   if (!document.querySelector("#billLines tr")) addBillLine();
   window.recalcBill?.({ force: true });
   bindBillVendorGuards();
-
-  // consume pending asset -> bill handoff once AP form is ready
-  queueMicrotask(() => {
-    window.consumePendingAssetBillPrefill?.();
-  });
 }
 window.bindAP = bindAP;
 
@@ -59534,6 +59537,9 @@ async function initPayablesScreen() {
   await fillBillVendorList?.();        // ✅ datalist for billVendor input
   await loadAPPostingAccounts?.();     // ✅ AP_POSTING_ACCOUNTS_CACHE (for payment/posting)
   await renderApVendorList?.({ closeOnPick: true }); // ✅ left pane vendors
+
+  // ✅ asset -> AP handoff should happen only AFTER vendor cache is ready
+  await window.consumePendingAssetBillPrefill?.();  
 
   const leasePrefill = window.getLeaseApPrefillFromUrl?.();
   if (leasePrefill) {
