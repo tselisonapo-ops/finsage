@@ -3592,10 +3592,10 @@ class DatabaseService:
         self.execute_sql(sql, params)
 
 
-    def get_company_account_settings(self, company_id: int) -> dict:
+    def get_company_account_settings(self, company_id: int, cur=None) -> dict:
         self.ensure_company_account_settings(company_id)
 
-        row = self.fetch_one("""
+        sql = """
         SELECT
             ar_control_code, ap_control_code,
             vat_output_code, vat_input_code,
@@ -3614,7 +3614,13 @@ class DatabaseService:
         FROM public.company_account_settings
         WHERE company_id=%s
         LIMIT 1;
-        """, (company_id,)) or {}
+        """
+
+        if cur is not None:
+            cur.execute(sql, (company_id,))
+            row = cur.fetchone() or {}
+        else:
+            row = self.fetch_one(sql, (company_id,)) or {}
 
         return row
 
