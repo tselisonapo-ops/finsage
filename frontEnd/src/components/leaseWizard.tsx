@@ -903,61 +903,65 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     return (
       <div className="lease-direct-cost-modal-backdrop">
         <div className="lease-direct-cost-modal">
-          <h3>Initial direct costs detected</h3>
-          <p>
-            This lease includes initial direct costs of{" "}
-            <strong>{Number(form.initial_direct_costs || 0).toFixed(2)}</strong>.
+          <div className="dc-header">
+            <h3>Initial Direct Costs</h3>
+            <span className="dc-badge">IFRS 16</span>
+          </div>
+
+          <p className="dc-text">
+            This lease includes initial direct costs of
           </p>
+
+          <div className="dc-amount">
+            {Number(form.initial_direct_costs || 0).toFixed(2)}
+          </div>
 
           {!showPaidCapture ? (
             <>
-              <p>How would you like to capture them?</p>
+              <p className="dc-subtext">How would you like to capture them?</p>
 
               {directCostAction && (
-                <p style={{ fontSize: 12, opacity: 0.7 }}>
+                <p className="dc-selection">
                   Current selection: {directCostAction}
                 </p>
               )}
 
-              <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
-                <button onClick={handleDirectCostCreateApBill}>
-                  Create AP Bill
+              <div className="dc-actions">
+                <button className="btn-primary" onClick={handleDirectCostCreateApBill}>
+                  📄 Create AP Bill
                 </button>
 
-                <button onClick={handleDirectCostPaidNow}>
-                  Record as Paid
+                <button className="btn-secondary" onClick={handleDirectCostPaidNow}>
+                  💳 Record as Paid
                 </button>
 
-                <button onClick={handleDirectCostSkip}>
+                <button className="btn-ghost" onClick={handleDirectCostSkip}>
                   Skip for now
                 </button>
-
-                <button onClick={closeDirectCostPrompt}>
-                  Close
-                </button>
               </div>
+
+              <button className="dc-close" onClick={closeDirectCostPrompt}>
+                ✕ Close
+              </button>
             </>
           ) : (
             <>
-              <p>
-                Select the bank account that funded this cost, then confirm the payment posting.
+              <p className="dc-subtext">
+                Select the bank account that funded this cost and confirm the payment.
               </p>
 
               {directCostAction && (
-                <p style={{ fontSize: 12, opacity: 0.7 }}>
+                <p className="dc-selection">
                   Current selection: {directCostAction}
                 </p>
               )}
 
-              <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+              <div className="dc-form">
                 <div>
-                  <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
-                    Bank account
-                  </label>
+                  <label>Bank account</label>
                   <select
                     value={selectedBankAccountId}
                     onChange={(e) => setSelectedBankAccountId(e.target.value)}
-                    style={{ width: "100%" }}
                   >
                     <option value="">Select bank account...</option>
                     {bankAccounts.map((b) => (
@@ -971,46 +975,43 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
-                    Payment date
-                  </label>
+                  <label>Payment date</label>
                   <input
                     type="date"
                     value={directCostPaidDate}
                     onChange={(e) => setDirectCostPaidDate(e.target.value)}
-                    style={{ width: "100%" }}
                   />
                 </div>
 
                 {loadingBankAccounts && (
-                  <p style={{ fontSize: 12, opacity: 0.7 }}>
-                    Loading bank accounts...
-                  </p>
+                  <p className="dc-loading">Loading bank accounts...</p>
                 )}
-
-                <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                  <button
-                    onClick={submitDirectCostPaidNow}
-                    disabled={loadingBankAccounts || !selectedBankAccountId}
-                  >
-                    Post paid direct cost
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowPaidCapture(false);
-                      setSelectedBankAccountId("");
-                      setDirectCostAction(null);
-                    }}
-                  >
-                    Back
-                  </button>
-
-                  <button onClick={closeDirectCostPrompt}>
-                    Close
-                  </button>
-                </div>
               </div>
+
+              <div className="dc-actions">
+                <button
+                  className="btn-primary"
+                  onClick={submitDirectCostPaidNow}
+                  disabled={loadingBankAccounts || !selectedBankAccountId}
+                >
+                  ✔ Post payment
+                </button>
+
+                <button
+                  className="btn-ghost"
+                  onClick={() => {
+                    setShowPaidCapture(false);
+                    setSelectedBankAccountId("");
+                    setDirectCostAction(null);
+                  }}
+                >
+                  Back
+                </button>
+              </div>
+
+              <button className="dc-close" onClick={closeDirectCostPrompt}>
+                ✕ Close
+              </button>
             </>
           )}
         </div>

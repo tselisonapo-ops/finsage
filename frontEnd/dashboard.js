@@ -55893,6 +55893,7 @@ function bindBillVendorGuards() {
   });
 }
 
+
 async function openBillFromAssetAcquisition(acqId) {
   const cid = (typeof window.getActiveCompanyId === "function")
     ? window.getActiveCompanyId()
@@ -55974,6 +55975,31 @@ async function openBillFromAssetAcquisition(acqId) {
   return prefill;
 }
 window.openBillFromAssetAcquisition = openBillFromAssetAcquisition;
+
+async function consumePendingAssetBillPrefill() {
+  try {
+    const raw = sessionStorage.getItem("fs_ap_asset_bill_prefill");
+    if (!raw) return false;
+
+    const ctx = JSON.parse(raw || "{}");
+    const acqId = Number(ctx?.acquisition_id || 0);
+    if (!acqId) {
+      sessionStorage.removeItem("fs_ap_asset_bill_prefill");
+      return false;
+    }
+
+    sessionStorage.removeItem("fs_ap_asset_bill_prefill");
+
+    await window.openBillFromAssetAcquisition?.(acqId);
+    return true;
+  } catch (e) {
+    console.warn("[AP] consumePendingAssetBillPrefill failed:", e);
+    sessionStorage.removeItem("fs_ap_asset_bill_prefill");
+    return false;
+  }
+}
+window.consumePendingAssetBillPrefill = consumePendingAssetBillPrefill;
+
 
 function bindAP() {
   const linesBody = document.getElementById("billLines");
@@ -57150,7 +57176,12 @@ function bindAP() {
   // ensure at least one row
   if (!document.querySelector("#billLines tr")) addBillLine();
   window.recalcBill?.({ force: true });
-  bindBillVendorGuards();   // 👈 add here
+  bindBillVendorGuards();
+
+  // consume pending asset -> bill handoff once AP form is ready
+  queueMicrotask(() => {
+    window.consumePendingAssetBillPrefill?.();
+  });
 }
 window.bindAP = bindAP;
 

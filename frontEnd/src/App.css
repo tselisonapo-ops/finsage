@@ -530,10 +530,12 @@ button {
   }
 }
 
+/* Modal */
 .lease-direct-cost-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.35);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -541,10 +543,123 @@ button {
 }
 
 .lease-direct-cost-modal {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 22px;
   width: 420px;
-  max-width: 92vw;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+  max-width: 92%;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+}
+
+/* Header */
+.dc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dc-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.dc-badge {
+  background: #0ea5e9;
+  color: white;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+/* Text */
+.dc-text {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.dc-amount {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 10px 0 16px;
+}
+
+.dc-subtext {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.dc-selection {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Form */
+.dc-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dc-form label {
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: #475569;
+}
+
+.dc-form input,
+.dc-form select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+/* Buttons */
+.dc-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.btn-primary {
+  background: #0f172a;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dc-close {
+  margin-top: 10px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dc-loading {
+  font-size: 12px;
+  color: #64748b;
 }

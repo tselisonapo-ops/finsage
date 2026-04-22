@@ -207,6 +207,39 @@ function assetAcqPreviewUrl(companyId: number | string, acqId: number | string):
   return `/api/companies/${encodeURIComponent(String(companyId))}/asset-acquisitions/${encodeURIComponent(String(acqId))}/journal-preview`;
 }
 
+async function handoffToApBillFromAcquisition(
+  companyId: number | string,
+  assetId: number | string,
+  acquisitionId: number | string
+) {
+  sessionStorage.setItem(
+    "fs_ap_asset_bill_prefill",
+    JSON.stringify({
+      company_id: Number(companyId),
+      asset_id: Number(assetId),
+      acquisition_id: Number(acquisitionId),
+      ts: Date.now(),
+    })
+  );
+
+  const w = window as unknown as {
+    navigateTo?: (name: string) => void;
+    switchScreen?: (name: string) => Promise<void> | void;
+  };
+
+  if (typeof w.navigateTo === "function") {
+    w.navigateTo("ap");
+    return;
+  }
+
+  if (typeof w.switchScreen === "function") {
+    await w.switchScreen("ap");
+    return;
+  }
+
+  console.warn("AP screen navigation function not found");
+}
+
 /** -----------------------------
  *  Helpers
  *  ----------------------------- */
@@ -1567,25 +1600,46 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             >
               {saving ? "Saving..." : "Create Draft"}
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submitPostDraft}
-              disabled={posting || previewLoading}
-              style={{
-                border: 0,
-                borderRadius: 12,
-                padding: "12px 14px",
-                background: "black",
-                color: "white",
-                cursor: posting ? "not-allowed" : "pointer",
-                fontWeight: 900,
-                marginTop: 6,
-              }}
-            >
-              {posting ? "Posting..." : "Post Acquisition"}
-            </button>
-          )}
+            ) : (
+              <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                    onClick={async () => {
+                      if (!args || !createdAssetId || !createdAcqId) return;
+                      await handoffToApBillFromAcquisition(args.companyId, createdAssetId, createdAcqId);
+                    }}
+                  disabled={!createdAssetId || !createdAcqId}
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.18)",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    background: "white",
+                    color: "black",
+                    cursor: !createdAssetId || !createdAcqId ? "not-allowed" : "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  Create Bill
+                </button>
+
+                <button
+                  type="button"
+                  onClick={submitPostDraft}
+                  disabled={posting || previewLoading}
+                  style={{
+                    border: 0,
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    background: "black",
+                    color: "white",
+                    cursor: posting ? "not-allowed" : "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  {posting ? "Posting..." : "Post Acquisition"}
+                </button>
+              </div>
+            )}
         </div>
       </div>
     </DrawerShell>
