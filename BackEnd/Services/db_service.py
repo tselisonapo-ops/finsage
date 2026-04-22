@@ -60124,15 +60124,32 @@ class DatabaseService:
 
             # Build journal lines on demand if they were not pre-saved on the run
             if not jlines:
-                jlines = self._build_revenue_recognition_journal_lines(
-                    company_id=company_id,
-                    run=run,
-                    entries=entries,
-                )
+                try:
+                    jlines = self._build_revenue_recognition_journal_lines(
+                        company_id=company_id,
+                        run=run,
+                        entries=entries,
+                    )
+                except Exception as build_err:
+                    raise ValueError(f"Recognition run journal build failed: {build_err}")
 
                 if not jlines:
-                    raise ValueError("Recognition run has no journal lines")
+                    debug_rows = []
+                    for e in entries:
+                        debug_rows.append({
+                            "entry_id": e.get("id"),
+                            "contract_id": e.get("contract_id"),
+                            "obligation_id": e.get("obligation_id"),
+                            "revenue_delta_this_run": e.get("revenue_delta_this_run"),
+                            "contract_asset_delta": e.get("contract_asset_delta"),
+                            "contract_liability_delta": e.get("contract_liability_delta"),
+                        })
 
+                    raise ValueError(
+                        "Recognition run has no journal lines. "
+                        f"Entry movements were: {debug_rows}"
+                    )
+                
                 # persist built lines back to payload_json so previews / later reads can reuse them
                 pj = dict(pj or {})
                 pj["journal_lines"] = jlines
