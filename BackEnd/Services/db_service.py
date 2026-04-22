@@ -6011,62 +6011,61 @@ class DatabaseService:
         -- ==================================================
         DO $$
         BEGIN
-            -- drop old constraint (if any)
             IF EXISTS (
                 SELECT 1
                 FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_journal_source_check'
-                AND n.nspname = '{schema}'
+                WHERE c.conname = 'company_22_journal_source_check'
+                AND n.nspname = 'company_22'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.journal DROP CONSTRAINT %I',
-                    '{schema}', '{schema}_journal_source_check'
+                    'company_22', 'company_22_journal_source_check'
                 );
             END IF;
 
-            -- recreate with expanded list
             EXECUTE format(
             'ALTER TABLE %I.journal
             ADD CONSTRAINT %I
             CHECK (
-                source IS NULL
-                OR source = ANY (ARRAY[
-                    ''manual'',
-                    ''invoice'',
-                    ''bill'',
-                    ''payment'',
-                    ''receipt'',
-                    ''credit_note'',
-                    ''debit_note'',
-                    ''inventory'',
-                    ''asset'',
-                    ''asset_acquisition'',
-                    ''asset_depreciation'',
-                    ''asset_revaluation'',
-                    ''asset_impairment'',
-                    ''asset_disposal'',
-                    ''asset_hfs'',
-                    ''lease_inception'',
-                    ''lease_monthly'',
-                    ''lease_payment'',
-                    ''lease_direct_cost_paid'',
-                    ''lease_modification'',
-                    ''lease_termination'',
-                    ''loan_origination'',
-                    ''loan_payment'',
-                    ''loan_reclassification'',
-                    ''loan_accrual'',
-                    ''loan_restructure'',
-                    ''loan_settlement'',
-                    ''bank'',
-                    ''adjustment'',
-                    ''revenue_run_reversal'',
-                    ''opening_balance'',
-                    ''year_end''
-                ]::text[])
+            source IS NULL
+            OR source = ANY (ARRAY[
+                ''manual'',
+                ''invoice'',
+                ''bill'',
+                ''bill_reversal'',
+                ''payment'',
+                ''receipt'',
+                ''credit_note'',
+                ''debit_note'',
+                ''inventory'',
+                ''asset'',
+                ''asset_acquisition'',
+                ''asset_depreciation'',
+                ''asset_revaluation'',
+                ''asset_impairment'',
+                ''asset_disposal'',
+                ''asset_hfs'',
+                ''lease_inception'',
+                ''lease_monthly'',
+                ''lease_payment'',
+                ''lease_direct_cost_paid'',
+                ''lease_modification'',
+                ''lease_termination'',
+                ''loan_origination'',
+                ''loan_payment'',
+                ''loan_reclassification'',
+                ''loan_accrual'',
+                ''loan_restructure'',
+                ''loan_settlement'',
+                ''bank'',
+                ''adjustment'',
+                ''revenue_run_reversal'',
+                ''opening_balance'',
+                ''year_end''
+            ]::text[])
             )',
-            '{schema}', '{schema}_journal_source_check'
+            'company_22', 'company_22_journal_source_check'
             );
         END $$;
                 
