@@ -9149,6 +9149,23 @@ window.loadCompanyProfile = loadCompanyProfile;
     host.innerHTML = emptyState("Select a structure item type to continue.");
   }
 
+
+  function toISODate(value) {
+    if (!value) return "";
+
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+      return value.slice(0, 10);
+    }
+
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   function bindCorporateStructureDynamicForm() {
     const form = document.getElementById("corporateStructureDynamicForm");
     if (!form) return;
@@ -13633,7 +13650,7 @@ async function reverseManualJournal(journalId, opts = {}) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) throw new Error("No active company");
 
-  const reversalDate = toIsoDate(opts.date || isoToday());
+  const reversalDate = toISODate(opts.date || isoToday());
   if (!reversalDate) throw new Error("Invalid reversal date");
 
   // UX gate (backend also enforces)
@@ -28797,7 +28814,7 @@ async function postLeaseJournal(lease) {
     // -------------------------
     if (USAGE_MODE === "READING") {
       // reading is a snapshot at a date: ps = pe
-      const today = toISODate(new Date().toISOString().slice(0, 10)); // YYYY-MM-DD
+      const today = toISODate(new Date()); // YYYY-MM-DD
       if (psEl) psEl.value = today;
       if (peEl) peEl.value = today;
     } else {
@@ -39361,13 +39378,7 @@ let REVENUE_ACCOUNTS_CACHE = [];
  *  - fallback heuristics (section/category/name contains revenue/income/sales)
  */
 
-function toISODate(d) {
-  // returns YYYY-MM-DD in local time
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
+
 
 function termsToDays(terms) {
   const t = String(terms || "").toLowerCase().trim();
@@ -41118,20 +41129,6 @@ function normalizeInvoiceFromApi(raw) {
   };
 }
 
-function toIsoDateOnly(v) {
-  if (!v) return "";
-
-  // already ISO date or ISO timestamp
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
-    return v.slice(0, 10);
-  }
-
-  // parse "Fri, 28 Feb 2025 00:00:00 GMT" etc
-  const d = new Date(v);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-
-  return "";
-}
 
 // Use NEXT NUMBER endpoint ONLY when user is actually committing the invoice.
 async function ensureInvoiceNumberOnCommit() {
@@ -41159,19 +41156,6 @@ async function ensureInvoiceNumberOnCommit() {
 
 window._INV_TOTALS_LOCKED = false;
 
-function toISODateInput(v) {
-  if (!v) return "";
-  const s = String(v);
-
-  // Already ISO-ish
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-
-  // Try Date parsing (works for: "Tue, 06 May 2025 00:00:00 GMT")
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-
-  return "";
-}
 
 function setSelectIfOptionExists(sel, value) {
   if (!sel || value == null || value === "") return false;
