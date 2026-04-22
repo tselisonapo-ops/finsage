@@ -1732,7 +1732,7 @@ def approve_vendor_payment_api(company_id: int, payment_id: int):
         company_role = (user.get("user_role") or user.get("company_role") or "other").strip().lower()
 
         # 🔒 permission gate
-        if not can_approve_payment(user, company_profile, mode, company_role):
+        if not can_approve_payment(user, company_profile, mode):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED|approve_payment"}), 403
 
         # ✅ Payment must exist and belong to company
@@ -1788,7 +1788,7 @@ def void_vendor_payment_api(company_id: int, payment_id: int):
         company_role = (user.get("user_role") or "").lower()
 
         # 🔒 permission: allow approvers (and owner) to void
-        if not can_approve_payment(user, company_profile, mode, company_role):
+        if not can_approve_payment(user, company_profile, mode):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED|void_payment"}), 403
 
         out = db_service.void_vendor_payment(
@@ -1842,7 +1842,7 @@ def reverse_bill_api(company_id: int, bill_id: int):
             user.get("user_role") or user.get("company_role") or "other"
         ).strip().lower()
 
-        if not can_approve_payment(user, company_profile, mode, company_role):
+        if not can_approve_payment(user, company_profile, mode):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED|reverse_bill"}), 403
 
         rid = db_service.reverse_posted_bill(
@@ -1893,7 +1893,7 @@ def writeoff_bill_api(company_id: int, bill_id: int):
         company_profile = cp.get("company") or {}
         company_role = (user.get("user_role") or user.get("company_role") or "other").strip().lower()
 
-        if not can_approve_payment(user, company_profile, mode, company_role):
+        if not can_approve_payment(user, company_profile, mode):
             return jsonify({"ok": False, "error": "PERMISSION_DENIED|writeoff_bill"}), 403
 
         acct = (data.get("writeoff_account_code") or "").strip()
