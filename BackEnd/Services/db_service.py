@@ -19443,8 +19443,8 @@ class DatabaseService:
             'CREATE UNIQUE INDEX uq_bills_vendor_number_notnull_nondraft
             ON %I.bills(company_id, vendor_id, lower(trim(number)))
             WHERE number IS NOT NULL
-                AND trim(number) <> ''''
-                AND lower(coalesce(status, '''')) <> ''draft''',
+            AND trim(number) <> ''''
+            AND lower(coalesce(status, '''')) NOT IN (''draft'', ''void'', ''written_off'', ''reversed'')',
             '{schema}'
             );
         END IF;
