@@ -51,6 +51,7 @@ from BackEnd.Services.reporting.cashflow_templates import (
     _norm_preview_columns as norm_preview_columns,
     _norm_compare as norm_compare,
 )
+from BackEnd.Services.reporting.equity_changes_builder import build_statement_of_changes_in_equity
 from BackEnd.Services.reporting.reporting_helpers import (
     build_income_statement_template,
     choose_layout,
@@ -24176,6 +24177,59 @@ class DatabaseService:
             "position": float(cash_positive - overdraft),
         }
 
+    def get_socie_v1(
+        self,
+        company_id: int,
+        date_from: date,
+        date_to: date,
+        template: str = "ifrs",
+        basis: str = "external",
+        compare: str = "none",
+        cols_mode: int = 1,
+        prior_from: Optional[date] = None,
+        prior_to: Optional[date] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        ctx = get_company_context(self, company_id) or {}
+        kwargs.pop("ctx", None)
+
+        if prior_from is None and "prior_from" in kwargs:
+            prior_from = kwargs.pop("prior_from", None)
+        if prior_to is None and "prior_to" in kwargs:
+            prior_to = kwargs.pop("prior_to", None)
+
+        basis_norm = (basis or "external").lower().strip()
+        compare_norm = (compare or "none").lower().strip()
+
+        if compare_norm not in ("none", "prior_period", "prior_year"):
+            compare_norm = "none"
+
+        try:
+            cols_mode = int(cols_mode or 1)
+        except Exception:
+            cols_mode = 1
+        if cols_mode not in (1, 2, 3):
+            cols_mode = 1
+
+        if cols_mode != 1:
+            compare_norm = "none"
+            prior_from = None
+            prior_to = None
+
+        return build_statement_of_changes_in_equity(
+            db=self,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            template=template,
+            basis=basis_norm,
+            compare=compare_norm,
+            cols_mode=cols_mode,
+            prior_from=prior_from,
+            prior_to=prior_to,
+            ctx=ctx,
+            **kwargs,
+        )
 
     def _tb_as_of(self, company_id: int, as_of: date) -> List[Dict[str, Any]]:
         """

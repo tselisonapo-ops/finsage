@@ -791,6 +791,37 @@ const ENDPOINTS = {
     return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bs${qs ? `?${qs}` : ""}`;
   },
 
+  socie: (companyId, opts = {}) => {
+    const {
+      preset,
+      from,
+      to,
+      format = "json",
+      template,
+      basis,
+      compare,
+      cols,
+      cols_mode,
+      detail,
+    } = opts;
+
+    const params = new URLSearchParams();
+    if (preset) params.append("preset", preset);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+    if (format) params.append("format", format);
+    if (template) params.append("template", template);
+    if (basis) params.append("basis", basis);
+    if (compare) params.append("compare", compare);
+    if (detail) params.append("detail", detail);
+
+    if (cols_mode != null) params.append("cols_mode", String(cols_mode));
+    else if (cols) params.append("cols", cols);
+
+    const qs = params.toString();
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/socie${qs ? `?${qs}` : ""}`;
+  },
+
   trialBalance: (companyId, { preset, from, to, format = "json" } = {}) => {
     const params = new URLSearchParams();
     if (preset) params.append("preset", preset);
@@ -1840,6 +1871,92 @@ const ENDPOINTS = {
 
     archiveItem: (cid, id) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/services/items/${encodeURIComponent(id)}`,
+  },
+
+  reports: {
+    // ---------------------------------
+    // Core reporting
+    // ---------------------------------
+    trialBalance: (cid) => `/api/companies/${cid}/reports/trial-balance`,
+    trialBalanceExport: (cid) => `/api/companies/${cid}/reports/trial-balance/export`,
+
+    generalLedger: (cid) => `/api/companies/${cid}/reports/general-ledger`,
+    generalLedgerExport: (cid) => `/api/companies/${cid}/reports/general-ledger/export`,
+
+    vat: (cid) => `/api/companies/${cid}/reports/vat`,
+    vatExport: (cid) => `/api/companies/${cid}/reports/vat/export`,
+
+    cashbook: (cid) => `/api/companies/${cid}/reports/cashbook`,
+    cashbookExport: (cid) => `/api/companies/${cid}/reports/cashbook/export`,
+
+    // ---------------------------------
+    // Lease reports
+    // ---------------------------------
+    leaseRegister: (cid) => `/api/companies/${cid}/reports/lease-register`,
+    leaseRegisterExport: (cid) => `/api/companies/${cid}/reports/lease-register/export`,
+
+    leaseSchedule: (cid) => `/api/companies/${cid}/reports/lease-schedule`,
+    leaseScheduleExport: (cid) => `/api/companies/${cid}/reports/lease-schedule/export`,
+
+    leasePayments: (cid) => `/api/companies/${cid}/reports/lease-payments`,
+    leasePaymentsExport: (cid) => `/api/companies/${cid}/reports/lease-payments/export`,
+
+    leaseMonthlyDue: (cid) => `/api/companies/${cid}/reports/lease-monthly-due`,
+    leaseMonthlyDueExport: (cid) => `/api/companies/${cid}/reports/lease-monthly-due/export`,
+
+    // ---------------------------------
+    // Loan reports
+    // ---------------------------------
+    loanRegister: (cid) => `/api/companies/${cid}/reports/loan-register`,
+    loanRegisterExport: (cid) => `/api/companies/${cid}/reports/loan-register/export`,
+
+    loanSchedule: (cid) => `/api/companies/${cid}/reports/loan-schedule`,
+    loanScheduleExport: (cid) => `/api/companies/${cid}/reports/loan-schedule/export`,
+
+    loanPayments: (cid) => `/api/companies/${cid}/reports/loan-payments`,
+    loanPaymentsExport: (cid) => `/api/companies/${cid}/reports/loan-payments/export`,
+
+    loanJournals: (cid) => `/api/companies/${cid}/reports/loan-journals`,
+    loanJournalsExport: (cid) => `/api/companies/${cid}/reports/loan-journals/export`,
+
+    // ---------------------------------
+    // Statement exports
+    // use ?format=xlsx or ?format=pdf
+    // ---------------------------------
+    balanceSheetExport: (cid) => `/api/companies/${cid}/statements/balance-sheet/export`,
+    incomeStatementExport: (cid) => `/api/companies/${cid}/statements/income-statement/export`,
+    cashFlowExport: (cid) => `/api/companies/${cid}/statements/cash-flow/export`,
+    socieExport: (cid) => `/api/companies/${cid}/statements/socie/export`,
+
+    // ---------------------------------
+    // AR controls
+    // ---------------------------------
+    arControlReconciliation: (cid) => `/api/companies/${cid}/reports/ar-control-reconciliation`,
+    arControlReconciliationExport: (cid) => `/api/companies/${cid}/reports/ar-control-reconciliation/export`,
+
+    customerStatement: (cid) => `/api/companies/${cid}/reports/customer-statement`,
+    customerStatementExport: (cid) => `/api/companies/${cid}/reports/customer-statement/export`,
+
+    arAging: (cid) => `/api/companies/${cid}/reports/ar-aging`,
+    arAgingExport: (cid) => `/api/companies/${cid}/reports/ar-aging/export`,
+
+    // ---------------------------------
+    // AP controls
+    // ---------------------------------
+    apControlReconciliation: (cid) => `/api/companies/${cid}/reports/ap-control-reconciliation`,
+    apControlReconciliationExport: (cid) => `/api/companies/${cid}/reports/ap-control-reconciliation/export`,
+
+    vendorStatement: (cid) => `/api/companies/${cid}/reports/vendor-statement`,
+    vendorStatementExport: (cid) => `/api/companies/${cid}/reports/vendor-statement/export`,
+
+    apAging: (cid) => `/api/companies/${cid}/reports/ap-aging`,
+    apAgingExport: (cid) => `/api/companies/${cid}/reports/ap-aging/export`,
+
+    // ---------------------------------
+    // Master/report lists
+    // ---------------------------------
+    lessorsList: (cid) => `/api/companies/${cid}/reports/lessors-list`,
+    lessorsListExport: (cid) => `/api/companies/${cid}/reports/lessors-list/export`,
   },
 
   // --- Dashboard / snapshots ---
@@ -17385,6 +17502,7 @@ function normalizeStmtType(raw) {
 
   if (["pnl","profit_and_loss","profit&loss","profit & loss"].includes(v)) return "pnl";
   if (["bs","balance_sheet","balance sheet"].includes(v)) return "bs";
+  if (t === "socie" || t === "equity") return "socie";
   if (["cf","cash_flow","cash flow"].includes(v)) return "cf";
   if (["tb","trial_balance","trial balance"].includes(v)) return "tb";
   if (["notes","notes_to_statements","notes to statements"].includes(v)) return "notes";
@@ -20586,9 +20704,10 @@ function renderStatementV2Html(stmt) {
 
   const titleMap = {
     pnl: meta.template === "npo" ? "Statement of Financial Performance" : "Statement of Profit or Loss",
-    bs:  "Statement of Financial Position",
-    cf:  "Statement of Cash Flows",
-    tb:  "Trial Balance",
+    bs: "Statement of Financial Position",
+    socie: "Statement of Changes in Equity",
+    cf: "Statement of Cash Flows",
+    //tb: "Trial Balance",
   };
 
   const title = titleMap[meta.statement] || "Statement";
@@ -20597,7 +20716,7 @@ function renderStatementV2Html(stmt) {
     meta.statement === "bs"
       ? `As at ${meta.as_of || meta.period?.to || ""}`
       : `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
-
+      
   const th = cols
     .map(c => `<th class="text-right py-2 px-2">${esc(c.label)}</th>`)
     .join("");
@@ -21374,6 +21493,90 @@ function renderStatementTableHtml(rows, typeKey) {
   `;
 }
 
+function renderSOCIEHtml(stmt) {
+  const meta = stmt?.meta || {};
+  const company = meta.company_name || "Company";
+  const currency = meta.currency || "";
+  const title = "Statement of Changes in Equity";
+  const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
+
+  const cols = Array.isArray(stmt?.columns) && stmt.columns.length
+    ? stmt.columns
+    : [
+        { key: "capital", label: "Capital" },
+        { key: "retained_earnings", label: "Retained Earnings" },
+        { key: "total", label: "Total Equity" },
+      ];
+
+  const rows = Array.isArray(stmt?.rows) ? stmt.rows : [];
+
+  function rowCells(values, { bold = false, underline = false } = {}) {
+    return cols.map(c => {
+      const v = Number(values?.[c.key] || 0);
+      const cls = bold ? "font-semibold" : "";
+      const inner = underline
+        ? `<div class="inline-block border-b border-slate-400 pb-[1px]">${fmtBracket(v)}</div>`
+        : `${fmtBracket(v)}`;
+      return `<td class="text-right py-2 px-2 tabular-nums ${cls}">${inner}</td>`;
+    }).join("");
+  }
+
+  const body = rows.map(r => {
+    const key = String(r?.key || "").toLowerCase();
+    const label = r?.label || r?.name || "";
+
+    const isClosing = key === "closing_balance";
+    const isStrong =
+      isClosing ||
+      key === "profit_for_period" ||
+      key === "total_comprehensive_income";
+
+    return `
+      <tr class="${isClosing ? "font-bold" : "border-b border-slate-100"}">
+        <td class="py-2 px-2 ${isStrong ? "font-semibold text-slate-900" : ""}">
+          ${esc(label)}
+        </td>
+        ${rowCells(r?.values || {}, {
+          bold: isStrong,
+          underline: isClosing,
+        })}
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <div class="mx-auto max-w-[900px]">
+      <div class="bg-white rounded border border-slate-200 p-4">
+        <div class="mb-3">
+          <div class="text-lg font-bold text-slate-900">${esc(company)}</div>
+          <div class="text-sm font-semibold text-slate-700">${esc(title)}</div>
+          <div class="text-xs text-slate-500">${esc(periodText)}</div>
+          ${currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(currency)})</div>` : ""}
+        </div>
+
+        <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 text-slate-600">
+              <tr>
+                <th class="text-left py-2 px-2">Description</th>
+                ${cols.map(c => `<th class="text-right py-2 px-2">${esc(c.label || c.key)}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${body || `
+                <tr>
+                  <td colspan="${1 + cols.length}" class="py-3 px-2 text-slate-500">
+                    No SOCIE data provided.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 // helper – normalize type dropdown value to backend key
 function normalizeStmtType(t) {
@@ -21569,15 +21772,28 @@ async function exportStatement(stmtType, format) {
   const fmt = String(format || "xlsx").toLowerCase();
 
   let url = "";
-  switch (t) {
-    case "pnl":   url = ENDPOINTS.pnl(cid, from, to, fmt); break;
-    case "bs":    url = ENDPOINTS.bs(cid, to, fmt); break;
-    case "cf":    url = ENDPOINTS.cashflow(cid, from, to, fmt); break;
-    case "tb":    url = ENDPOINTS.trialBalance(cid, from, to, fmt); break;
-    case "notes": url = ENDPOINTS.notes(cid, from, to, fmt); break;
-    default:
-      return alert("Unknown statement type.");
-  }
+    switch (t) {
+      case "pnl":
+        url = ENDPOINTS.pnl(cid, { preset: CURRENT_PERIOD_KEY, from, to, format: fmt });
+        break;
+      case "bs":
+        url = ENDPOINTS.bs(cid, { preset: CURRENT_PERIOD_KEY, asOf: to, format: fmt });
+        break;
+      case "socie":
+        url = ENDPOINTS.socie(cid, { preset: CURRENT_PERIOD_KEY, from, to, format: fmt });
+        break;
+      case "cf":
+        url = ENDPOINTS.cashflow(cid, from, to, fmt);
+        break;
+      case "tb":
+        url = ENDPOINTS.trialBalance(cid, from, to, fmt);
+        break;
+      case "notes":
+        url = ENDPOINTS.notes(cid, from, to, fmt);
+        break;
+      default:
+        return alert("Unknown statement type.");
+    }
 
   const template = document.getElementById("stmtTemplate")?.value || "ifrs";
   const basis    = document.getElementById("stmtBasis")?.value || "external";
@@ -22348,10 +22564,15 @@ async function renderStatementInterpretation(stmtType, data, ctx = {}) {
     return;
   }
 
-  if (stmtType === "tb" || stmtType === "notes") {
+  if (stmtType === "tb" || stmtType === "notes" || stmtType === "socie") {
+    const msg =
+      stmtType === "socie"
+        ? "SOCIE is a reconciliation statement and does not have automated interpretation."
+        : "Interpretation is available for Profit & Loss, Balance Sheet, and Cash Flow.";
+
     host.innerHTML = `
       <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
-        Interpretation is available for Profit &amp; Loss, Balance Sheet, and Cash Flow.
+        ${msg}
       </div>
     `;
     return;
@@ -22810,6 +23031,19 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
         break;
       }
 
+      case "socie": {
+        url = ENDPOINTS.socie(cid, {
+          ...periodParams,
+          format: "json",
+          template,
+          basis,
+          compare,
+          cols_mode,
+          detail,
+        });
+        break;
+      }
+
       case "cf": {
         // Determine how to call cashflow endpoint: with from/to or with preset only
         const extra = {
@@ -22923,6 +23157,29 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
     console.log("[stmt] type =", t, "url =", url);
     console.log("[stmt] payload keys =", data && typeof data === "object" ? Object.keys(data) : typeof data);
     console.log("[stmt] payload =", data);
+
+    // ----------------------------
+    // SOCIE routing
+    // ----------------------------
+    if (
+      t === "socie" &&
+      data?.meta?.statement === "socie" &&
+      Array.isArray(data?.columns) &&
+      Array.isArray(data?.rows)
+    ) {
+      if (typeof renderSOCIEHtml === "function") {
+        canvas.innerHTML = renderSOCIEHtml(data);
+        return;
+      }
+
+      canvas.innerHTML = `
+        <div class="text-xs text-red-500 mb-2">
+          SOCIE renderer missing: renderSOCIEHtml
+        </div>
+        <pre class="text-[11px] whitespace-pre-wrap">${esc(JSON.stringify(data, null, 2))}</pre>
+      `;
+      return;
+    }
 
     // ----------------------------
     // CF routing (must happen early)
@@ -23170,10 +23427,22 @@ function bindLeaseWizard() {
       .replaceAll('"', "&quot;");
   }
 
+  function downloadUrl(url) {
+    const a = document.createElement("a");
+    a.href = toApiUrl(url);
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.click();
+  }
+  window.downloadUrl = downloadUrl;
+
 window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
   mount.innerHTML = `
     <div class="flex items-center justify-between gap-3 mb-3">
       <div class="text-sm font-semibold">Lease Payments</div>
+      <div class="flex items-center gap-2">
+        <button id="btnLpExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+      </div>
     </div>
 
     <div class="border rounded-xl p-3 bg-slate-50 mb-3">
@@ -23234,6 +23503,7 @@ window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
   // bind buttons once per render
   const btnLoad = document.getElementById("btnLpLoad");
   const btnPay  = document.getElementById("btnLpPay");
+  const btnExport = document.getElementById("btnLpExportCsv");
 
   btnLoad?.addEventListener("click", async () => {
     const cid = window.getActiveCompanyId?.();
@@ -23298,12 +23568,36 @@ window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
     if (!leaseId) return alert("Enter Lease ID first.");
     window.openLeasePaymentModal?.({ lease_id: leaseId });
   });
+
+  btnExport?.addEventListener("click", () => {
+    const cid = window.getActiveCompanyId?.();
+    const leaseId = Number((document.getElementById("lpFilterLeaseId")?.value || "").trim() || 0);
+    const from = (document.getElementById("lpFilterFrom")?.value || "").trim();
+    const to = (document.getElementById("lpFilterTo")?.value || "").trim();
+    const q = (document.getElementById("lpFilterQ")?.value || "").trim();
+
+    const msgEl = document.getElementById("leasePaymentsMsg");
+
+    if (!cid) return showLeaseMsg(msgEl, "No company selected");
+    if (!leaseId) return showLeaseMsg(msgEl, "Lease ID is required");
+
+    const qs = new URLSearchParams({ lease_id: String(leaseId) });
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    if (q) qs.set("q", q);
+    qs.set("format", "csv");
+
+    downloadUrl(`${window.endpoints.reports.leasePaymentsExport(cid)}?${qs.toString()}`);
+  });
 };
 
 window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
   mount.innerHTML = `
     <div class="flex items-center justify-between gap-3 mb-3">
       <div class="text-sm font-semibold">Monthly Due (IFRS 16)</div>
+      <div class="flex items-center gap-2">
+        <button id="btnLmExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+      </div>
     </div>
 
     <div id="leaseMonthlyMsg" class="text-xs hidden mb-2"></div>
@@ -23370,6 +23664,23 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
       const filtered = !q ? rows : rows.filter(r => {
         const t = [r.lease_name, r.lessor_name, r.name].join(" ").toLowerCase();
         return t.includes(q);
+      });
+
+      document.getElementById("btnLmExportCsv")?.addEventListener("click", () => {
+        const cid = window.getActiveCompanyId?.();
+        const msgEl = document.getElementById("leaseMonthlyMsg");
+
+        if (!cid) return showLeaseMsg(msgEl, "No company selected");
+
+        const as_of = (document.getElementById("lmAsOf")?.value || "").trim();
+        const q = (document.getElementById("lmQ")?.value || "").trim();
+
+        const qs = new URLSearchParams();
+        if (as_of) qs.set("as_of", as_of);
+        if (q) qs.set("q", q);
+        qs.set("format", "csv");
+
+        downloadUrl(`${window.endpoints.reports.leaseMonthlyDueExport(cid)}?${qs.toString()}`);
       });
 
       if (!filtered.length) {
@@ -23511,6 +23822,7 @@ function showLeaseMsg(el, msg, type="error") {
 
     // safer direct lookup for launcher
     els.btnQuickAdd = document.getElementById("btnLessorQuickAdd");
+    esl.btnLessorsExportCsv = document.gerElementById("btnLessorsExportCsv");
     els.qModal = document.getElementById("lessorQuickModal");
 
     // Modals/drawers are global overlays → keep document.getElementById for those
@@ -23647,6 +23959,18 @@ async function fetchLessors() {
         const id = parseInt(btn.getAttribute("data-lessor-open"), 10);
         openLessorDrawer(id);
       });
+    });
+  
+    document.getElementById("btnLessorsExportCsv")?.addEventListener("click", () => {
+      const cid = window.getActiveCompanyId?.();
+      if (!cid) return;
+
+      const q = (document.getElementById("lessorSearch")?.value || "").trim();
+      const qs = new URLSearchParams();
+      if (q) qs.set("q", q);
+      qs.set("format", "csv");
+
+      downloadUrl(`${window.endpoints.reports.lessorsListExport(cid)}?${qs.toString()}`);
     });
   }
 
@@ -26429,6 +26753,27 @@ window.renderLeaseRegTab = async function renderLeaseRegTab({ force = false } = 
         body.innerHTML = `<div class="text-sm text-slate-600 border rounded p-3">
           Missing endpoint builder: endpoints.leases.listSchedule(companyId, leaseId).
         </div>`;
+        document.getElementById("btnLeaseScheduleExportCsv")?.addEventListener("click", () => {
+          const cid = window.getActiveCompanyId?.();
+          const msgEl =
+            document.getElementById("leaseScheduleMsg") ||
+            document.getElementById("leaseMsg");
+
+          if (!cid) return window.leaseRegShowMsg?.("No company selected");
+
+          const lease_id = leaseId; // 🔥 already available in this function
+
+          if (!lease_id) {
+            return window.leaseRegShowMsg?.("Lease ID is required");
+          }
+
+          const qs = new URLSearchParams({
+            lease_id: String(lease_id),
+            format: "csv",
+          });
+
+          downloadUrl(`${window.ENDPOINTS.reports.leaseScheduleExport(cid)}?${qs.toString()}`);
+        });
         return;
       }
 
@@ -26476,6 +26821,14 @@ window.renderLeaseRegTab = async function renderLeaseRegTab({ force = false } = 
       }
 
       body.innerHTML = `
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-sm font-semibold">Lease Schedule</div>
+          <button id="btnLeaseScheduleExportCsv"
+            class="px-3 py-1.5 rounded border text-sm bg-white">
+            Export CSV
+          </button>
+        </div>
+
         <div class="border rounded-xl overflow-auto">
           <table class="min-w-full text-xs">
             <thead class="bg-slate-50 border-b">
@@ -26690,7 +27043,10 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
   mount.innerHTML = `
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
       <div class="text-sm font-semibold">Registered Leases</div>
-      <button id="btnLrLoad" class="px-3 py-1.5 rounded bg-slate-900 text-white text-sm">Load</button>
+      <div class="flex items-center gap-2">
+        <button id="btnLrLoad" class="px-3 py-1.5 rounded bg-slate-900 text-white text-sm">Load</button>
+        <button id="btnLeaseRegisterExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
+      </div>
     </div>
 
     <div id="leaseRegisterMsg" class="text-xs hidden mb-2"></div>
@@ -26719,6 +27075,7 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
 
   const msgEl = document.getElementById("leaseRegisterMsg");
   const body = document.getElementById("lrTableBody");
+  const btnExport = document.getElementById("btnLeaseRegisterExportCsv");
 
   const show = (m, type = "error") => {
     if (!msgEl) return;
@@ -26729,6 +27086,14 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
     msgEl.classList.toggle("text-slate-600", type === "info");
   };
 
+  btnExport?.addEventListener("click", () => {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || null;
+    if (!cid) return show("No company selected");
+
+    const qs = new URLSearchParams({ format: "csv" });
+    downloadUrl(`${window.ENDPOINTS.reports.leaseRegisterExport(cid)}?${qs.toString()}`);
+  });
+
   document.getElementById("btnLrLoad")?.addEventListener("click", async () => {
     const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || null;
     if (!cid) return show("No company selected");
@@ -26736,7 +27101,6 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
     try {
       show("Loading…", "info");
 
-      // ✅ use your real endpoints object (ENDPOINTS), not window.endpoints
       const url = window.ENDPOINTS?.leases?.list
         ? window.ENDPOINTS.leases.list(cid, { limit: 200, offset: 0 })
         : `/api/companies/${encodeURIComponent(cid)}/leases?limit=200&offset=0`;
@@ -26772,19 +27136,16 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
         `;
       }).join("");
 
-      // ✅ OPEN = open the full-screen modal with tabs
       body.querySelectorAll("[data-open-lease]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const leaseId = Number(btn.getAttribute("data-open-lease") || 0) || null;
           if (!leaseId) return;
 
-          // keep global active lease
           window.__ACTIVE_LEASE_ID = leaseId;
           window.LEASE_UI = window.LEASE_UI || {};
           window.LEASE_UI.state = window.LEASE_UI.state || {};
           window.LEASE_UI.state.leaseId = leaseId;
 
-          // open modal (from the modal code we created)
           window.openLeaseRegisterModal?.(leaseId, { tab: "overview" });
         });
       });
@@ -34633,214 +34994,263 @@ function bindAssetRecordsPickerModal({ cid }) {
     return data;
   }
 
-function renderContractPreview(c = {}) {
-  const el = $("revContractPreviewBody");
-  if (!el) return;
+  function getSettlementPattern(contract) {
+    return (contract?.payload_json?.settlement_pattern || "").toLowerCase();
+  }
 
-  if (!c?.id) {
+  function renderContractPreview(c = {}) {
+    const el = $("revContractPreviewBody");
+    if (!el) return;
+
+    if (!c?.id) {
+      el.innerHTML = `
+        <div class="text-sm text-slate-500">
+          Select a contract from the left to preview it, or click New Contract to create one.
+        </div>
+      `;
+      return;
+    }
+
+    const expectedPosition = getExpectedPositionFromSettlementPattern(
+      c?.payload_json?.settlement_pattern || ""
+    );
+
+    const policy = getSelectedBillingPolicy();
+
+    const billingCfg = c?.payload_json?.billing_config || {};
+    const milestoneBasis = billingCfg.milestone_basis || "obligation";
+    const periodicity = billingCfg.periodicity || "";
+    const billingDay = billingCfg.billing_day ?? "";
+    const allowOverride = !!billingCfg.allow_obligation_override;
+    const autoAllocate = billingCfg.auto_allocate_contract_pool !== false;
+    const billingNotes = billingCfg.notes || "";
+
+    let billingHint = "";
+    if (policy?.billing_method === "milestone") {
+      if (milestoneBasis === "obligation") {
+        const settlementPattern = getSettlementPattern(c);
+
+        if (policy?.billing_method === "milestone") {
+          if (milestoneBasis === "obligation") {
+            if (settlementPattern === "billing_before_revenue") {
+              billingHint =
+                "This contract allows advance billing at contract level. Billed amounts will remain in contract liability until related obligations are satisfied.";
+            } else {
+              billingHint =
+                "This contract requires revenue recognition at obligation level before billing. Each obligation acts as a billing trigger.";
+            }
+          } else {
+            billingHint =
+              "This contract uses custom billing milestones. Billing milestones may differ from the obligation structure.";
+          }
+        }
+      } else {
+        billingHint = "This contract uses custom billing milestones. Billing milestones may differ from the obligation structure.";
+      }
+    } else if (policy?.billing_method === "periodic") {
+      billingHint = "This contract can bill at contract level using the configured period schedule.";
+    } else if (policy?.billing_method === "manual") {
+      billingHint = "This contract allows manual billing decisions at contract or obligation level.";
+    } else if (policy?.billing_method === "progress") {
+      billingHint = "This contract uses contract-level progress billing and can coordinate over-time billing across obligations.";
+    }
+
+    const billingHintHtml = billingHint
+      ? `
+        <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          ${esc(billingHint)}
+        </div>
+      `
+      : "";
+
     el.innerHTML = `
-      <div class="text-sm text-slate-500">
-        Select a contract from the left to preview it, or click New Contract to create one.
+      <div class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
+          <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
+          <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
+          <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
+          <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
+          <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
+          <div><span class="text-slate-500">Milestone Basis:</span> <strong>${esc(c.billing_method === "milestone" ? milestoneBasis : "—")}</strong></div>
+          <div><span class="text-slate-500">Periodicity:</span> <strong>${esc(c.billing_method === "periodic" ? periodicity : "—")}</strong></div>
+          <div><span class="text-slate-500">Billing Day:</span> <strong>${esc(c.billing_method === "periodic" && billingDay ? String(billingDay) : "—")}</strong></div>
+          <div><span class="text-slate-500">Allow Override:</span> <strong>${allowOverride ? "Yes" : "No"}</strong></div>
+          <div><span class="text-slate-500">Auto Allocate:</span> <strong>${autoAllocate ? "Yes" : "No"}</strong></div>
+          <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
+          <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
+          <div><span class="text-slate-500">Expected Position:</span> <strong>${esc(expectedPosition)}</strong></div>
+          <div><span class="text-slate-500">Current Position:</span> <strong>${esc(getCurrentPositionFromContract(c))}</strong></div>
+          <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
+          <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
+        </div>
+
+        <div>
+          <div class="text-slate-500 text-xs mb-1">Notes</div>
+          <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
+        </div>
+
+        ${
+          billingNotes
+            ? `
+              <div>
+                <div class="text-slate-500 text-xs mb-1">Billing Notes</div>
+                <div class="border rounded p-3 bg-slate-50">${esc(billingNotes)}</div>
+              </div>
+            `
+            : ""
+        }
+
+        ${billingHintHtml}
+
+        <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
+          <button
+            id="revPreviewCreateInvoiceBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+          >
+            Create Invoice
+          </button>
+
+          <button
+            id="revPreviewRecordPaymentBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+          >
+            Record Payment
+          </button>
+
+          <button
+            id="revPreviewDefineObligationsBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+          >
+            Define Obligations
+          </button>
+
+          <button
+            id="revPreviewRecalcBtn"
+            type="button"
+            class="px-3 py-2 text-sm rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100"
+          >
+            Recalculate Revenue
+          </button>
+        </div>
       </div>
     `;
-    return;
-  }
 
-  const expectedPosition = getExpectedPositionFromSettlementPattern(
-    c?.payload_json?.settlement_pattern || ""
-  );
+      const createBtn = $("revPreviewCreateInvoiceBtn");
+      if (createBtn) {
+        const settlementPattern = getSettlementPattern(c);
 
-  const policy = getSelectedBillingPolicy();
-
-  const billingCfg = c?.payload_json?.billing_config || {};
-  const milestoneBasis = billingCfg.milestone_basis || "obligation";
-  const periodicity = billingCfg.periodicity || "";
-  const billingDay = billingCfg.billing_day ?? "";
-  const allowOverride = !!billingCfg.allow_obligation_override;
-  const autoAllocate = billingCfg.auto_allocate_contract_pool !== false;
-  const billingNotes = billingCfg.notes || "";
-
-  let billingHint = "";
-  if (policy?.billing_method === "milestone") {
-    if (milestoneBasis === "obligation") {
-      billingHint = "This contract uses obligation-based milestones. Each obligation acts as a billing milestone.";
-    } else {
-      billingHint = "This contract uses custom billing milestones. Billing milestones may differ from the obligation structure.";
-    }
-  } else if (policy?.billing_method === "periodic") {
-    billingHint = "This contract can bill at contract level using the configured period schedule.";
-  } else if (policy?.billing_method === "manual") {
-    billingHint = "This contract allows manual billing decisions at contract or obligation level.";
-  } else if (policy?.billing_method === "progress") {
-    billingHint = "This contract uses contract-level progress billing and can coordinate over-time billing across obligations.";
-  }
-
-  const billingHintHtml = billingHint
-    ? `
-      <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-        ${esc(billingHint)}
-      </div>
-    `
-    : "";
-
-  el.innerHTML = `
-    <div class="space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div><span class="text-slate-500">Contract No:</span> <strong>${esc(c.contract_number || "")}</strong></div>
-        <div><span class="text-slate-500">Status:</span> <strong>${esc(c.status || "")}</strong></div>
-        <div><span class="text-slate-500">Title:</span> <strong>${esc(c.contract_title || "")}</strong></div>
-        <div><span class="text-slate-500">Customer:</span> <strong>${esc(c.customer_name || "")}</strong></div>
-        <div><span class="text-slate-500">Currency:</span> <strong>${esc(c.contract_currency || "")}</strong></div>
-        <div><span class="text-slate-500">Billing Method:</span> <strong>${esc(c.billing_method || "")}</strong></div>
-        <div><span class="text-slate-500">Milestone Basis:</span> <strong>${esc(c.billing_method === "milestone" ? milestoneBasis : "—")}</strong></div>
-        <div><span class="text-slate-500">Periodicity:</span> <strong>${esc(c.billing_method === "periodic" ? periodicity : "—")}</strong></div>
-        <div><span class="text-slate-500">Billing Day:</span> <strong>${esc(c.billing_method === "periodic" && billingDay ? String(billingDay) : "—")}</strong></div>
-        <div><span class="text-slate-500">Allow Override:</span> <strong>${allowOverride ? "Yes" : "No"}</strong></div>
-        <div><span class="text-slate-500">Auto Allocate:</span> <strong>${autoAllocate ? "Yes" : "No"}</strong></div>
-        <div><span class="text-slate-500">Contract Date:</span> <strong>${esc(toDateInputValue(c.contract_date))}</strong></div>
-        <div><span class="text-slate-500">Settlement Pattern:</span> <strong>${esc(c?.payload_json?.settlement_pattern || "")}</strong></div>
-        <div><span class="text-slate-500">Expected Position:</span> <strong>${esc(expectedPosition)}</strong></div>
-        <div><span class="text-slate-500">Current Position:</span> <strong>${esc(getCurrentPositionFromContract(c))}</strong></div>
-        <div><span class="text-slate-500">Transaction Price:</span> <strong>${money(c.transaction_price)}</strong></div>
-        <div><span class="text-slate-500">Variable Consideration:</span> <strong>${money(c.variable_consideration_constrained)}</strong></div>
-      </div>
-
-      <div>
-        <div class="text-slate-500 text-xs mb-1">Notes</div>
-        <div class="border rounded p-3 bg-slate-50">${esc(c.notes || "—")}</div>
-      </div>
-
-      ${
-        billingNotes
-          ? `
-            <div>
-              <div class="text-slate-500 text-xs mb-1">Billing Notes</div>
-              <div class="border rounded p-3 bg-slate-50">${esc(billingNotes)}</div>
-            </div>
-          `
-          : ""
-      }
-
-      ${billingHintHtml}
-
-      <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
-        <button
-          id="revPreviewCreateInvoiceBtn"
-          type="button"
-          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-        >
-          Create Invoice
-        </button>
-
-        <button
-          id="revPreviewRecordPaymentBtn"
-          type="button"
-          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-        >
-          Record Payment
-        </button>
-
-        <button
-          id="revPreviewDefineObligationsBtn"
-          type="button"
-          class="px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-        >
-          Define Obligations
-        </button>
-
-        <button
-          id="revPreviewRecalcBtn"
-          type="button"
-          class="px-3 py-2 text-sm rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100"
-        >
-          Recalculate Revenue
-        </button>
-      </div>
-    </div>
-  `;
-
-    const createBtn = $("revPreviewCreateInvoiceBtn");
-    if (createBtn) {
-      if (policy?.billing_method === "milestone" && milestoneBasis === "obligation") {
-        createBtn.textContent = "Invoice via Obligation";
-        createBtn.title = "Milestone billing with obligation basis requires an obligation-linked invoice";
-      } else if (policy?.billing_method === "periodic") {
-        createBtn.textContent = "Create Contract Invoice";
-        createBtn.title = "Periodic billing defaults to contract-level billing";
-      } else {
-        createBtn.textContent = "Create Invoice";
-        createBtn.title = "";
-      }
-    }
-
-    $("revPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
-      try {
-        const contract = state.selectedContract || c;
-        if (!contract?.id) throw new Error("Select a contract first.");
-
-        const activePolicy = getSelectedBillingPolicy();
-
-        if (policy?.billing_method === "milestone" && milestoneBasis === "obligation" && requiresObligationForInvoice()) {
-          throw new Error(
-            "This contract uses obligation-based milestone billing. Select an obligation first, then create the invoice from the obligation preview."
-          );
-        }
-
-        const prefill = buildInvoicePrefillFromContractPreview(contract);
-        prefill.billing_policy = activePolicy?.billing_method || null;
-        prefill.billing_level = "contract";
-        prefill.milestone_basis = milestoneBasis;
-
-        await redirectToInvoiceFromContract(prefill);
-      } catch (e) {
-        setMsg(e?.message || "Invoice redirect failed", "error");
-      }
-    });
-
-    $("revPreviewRecordPaymentBtn")?.addEventListener("click", () => {
-      try {
-        const contract = state.selectedContract || c;
-        if (!contract?.id) throw new Error("Select a contract first.");
-
-        const activePolicy = getSelectedBillingPolicy();
-
-        state.selectedContract = contract;
-
-        if ($("revContractId")) $("revContractId").value = String(contract.id || "");
-        if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
-        if ($("revCustomerId")) $("revCustomerId").value = String(contract.customer_id || "");
-        if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
-        if ($("revObligationId")) $("revObligationId").value = String(state.selectedObligation?.id || "");
-
-        if (activePolicy?.billing_method === "milestone" && milestoneBasis === "obligation") {
-          setMsg("This contract uses obligation-based milestone billing. Select the related obligation before saving billing/cash entries.");
+        if (policy?.billing_method === "milestone" && milestoneBasis === "obligation") {
+          if (settlementPattern === "billing_before_revenue") {
+            createBtn.textContent = "Create Contract Invoice";
+            createBtn.title =
+              "You can bill at contract level first. Amounts will be recorded as contract liability until obligations are satisfied.";
+          } else {
+            createBtn.textContent = "Invoice via Obligation";
+            createBtn.title =
+              "Revenue must be recognized at obligation level before invoicing.";
+          }
+        } else if (policy?.billing_method === "periodic") {
+          createBtn.textContent = "Create Contract Invoice";
+          createBtn.title = "Periodic billing defaults to contract-level billing";
         } else {
-          setMsg("Enter payment details, then save the cash receipt.");
+          createBtn.textContent = "Create Invoice";
+          createBtn.title = "";
         }
-
-        setActiveTab("billings");
-      } catch (e) {
-        setMsg(e?.message || "Could not open payment flow", "error");
       }
-    });
 
-    $("revPreviewDefineObligationsBtn")?.addEventListener("click", () => {
-      try {
-        state.selectedContract = state.selectedContract || c;
-        openObligationsForSelectedContract();
-      } catch (e) {
-        setMsg(e?.message || "Could not open obligations", "error");
-      }
-    });
+      $("revPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
+        try {
+          const contract = state.selectedContract || c;
+          if (!contract?.id) throw new Error("Select a contract first.");
 
-    $("revPreviewRecalcBtn")?.addEventListener("click", async () => {
-      try {
-        await recalcSelectedRevenueContract();
-      } catch (e) {
-        setMsg(e?.message || "Recalculation failed", "error");
-      }
-    });
-  }
+          const activePolicy = getSelectedBillingPolicy();
+
+          const settlementPattern = getSettlementPattern(contract);
+
+          const mustUseObligationFlow =
+            policy?.billing_method === "milestone" &&
+            milestoneBasis === "obligation" &&
+            settlementPattern === "revenue_before_billing" &&
+            requiresObligationForInvoice();
+
+            if (mustUseObligationFlow) {
+              throw new Error(
+                "This contract follows revenue-before-billing. Recognize revenue through the relevant obligation first, then create the invoice from the obligation preview."
+              );
+            }
+
+            // ✅ PLACE IT HERE (AFTER BLOCK CHECK, BEFORE PREFILL)
+            if (
+              settlementPattern === "billing_before_revenue" &&
+              policy?.billing_method === "milestone" &&
+              milestoneBasis === "obligation"
+            ) {
+              setMsg(
+                "This invoice will be recorded as a contract liability until obligations are satisfied.",
+                "info"
+              );
+            }
+
+
+          const prefill = buildInvoicePrefillFromContractPreview(contract);
+          prefill.billing_policy = activePolicy?.billing_method || null;
+          prefill.billing_level = "contract";
+          prefill.milestone_basis = milestoneBasis;
+
+          await redirectToInvoiceFromContract(prefill);
+        } catch (e) {
+          setMsg(e?.message || "Invoice redirect failed", "error");
+        }
+      });
+
+      $("revPreviewRecordPaymentBtn")?.addEventListener("click", () => {
+        try {
+          const contract = state.selectedContract || c;
+          if (!contract?.id) throw new Error("Select a contract first.");
+
+          const activePolicy = getSelectedBillingPolicy();
+
+          state.selectedContract = contract;
+
+          if ($("revContractId")) $("revContractId").value = String(contract.id || "");
+          if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
+          if ($("revCustomerId")) $("revCustomerId").value = String(contract.customer_id || "");
+          if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
+          if ($("revObligationId")) $("revObligationId").value = String(state.selectedObligation?.id || "");
+
+          if (activePolicy?.billing_method === "milestone" && milestoneBasis === "obligation") {
+            setMsg("This contract uses obligation-based milestone billing. Select the related obligation before saving billing/cash entries.");
+          } else {
+            setMsg("Enter payment details, then save the cash receipt.");
+          }
+
+          setActiveTab("billings");
+        } catch (e) {
+          setMsg(e?.message || "Could not open payment flow", "error");
+        }
+      });
+
+      $("revPreviewDefineObligationsBtn")?.addEventListener("click", () => {
+        try {
+          state.selectedContract = state.selectedContract || c;
+          openObligationsForSelectedContract();
+        } catch (e) {
+          setMsg(e?.message || "Could not open obligations", "error");
+        }
+      });
+
+      $("revPreviewRecalcBtn")?.addEventListener("click", async () => {
+        try {
+          await recalcSelectedRevenueContract();
+        } catch (e) {
+          setMsg(e?.message || "Recalculation failed", "error");
+        }
+      });
+    }
 
   function renderObligationPreview(o = {}) {
     const el = $("revObligationPreviewBody");
@@ -51005,6 +51415,14 @@ function mountControlRoom(key) {
   return page;
 }
 
+function downloadUrl(url) {
+  const a = document.createElement("a");
+  a.href = toApiUrl(url);
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.click();
+}
+
 async function renderARRecon() {
   const companyId = CURRENT_COMPANY_ID;
   const asAt0 = isoToday();
@@ -51014,14 +51432,15 @@ async function renderARRecon() {
 
   mount.innerHTML = `
     <div class="card shadow-sage p-3">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:700; color:var(--fs-navy); font-size:18px;">AR Control Reconciliation</div>
           <div style="color:var(--fs-muted); font-size:12px;">Control vs subledger (customers) as at a date</div>
         </div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <input id="arReconAsAt" type="date" value="${asAt0}" class="pill" />
           <button id="btnRunRecon" class="btn btn-highlight">Run</button>
+          <button id="btnExportReconCsv" class="btn">Export CSV</button>
         </div>
       </div>
 
@@ -51031,6 +51450,7 @@ async function renderARRecon() {
 
   const out = mount.querySelector("#arReconOut");
   const btn = mount.querySelector("#btnRunRecon");
+  const btnExport = mount.querySelector("#btnExportReconCsv");
 
   async function run() {
     const asAt = mount.querySelector("#arReconAsAt").value || asAt0;
@@ -51101,6 +51521,11 @@ async function renderARRecon() {
   }
 
   btn.onclick = run;
+  btnExport.onclick = () => {
+    const asAt = (mount.querySelector("#arReconAsAt")?.value || asAt0).slice(0, 10);
+    const qs = new URLSearchParams({ as_of: asAt, format: "csv" });
+    downloadUrl(`${ENDPOINTS.reports.arControlReconciliationExport(companyId)}?${qs.toString()}`);
+  };
   run();
 }
 
@@ -51140,6 +51565,7 @@ async function renderARStatements() {
           <input id="stmtFrom" type="date" value="${isoMonthStart()}" class="pill" />
           <input id="stmtTo" type="date" value="${isoToday()}" class="pill" />
           <button id="btnRunStmt" class="btn btn-highlight">Run</button>
+          <button id="btnExportStmtCsv" class="btn">Export CSV</button>
         </div>
       </div>
 
@@ -51149,6 +51575,7 @@ async function renderARStatements() {
 
   const out = mount.querySelector("#stmtOut");
   const btn = mount.querySelector("#btnRunStmt");
+  const btnExport = mount.querySelector("#btnExportStmtCsv");
 
   function renderReverseBox() {
     return `
@@ -51388,6 +51815,25 @@ async function renderARStatements() {
   }
 
   btn.onclick = run;
+  btnExport.onclick = () => {
+    const customerId = mount.querySelector("#stmtCustomerId").value.trim();
+    const from = mount.querySelector("#stmtFrom").value;
+    const to = mount.querySelector("#stmtTo").value;
+
+    if (!customerId) {
+      out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a Customer ID.</div>`;
+      return;
+    }
+
+    const qs = new URLSearchParams({
+      customer_id: customerId,
+      from,
+      to,
+      format: "csv",
+    });
+
+    downloadUrl(`${ENDPOINTS.reports.customerStatementExport(companyId)}?${qs.toString()}`);
+  };
 }
 
 
@@ -51575,6 +52021,7 @@ async function renderARAging() {
           <input id="agingAsAt" type="date" value="${asAt0}" class="pill" />
           <input id="agingCustomerId" placeholder="Customer ID (optional)" class="pill" style="width:180px;" />
           <button id="btnRunAging" class="btn btn-highlight">Run</button>
+          <button id="btnExportAgingCsv" class="btn">Export CSV</button>
         </div>
       </div>
 
@@ -51584,6 +52031,7 @@ async function renderARAging() {
 
   const out = mount.querySelector("#agingOut");
   const btn = mount.querySelector("#btnRunAging");
+  const btnExport = mount.querySelector("#btnExportAgingCsv");
 
   async function run() {
     const asAt = (mount.querySelector("#agingAsAt")?.value || asAt0).slice(0, 10);
@@ -51683,6 +52131,15 @@ async function renderARAging() {
   }
 
   btn.onclick = run;
+  btnExport.onclick = () => {
+    const asAt = (mount.querySelector("#agingAsAt")?.value || asAt0).slice(0, 10);
+    const customerId = (mount.querySelector("#agingCustomerId")?.value || "").trim();
+
+    const qs = new URLSearchParams({ as_of: asAt, format: "csv" });
+    if (customerId) qs.set("customer_id", customerId);
+
+    downloadUrl(`${ENDPOINTS.reports.arAgingExport(companyId)}?${qs.toString()}`);
+  };
   run();
 }
 
@@ -61095,14 +61552,15 @@ async function renderAPRecon() {
 
   mount.innerHTML = `
     <div class="card shadow-sage p-3">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:700; color:var(--fs-navy); font-size:18px;">AP Control Reconciliation</div>
           <div style="color:var(--fs-muted); font-size:12px;">Control vs subledger (vendors) as at a date</div>
         </div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <input id="apReconAsAt" type="date" value="${asAt0}" class="pill" />
           <button id="btnRunApRecon" class="btn btn-highlight">Run</button>
+          <button id="btnExportApReconCsv" class="btn">Export CSV</button>
         </div>
       </div>
 
@@ -61112,6 +61570,7 @@ async function renderAPRecon() {
 
   const out = mount.querySelector("#apReconOut");
   const btn = mount.querySelector("#btnRunApRecon");
+  const btnExport = mount.querySelector("#btnExportApReconCsv");
 
   async function run() {
     const asAt = (mount.querySelector("#apReconAsAt")?.value || asAt0).slice(0, 10);
@@ -61187,6 +61646,11 @@ async function renderAPRecon() {
   }
 
   btn.onclick = run;
+  btnExport.onclick = () => {
+    const asAt = (mount.querySelector("#apReconAsAt")?.value || asAt0).slice(0, 10);
+    const qs = new URLSearchParams({ as_of: asAt, format: "csv" });
+    downloadUrl(`${ENDPOINTS.reports.apControlReconciliationExport(companyId)}?${qs.toString()}`);
+  };
   run();
 }
 window.renderAPRecon = renderAPRecon;
@@ -61212,6 +61676,7 @@ async function renderAPStatements() {
           <input id="stmtFrom" type="date" value="${isoMonthStart()}" class="pill" />
           <input id="stmtTo" type="date" value="${isoToday()}" class="pill" />
           <button id="btnRunVendorStmt" class="btn btn-highlight">Run</button>
+          <button id="btnExportVendorStmtCsv" class="btn">Export CSV</button>
         </div>
       </div>
 
@@ -61221,6 +61686,7 @@ async function renderAPStatements() {
 
   const out = mount.querySelector("#stmtOut");
   const btn = mount.querySelector("#btnRunVendorStmt");
+  const btnExport = mount.querySelector("#btnExportVendorStmtCsv");
 
   // -----------------------
   // UI helpers (mirrors AR)
@@ -61518,6 +61984,25 @@ async function renderAPStatements() {
   }
 
   btn.onclick = run;
+  btnExport.onclick = () => {
+    const vendorId = mount.querySelector("#stmtVendorId").value.trim();
+    const from = mount.querySelector("#stmtFrom").value;
+    const to = mount.querySelector("#stmtTo").value;
+
+    if (!vendorId) {
+      out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a Vendor ID.</div>`;
+      return;
+    }
+
+    const qs = new URLSearchParams({
+      vendor_id: vendorId,
+      from,
+      to,
+      format: "csv",
+    });
+
+    downloadUrl(`${ENDPOINTS.reports.vendorStatementExport(companyId)}?${qs.toString()}`);
+  };
 }
 window.renderAPStatements = renderAPStatements;
 
@@ -61544,6 +62029,7 @@ async function renderAPAging() {
           <input id="agingAsAt" type="date" value="${asAt0}" class="pill" />
           <input id="agingVendorId" placeholder="Vendor ID (optional)" class="pill" style="width:180px;" />
           <button id="btnRunApAging" class="btn btn-highlight">Run</button>
+          <button id="btnExportApAgingCsv" class="btn">Export CSV</button>
         </div>
       </div>
 
@@ -61553,6 +62039,7 @@ async function renderAPAging() {
 
   const out = mount.querySelector("#agingOut");
   const btn = mount.querySelector("#btnRunApAging");
+  const btnExport = mount.querySelector("#btnExportApAgingCsv");
 
   async function run() {
     const asAt = (mount.querySelector("#agingAsAt")?.value || asAt0).slice(0, 10);
@@ -61653,6 +62140,15 @@ async function renderAPAging() {
   }
 
   btn.onclick = run;
+  btnExport.onclick = () => {
+    const asAt = (mount.querySelector("#agingAsAt")?.value || asAt0).slice(0, 10);
+    const vendorId = (mount.querySelector("#agingVendorId")?.value || "").trim();
+
+    const qs = new URLSearchParams({ as_of: asAt, format: "csv" });
+    if (vendorId) qs.set("vendor_id", vendorId);
+
+    downloadUrl(`${ENDPOINTS.reports.apAgingExport(companyId)}?${qs.toString()}`);
+  };
   run();
 }
 window.renderAPAging = renderAPAging;

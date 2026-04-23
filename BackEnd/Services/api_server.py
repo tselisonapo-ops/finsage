@@ -181,6 +181,9 @@ from BackEnd.Services.practitioner.practitioner_risk_independence import risk_in
 from BackEnd.Services.practitioner.practitioner_override_log import override_log_bp
 from BackEnd.Services.routes.loans_routes import loans_bp
 from BackEnd.Services.routes.revenue_routes import revenue_bp
+from BackEnd.Routes.report_run import report_bp
+
+
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -313,6 +316,7 @@ app.register_blueprint(risk_independence_bp)
 app.register_blueprint(override_log_bp)
 app.register_blueprint(loans_bp)
 app.register_blueprint(revenue_bp)
+app.register_blueprint(report_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
@@ -8243,6 +8247,72 @@ def api_cashflow(company_id: int):
 
     return jsonify(stmt), 200
 
+@app.route("/api/companies/<int:company_id>/socie", methods=["GET"])
+@require_auth
+def api_socie(company_id: int):
+    if not _company_guard(company_id):
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    # FY-aware period resolver
+    date_from, date_to, meta = resolve_company_period(
+        db_service, company_id, request, mode="range"
+    )
+    if not date_from or not date_to:
+        return jsonify({"error": "from/to are required (or provide preset)"}), 400
+
+    ctx = get_company_context(db_service, company_id) or {}
+
+    template = (request.args.get("template") or ctx.get("template") or "ifrs").lower()
+    basis = (request.args.get("basis") or "external").lower()
+    compare = (request.args.get("compare") or "none").lower()
+
+    if basis not in ("external", "management"):
+        basis = "external"
+    if compare not in ("none", "prior_period", "prior_year"):
+        compare = "none"
+    if template not in ("ifrs", "npo"):
+        template = "ifrs"
+
+    try:
+        cols_mode = int(request.args.get("cols_mode") or 1)
+    except ValueError:
+        cols_mode = 1
+    cols_mode = 1 if cols_mode not in (1, 2, 3) else cols_mode
+
+    # keep same behavior as your other statements
+    if cols_mode != 1:
+        compare = "none"
+
+    prior_from = prior_to = None
+    if compare != "none" and cols_mode == 1:
+        prior_from, prior_to = resolve_compare_period(
+            db_service, company_id, meta, compare, mode="range"
+        )
+
+    try:
+        stmt = db_service.get_socie_v1(
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            template=template,
+            basis=basis,
+            compare=compare,
+            cols_mode=cols_mode,
+            prior_from=prior_from,
+            prior_to=prior_to,
+        )
+
+        if isinstance(stmt, dict):
+            stmt.setdefault("meta", {})
+            stmt["meta"].update(meta)
+            stmt["meta"]["template"] = template
+            stmt["meta"]["statement"] = "socie"
+
+    except Exception as e:
+        current_app.logger.exception("SOCIE build failed")
+        return jsonify({"ok": False, "error": str(e), "type": type(e).__name__}), 500
+
+    return jsonify(stmt), 200
 
 def get_company_emails_by_role(company_id, role):
     sql = """
