@@ -6401,6 +6401,20 @@ function initDashboardModeSwitcher(currentMode = "internal") {
   };
 }
 
+async function getReportExportUrl(cid, reportKey, exportUrl) {
+  const res = await apiFetch(`/api/companies/${cid}/reports/export-token`, {
+    method: "POST",
+    body: JSON.stringify({ report_key: reportKey }),
+  });
+
+  const token = res?.token || res?.data?.token;
+  if (!token) throw new Error("Could not create export token");
+
+  const sep = exportUrl.includes("?") ? "&" : "?";
+  return `${exportUrl}${sep}t=${encodeURIComponent(token)}`;
+} 
+window.getReportExportUrl = getReportExportUrl;
+
 function renderPostingDashboardContextBanner(mount, me, postingCtx = null) {
   const storedCtx = (() => {
     try {
