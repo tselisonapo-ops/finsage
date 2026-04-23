@@ -23501,9 +23501,9 @@ window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
   `;
 
   // bind buttons once per render
-  const btnLoad = document.getElementById("btnLpLoad");
-  const btnPay  = document.getElementById("btnLpPay");
-  const btnExport = document.getElementById("btnLpExportCsv");
+  const btnLoad = mount.querySelector("#btnLpLoad");
+  const btnPay = mount.querySelector("#btnLpPay");
+  const btnExport = mount.querySelector("#btnLpExportCsv");
 
   btnLoad?.addEventListener("click", async () => {
     const cid = window.getActiveCompanyId?.();
