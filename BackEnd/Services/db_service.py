@@ -46197,6 +46197,64 @@ class DatabaseService:
             "valuations": [dict(x) for x in (cur.fetchall() or [])]
         }
 
+    def get_fixed_assets_snapshot(self, company_id: int, *, as_of=None) -> dict:
+        report = self.list_asset_register_report(
+            company_id,
+            as_of=as_of,
+            limit=100000,
+            offset=0,
+        )
+
+        items = report.get("items", []) or []
+
+        def _f(v):
+            try:
+                return float(v or 0)
+            except Exception:
+                return 0.0
+
+        book_value = 0.0
+        accum_dep = 0.0
+        net_carrying = 0.0
+        pending_dep = 0
+
+        for a in items:
+            status = str(a.get("status") or "").strip().lower()
+            if status in {"disposed", "void"}:
+                continue
+
+            cost = _f(a.get("cost"))
+            acc_dep_val = _f(a.get("accumulated_depreciation"))
+            carrying = _f(a.get("carrying_amount"))
+            residual = _f(a.get("residual_value"))
+
+            book_value += cost
+            accum_dep += acc_dep_val
+            net_carrying += carrying
+
+            dep_method = str(a.get("depreciation_method") or "").strip().upper()
+            available = a.get("available_for_use_date")
+            dep_as_of = a.get("depreciation_as_of")
+
+            is_depreciable = dep_method in {"SL", "RB", "UOP"}
+            in_use = bool(available) and (not as_of or str(available) <= str(as_of))
+            not_fully_dep = carrying > residual and carrying > 0
+
+            already_done = False
+            if as_of and dep_as_of:
+                already_done = str(dep_as_of)[:7] == str(as_of)[:7]
+
+            if is_depreciable and in_use and not_fully_dep and not already_done:
+                pending_dep += 1
+
+        return {
+            "book_value": round(book_value, 2),
+            "accum_depreciation": round(accum_dep, 2),
+            "net_carrying_amount": round(net_carrying, 2),
+            "pending_depreciation_count": int(pending_dep),
+            "asset_count": int(len(items)),
+        }
+
     def create_customer_company_link(
         self,
         cur,

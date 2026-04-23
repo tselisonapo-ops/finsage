@@ -61773,14 +61773,19 @@ async function renderFixedAssetsSnapshot(periodKey = "this_month") {
     const fa = snap?.fixedAssets || {};
 
     const book = Number(fa.bookValue || 0);
-    const dep = Number(fa.accumDep || 0);
-    const net = Number(fa.netBookValue != null ? fa.netBookValue : (book - dep));
-    const pending = Number(fa.pendingCount || 0);
+    const dep = Number(fa.accumDepreciation || 0);
+    const net = Number(
+      fa.netCarryingAmount != null
+        ? fa.netCarryingAmount
+        : (book - dep)
+    );
+    const pending = Number(fa.pendingDepreciationCount || 0);
 
-    elBook.textContent = money(book);
-    elDep.textContent = money(dep);
-    elNet.textContent = money(net);
+    elBook.textContent = typeof money === "function" ? money(book) : String(book);
+    elDep.textContent = typeof money === "function" ? money(dep) : String(dep);
+    elNet.textContent = typeof money === "function" ? money(net) : String(net);
     elPend.textContent = String(pending);
+
   } catch (e) {
     console.error("renderFixedAssetsSnapshot error:", e);
     elBook.textContent = money(0);

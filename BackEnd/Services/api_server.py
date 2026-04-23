@@ -4895,6 +4895,11 @@ def api_dashboard_snapshot(company_id: int):
         as_at=as_at,
     ) or {}
 
+    fixed_assets = db_service.get_fixed_assets_snapshot(
+        company_id,
+        as_of=as_at,
+    ) or {}
+
     customer_count = db_service.count_customers(company_id)
     vendor_count = db_service.count_vendors(company_id)
 
@@ -5097,14 +5102,17 @@ def api_dashboard_snapshot(company_id: int):
             if month_profit == 0 and (month_revenue != 0 or month_expenses != 0):
                 month_profit = month_revenue - month_expenses
 
-            # month-end cash balance from TB
+            cash_accounts = set()
             for r in month_tb:
                 name = _txt(r.get("name"), r.get("section"), r.get("category"))
                 closing = _f(r.get("closing_balance"))
+                code = str(r.get("code") or "").strip().upper()
+
                 if any(k in name for k in ["cash", "bank", "petty cash"]):
                     month_cash_balance += closing
+                    if code:
+                        cash_accounts.add(code)
 
-            # cash movement from ledger
             month_cash_in = 0.0
             month_cash_out = 0.0
             try:
@@ -5119,14 +5127,14 @@ def api_dashboard_snapshot(company_id: int):
                 ledger_rows = db_service.fetch_all(sql, (int(company_id), start, end)) or []
 
                 for row in ledger_rows:
-                    acct = _txt(row.get("account"))
+                    acct = str(row.get("account") or "").strip().upper()
                     dr = _f(row.get("debit"))
                     cr = _f(row.get("credit"))
 
-                    # if account code or descriptor indicates cash/bank movement
-                    if any(k in acct for k in ["cash", "bank", "petty"]):
+                    if acct in cash_accounts:
                         month_cash_in += dr
                         month_cash_out += cr
+
             except Exception:
                 month_cash_in = 0.0
                 month_cash_out = 0.0
@@ -5269,6 +5277,13 @@ def api_dashboard_snapshot(company_id: int):
             "cash_in": cash_in_trend,
             "cash_out": cash_out_trend,
             "net_cash_movement": net_cash_movement_trend,
+        },
+        "fixedAssets": {
+            "bookValue": round(float(fixed_assets.get("book_value") or 0), 2),
+            "accumDepreciation": round(float(fixed_assets.get("accum_depreciation") or 0), 2),
+            "netCarryingAmount": round(float(fixed_assets.get("net_carrying_amount") or 0), 2),
+            "pendingDepreciationCount": int(fixed_assets.get("pending_depreciation_count") or 0),
+            "assetCount": int(fixed_assets.get("asset_count") or 0),
         },
         "insights": insights,
     }
