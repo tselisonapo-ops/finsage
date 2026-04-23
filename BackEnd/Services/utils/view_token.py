@@ -96,3 +96,53 @@ def verify_quote_pdf_token(token: str):
     if not payload or payload.get("doc_type") != "quote":
         return None
     return {"company_id": payload["company_id"], "quote_id": payload["doc_id"]}
+
+def create_report_export_token(*, company_id: int, report_key: str, user_id: int, ttl_seconds: int = 120) -> str:
+    exp = int(time.time()) + int(ttl_seconds)
+    msg = f"{company_id}:report_export:{report_key}:{user_id}:{exp}".encode("utf-8")
+
+    secret = (current_app.config.get("SECRET_KEY") or "dev-secret").encode("utf-8")
+    sig = hmac.new(secret, msg, hashlib.sha256).digest()
+
+    return _b64url(msg + b"." + sig)
+
+
+def verify_report_export_token(token: str):
+    if not token:
+        return None
+
+    try:
+        raw = _b64url_decode(token)
+        msg, sig = raw.rsplit(b".", 1)
+
+        secret = (current_app.config.get("SECRET_KEY") or "dev-secret").encode("utf-8")
+        good = hmac.new(secret, msg, hashlib.sha256).digest()
+
+        if not hmac.compare_digest(sig, good):
+            return None
+
+        parts = msg.decode("utf-8").split(":")
+        if len(parts) != 5:
+            return None
+
+        company_id = int(parts[0])
+        token_type = parts[1]
+        report_key = parts[2]
+        user_id = int(parts[3])
+        exp = int(parts[4])
+
+        if token_type != "report_export":
+            return None
+
+        if int(time.time()) > exp:
+            return None
+
+        return {
+            "company_id": company_id,
+            "report_key": report_key,
+            "user_id": user_id,
+        }
+
+    except Exception:
+        return None
+

@@ -1957,6 +1957,26 @@ const ENDPOINTS = {
     // ---------------------------------
     lessorsList: (cid) => `/api/companies/${cid}/reports/lessors-list`,
     lessorsListExport: (cid) => `/api/companies/${cid}/reports/lessors-list/export`,
+
+    revenueContracts: (cid) => `/api/companies/${cid}/reports/revenue-contracts`,
+    revenueContractsExport: (cid) => `/api/companies/${cid}/reports/revenue-contracts/export`,
+
+    revenueObligations: (cid) => `/api/companies/${cid}/reports/revenue-obligations`,
+    revenueObligationsExport: (cid) => `/api/companies/${cid}/reports/revenue-obligations/export`,
+
+    revenueBillingEvents: (cid) => `/api/companies/${cid}/reports/revenue-billing-events`,
+    revenueBillingEventsExport: (cid) => `/api/companies/${cid}/reports/revenue-billing-events/export`,
+
+    revenueCashEvents: (cid) => `/api/companies/${cid}/reports/revenue-cash-events`,
+    revenueCashEventsExport: (cid) => `/api/companies/${cid}/reports/revenue-cash-events/export`,
+
+    revenueProgress: (cid) => `/api/companies/${cid}/reports/revenue-progress`,
+    revenueProgressExport: (cid) => `/api/companies/${cid}/reports/revenue-progress/export`,
+
+    revenueRecognitionRuns: (cid) => `/api/companies/${cid}/reports/revenue-recognition-runs`,
+    revenueRecognitionRunsExport: (cid) => `/api/companies/${cid}/reports/revenue-recognition-runs/export`,
+
+    revenueRecognitionEntriesExport: (cid) => `/api/companies/${cid}/reports/revenue-recognition-entries/export`,
   },
 
   // --- Dashboard / snapshots ---
@@ -14346,6 +14366,13 @@ async function renderRecentJournals() {
   }
 
   host.innerHTML = `
+    <div class="flex items-center justify-between gap-3 mb-3">
+      <div class="text-sm font-semibold">Recent Journals</div>
+      <div class="flex items-center gap-2">
+        <button id="btnRecentJournalsExportCsv" class="btn">Export CSV</button>
+      </div>
+    </div>
+
     <div class="border rounded overflow-hidden">
       <div class="max-h-[520px] overflow-auto">
         <table class="min-w-full text-xs">
@@ -14372,7 +14399,6 @@ async function renderRecentJournals() {
                     const refCell  = r.isFirst ? esc(r.ref) : "";
                     const descCell = r.isFirst ? esc(r.description) : "";
 
-                    // ✅ gate: only allow reverse for manual-ish journals
                     const src = String(r.source || "").toLowerCase();
                     const isManual = !src || src === "manual" || src === "gl_manual";
 
@@ -14414,6 +14440,28 @@ async function renderRecentJournals() {
       </div>
     </div>
   `;
+
+  host.querySelector("#btnRecentJournalsExportCsv")?.addEventListener("click", () => {
+    const url = new URL(toApiUrl(window.ENDPOINTS.reports.journalRegisterExport(cid)), window.location.origin);
+
+    const fromEl = document.getElementById("jrnlFilterFrom");
+    const toEl = document.getElementById("jrnlFilterTo");
+    const qEl = document.getElementById("jrnlFilterQ");
+    const limitEl = document.getElementById("jrnlFilterLimit");
+
+    const from = (fromEl?.value || "").trim();
+    const to = (toEl?.value || "").trim();
+    const q = (qEl?.value || "").trim();
+    const limit = (limitEl?.value || "").trim();
+
+    if (from) url.searchParams.set("from", from);
+    if (to) url.searchParams.set("to", to);
+    if (q) url.searchParams.set("q", q);
+    if (limit) url.searchParams.set("limit", limit);
+    url.searchParams.set("format", "csv");
+
+    window.open(url.toString(), "_blank", "noopener");
+  });
 
   // bind Open
   host.querySelectorAll("[data-open-journal]").forEach((btn) => {
@@ -16972,8 +17020,9 @@ function renderLedgerTable(rows, meta) {
   const label = isAll ? "ALL accounts" : (accountCode || "");
 
   const headerHtml = `
-    <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-      <span>Ledger: ${label}</span>
+    <div class="flex items-center justify-between gap-3 mb-2">
+      <div class="text-[11px] text-slate-500">Ledger: ${label}</div>
+      <button id="btnLedgerExportCsv" class="btn whitespace-nowrap">Export CSV</button>
     </div>
     <div class="max-h-[calc(100vh-260px)] overflow-y-auto border rounded">
       <table class="min-w-full text-xs">
@@ -17146,6 +17195,36 @@ function renderLedgerTable(rows, meta) {
       </table>
     </div>
   `;
+  host.querySelector("#btnLedgerExportCsv")?.addEventListener("click", () => {
+    const cid =
+      (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
+      window.CURRENT_COMPANY_ID;
+
+    if (!cid) return;
+
+    const params = new URLSearchParams({ format: "csv" });
+
+    const periodKey =
+      window.CURRENT_PERIOD_KEY ||
+      "this_month";
+
+    const r = (typeof computePeriodRange === "function")
+      ? computePeriodRange(periodKey)
+      : {};
+
+    if (r.from && r.to) {
+      params.set("from", r.from);
+      params.set("to", r.to);
+    } else if (r.preset || periodKey) {
+      params.set("preset", r.preset || periodKey);
+    }
+
+    if (!isAll && accountCode) {
+      params.set("account_code", accountCode);
+    }
+
+    downloadUrl(`${ENDPOINTS.reports.generalLedgerExport(cid)}?${params.toString()}`);
+  });
 }
 
 
@@ -17285,9 +17364,12 @@ async function renderTB(periodKey = CURRENT_PERIOD_KEY) {
     }).join("");
 
     host.innerHTML = `
-      <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-        <span>Trial balance period</span>
-        <span>${esc(label)}</span>
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <div class="flex items-center justify-between text-[11px] text-slate-500 w-full">
+          <span>Trial balance period</span>
+          <span>${esc(label)}</span>
+        </div>
+        <button id="btnTbExportCsv" class="btn whitespace-nowrap">Export CSV</button>
       </div>
       <table class="min-w-full text-xs">
         <thead class="bg-slate-50 text-slate-500">
@@ -17307,6 +17389,19 @@ async function renderTB(periodKey = CURRENT_PERIOD_KEY) {
         </tfoot>
       </table>
     `;
+    host.querySelector("#btnTbExportCsv")?.addEventListener("click", () => {
+      const params = new URLSearchParams({ format: "csv" });
+
+      if (r.from && r.to) {
+        params.set("from", r.from);
+        params.set("to", r.to);
+      } else {
+        params.set("preset", r.preset || periodKey);
+      }
+
+      downloadUrl(`${ENDPOINTS.reports.trialBalanceExport(cid)}?${params.toString()}`);
+    });
+
   } catch (err) {
     console.error("renderTB error:", err);
     host.innerHTML = `<div class="text-xs text-red-500">Error loading trial balance.</div>`;
@@ -21774,23 +21869,29 @@ async function exportStatement(stmtType, format) {
   let url = "";
     switch (t) {
       case "pnl":
-        url = ENDPOINTS.pnl(cid, { preset: CURRENT_PERIOD_KEY, from, to, format: fmt });
+        url = ENDPOINTS.reports.incomeStatementExport(cid);
         break;
+
       case "bs":
-        url = ENDPOINTS.bs(cid, { preset: CURRENT_PERIOD_KEY, asOf: to, format: fmt });
+        url = ENDPOINTS.reports.balanceSheetExport(cid);
         break;
+
       case "socie":
-        url = ENDPOINTS.socie(cid, { preset: CURRENT_PERIOD_KEY, from, to, format: fmt });
+        url = ENDPOINTS.reports.socieExport(cid);
         break;
+
       case "cf":
-        url = ENDPOINTS.cashflow(cid, from, to, fmt);
+        url = ENDPOINTS.reports.cashFlowExport(cid);
         break;
+
       case "tb":
-        url = ENDPOINTS.trialBalance(cid, from, to, fmt);
+        url = ENDPOINTS.reports.trialBalanceExport(cid);
         break;
+
       case "notes":
         url = ENDPOINTS.notes(cid, from, to, fmt);
         break;
+
       default:
         return alert("Unknown statement type.");
     }
@@ -21800,7 +21901,24 @@ async function exportStatement(stmtType, format) {
   const compare  = document.getElementById("stmtCompare")?.value || "none";
   const detail   = document.getElementById("stmtDetail")?.value || "summary";
 
-  const params = { template, basis, compare };
+  const params = {
+    template,
+    basis,
+    compare,
+    format: fmt,
+    preset: CURRENT_PERIOD_KEY,
+  };
+
+  if (from) params.from = from;
+  if (to) params.to = to;
+
+  if (t === "bs") {
+    params.as_of = to;
+  }
+
+  if (t === "cf") {
+    params.method = document.getElementById("stmtCfMethod")?.value || "direct";
+  }
 
   if (t === "pnl") {
     params.detail = detail;
@@ -23642,7 +23760,27 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
     </div>
   `;
 
-  document.getElementById("btnLmLoad")?.addEventListener("click", async () => {
+  const btnLoad = document.getElementById("btnLmLoad");
+  const btnExport = document.getElementById("btnLmExportCsv");
+
+  btnExport?.addEventListener("click", () => {
+    const cid = window.getActiveCompanyId?.();
+    const msgEl = document.getElementById("leaseMonthlyMsg");
+
+    if (!cid) return showLeaseMsg(msgEl, "No company selected");
+
+    const as_of = (document.getElementById("lmAsOf")?.value || "").trim();
+    const q = (document.getElementById("lmQ")?.value || "").trim();
+
+    const qs = new URLSearchParams();
+    if (as_of) qs.set("as_of", as_of);
+    if (q) qs.set("q", q);
+    qs.set("format", "csv");
+
+    downloadUrl(`${window.endpoints.reports.leaseMonthlyDueExport(cid)}?${qs.toString()}`);
+  });
+
+  btnLoad?.addEventListener("click", async () => {
     const cid = window.getActiveCompanyId?.();
     const msgEl = document.getElementById("leaseMonthlyMsg");
     const body = document.getElementById("lmTableBody");
@@ -23664,23 +23802,6 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
       const filtered = !q ? rows : rows.filter(r => {
         const t = [r.lease_name, r.lessor_name, r.name].join(" ").toLowerCase();
         return t.includes(q);
-      });
-
-      document.getElementById("btnLmExportCsv")?.addEventListener("click", () => {
-        const cid = window.getActiveCompanyId?.();
-        const msgEl = document.getElementById("leaseMonthlyMsg");
-
-        if (!cid) return showLeaseMsg(msgEl, "No company selected");
-
-        const as_of = (document.getElementById("lmAsOf")?.value || "").trim();
-        const q = (document.getElementById("lmQ")?.value || "").trim();
-
-        const qs = new URLSearchParams();
-        if (as_of) qs.set("as_of", as_of);
-        if (q) qs.set("q", q);
-        qs.set("format", "csv");
-
-        downloadUrl(`${window.endpoints.reports.leaseMonthlyDueExport(cid)}?${qs.toString()}`);
       });
 
       if (!filtered.length) {
@@ -23746,7 +23867,6 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               return;
             }
 
-            // ✅ find row from monthly_due memory
             const rows = window._leaseMonthlyRows || [];
             const r = rows.find(x => Number(x.lease_id) === leaseId && Number(x.period_no) === periodNo);
             if (!r) {
@@ -23773,7 +23893,6 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               }))
             };
 
-            // ✅ load into journal UI
             if (typeof loadJournalIntoLines === "function") loadJournalIntoLines(det, { mode: "append" });
 
             if (typeof showLeaseMsg === "function") showLeaseMsg(msgEl, "Loaded Interest + Depreciation into journal form.", "ok");
@@ -34568,6 +34687,97 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function getRevenueExportConfig() {
+    const tab = String(state.tab || "contracts").toLowerCase();
+
+    const map = {
+      contracts: {
+        key: "revenue_contracts",
+        endpoint: ENDPOINTS.reports.revenueContractsExport,
+      },
+      obligations: {
+        key: "revenue_obligations",
+        endpoint: ENDPOINTS.reports.revenueObligationsExport,
+      },
+      billings: {
+        key: "revenue_billing_events",
+        endpoint: ENDPOINTS.reports.revenueBillingEventsExport,
+      },
+      cash: {
+        key: "revenue_cash_events",
+        endpoint: ENDPOINTS.reports.revenueCashEventsExport,
+      },
+      progress: {
+        key: "revenue_progress",
+        endpoint: ENDPOINTS.reports.revenueProgressExport,
+      },
+      runs: {
+        key: "revenue_recognition_runs",
+        endpoint: ENDPOINTS.reports.revenueRecognitionRunsExport,
+      },
+    };
+
+    return map[tab] || map.contracts;
+  }
+
+  function buildRevenueExportParams() {
+    const qs = new URLSearchParams({ format: "csv" });
+
+    const q = ($("revSearch")?.value || "").trim();
+    const status = ($("revStatusFilter")?.value || "").trim();
+    const from = ($("revPeriodStart")?.value || "").trim();
+    const to = ($("revPeriodEnd")?.value || "").trim();
+
+    const contractId = Number(
+      state.selectedContract?.id ||
+      $("revContractId")?.value ||
+      0
+    ) || null;
+
+    const obligationId = Number(
+      state.selectedObligation?.id ||
+      $("revObligationId")?.value ||
+      0
+    ) || null;
+
+    if (q) qs.set("q", q);
+    if (status && state.tab === "contracts") qs.set("status", status);
+
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+
+    if (contractId && state.tab !== "contracts") {
+      qs.set("contract_id", String(contractId));
+    }
+
+    if (obligationId && state.tab === "progress") {
+      qs.set("obligation_id", String(obligationId));
+    }
+
+    if (state.tab === "runs") {
+      const runId = Number($("revRunId")?.value || 0) || null;
+      if (runId) qs.set("run_id", String(runId));
+    }
+
+    return qs;
+  }
+
+  async function exportCurrentRevenueTab() {
+    const cid = state.cid || activeCid();
+    if (!cid) {
+      setMsg("No active company selected.", "error");
+      return;
+    }
+
+    const cfg = getRevenueExportConfig();
+    const qs = buildRevenueExportParams();
+
+    const rawUrl = `${cfg.endpoint(cid)}?${qs.toString()}`;
+    const signedUrl = await getReportExportUrl(cid, cfg.key, rawUrl);
+
+    downloadUrl(signedUrl);
+  }
+
   function hydrateRevenueProgressForm(p = {}) {
     if ($("revProgressPeriodEnd")) $("revProgressPeriodEnd").value = toDateInputValue(p.period_end);
     if ($("revProgressType")) $("revProgressType").value = p.update_type || "cost_to_cost";
@@ -38756,6 +38966,14 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     $("revBtnReload")?.addEventListener("click", async () => {
       await loadContracts();
       await loadRuns();
+    });
+
+    $("revBtnExportCurrent")?.addEventListener("click", async () => {
+      try {
+        await exportCurrentRevenueTab();
+      } catch (e) {
+        setMsg(e?.message || "Revenue export failed", "error");
+      }
     });
 
     $("revSearch")?.addEventListener("input", renderContractList);
