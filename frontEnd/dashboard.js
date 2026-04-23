@@ -10734,14 +10734,20 @@ async function renderRevenueExpenseChart(periodKey = "this_month") {
   const snap = await getDashboardSnapshot(periodKey);
   if (!snap) return;
 
-  const pnl = snap.pnl || {};
-  const revenue = Number(pnl.revenue || 0);
-  const cogs = Math.abs(Number(pnl.cogs || 0));
-  const expenses = Math.abs(Number(pnl.expenses || 0));
+  const revenueRows = Array.isArray(snap?.trends?.revenue) ? snap.trends.revenue : [];
+  const expenseRows = Array.isArray(snap?.trends?.expenses) ? snap.trends.expenses : [];
+
+  const revenueSeries = buildTrendSeries(revenueRows, periodKey);
+  const expenseSeries = buildTrendSeries(expenseRows, periodKey);
+
+  const len = Math.min(revenueSeries.values.length, expenseSeries.values.length);
+  const labels = revenueSeries.labels.slice(-len);
+  const revenueValues = revenueSeries.values.slice(-len).map(v => Math.abs(Number(v || 0)));
+  const expenseValues = expenseSeries.values.slice(-len).map(v => Math.abs(Number(v || 0)));
 
   showAnalysisChartMode({
     title: "Revenue vs Expenses",
-    subtitle: snap?.meta?.label || "Selected period",
+    subtitle: snap?.meta?.label || "Monthly comparison",
   });
 
   destroyFsChart("__fsAnalysisChart");
@@ -10749,40 +10755,177 @@ async function renderRevenueExpenseChart(periodKey = "this_month") {
   window.__fsAnalysisChart = new Chart(canvas, {
     type: "bar",
     data: {
-      labels: ["Revenue", "Cost of Sales", "Operating Expenses"],
+      labels,
       datasets: [
         {
-          label: "Amount",
-          data: [revenue, cogs, expenses],
+          label: "Revenue",
+          data: revenueValues,
           borderWidth: 1,
+          categoryPercentage: 0.7,
+          barPercentage: 0.9,
+        },
+        {
+          label: "Expenses",
+          data: expenseValues,
+          borderWidth: 1,
+          categoryPercentage: 0.7,
+          barPercentage: 0.9,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
       plugins: {
         legend: { display: true },
         tooltip: {
           callbacks: {
             label(ctx) {
               const v = Number(ctx.raw || 0);
-              return typeof money === "function" ? money(v) : String(v);
+              return `${ctx.dataset.label}: ${
+                typeof money === "function" ? money(v) : String(v)
+              }`;
             },
           },
         },
       },
       scales: {
+        x: {
+          stacked: false,
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 6,
+            maxRotation: 45,
+            minRotation: 0,
+          },
+          grid: {
+            display: false,
+          },
+        },
         y: {
+          beginAtZero: true,
           ticks: {
             callback(value) {
-              return typeof money === "function" ? money(Number(value || 0)) : value;
+              return typeof money === "function"
+                ? money(Number(value || 0))
+                : value;
             },
           },
         },
       },
     },
   });
+}
+
+function getTrendWindowSize(periodKey = "this_month") {
+  const key = String(periodKey || "").toLowerCase();
+
+  if (["last_12_months", "12_months", "this_year", "last_year"].includes(key)) return 12;
+  if (["last_6_months", "6_months"].includes(key)) return 6;
+
+  // dashboard default
+  return 6;
+}
+
+function parseTrendRows(rows = [], fallbackYear = null) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((r, i) => {
+      const raw = (r?.period || r?.label || "").toString().trim();
+      const value = Number(r?.value || 0);
+
+      let dt = null;
+
+      // ISO-like: 2025-04 or 2025-04-01
+      if (/^\d{4}-\d{2}(-\d{2})?$/.test(raw)) {
+        dt = new Date(raw.length === 7 ? `${raw}-01T00:00:00` : `${raw}T00:00:00`);
+      }
+      // Month short + year like "Sep 25"
+      else if (/^[A-Za-z]{3}\s+\d{2,4}$/.test(raw)) {
+        dt = new Date(`01 ${raw}`);
+      }
+      // Month short only like "Sep"
+      else if (/^[A-Za-z]{3,9}$/.test(raw) && fallbackYear) {
+        dt = new Date(`01 ${raw} ${fallbackYear}`);
+      }
+      // fallback
+      else {
+        const tryDate = new Date(raw);
+        if (!Number.isNaN(tryDate.getTime())) dt = tryDate;
+      }
+
+      return {
+        raw,
+        date: dt,
+        value,
+        index: i,
+      };
+    })
+    .filter(x => Number.isFinite(x.value))
+    .sort((a, b) => {
+      if (a.date && b.date) return a.date - b.date;
+      if (a.date) return -1;
+      if (b.date) return 1;
+      return a.index - b.index;
+    });
+}
+
+function buildTrendSeries(rows = [], periodKey = "this_month", fallbackYear = null) {
+  const parsed = parseTrendRows(rows, fallbackYear);
+  const windowSize = getTrendWindowSize(periodKey);
+
+  const sliced = parsed.length > windowSize ? parsed.slice(-windowSize) : parsed;
+
+  const labels = sliced.map(r => {
+    if (r.date && !Number.isNaN(r.date.getTime())) {
+      return r.date.toLocaleDateString("en-ZA", {
+        month: "short",
+        year: "2-digit",
+      });
+    }
+    return r.raw || "";
+  });
+
+  const values = sliced.map(r => Number(r.value || 0));
+
+  return { labels, values, rows: sliced };
+}
+
+function getTrendChartOptions(yTickFormatter, extra = {}) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: "index",
+      intersect: false,
+    },
+    plugins: {
+      legend: { display: true },
+      tooltip: extra.tooltip || {},
+    },
+    scales: {
+      x: {
+        ticks: {
+          autoSkip: true,
+          maxTicksLimit: 6,
+          maxRotation: 45,
+          minRotation: 0,
+        },
+        grid: {
+          display: false,
+        },
+      },
+      y: {
+        beginAtZero: false,
+        ticks: {
+          callback: yTickFormatter,
+        },
+      },
+    },
+  };
 }
 
 async function renderProfitTrendChart(periodKey = "this_month") {
@@ -10793,12 +10936,11 @@ async function renderProfitTrendChart(periodKey = "this_month") {
   if (!snap) return;
 
   const rows = Array.isArray(snap?.trends?.profit) ? snap.trends.profit : [];
-  const labels = rows.map(r => r.label || r.period || "");
-  const values = rows.map(r => Number(r.value || 0));
+  const { labels, values } = buildTrendSeries(rows, periodKey);
 
   showAnalysisChartMode({
     title: "Profit Trend",
-    subtitle: "Recent monthly trend",
+    subtitle: snap?.meta?.label || "Recent monthly trend",
   });
 
   destroyFsChart("__fsAnalysisChart");
@@ -10816,11 +10958,9 @@ async function renderProfitTrendChart(periodKey = "this_month") {
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true },
+    options: getTrendChartOptions(
+      (value) => typeof money === "function" ? money(Number(value || 0)) : value,
+      {
         tooltip: {
           callbacks: {
             label(ctx) {
@@ -10829,17 +10969,8 @@ async function renderProfitTrendChart(periodKey = "this_month") {
             },
           },
         },
-      },
-      scales: {
-        y: {
-          ticks: {
-            callback(value) {
-              return typeof money === "function" ? money(Number(value || 0)) : value;
-            },
-          },
-        },
-      },
-    },
+      }
+    ),
   });
 }
 
@@ -10853,10 +10984,13 @@ async function renderMarginTrendChart(periodKey = "this_month") {
   const revenueRows = Array.isArray(snap?.trends?.revenue) ? snap.trends.revenue : [];
   const profitRows = Array.isArray(snap?.trends?.profit) ? snap.trends.profit : [];
 
-  const labels = revenueRows.map(r => r.label || r.period || "");
-  const marginValues = revenueRows.map((r, i) => {
-    const revenue = Number(r.value || 0);
-    const profit = Number(profitRows[i]?.value || 0);
+  const revenueSeries = buildTrendSeries(revenueRows, periodKey);
+  const profitSeries = buildTrendSeries(profitRows, periodKey);
+
+  const len = Math.min(revenueSeries.values.length, profitSeries.values.length);
+  const labels = revenueSeries.labels.slice(-len);
+  const marginValues = revenueSeries.values.slice(-len).map((revenue, i) => {
+    const profit = Number(profitSeries.values.slice(-len)[i] || 0);
     return revenue ? Number(((profit / revenue) * 100).toFixed(2)) : 0;
   });
 
@@ -10880,11 +11014,9 @@ async function renderMarginTrendChart(periodKey = "this_month") {
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true },
+    options: getTrendChartOptions(
+      (value) => `${Number(value || 0)}%`,
+      {
         tooltip: {
           callbacks: {
             label(ctx) {
@@ -10892,17 +11024,8 @@ async function renderMarginTrendChart(periodKey = "this_month") {
             },
           },
         },
-      },
-      scales: {
-        y: {
-          ticks: {
-            callback(value) {
-              return `${value}%`;
-            },
-          },
-        },
-      },
-    },
+      }
+    ),
   });
 }
 
@@ -10914,8 +11037,7 @@ async function renderCashTrendChart(periodKey = "this_month") {
   if (!snap) return;
 
   const rows = Array.isArray(snap?.trends?.cash) ? snap.trends.cash : [];
-  const labels = rows.map(r => r.label || r.period || "");
-  const values = rows.map(r => Number(r.value || 0));
+  const { labels, values } = buildTrendSeries(rows, periodKey);
 
   showAnalysisChartMode({
     title: "Cash Trend",
@@ -10936,11 +11058,9 @@ async function renderCashTrendChart(periodKey = "this_month") {
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true },
+    options: getTrendChartOptions(
+      (value) => typeof money === "function" ? money(Number(value || 0)) : value,
+      {
         tooltip: {
           callbacks: {
             label(ctx) {
@@ -10949,17 +11069,8 @@ async function renderCashTrendChart(periodKey = "this_month") {
             },
           },
         },
-      },
-      scales: {
-        y: {
-          ticks: {
-            callback(value) {
-              return typeof money === "function" ? money(Number(value || 0)) : value;
-            },
-          },
-        },
-      },
-    },
+      }
+    ),
   });
 }
 
