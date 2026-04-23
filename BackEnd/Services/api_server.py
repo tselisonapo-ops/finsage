@@ -5106,12 +5106,26 @@ def api_dashboard_snapshot(company_id: int):
             for r in month_tb:
                 name = _txt(r.get("name"), r.get("section"), r.get("category"))
                 closing = _f(r.get("closing_balance"))
-                code = str(r.get("code") or "").strip().upper()
+
+                code = str(
+                    r.get("code")
+                    or r.get("account")
+                    or r.get("account_code")
+                    or ""
+                ).strip().upper()
 
                 if any(k in name for k in ["cash", "bank", "petty cash"]):
                     month_cash_balance += closing
                     if code:
                         cash_accounts.add(code)
+
+            # fallback: if TB did not expose codes cleanly, use known cash/bank GLs
+            if not cash_accounts:
+                cash_accounts = {
+                    "BS_CA_1000",  # Cash & Bank
+                    "BS_CA_1010",  # Petty Cash / Bank alt if used
+                    "BS_CA_1050",  # Other cash equivalent if used
+                }
 
             month_cash_in = 0.0
             month_cash_out = 0.0
