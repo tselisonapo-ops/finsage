@@ -24984,9 +24984,12 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
   // ============================================================
   function renderPaymentsUI(mount) {
     mount.innerHTML = `
-      <div class="flex items-center justify-between gap-3 mb-3">
-        <div class="text-sm font-semibold">Lease Payments</div>
+    <div class="flex items-center justify-between gap-3 mb-3">
+      <div class="text-sm font-semibold">Lease Payments</div>
+      <div class="flex items-center gap-2">
+        <button id="btnLpExportCsv" class="px-3 py-1.5 rounded border text-sm bg-white">Export CSV</button>
       </div>
+    </div>
 
       <div class="border rounded-xl p-3 bg-slate-50 mb-3">
         <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
@@ -25299,6 +25302,26 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
 
     $("lpFilterQ")?.addEventListener("input", () => {
       renderPaymentsTable(_paymentRows, { q: $("lpFilterQ")?.value || "" });
+    });
+
+    document.getElementById("btnLpExportCsv")?.addEventListener("click", () => {
+      const cid = window.getActiveCompanyId?.();
+      const leaseId = Number((document.getElementById("lpFilterLeaseId")?.value || "").trim() || 0);
+      const from = (document.getElementById("lpFilterFrom")?.value || "").trim();
+      const to = (document.getElementById("lpFilterTo")?.value || "").trim();
+      const q = (document.getElementById("lpFilterQ")?.value || "").trim();
+
+      const msgEl = document.getElementById("leasePaymentsMsg");
+
+      if (!cid) return showMsg(msgEl, "No company selected");
+      if (!leaseId) return showMsg(msgEl, "Lease ID is required");
+
+      const qs = new URLSearchParams({ lease_id: String(leaseId), format: "csv" });
+      if (from) qs.set("from", from);
+      if (to) qs.set("to", to);
+      if (q) qs.set("q", q);
+
+      downloadUrl(`${window.endpoints.reports.leasePaymentsExport(cid)}?${qs.toString()}`);
     });
   }
 

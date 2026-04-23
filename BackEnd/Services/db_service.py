@@ -24216,19 +24216,119 @@ class DatabaseService:
             prior_from = None
             prior_to = None
 
+        # ----------------------------
+        # Company meta
+        # ----------------------------
+        company_name = (
+            ctx.get("company_name")
+            or ctx.get("name")
+            or f"Company {company_id}"
+        )
+        currency = (
+            ctx.get("currency")
+            or ctx.get("base_currency")
+            or "ZAR"
+        )
+
+        # ----------------------------
+        # Opening balances
+        # As at the day before date_from
+        # ----------------------------
+        opening_as_of = date_from - timedelta(days=1)
+        opening_tb = self.get_trial_balance_as_of(company_id, opening_as_of) or []
+        closing_tb = self.get_trial_balance_as_of(company_id, date_to) or []
+        coa_rows = self.get_company_coa(company_id) or []
+
+        coa_map = {
+            str(a.get("code") or "").strip(): a
+            for a in coa_rows
+            if a.get("code")
+        }
+
+        def _tb_to_equity_accounts(tb_rows):
+            out = []
+            for r in tb_rows:
+                code = str(r.get("code") or r.get("account") or "").strip()
+                if not code.startswith("BS_EQ_"):
+                    continue
+
+                coa = coa_map.get(code, {})
+                out.append({
+                    "code": code,
+                    "name": coa.get("name") or r.get("name") or code,
+                    "role": coa.get("role") or "",
+                    "category": coa.get("category") or r.get("category") or "",
+                    "balance": float(r.get("closing_balance") or 0.0),
+                })
+            return out
+
+        opening_equity_accounts = _tb_to_equity_accounts(opening_tb)
+        closing_equity_accounts = _tb_to_equity_accounts(closing_tb)
+
+        # ----------------------------
+        # Equity movement journals in period
+        # ----------------------------
+        journals = self.get_journals_with_lines_for_period(company_id, date_from, date_to) or []
+
+        movement_journal_lines = []
+        for j in journals:
+            jdate = j.get("date")
+            for ln in (j.get("journal_lines") or []):
+                code = str(
+                    ln.get("account_code")
+                    or ln.get("code")
+                    or ln.get("account")
+                    or ""
+                ).strip()
+                if not code.startswith("BS_EQ_"):
+                    continue
+
+                coa = coa_map.get(code, {})
+                movement_journal_lines.append({
+                    "account_code": code,
+                    "name": coa.get("name") or "",
+                    "role": coa.get("role") or "",
+                    "category": coa.get("category") or "",
+                    "date": jdate,
+                    "debit": float(ln.get("debit") or 0.0),
+                    "credit": float(ln.get("credit") or 0.0),
+                })
+
+        # ----------------------------
+        # Profit for period
+        # ----------------------------
+        profit_for_period = 0.0
+        try:
+            pnl = self.get_income_statement_v2(
+                company_id=company_id,
+                date_from=date_from,
+                date_to=date_to,
+                template=template,
+                basis="external",
+                compare="none",
+                cols_mode=1,
+                detail="summary",
+            ) or {}
+
+            profit_for_period = float(
+                ((pnl.get("net_result") or {}).get("values") or {}).get("cur")
+                or ((pnl.get("net_result") or {}).get("amount"))
+                or 0.0
+            )
+        except Exception:
+            profit_for_period = 0.0
+
         return build_statement_of_changes_in_equity(
-            db=self,
             company_id=company_id,
-            date_from=date_from,
-            date_to=date_to,
-            template=template,
-            basis=basis_norm,
-            compare=compare_norm,
-            cols_mode=cols_mode,
-            prior_from=prior_from,
-            prior_to=prior_to,
-            ctx=ctx,
-            **kwargs,
+            company_name=company_name,
+            currency=currency,
+            period_from=date_from.isoformat(),
+            period_to=date_to.isoformat(),
+            opening_equity_accounts=opening_equity_accounts,
+            closing_equity_accounts=closing_equity_accounts,
+            movement_journal_lines=movement_journal_lines,
+            profit_for_period=profit_for_period,
+            include_unclosed_profit=True,
         )
 
     def _tb_as_of(self, company_id: int, as_of: date) -> List[Dict[str, Any]]:
