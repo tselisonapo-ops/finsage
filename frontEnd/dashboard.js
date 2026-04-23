@@ -10824,14 +10824,15 @@ async function renderRevenueExpenseChart(periodKey = "this_month") {
 function getTrendWindowSize(periodKey = "this_month") {
   const key = String(periodKey || "").toLowerCase();
 
-  if (["last_12_months", "12_months", "this_year", "last_year"].includes(key)) return 12;
-  if (["last_6_months", "6_months"].includes(key)) return 6;
+  if (["this_month", "prev_month"].includes(key)) return 1;
+  if (["this_quarter", "prev_quarter"].includes(key)) return 3;
+  if (["last_2_quarters"].includes(key)) return 6;
+  if (["ytd", "this_year", "prev_year", "last_12_months", "12_months"].includes(key)) return 12;
 
-  // dashboard default
   return 6;
 }
 
-function parseTrendRows(rows = [], fallbackYear = null) {
+function parseTrendRows(rows = []) {
   return (Array.isArray(rows) ? rows : [])
     .map((r, i) => {
       const raw = (r?.period || r?.label || "").toString().trim();
@@ -10839,59 +10840,61 @@ function parseTrendRows(rows = [], fallbackYear = null) {
 
       let dt = null;
 
-      // ISO-like: 2025-04 or 2025-04-01
       if (/^\d{4}-\d{2}(-\d{2})?$/.test(raw)) {
         dt = new Date(raw.length === 7 ? `${raw}-01T00:00:00` : `${raw}T00:00:00`);
-      }
-      // Month short + year like "Sep 25"
-      else if (/^[A-Za-z]{3}\s+\d{2,4}$/.test(raw)) {
+      } else if (/^[A-Za-z]{3}\s+\d{2,4}$/.test(raw)) {
         dt = new Date(`01 ${raw}`);
-      }
-      // Month short only like "Sep"
-      else if (/^[A-Za-z]{3,9}$/.test(raw) && fallbackYear) {
-        dt = new Date(`01 ${raw} ${fallbackYear}`);
-      }
-      // fallback
-      else {
+      } else {
         const tryDate = new Date(raw);
         if (!Number.isNaN(tryDate.getTime())) dt = tryDate;
       }
 
-      return {
-        raw,
-        date: dt,
-        value,
-        index: i,
-      };
+      return { raw, date: dt, value, index: i };
     })
-    .filter(x => Number.isFinite(x.value))
-    .sort((a, b) => {
-      if (a.date && b.date) return a.date - b.date;
-      if (a.date) return -1;
-      if (b.date) return 1;
-      return a.index - b.index;
-    });
+    .filter(x => x.date && !Number.isNaN(x.date.getTime()))
+    .sort((a, b) => a.date - b.date);
 }
 
-function buildTrendSeries(rows = [], periodKey = "this_month", fallbackYear = null) {
-  const parsed = parseTrendRows(rows, fallbackYear);
+function monthKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function buildTrendSeries(rows = [], periodKey = "this_month") {
+  const parsed = parseTrendRows(rows);
   const windowSize = getTrendWindowSize(periodKey);
 
-  const sliced = parsed.length > windowSize ? parsed.slice(-windowSize) : parsed;
+  if (!parsed.length) {
+    return { labels: [], values: [], rows: [] };
+  }
 
-  const labels = sliced.map(r => {
-    if (r.date && !Number.isNaN(r.date.getTime())) {
-      return r.date.toLocaleDateString("en-ZA", {
-        month: "short",
-        year: "2-digit",
-      });
-    }
-    return r.raw || "";
-  });
+  const lastDate = parsed[parsed.length - 1].date;
+  const monthMap = new Map(
+    parsed.map(r => [monthKey(r.date), Number(r.value || 0)])
+  );
 
-  const values = sliced.map(r => Number(r.value || 0));
+  const points = [];
+  for (let i = windowSize - 1; i >= 0; i--) {
+    const d = new Date(lastDate.getFullYear(), lastDate.getMonth() - i, 1);
+    const key = monthKey(d);
 
-  return { labels, values, rows: sliced };
+    points.push({
+      date: d,
+      value: monthMap.get(key) || 0,
+    });
+  }
+
+  const labels = points.map(r =>
+    r.date.toLocaleDateString("en-ZA", {
+      month: "short",
+      year: "2-digit",
+    })
+  );
+
+  const values = points.map(r => r.value);
+
+  return { labels, values, rows: points };
 }
 
 function getTrendChartOptions(yTickFormatter, extra = {}) {
