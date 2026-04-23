@@ -11039,12 +11039,21 @@ async function renderCashTrendChart(periodKey = "this_month") {
   const snap = await getDashboardSnapshot(periodKey);
   if (!snap) return;
 
-  const rows = Array.isArray(snap?.trends?.cash) ? snap.trends.cash : [];
-  const { labels, values } = buildTrendSeries(rows, periodKey);
+  const inRows = Array.isArray(snap?.trends?.cash_in) ? snap.trends.cash_in : [];
+  const outRows = Array.isArray(snap?.trends?.cash_out) ? snap.trends.cash_out : [];
+
+  const inSeries = buildTrendSeries(inRows, periodKey);
+  const outSeries = buildTrendSeries(outRows, periodKey);
+
+  const len = Math.max(inSeries.values.length, outSeries.values.length);
+  const labels = (inSeries.labels.length ? inSeries.labels : outSeries.labels).slice(-len);
+
+  const cashInValues = inSeries.values.slice(-len).map(v => Math.abs(Number(v || 0)));
+  const cashOutValues = outSeries.values.slice(-len).map(v => Math.abs(Number(v || 0)));
 
   showAnalysisChartMode({
-    title: "Cash Trend",
-    subtitle: snap?.meta?.label || "Selected period",
+    title: "Cash Movement",
+    subtitle: snap?.meta?.label || "Cash in vs cash out",
   });
 
   destroyFsChart("__fsAnalysisChart");
@@ -11055,9 +11064,18 @@ async function renderCashTrendChart(periodKey = "this_month") {
       labels,
       datasets: [
         {
-          label: "Cash",
-          data: values,
+          label: "Cash In",
+          data: cashInValues,
           borderWidth: 1,
+          categoryPercentage: 0.7,
+          barPercentage: 0.9,
+        },
+        {
+          label: "Cash Out",
+          data: cashOutValues,
+          borderWidth: 1,
+          categoryPercentage: 0.7,
+          barPercentage: 0.9,
         },
       ],
     },
@@ -11068,7 +11086,9 @@ async function renderCashTrendChart(periodKey = "this_month") {
           callbacks: {
             label(ctx) {
               const v = Number(ctx.raw || 0);
-              return typeof money === "function" ? money(v) : String(v);
+              return `${ctx.dataset.label}: ${
+                typeof money === "function" ? money(v) : String(v)
+              }`;
             },
           },
         },

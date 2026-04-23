@@ -5013,8 +5013,20 @@ def api_dashboard_snapshot(company_id: int):
         vat_net = 0.0
 
     # -----------------------------------------
-    # 5) Trends (simple first version)
+    # 5) Trends
     # -----------------------------------------
+    def trend_month_count(preset: str | None) -> int:
+        key = str(preset or "").lower()
+        if key in {"this_month", "prev_month"}:
+            return 1
+        if key in {"this_quarter", "prev_quarter"}:
+            return 3
+        if key in {"last_2_quarters"}:
+            return 6
+        if key in {"ytd", "this_year", "prev_year"}:
+            return 12
+        return 6
+
     def month_end_series(end_date, months=6):
         out = []
         cur = end_date.replace(day=1)
@@ -5039,42 +5051,135 @@ def api_dashboard_snapshot(company_id: int):
         return out
 
     revenue_trend = []
+    expense_trend = []
     profit_trend = []
-    cash_trend = []
+    cash_balance_trend = []
+    cash_in_trend = []
+    cash_out_trend = []
+    net_cash_movement_trend = []
 
     try:
-        for start, end in month_end_series(date_to, months=6):
+        trend_months = trend_month_count(request.args.get("preset"))
+
+        for start, end in month_end_series(date_to, months=trend_months):
             month_pnl = db_service.get_pnl_mini(company_id, start, end) or []
             month_tb = db_service.get_trial_balance_with_meta(company_id, start, end) or []
 
             month_revenue = 0.0
+            month_expenses = 0.0
             month_profit = 0.0
-            month_cash = 0.0
+            month_cash_balance = 0.0
 
+            # P&L monthly parsing
             for r in month_pnl:
                 label = _txt(r.get("label"))
                 amt = _f(r.get("amount"))
+
                 if "revenue" in label or label == "income":
                     month_revenue = amt
-                elif "net profit" in label or "surplus" in label or "deficit" in label:
+
+                elif "cost of sales" in label:
+                    month_expenses += abs(amt)
+
+                elif "operating expenses" in label or "expenses" == label:
+                    month_expenses += abs(amt)
+
+                elif (
+                    "net profit" in label
+                    or "profit for period" in label
+                    or "profit before tax" in label
+                    or "surplus" in label
+                    or "deficit" in label
+                ):
                     month_profit = amt
 
+            # fallback if profit row missing
+            if month_profit == 0 and (month_revenue != 0 or month_expenses != 0):
+                month_profit = month_revenue - month_expenses
+
+            # month-end cash balance from TB
             for r in month_tb:
                 name = _txt(r.get("name"), r.get("section"), r.get("category"))
                 closing = _f(r.get("closing_balance"))
                 if any(k in name for k in ["cash", "bank", "petty cash"]):
-                    month_cash += closing
+                    month_cash_balance += closing
+
+            # cash movement from ledger
+            month_cash_in = 0.0
+            month_cash_out = 0.0
+            try:
+                schema = db_service.company_schema(company_id)
+                sql = f"""
+                    SELECT account, debit, credit
+                    FROM {schema}.ledger
+                    WHERE company_id = %s
+                      AND date >= %s
+                      AND date <= %s
+                """
+                ledger_rows = db_service.fetch_all(sql, (int(company_id), start, end)) or []
+
+                for row in ledger_rows:
+                    acct = _txt(row.get("account"))
+                    dr = _f(row.get("debit"))
+                    cr = _f(row.get("credit"))
+
+                    # if account code or descriptor indicates cash/bank movement
+                    if any(k in acct for k in ["cash", "bank", "petty"]):
+                        month_cash_in += dr
+                        month_cash_out += cr
+            except Exception:
+                month_cash_in = 0.0
+                month_cash_out = 0.0
+
+            month_net_cash = month_cash_in - month_cash_out
 
             label = end.strftime("%b %y")
             period_key = end.strftime("%Y-%m")
 
-            revenue_trend.append({"period": period_key, "label": label, "value": round(month_revenue, 2)})
-            profit_trend.append({"period": period_key, "label": label, "value": round(month_profit, 2)})
-            cash_trend.append({"period": period_key, "label": label, "value": round(month_cash, 2)})
+            revenue_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_revenue, 2),
+            })
+            expense_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_expenses, 2),
+            })
+            profit_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_profit, 2),
+            })
+            cash_balance_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_cash_balance, 2),
+            })
+            cash_in_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_cash_in, 2),
+            })
+            cash_out_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_cash_out, 2),
+            })
+            net_cash_movement_trend.append({
+                "period": period_key,
+                "label": label,
+                "value": round(month_net_cash, 2),
+            })
+
     except Exception:
         revenue_trend = []
+        expense_trend = []
         profit_trend = []
-        cash_trend = []
+        cash_balance_trend = []
+        cash_in_trend = []
+        cash_out_trend = []
+        net_cash_movement_trend = []
 
     # -----------------------------------------
     # 6) Insights
@@ -5158,8 +5263,12 @@ def api_dashboard_snapshot(company_id: int):
         },
         "trends": {
             "revenue": revenue_trend,
+            "expenses": expense_trend,
             "profit": profit_trend,
-            "cash": cash_trend,
+            "cash": cash_balance_trend,
+            "cash_in": cash_in_trend,
+            "cash_out": cash_out_trend,
+            "net_cash_movement": net_cash_movement_trend,
         },
         "insights": insights,
     }
