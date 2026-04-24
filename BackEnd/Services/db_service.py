@@ -24937,33 +24937,25 @@ class DatabaseService:
 
             {posted_expr} AS posted,
 
-            EXISTS (
-                SELECT 1
-                FROM {schema}.lease_payments p
-                WHERE p.company_id = s.company_id
-                AND (
-                        p.schedule_id = s.id
-                        OR (
-                            p.lease_id = s.lease_id
-                            AND p.period_no = s.period_no
-                        )
-                )
-            ) AS paid,
+        EXISTS (
+            SELECT 1
+            FROM {schema}.lease_payments p
+            WHERE p.company_id = s.company_id
+            AND p.lease_id = s.lease_id
+            AND p.schedule_id = s.id
+            AND p.status IN ('draft','posted')
+        ) AS paid,
 
-            (
-                SELECT p.posted_journal_id
-                FROM {schema}.lease_payments p
-                WHERE p.company_id = s.company_id
-                AND (
-                        p.schedule_id = s.id
-                        OR (
-                            p.lease_id = s.lease_id
-                            AND p.period_no = s.period_no
-                        )
-                )
-                ORDER BY p.id DESC
-                LIMIT 1
-            ) AS payment_journal_id
+        (
+            SELECT p.posted_journal_id
+            FROM {schema}.lease_payments p
+            WHERE p.company_id = s.company_id
+            AND p.lease_id = s.lease_id
+            AND p.schedule_id = s.id
+            AND p.status IN ('draft','posted')
+            ORDER BY p.id DESC
+            LIMIT 1
+        ) AS payment_journal_id
 
         FROM {schema}.lease_schedule s
         JOIN {schema}.leases l
