@@ -93,10 +93,9 @@ def _payload_columns(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         if isinstance(block, dict):
             scan_values(block.get("values"))
 
-    filtered = [c for c in cols if c.get("key") in used]
-
-    # always keep at least one column
-    return filtered or cols[:1]
+    # ✅ Keep the template/requested structure.
+    # Do NOT collapse export columns just because values are zero.
+    return cols
 
 def _row_type(row: Dict[str, Any]) -> str:
     meta = row.get("meta") or {}
@@ -448,7 +447,7 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     story.append(Paragraph(f"Currency: {currency}", styles["BodyText"]))
     story.append(Spacer(1, 6))
 
-    data = [headers]
+    data = [["", *headers[1:]]]
 
     for item in flat_rows:
         row = [item["label"]]
@@ -457,7 +456,8 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
         for key in col_keys:
             v = vals.get(key, "")
             if isinstance(v, (int, float)):
-                row.append(f"{v:,.2f}")
+                num = float(v)
+                row.append(f"({abs(num):,.2f})" if num < 0 else f"{num:,.2f}")
             else:
                 row.append("" if v is None else str(v))
         data.append(row)
@@ -468,7 +468,7 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     per_col = usable_width / remaining_cols
     col_widths.extend([per_col] * remaining_cols)
 
-    table = Table(data, colWidths=col_widths, repeatRows=1)
+    table = Table(data, colWidths=col_widths, repeatRows=0)
     style = TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.black),
@@ -497,9 +497,8 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
         elif rt == "total":
             style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-            style.add("LINEABOVE", (1, idx), (-1, idx), 0.7, colors.black)
-            style.add("LINEBELOW", (1, idx), (-1, idx), 0.7, colors.black)
-            
+            style.add("LINEABOVE", (-1, idx), (-1, idx), 0.7, colors.black)
+            style.add("LINEBELOW", (-1, idx), (-1, idx), 0.7, colors.black)
     table.setStyle(style)
     story.append(table)
 
