@@ -122,6 +122,7 @@ def _has_value(v: Any) -> bool:
     except Exception:
         return True
 
+
 def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str, Any]]]:
     cols = _payload_columns(payload)
     col_labels = [c.get("label") or c.get("key") for c in cols]
@@ -236,14 +237,41 @@ def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str,
                 )
 
         # Final net result
-        if payload.get("net_result"):
-            nr = payload.get("net_result") or {}
-            _append_row(
-                out_rows,
-                nr.get("label") or "Net result",
-                nr.get("values") or {},
-                "total",
-            )
+        # Final net result (support all builder variants)
+        def _extract_net_result(payload):
+            for key in ("net_result", "net_income", "net_profit", "profit_for_period", "net"):
+                block = payload.get(key)
+                if isinstance(block, dict):
+                    values = block.get("values") or {}
+                    if values:
+                        return {
+                            "label": block.get("label") or "Net Profit",
+                            "values": values,
+                        }
+
+                    amt = block.get("amount")
+                    if amt is not None:
+                        cols = _payload_columns(payload)
+                        k = cols[0].get("key") if cols else "cur"
+                        return {
+                            "label": block.get("label") or "Net Profit",
+                            "values": {k: amt},
+                        }
+
+                elif block is not None:
+                    cols = _payload_columns(payload)
+                    k = cols[0].get("key") if cols else "cur"
+                    return {
+                        "label": "Net Profit",
+                        "values": {k: block},
+                    }
+
+            return None
+
+
+        nr = _extract_net_result(payload)
+        if nr:
+            _append_row(out_rows, nr["label"], nr["values"], "total")
 
         return ["Line Item", *col_labels], out_rows
 
