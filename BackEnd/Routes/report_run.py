@@ -11,7 +11,7 @@ from BackEnd.Services.reporting.tb_reports import build_trial_balance_report
 from BackEnd.Services.reporting.vat_reports import build_vat_report
 from BackEnd.Services.period_core import resolve_company_period
 from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
-
+from BackEnd.Services.reporting.journal_reports import build_journal_register
 from BackEnd.Services.reporting.lease_reports import (
     build_lease_monthly_due_report,
     build_lease_payments_report,
@@ -233,11 +233,40 @@ def run_general_ledger(company_id):
 
     try:
         db, date_from, date_to, meta = _resolve_range(company_id)
+
         account_code = (request.args.get("account_code") or "").strip()
+        if account_code.lower() in {"all", "all accounts", "*"}:
+            account_code = ""
+
         q = (request.args.get("q") or "").strip()
-        rows, columns, totals = build_general_ledger_report(db, company_id, date_from=date_from, date_to=date_to, account_code=account_code, q=q)
-        payload = build_report_response("general_ledger", company_id, date_from, date_to, rows, columns, totals=totals, filters={"preset": request.args.get("preset"), "account_code": account_code, "q": q}, extra_meta=meta)
+
+        rows, columns, totals = build_general_ledger_report(
+            db,
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            account_code=account_code or None,
+            q=q,
+        )
+
+        payload = build_report_response(
+            "general_ledger",
+            company_id,
+            date_from,
+            date_to,
+            rows,
+            columns,
+            totals=totals,
+            filters={
+                "preset": request.args.get("preset"),
+                "account_code": account_code,
+                "q": q,
+            },
+            extra_meta=meta,
+        )
+
         return jsonify(payload)
+
     except Exception as e:
         current_app.logger.exception("run_general_ledger failed")
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -251,16 +280,133 @@ def export_general_ledger(company_id):
 
     try:
         db, date_from, date_to, meta = _resolve_range(company_id)
+
         account_code = (request.args.get("account_code") or "").strip()
+        if account_code.lower() in {"all", "all accounts", "*"}:
+            account_code = ""
+
         q = (request.args.get("q") or "").strip()
-        rows, columns, totals = build_general_ledger_report(db, company_id, date_from=date_from, date_to=date_to, account_code=account_code, q=q)
-        payload = build_report_response("general_ledger", company_id, date_from, date_to, rows, columns, totals=totals, filters={"preset": request.args.get("preset"), "account_code": account_code, "q": q}, extra_meta=meta)
+
+        rows, columns, totals = build_general_ledger_report(
+            db,
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            account_code=account_code or None,
+            q=q,
+        )
+
+        payload = build_report_response(
+            "general_ledger",
+            company_id,
+            date_from,
+            date_to,
+            rows,
+            columns,
+            totals=totals,
+            filters={
+                "preset": request.args.get("preset"),
+                "account_code": account_code,
+                "q": q,
+            },
+            extra_meta=meta,
+        )
+
         return export_csv(payload, filename="general_ledger.csv")
+
     except Exception as e:
         current_app.logger.exception("export_general_ledger failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+# =========================================================
+# Journal Register
+# =========================================================
 
+@report_bp.route("/api/companies/<int:company_id>/reports/journal-register", methods=["GET"])
+@require_auth
+def run_journal_register(company_id):
+    deny = _deny_report_access(company_id)
+    if deny:
+        return deny
+
+    try:
+        db, date_from, date_to, meta = _resolve_range(company_id)
+        q = (request.args.get("q") or "").strip()
+
+        rows, columns = build_journal_register(
+            db,
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            q=q or None,
+        )
+
+        totals = {
+            "debit_total": sum(float(r.get("debit_total") or 0) for r in rows),
+            "credit_total": sum(float(r.get("credit_total") or 0) for r in rows),
+            "row_count": len(rows),
+        }
+
+        payload = build_report_response(
+            "journal_register",
+            company_id,
+            date_from,
+            date_to,
+            rows,
+            columns,
+            totals=totals,
+            filters={"preset": request.args.get("preset"), "q": q},
+            extra_meta=meta,
+        )
+
+        return jsonify(payload)
+
+    except Exception as e:
+        current_app.logger.exception("run_journal_register failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@report_bp.route("/api/companies/<int:company_id>/reports/journal-register/export", methods=["GET"])
+def export_journal_register(company_id):
+    deny = _deny_report_export_access(company_id, "journal_register")
+    if deny:
+        return deny
+
+    try:
+        db, date_from, date_to, meta = _resolve_range(company_id)
+        q = (request.args.get("q") or "").strip()
+
+        rows, columns = build_journal_register(
+            db,
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            q=q or None,
+        )
+
+        totals = {
+            "debit_total": sum(float(r.get("debit_total") or 0) for r in rows),
+            "credit_total": sum(float(r.get("credit_total") or 0) for r in rows),
+            "row_count": len(rows),
+        }
+
+        payload = build_report_response(
+            "journal_register",
+            company_id,
+            date_from,
+            date_to,
+            rows,
+            columns,
+            totals=totals,
+            filters={"preset": request.args.get("preset"), "q": q},
+            extra_meta=meta,
+        )
+
+        return export_csv(payload, filename="journal_register.csv")
+
+    except Exception as e:
+        current_app.logger.exception("export_journal_register failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
 # =========================================================
 # VAT
 # =========================================================

@@ -1877,6 +1877,9 @@ const ENDPOINTS = {
     // ---------------------------------
     // Core reporting
     // ---------------------------------
+    journalRegister: (cid) => `/api/companies/${cid}/reports/journal-register`,
+    journalRegisterExport: (cid) => `/api/companies/${cid}/reports/journal-register/export`,
+
     trialBalance: (cid) => `/api/companies/${cid}/reports/trial-balance`,
     trialBalanceExport: (cid) => `/api/companies/${cid}/reports/trial-balance/export`,
 
@@ -6433,6 +6436,7 @@ function inferReportKeyFromExportUrl(url) {
   const s = String(url || "");
 
   const map = [
+    ["/journal-register/export", "journal_register"],
     ["/trial-balance/export", "trial_balance"],
     ["/general-ledger/export", "general_ledger"],
     ["/vat/export", "vat_report"],
@@ -14521,7 +14525,7 @@ async function renderRecentJournals() {
   `;
 
   host.querySelector("#btnRecentJournalsExportCsv")?.addEventListener("click", () => {
-    const url = new URL(toApiUrl(window.ENDPOINTS.reports.loanJournalsExport(cid)), window.location.origin);
+    const url = new URL(toApiUrl(window.ENDPOINTS.reports.journalRegisterExport(cid)), window.location.origin);
 
     const fromEl = document.getElementById("jrnlFilterFrom");
     const toEl = document.getElementById("jrnlFilterTo");
@@ -21981,7 +21985,14 @@ async function exportStatement(stmtType, format) {
     updateStmtViewerMethodVisibility(t);
   }
 
-  const fmt = String(format || "xlsx").toLowerCase();
+  let fmt = String(format || "xlsx").toLowerCase();
+
+  if (fmt === "json") fmt = "xlsx";
+
+  if (!["xlsx", "pdf"].includes(fmt)) {
+    alert("Statement exports support XLSX or PDF only.");
+    return;
+  }
 
   let url = "";
     switch (t) {
@@ -22043,8 +22054,8 @@ async function exportStatement(stmtType, format) {
 
   url = addQueryParamsAbs(url, params);
 
-  const ext = (fmt === "sars_xml") ? "xml" : fmt;
-  const filename = `${t}_${from}_${to}.${ext}`;
+  //const ext = (fmt === "sars_xml") ? "xml" : fmt;
+  //const filename = `${t}_${from}_${to}.${ext}`;
 
   await downloadUrl(url);
 }
