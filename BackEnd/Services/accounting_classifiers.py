@@ -857,8 +857,19 @@ def _coa_role_from_text(
         "revenue received but not yet earned",
         "income received in advance",
         "progress payment received in advance",
+        "payments received in advance",
+        "advance consideration",
+        "customer advance",
+        "customer deposit",
+        "client deposit",
+        "contract deposit",
+        "deposit received",
+        "deferred contract revenue",
+        "contract deferred income",
+        "billings in excess of revenue",
+        "billings in excess of costs",
     ):
-        return "contract_liability"
+        return "CONTRACT_LIABILITY"
 
     # ----------------------------
     # IFRS 15 / contract asset
@@ -874,8 +885,18 @@ def _coa_role_from_text(
         "contract assets - postpaid",
         "postpaid contract revenue",
         "revenue earned not yet billed",
+        "amounts due from customer",
+        "amount due from customer",
+        "conditional right to consideration",
+        "right to consideration",
+        "revenue asset",
+        "work certified not billed",
+        "work performed not billed",
+        "wip receivable",
+        "contract work in progress",
+        "construction contract asset",
     ):
-        return "contract_asset"
+        return "CONTRACT_ASSET"
 
     # ----------------------------
     # IFRS 15 / contract revenue
@@ -884,13 +905,44 @@ def _coa_role_from_text(
         "contract income",
         "contract revenue",
         "revenue recognized from contracts",
-        "revenue recognition -ifrs 15",
+        "revenue recognition - ifrs 15",
         "revenue recognition ifrs 15",
         "e&m contract income",
         "residential contract income",
         "postpaid contract revenue",
+        "revenue from contracts with customers",
+        "ifrs 15 revenue",
+        "ifrs15 revenue",
+        "customer contract revenue",
+        "service contract revenue",
+        "project revenue",
+        "construction contract revenue",
+        "consulting contract revenue",
+        "performance obligation revenue",
+        "revenue from performance obligations",
+    ):
+        return "CONTRACT_REVENUE"
+
+    # ----------------------------
+    # IFRS 15 / contract revenue
+    # ----------------------------
+    # --- IFRS 15 fallback (industry revenue accounts) ---
+    if (
+        (standard or "").strip().upper() == "IFRS 15"
+        and (
+            "income" in sec
+            or "revenue" in sec
+            or "income" in cat
+            or "revenue" in cat
+        )
+        and not has_any(
+            "discount", "rebate", "returns", "allowance",
+            "adjustment", "recovery", "grant", "subsidy",
+            "commission income", "interest", "foreign exchange"
+        )
     ):
         return "contract_revenue"
+
     # ----------------------------
     # loan / borrowing roles
     # ----------------------------

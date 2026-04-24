@@ -460,6 +460,8 @@ def _normalize_coa_rows_codes(
     # ------------------------------------------------------------
     # Main normalize loop
     # ------------------------------------------------------------
+    contract_revenue_assigned = False
+    
     for r in rows:
         row = make_row_dict(r)
 
@@ -546,6 +548,13 @@ def _normalize_coa_rows_codes(
 
             row["role"] = _resolve_role(row)
 
+            # --- IFRS 15 CONTROL ---
+            if row["role"] == "contract_revenue":
+                if contract_revenue_assigned:
+                    row["role"] = ""
+                else:
+                    contract_revenue_assigned = True
+
             out.append(row)
             continue
 
@@ -630,8 +639,15 @@ def _normalize_coa_rows_codes(
         row["normal_side"] = ac.NORMAL_SIDE.get(bucket, "debit")
         row["allow_opposite"] = bool(ac.ALLOW_OPPOSITE_BY_FAMILY.get(bucket, False))
 
-        # ✅ preserve explicit role; otherwise derive from text
+        # preserve explicit role; otherwise derive from text
         row["role"] = _resolve_role(row)
+
+        # --- IFRS 15 CONTROL (only ONE contract revenue account) ---
+        if row["role"] == "contract_revenue":
+            if contract_revenue_assigned:
+                row["role"] = ""  # drop duplicates
+            else:
+                contract_revenue_assigned = True
 
         out.append(row)
 
@@ -59410,6 +59426,7 @@ class DatabaseService:
                         "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
                     },
                     entries=flat_entries,
+                    cur=cur,
                 )
             return {
                 "ok": True,
@@ -59985,14 +60002,20 @@ class DatabaseService:
 
         return after
 
-    def _build_revenue_recognition_journal_lines(self, company_id: int, run: dict, entries: list[dict]) -> list[dict]:
+    def _build_revenue_recognition_journal_lines(
+        self,
+        company_id: int,
+        run: dict,
+        entries: list[dict],
+        cur=None,
+    ) -> list[dict]:
         from decimal import Decimal, ROUND_HALF_UP
 
-        acct = self._get_revenue_setup_accounts(company_id, entries=entries)
+        acct = self.resolve_ifrs15_accounts(company_id, cur=cur, strict=True)
 
         revenue_code = acct["revenue_code"]
-        contract_asset_code = acct.get("contract_asset_code")
-        contract_liability_code = acct.get("contract_liability_code")
+        contract_asset_code = acct["contract_asset_code"]
+        contract_liability_code = acct["contract_liability_code"]
 
         def q2(v) -> Decimal:
             return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
