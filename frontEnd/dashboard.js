@@ -36402,7 +36402,13 @@ function bindAssetRecordsPickerModal({ cid }) {
       if (createBtn) {
         createBtn.classList.remove("hidden");
         createBtn.disabled = !canCreate;
-        createBtn.onclick = async () => {
+        createBtn.style.pointerEvents = canCreate ? "auto" : "none";
+        createBtn.style.opacity = canCreate ? "1" : "0.55";
+
+        createBtn.onclick = async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
           if (!canCreate) return;
 
           const payload = {
@@ -36414,7 +36420,9 @@ function bindAssetRecordsPickerModal({ cid }) {
             revenue_obligation_id: p.obligation_id,
             revenue_obligation_name: p.obligation_name || "",
             invoice_date: new Date().toISOString().slice(0, 10),
-            currency: p.contract_currency || "ZAR",
+            currency: resolveCurrency(
+              p.contract_currency || state.selectedContract?.contract_currency
+            ),
             memo: `Invoice for recognised work done on ${p.obligation_name || "obligation"}`,
             line: {
               item_name: p.obligation_name || "Service",
@@ -36422,8 +36430,10 @@ function bindAssetRecordsPickerModal({ cid }) {
               quantity: 1,
               unit_price: Number(p.available_to_bill || 0),
               revenue_obligation_id: p.obligation_id,
-            }
+            },
           };
+
+          console.log("[REV CREATE INVOICE PAYLOAD]", payload);
 
           await redirectToInvoiceFromRevenueBilling(payload);
         };
@@ -39477,6 +39487,40 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       hydrateObligationForm(state.selectedObligation);
       renderObligationContractBanner(state.selectedContract);
       setObligationViewMode("form");
+    });
+
+    $("revCreateBillingInvoice")?.addEventListener("click", async () => {
+      try {
+        const preview = await loadSelectedObligationBillablePreview();
+
+        if (!preview?.ui?.can_create_invoice) {
+          throw new Error("No recognised amount is currently available to bill.");
+        }
+
+        const payload = {
+          customer_id: preview.customer_id,
+          customer_name: state.selectedContract?.customer_name || "",
+          revenue_contract_id: preview.contract_id,
+          revenue_contract_number: preview.contract_number || "",
+          revenue_contract_title: preview.contract_title || "",
+          revenue_obligation_id: preview.obligation_id,
+          revenue_obligation_name: preview.obligation_name || "",
+          invoice_date: new Date().toISOString().slice(0, 10),
+          currency: preview.contract_currency || "ZAR",
+          memo: `Invoice for recognised work done on ${preview.obligation_name || "obligation"}`,
+          line: {
+            item_name: preview.obligation_name || "Service",
+            description: `Recognised revenue available to bill for ${preview.obligation_name || "obligation"}`,
+            quantity: 1,
+            unit_price: Number(preview.available_to_bill || 0),
+            revenue_obligation_id: preview.obligation_id,
+          },
+        };
+
+        await redirectToInvoiceFromRevenueBilling(payload);
+      } catch (e) {
+        setMsg(e?.message || "Create invoice failed", "error");
+      }
     });
 
     $("revSaveBilling")?.addEventListener("click", async () => {
