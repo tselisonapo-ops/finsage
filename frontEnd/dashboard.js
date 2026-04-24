@@ -57536,10 +57536,9 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
         x?.acquisition_id &&
         funding === "vendor_credit" &&
         !posted &&
-        !hasBill &&
         status !== "cancelled" &&
         status !== "completed";
-
+        
       return {
         acquisition_id: x?.acquisition_id,
         asset_label: assetLabel,
