@@ -274,6 +274,12 @@ def run_general_ledger(company_id):
 
 @report_bp.route("/api/companies/<int:company_id>/reports/general-ledger/export", methods=["GET"])
 def export_general_ledger(company_id):
+    current_app.logger.warning(
+        "GL EXPORT START company_id=%s args=%s",
+        company_id,
+        dict(request.args),
+    )
+
     deny = _deny_report_export_access(company_id, "general_ledger")
     if deny:
         return deny
@@ -281,11 +287,29 @@ def export_general_ledger(company_id):
     try:
         db, date_from, date_to, meta = _resolve_range(company_id)
 
-        account_code = (request.args.get("account_code") or "").strip()
+        current_app.logger.warning(
+            "GL EXPORT RANGE company_id=%s date_from=%s date_to=%s meta=%s",
+            company_id,
+            date_from,
+            date_to,
+            meta,
+        )
+
+        account_code = (
+            request.args.get("account_code")
+            or request.args.get("account")
+            or request.args.get("gl_account")
+            or ""
+        ).strip()
+
         if account_code.lower() in {"all", "all accounts", "*"}:
             account_code = ""
 
-        q = (request.args.get("q") or "").strip()
+        q = (
+            request.args.get("q")
+            or request.args.get("search")
+            or ""
+        ).strip()
 
         rows, columns, totals = build_general_ledger_report(
             db,
@@ -294,6 +318,18 @@ def export_general_ledger(company_id):
             date_to=date_to,
             account_code=account_code or None,
             q=q,
+        )
+
+        rows = rows or []
+        columns = columns or []
+        totals = totals or {}
+
+        current_app.logger.warning(
+            "GL EXPORT BUILT company_id=%s rows=%s columns=%s totals_keys=%s",
+            company_id,
+            len(rows),
+            len(columns),
+            list(totals.keys()) if isinstance(totals, dict) else type(totals).__name__,
         )
 
         payload = build_report_response(
@@ -312,12 +348,22 @@ def export_general_ledger(company_id):
             extra_meta=meta,
         )
 
-        return export_csv(payload, filename="general_ledger.csv")
+        try:
+            return export_csv(payload, filename="general_ledger.csv")
+        except Exception:
+            current_app.logger.exception("GL EXPORT CSV BUILD FAILED")
+            return jsonify({
+                "ok": False,
+                "error": "General ledger data loaded, but CSV export failed.",
+            }), 400
 
     except Exception as e:
         current_app.logger.exception("export_general_ledger failed")
-        return jsonify({"ok": False, "error": str(e)}), 400
-
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "args": dict(request.args),
+        }), 400
 # =========================================================
 # Journal Register
 # =========================================================

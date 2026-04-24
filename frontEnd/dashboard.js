@@ -3825,9 +3825,13 @@ async function downloadUrl(url, reportKey = null) {
     String(url || "").includes("?t=") ||
     String(url || "").includes("&t=");
 
+  console.log("[downloadUrl:start]", { url, cid, key, alreadySigned });
+
   if (key && cid && !alreadySigned) {
     finalUrl = await getReportExportUrl(cid, key, url);
   }
+
+  console.log("[downloadUrl:final]", { finalUrl });
 
   const iframe = document.createElement("iframe");
   iframe.style.display = "none";
@@ -14524,26 +14528,27 @@ async function renderRecentJournals() {
     </div>
   `;
 
-  host.querySelector("#btnRecentJournalsExportCsv")?.addEventListener("click", () => {
-    const url = new URL(toApiUrl(window.ENDPOINTS.reports.journalRegisterExport(cid)), window.location.origin);
+  host.querySelector("#btnRecentJournalsExportCsv")?.addEventListener("click", async () => {
+    try {
+      const base = window.ENDPOINTS.reports.journalRegisterExport(cid);
+      const url = new URL(toApiUrl(base), window.location.origin);
 
-    const fromEl = document.getElementById("jrnlFilterFrom");
-    const toEl = document.getElementById("jrnlFilterTo");
-    const qEl = document.getElementById("jrnlFilterQ");
-    const limitEl = document.getElementById("jrnlFilterLimit");
+      const from = document.getElementById("jrnlFilterFrom")?.value?.trim();
+      const to = document.getElementById("jrnlFilterTo")?.value?.trim();
+      const q = document.getElementById("jrnlFilterQ")?.value?.trim();
+      const limit = document.getElementById("jrnlFilterLimit")?.value?.trim();
 
-    const from = (fromEl?.value || "").trim();
-    const to = (toEl?.value || "").trim();
-    const q = (qEl?.value || "").trim();
-    const limit = (limitEl?.value || "").trim();
+      if (from) url.searchParams.set("from", from);
+      if (to) url.searchParams.set("to", to);
+      if (q) url.searchParams.set("q", q);
+      if (limit) url.searchParams.set("limit", limit);
 
-    if (from) url.searchParams.set("from", from);
-    if (to) url.searchParams.set("to", to);
-    if (q) url.searchParams.set("q", q);
-    if (limit) url.searchParams.set("limit", limit);
-    url.searchParams.set("format", "csv");
+      url.searchParams.set("format", "csv");
 
-    window.open(url.toString(), "_blank", "noopener");
+      await downloadUrl(url.pathname + url.search, "journal_register");
+    } catch (e) {
+      console.error("Export failed:", e);
+    }
   });
 
   // bind Open
