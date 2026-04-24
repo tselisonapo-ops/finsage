@@ -57326,12 +57326,172 @@ async function consumePendingAssetBillPrefill() {
 }
 window.consumePendingAssetBillPrefill = consumePendingAssetBillPrefill;
 
+function showVendorLinkedAssetBillModal(vendorObj, rows) {
+  const old = document.getElementById("apAssetBillModal");
+  if (old) old.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "apAssetBillModal";
+  modal.innerHTML = `
+    <div class="ap-asset-modal-backdrop">
+      <div class="ap-asset-modal">
+        <div class="ap-asset-modal-head">
+          <div>
+            <h3>Linked asset acquisitions</h3>
+            <p>${vendorObj.name || vendorObj.vendor_name || "Selected vendor"}</p>
+          </div>
+          <button type="button" class="ap-asset-modal-close">×</button>
+        </div>
+
+        <table class="ap-asset-table">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Reference</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Bill</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => `
+              <tr data-index="${i}" class="${r.clickable ? "clickable" : "disabled"}">
+                <td>${esc(r.asset_label)}</td>
+                <td>${esc(r.reference || "—")}</td>
+                <td>${money(Number(r.amount || 0))}</td>
+                <td>${esc(r.status_label)}</td>
+                <td>${r.bill_label}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+
+        <div class="ap-asset-modal-foot">
+          Click a pending acquisition to prefill the bill.
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector(".ap-asset-modal-close")?.addEventListener("click", () => modal.remove());
+  modal.querySelector(".ap-asset-modal-backdrop")?.addEventListener("click", (e) => {
+    if (e.target.classList.contains("ap-asset-modal-backdrop")) modal.remove();
+  });
+
+  modal.querySelectorAll("tbody tr.clickable").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      const idx = Number(tr.dataset.index || -1);
+      const row = rows[idx];
+      if (!row?.acquisition_id) return;
+
+      modal.remove();
+      window.openBillFromAssetAcquisition?.(Number(row.acquisition_id));
+    });
+  });
+}
+
+(function injectAssetBillModalCss() {
+  if (document.getElementById("apAssetBillModalCss")) return;
+
+  const style = document.createElement("style");
+  style.id = "apAssetBillModalCss";
+  style.textContent = `
+    .ap-asset-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,.45);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    .ap-asset-modal {
+      width: min(820px, 96vw);
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 20px 50px rgba(15,23,42,.25);
+      overflow: hidden;
+    }
+    .ap-asset-modal-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .ap-asset-modal-head h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .ap-asset-modal-head p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .ap-asset-modal-close {
+      border: 0;
+      background: transparent;
+      font-size: 26px;
+      cursor: pointer;
+    }
+    .ap-asset-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .ap-asset-table th,
+    .ap-asset-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eef2f7;
+      text-align: left;
+    }
+    .ap-asset-table th {
+      background: #f8fafc;
+      font-size: 12px;
+      color: #475569;
+    }
+    .ap-asset-table tr.clickable {
+      cursor: pointer;
+    }
+    .ap-asset-table tr.clickable:hover {
+      background: #ecfeff;
+    }
+    .ap-asset-table tr.disabled {
+      color: #94a3b8;
+      background: #fafafa;
+    }
+    .ap-asset-modal-foot {
+      padding: 12px 18px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .ap-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .ap-badge--ok {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .ap-badge--muted {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
 function maybePromptForVendorLinkedAssetBill(vendorObj) {
   try {
     if (!vendorObj || !vendorObj.id) return false;
-
-    // avoid repeated prompting for the same vendor/acquisition in one session
-    window._AP_LAST_ASSET_BILL_PROMPT = window._AP_LAST_ASSET_BILL_PROMPT || {};
 
     const linked = Array.isArray(vendorObj.linked_asset_acquisitions)
       ? vendorObj.linked_asset_acquisitions
@@ -57339,53 +57499,74 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
 
     if (!linked.length) return false;
 
-    // choose first acquisition that still looks bill-worthy
-    const pending = linked.find((x) => {
+    const linkedAssets = Array.isArray(vendorObj.linked_assets)
+      ? vendorObj.linked_assets
+      : [];
+
+    const rows = linked
+      .filter((x) => {
+        const hasBill =
+          !!x?.bill_id ||
+          !!x?.ap_bill_id ||
+          !!x?.vendor_bill_id ||
+          String(x?.bill_status || "").trim() !== "";
+
+        const funding = String(x?.funding_source || "").trim().toLowerCase();
+
+        return (
+          x?.acquisition_id &&
+          funding === "vendor_credit" &&
+          !hasBill // ❗ exclude billed ones completely
+        );
+      })
+      .map((x) => {
       const funding = String(x?.funding_source || "").trim().toLowerCase();
       const status = String(x?.status || "").trim().toLowerCase();
       const posted = !!x?.posted_journal_id;
 
-      // you can loosen/tighten this rule later
-      return (
+      const asset = linkedAssets.find(
+        (a) => Number(a?.asset_id || 0) === Number(x?.asset_id || 0)
+      );
+
+      const assetLabel = asset?.asset_name
+        ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
+        : `Asset #${x?.asset_id || "—"}`;
+
+      const clickable =
         x?.acquisition_id &&
         funding === "vendor_credit" &&
         !posted &&
+        !hasBill &&
         status !== "cancelled" &&
-        status !== "completed"
-      );
+        status !== "completed";
+
+      return {
+        acquisition_id: x?.acquisition_id,
+        asset_label: assetLabel,
+        reference: x?.vendor_invoice_no || x?.reference || "",
+        amount: x?.amount || x?.gross_amount || 0,
+        clickable,
+        status_label: posted
+          ? "Posted"
+          : status
+            ? status
+            : "Draft",
+        bill_label: clickable
+          ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
+          : `<span class="ap-badge ap-badge--muted">Locked</span>`,
+        };
     });
 
-    if (!pending) return false;
+    if (!rows.length) return false;
 
-    const promptKey = `${vendorObj.id}:${pending.acquisition_id}`;
-    if (window._AP_LAST_ASSET_BILL_PROMPT[promptKey]) return false;
-
-    window._AP_LAST_ASSET_BILL_PROMPT[promptKey] = true;
-
-    const asset = (Array.isArray(vendorObj.linked_assets) ? vendorObj.linked_assets : [])
-      .find((a) => Number(a?.asset_id || 0) === Number(pending.asset_id || 0));
-
-    const assetLabel = asset?.asset_name
-      ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
-      : `Asset #${pending.asset_id}`;
-
-    const ref = pending.vendor_invoice_no || pending.reference || "";
-    const msg =
-      `This vendor has an unbilled asset acquisition.\n\n` +
-      `Asset: ${assetLabel}\n` +
-      `${ref ? `Reference: ${ref}\n` : ""}` +
-      `\nWould you like to prefill the bill now?`;
-
-    const yes = window.confirm(msg);
-    if (!yes) return false;
-
-    window.openBillFromAssetAcquisition?.(Number(pending.acquisition_id));
+    showVendorLinkedAssetBillModal(vendorObj, rows);
     return true;
   } catch (e) {
     console.warn("[AP] maybePromptForVendorLinkedAssetBill failed:", e);
     return false;
   }
 }
+
 window.maybePromptForVendorLinkedAssetBill = maybePromptForVendorLinkedAssetBill;
 
 function getSelectedVendorObjectFromBillForm() {
