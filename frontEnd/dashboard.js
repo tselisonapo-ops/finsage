@@ -14492,7 +14492,7 @@ async function renderRecentJournals() {
   `;
 
   host.querySelector("#btnRecentJournalsExportCsv")?.addEventListener("click", () => {
-    const url = new URL(toApiUrl(window.ENDPOINTS.reports.journalRegisterExport(cid)), window.location.origin);
+    const url = new URL(toApiUrl(window.ENDPOINTS.reports.loanJournalsExport(cid)), window.location.origin);
 
     const fromEl = document.getElementById("jrnlFilterFrom");
     const toEl = document.getElementById("jrnlFilterTo");

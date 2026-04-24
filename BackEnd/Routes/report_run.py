@@ -55,17 +55,18 @@ report_bp = Blueprint("report_bp", __name__)
 # =========================================================
 
 def _get_db():
-    db = current_app.config.get("db_service")
-    if db is not None:
-        return db
+    db = (
+        current_app.config.get("db_service")
+        or current_app.config.get("DB_SERVICE")
+        or current_app.extensions.get("db_service")
+        or current_app.extensions.get("DB_SERVICE")
+    )
 
-    db = current_app.extensions.get("db_service")
     if db is not None:
         return db
 
     raise RuntimeError(
-        "db_service not found. Put your DatabaseService instance into "
-        "current_app.config['db_service'] or current_app.extensions['db_service']."
+        "db_service not found. Set app.config['DB_SERVICE'] or app.config['db_service']."
     )
 
 def _revenue_report_payload(report_key, company_id, rows, columns, totals, date_from=None, date_to=None, filters=None, meta=None):

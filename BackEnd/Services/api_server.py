@@ -225,6 +225,7 @@ def health():
 print("[BOOT] Flask app created")
 
 app.config["DB_SERVICE"] = db_service
+app.config["db_service"] = db_service
 app.config["GET_DB_CONNECTION"] = get_db_connection
 app.config["GET_TRIAL_BALANCE_FN"] = getattr(db_service, "get_trial_balance", None)
 
