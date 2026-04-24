@@ -47,10 +47,56 @@ def _statement_title(meta: Dict[str, Any]) -> str:
 
 def _payload_columns(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     cols = payload.get("columns") or []
-    if cols:
-        return cols
-    return [{"key": "amount", "label": "Amount"}]
+    if not cols:
+        return [{"key": "amount", "label": "Amount"}]
 
+    # hide comparison / extra columns that have no data anywhere
+    used = set()
+
+    def scan_values(values):
+        if isinstance(values, dict):
+            for k, v in values.items():
+                if _has_value(v):
+                    used.add(k)
+
+    for r in payload.get("rows") or []:
+        scan_values(r.get("values"))
+
+    for sec in payload.get("sections") or []:
+        for ln in sec.get("lines") or []:
+            scan_values(ln.get("values"))
+        scan_values(sec.get("totals"))
+
+    def scan_bs_side(side):
+        for sec in (side or {}).values():
+            if isinstance(sec, dict):
+                for ln in sec.get("lines") or []:
+                    scan_values(ln.get("values"))
+                scan_values(sec.get("totals"))
+                scan_values(sec.get("values"))
+
+    scan_bs_side(payload.get("assets"))
+    scan_bs_side(payload.get("equity_and_liabilities"))
+
+    for key in ("net_result", "net_change", "opening_balance", "closing_balance"):
+        block = payload.get(key)
+        if isinstance(block, dict):
+            scan_values(block.get("values"))
+
+    cash_pos = payload.get("cash_position") or {}
+    for block in cash_pos.values():
+        if isinstance(block, dict):
+            scan_values(block.get("values"))
+
+    reconciliation = payload.get("reconciliation") or {}
+    for block in reconciliation.values():
+        if isinstance(block, dict):
+            scan_values(block.get("values"))
+
+    filtered = [c for c in cols if c.get("key") in used]
+
+    # always keep at least one column
+    return filtered or cols[:1]
 
 def _row_type(row: Dict[str, Any]) -> str:
     meta = row.get("meta") or {}
@@ -69,76 +115,156 @@ def _append_row(
         "row_type": row_type,
     })
 
+def _has_value(v: Any) -> bool:
+    if v is None or v == "":
+        return False
+    try:
+        return abs(float(v)) > 0.000001
+    except Exception:
+        return True
 
 def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str, Any]]]:
-    """
-    Normalizes different statement payload shapes into:
-      headers = ["Line Item", ...dynamic columns...]
-      rows = [{"label": ..., "values": {...}, "row_type": ...}, ...]
-    """
     cols = _payload_columns(payload)
-    col_keys = [c.get("key") for c in cols]
     col_labels = [c.get("label") or c.get("key") for c in cols]
 
     out_rows: List[Dict[str, Any]] = []
 
-    # Case 1: SOCIE / simple statements with payload["rows"]
-    if payload.get("rows"):
-        for r in payload.get("rows") or []:
-            label = r.get("label") or r.get("name") or r.get("key") or ""
-            values = r.get("values") or {}
-            rt = _row_type(r)
-            _append_row(out_rows, label, values, rt)
+    # 1) Balance Sheet shape
+    if payload.get("assets") and payload.get("equity_and_liabilities"):
+
+        def push_section(label, section):
+            if not section:
+                return
+
+            _append_row(out_rows, label, {}, "header")
+
+            for line in section.get("lines") or []:
+                _append_row(
+                    out_rows,
+                    line.get("name") or line.get("label") or "",
+                    line.get("values") or {},
+                    _row_type(line),
+                )
+
+            totals = section.get("totals")
+            if totals:
+                vals = totals.get("values") if isinstance(totals, dict) else totals
+                _append_row(out_rows, f"Total {label}", vals or {}, "total")
+
+        assets = payload.get("assets") or {}
+        push_section("Current assets", assets.get("current_assets"))
+        push_section("Non-current assets", assets.get("non_current_assets"))
+
+        if assets.get("totals"):
+            _append_row(
+                out_rows,
+                assets["totals"].get("label") or "Total assets",
+                assets["totals"].get("values") or {},
+                "total",
+            )
+
+        eq = payload.get("equity_and_liabilities") or {}
+        push_section("Equity", eq.get("equity"))
+        push_section("Non-current liabilities", eq.get("non_current_liabilities"))
+        push_section("Current liabilities", eq.get("current_liabilities"))
+
+        if eq.get("totals"):
+            _append_row(
+                out_rows,
+                eq["totals"].get("label") or "Total equity and liabilities",
+                eq["totals"].get("values") or {},
+                "total",
+            )
+
+        if payload.get("balance_check"):
+            bc = payload["balance_check"]
+            _append_row(
+                out_rows,
+                bc.get("label") or "Balance check",
+                bc.get("values") or {},
+                "subtotal",
+            )
 
         return ["Line Item", *col_labels], out_rows
 
-    # Case 2: statements with payload["sections"]
+    # 2) SOCIE / row-based shape
+    if payload.get("rows"):
+        for r in payload.get("rows") or []:
+            label = r.get("label") or r.get("name") or r.get("key") or ""
+            rt = "total" if str(r.get("key") or "").lower() in {"closing_balance", "total"} else _row_type(r)
+            _append_row(out_rows, label, r.get("values") or {}, rt)
+
+        return ["Line Item", *col_labels], out_rows
+
+    # 3) P&L / Cash Flow sections shape
     for sec in payload.get("sections") or []:
         sec_label = sec.get("label") or sec.get("key") or ""
+
         if sec_label:
             _append_row(out_rows, sec_label, {}, "header")
 
         for line in sec.get("lines") or []:
             label = line.get("name") or line.get("label") or line.get("code") or ""
-            values = line.get("values") or {}
             rt = _row_type(line)
-            _append_row(out_rows, label, values, rt)
+            if line.get("is_subtotal"):
+                rt = "subtotal"
+            _append_row(out_rows, label, line.get("values") or {}, rt)
 
-        if sec.get("totals"):
-            _append_row(out_rows, f"Total {sec_label}", sec.get("totals") or {}, "subtotal")
+            # Optional: include breakdown details in Excel/PDF
+            detail = line.get("detail") or {}
+            for col_key, detail_rows in detail.items():
+                if not isinstance(detail_rows, list):
+                    continue
+                for d in detail_rows:
+                    _append_row(
+                        out_rows,
+                        f"   - {d.get('account_name') or d.get('name') or 'Detail'}",
+                        {col_key: d.get("amount")},
+                        "normal",
+                    )
 
-    # Case 3: statement-level extras (cash flow especially)
-    if payload.get("net_change"):
-        block = payload["net_change"] or {}
-        _append_row(
-            out_rows,
-            block.get("label") or "Net change",
-            block.get("values") or {},
-            "total",
-        )
+        totals = sec.get("totals")
+        if totals:
+            _append_row(out_rows, f"Total {sec_label}", totals or {}, "subtotal")
+
+        # Some P&L blocks use values directly, not lines/totals
+        if sec.get("values") and not sec.get("lines") and not sec.get("totals"):
+            _append_row(out_rows, sec_label, sec.get("values") or {}, "subtotal")
+
+    # 4) Statement-level totals / extras
+    for key in ("net_result", "net_change", "opening_balance", "closing_balance"):
+        block = payload.get(key)
+        if isinstance(block, dict):
+            _append_row(
+                out_rows,
+                block.get("label") or key.replace("_", " ").title(),
+                block.get("values") or {},
+                "total" if key in {"net_result", "net_change"} else "subtotal",
+            )
 
     cash_pos = payload.get("cash_position") or {}
     for k in ("opening", "closing", "delta_from_tb", "reconciliation_gap"):
-        if cash_pos.get(k):
-            block = cash_pos[k] or {}
+        block = cash_pos.get(k)
+        if isinstance(block, dict):
             _append_row(
                 out_rows,
                 block.get("label") or k.replace("_", " ").title(),
                 block.get("values") or {},
-                "subtotal" if k in ("opening", "closing") else "normal",
+                "subtotal",
             )
 
-    if payload.get("net_result"):
-        nr = payload.get("net_result") or {}
-        _append_row(
-            out_rows,
-            nr.get("label") or "Net result",
-            nr.get("values") or {},
-            "total",
-        )
+    reconciliation = payload.get("reconciliation") or {}
+    for k in ("delta_from_tb", "gap"):
+        block = reconciliation.get(k)
+        if isinstance(block, dict):
+            _append_row(
+                out_rows,
+                block.get("label") or k.replace("_", " ").title(),
+                block.get("values") or {},
+                "subtotal",
+            )
 
     return ["Line Item", *col_labels], out_rows
-
 
 def _xlsx_apply_row_style(ws, row_idx: int, row_type: str, max_col: int):
     if row_type == "header":

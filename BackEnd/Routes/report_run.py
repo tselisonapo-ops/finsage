@@ -90,6 +90,13 @@ def _deny_report_access(company_id: int):
         db_service=_get_db(),
     )
 
+def _export_statement_payload(payload, statement_key):
+    fmt = (request.args.get("format") or "xlsx").lower().strip()
+
+    if fmt == "pdf":
+        return export_statement_pdf(payload, filename=f"{statement_key}.pdf")
+
+    return export_statement_xlsx(payload, filename=f"{statement_key}.xlsx")
 
 def _deny_report_export_access(company_id: int, expected_report_key: str):
     """

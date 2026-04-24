@@ -18278,8 +18278,15 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
   const fmtAmt = (x) => fmtBracket(Number(x || 0));
 
   function ths() {
-    const hdr = cols.map(c => `<th class="text-right py-2 px-2">${esc(c.label || c.key)}</th>`).join("");
-    return `<tr><th class="text-left py-2 px-2">Description</th>${hdr}</tr>`;
+    const hdr = cols.map(c => {
+      const label = (c?.label || c?.key || "").trim();
+      return `<th class="text-right py-2 px-2">${esc(label || " ")}</th>`;
+    }).join("");
+
+    return `<tr>
+      <th class="text-left py-2 px-2">Description</th>
+      ${hdr}
+    </tr>`;
   }
 
   function valsTd(values) {
@@ -19589,9 +19596,19 @@ function collectStmtOpts() {
   // Export button
   // ----------------------------
   if (exportBtn && typeSel && formatSel) {
-    exportBtn.addEventListener("click", () => {
-      exportStatement(typeSel.value, formatSel.value);
-    });
+    exportBtn.onclick = async () => {
+      if (exportBtn.dataset.busy === "1") return;
+
+      try {
+        exportBtn.dataset.busy = "1";
+        exportBtn.disabled = true;
+
+        await exportStatement(typeSel.value, formatSel.value);
+      } finally {
+        exportBtn.dataset.busy = "0";
+        exportBtn.disabled = false;
+      }
+    };
   }
 }
 
