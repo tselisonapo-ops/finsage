@@ -32,7 +32,7 @@ def get_pnl_full_v2(
     """
     IAS 1-style multi-tier P&L (external reporting only).
     - basis is always treated as 'external'
-    - cols_mode is always 1 (Current / Prior / Delta)
+    - cols_mode is always 1 (Amount / Prior / Delta)
     - detail controls line density: summary | mid | full
     """
 

@@ -19689,6 +19689,20 @@ function fmtAcct(n) {
   return v < 0 ? `(${s})` : s;
 }
 
+function pnlColLabel(c, cols) {
+  const key = String(c?.key || "").toLowerCase();
+
+  // single column
+  if (cols.length === 1) return "Amount";
+
+  // management/internal 2-col style
+  if (cols.length === 2 && ["brk", "tot", "c1", "c2", "c3", "col1", "col2"].includes(key)) {
+    return "Amount";
+  }
+
+  return c?.label || c?.key || "Amount";
+}
+
 function renderPnLClassicHtml(stmt) {
   const meta = stmt?.meta || {};
   const cols = Array.isArray(stmt?.columns) && stmt.columns.length
@@ -19701,7 +19715,9 @@ function renderPnLClassicHtml(stmt) {
     : "Income Statement";
   const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
 
-  const th = cols.map(c => `<th class="text-right py-2 px-2">${esc(c.label || "")}</th>`).join("");
+  const th = cols
+    .map(c => `<th class="text-right py-2 px-2">${esc(pnlColLabel(c, cols))}</th>`)
+    .join("");
 
   function rowCells(values, { bold = false, underline = false } = {}) {
     return cols.map(c => {
@@ -21410,7 +21426,7 @@ function renderPnLHunter3ColHtml(stmt) {
   // ---- Header cells: hide first numeric column label in semi-detailed mode
   const th = cols.map(c => {
     if (isSemi && c.key === "c1") return `<th class="text-right py-2 px-2"></th>`;
-    return `<th class="text-right py-2 px-2">${esc(c.label || "")}</th>`;
+    return `<th class="text-right py-2 px-2">${esc(pnlColLabel(c, cols))}</th>`;
   }).join("");
 
   // blank cell if not provided

@@ -196,6 +196,58 @@ def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str,
 
         return ["Line Item", *col_labels], out_rows
 
+    # 3A) P&L expanded / management shape (payload["blocks"])
+    if payload.get("blocks"):
+        for block in payload.get("blocks") or []:
+            block_label = block.get("label") or block.get("key") or ""
+
+            # Header
+            if block_label:
+                _append_row(out_rows, block_label, {}, "header")
+
+            # Lines
+            for line in block.get("lines") or []:
+                rt = _row_type(line)
+                if line.get("is_subtotal"):
+                    rt = "subtotal"
+
+                _append_row(
+                    out_rows,
+                    line.get("name") or line.get("label") or line.get("code") or "",
+                    line.get("values") or {},
+                    rt,
+                )
+
+            # Totals
+            if block.get("totals"):
+                _append_row(
+                    out_rows,
+                    f"Total {block_label}",
+                    block.get("totals") or {},
+                    "subtotal",
+                )
+
+            # Direct value blocks (e.g. gross profit)
+            if block.get("values") and not block.get("lines") and not block.get("totals"):
+                _append_row(
+                    out_rows,
+                    block_label,
+                    block.get("values") or {},
+                    "subtotal",
+                )
+
+        # Final net result
+        if payload.get("net_result"):
+            nr = payload.get("net_result") or {}
+            _append_row(
+                out_rows,
+                nr.get("label") or "Net result",
+                nr.get("values") or {},
+                "total",
+            )
+
+        return ["Line Item", *col_labels], out_rows
+
     # 3) P&L / Cash Flow sections shape
     for sec in payload.get("sections") or []:
         sec_label = sec.get("label") or sec.get("key") or ""
@@ -297,7 +349,14 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     period_from = period.get("from")
     period_to = period.get("to")
 
-    headers, flat_rows = _flatten_payload(payload)
+    cols = _payload_columns(payload)
+
+    # ✅ Apply single-column rename BEFORE flatten
+    if len(cols) == 1:
+        cols[0]["label"] = "Amount"
+
+    headers, flat_rows = _flatten_payload({**payload, "columns": cols})
+
     cols = _payload_columns(payload)
     col_keys = [c.get("key") for c in cols]
 
@@ -411,31 +470,36 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9EAF7")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.black),
+
         ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
         ("ALIGN", (0, 0), (0, -1), "LEFT"),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#B7C9E2")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("TOPPADDING", (0, 0), (-1, 0), 6),
+
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ])
 
     # Apply row shading based on flattened row types
-    for idx, item in enumerate(flat_rows, start=1):  # +1 because row 0 is header
+    for idx, item in enumerate(flat_rows, start=1):
         rt = item.get("row_type") or "normal"
-        if rt == "header":
-            style.add("BACKGROUND", (0, idx), (-1, idx), colors.HexColor("#EEF4FB"))
-            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-        elif rt == "subtotal":
-            style.add("BACKGROUND", (0, idx), (-1, idx), colors.HexColor("#F6F9FD"))
-            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-        elif rt == "total":
-            style.add("BACKGROUND", (0, idx), (-1, idx), colors.HexColor("#DCEAF7"))
-            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
 
+        if rt == "header":
+            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
+            style.add("TOPPADDING", (0, idx), (-1, idx), 8)
+
+        elif rt == "subtotal":
+            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
+            style.add("LINEABOVE", (1, idx), (-1, idx), 0.4, colors.black)
+
+        elif rt == "total":
+            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
+            style.add("LINEABOVE", (1, idx), (-1, idx), 0.7, colors.black)
+            style.add("LINEBELOW", (1, idx), (-1, idx), 0.7, colors.black)
+            
     table.setStyle(style)
     story.append(table)
 
