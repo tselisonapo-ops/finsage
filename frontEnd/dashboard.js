@@ -57512,49 +57512,47 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
           String(x?.bill_status || "").trim() !== "";
 
         const funding = String(x?.funding_source || "").trim().toLowerCase();
+        const status = String(x?.status || "").trim().toLowerCase();
 
         return (
           x?.acquisition_id &&
           funding === "vendor_credit" &&
-          !hasBill // ❗ exclude billed ones completely
+          !hasBill &&
+          status !== "cancelled" &&
+          status !== "completed"
         );
       })
       .map((x) => {
-      const funding = String(x?.funding_source || "").trim().toLowerCase();
-      const status = String(x?.status || "").trim().toLowerCase();
-      const posted = !!x?.posted_journal_id;
+        const funding = String(x?.funding_source || "").trim().toLowerCase();
+        const status = String(x?.status || "").trim().toLowerCase();
+        const posted = !!x?.posted_journal_id;
 
-      const asset = linkedAssets.find(
-        (a) => Number(a?.asset_id || 0) === Number(x?.asset_id || 0)
-      );
+        const asset = linkedAssets.find(
+          (a) => Number(a?.asset_id || 0) === Number(x?.asset_id || 0)
+        );
 
-      const assetLabel = asset?.asset_name
-        ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
-        : `Asset #${x?.asset_id || "—"}`;
+        const assetLabel = asset?.asset_name
+          ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
+          : `Asset #${x?.asset_id || "—"}`;
 
-      const clickable =
-        x?.acquisition_id &&
-        funding === "vendor_credit" &&
-        !posted &&
-        status !== "cancelled" &&
-        status !== "completed";
-        
-      return {
-        acquisition_id: x?.acquisition_id,
-        asset_label: assetLabel,
-        reference: x?.vendor_invoice_no || x?.reference || "",
-        amount: x?.amount || x?.gross_amount || 0,
-        clickable,
-        status_label: posted
-          ? "Posted"
-          : status
-            ? status
-            : "Draft",
-        bill_label: clickable
-          ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
-          : `<span class="ap-badge ap-badge--muted">Locked</span>`,
+        const clickable =
+          x?.acquisition_id &&
+          funding === "vendor_credit" &&
+          status !== "cancelled" &&
+          status !== "completed";
+
+        return {
+          acquisition_id: x?.acquisition_id,
+          asset_label: assetLabel,
+          reference: x?.vendor_invoice_no || x?.reference || "",
+          amount: x?.amount || x?.gross_amount || 0,
+          clickable,
+          status_label: posted ? "Posted acquisition" : status || "Draft",
+          bill_label: clickable
+            ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
+            : `<span class="ap-badge ap-badge--muted">Locked</span>`,
         };
-    });
+      });
 
     if (!rows.length) return false;
 
