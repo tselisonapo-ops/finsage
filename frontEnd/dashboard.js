@@ -3808,6 +3808,28 @@ FS.modePrompt.open = function openModePrompt({ title, message, bullets, enableLa
   };
 };
 
+async function downloadUrl(url, reportKey = null) {
+  let finalUrl = url;
+
+  const cid =
+    typeof getActiveCompanyId === "function"
+      ? getActiveCompanyId()
+      : window.CURRENT_COMPANY_ID;
+
+  const key = reportKey || inferReportKeyFromExportUrl(url);
+
+  const alreadySigned =
+    String(url || "").includes("?t=") ||
+    String(url || "").includes("&t=");
+
+  if (key && cid && !alreadySigned) {
+    finalUrl = await getReportExportUrl(cid, key, url);
+  }
+
+  // Avoid anchor click redirect interceptor
+  window.open(toApiUrl(finalUrl), "_blank", "noopener");
+}
+window.downloadUrl = downloadUrl;
   // ==========================================================
   // 8) UTILITIES (safe anywhere after here)
   // ==========================================================
@@ -23633,38 +23655,6 @@ function bindLeaseWizard() {
       .replaceAll('"', "&quot;");
   }
 
-  async function downloadUrl(url, reportKey = null) {
-    let finalUrl = url;
-
-    const cid =
-      typeof getActiveCompanyId === "function"
-        ? getActiveCompanyId()
-        : window.CURRENT_COMPANY_ID;
-
-    const isReportExport =
-      String(url || "").includes("/reports/") &&
-      String(url || "").includes("/export");
-
-    if (isReportExport && cid) {
-      const key =
-        reportKey ||
-        inferReportKeyFromExportUrl(url);
-
-      if (key) {
-        finalUrl = await getReportExportUrl(cid, key, url);
-      }
-    }
-
-    const a = document.createElement("a");
-    a.href = toApiUrl(finalUrl);
-    a.target = "_blank";
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }
-  window.downloadUrl = downloadUrl;
-
 window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
   mount.innerHTML = `
     <div class="flex items-center justify-between gap-3 mb-3">
@@ -25976,17 +25966,17 @@ window.ensureLeaseModals = window.ensureLeaseModals || function ensureLeaseModal
   const show = (id) => document.getElementById(id)?.classList.remove("hidden");
   const hide = (id) => document.getElementById(id)?.classList.add("hidden");
 
-  document.getElementById("leaseModClose").onclick = () => hide("leaseModModal");
-  document.getElementById("leaseTermClose").onclick = () => hide("leaseTermModal");
+  document.getElementById("leaseModClose")?.addEventListener("click", () => hide("leaseModModal"));
 
-  // hook your existing handlers (must exist globally)
-  document.getElementById("leaseModSaveDraft").onclick = () => window.submitModDraft?.();
-  document.getElementById("leaseModPreview").onclick   = () => window.previewMod?.();
-  document.getElementById("leaseModPost").onclick      = () => window.postMod?.();
+  document.getElementById("leaseModSaveDraft")?.addEventListener("click", () => window.submitModDraft?.());
+  document.getElementById("leaseModPreview")?.addEventListener("click", () => window.previewMod?.());
+  document.getElementById("leaseModPost")?.addEventListener("click", () => window.postMod?.());
 
-  document.getElementById("leaseTermSaveDraft").onclick = () => window.submitTermDraft?.();
-  document.getElementById("leaseTermPreview").onclick   = () => window.previewTerm?.();
-  document.getElementById("leaseTermPost").onclick      = () => window.postTerm?.();
+  // Only bind termination if it exists (it doesn't in this modal)
+  document.getElementById("leaseTermClose")?.addEventListener("click", () => hide("leaseTermModal"));
+  document.getElementById("leaseTermSaveDraft")?.addEventListener("click", () => window.submitTermDraft?.());
+  document.getElementById("leaseTermPreview")?.addEventListener("click", () => window.previewTerm?.());
+  document.getElementById("leaseTermPost")?.addEventListener("click", () => window.postTerm?.());
 
   console.log("[Leases] Modals injected ✅");
 };
@@ -26842,6 +26832,8 @@ window.ensureLeaseRegisterModal = function ensureLeaseRegisterModal() {
           </div>
 
           <div class="ml-auto flex items-center gap-2">
+            <button id="btnLeaseRegExportSchedule" class="px-3 py-1.5 rounded border text-sm bg-white">Export Schedule</button>
+            <button id="btnLeaseRegExportPayments" class="px-3 py-1.5 rounded border text-sm bg-white">Export Payments</button>
             <button id="btnLeaseRegRefresh" class="px-3 py-1.5 rounded border text-sm bg-white">Refresh</button>
             <button id="btnLeaseRegClose" class="px-3 py-1.5 rounded bg-slate-900 text-white text-sm">Close</button>
           </div>
@@ -26869,6 +26861,36 @@ window.ensureLeaseRegisterModal = function ensureLeaseRegisterModal() {
   screen.appendChild(wrap);
 
   $("btnLeaseRegClose").onclick = () => window.closeLeaseRegisterModal?.();
+
+  $("btnLeaseRegExportSchedule").onclick = () => {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const leaseId =
+      Number(window.LEASE_UI?.state?.leaseId || window.__ACTIVE_LEASE_ID || 0);
+
+    if (!cid || !leaseId) return alert("Missing lease.");
+
+    const qs = new URLSearchParams({
+      lease_id: String(leaseId),
+      format: "csv",
+    });
+
+    downloadUrl(`${window.endpoints.reports.leaseScheduleExport(cid)}?${qs.toString()}`);
+  };
+
+  $("btnLeaseRegExportPayments").onclick = () => {
+    const cid = window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const leaseId =
+      Number(window.LEASE_UI?.state?.leaseId || window.__ACTIVE_LEASE_ID || 0);
+
+    if (!cid || !leaseId) return alert("Missing lease.");
+
+    const qs = new URLSearchParams({
+      lease_id: String(leaseId),
+      format: "csv",
+    });
+
+    downloadUrl(`${window.endpoints.reports.leasePaymentsExport(cid)}?${qs.toString()}`);
+  };
 
   $("leaseRegisterModal").addEventListener("click", (e) => {
     if (e.target && e.target.id === "leaseRegisterModal") window.closeLeaseRegisterModal?.();
@@ -51851,37 +51873,6 @@ function mountControlRoom(key) {
   page.style.marginTop = "12px";
   mount.appendChild(page);
   return page;
-}
-
-async function downloadUrl(url, reportKey = null) {
-  let finalUrl = url;
-
-  const cid =
-    typeof getActiveCompanyId === "function"
-      ? getActiveCompanyId()
-      : window.CURRENT_COMPANY_ID;
-
-  const isReportExport =
-    String(url || "").includes("/reports/") &&
-    String(url || "").includes("/export");
-
-  if (isReportExport && cid) {
-    const key =
-      reportKey ||
-      inferReportKeyFromExportUrl(url);
-
-    if (key) {
-      finalUrl = await getReportExportUrl(cid, key, url);
-    }
-  }
-
-  const a = document.createElement("a");
-  a.href = toApiUrl(finalUrl);
-  a.target = "_blank";
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
 
 async function renderARRecon() {
