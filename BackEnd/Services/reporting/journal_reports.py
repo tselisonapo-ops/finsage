@@ -1,19 +1,19 @@
 def build_journal_register(db, company_id, date_from=None, date_to=None, q=None):
     schema = db.company_schema(company_id)
 
-    where = ["company_id = %s"]
+    where = ["j.company_id = %s"]
     params = [company_id]
 
     if date_from:
-        where.append("date >= %s")
+        where.append("j.date >= %s")
         params.append(date_from)
 
     if date_to:
-        where.append("date <= %s")
+        where.append("j.date <= %s")
         params.append(date_to)
 
     if q:
-        where.append("(ref ILIKE %s OR description ILIKE %s)")
+        where.append("(j.ref ILIKE %s OR j.description ILIKE %s)")
         like = f"%{q}%"
         params.extend([like, like])
 
@@ -31,7 +31,9 @@ def build_journal_register(db, company_id, date_from=None, date_to=None, q=None)
         COALESCE(SUM(l.debit),0) AS debit_total,
         COALESCE(SUM(l.credit),0) AS credit_total
     FROM {schema}.journal j
-    LEFT JOIN {schema}.ledger l ON l.journal_id = j.id
+    LEFT JOIN {schema}.ledger l 
+      ON l.journal_id = j.id
+     AND l.company_id = j.company_id
     WHERE {" AND ".join(where)}
     GROUP BY j.id
     ORDER BY j.date DESC, j.id DESC

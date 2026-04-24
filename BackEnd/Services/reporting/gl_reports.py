@@ -11,14 +11,14 @@ def build_general_ledger_report(
 ):
     schema = db.company_schema(company_id)
 
-    if not account_code:
-        raise ValueError("account_code is required for general ledger")
+    account_code = str(account_code or "").strip()
 
-    params = [int(company_id), str(account_code).strip()]
-    where = [
-        "l.company_id = %s",
-        "l.account = %s",
-    ]
+    params = [int(company_id)]
+    where = ["l.company_id = %s"]
+
+    if account_code:
+        where.append("l.account = %s")
+        params.append(account_code)
 
     if date_from:
         where.append("l.date >= %s")
@@ -30,8 +30,16 @@ def build_general_ledger_report(
 
     if q:
         like = f"%{q}%"
-        where.append("(COALESCE(l.ref,'') ILIKE %s OR COALESCE(l.memo,'') ILIKE %s OR COALESCE(j.description,'') ILIKE %s)")
-        params.extend([like, like, like])
+        where.append("""
+            (
+                COALESCE(l.ref,'') ILIKE %s
+                OR COALESCE(l.memo,'') ILIKE %s
+                OR COALESCE(j.description,'') ILIKE %s
+                OR COALESCE(l.account,'') ILIKE %s
+                OR COALESCE(c.name,'') ILIKE %s
+            )
+        """)
+        params.extend([like, like, like, like, like])
 
     sql = f"""
     SELECT
@@ -50,55 +58,113 @@ def build_general_ledger_report(
     FROM {schema}.ledger l
     LEFT JOIN {schema}.journal j
       ON j.id = l.journal_id
+     AND j.company_id = l.company_id
     LEFT JOIN {schema}.coa c
       ON c.company_id = l.company_id
      AND c.code = l.account
     WHERE {" AND ".join(where)}
-    ORDER BY l.date ASC, l.id ASC
+    ORDER BY l.account ASC, l.date ASC, l.id ASC
     """
+
     rows = db.fetch_all(sql, tuple(params)) or []
 
-    # Opening balance from ledger before period start
-    opening_balance = Decimal("0")
-    if date_from:
-        ob_sql = f"""
-        SELECT
-            COALESCE(SUM(l.debit), 0) AS debit_before,
-            COALESCE(SUM(l.credit), 0) AS credit_before
-        FROM {schema}.ledger l
-        WHERE l.company_id = %s
-          AND l.account = %s
-          AND l.date < %s
-        """
-        ob_row = db.fetch_one(ob_sql, (int(company_id), str(account_code).strip(), date_from)) or {}
-        opening_balance = Decimal(str(ob_row.get("debit_before") or 0)) - Decimal(str(ob_row.get("credit_before") or 0))
-
-    running = opening_balance
     total_debit = Decimal("0")
     total_credit = Decimal("0")
     out_rows = []
 
-    for r in rows:
-        debit = Decimal(str(r.get("debit") or 0))
-        credit = Decimal(str(r.get("credit") or 0))
-        running += debit - credit
-        total_debit += debit
-        total_credit += credit
+    if account_code:
+        opening_balance = Decimal("0")
 
-        out_rows.append({
-            "date": str(r.get("date")) if r.get("date") else None,
-            "ref": r.get("ref") or "",
-            "journal_id": r.get("journal_id"),
-            "source": r.get("source") or "",
-            "source_id": r.get("source_id"),
-            "account_code": r.get("account_code") or "",
-            "account_name": r.get("account_name") or "",
-            "journal_description": r.get("journal_description") or "",
-            "memo": r.get("memo") or "",
-            "debit": float(debit),
-            "credit": float(credit),
-            "balance": float(running),
-        })
+        if date_from:
+            ob_sql = f"""
+            SELECT
+                COALESCE(SUM(l.debit), 0) AS debit_before,
+                COALESCE(SUM(l.credit), 0) AS credit_before
+            FROM {schema}.ledger l
+            WHERE l.company_id = %s
+              AND l.account = %s
+              AND l.date < %s
+            """
+            ob_row = db.fetch_one(
+                ob_sql,
+                (int(company_id), account_code, date_from),
+            ) or {}
+
+            opening_balance = (
+                Decimal(str(ob_row.get("debit_before") or 0))
+                - Decimal(str(ob_row.get("credit_before") or 0))
+            )
+
+        running = opening_balance
+
+        for r in rows:
+            debit = Decimal(str(r.get("debit") or 0))
+            credit = Decimal(str(r.get("credit") or 0))
+
+            running += debit - credit
+            total_debit += debit
+            total_credit += credit
+
+            out_rows.append({
+                "date": str(r.get("date")) if r.get("date") else None,
+                "ref": r.get("ref") or "",
+                "journal_id": r.get("journal_id"),
+                "source": r.get("source") or "",
+                "source_id": r.get("source_id"),
+                "account_code": r.get("account_code") or "",
+                "account_name": r.get("account_name") or "",
+                "journal_description": r.get("journal_description") or "",
+                "memo": r.get("memo") or "",
+                "debit": float(debit),
+                "credit": float(credit),
+                "balance": float(running),
+            })
+
+        totals = {
+            "mode": "single_account",
+            "account_code": account_code,
+            "opening_balance": float(opening_balance),
+            "debit_total": float(total_debit),
+            "credit_total": float(total_credit),
+            "closing_balance": float(running),
+            "row_count": len(out_rows),
+        }
+
+    else:
+        account_running = {}
+
+        for r in rows:
+            acc = r.get("account_code") or ""
+            debit = Decimal(str(r.get("debit") or 0))
+            credit = Decimal(str(r.get("credit") or 0))
+
+            account_running.setdefault(acc, Decimal("0"))
+            account_running[acc] += debit - credit
+
+            total_debit += debit
+            total_credit += credit
+
+            out_rows.append({
+                "date": str(r.get("date")) if r.get("date") else None,
+                "ref": r.get("ref") or "",
+                "journal_id": r.get("journal_id"),
+                "source": r.get("source") or "",
+                "source_id": r.get("source_id"),
+                "account_code": acc,
+                "account_name": r.get("account_name") or "",
+                "journal_description": r.get("journal_description") or "",
+                "memo": r.get("memo") or "",
+                "debit": float(debit),
+                "credit": float(credit),
+                "balance": float(account_running[acc]),
+            })
+
+        totals = {
+            "mode": "all_accounts",
+            "debit_total": float(total_debit),
+            "credit_total": float(total_credit),
+            "row_count": len(out_rows),
+        }
 
     columns = [
         {"key": "date", "label": "Date"},
@@ -113,13 +179,5 @@ def build_general_ledger_report(
         {"key": "credit", "label": "Credit"},
         {"key": "balance", "label": "Running Balance"},
     ]
-
-    totals = {
-        "opening_balance": float(opening_balance),
-        "debit_total": float(total_debit),
-        "credit_total": float(total_credit),
-        "closing_balance": float(running),
-        "row_count": len(out_rows),
-    }
 
     return out_rows, columns, totals
