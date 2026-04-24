@@ -552,7 +552,7 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING", (1, 0), (-1, -1), 2)
+        ("LEFTPADDING", (1, 0), (-1, -1), 2),
         ("LINEBELOW", (0, 0), (0, 0), 0, colors.white),
     ])
 
