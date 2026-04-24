@@ -3826,8 +3826,15 @@ async function downloadUrl(url, reportKey = null) {
     finalUrl = await getReportExportUrl(cid, key, url);
   }
 
-  // Avoid anchor click redirect interceptor
-  window.open(toApiUrl(finalUrl), "_blank", "noopener");
+  const iframe = document.createElement("iframe");
+  iframe.style.display = "none";
+  iframe.src = toApiUrl(finalUrl);
+
+  document.body.appendChild(iframe);
+
+  setTimeout(() => {
+    iframe.remove();
+  }, 60000);
 }
 window.downloadUrl = downloadUrl;
   // ==========================================================
@@ -22039,7 +22046,7 @@ async function exportStatement(stmtType, format) {
   const ext = (fmt === "sars_xml") ? "xml" : fmt;
   const filename = `${t}_${from}_${to}.${ext}`;
 
-  await downloadFile(url, filename);
+  await downloadUrl(url);
 }
 
 // --- expose widget renderers globally ---
