@@ -5900,6 +5900,38 @@ def create_invoice(cid: int):
         # --------------------------
         # 6) Save invoice
         # --------------------------
+        # --------------------------
+        # 5) IFRS 15 overbilling guard
+        # --------------------------
+        from decimal import Decimal
+
+        # group invoice amounts per obligation
+        obligation_totals = {}
+
+        for l in mapped_lines:
+            oid = l.get("revenue_obligation_id")
+            if not oid:
+                continue
+
+            obligation_totals.setdefault(int(oid), Decimal("0.00"))
+            obligation_totals[int(oid)] += Decimal(str(l.get("net_amount") or 0))
+
+        # validate each obligation
+        for oid, invoice_amount in obligation_totals.items():
+            preview = db_service.get_revenue_obligation_billable_preview(
+                company_id=company_id,
+                obligation_id=int(oid),
+                cur=None,  # or pass cursor if available
+            )
+
+            available_to_bill = Decimal(str(preview.get("available_to_bill") or 0))
+
+            if invoice_amount > available_to_bill:
+                raise Exception(
+                    f"Cannot overbill obligation {oid}. "
+                    f"Available: {available_to_bill}, Attempted: {invoice_amount}"
+                )
+    
         current_app.logger.info("create_invoice: before insert")
         invoice_id = db_service.insert_invoice_with_lines(company_id, header, mapped_lines)
         current_app.logger.info("create_invoice: inserted invoice_id=%s", invoice_id)

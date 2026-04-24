@@ -61122,7 +61122,7 @@ class DatabaseService:
                     timing == "over_time"
                     and settlement_pattern == "revenue_before_billing"
                     and available_to_bill > Decimal("0.00")
-                    and not (linked_invoice and linked_invoice.get("invoice_id"))
+                    # and not (linked_invoice and linked_invoice.get("invoice_id"))
                 ),
             },
         }
