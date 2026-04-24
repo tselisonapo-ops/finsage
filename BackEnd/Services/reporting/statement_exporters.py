@@ -423,82 +423,121 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     period_from = period.get("from")
     period_to = period.get("to")
 
-    headers, flat_rows = _flatten_payload(payload)
     cols = _payload_columns(payload)
+
+    if len(cols) == 1:
+        cols[0] = {**cols[0], "label": "Amount"}
+
+    payload = {**payload, "columns": cols}
+
+    headers, flat_rows = _flatten_payload(payload)
     col_keys = [c.get("key") for c in cols]
+
+    def fmt_pdf_amount(v: Any) -> str:
+        try:
+            if v is None or v == "":
+                return ""
+            num = float(v)
+            if abs(num) < 0.000001:
+                num = 0.0
+            return f"({abs(num):,.2f})" if num < 0 else f"{num:,.2f}"
+        except Exception:
+            return "" if v is None else str(v)
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=landscape(A4),
-        leftMargin=10 * mm,
-        rightMargin=10 * mm,
-        topMargin=10 * mm,
-        bottomMargin=10 * mm,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
     )
 
     styles = getSampleStyleSheet()
     story = []
 
     story.append(Paragraph(f"<b>{title}</b>", styles["Title"]))
+
     if company_name:
         story.append(Paragraph(f"<b>{company_name}</b>", styles["Heading3"]))
-    story.append(Paragraph(f"Period: {period_from or ''} to {period_to or ''}", styles["BodyText"]))
-    story.append(Paragraph(f"Currency: {currency}", styles["BodyText"]))
-    story.append(Spacer(1, 6))
 
-    data = [["", *headers[1:]]]
+    if period_from or period_to:
+        if period_from:
+            story.append(Paragraph(f"Period: {period_from} to {period_to or ''}", styles["BodyText"]))
+        else:
+            story.append(Paragraph(f"As at: {period_to or ''}", styles["BodyText"]))
+
+    if currency:
+        story.append(Paragraph(f"Currency: {currency}", styles["BodyText"]))
+
+    story.append(Spacer(1, 8))
+
+    # Header row: no "Line Item"; keep Amount above the numeric column(s)
+    amount_headers = []
+    for h in headers[1:]:
+        amount_headers.append(h or "Amount")
+
+    data = [["", *amount_headers]]
 
     for item in flat_rows:
-        row = [item["label"]]
         vals = item.get("values") or {}
+        row = [item.get("label") or ""]
 
         for key in col_keys:
-            v = vals.get(key, "")
-            if isinstance(v, (int, float)):
-                num = float(v)
-                row.append(f"({abs(num):,.2f})" if num < 0 else f"{num:,.2f}")
-            else:
-                row.append("" if v is None else str(v))
+            row.append(fmt_pdf_amount(vals.get(key, "")))
+
         data.append(row)
 
-    col_widths = [95 * mm]
-    remaining_cols = max(1, len(headers) - 1)
-    usable_width = 277 * mm - col_widths[0]
-    per_col = usable_width / remaining_cols
-    col_widths.extend([per_col] * remaining_cols)
+    num_cols = max(1, len(col_keys))
 
-    table = Table(data, colWidths=col_widths, repeatRows=0)
+    # Compact financial-statement layout, not Excel-like full-width layout
+    if num_cols == 1:
+        col_widths = [120 * mm, 35 * mm]
+    elif num_cols == 2:
+        col_widths = [105 * mm, 32 * mm, 32 * mm]
+    elif num_cols == 3:
+        col_widths = [90 * mm, 30 * mm, 30 * mm, 30 * mm]
+    else:
+        desc_width = 78 * mm
+        amount_width = 25 * mm
+        col_widths = [desc_width, *([amount_width] * num_cols)]
+
+    table = Table(data, colWidths=col_widths, repeatRows=0, hAlign="LEFT")
+
     style = TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.black),
-
-        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-        ("ALIGN", (0, 0), (0, -1), "LEFT"),
-
-        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
         ("FONTSIZE", (0, 0), (-1, -1), 8.5),
 
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("ALIGN", (0, 0), (0, -1), "LEFT"),
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+
+        ("LINEBELOW", (1, 0), (-1, 0), 0.5, colors.black),
+
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ])
 
-    # Apply row shading based on flattened row types
     for idx, item in enumerate(flat_rows, start=1):
         rt = item.get("row_type") or "normal"
 
         if rt == "header":
             style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
             style.add("TOPPADDING", (0, idx), (-1, idx), 8)
+            style.add("BOTTOMPADDING", (0, idx), (-1, idx), 3)
 
         elif rt == "subtotal":
             style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-            style.add("LINEABOVE", (1, idx), (-1, idx), 0.4, colors.black)
+            style.add("LINEABOVE", (-1, idx), (-1, idx), 0.4, colors.black)
 
         elif rt == "total":
             style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
             style.add("LINEABOVE", (-1, idx), (-1, idx), 0.7, colors.black)
             style.add("LINEBELOW", (-1, idx), (-1, idx), 0.7, colors.black)
+
     table.setStyle(style)
     story.append(table)
 
