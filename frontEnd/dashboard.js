@@ -6400,6 +6400,50 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     }
   };
 }
+function inferReportKeyFromExportUrl(url) {
+  const s = String(url || "");
+
+  const map = [
+    ["/trial-balance/export", "trial_balance"],
+    ["/general-ledger/export", "general_ledger"],
+    ["/vat/export", "vat_report"],
+    ["/cashbook/export", "cashbook"],
+
+    ["/lease-register/export", "lease_register"],
+    ["/lease-schedule/export", "lease_schedule"],
+    ["/lease-payments/export", "lease_payments"],
+    ["/lease-monthly-due/export", "lease_monthly_due"],
+
+    ["/loan-register/export", "loan_register"],
+    ["/loan-schedule/export", "loan_schedule"],
+    ["/loan-payments/export", "loan_payments"],
+    ["/loan-journals/export", "loan_journals"],
+
+    ["/ar-control-reconciliation/export", "ar_control_reconciliation"],
+    ["/ap-control-reconciliation/export", "ap_control_reconciliation"],
+    ["/customer-statement/export", "customer_statement"],
+    ["/vendor-statement/export", "vendor_statement"],
+    ["/ar-aging/export", "ar_aging"],
+    ["/ap-aging/export", "ap_aging"],
+    ["/lessors-list/export", "lessors_list"],
+
+    ["/revenue-contracts/export", "revenue_contracts"],
+    ["/revenue-obligations/export", "revenue_obligations"],
+    ["/revenue-billing-events/export", "revenue_billing_events"],
+    ["/revenue-cash-events/export", "revenue_cash_events"],
+    ["/revenue-progress/export", "revenue_progress"],
+    ["/revenue-recognition-runs/export", "revenue_recognition_runs"],
+    ["/revenue-recognition-entries/export", "revenue_recognition_entries"],
+  
+    // ✅ ADD STATEMENTS HERE
+    ["/statements/balance-sheet/export", "balance_sheet"],
+    ["/statements/income-statement/export", "income_statement"],
+    ["/statements/cash-flow/export", "cash_flow"],
+    ["/statements/socie/export", "socie"],
+  ];
+
+  return map.find(([needle]) => s.includes(needle))?.[1] || null;
+}
 
 async function getReportExportUrl(cid, reportKey, exportUrl) {
   const res = await apiFetch(`/api/companies/${cid}/reports/export-token`, {
@@ -12176,23 +12220,15 @@ function ensureVatScreen() {
         return;
       }
 
-      const [linesRes, summary] = await Promise.all([
-        apiFetch(ENDPOINTS.vatLines(cid, period.start_date, period.end_date), { method: "GET" }),
-        apiFetch(ENDPOINTS.vatSummary(cid, period.start_date, period.end_date), { method: "GET" }),
-      ]);
-
-      const rows = Array.isArray(linesRes) ? linesRes : (linesRes?.lines || []);
-      if (!rows.length) {
-        alert("No VAT lines found for this period.");
-        return;
-      }
-
-      exportVatCsv({
-        companyId: cid,
-        period,
-        summary: summary || {},
-        rows,
+      const qs = new URLSearchParams({
+        from: period.start_date,
+        to: period.end_date,
+        format: "csv",
       });
+
+      const url = `${ENDPOINTS.reports.vatExport(cid)}?${qs.toString()}`;
+
+      downloadUrl(url); // 🔥 auto token handled here
     } catch (err) {
       console.error("VAT export failed:", err);
       alert(err?.message || "Failed to export VAT report.");
@@ -16428,7 +16464,24 @@ function bindBankScreen() {
       const file = e.target.files?.[0];
       if (file) importBankCsv(file);
     });
+
+  const exportBtn = document.getElementById("cashbookExportBtn");
+
+  if (exportBtn && exportBtn.dataset.bound !== "1") {
+    exportBtn.dataset.bound = "1";
+
+    exportBtn.addEventListener("click", () => {
+      const url = cashbookExportUrl();
+
+      if (!url) {
+        alert("Select a bank account first.");
+        return;
+      }
+
+      downloadUrl(url); // 🔥 uses your auto-token system
+    });
   }
+}
 
   // ✅ Now load data safely (don’t let API errors kill screen init)
   (async () => {
@@ -16673,6 +16726,26 @@ async function loadCashbookForSelectedBank() {
       </table>
     </div>
   `;
+}
+
+function cashbookExportUrl() {
+  const cid = getActiveCompanyId();
+  const sel = document.getElementById("bankAccountSelect");
+
+  if (!cid || !sel?.value) return null;
+
+  const bankId = sel.value;
+  const bank = BANK_ACCOUNTS_CACHE.find(b => String(b.id) === String(bankId));
+  const ledgerCode = bank?.ledger_account_code;
+
+  if (!ledgerCode) return null;
+
+  const qs = new URLSearchParams({
+    format: "csv",
+    account_code: ledgerCode,
+  });
+
+  return `${ENDPOINTS.reports.generalLedgerExport(cid)}?${qs.toString()}`;
 }
 
 ENDPOINTS.bankReconFromImport = (cid, importId) =>
@@ -16970,6 +17043,7 @@ async function loadLedger(companyId, selectedAccount, fromDate, toDate, layout) 
 
 function renderLedgerTable(rows, meta) {
   const { accountCode, isAll, layout } = meta || {};
+  const showBalance = !isAll;
 
   const host = document.getElementById("ledgerTable");
   if (!host) {
@@ -17048,7 +17122,7 @@ function renderLedgerTable(rows, meta) {
             ${isAll ? `<th class="px-2 py-1 text-left bg-slate-50">Narration</th>` : ""}
             <th class="px-2 py-1 text-right bg-slate-50">Debit</th>
             <th class="px-2 py-1 text-right bg-slate-50">Credit</th>
-            <th class="px-2 py-1 text-right bg-slate-50">Balance</th>
+            ${showBalance ? `<th class="px-2 py-1 text-right bg-slate-50">Balance</th>` : ""}
           </tr>
         </thead>
         <tbody>
@@ -17127,8 +17201,8 @@ function renderLedgerTable(rows, meta) {
             <td colspan="${isAll ? 2 : 1}" class="px-2 py-1 text-[11px] text-slate-600">
               Journal breakdown ${r.journal_id ? `(Journal #${r.journal_id})` : ""}
             </td>
-            <td class="px-2 py-1 text-xs text-right"></td>
-            <td class="px-2 py-1 text-xs text-right"></td>
+            ${showBalance ? `<td class="px-2 py-1 text-xs text-right"></td>` : ""}
+            ${showBalance ? `<td class="px-2 py-1 text-xs text-right"></td>` : ""}
             <td class="px-2 py-1 text-xs text-right"></td>
           </tr>
         `;
@@ -17165,7 +17239,7 @@ function renderLedgerTable(rows, meta) {
 
         extraRows = `
           <tr>
-            <td colspan="${isAll ? 7 : 6}" class="py-1"></td>
+            <td colspan="${showBalance ? (isAll ? 7 : 6) : (isAll ? 6 : 5)}" class="py-1"></td> n
           </tr>
           ${headerRow}
           ${linesHtml}
@@ -17193,7 +17267,7 @@ function renderLedgerTable(rows, meta) {
           }
           <td class="px-2 py-1 text-xs text-right">${fmtMoney(debit)}</td>
           <td class="px-2 py-1 text-xs text-right">${fmtMoney(credit)}</td>
-          <td class="px-2 py-1 text-xs text-right font-mono">${fmtMoney(balance)}</td>
+          ${showBalance ? `<td class="px-2 py-1 text-xs text-right font-mono">${fmtMoney(balance)}</td>` : ""}
         </tr>
       `;
 
@@ -23559,12 +23633,35 @@ function bindLeaseWizard() {
       .replaceAll('"', "&quot;");
   }
 
-  function downloadUrl(url) {
+  async function downloadUrl(url, reportKey = null) {
+    let finalUrl = url;
+
+    const cid =
+      typeof getActiveCompanyId === "function"
+        ? getActiveCompanyId()
+        : window.CURRENT_COMPANY_ID;
+
+    const isReportExport =
+      String(url || "").includes("/reports/") &&
+      String(url || "").includes("/export");
+
+    if (isReportExport && cid) {
+      const key =
+        reportKey ||
+        inferReportKeyFromExportUrl(url);
+
+      if (key) {
+        finalUrl = await getReportExportUrl(cid, key, url);
+      }
+    }
+
     const a = document.createElement("a");
-    a.href = toApiUrl(url);
+    a.href = toApiUrl(finalUrl);
     a.target = "_blank";
     a.rel = "noopener";
+    document.body.appendChild(a);
     a.click();
+    a.remove();
   }
   window.downloadUrl = downloadUrl;
 
@@ -34034,6 +34131,76 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function selectedLoanId() {
+    return Number(LOANS_STATE.currentLoanId || LOANS_STATE.loanDetail?.loan?.id || 0) || null;
+  }
+
+  function loanRegisterExportUrl() {
+    const cid = getCid();
+    if (!cid) return null;
+
+    const status = ($("#loanFilterStatus")?.value || "active").trim();
+    const q = ($("#loanSearch")?.value || "").trim();
+    const effectiveStatus = status === "all" ? "" : status;
+
+    const qs = new URLSearchParams({ format: "csv" });
+    if (q) qs.set("q", q);
+    if (effectiveStatus) qs.set("status", effectiveStatus);
+
+    return `${ENDPOINTS.reports.loanRegisterExport(cid)}?${qs.toString()}`;
+  }
+
+  function loanScheduleExportUrl() {
+    const cid = getCid();
+    const loanId = selectedLoanId();
+    if (!cid || !loanId) return null;
+
+    const qs = new URLSearchParams({
+      format: "csv",
+      loan_id: String(loanId),
+    });
+
+    const scheduleVersion =
+      LOANS_STATE.loanDetail?.loan?.schedule_version ||
+      LOANS_STATE.loanDetail?.schedule?.[0]?.schedule_version ||
+      null;
+
+    if (scheduleVersion) qs.set("schedule_version", String(scheduleVersion));
+
+    return `${ENDPOINTS.reports.loanScheduleExport(cid)}?${qs.toString()}`;
+  }
+
+  function loanPaymentsExportUrl() {
+    const cid = getCid();
+    const loanId = selectedLoanId();
+    if (!cid || !loanId) return null;
+
+    const qs = new URLSearchParams({
+      format: "csv",
+      loan_id: String(loanId),
+    });
+
+    return `${ENDPOINTS.reports.loanPaymentsExport(cid)}?${qs.toString()}`;
+  }
+
+  function loanJournalsExportUrl() {
+    const cid = getCid();
+    const loanId = selectedLoanId();
+    if (!cid || !loanId) return null;
+
+    const qs = new URLSearchParams({
+      format: "csv",
+      loan_id: String(loanId),
+    });
+
+    return `${ENDPOINTS.reports.loanJournalsExport(cid)}?${qs.toString()}`;
+  }
+
+  function exportLoanUrl(url, missingMsg = "Select a loan first.") {
+    if (!url) return alert(missingMsg);
+    downloadUrl(url);
+  }
+
   async function reclassifyLoan() {
     const cid = getCid();
     const loanId = LOANS_STATE.currentLoanId;
@@ -34556,6 +34723,22 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     $("#loanPaymentSaveBtn")?.addEventListener("click", async () => {
       await saveLoanPaymentDraft({ autoPost: false });
+    });
+
+    $("#loanRegisterExportBtn")?.addEventListener("click", () => {
+      exportLoanUrl(loanRegisterExportUrl(), "No company selected.");
+    });
+
+    $("#loanScheduleExportBtn")?.addEventListener("click", () => {
+      exportLoanUrl(loanScheduleExportUrl(), "Select a loan first.");
+    });
+
+    $("#loanPaymentsExportBtn")?.addEventListener("click", () => {
+      exportLoanUrl(loanPaymentsExportUrl(), "Select a loan first.");
+    });
+
+    $("#loanJournalsExportBtn")?.addEventListener("click", () => {
+      exportLoanUrl(loanJournalsExportUrl(), "Select a loan first.");
     });
 
     $("#loanPaymentPostBtn")?.addEventListener("click", async () => {
@@ -51670,12 +51853,35 @@ function mountControlRoom(key) {
   return page;
 }
 
-function downloadUrl(url) {
+async function downloadUrl(url, reportKey = null) {
+  let finalUrl = url;
+
+  const cid =
+    typeof getActiveCompanyId === "function"
+      ? getActiveCompanyId()
+      : window.CURRENT_COMPANY_ID;
+
+  const isReportExport =
+    String(url || "").includes("/reports/") &&
+    String(url || "").includes("/export");
+
+  if (isReportExport && cid) {
+    const key =
+      reportKey ||
+      inferReportKeyFromExportUrl(url);
+
+    if (key) {
+      finalUrl = await getReportExportUrl(cid, key, url);
+    }
+  }
+
   const a = document.createElement("a");
-  a.href = toApiUrl(url);
+  a.href = toApiUrl(finalUrl);
   a.target = "_blank";
   a.rel = "noopener";
+  document.body.appendChild(a);
   a.click();
+  a.remove();
 }
 
 async function renderARRecon() {

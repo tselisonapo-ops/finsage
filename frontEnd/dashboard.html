@@ -5190,6 +5190,9 @@ html, body {
                   >
                     + New
                   </button>
+                  <button id="loanRegisterExportBtn" class="btn text-xs">
+                    Export
+                  </button>
                 </div>
               </div>
 
@@ -5440,6 +5443,11 @@ html, body {
               </div>
 
               <div data-loan-pane="loan-schedule" class="hidden">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="text-sm font-semibold text-slate-700">Loan Schedule</div>
+                  <button id="loanScheduleExportBtn" class="btn">Export CSV</button>
+                </div>
+
                 <div class="overflow-auto border rounded-xl">
                   <table class="min-w-full text-sm">
                     <thead class="bg-slate-50 text-slate-600">
@@ -5467,6 +5475,7 @@ html, body {
                       <button id="loanPreviewInceptionBtn" class="btn w-full">Preview Inception</button>
                       <button id="loanPreviewLastPaymentBtn" class="btn w-full">Preview Last Payment</button>
                       <button id="loanPreviewReclassBtn" class="btn w-full">Preview Reclass Info</button>
+                      <button id="loanJournalsExportBtn" class="btn w-full">Export Journals CSV</button>
                     </div>
                   </div>
 
@@ -5500,7 +5509,10 @@ html, body {
               <div data-loan-pane="loan-payments" class="hidden">
                 <div class="flex items-center justify-between mb-3">
                   <div class="text-sm font-semibold text-slate-700">Payment History</div>
-                  <button id="loanPaymentsRefreshBtn" class="btn">Refresh</button>
+                  <div class="flex items-center gap-2">
+                    <button id="loanPaymentsExportBtn" class="btn">Export CSV</button>
+                    <button id="loanPaymentsRefreshBtn" class="btn">Refresh</button>
+                  </div>                
                 </div>
 
                 <div class="overflow-auto border rounded-xl">
@@ -6901,7 +6913,10 @@ html, body {
 
           <!-- Cashbook -->
           <div>
-            <h3 class="font-semibold mb-2 text-sm">Standard cashbook</h3>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold text-sm">Standard cashbook</h3>
+              <button id="cashbookExportBtn" class="btn text-xs">Export CSV</button>
+            </div>
             <div id="cashbookTable" class="text-xs text-slate-500">
               Select a bank account to see cashbook.
             </div>
