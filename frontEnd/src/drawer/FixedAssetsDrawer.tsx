@@ -636,6 +636,11 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     setErr("");
 
+    if (createdAssetId || createdAcqId) {
+      return setErr(
+        "This draft was already created. To change amount, depreciation, or asset details safely, add an update-draft endpoint or discard this draft and create a new one."
+      );
+    }
     if (!form.asset_code.trim()) return setErr("Asset code is required.");
     if (!form.asset_name.trim()) return setErr("Asset name is required.");
     if (!form.asset_class.trim()) return setErr("Asset class is required.");
@@ -1602,6 +1607,28 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             </button>
             ) : (
               <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep(1);
+                    setPreviewLines([]);
+                    setPreviewMeta(null);
+                    setErr("");
+                  }}
+                  disabled={posting || saving}
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.18)",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    background: "white",
+                    color: "black",
+                    cursor: posting || saving ? "not-allowed" : "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  Back to Edit
+                </button>
+               
                 <button
                   type="button"
                     onClick={async () => {

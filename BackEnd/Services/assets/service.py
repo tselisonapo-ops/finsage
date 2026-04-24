@@ -997,10 +997,14 @@ def create_acquisition(cur, company_id, asset_id, payload):
 
     # ----------------------------
     # Insert
-    # ----------------------------
+    posting_date = payload.get("posting_date") or payload.get("acquisition_date")
+    if not posting_date:
+        raise Exception("posting_date is required")
+
     cur.execute(_q(schema, """
       INSERT INTO {schema}.asset_acquisitions(
         company_id, asset_id,
+        posting_date,
         acquisition_date, amount,
 
         funding_source,
@@ -1015,10 +1019,11 @@ def create_acquisition(cur, company_id, asset_id, payload):
         reference, notes,
         status
       )
-      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,'draft'))
+      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,'draft'))
       RETURNING id
     """), (
       company_id, asset_id,
+      posting_date,
       payload["acquisition_date"], payload["amount"],
 
       funding,
