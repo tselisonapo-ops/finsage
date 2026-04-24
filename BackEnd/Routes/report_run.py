@@ -94,7 +94,16 @@ def _export_statement_payload(payload, statement_key):
     fmt = (request.args.get("format") or "xlsx").lower().strip()
 
     if fmt == "pdf":
+        if not callable(export_statement_pdf):
+            raise RuntimeError(
+                f"export_statement_pdf is not callable. Got: {type(export_statement_pdf)}"
+            )
         return export_statement_pdf(payload, filename=f"{statement_key}.pdf")
+
+    if not callable(export_statement_xlsx):
+        raise RuntimeError(
+            f"export_statement_xlsx is not callable. Got: {type(export_statement_xlsx)}"
+        )
 
     return export_statement_xlsx(payload, filename=f"{statement_key}.xlsx")
 
