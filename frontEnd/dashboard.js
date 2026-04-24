@@ -17261,7 +17261,7 @@ function renderLedgerTable(rows, meta) {
 
         extraRows = `
           <tr>
-            <td colspan="${showBalance ? (isAll ? 7 : 6) : (isAll ? 6 : 5)}" class="py-1"></td> n
+            <td colspan="${showBalance ? (isAll ? 7 : 6) : (isAll ? 6 : 5)}" class="py-1"></td>
           </tr>
           ${headerRow}
           ${linesHtml}
