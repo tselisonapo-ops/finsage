@@ -2,7 +2,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
-
+from BackEnd.Services.reporting.balance_sheet_templates import get_balance_sheet_v3_exact
 from BackEnd.Services.reporting.export_helpers import export_csv
 from BackEnd.Services.reporting.gl_reports import build_general_ledger_report
 from BackEnd.Services.reporting.cashbook_reports import build_cashbook_report
@@ -866,12 +866,24 @@ def export_balance_sheet(company_id):
     try:
         db = _get_db()
         _from, as_of, _meta = resolve_company_period(db, company_id, request, mode="as_of")
-        payload = db.get_balance_sheet_report(company_id=company_id, as_of=as_of, request_args=request.args)
+
+        payload = get_balance_sheet_v3_exact(
+            db=db,
+            company_id=company_id,
+            as_of=as_of,
+            compare=request.args.get("compare", "none"),
+            view=request.args.get("view", "external"),
+            basis=request.args.get("basis", "external"),
+            include_net_profit_line=str(
+                request.args.get("include_net_profit_line") or ""
+            ).lower() in {"1", "true", "yes"},
+        )
+
         return _export_statement_payload(payload, "balance_sheet")
+
     except Exception as e:
         current_app.logger.exception("export_balance_sheet failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @report_bp.route("/api/companies/<int:company_id>/statements/income-statement/export", methods=["GET"])
 def export_income_statement(company_id):
@@ -882,12 +894,21 @@ def export_income_statement(company_id):
     try:
         db = _get_db()
         date_from, date_to, _meta = resolve_company_period(db, company_id, request, mode="range")
-        payload = db.get_income_statement_report(company_id=company_id, date_from=date_from, date_to=date_to, request_args=request.args)
+
+        payload = db.get_income_statement_v2(
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            template=request.args.get("template", "ifrs"),
+            basis=request.args.get("basis", "external"),
+            compare=request.args.get("compare", "none"),
+            detail=request.args.get("detail", "summary"),
+        )
+
         return _export_statement_payload(payload, "income_statement")
     except Exception as e:
         current_app.logger.exception("export_income_statement failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @report_bp.route("/api/companies/<int:company_id>/statements/cash-flow/export", methods=["GET"])
 def export_cash_flow(company_id):
@@ -898,12 +919,21 @@ def export_cash_flow(company_id):
     try:
         db = _get_db()
         date_from, date_to, _meta = resolve_company_period(db, company_id, request, mode="range")
-        payload = db.get_cash_flow_report(company_id=company_id, date_from=date_from, date_to=date_to, request_args=request.args)
+
+        payload = db.get_cashflow_full_v2(
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            template=request.args.get("template", "ifrs"),
+            basis=request.args.get("basis", "external"),
+            compare=request.args.get("compare", "none"),
+            method=request.args.get("method", "direct"),
+        )
+
         return _export_statement_payload(payload, "cash_flow")
     except Exception as e:
         current_app.logger.exception("export_cash_flow failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @report_bp.route("/api/companies/<int:company_id>/statements/socie/export", methods=["GET"])
 def export_socie(company_id):
@@ -914,12 +944,20 @@ def export_socie(company_id):
     try:
         db = _get_db()
         date_from, date_to, _meta = resolve_company_period(db, company_id, request, mode="range")
-        payload = db.get_socie_report(company_id=company_id, date_from=date_from, date_to=date_to, request_args=request.args)
+
+        payload = db.get_socie_v1(
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            template=request.args.get("template", "ifrs"),
+            basis=request.args.get("basis", "external"),
+            compare=request.args.get("compare", "none"),
+        )
+
         return _export_statement_payload(payload, "socie")
     except Exception as e:
         current_app.logger.exception("export_socie failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 # =========================================================
 # AR / AP Controls
