@@ -3825,23 +3825,40 @@ async function downloadUrl(url, reportKey = null) {
     String(url || "").includes("?t=") ||
     String(url || "").includes("&t=");
 
-  console.log("[downloadUrl:start]", { url, cid, key, alreadySigned });
-
   if (key && cid && !alreadySigned) {
     finalUrl = await getReportExportUrl(cid, key, url);
   }
 
   console.log("[downloadUrl:final]", { finalUrl });
 
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = toApiUrl(finalUrl);
+  // TEMP DEBUG: expose backend 400 message
+  const debugUrl = toApiUrl(finalUrl);
+  const res = await fetch(debugUrl, { method: "GET" });
 
-  document.body.appendChild(iframe);
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error("[EXPORT FAILED]", {
+      status: res.status,
+      url: debugUrl,
+      body: txt,
+    });
+    alert(`Export failed ${res.status}: ${txt.slice(0, 500)}`);
+    return;
+  }
 
-  setTimeout(() => {
-    iframe.remove();
-  }, 60000);
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+
+  const cd = res.headers.get("content-disposition") || "";
+  const match = cd.match(/filename="?([^"]+)"?/i);
+  a.download = match?.[1] || "export.csv";
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
 }
 window.downloadUrl = downloadUrl;
   // ==========================================================
@@ -17321,7 +17338,7 @@ function renderLedgerTable(rows, meta) {
       </table>
     </div>
   `;
-  host.querySelector("#btnLedgerExportCsv")?.addEventListener("click", () => {
+  host.querySelector("#btnLedgerExportCsv")?.addEventListener("click", async () => {
     const cid =
       (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
       window.CURRENT_COMPANY_ID;
@@ -17330,26 +17347,44 @@ function renderLedgerTable(rows, meta) {
 
     const params = new URLSearchParams({ format: "csv" });
 
-    const periodKey =
+    const from =
+      document.getElementById("ledgerFilterFrom")?.value?.trim() ||
+      document.getElementById("reportFrom")?.value?.trim() ||
+      "";
+
+    const to =
+      document.getElementById("ledgerFilterTo")?.value?.trim() ||
+      document.getElementById("reportTo")?.value?.trim() ||
+      "";
+
+    const preset =
+      document.getElementById("ledgerFilterPreset")?.value?.trim() ||
+      document.getElementById("reportPreset")?.value?.trim() ||
       window.CURRENT_PERIOD_KEY ||
       "this_month";
 
-    const r = (typeof computePeriodRange === "function")
-      ? computePeriodRange(periodKey)
-      : {};
+    const q =
+      document.getElementById("ledgerSearch")?.value?.trim() ||
+      document.getElementById("ledgerFilterQ")?.value?.trim() ||
+      "";
 
-    if (r.from && r.to) {
-      params.set("from", r.from);
-      params.set("to", r.to);
-    } else if (r.preset || periodKey) {
-      params.set("preset", r.preset || periodKey);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+
+    if (!from && !to && preset) {
+      params.set("preset", preset);
     }
+
+    if (q) params.set("q", q);
 
     if (!isAll && accountCode) {
       params.set("account_code", accountCode);
     }
 
-    downloadUrl(`${ENDPOINTS.reports.generalLedgerExport(cid)}?${params.toString()}`);
+    await downloadUrl(
+      `${ENDPOINTS.reports.generalLedgerExport(cid)}?${params.toString()}`,
+      "general_ledger"
+    );
   });
 }
 
@@ -27051,46 +27086,6 @@ window.renderLeaseRegTab = async function renderLeaseRegTab({ force = false } = 
         body.innerHTML = `<div class="text-sm text-slate-600 border rounded p-3">
           Missing endpoint builder: endpoints.leases.listSchedule(companyId, leaseId).
         </div>`;
-        document.getElementById("btnLeaseScheduleExportCsv")?.addEventListener("click", () => {
-          const cid = window.getActiveCompanyId?.();
-          const msgEl =
-            document.getElementById("leaseScheduleMsg") ||
-            document.getElementById("leaseMsg");
-
-          if (!cid) return window.leaseRegShowMsg?.("No company selected");
-
-          const lease_id = leaseId; // 🔥 already available in this function
-
-          if (!lease_id) {
-            return window.leaseRegShowMsg?.("Lease ID is required");
-          }
-
-          const qs = new URLSearchParams({
-            lease_id: String(lease_id),
-            format: "csv",
-          });
-
-          downloadUrl(`${window.ENDPOINTS.reports.leaseScheduleExport(cid)}?${qs.toString()}`);
-        });
-        return;
-      }
-
-      body.innerHTML = `<div class="text-sm text-slate-600">Loading schedule…</div>`;
-
-      // ✅ force active_only=1 explicitly (and version_no blank)
-      const url = EP.leases.listSchedule(cid, leaseId, { active_only: true });
-
-      let res;
-      try {
-        res = await window.apiFetch(url, { method: "GET" });
-      } catch (e) {
-        console.error("[LeaseReg] schedule fetch failed", { url, leaseId, cid, err: e });
-        body.innerHTML = `
-          <div class="text-sm text-rose-600 border rounded p-3">
-            Schedule load failed: ${esc(e?.message || "Unknown error")}
-          </div>
-          <pre class="text-[11px] mt-2 p-2 border rounded bg-slate-50 overflow-auto">${esc(url)}</pre>
-        `;
         return;
       }
 
@@ -27158,6 +27153,33 @@ window.renderLeaseRegTab = async function renderLeaseRegTab({ force = false } = 
       `;
       return;
     }
+
+    document.getElementById("btnLeaseScheduleExportCsv")?.addEventListener("click", () => {
+      const cid = window.getActiveCompanyId?.();
+      if (!cid) return window.leaseRegShowMsg?.("No company selected");
+
+      if (!leaseId) {
+        return window.leaseRegShowMsg?.("Lease ID is required");
+      }
+
+      const qs = new URLSearchParams({
+        lease_id: String(leaseId),
+        format: "csv",
+      });
+
+      const from = ($("#leaseReportFrom")?.value || $("#reportFrom")?.value || "").trim();
+      const to = ($("#leaseReportTo")?.value || $("#reportTo")?.value || "").trim();
+      const preset = ($("#leaseReportPreset")?.value || $("#reportPreset")?.value || "").trim();
+
+      if (from) qs.set("from", from);
+      if (to) qs.set("to", to);
+      if (preset) qs.set("preset", preset);
+
+      downloadUrl(
+        `${window.ENDPOINTS.reports.leaseScheduleExport(cid)}?${qs.toString()}`,
+        "lease_schedule"
+      );
+    });
 
     if (tab === "payments") {
       // your payments UI requires a Lease ID input; set it if it exists
@@ -34212,6 +34234,14 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (scheduleVersion) qs.set("schedule_version", String(scheduleVersion));
 
+    const from = ($("#loanReportFrom")?.value || $("#reportFrom")?.value || "").trim();
+    const to = ($("#loanReportTo")?.value || $("#reportTo")?.value || "").trim();
+    const preset = ($("#loanReportPreset")?.value || $("#reportPreset")?.value || "").trim();
+
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    if (preset) qs.set("preset", preset);
+
     return `${ENDPOINTS.reports.loanScheduleExport(cid)}?${qs.toString()}`;
   }
 
@@ -34225,6 +34255,14 @@ function bindAssetRecordsPickerModal({ cid }) {
       loan_id: String(loanId),
     });
 
+    const from = ($("#loanReportFrom")?.value || $("#reportFrom")?.value || "").trim();
+    const to = ($("#loanReportTo")?.value || $("#reportTo")?.value || "").trim();
+    const preset = ($("#loanReportPreset")?.value || $("#reportPreset")?.value || "").trim();
+
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    if (preset) qs.set("preset", preset);
+
     return `${ENDPOINTS.reports.loanPaymentsExport(cid)}?${qs.toString()}`;
   }
 
@@ -34237,6 +34275,14 @@ function bindAssetRecordsPickerModal({ cid }) {
       format: "csv",
       loan_id: String(loanId),
     });
+
+    const from = ($("#loanReportFrom")?.value || $("#reportFrom")?.value || "").trim();
+    const to = ($("#loanReportTo")?.value || $("#reportTo")?.value || "").trim();
+    const preset = ($("#loanReportPreset")?.value || $("#reportPreset")?.value || "").trim();
+
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    if (preset) qs.set("preset", preset);
 
     return `${ENDPOINTS.reports.loanJournalsExport(cid)}?${qs.toString()}`;
   }
