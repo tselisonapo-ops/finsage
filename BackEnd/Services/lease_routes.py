@@ -1097,6 +1097,11 @@ def leases_monthly_due(company_id: int):
                 "period_end": str(r["period_end"]),
                 "schedule_id": schedule_id,
 
+                # ✅ NEW FLAGS
+                "is_paid": bool(r.get("paid")),
+                "payment_journal_id": r.get("payment_journal_id"),
+                "is_posted": bool(r.get("posted")),
+
                 "amounts": {
                     "interest": float(r.get("interest") or 0),
                     "principal": float(r.get("principal") or 0),

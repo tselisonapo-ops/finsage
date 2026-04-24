@@ -23844,6 +23844,15 @@ window.renderLeasePaymentsView = function renderLeasePaymentsView(mount) {
       } else {
         body.innerHTML = filtered.map(r => {
           const jid = r.journal_id || r.posted_journal_id || "";
+          const isPaid = !!r.is_paid;
+          const isPosted = !!r.is_posted;
+
+          const payLabel = isPaid ? "Paid" : "Pay";
+          const payDisabled = isPaid ? "disabled" : "";
+
+          const postLabel = isPosted ? "Posted" : "Post";
+          const postDisabled = isPosted ? "disabled" : "";
+
           return `
             <tr class="border-t">
               <td class="p-2">${escapeHtml(String(r.payment_date || r.date || ""))}</td>
@@ -24013,18 +24022,27 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               <td class="p-2">${escapeHtml(String(periodNo || ""))}</td>
               <td class="p-2 text-right tabular-nums">${fmtMoney(due)}</td>
               <td class="p-2 text-right">
-                <button class="px-2 py-1 rounded border text-xs bg-white"
+                <button
+                  class="px-2 py-1 rounded border text-xs ${isPaid ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white'}"
                   data-pay="1"
                   data-lease-id="${escapeHtml(String(leaseId))}"
                   data-schedule-id="${escapeHtml(String(r.schedule_id || ""))}"
-                  data-due="${escapeHtml(String(due))}">
-                  Pay
+                  data-due="${escapeHtml(String(due))}"
+                  ${payDisabled}
+                >
+                  ${payLabel}
                 </button>
-                <button class="px-2 py-1 rounded bg-slate-900 text-white text-xs ml-2"
+
+                <button
+                  class="px-2 py-1 rounded text-xs ml-2 ${
+                    isPosted ? 'bg-slate-300 text-white cursor-not-allowed' : 'bg-slate-900 text-white'
+                  }"
                   data-lm-post="1"
                   data-lease-id="${escapeHtml(String(leaseId))}"
-                  data-period-no="${escapeHtml(String(periodNo))}">
-                  Post
+                  data-period-no="${escapeHtml(String(periodNo))}"
+                  ${postDisabled}
+                >
+                  ${postLabel}
                 </button>
               </td>
             </tr>
@@ -24033,6 +24051,10 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
 
         body.querySelectorAll("[data-pay]").forEach(btn => {
           btn.addEventListener("click", () => {
+
+            // 👉 ADD THIS LINE HERE
+            if (btn.disabled) return;
+
             const lease_id = Number(btn.getAttribute("data-lease-id") || 0);
             const schedule_id = btn.getAttribute("data-schedule-id");
             const due = btn.getAttribute("data-due") || "";
@@ -24048,18 +24070,27 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
 
         body.querySelectorAll("[data-lm-post]").forEach((btn) => {
           btn.addEventListener("click", () => {
+
+            // 👉 ADD THIS LINE HERE
+            if (btn.disabled) return;
+
             const msgEl = document.getElementById("leaseMonthlyMsg");
             if (typeof showLeaseMsg === "function") showLeaseMsg(msgEl, "");
 
             const leaseId = Number(btn.getAttribute("data-lease-id") || 0);
             const periodNo = Number(btn.getAttribute("data-period-no") || 0);
+
             if (!leaseId || !periodNo) {
               if (typeof showLeaseMsg === "function") showLeaseMsg(msgEl, "Missing lease/period");
               return;
             }
 
             const rows = window._leaseMonthlyRows || [];
-            const r = rows.find(x => Number(x.lease_id) === leaseId && Number(x.period_no) === periodNo);
+            const r = rows.find(x =>
+              Number(x.lease_id) === leaseId &&
+              Number(x.period_no) === periodNo
+            );
+
             if (!r) {
               if (typeof showLeaseMsg === "function") showLeaseMsg(msgEl, "Could not find monthly row in memory. Click Load first.");
               return;
@@ -24084,10 +24115,13 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               }))
             };
 
-            if (typeof loadJournalIntoLines === "function") loadJournalIntoLines(det, { mode: "append" });
+            if (typeof loadJournalIntoLines === "function") {
+              loadJournalIntoLines(det, { mode: "append" });
+            }
 
-            if (typeof showLeaseMsg === "function") showLeaseMsg(msgEl, "Loaded Interest + Depreciation into journal form.", "ok");
-            setTimeout(() => { if (typeof showLeaseMsg === "function") showLeaseMsg(msgEl, ""); }, 1200);
+            if (typeof showLeaseMsg === "function") {
+              showLeaseMsg(msgEl, "Loaded Interest + Depreciation into journal form.", "ok");
+            }
           });
         });
       }

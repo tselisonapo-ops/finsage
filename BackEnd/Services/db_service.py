@@ -24886,14 +24886,12 @@ class DatabaseService:
     def list_lease_schedule_for_month(self, company_id: int, as_of: date, cur=None):
         schema = f"company_{company_id}"
 
-        # month start/end
         month_start = as_of.replace(day=1)
         if month_start.month == 12:
             next_month_start = month_start.replace(year=month_start.year + 1, month=1, day=1)
         else:
             next_month_start = month_start.replace(month=month_start.month + 1, day=1)
 
-        # Detect optional marker columns (safe across tenants)
         has_posted_cols = bool(self.fetch_one(
             """
             SELECT 1
@@ -24937,7 +24935,36 @@ class DatabaseService:
             l.lessor_id,
             ls.name AS lessor_name,
 
-            {posted_expr} AS posted
+            {posted_expr} AS posted,
+
+            EXISTS (
+                SELECT 1
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND (
+                        p.schedule_id = s.id
+                        OR (
+                            p.lease_id = s.lease_id
+                            AND p.period_no = s.period_no
+                        )
+                )
+            ) AS paid,
+
+            (
+                SELECT p.posted_journal_id
+                FROM {schema}.lease_payments p
+                WHERE p.company_id = s.company_id
+                AND (
+                        p.schedule_id = s.id
+                        OR (
+                            p.lease_id = s.lease_id
+                            AND p.period_no = s.period_no
+                        )
+                )
+                ORDER BY p.id DESC
+                LIMIT 1
+            ) AS payment_journal_id
+
         FROM {schema}.lease_schedule s
         JOIN {schema}.leases l
             ON l.id = s.lease_id
