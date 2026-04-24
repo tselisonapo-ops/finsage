@@ -382,9 +382,14 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     if len(cols) == 1:
         cols[0]["label"] = "Amount"
 
-    headers, flat_rows = _flatten_payload({**payload, "columns": cols})
-
     cols = _payload_columns(payload)
+
+    if len(cols) == 1:
+        cols[0]["label"] = "Amount"
+
+    payload = {**payload, "columns": cols}
+
+    headers, flat_rows = _flatten_payload(payload)
     col_keys = [c.get("key") for c in cols]
 
     wb = Workbook()
@@ -521,7 +526,7 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
     # Compact financial-statement layout, not Excel-like full-width layout
     if num_cols == 1:
-        col_widths = [120 * mm, 35 * mm]
+        col_widths = [135 * mm, 30 * mm]
     elif num_cols == 2:
         col_widths = [105 * mm, 32 * mm, 32 * mm]
     elif num_cols == 3:
@@ -546,7 +551,9 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
 
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (1, 0), (-1, -1), 2)
+        ("LINEBELOW", (0, 0), (0, 0), 0, colors.white),
     ])
 
     for idx, item in enumerate(flat_rows, start=1):

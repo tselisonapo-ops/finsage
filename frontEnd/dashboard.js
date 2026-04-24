@@ -22041,17 +22041,23 @@ async function downloadFile(url, filename) {
 }
 
 async function exportStatement(stmtType, format) {
-  const cid = (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null);
+  const cid = typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null;
   if (!cid) return alert("No active company.");
-
-  const { from, to } = computePeriodRange(CURRENT_PERIOD_KEY);
 
   const t = normalizeStmtType(stmtType);
 
+  const preset =
+    document.getElementById("stmtPreset")?.value ||
+    window.CURRENT_PERIOD_KEY ||
+    CURRENT_PERIOD_KEY ||
+    "this_year";
+
+  const pr = computePeriodRange(preset) || {};
+  const from = pr.from || null;
+  const to = pr.to || null;
+
   if (t === "notes") {
-    if (typeof restoreNotesIfPresent === "function" && restoreNotesIfPresent()) {
-      return;
-    }
+    if (typeof restoreNotesIfPresent === "function" && restoreNotesIfPresent()) return;
   }
 
   if (typeof updateStmtViewerMethodVisibility === "function") {
@@ -22059,7 +22065,6 @@ async function exportStatement(stmtType, format) {
   }
 
   let fmt = String(format || "xlsx").toLowerCase();
-
   if (fmt === "json") fmt = "xlsx";
 
   if (!["xlsx", "pdf"].includes(fmt)) {
@@ -22068,69 +22073,63 @@ async function exportStatement(stmtType, format) {
   }
 
   let url = "";
-    switch (t) {
-      case "pnl":
-        url = ENDPOINTS.reports.incomeStatementExport(cid);
-        break;
+  const reportKeyMap = {
+    pnl: "income_statement",
+    bs: "balance_sheet",
+    socie: "socie",
+    cf: "cash_flow",
+    tb: "trial_balance",
+  };
 
-      case "bs":
-        url = ENDPOINTS.reports.balanceSheetExport(cid);
-        break;
-
-      case "socie":
-        url = ENDPOINTS.reports.socieExport(cid);
-        break;
-
-      case "cf":
-        url = ENDPOINTS.reports.cashFlowExport(cid);
-        break;
-
-      case "tb":
-        url = ENDPOINTS.reports.trialBalanceExport(cid);
-        break;
-
-      case "notes":
-        url = ENDPOINTS.notes(cid, from, to, fmt);
-        break;
-
-      default:
-        return alert("Unknown statement type.");
-    }
-
-  const template = document.getElementById("stmtTemplate")?.value || "ifrs";
-  const basis    = document.getElementById("stmtBasis")?.value || "external";
-  const compare  = document.getElementById("stmtCompare")?.value || "none";
-  const detail   = document.getElementById("stmtDetail")?.value || "summary";
+  switch (t) {
+    case "pnl":
+      url = ENDPOINTS.reports.incomeStatementExport(cid);
+      break;
+    case "bs":
+      url = ENDPOINTS.reports.balanceSheetExport(cid);
+      break;
+    case "socie":
+      url = ENDPOINTS.reports.socieExport(cid);
+      break;
+    case "cf":
+      url = ENDPOINTS.reports.cashFlowExport(cid);
+      break;
+    case "tb":
+      url = ENDPOINTS.reports.trialBalanceExport(cid);
+      break;
+    case "notes":
+      url = ENDPOINTS.notes(cid, from, to, fmt);
+      break;
+    default:
+      return alert("Unknown statement type.");
+  }
 
   const params = {
-    template,
-    basis,
-    compare,
     format: fmt,
-    preset: CURRENT_PERIOD_KEY,
+    preset,
+    template: document.getElementById("stmtTemplate")?.value || "ifrs",
+    basis: document.getElementById("stmtBasis")?.value || "external",
+    compare: document.getElementById("stmtCompare")?.value || "none",
+    cols_mode: document.getElementById("stmtColsMode")?.value || "1",
+    detail: document.getElementById("stmtDetail")?.value || "summary",
   };
 
   if (from) params.from = from;
   if (to) params.to = to;
 
-  if (t === "bs") {
+  if (t === "bs" && to) {
     params.as_of = to;
+    params.include_net_profit_line = "true";
   }
 
   if (t === "cf") {
     params.method = document.getElementById("stmtCfMethod")?.value || "direct";
-  }
-
-  if (t === "pnl") {
-    params.detail = detail;
+    params.preview_columns = params.cols_mode;
   }
 
   url = addQueryParamsAbs(url, params);
 
-  //const ext = (fmt === "sars_xml") ? "xml" : fmt;
-  //const filename = `${t}_${from}_${to}.${ext}`;
-
-  await downloadUrl(url);
+  await downloadUrl(url, reportKeyMap[t] || null);
 }
 
 // --- expose widget renderers globally ---
