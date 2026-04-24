@@ -24023,26 +24023,28 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               <td class="p-2 text-right tabular-nums">${fmtMoney(due)}</td>
               <td class="p-2 text-right">
                 <button
-                  class="px-2 py-1 rounded border text-xs ${isPaid ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white'}"
+                  class="px-2 py-1 rounded border text-xs ${
+                    isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"
+                  }"
                   data-pay="1"
                   data-lease-id="${escapeHtml(String(leaseId))}"
                   data-schedule-id="${escapeHtml(String(r.schedule_id || ""))}"
                   data-due="${escapeHtml(String(due))}"
-                  ${payDisabled}
+                  ${isPaid ? "disabled" : ""}
                 >
-                  ${payLabel}
+                  ${isPaid ? "Paid" : "Pay"}
                 </button>
 
                 <button
                   class="px-2 py-1 rounded text-xs ml-2 ${
-                    isPosted ? 'bg-slate-300 text-white cursor-not-allowed' : 'bg-slate-900 text-white'
+                    isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"
                   }"
                   data-lm-post="1"
                   data-lease-id="${escapeHtml(String(leaseId))}"
                   data-period-no="${escapeHtml(String(periodNo))}"
-                  ${postDisabled}
+                  ${isPosted ? "disabled" : ""}
                 >
-                  ${postLabel}
+                  ${isPosted ? "Posted" : "Post"}
                 </button>
               </td>
             </tr>
