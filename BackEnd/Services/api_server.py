@@ -5674,6 +5674,7 @@ def create_invoice(cid: int):
         # helpers
         # --------------------------
         def money(x) -> float:
+            from decimal import Decimal, ROUND_HALF_UP
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
         def to_float(x, default=0.0):
