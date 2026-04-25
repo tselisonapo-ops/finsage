@@ -99,7 +99,7 @@ def _build_vat_summary_xlsx(rows):
     ws.title = "Filled VAT Return"
 
     for row in rows:
-        ws.append(row)
+        ws.append([_excel_safe(v) for v in row])
 
     _style_xlsx_sheet(ws)
 
@@ -114,7 +114,7 @@ def _build_vat_detail_xlsx(rows):
     ws.title = "Supporting Schedule"
 
     for row in rows:
-        ws.append(row)
+        ws.append([_excel_safe(v) for v in row])
 
     _style_xlsx_sheet(ws)
 
@@ -338,6 +338,29 @@ def _get_vat_lines(company_id: int, start_date, end_date):
         })
 
     return lines
+
+def _excel_safe(value):
+    """
+    Convert values into Excel-safe format
+    - remove timezone from datetime
+    - stringify complex objects
+    """
+    from datetime import datetime
+
+    if isinstance(value, datetime):
+        # remove timezone if present
+        return value.replace(tzinfo=None)
+
+    # handle ISO string with timezone
+    if isinstance(value, str) and "+" in value:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(value)
+            return dt.replace(tzinfo=None)
+        except Exception:
+            return value
+
+    return value
 
 def compute_current_vat_period(today: date, cfg: dict):
     """Return the VAT period that contains today."""
