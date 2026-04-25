@@ -6537,6 +6537,7 @@ function initDashboardModeSwitcher(currentMode = "internal") {
     }
   };
 }
+
 function inferReportKeyFromExportUrl(url) {
   const s = String(url || "");
 
@@ -6546,6 +6547,10 @@ function inferReportKeyFromExportUrl(url) {
     ["/general-ledger/export", "general_ledger"],
     ["/vat/export", "vat_report"],
     ["/cashbook/export", "cashbook"],
+
+    // 🔥 VAT (ADD THIS BLOCK)
+    ["/vat/filings/export-pack", "vat_pack"],
+    ["/vat/filings/export", "vat_filing"],
 
     ["/lease-register/export", "lease_register"],
     ["/lease-schedule/export", "lease_schedule"],
@@ -6572,8 +6577,8 @@ function inferReportKeyFromExportUrl(url) {
     ["/revenue-progress/export", "revenue_progress"],
     ["/revenue-recognition-runs/export", "revenue_recognition_runs"],
     ["/revenue-recognition-entries/export", "revenue_recognition_entries"],
-  
-    // ✅ ADD STATEMENTS HERE
+
+    // ✅ STATEMENTS
     ["/statements/balance-sheet/export", "balance_sheet"],
     ["/statements/income-statement/export", "income_statement"],
     ["/statements/cash-flow/export", "cash_flow"],

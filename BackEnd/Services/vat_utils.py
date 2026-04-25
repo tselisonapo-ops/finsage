@@ -1172,9 +1172,11 @@ FinSage
 
     try:
         send_mail(
-            to=user_email,
+            to_email=user_email,
             subject=subject,
-            body=body,
+            html_body=body.replace("\n", "<br>"),
+            text_body=body,
+            from_name="FinSage",
         )
     except Exception as e:
         return jsonify({
