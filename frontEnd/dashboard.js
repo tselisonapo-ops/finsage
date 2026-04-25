@@ -41779,7 +41779,7 @@ function bindInvoicePostingUI() {
         // NEW: makers submit for approval using Save Draft button
         const res = await commitInvoice("submit_for_approval");
         // draft saved → you can reset or keep open; keeping your behavior:
-        resetInvoiceForm();
+        window.resetInvoiceForm?.();
         await renderDraftInvoiceList?.();
         return res;
       } catch (err) {
@@ -41810,7 +41810,7 @@ function bindInvoicePostingUI() {
         // If maker route: sent_to_inbox (do NOT render cashflow yet, nothing posted)
         if (res?.flow === "sent_to_inbox") {
           // optional: keep invoice open; but you currently reset → ok
-          resetInvoiceForm();
+          window.resetInvoiceForm?.();
           await renderDraftInvoiceList?.();
           alert("Sent to Approvals inbox. Awaiting review.");
           return;
@@ -41819,14 +41819,14 @@ function bindInvoicePostingUI() {
         // If approver route: posted
         if (res?.flow === "post") {
           await renderCashFlow?.(CURRENT_PERIOD_KEY);
-          resetInvoiceForm();
+          window.resetInvoiceForm?.();
           await renderDraftInvoiceList?.();
           alert("Invoice posted ✅");
           return;
         }
 
         // fallback
-        resetInvoiceForm();
+        window.resetInvoiceForm?.();
         await renderDraftInvoiceList?.();
         return res;
 
@@ -41871,7 +41871,7 @@ function bindInvoicePostingUI() {
 
         await sendInvoiceEmail(after);
 
-        resetInvoiceForm();
+        window.resetInvoiceForm?.();
         await renderDraftInvoiceList?.();
         alert("Invoice sent ✅");
 
@@ -41902,7 +41902,7 @@ function bindInvoicePostingUI() {
         const res = await commitInvoice("approve_post");
         if (res?.flow === "post") {
           await renderCashFlow?.(CURRENT_PERIOD_KEY);
-          resetInvoiceForm();
+          window.resetInvoiceForm?.();
           await renderDraftInvoiceList?.();
         }
       } catch (err) {
@@ -43202,54 +43202,49 @@ function resetInvoiceForm() {
 
   const $ = (sel) => document.querySelector(sel);
 
-  // Hidden ID
   if ($("#invId")) $("#invId").value = "";
-
-  // If you use hidden customer id, clear it too
   if ($("#invCustomerId")) $("#invCustomerId").value = "";
 
-  // Header fields
   if ($("#invCustomerName")) $("#invCustomerName").value = "";
   if ($("#invNumber")) $("#invNumber").value = "";
   if ($("#invDate")) $("#invDate").value = "";
   if ($("#invTerms")) $("#invTerms").value = "Due on receipt";
   if ($("#invCurrency")) $("#invCurrency").value = "ZAR";
 
-  // Bank account
   if ($("#invoiceBankAccount")) $("#invoiceBankAccount").selectedIndex = 0;
 
-  // VAT controls
   if ($("#invVatEnabled")) $("#invVatEnabled").checked = false;
   if ($("#invDefaultVat")) $("#invDefaultVat").value = "STANDARD";
 
-  // Totals inputs
   if ($("#invDisc"))  $("#invDisc").value  = "0.00";
   if ($("#invOther")) $("#invOther").value = "0.00";
 
-  // ✅ Totals spans (these were not being reset before)
   if ($("#sumSubtotal")) $("#sumSubtotal").textContent = "0.00";
   if ($("#sumVat"))      $("#sumVat").textContent      = "0.00";
   if ($("#sumTotal"))    $("#sumTotal").textContent    = "0.00";
 
-  // Status label
   if ($("#invStatus")) $("#invStatus").textContent = "Draft";
 
-  // Memo
   if ($("#invMemo")) $("#invMemo").value = "";
 
-  // Clear lines
   const tbody = document.querySelector("#invLines");
   if (tbody) tbody.innerHTML = "";
 
-  // Add one empty line if you have a helper
   if (typeof addLine === "function") addLine();
-
-  // Recalculate totals if you have this
   if (typeof recalcInvoice === "function") recalcInvoice();
 
-  // Focus customer for next capture
   if ($("#invCustomerName")) $("#invCustomerName").focus();
+
+  // ✅ clear saved drafts (important)
+  try {
+    localStorage.removeItem("invoiceDraft");
+    localStorage.removeItem("arInvoiceDraft");
+    window._CURRENT_INVOICE_DRAFT = null;
+  } catch (_) {}
 }
+
+// 👇 THIS LINE IS THE FIX
+window.resetInvoiceForm = resetInvoiceForm;
 
 let INVOICES_CACHE = null;
 
@@ -49122,7 +49117,7 @@ function bindAR() {
 
       // reset form for a new invoice instead of loading an existing one
       if (typeof window.resetInvoiceForm === "function") {
-        await window.resetInvoiceForm();
+        await window.resetInvoiceForm?.();
       } else {
         const $ = (id) => document.getElementById(id);
 
@@ -50498,12 +50493,6 @@ function bindCustomerInvoicesPane() {
 // =============================
 // INVOICE PAYMENT HELPERS (GLOBAL)
 // =============================
-
-// =======================================================
-// Invoice Viewer (FULL) + Payment/Overdue helpers
-// Drop this in your dashboard.js (module-level), NOT inside the function.
-// Then replace your openInvoiceViewer with the one below.
-// =======================================================
 
 // ---------- date helpers ----------
 function _parseIsoDate(d) {
