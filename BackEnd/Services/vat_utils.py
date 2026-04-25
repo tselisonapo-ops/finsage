@@ -169,11 +169,11 @@ def _get_vat_lines(company_id: int, start_date, end_date):
 
             -- prefer P&L / real source accounts over BS controls
             CASE
-              WHEN COALESCE(src_acc.category, '') ILIKE '%revenue%' THEN 1
-              WHEN COALESCE(src_acc.category, '') ILIKE '%income%' THEN 1
-              WHEN COALESCE(src_acc.category, '') ILIKE '%expense%' THEN 1
-              WHEN COALESCE(src_acc.category, '') ILIKE '%cost%' THEN 1
-              WHEN COALESCE(src_acc.category, '') ILIKE '%asset%' THEN 2
+            WHEN COALESCE(src_acc.category, '') ILIKE '%%revenue%%' THEN 1
+            WHEN COALESCE(src_acc.category, '') ILIKE '%%income%%' THEN 1
+            WHEN COALESCE(src_acc.category, '') ILIKE '%%expense%%' THEN 1
+            WHEN COALESCE(src_acc.category, '') ILIKE '%%cost%%' THEN 1
+            WHEN COALESCE(src_acc.category, '') ILIKE '%%asset%%' THEN 2
               ELSE 9
             END,
 
