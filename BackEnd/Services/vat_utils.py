@@ -23,7 +23,7 @@ from flask import (
     request,
     g,
     make_response,
-    
+    current_app 
 )
 from BackEnd.Services.vat_pack_pdf_builder import (
     generate_vat_return_pdf,
@@ -107,6 +107,41 @@ def _build_vat_summary_xlsx(rows):
     wb.save(buf)
     return buf.getvalue()
 
+def _get_company_vat_pack_profile(company_id: int) -> dict:
+    company = db_service.fetch_one(
+        """
+        SELECT
+          id,
+          name,
+          company_reg_no,
+          vat,
+          tin,
+          company_email,
+          company_phone,
+          physical_address,
+          postal_address,
+          currency,
+          logo_url
+        FROM public.companies
+        WHERE id = %s
+        LIMIT 1;
+        """,
+        (int(company_id),),
+    ) or {}
+
+    logo_url = (company.get("logo_url") or "").strip()
+
+    if logo_url and logo_url.startswith("/uploads/company_logos/"):
+        filename = os.path.basename(logo_url)
+        company["logo_path"] = os.path.join(
+            current_app.root_path,
+            "uploads",
+            "company_logos",
+            filename,
+        )
+
+    company["company_name"] = company.get("name") or f"Company {company_id}"
+    return company
 
 def _build_vat_detail_xlsx(rows):
     wb = Workbook()
@@ -1074,19 +1109,14 @@ def vat_filing_export_pack(company_id: int):
 
     lines = _get_vat_lines(company_id, start_date, end_date)
 
-    ctx = get_company_context(db_service, company_id) or {}
+    ctx = _get_company_vat_pack_profile(company_id)
 
-    company_name = (
-        ctx.get("company_name")
-        or ctx.get("name")
-        or f"Company {company_id}"
-    )
-
+    company_name = ctx.get("company_name") or ctx.get("name") or f"Company {company_id}"
     currency = ctx.get("currency") or ""
     company_reg_no = ctx.get("company_reg_no") or "-"
-    vat_number = ctx.get("vat") or ctx.get("vat_number") or ctx.get("vat_no") or "-"
+    vat_number = ctx.get("vat") or "-"
     tin = ctx.get("tin") or "-"
-    company_email = ctx.get("company_email") or ctx.get("email") or "-"
+    company_email = ctx.get("company_email") or "-"
 
     input_total = _money(filing.get("input_total"))
     output_total = _money(filing.get("output_total"))
