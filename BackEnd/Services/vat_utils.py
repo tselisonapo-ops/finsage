@@ -575,7 +575,15 @@ def _serialise_vat_filing(row: dict):
         "updated_at": iso(row.get("updated_at")),
     }
 
-def _build_vat_settlement_preview(input_total: float, output_total: float):
+def _build_vat_settlement_preview(
+    input_total: float,
+    output_total: float,
+    *,
+    vat_input=None,
+    vat_output=None,
+    vat_receivable=None,
+    vat_payable=None,
+):
     input_total = round(float(input_total or 0), 2)
     output_total = round(float(output_total or 0), 2)
     net_vat = round(output_total - input_total, 2)
@@ -584,24 +592,24 @@ def _build_vat_settlement_preview(input_total: float, output_total: float):
 
     if output_total > 0:
         lines.append({
-            "account": "BS_CL_2310",
-            "name": "VAT Output",
+            "account_role": "vat_output",
+            "account_name": vat_output.get("name"),
             "debit": output_total,
             "credit": 0,
         })
 
     if input_total > 0:
         lines.append({
-            "account": "BS_CA_1410",
-            "name": "VAT Input",
+            "account_role": "vat_input",
+            "account_name": vat_input.get("name"),
             "debit": 0,
             "credit": input_total,
         })
 
     if net_vat > 0:
         lines.append({
-            "account": "BS_CL_2320",
-            "name": "VAT Payable",
+            "account_role": "vat_payable",
+            "account_name": vat_payable.get("name"),
             "debit": 0,
             "credit": net_vat,
         })
@@ -609,8 +617,8 @@ def _build_vat_settlement_preview(input_total: float, output_total: float):
 
     elif net_vat < 0:
         lines.append({
-            "account": "BS_CA_1420",
-            "name": "VAT Receivable / Refund Due",
+            "account_role": "vat_receivable",
+            "account_name": vat_receivable.get("name"),
             "debit": abs(net_vat),
             "credit": 0,
         })
@@ -625,6 +633,23 @@ def _build_vat_settlement_preview(input_total: float, output_total: float):
         "net_vat": net_vat,
         "settlement_type": settlement_type,
         "journal_lines": lines,
+    }
+
+def resolve_account_by_role(company_id: int, role: str) -> dict:
+    row = db_service.fetch_one("""
+        SELECT code, name
+        FROM {schema}.coa
+        WHERE company_id = %s
+          AND role = %s
+        LIMIT 1
+    """.format(schema=db_service.company_schema(company_id)), (company_id, role))
+
+    if not row:
+        raise ValueError(f"Account role '{role}' not configured")
+
+    return {
+        "code": row["code"],
+        "name": row["name"],
     }
 
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat/periods", methods=["GET", "OPTIONS"])
@@ -978,6 +1003,18 @@ def vat_prepare_filing(company_id: int):
             "created_by_user_id": int(current_user.get("id") or 0),
             "prepared_by_user_id": int(current_user.get("id") or 0),
         }
+
+        resolved_lines = []
+
+        for l in preview["journal_lines"]:
+            acc = resolve_account_by_role(company_id, l["account_role"])
+
+            resolved_lines.append({
+                "account": acc["code"],   # only now we use code
+                "name": acc["name"],
+                "debit": l["debit"],
+                "credit": l["credit"],
+            })
 
         journal_id = db_service.post_journal(
             company_id=company_id,
@@ -1603,6 +1640,18 @@ def vat_filing_pay(company_id: int):
         "created_by_user_id": int(user.get("id") or 0),
         "prepared_by_user_id": int(user.get("id") or 0),
     }
+
+    resolved_lines = []
+
+    for l in preview["journal_lines"]:
+        acc = resolve_account_by_role(company_id, l["account_role"])
+
+        resolved_lines.append({
+            "account": acc["code"],   # only now we use code
+            "name": acc["name"],
+            "debit": l["debit"],
+            "credit": l["credit"],
+        })
 
     journal_id = db_service.post_journal(company_id=company_id, entry=entry)
 
