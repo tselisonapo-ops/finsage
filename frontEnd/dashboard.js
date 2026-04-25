@@ -2212,6 +2212,8 @@ const ENDPOINTS = {
     return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings` + (qs ? `?${qs}` : "");
   },
 
+  vatFilingExport: (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/export`,
+  
   vatPrepareFiling: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/prepare`,
 
@@ -12210,8 +12212,13 @@ function ensureVatScreen() {
           <button id="vatRefreshBtn" class="px-3 py-1 rounded bg-[var(--fs-navy)] text-white">
             Refresh
           </button>
+
           <button id="vatExportBtn" class="px-3 py-1 rounded border border-slate-200">
-            Export VAT report (CSV)
+            Export VAT Lines (CSV)
+          </button>
+
+          <button id="vatFilingExportBtn" class="px-3 py-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+            Download Prepared Filing (CSV)
           </button>
         </div>
 
@@ -12286,6 +12293,33 @@ function ensureVatScreen() {
     } catch (err) {
       console.error("VAT export failed:", err);
       alert(err?.message || "Failed to export VAT report.");
+    }
+  });
+
+  document.getElementById("vatFilingExportBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+
+    try {
+      const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+      if (!cid) throw new Error("No company selected");
+
+      const period = parseVatPeriodSelection?.();
+      if (!period?.start_date || !period?.end_date) {
+        alert("Please select a VAT period first.");
+        return;
+      }
+
+      const qs = new URLSearchParams({
+        from: period.start_date,
+        to: period.end_date,
+      });
+
+      const url = `${ENDPOINTS.vatFilingExport(cid)}?${qs.toString()}`;
+
+      downloadUrl(url);
+    } catch (err) {
+      console.error("VAT filing export failed:", err);
+      alert(err?.message || "Failed to export VAT filing report.");
     }
   });
 
@@ -12644,10 +12678,19 @@ async function renderVatDashboard() {
       }
     }
 
-    const filing =
-      filingRes?.filing ||
-      (Array.isArray(filingRes?.filings) ? filingRes.filings[0] : null) ||
-      null;
+    const filing = filingRes?.filing || filingRes?.data?.filing || null;
+    const filingExportBtn = document.getElementById("vatFilingExportBtn");
+
+    if (filingExportBtn) {
+      const canExportFiling = ["prepared", "submitted"].includes(
+        String(filing?.status || "").toLowerCase()
+      );
+
+      filingExportBtn.disabled = !canExportFiling;
+      filingExportBtn.title = canExportFiling
+        ? "Download prepared VAT filing report"
+        : "Prepare the VAT return before downloading the filing report";
+    }
 
     if (typeof setVatFilingBadgeState === "function") {
       setVatFilingBadgeState({ filing, period });

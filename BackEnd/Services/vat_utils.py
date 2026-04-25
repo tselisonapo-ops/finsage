@@ -92,6 +92,122 @@ def _make_vat_periods_for_year(year: int, cfg: dict):
 
     return periods
 
+def _get_vat_lines(company_id: int, start_date, end_date):
+    schema = db_service.company_schema(company_id)
+
+    input_codes, output_codes = _get_vat_accounts(company_id)
+    vat_codes = list(set(input_codes) | set(output_codes))
+
+    if not vat_codes:
+        return []
+
+    placeholders = ",".join(["%s"] * len(vat_codes))
+
+    sql = f"""
+    WITH vat_lines AS (
+        SELECT
+            l.id,
+            l.journal_id,
+            l.date,
+            l.ref,
+            l.account AS vat_account_code,
+            vat_acc.name AS vat_account_name,
+            l.debit,
+            l.credit
+        FROM {schema}.ledger l
+        LEFT JOIN {schema}.coa vat_acc
+          ON vat_acc.company_id = l.company_id
+         AND vat_acc.code = l.account
+        WHERE l.company_id = %s
+          AND l.date >= %s
+          AND l.date <= %s
+          AND l.account IN ({placeholders})
+    ),
+    source_lines AS (
+        SELECT DISTINCT ON (vl.id)
+            vl.id AS vat_line_id,
+            src.account AS source_account_code,
+            src_acc.name AS source_account_name
+        FROM vat_lines vl
+        LEFT JOIN {schema}.ledger src
+          ON src.company_id = %s
+         AND src.journal_id = vl.journal_id
+         AND src.id <> vl.id
+         AND src.account NOT IN ({placeholders})
+        LEFT JOIN {schema}.coa src_acc
+          ON src_acc.company_id = src.company_id
+         AND src_acc.code = src.account
+        ORDER BY
+            vl.id,
+            ABS(COALESCE(src.debit, 0) - COALESCE(src.credit, 0)) DESC
+    )
+    SELECT
+        vl.date,
+        vl.ref,
+        vl.vat_account_code,
+        vl.vat_account_name,
+        sl.source_account_code,
+        sl.source_account_name,
+        vl.debit,
+        vl.credit
+    FROM vat_lines vl
+    LEFT JOIN source_lines sl
+      ON sl.vat_line_id = vl.id
+    ORDER BY vl.date DESC, vl.id DESC
+    LIMIT 500;
+    """
+
+    params = (
+        int(company_id),
+        start_date,
+        end_date,
+        *vat_codes,
+        int(company_id),
+        *vat_codes,
+    )
+
+    with db_service._conn_cursor() as (_conn, cur):
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+
+    lines = []
+
+    for r in rows:
+        vat_code = str(r.get("vat_account_code") or "")
+        side = "input" if vat_code in input_codes else (
+            "output" if vat_code in output_codes else None
+        )
+
+        debit = float(r.get("debit") or 0)
+        credit = float(r.get("credit") or 0)
+
+        source_code = str(r.get("source_account_code") or "")
+        source_name = r.get("source_account_name") or ""
+
+        vat_name = r.get("vat_account_name") or ""
+
+        lines.append({
+            "date": r.get("date").isoformat() if r.get("date") else None,
+            "ref": r.get("ref") or "",
+
+            "source_account_code": source_code,
+            "source_account_name": source_name,
+
+            "vat_account_code": vat_code,
+            "vat_account_name": vat_name,
+
+            # backwards compatibility
+            "account_code": source_code or vat_code,
+            "account_name": source_name or vat_name,
+
+            "debit": debit,
+            "credit": credit,
+            "vat_amount": abs(debit - credit),
+            "vat_side": side,
+        })
+
+    return lines
+
 def compute_current_vat_period(today: date, cfg: dict):
     """Return the VAT period that contains today."""
     if not cfg:
@@ -480,123 +596,9 @@ def vat_lines(company_id: int):
     if not start_date or not end_date:
         return jsonify({"error": "from and to are required"}), 400
 
-    schema = db_service.company_schema(company_id)
-
-    input_codes, output_codes = _get_vat_accounts(company_id)
-    vat_codes = list(set(input_codes) | set(output_codes))
-
-    if not vat_codes:
-        return jsonify({"lines": []}), 200
-
-    placeholders = ",".join(["%s"] * len(vat_codes))
-
-    sql = f"""
-    WITH vat_lines AS (
-        SELECT
-            l.id,
-            l.journal_id,
-            l.date,
-            l.ref,
-            l.account AS vat_account_code,
-            vat_acc.name AS vat_account_name,
-            l.debit,
-            l.credit
-        FROM {schema}.ledger l
-        LEFT JOIN {schema}.coa vat_acc
-          ON vat_acc.company_id = l.company_id
-         AND vat_acc.code = l.account
-        WHERE l.company_id = %s
-          AND l.date >= %s
-          AND l.date <= %s
-          AND l.account IN ({placeholders})
-    ),
-    source_lines AS (
-        SELECT DISTINCT ON (vl.id)
-            vl.id AS vat_line_id,
-            src.account AS source_account_code,
-            src_acc.name AS source_account_name
-        FROM vat_lines vl
-        LEFT JOIN {schema}.ledger src
-          ON src.company_id = %s
-         AND src.journal_id = vl.journal_id
-         AND src.id <> vl.id
-         AND src.account NOT IN ({placeholders})
-        LEFT JOIN {schema}.coa src_acc
-          ON src_acc.company_id = src.company_id
-         AND src_acc.code = src.account
-        ORDER BY
-            vl.id,
-            ABS(COALESCE(src.debit, 0) - COALESCE(src.credit, 0)) DESC
-    )
-    SELECT
-        vl.date,
-        vl.ref,
-        vl.vat_account_code,
-        vl.vat_account_name,
-        sl.source_account_code,
-        sl.source_account_name,
-        vl.debit,
-        vl.credit
-    FROM vat_lines vl
-    LEFT JOIN source_lines sl
-      ON sl.vat_line_id = vl.id
-    ORDER BY vl.date DESC, vl.id DESC
-    LIMIT 500;
-    """
-
-    params = (
-        int(company_id),
-        start_date,
-        end_date,
-        *vat_codes,
-        int(company_id),
-        *vat_codes,
-    )
-
-    with db_service._conn_cursor() as (_conn, cur):
-        cur.execute(sql, params)
-        rows = cur.fetchall() or []
-
-    lines = []
-
-    for r in rows:
-        vat_code = str(r.get("vat_account_code") or "")
-        side = "input" if vat_code in input_codes else (
-            "output" if vat_code in output_codes else None
-        )
-
-        debit = float(r.get("debit") or 0)
-        credit = float(r.get("credit") or 0)
-
-        source_code = str(r.get("source_account_code") or "")
-        source_name = r.get("source_account_name") or ""
-
-        vat_name = r.get("vat_account_name") or ""
-
-        lines.append({
-            "date": r.get("date").isoformat() if r.get("date") else None,
-            "ref": r.get("ref") or "",
-
-            # useful source account display
-            "source_account_code": source_code,
-            "source_account_name": source_name,
-
-            # actual VAT control account
-            "vat_account_code": vat_code,
-            "vat_account_name": vat_name,
-
-            # backwards compatibility for your existing frontend
-            "account_code": source_code or vat_code,
-            "account_name": source_name or vat_name,
-
-            "debit": debit,
-            "credit": credit,
-            "vat_amount": abs(debit - credit),
-            "vat_side": side,
-        })
+    lines = _get_vat_lines(company_id, start_date, end_date)
 
     return jsonify({"lines": lines}), 200
-
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings", methods=["GET", "OPTIONS"])
 @require_auth
 def vat_filings(company_id: int):
@@ -803,3 +805,82 @@ def vat_prepare_filing(company_id: int):
         "preview": preview,
         "filing": _serialise_vat_filing(saved),
     }), 200
+
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings/export", methods=["GET", "OPTIONS"])
+@require_auth
+def vat_filing_export(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"error": "Not authorised"}), 403
+
+    from_str = (request.args.get("from") or "").strip()
+    to_str = (request.args.get("to") or "").strip()
+
+    start_date = _parse_date(from_str, None)
+    end_date = _parse_date(to_str, None)
+
+    if not start_date or not end_date:
+        return jsonify({"error": "from and to are required"}), 400
+
+    filing = db_service.get_vat_filing(company_id, start_date, end_date)
+    if not filing:
+        return jsonify({"error": "Prepare VAT return first"}), 400
+
+    lines = _get_vat_lines(company_id, start_date, end_date)
+
+    import csv, io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    ctx = get_company_context(db_service, company_id) or {}
+    company_name = ctx.get("company_name") or f"Company {company_id}"
+
+    # HEADER
+    writer.writerow(["VAT FILING REPORT"])
+    writer.writerow(["Company", company_name])
+    writer.writerow(["Period", f"{start_date} to {end_date}"])
+    writer.writerow(["Due date", filing.get("due_date")])
+    writer.writerow(["Status", filing.get("status")])
+    writer.writerow(["Prepared at", filing.get("prepared_at")])
+    writer.writerow([])
+
+    # SUMMARY
+    writer.writerow(["SUMMARY"])
+    writer.writerow(["Output VAT", filing.get("output_total")])
+    writer.writerow(["Input VAT", filing.get("input_total")])
+    writer.writerow(["Net VAT", filing.get("net_vat")])
+    writer.writerow([])
+
+    # DETAIL
+    writer.writerow([
+        "Date",
+        "Reference",
+        "Source Account",
+        "VAT Side",
+        "VAT Account",
+        "VAT Amount",
+    ])
+
+    for l in lines:
+        writer.writerow([
+            l.get("date"),
+            l.get("ref"),
+            f"{l.get('source_account_code')} {l.get('source_account_name')}",
+            l.get("vat_side"),
+            f"{l.get('vat_account_code')} {l.get('vat_account_name')}",
+            l.get("vat_amount"),
+        ])
+
+    csv_data = output.getvalue()
+    output.close()
+
+    filename = f"vat_filing_{company_id}_{start_date}_{end_date}.csv"
+
+    resp = make_response(csv_data)
+    resp.headers["Content-Type"] = "text/csv"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return _corsify(resp)
