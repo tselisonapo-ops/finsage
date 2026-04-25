@@ -25546,6 +25546,9 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         r.payment_amount ??
         0;
 
+      const isPaid = !!r.is_paid;
+      const isPosted = !!r.is_posted || !!r.payment_journal_id;
+
       return `
         <tr class="border-t">
           <td class="p-2">
@@ -25556,27 +25559,37 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           <td class="p-2">${esc(String(periodNo || ""))}</td>
           <td class="p-2 text-right tabular-nums">${fmtMoney(due)}</td>
           <td class="p-2 text-right">
-            <button class="px-2 py-1 rounded border text-xs bg-white" data-lm-pay="1"
+            <button
+              class="px-2 py-1 rounded border text-xs ${isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
+              data-lm-pay="1"
               data-lease-id="${esc(String(leaseId))}"
               data-lease-name="${esc(String(r.lease_name || r.name || ""))}"
               data-lessor-name="${esc(String(r.lessor_name || ""))}"
               data-schedule-id="${esc(String(r.schedule_id || ""))}"
-              data-due="${esc(String(due))}">
-              Pay
+              data-due="${esc(String(due))}"
+              ${isPaid ? "disabled" : ""}
+            >
+              ${isPaid ? "Paid" : "Pay"}
             </button>
-            <button class="px-2 py-1 rounded bg-slate-900 text-white text-xs ml-2" data-lm-post="1"
+
+            <button
+              class="px-2 py-1 rounded text-xs ml-2 ${isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"}"
+              data-lm-post="1"
               data-lease-id="${esc(String(leaseId))}"
-              data-period-no="${esc(String(periodNo))}">
-              Post
+              data-period-no="${esc(String(periodNo))}"
+              ${isPosted ? "disabled" : ""}
+            >
+              ${isPosted ? "Posted" : "Post"}
             </button>
           </td>
         </tr>
       `;
     }).join("");
 
-    // Pay -> opens your modal
     body.querySelectorAll("[data-lm-pay]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+
         const lease_id = Number(btn.getAttribute("data-lease-id") || 0);
         const schedule_id = btn.getAttribute("data-schedule-id") || null;
 
@@ -25591,9 +25604,10 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       });
     });
 
-    // Post -> calls leases/<id>/period/<no>/post
     body.querySelectorAll("[data-lm-post]").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (btn.disabled) return;
+
         const msgEl = $("leaseMonthlyMsg");
         showMsg(msgEl, "");
 
@@ -25610,6 +25624,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           );
           showMsg(msgEl, "Posted.", "ok");
           setTimeout(() => showMsg(msgEl, ""), 900);
+          await loadMonthlyDue();
         } catch (e) {
           showMsg(msgEl, e?.message || "Posting failed");
         }
