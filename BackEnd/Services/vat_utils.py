@@ -1167,11 +1167,9 @@ def vat_filing_export_pack(company_id: int):
         [
             "Date",
             "Reference",
-            "Source Account Code",
-            "Source Account Name",
+            "Source Account",
             "VAT Side",
-            "VAT Account Code",
-            "VAT Account Name",
+            "VAT Account",
             "Debit",
             "Credit",
             "VAT Amount",
