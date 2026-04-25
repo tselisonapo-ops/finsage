@@ -888,7 +888,6 @@ def vat_filing_export(company_id: int):
     return _corsify(resp)
 
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings/export-pack", methods=["GET", "OPTIONS"])
-@require_auth
 def vat_filing_export_pack(company_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
