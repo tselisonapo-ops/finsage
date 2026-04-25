@@ -1058,9 +1058,9 @@ def vat_filing_export(company_id: int):
         writer.writerow([
             l.get("date"),
             l.get("ref"),
-            f"{l.get('source_account_code')} {l.get('source_account_name')}",
+            l.get("source_account_name"),
             l.get("vat_side"),
-            f"{l.get('vat_account_code')} {l.get('vat_account_name')}",
+            l.get("vat_account_name"),
             l.get("vat_amount"),
         ])
 
