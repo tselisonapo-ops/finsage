@@ -19,7 +19,10 @@ from flask import (
     make_response,
     
 )
-
+from BackEnd.Services.vat_pack_pdf_builder import (
+    generate_vat_return_pdf,
+    generate_vat_supporting_pdf,
+)
 from flask import Blueprint
 
 vat_utils_bp = Blueprint("companies_vat", __name__)
@@ -129,7 +132,9 @@ def _get_vat_lines(company_id: int, start_date, end_date):
         SELECT DISTINCT ON (vl.id)
             vl.id AS vat_line_id,
             src.account AS source_account_code,
-            src_acc.name AS source_account_name
+            src_acc.name AS source_account_name,
+            src.debit AS source_debit,
+            src.credit AS source_credit
         FROM vat_lines vl
         LEFT JOIN {schema}.ledger src
           ON src.company_id = %s
@@ -139,8 +144,39 @@ def _get_vat_lines(company_id: int, start_date, end_date):
         LEFT JOIN {schema}.coa src_acc
           ON src_acc.company_id = src.company_id
          AND src_acc.code = src.account
+        WHERE src.id IS NOT NULL
+
+          -- exclude control/settlement accounts
+          AND COALESCE(src.account, '') NOT IN (
+            'BS_CA_1000',
+            'BS_CA_1010',
+            'BS_CA_9002',
+            'BS_CL_2200',
+            'BS_CL_9001'
+          )
+
+          -- exclude by account names too
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%cash%'
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%bank%'
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%receivable%'
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%debtor%'
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%payable%'
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%creditor%'
+          AND COALESCE(src_acc.name, '') NOT ILIKE '%vat%'
+
         ORDER BY
             vl.id,
+
+            -- prefer P&L / real source accounts over BS controls
+            CASE
+              WHEN COALESCE(src_acc.category, '') ILIKE '%revenue%' THEN 1
+              WHEN COALESCE(src_acc.category, '') ILIKE '%income%' THEN 1
+              WHEN COALESCE(src_acc.category, '') ILIKE '%expense%' THEN 1
+              WHEN COALESCE(src_acc.category, '') ILIKE '%cost%' THEN 1
+              WHEN COALESCE(src_acc.category, '') ILIKE '%asset%' THEN 2
+              ELSE 9
+            END,
+
             ABS(COALESCE(src.debit, 0) - COALESCE(src.credit, 0)) DESC
     )
     SELECT
@@ -198,7 +234,6 @@ def _get_vat_lines(company_id: int, start_date, end_date):
             "vat_account_code": vat_code,
             "vat_account_name": vat_name,
 
-            # backwards compatibility
             "account_code": source_code or vat_code,
             "account_name": source_name or vat_name,
 
@@ -939,6 +974,10 @@ def vat_filing_export_pack(company_id: int):
         or f"Company {company_id}"
     )
     currency = ctx.get("currency") or ""
+    company_reg_no = ctx.get("company_reg_no") or ""
+    vat_number = ctx.get("vat") or ctx.get("vat_number") or ctx.get("vat_no") or ""
+    tin = ctx.get("tin") or ""
+    company_email = ctx.get("company_email") or ""
 
     input_total = float(filing.get("input_total") or 0)
     output_total = float(filing.get("output_total") or 0)
@@ -960,7 +999,10 @@ def vat_filing_export_pack(company_id: int):
     summary.writerow(["FILLED VAT RETURN"])
     summary.writerow([])
     summary.writerow(["Company", company_name])
-    summary.writerow(["Company ID", company_id])
+    summary.writerow(["Company Registration No", company_reg_no])
+    summary.writerow(["VAT Number", vat_number])
+    summary.writerow(["TIN", tin])
+    summary.writerow(["Company Email", company_email])
     summary.writerow(["Currency", currency])
     summary.writerow(["VAT Period", f"{start_date} to {end_date}"])
     summary.writerow(["Due Date", filing.get("due_date")])
@@ -1050,12 +1092,17 @@ def vat_filing_export_pack(company_id: int):
     calculated_net = round(total_output - total_input, 2)
 
     detail.writerow([])
-    detail.writerow(["DETAIL TOTALS"])
-    detail.writerow(["Total Output VAT", total_output])
-    detail.writerow(["Total Input VAT", total_input])
-    detail.writerow(["Net VAT", calculated_net])
-    detail.writerow(["Filing Net VAT", net_vat])
-    detail.writerow(["Difference", round(calculated_net - net_vat, 2)])
+    detail.writerow(["OFFICIAL FILING TOTALS"])
+    detail.writerow(["Total Output VAT", output_total])
+    detail.writerow(["Total Input VAT", input_total])
+    detail.writerow(["Net VAT", net_vat])
+    detail.writerow([])
+
+    detail.writerow(["DETAIL RECONCILIATION"])
+    detail.writerow(["Extracted Detail Output VAT", total_output])
+    detail.writerow(["Extracted Detail Input VAT", total_input])
+    detail.writerow(["Extracted Detail Net VAT", calculated_net])
+    detail.writerow(["Detail vs Filing Difference", round(calculated_net - net_vat, 2)])
     detail.writerow([])
 
     # ==========================================================
@@ -1098,6 +1145,20 @@ def vat_filing_export_pack(company_id: int):
     detail_csv = detail_io.getvalue()
     detail_io.close()
 
+    summary_pdf = generate_vat_return_pdf(
+        filing,
+        ctx,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    detail_pdf = generate_vat_supporting_pdf(
+        filing,
+        ctx,
+        lines,
+        start_date=start_date,
+        end_date=end_date,
+    )
     # ==========================================================
     # ZIP RESPONSE
     # ==========================================================
@@ -1114,6 +1175,15 @@ def vat_filing_export_pack(company_id: int):
         zf.writestr(
             f"vat_supporting_schedule_{company_id}_{safe_start}_{safe_end}.csv",
             detail_csv
+        )
+        zf.writestr(
+            f"vat_return_summary_{company_id}_{safe_start}_{safe_end}.pdf",
+            summary_pdf
+        )
+
+        zf.writestr(
+            f"vat_supporting_schedule_{company_id}_{safe_start}_{safe_end}.pdf",
+            detail_pdf
         )
 
     zip_buffer.seek(0)
