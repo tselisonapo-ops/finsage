@@ -24013,6 +24013,15 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
           const due = (r?.amounts?.payment ?? null) ?? r.amount_due ?? r.due_amount ?? r.payment_amount ?? 0;
           const isPaid = !!r.is_paid;
           const isPosted = !!r.is_posted || !!r.payment_journal_id;
+          
+        console.log("[MONTHLY BUTTON FLAGS]", {
+          leaseId,
+          periodNo,
+          is_paid: r.is_paid,
+          payment_journal_id: r.payment_journal_id,
+          isPaid,
+          isPosted,
+});          
           return `
             <tr class="border-t" data-lease-id="${escapeHtml(String(leaseId))}">
               <td class="p-2">
