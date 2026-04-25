@@ -1,6 +1,6 @@
 # utils/vat_utils.py
 from collections import defaultdict
-# routes/companies_vat.py
+import os
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.company_context import get_company_context
@@ -9,6 +9,8 @@ from typing import Optional, Tuple, Set
 from collections import defaultdict
 from datetime import date as date_cls
 from BackEnd.Services.emailer import send_mail
+from BackEnd.Services.utils.view_token import create_report_export_token
+from urllib.parse import urlencode
 from flask import (
     Blueprint,
     jsonify,
@@ -1144,9 +1146,29 @@ def vat_filing_email_pack(company_id: int):
     company_name = ctx.get("company_name") or ctx.get("name") or f"Company {company_id}"
 
     # This should be the same signed/export URL pattern your frontend uses.
+
+    public_base = (
+        os.getenv("PUBLIC_APP_URL")
+        or os.getenv("FRONTEND_URL")
+        or "https://finspheresolutions.com"
+    ).rstrip("/")
+
+    token = create_report_export_token(
+        company_id=company_id,
+        report_key="vat_pack",
+        user_id=int(user.get("id") or 0),
+        ttl_seconds=3600,
+    )
+
+    qs = urlencode({
+        "from": start_date.isoformat(),
+        "to": end_date.isoformat(),
+        "t": token,
+    })
+
     pack_url = (
-        f"/api/companies/{company_id}/vat/filings/export-pack"
-        f"?from={start_date.isoformat()}&to={end_date.isoformat()}"
+        f"{public_base}/api/api/companies/{company_id}/vat/filings/export-pack"
+        f"?{qs}"
     )
 
     subject = f"VAT Pack - {company_name} - {start_date} to {end_date}"

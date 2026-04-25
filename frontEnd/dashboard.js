@@ -3895,23 +3895,28 @@ async function downloadVatFiling() {
 }
 
 async function downloadVatPack() {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid) throw new Error("No company selected");
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) throw new Error("No company selected");
 
-  const period = parseVatPeriodSelection?.();
-  if (!period?.start_date || !period?.end_date) {
-    alert("Please select a VAT period first.");
-    return;
+    const period = parseVatPeriodSelection?.();
+    if (!period?.start_date || !period?.end_date) {
+      alert("Please select a VAT period first.");
+      return;
+    }
+
+    const base = ENDPOINTS.vatFilingPackExport(cid);
+    const url = new URL(toApiUrl(base), window.location.origin);
+
+    url.searchParams.set("from", period.start_date);
+    url.searchParams.set("to", period.end_date);
+    url.searchParams.set("format", "zip");
+
+    await downloadUrl(url.pathname + url.search, "vat_pack");
+  } catch (err) {
+    console.error("downloadVatPack failed:", err);
+    alert(err?.message || "Failed to download VAT pack.");
   }
-
-  const qs = new URLSearchParams({
-    from: period.start_date,
-    to: period.end_date,
-  });
-
-  const url = `${ENDPOINTS.vatFilingPackExport(cid)}?${qs.toString()}`;
-
-  await downloadUrl(url, "vat_pack");
 }
 
 async function emailVatPack() {
