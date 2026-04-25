@@ -2213,7 +2213,9 @@ const ENDPOINTS = {
   },
 
   vatFilingExport: (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/export`,
-  
+  vatFilingPackExport: (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/export-pack`,
+  vatFilingPackEmail:  (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/email-pack`,
+
   vatPrepareFiling: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/prepare`,
 
@@ -3863,6 +3865,35 @@ async function downloadUrl(url, reportKey = null) {
   setTimeout(() => URL.revokeObjectURL(a.href), 30000);
 }
 window.downloadUrl = downloadUrl;
+
+async function downloadVatFiling() {
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) throw new Error("No company selected");
+
+    const period = parseVatPeriodSelection?.();
+    if (!period?.start_date || !period?.end_date) {
+      alert("Please select a VAT period first.");
+      return;
+    }
+
+    const qs = new URLSearchParams({
+      from: period.start_date,
+      to: period.end_date,
+      format: "csv",
+    });
+
+    const url = `${ENDPOINTS.vatFilingExport(cid)}?${qs.toString()}`;
+
+    // 🔥 correct — keeps auth working
+    await downloadUrl(url, "vat_filing");
+
+  } catch (err) {
+    console.error("downloadVatFiling failed:", err);
+    alert(err?.message || "Failed to download VAT filing.");
+  }
+}
+
   // ==========================================================
   // 8) UTILITIES (safe anywhere after here)
   // ==========================================================
@@ -12217,8 +12248,12 @@ function ensureVatScreen() {
             Export VAT Lines (CSV)
           </button>
 
-          <button id="vatFilingExportBtn" class="px-3 py-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
-            Download Prepared Filing (CSV)
+          <button id="vatPackExportBtn" class="px-3 py-1 rounded border border-emerald-200 text-emerald-700 bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+            Download VAT Pack
+          </button>
+
+          <button id="vatEmailPackBtn" class="px-3 py-1 rounded border border-blue-200 text-blue-700 bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+            Email VAT Pack
           </button>
         </div>
 
@@ -12296,33 +12331,15 @@ function ensureVatScreen() {
     }
   });
 
-  document.getElementById("vatFilingExportBtn")?.addEventListener("click", async (e) => {
+  document.getElementById("vatFilingExportBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
-
-    try {
-      const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-      if (!cid) throw new Error("No company selected");
-
-      const period = parseVatPeriodSelection?.();
-      if (!period?.start_date || !period?.end_date) {
-        alert("Please select a VAT period first.");
-        return;
-      }
-
-      const qs = new URLSearchParams({
-        from: period.start_date,
-        to: period.end_date,
-      });
-
-      const url = `${ENDPOINTS.vatFilingExport(cid)}?${qs.toString()}`;
-
-      downloadUrl(url);
-    } catch (err) {
-      console.error("VAT filing export failed:", err);
-      alert(err?.message || "Failed to export VAT filing report.");
-    }
+    downloadVatFiling();
   });
 
+  document.getElementById("vatEmailPackBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    emailVatPack();
+  });
   document.getElementById("vatFileNowBtn")?.addEventListener("click", async (e) => {
     e.preventDefault();
 
@@ -12679,17 +12696,34 @@ async function renderVatDashboard() {
     }
 
     const filing = filingRes?.filing || filingRes?.data?.filing || null;
+
     const filingExportBtn = document.getElementById("vatFilingExportBtn");
+    const vatPackExportBtn = document.getElementById("vatPackExportBtn");
+    const vatEmailPackBtn = document.getElementById("vatEmailPackBtn");
+
+    const canUseVatPack = ["prepared", "submitted"].includes(
+      String(filing?.status || "").toLowerCase()
+    );
 
     if (filingExportBtn) {
-      const canExportFiling = ["prepared", "submitted"].includes(
-        String(filing?.status || "").toLowerCase()
-      );
-
-      filingExportBtn.disabled = !canExportFiling;
-      filingExportBtn.title = canExportFiling
+      filingExportBtn.disabled = !canUseVatPack;
+      filingExportBtn.title = canUseVatPack
         ? "Download prepared VAT filing report"
         : "Prepare the VAT return before downloading the filing report";
+    }
+
+    if (vatPackExportBtn) {
+      vatPackExportBtn.disabled = !canUseVatPack;
+      vatPackExportBtn.title = canUseVatPack
+        ? "Download VAT pack"
+        : "Prepare the VAT return before downloading the VAT pack";
+    }
+
+    if (vatEmailPackBtn) {
+      vatEmailPackBtn.disabled = !canUseVatPack;
+      vatEmailPackBtn.title = canUseVatPack
+        ? "Email VAT pack to your account email"
+        : "Prepare the VAT return before emailing the VAT pack";
     }
 
     if (typeof setVatFilingBadgeState === "function") {

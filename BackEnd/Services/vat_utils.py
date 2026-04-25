@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional, Tuple, Set
 from collections import defaultdict
 from datetime import date as date_cls
-
+from BackEnd.Services.emailer import send_email
 from flask import (
     Blueprint,
     jsonify,
@@ -884,3 +884,305 @@ def vat_filing_export(company_id: int):
     resp.headers["Content-Type"] = "text/csv"
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return _corsify(resp)
+
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings/export-pack", methods=["GET", "OPTIONS"])
+@require_auth
+def vat_filing_export_pack(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"error": "Not authorised"}), 403
+
+    from_str = (request.args.get("from") or "").strip()
+    to_str = (request.args.get("to") or "").strip()
+
+    start_date = _parse_date(from_str, None)
+    end_date = _parse_date(to_str, None)
+
+    if not start_date or not end_date:
+        return jsonify({"error": "from and to are required"}), 400
+
+    filing = db_service.get_vat_filing(company_id, start_date, end_date)
+    if not filing:
+        return jsonify({"error": "Prepare VAT return first"}), 400
+
+    lines = _get_vat_lines(company_id, start_date, end_date)
+
+    import csv
+    import io
+    import zipfile
+
+    ctx = get_company_context(db_service, company_id) or {}
+    company_name = (
+        ctx.get("company_name")
+        or ctx.get("name")
+        or f"Company {company_id}"
+    )
+    currency = ctx.get("currency") or ""
+
+    input_total = float(filing.get("input_total") or 0)
+    output_total = float(filing.get("output_total") or 0)
+    net_vat = float(filing.get("net_vat") or 0)
+
+    if net_vat > 0:
+        net_label = "VAT Payable"
+    elif net_vat < 0:
+        net_label = "VAT Refundable"
+    else:
+        net_label = "Nil VAT"
+
+    # ==========================================================
+    # 1) FILLED VAT RETURN SUMMARY
+    # ==========================================================
+    summary_io = io.StringIO()
+    summary = csv.writer(summary_io)
+
+    summary.writerow(["FILLED VAT RETURN"])
+    summary.writerow([])
+    summary.writerow(["Company", company_name])
+    summary.writerow(["Company ID", company_id])
+    summary.writerow(["Currency", currency])
+    summary.writerow(["VAT Period", f"{start_date} to {end_date}"])
+    summary.writerow(["Due Date", filing.get("due_date")])
+    summary.writerow(["Status", filing.get("status")])
+    summary.writerow(["Prepared At", filing.get("prepared_at")])
+    summary.writerow(["Submitted At", filing.get("submitted_at")])
+    summary.writerow(["Submission Reference", filing.get("reference") or ""])
+    summary.writerow([])
+
+    summary.writerow(["VAT RETURN VALUES"])
+    summary.writerow(["Output VAT", output_total])
+    summary.writerow(["Input VAT", input_total])
+    summary.writerow([net_label, abs(net_vat)])
+    summary.writerow([])
+
+    summary.writerow(["DECLARATION"])
+    summary.writerow([
+        "Declaration",
+        "This VAT return was prepared from ledger VAT records in FinSage."
+    ])
+    summary.writerow([
+        "Prepared By",
+        "FinSage"
+    ])
+    summary.writerow([
+        "Notice",
+        "This document is prepared by FinSage, no stamp required"
+    ])
+
+    summary_csv = summary_io.getvalue()
+    summary_io.close()
+
+    # ==========================================================
+    # 2) DETAILED SUPPORTING SCHEDULE
+    # ==========================================================
+    detail_io = io.StringIO()
+    detail = csv.writer(detail_io)
+
+    detail.writerow(["VAT SUPPORTING SCHEDULE"])
+    detail.writerow([])
+    detail.writerow(["Company", company_name])
+    detail.writerow(["VAT Period", f"{start_date} to {end_date}"])
+    detail.writerow(["Status", filing.get("status")])
+    detail.writerow(["Prepared At", filing.get("prepared_at")])
+    detail.writerow([])
+
+    detail.writerow([
+        "Date",
+        "Reference",
+        "Source Account Code",
+        "Source Account Name",
+        "VAT Side",
+        "VAT Account Code",
+        "VAT Account Name",
+        "Debit",
+        "Credit",
+        "VAT Amount",
+    ])
+
+    total_input = 0.0
+    total_output = 0.0
+
+    for l in lines:
+        side = str(l.get("vat_side") or "").lower()
+        vat_amount = float(l.get("vat_amount") or 0)
+        debit = float(l.get("debit") or 0)
+        credit = float(l.get("credit") or 0)
+
+        if side == "input":
+            total_input += vat_amount
+        elif side == "output":
+            total_output += vat_amount
+
+        detail.writerow([
+            l.get("date"),
+            l.get("ref"),
+            l.get("source_account_code"),
+            l.get("source_account_name"),
+            side,
+            l.get("vat_account_code"),
+            l.get("vat_account_name"),
+            debit,
+            credit,
+            vat_amount,
+        ])
+
+    calculated_net = round(total_output - total_input, 2)
+
+    detail.writerow([])
+    detail.writerow(["DETAIL TOTALS"])
+    detail.writerow(["Total Output VAT", total_output])
+    detail.writerow(["Total Input VAT", total_input])
+    detail.writerow(["Net VAT", calculated_net])
+    detail.writerow(["Filing Net VAT", net_vat])
+    detail.writerow(["Difference", round(calculated_net - net_vat, 2)])
+    detail.writerow([])
+
+    # ==========================================================
+    # SETTLEMENT JOURNAL SECTION
+    # ==========================================================
+    settlement_preview = _build_vat_settlement_preview(input_total, output_total)
+    journal_lines = settlement_preview.get("journal_lines") or []
+
+    detail.writerow(["SETTLEMENT JOURNAL"])
+    detail.writerow(["Account Code", "Account Name", "Debit", "Credit"])
+
+    debit_total = 0.0
+    credit_total = 0.0
+
+    for jl in journal_lines:
+        debit = float(jl.get("debit") or 0)
+        credit = float(jl.get("credit") or 0)
+
+        debit_total += debit
+        credit_total += credit
+
+        detail.writerow([
+            jl.get("account"),
+            jl.get("name"),
+            debit,
+            credit,
+        ])
+
+    detail.writerow([])
+    detail.writerow(["JOURNAL BALANCE CHECK"])
+    detail.writerow(["Debit Total", debit_total])
+    detail.writerow(["Credit Total", credit_total])
+    detail.writerow(["Difference", round(debit_total - credit_total, 2)])
+    detail.writerow([])
+
+    detail.writerow(["---"])
+    detail.writerow(["This document is prepared by FinSage, no stamp required"])
+    detail.writerow(["---"])
+
+    detail_csv = detail_io.getvalue()
+    detail_io.close()
+
+    # ==========================================================
+    # ZIP RESPONSE
+    # ==========================================================
+    zip_buffer = io.BytesIO()
+
+    safe_start = start_date.isoformat()
+    safe_end = end_date.isoformat()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            f"vat_return_summary_{company_id}_{safe_start}_{safe_end}.csv",
+            summary_csv
+        )
+        zf.writestr(
+            f"vat_supporting_schedule_{company_id}_{safe_start}_{safe_end}.csv",
+            detail_csv
+        )
+
+    zip_buffer.seek(0)
+
+    filename = f"vat_pack_{company_id}_{safe_start}_{safe_end}.zip"
+
+    resp = make_response(zip_buffer.getvalue())
+    resp.headers["Content-Type"] = "application/zip"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    return _corsify(resp)
+
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings/email-pack", methods=["POST", "OPTIONS"])
+@require_auth
+def vat_filing_email_pack(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"ok": False, "error": "Not authorised"}), 403
+
+    payload = request.get_json(force=True) or {}
+
+    start_date = _parse_date((payload.get("from") or "").strip(), None)
+    end_date = _parse_date((payload.get("to") or "").strip(), None)
+
+    if not start_date or not end_date:
+        return jsonify({"ok": False, "error": "from and to are required"}), 400
+
+    filing = db_service.get_vat_filing(company_id, start_date, end_date)
+    if not filing:
+        return jsonify({"ok": False, "error": "Prepare VAT return first"}), 400
+
+    user_email = (
+        payload.get("email")
+        or user.get("email")
+        or user.get("user_email")
+    )
+
+    if not user_email:
+        return jsonify({"ok": False, "error": "No user email address found"}), 400
+
+    ctx = get_company_context(db_service, company_id) or {}
+    company_name = ctx.get("company_name") or ctx.get("name") or f"Company {company_id}"
+
+    # This should be the same signed/export URL pattern your frontend uses.
+    pack_url = (
+        f"/api/companies/{company_id}/vat/filings/export-pack"
+        f"?from={start_date.isoformat()}&to={end_date.isoformat()}"
+    )
+
+    subject = f"VAT Pack - {company_name} - {start_date} to {end_date}"
+
+    body = f"""
+Hello,
+
+Your VAT Pack is ready.
+
+Company: {company_name}
+Period: {start_date} to {end_date}
+Status: {filing.get("status")}
+Net VAT: {filing.get("net_vat")}
+
+Download VAT Pack:
+{pack_url}
+
+This document is prepared by FinSage, no stamp required.
+
+Regards,
+FinSage
+""".strip()
+
+    try:
+        send_email(
+            to=user_email,
+            subject=subject,
+            body=body,
+        )
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Failed to send VAT Pack email: {str(e)}"
+        }), 500
+
+    return jsonify({
+        "ok": True,
+        "message": f"VAT Pack email sent to {user_email}",
+    }), 200
