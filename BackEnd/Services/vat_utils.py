@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional, Tuple, Set
 from collections import defaultdict
 from datetime import date as date_cls
-from BackEnd.Services.emailer import send_email
+from BackEnd.Services.emailer import send_mail
 from flask import (
     Blueprint,
     jsonify,
@@ -1171,7 +1171,7 @@ FinSage
 """.strip()
 
     try:
-        send_email(
+        send_mail(
             to=user_email,
             subject=subject,
             body=body,
