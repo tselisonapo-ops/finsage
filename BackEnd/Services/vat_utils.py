@@ -9,7 +9,7 @@ from typing import Optional, Tuple, Set
 from collections import defaultdict
 from datetime import date as date_cls
 from BackEnd.Services.emailer import send_mail
-from BackEnd.Services.utils.view_token import create_report_export_token
+from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
 from urllib.parse import urlencode
 from flask import (
     Blueprint,
@@ -893,10 +893,27 @@ def vat_filing_export_pack(company_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
-    user = getattr(g, "current_user", {}) or {}
-    if int(user.get("company_id") or 0) != int(company_id):
-        return jsonify({"error": "Not authorised"}), 403
+    token = request.args.get("t")
 
+    if token:
+        data = verify_report_export_token(token)
+
+        if not data:
+            return jsonify({"error": "Invalid or expired token"}), 401
+
+        if int(data.get("company_id")) != int(company_id):
+            return jsonify({"error": "Token company mismatch"}), 403
+
+        if data.get("report_key") != "vat_pack":
+            return jsonify({"error": "Invalid report key"}), 403
+
+        # ✅ allow request without Authorization header
+
+    else:
+        user = getattr(g, "current_user", {}) or {}
+        if int(user.get("company_id") or 0) != int(company_id):
+            return jsonify({"error": "Not authorised"}), 403
+        
     from_str = (request.args.get("from") or "").strip()
     to_str = (request.args.get("to") or "").strip()
 
