@@ -14478,8 +14478,9 @@ async function renderRecentJournals() {
     </div>
 
     <div class="border rounded overflow-hidden">
-      <div class="max-h-[520px] overflow-auto">
-        <table class="min-w-full text-xs">
+      <div class="w-full overflow-x-auto">
+        <div class="max-h-[520px] overflow-y-auto">
+          <table class="min-w-[900px] w-full text-xs">
           <thead class="sticky top-0 bg-slate-50 border-b border-slate-200">
             <tr>
               <th class="px-2 py-2 text-left w-[120px]">Date</th>
@@ -27182,6 +27183,9 @@ window.renderLeaseRegTab = async function renderLeaseRegTab({ force = false } = 
         return;
       }
 
+      // ✅ DEFINE URL + FETCH
+      const url = EP.leases.listSchedule(cid, leaseId);
+      const res = await window.apiFetch(url, { method: "GET" });  
       // ✅ log exact shape so we stop guessing
       console.log("[LeaseReg] schedule response", { leaseId, url, res });
 
