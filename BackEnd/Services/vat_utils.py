@@ -559,6 +559,12 @@ def _serialise_vat_filing(row: dict):
         "status": row.get("status"),
         "reference": row.get("reference"),
         "notes": row.get("notes"),
+
+        "settlement_journal_id": row.get("settlement_journal_id"),
+        "payment_journal_id": row.get("payment_journal_id"),
+        "paid_at": iso(row.get("paid_at")),
+        "payment_reference": row.get("payment_reference"),
+
         "prepared_at": iso(row.get("prepared_at")),
         "prepared_by_user_id": row.get("prepared_by_user_id"),
         "submitted_at": iso(row.get("submitted_at")),
@@ -948,15 +954,34 @@ def vat_prepare_filing(company_id: int):
 
     journal_id = None
 
-    if preview.get("settlement_type") != "nil":
-        journal_id = db_service.post_simple_journal(
+    lines = preview.get("journal_lines") or []
+
+    if lines:
+        total_dr = sum(float(l.get("debit") or 0) for l in lines)
+        total_cr = sum(float(l.get("credit") or 0) for l in lines)
+
+        if round(total_dr, 2) != round(total_cr, 2):
+            return jsonify({
+                "error": "VAT settlement journal is not balanced",
+                "debits": total_dr,
+                "credits": total_cr,
+            }), 400
+
+        entry = {
+            "date": end_date,
+            "ref": f"VAT-{period_label.replace(' ', '')}",
+            "description": f"VAT settlement for {period_label}",
+            "source": "vat_filing",
+            "source_id": filing_id,
+            "lines": lines,
+            "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
+            "created_by_user_id": int(current_user.get("id") or 0),
+            "prepared_by_user_id": int(current_user.get("id") or 0),
+        }
+
+        journal_id = db_service.post_journal(
             company_id=company_id,
-            journal_date=end_date,
-            ref=f"VAT-{start_date.isoformat()}-{end_date.isoformat()}",
-            description=f"VAT settlement for {period_label}",
-            source="vat_filing",
-            source_id=filing_id,
-            lines=preview["journal_lines"],
+            entry=entry,
         )
 
         db_service.mark_vat_filing_settlement_posted(
@@ -1422,4 +1447,179 @@ FinSage
     return jsonify({
         "ok": True,
         "message": f"VAT Pack email sent to {user_email}",
+    }), 200
+
+@vat_utils_bp.route("/api/companies/<int:company_id>/vat/filings/pay", methods=["POST", "OPTIONS"])
+@require_auth
+def vat_filing_pay(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user = getattr(g, "current_user", {}) or {}
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"ok": False, "error": "Not authorised"}), 403
+
+    payload = request.get_json(force=True) or {}
+
+    start_date = _parse_date((payload.get("from") or "").strip(), None)
+    end_date = _parse_date((payload.get("to") or "").strip(), None)
+    payment_date = _parse_date((payload.get("payment_date") or "").strip(), date.today())
+
+    bank_account = (payload.get("bank_account") or "").strip()
+    bank_account_name = (payload.get("bank_account_name") or "Bank").strip() or "Bank"
+    reference = (payload.get("reference") or "").strip()
+    preview_only = bool(payload.get("preview_only"))
+
+    try:
+        amount = round(float(payload.get("amount") or 0), 2)
+    except Exception:
+        amount = 0.0
+
+    if not start_date or not end_date:
+        return jsonify({"ok": False, "error": "from and to are required"}), 400
+
+    if not bank_account:
+        return jsonify({"ok": False, "error": "bank_account is required"}), 400
+
+    filing = db_service.get_vat_filing(company_id, start_date, end_date)
+    if not filing:
+        return jsonify({"ok": False, "error": "Prepare VAT return first"}), 400
+
+    if not filing.get("settlement_journal_id"):
+        return jsonify({"ok": False, "error": "Post VAT settlement first"}), 400
+
+    if filing.get("payment_journal_id"):
+        return jsonify({
+            "ok": True,
+            "already_paid": True,
+            "filing": _serialise_vat_filing(filing),
+        }), 200
+
+    net_vat = round(float(filing.get("net_vat") or 0), 2)
+    expected_amount = abs(net_vat)
+
+    if expected_amount <= 0:
+        return jsonify({"ok": False, "error": "Nil VAT filing has no payment/refund to process"}), 400
+
+    if amount <= 0:
+        amount = expected_amount
+
+    if round(amount, 2) != round(expected_amount, 2):
+        return jsonify({
+            "ok": False,
+            "error": "Payment/refund amount must match the net VAT amount",
+            "expected": expected_amount,
+            "provided": amount,
+        }), 400
+
+    vat_accounts = db_service.ensure_company_vat_settlement_accounts(company_id)
+    vat_receivable = vat_accounts.get("vat_receivable")
+    vat_payable = vat_accounts.get("vat_payable")
+
+    if not vat_receivable or not vat_receivable.get("code"):
+        return jsonify({"ok": False, "error": "VAT receivable account role is missing"}), 400
+
+    if not vat_payable or not vat_payable.get("code"):
+        return jsonify({"ok": False, "error": "VAT payable account role is missing"}), 400
+
+    period_label = filing.get("period_label") or f"{start_date} to {end_date}"
+
+    if net_vat > 0:
+        payment_type = "payment"
+        desc = f"VAT payment for {period_label}"
+        lines = [
+            {
+                "account": vat_payable["code"],
+                "name": vat_payable.get("name") or "VAT Payable",
+                "debit": amount,
+                "credit": 0,
+            },
+            {
+                "account": bank_account,
+                "name": bank_account_name,
+                "debit": 0,
+                "credit": amount,
+            },
+        ]
+    else:
+        payment_type = "refund"
+        desc = f"VAT refund received for {period_label}"
+        lines = [
+            {
+                "account": bank_account,
+                "name": bank_account_name,
+                "debit": amount,
+                "credit": 0,
+            },
+            {
+                "account": vat_receivable["code"],
+                "name": vat_receivable.get("name") or "VAT Receivable / Refund Due",
+                "debit": 0,
+                "credit": amount,
+            },
+        ]
+
+    debit_total = round(sum(float(l.get("debit") or 0) for l in lines), 2)
+    credit_total = round(sum(float(l.get("credit") or 0) for l in lines), 2)
+    difference = round(debit_total - credit_total, 2)
+
+    preview = {
+        "payment_type": payment_type,
+        "period_label": period_label,
+        "payment_date": payment_date.isoformat() if payment_date else None,
+        "amount": amount,
+        "expected_amount": expected_amount,
+        "net_vat": net_vat,
+        "description": desc,
+        "reference": reference,
+        "journal_lines": lines,
+        "debit_total": debit_total,
+        "credit_total": credit_total,
+        "difference": difference,
+    }
+
+    if preview_only:
+        return jsonify({
+            "ok": True,
+            "preview": preview,
+            "filing": _serialise_vat_filing(filing),
+        }), 200
+
+    if difference != 0:
+        return jsonify({
+            "ok": False,
+            "error": "VAT payment/refund journal is not balanced",
+            "preview": preview,
+        }), 400
+
+    entry = {
+        "date": payment_date,
+        "ref": reference or f"VAT-{payment_type.upper()}-{start_date.isoformat()}-{end_date.isoformat()}",
+        "description": desc,
+        "source": "vat_filing_payment",
+        "source_id": filing.get("id"),
+        "lines": lines,
+        "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
+        "created_by_user_id": int(user.get("id") or 0),
+        "prepared_by_user_id": int(user.get("id") or 0),
+    }
+
+    journal_id = db_service.post_journal(company_id=company_id, entry=entry)
+
+    db_service.mark_vat_filing_payment_posted(
+        company_id,
+        filing.get("id"),
+        journal_id=journal_id,
+        paid_at=payment_date,
+        payment_reference=reference,
+    )
+
+    saved = db_service.get_vat_filing(company_id, start_date, end_date)
+
+    return jsonify({
+        "ok": True,
+        "payment_type": payment_type,
+        "journal_id": journal_id,
+        "preview": preview,
+        "filing": _serialise_vat_filing(saved),
     }), 200

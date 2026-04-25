@@ -2212,13 +2212,21 @@ const ENDPOINTS = {
     return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings` + (qs ? `?${qs}` : "");
   },
 
-  vatFilingExport: (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/export`,
-  vatFilingPackExport: (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/export-pack`,
-  vatFilingPackEmail:  (cid) => `${API_BASE}/api/companies/${cid}/vat/filings/email-pack`,
+  vatFilingExport: (cid) => 
+    `${API_BASE}/api/companies/${cid}/vat/filings/export`,
+  
+  vatFilingPackExport: (cid) => 
+    `${API_BASE}/api/companies/${cid}/vat/filings/export-pack`,
+  
+  vatFilingPackEmail:  (cid) => 
+    `${API_BASE}/api/companies/${cid}/vat/filings/email-pack`,
 
   vatPrepareFiling: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/prepare`,
-
+  
+  vatFilingPay: (cid) => 
+    `${API_BASE}/api/companies/${cid}/vat/filings/pay`,
+  
   vatSubmitFiling: (companyId, filingId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/vat/filings/${encodeURIComponent(filingId)}/submit`,
 };
@@ -12212,6 +12220,208 @@ async function renderDashboardKPIs(periodKey = "this_month") {
 }
 window.renderDashboardKPIs = renderDashboardKPIs;
 
+function showVatPaymentPreviewModal({ cid, period, payload, preview, isRefund }) {
+  const old = document.getElementById("vatPaymentPreviewModal");
+  old?.remove();
+
+  const fmt = (n) => typeof money === "function" ? money(n) : Number(n || 0).toFixed(2);
+
+  const rows = (preview?.journal_lines || []).map(l => `
+    <tr class="border-b">
+      <td class="py-2 pr-2">${l.name || l.account}</td>
+      <td class="py-2 pr-2 text-right">${l.debit ? fmt(l.debit) : ""}</td>
+      <td class="py-2 pr-2 text-right">${l.credit ? fmt(l.credit) : ""}</td>
+    </tr>
+  `).join("");
+
+  const modal = document.createElement("div");
+  modal.id = "vatPaymentPreviewModal";
+  modal.className = "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-5 text-sm">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-slate-800">
+          ${isRefund ? "VAT Refund Preview" : "VAT Payment Preview"}
+        </h3>
+        <button id="vatPaymentPreviewCloseBtn" class="text-slate-400">✕</button>
+      </div>
+
+      <div class="mb-3 text-xs text-slate-500">
+        ${preview?.description || ""}
+      </div>
+
+      <table class="w-full text-xs">
+        <thead class="border-b text-slate-500">
+          <tr>
+            <th class="text-left py-2">Account</th>
+            <th class="text-right py-2">Debit</th>
+            <th class="text-right py-2">Credit</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="mt-3 text-xs text-slate-500">
+        Debit total: ${fmt(preview?.debit_total)} |
+        Credit total: ${fmt(preview?.credit_total)} |
+        Difference: ${fmt(preview?.difference)}
+      </div>
+
+      <div class="flex justify-end gap-2 mt-5">
+        <button id="vatPaymentPreviewCancelBtn" class="px-3 py-2 rounded border">Cancel</button>
+        <button id="vatPaymentPreviewPostBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
+          Confirm & Post
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+
+  document.getElementById("vatPaymentPreviewCloseBtn")?.addEventListener("click", close);
+  document.getElementById("vatPaymentPreviewCancelBtn")?.addEventListener("click", close);
+
+  document.getElementById("vatPaymentPreviewPostBtn")?.addEventListener("click", async () => {
+    try {
+      const res = await apiFetch(ENDPOINTS.vatFilingPay(cid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payload,
+          preview_only: false,
+        }),
+      });
+
+      if (res?.ok === false) {
+        throw new Error(res.error || "Failed to post VAT payment/refund");
+      }
+
+      close();
+      await renderVatDashboard();
+      alert(isRefund ? "VAT refund received recorded." : "VAT payment recorded.");
+    } catch (err) {
+      console.error("VAT payment/refund post failed:", err);
+      alert(err?.message || "Failed to post VAT payment/refund.");
+    }
+  });
+}
+
+function showVatPaymentModal() {
+  const old = document.getElementById("vatPaymentModal");
+  old?.remove();
+
+  const period = parseVatPeriodSelection?.();
+  if (!period?.start_date || !period?.end_date) {
+    alert("Please select a VAT period first.");
+    return;
+  }
+
+  const netText = document.getElementById("vatNetAmount")?.textContent || "";
+  const isRefund = netText.includes("-");
+
+  const modal = document.createElement("div");
+  modal.id = "vatPaymentModal";
+  modal.className = "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 text-sm">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-slate-800">
+          ${isRefund ? "Record VAT Refund" : "Pay VAT"}
+        </h3>
+        <button id="vatPaymentCloseBtn" class="text-slate-400">✕</button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-slate-500">Payment / Receipt Date</label>
+          <input id="vatPaymentDate" type="date"
+            class="w-full border rounded px-2 py-2 text-sm"
+            value="${new Date().toISOString().slice(0, 10)}">
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Bank Account Code</label>
+          <input id="vatPaymentBankAccount" type="text"
+            class="w-full border rounded px-2 py-2 text-sm"
+            value="BS_CA_1000">
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Amount</label>
+          <input id="vatPaymentAmount" type="number" step="0.01"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="Leave blank to use net VAT amount">
+        </div>
+
+        <div>
+          <label class="text-xs text-slate-500">Reference</label>
+          <input id="vatPaymentReference" type="text"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="Bank/SARS reference">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-5">
+        <button id="vatPaymentCancelBtn" class="px-3 py-2 rounded border">Cancel</button>
+        <button id="vatPaymentPostBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
+          ${isRefund ? "Record Refund" : "Post Payment"}
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+
+  document.getElementById("vatPaymentCloseBtn")?.addEventListener("click", close);
+  document.getElementById("vatPaymentCancelBtn")?.addEventListener("click", close);
+
+  document.getElementById("vatPaymentPostBtn")?.addEventListener("click", async () => {
+    try {
+      const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+      if (!cid) throw new Error("No company selected");
+
+      const payload = {
+        from: period.start_date,
+        to: period.end_date,
+        payment_date: document.getElementById("vatPaymentDate")?.value,
+        bank_account: document.getElementById("vatPaymentBankAccount")?.value,
+        amount: document.getElementById("vatPaymentAmount")?.value,
+        reference: document.getElementById("vatPaymentReference")?.value,
+        preview_only: true,
+      };
+
+      const previewRes = await apiFetch(ENDPOINTS.vatFilingPay(cid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (previewRes?.ok === false) {
+        throw new Error(previewRes.error || "Failed to preview VAT payment/refund");
+      }
+
+      showVatPaymentPreviewModal({
+        cid,
+        period,
+        payload,
+        preview: previewRes.preview,
+        isRefund,
+      });
+
+      close();
+    } catch (err) {
+      console.error("VAT payment/refund preview failed:", err);
+      alert(err?.message || "Failed to preview VAT payment/refund.");
+    }
+  });
+}
+
 function ensureVatScreen() {
   let section = document.getElementById("screen-vat");
   if (!section) {
@@ -12316,6 +12526,12 @@ function ensureVatScreen() {
           <button id="vatEmailPackBtn" class="px-3 py-1 rounded border border-blue-200 text-blue-700 bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
             Email VAT Pack
           </button>
+
+          <button id="vatPayRefundBtn"
+            class="px-3 py-1 rounded border border-amber-200 text-amber-700 bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled>
+            Pay / Record Refund
+          </button>
         </div>
 
         <div id="vatPeriodRange" class="mt-2 text-[11px] text-slate-400"></div>
@@ -12406,6 +12622,12 @@ function ensureVatScreen() {
     e.preventDefault();
     emailVatPack();
   });
+
+  document.getElementById("vatPayRefundBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    showVatPaymentModal();
+  });
+
   document.getElementById("vatFileNowBtn")?.addEventListener("click", async (e) => {
     e.preventDefault();
 
@@ -12766,10 +12988,29 @@ async function renderVatDashboard() {
     const filingExportBtn = document.getElementById("vatFilingExportBtn");
     const vatPackExportBtn = document.getElementById("vatPackExportBtn");
     const vatEmailPackBtn = document.getElementById("vatEmailPackBtn");
+    const vatPayRefundBtn = document.getElementById("vatPayRefundBtn");
 
     const canUseVatPack = ["prepared", "submitted"].includes(
       String(filing?.status || "").toLowerCase()
     );
+
+    const canPayOrRefund =
+      String(filing?.status || "").toLowerCase() === "prepared" &&
+      filing?.settlement_journal_id &&
+      !filing?.payment_journal_id &&
+      Math.abs(Number(filing?.net_vat || 0)) > 0;
+
+    if (vatPayRefundBtn) {
+      const net = Number(filing?.net_vat || 0);
+      vatPayRefundBtn.disabled = !canPayOrRefund;
+      vatPayRefundBtn.textContent =
+        net > 0 ? "Record VAT Payment" :
+        net < 0 ? "Record VAT Refund Received" :
+        "No VAT Payment Due";
+      vatPayRefundBtn.title = canPayOrRefund
+        ? "Record VAT payment/refund cash movement"
+        : "Prepare and post VAT settlement first";
+    }
 
     if (filingExportBtn) {
       filingExportBtn.disabled = !canUseVatPack;

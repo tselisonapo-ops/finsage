@@ -812,10 +812,17 @@ def _coa_role_from_text(
         return "bank"
     if any(k in text for k in ("cash", "petty cash")):
         return "cash"
-    if "output vat" in text or "vat payable" in text:
-        return "vat_out"
-    if "input vat" in text or "vat receivable" in text:
-        return "vat_in"
+    if "vat receivable" in text or "refund due" in text:
+        return "vat_receivable"
+
+    if "vat payable" in text and "output" not in text:
+        return "vat_payable"
+
+    if "output vat" in text or "vat output" in text:
+        return "vat_output"
+
+    if "input vat" in text or "vat input" in text:
+        return "vat_input"
 
     # ----------------------------
     # helpers

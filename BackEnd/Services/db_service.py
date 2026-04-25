@@ -23659,7 +23659,92 @@ class DatabaseService:
             row = cur.fetchone()
             conn.commit()
             return bool(row)
-        
+
+    def ensure_company_vat_settlement_accounts(self, company_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        defaults = [
+            {
+                "role": "vat_receivable",
+                "code": "BS_CA_1420",
+                "name": "VAT Receivable / Refund Due",
+                "section": "Asset",
+                "category": "Current Assets",
+                "subcategory": "Tax",
+                "description": "VAT refund receivable from revenue authority after VAT return settlement.",
+                "standard": "IAS 12",
+                "cf_section": "operating",
+                "cf_bucket": "vat_refund",
+            },
+            {
+                "role": "vat_payable",
+                "code": "BS_CL_2330",
+                "name": "VAT Payable",
+                "section": "Liability",
+                "category": "Current Liabilities",
+                "subcategory": "Tax",
+                "description": "Net VAT payable to revenue authority after VAT return settlement.",
+                "standard": "IAS 12",
+                "cf_section": "operating",
+                "cf_bucket": "vat_payable",
+            },
+        ]
+
+        resolved = {}
+
+        with self._conn_cursor() as (conn, cur):
+            for acc in defaults:
+                role = acc["role"]
+
+                cur.execute(
+                    f"""
+                    SELECT code, name
+                    FROM {schema}.coa
+                    WHERE company_id = %s
+                    AND lower(coalesce(role, '')) = lower(%s)
+                    LIMIT 1
+                    """,
+                    (int(company_id), role),
+                )
+                existing = cur.fetchone()
+
+                if existing:
+                    resolved[role] = {
+                        "code": existing["code"],
+                        "name": existing["name"],
+                    }
+                    continue
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.coa (
+                        company_id, code, name, section, category, subcategory,
+                        description, standard, cf_section, cf_bucket, role,
+                        posting, is_contra
+                    )
+                    SELECT
+                        %(company_id)s, %(code)s, %(name)s, %(section)s, %(category)s, %(subcategory)s,
+                        %(description)s, %(standard)s, %(cf_section)s, %(cf_bucket)s, %(role)s,
+                        TRUE, FALSE
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM {schema}.coa
+                        WHERE company_id = %(company_id)s
+                        AND code = %(code)s
+                    )
+                    """,
+                    {**acc, "company_id": int(company_id)},
+                )
+
+                resolved[role] = {
+                    "code": acc["code"],
+                    "name": acc["name"],
+                }
+
+            conn.commit()
+
+        return resolved
+
     def get_vat_filing(self, company_id: int, period_start, period_end):
         schema = self.company_schema(company_id)
         sql = f"""
