@@ -118,19 +118,43 @@ def _load_logo(company: dict, max_w=30 * mm, max_h=30 * mm):
         or _safe(company.get("branding_logo_url"))
     )
 
-    if not logo and logo_url:
-        rel_url = logo_url.lstrip("/")
-        logo = os.path.join(current_app.root_path, rel_url)
+    candidates = []
 
-    if not logo or not os.path.exists(logo):
-        return None
+    if logo:
+        candidates.append(logo)
 
-    try:
-        img = Image(logo)
-        img._restrictSize(max_w, max_h)
-        return img
-    except Exception:
-        return None
+    if logo_url:
+        candidates.append(logo_url.lstrip("/"))
+
+    for p in list(candidates):
+        if not os.path.isabs(p):
+            candidates.append(os.path.join(current_app.root_path, p))
+            candidates.append(os.path.join(current_app.root_path, "static", p))
+            candidates.append(os.path.join(current_app.root_path, "uploads", os.path.basename(p)))
+
+    for path in candidates:
+        if not path:
+            continue
+
+        if path.startswith("http://") or path.startswith("https://"):
+            continue
+
+        if os.path.exists(path):
+            try:
+                img = Image(path)
+                img._restrictSize(max_w, max_h)
+                return img
+            except Exception as e:
+                print("VAT LOGO DEBUG load failed:", path, e)
+
+    print("VAT LOGO DEBUG no logo found", {
+        "logo": logo,
+        "logo_url": logo_url,
+        "candidates": candidates,
+        "company_keys": list(company.keys()),
+    })
+
+    return None
 
 
 def _styles():

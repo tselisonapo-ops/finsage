@@ -11,6 +11,12 @@ from datetime import date as date_cls
 from BackEnd.Services.emailer import send_mail
 from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
 from urllib.parse import urlencode
+import csv
+import io
+import zipfile
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, Protection
+from openpyxl.utils import get_column_letter
 from flask import (
     Blueprint,
     jsonify,
@@ -27,6 +33,94 @@ from flask import Blueprint
 
 vat_utils_bp = Blueprint("companies_vat", __name__)
 
+def _safe_cell(v, default="-"):
+    if v is None or str(v).strip() == "":
+        return default
+    return v
+
+
+def _money(v):
+    try:
+        return round(float(v or 0), 2)
+    except Exception:
+        return 0.0
+
+
+def _style_xlsx_sheet(ws):
+    header_fill = PatternFill("solid", fgColor="0F2A3D")
+    header_font = Font(color="FFFFFF", bold=True)
+    section_fill = PatternFill("solid", fgColor="D9F0F2")
+    thin = Side(style="thin", color="D6DAD8")
+
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            cell.protection = Protection(locked=True)
+
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    for row in ws.iter_rows():
+        first = str(row[0].value or "").upper()
+        if first in {
+            "FILLED VAT RETURN",
+            "VAT RETURN VALUES",
+            "DECLARATION",
+            "VAT SUPPORTING SCHEDULE",
+            "OFFICIAL FILING TOTALS",
+            "DETAIL RECONCILIATION",
+            "SETTLEMENT JOURNAL",
+            "JOURNAL BALANCE CHECK",
+        }:
+            for cell in row:
+                cell.fill = section_fill
+                cell.font = Font(bold=True)
+
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+
+        for cell in col:
+            val = str(cell.value or "")
+            max_len = max(max_len, len(val))
+
+        ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 45)
+
+    ws.freeze_panes = "A2"
+    ws.protection.sheet = True
+    ws.protection.password = "FinSage"
+
+
+def _build_vat_summary_xlsx(rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Filled VAT Return"
+
+    for row in rows:
+        ws.append(row)
+
+    _style_xlsx_sheet(ws)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _build_vat_detail_xlsx(rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Supporting Schedule"
+
+    for row in rows:
+        ws.append(row)
+
+    _style_xlsx_sheet(ws)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 def _days_in_month(year, month):
     # month = 1..12
@@ -927,7 +1021,7 @@ def vat_filing_export_pack(company_id: int):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
-    token = request.args.get("t")
+    token = (request.args.get("t") or "").strip()
 
     if token:
         data = verify_report_export_token(token)
@@ -935,24 +1029,18 @@ def vat_filing_export_pack(company_id: int):
         if not data:
             return jsonify({"error": "Invalid or expired token"}), 401
 
-        if int(data.get("company_id")) != int(company_id):
+        if int(data.get("company_id") or 0) != int(company_id):
             return jsonify({"error": "Token company mismatch"}), 403
 
         if data.get("report_key") != "vat_pack":
             return jsonify({"error": "Invalid report key"}), 403
-
-        # ✅ allow request without Authorization header
-
     else:
         user = getattr(g, "current_user", {}) or {}
         if int(user.get("company_id") or 0) != int(company_id):
             return jsonify({"error": "Not authorised"}), 403
-        
-    from_str = (request.args.get("from") or "").strip()
-    to_str = (request.args.get("to") or "").strip()
 
-    start_date = _parse_date(from_str, None)
-    end_date = _parse_date(to_str, None)
+    start_date = _parse_date((request.args.get("from") or "").strip(), None)
+    end_date = _parse_date((request.args.get("to") or "").strip(), None)
 
     if not start_date or not end_date:
         return jsonify({"error": "from and to are required"}), 400
@@ -963,25 +1051,23 @@ def vat_filing_export_pack(company_id: int):
 
     lines = _get_vat_lines(company_id, start_date, end_date)
 
-    import csv
-    import io
-    import zipfile
-
     ctx = get_company_context(db_service, company_id) or {}
+
     company_name = (
         ctx.get("company_name")
         or ctx.get("name")
         or f"Company {company_id}"
     )
-    currency = ctx.get("currency") or ""
-    company_reg_no = ctx.get("company_reg_no") or ""
-    vat_number = ctx.get("vat") or ctx.get("vat_number") or ctx.get("vat_no") or ""
-    tin = ctx.get("tin") or ""
-    company_email = ctx.get("company_email") or ""
 
-    input_total = float(filing.get("input_total") or 0)
-    output_total = float(filing.get("output_total") or 0)
-    net_vat = float(filing.get("net_vat") or 0)
+    currency = ctx.get("currency") or ""
+    company_reg_no = ctx.get("company_reg_no") or "-"
+    vat_number = ctx.get("vat") or ctx.get("vat_number") or ctx.get("vat_no") or "-"
+    tin = ctx.get("tin") or "-"
+    company_email = ctx.get("company_email") or ctx.get("email") or "-"
+
+    input_total = _money(filing.get("input_total"))
+    output_total = _money(filing.get("output_total"))
+    net_vat = _money(filing.get("net_vat"))
 
     if net_vat > 0:
         net_label = "VAT Payable"
@@ -990,93 +1076,70 @@ def vat_filing_export_pack(company_id: int):
     else:
         net_label = "Nil VAT"
 
-    # ==========================================================
-    # 1) FILLED VAT RETURN SUMMARY
-    # ==========================================================
-    summary_io = io.StringIO()
-    summary = csv.writer(summary_io)
+    summary_rows = [
+        ["FILLED VAT RETURN"],
+        [],
+        ["Company", company_name],
+        ["Company Registration No", company_reg_no],
+        ["VAT Number", vat_number],
+        ["TIN", tin],
+        ["Company Email", company_email],
+        ["Currency", currency],
+        ["VAT Period", f"{start_date} to {end_date}"],
+        ["Due Date", filing.get("due_date")],
+        ["Status", filing.get("status")],
+        ["Prepared At", filing.get("prepared_at")],
+        ["Submitted At", filing.get("submitted_at")],
+        ["Submission Reference", filing.get("reference") or ""],
+        [],
+        ["VAT RETURN VALUES"],
+        ["Output VAT", output_total],
+        ["Input VAT", input_total],
+        [net_label, abs(net_vat)],
+        [],
+        ["DECLARATION"],
+        ["Declaration", "This VAT return was prepared from ledger VAT records in FinSage."],
+        ["Prepared By", "FinSage"],
+        ["Notice", "This document is prepared by FinSage, no stamp required"],
+    ]
 
-    summary.writerow(["FILLED VAT RETURN"])
-    summary.writerow([])
-    summary.writerow(["Company", company_name])
-    summary.writerow(["Company Registration No", company_reg_no])
-    summary.writerow(["VAT Number", vat_number])
-    summary.writerow(["TIN", tin])
-    summary.writerow(["Company Email", company_email])
-    summary.writerow(["Currency", currency])
-    summary.writerow(["VAT Period", f"{start_date} to {end_date}"])
-    summary.writerow(["Due Date", filing.get("due_date")])
-    summary.writerow(["Status", filing.get("status")])
-    summary.writerow(["Prepared At", filing.get("prepared_at")])
-    summary.writerow(["Submitted At", filing.get("submitted_at")])
-    summary.writerow(["Submission Reference", filing.get("reference") or ""])
-    summary.writerow([])
+    detail_rows = [
+        ["VAT SUPPORTING SCHEDULE"],
+        [],
+        ["Company", company_name],
+        ["VAT Period", f"{start_date} to {end_date}"],
+        ["Status", filing.get("status")],
+        ["Prepared At", filing.get("prepared_at")],
+        [],
+        [
+            "Date",
+            "Reference",
+            "Source Account Code",
+            "Source Account Name",
+            "VAT Side",
+            "VAT Account Code",
+            "VAT Account Name",
+            "Debit",
+            "Credit",
+            "VAT Amount",
+        ],
+    ]
 
-    summary.writerow(["VAT RETURN VALUES"])
-    summary.writerow(["Output VAT", output_total])
-    summary.writerow(["Input VAT", input_total])
-    summary.writerow([net_label, abs(net_vat)])
-    summary.writerow([])
-
-    summary.writerow(["DECLARATION"])
-    summary.writerow([
-        "Declaration",
-        "This VAT return was prepared from ledger VAT records in FinSage."
-    ])
-    summary.writerow([
-        "Prepared By",
-        "FinSage"
-    ])
-    summary.writerow([
-        "Notice",
-        "This document is prepared by FinSage, no stamp required"
-    ])
-
-    summary_csv = summary_io.getvalue()
-    summary_io.close()
-
-    # ==========================================================
-    # 2) DETAILED SUPPORTING SCHEDULE
-    # ==========================================================
-    detail_io = io.StringIO()
-    detail = csv.writer(detail_io)
-
-    detail.writerow(["VAT SUPPORTING SCHEDULE"])
-    detail.writerow([])
-    detail.writerow(["Company", company_name])
-    detail.writerow(["VAT Period", f"{start_date} to {end_date}"])
-    detail.writerow(["Status", filing.get("status")])
-    detail.writerow(["Prepared At", filing.get("prepared_at")])
-    detail.writerow([])
-
-    detail.writerow([
-        "Date",
-        "Reference",
-        "Source Account Code",
-        "Source Account Name",
-        "VAT Side",
-        "VAT Account Code",
-        "VAT Account Name",
-        "Debit",
-        "Credit",
-        "VAT Amount",
-    ])
-
-    total_input = 0.0
-    total_output = 0.0
+    extracted_input = 0.0
+    extracted_output = 0.0
 
     for l in lines:
         side = str(l.get("vat_side") or "").lower()
-        vat_amount = float(l.get("vat_amount") or 0)
-        debit = float(l.get("debit") or 0)
-        credit = float(l.get("credit") or 0)
+        vat_amount = _money(l.get("vat_amount"))
+        debit = _money(l.get("debit"))
+        credit = _money(l.get("credit"))
 
         if side == "input":
-            total_input += vat_amount
+            extracted_input += vat_amount
         elif side == "output":
-            total_output += vat_amount
+            extracted_output += vat_amount
 
-        detail.writerow([
+        detail_rows.append([
             l.get("date"),
             l.get("ref"),
             l.get("source_account_code"),
@@ -1089,62 +1152,72 @@ def vat_filing_export_pack(company_id: int):
             vat_amount,
         ])
 
-    calculated_net = round(total_output - total_input, 2)
+    extracted_net = round(extracted_output - extracted_input, 2)
 
-    detail.writerow([])
-    detail.writerow(["OFFICIAL FILING TOTALS"])
-    detail.writerow(["Total Output VAT", output_total])
-    detail.writerow(["Total Input VAT", input_total])
-    detail.writerow(["Net VAT", net_vat])
-    detail.writerow([])
+    detail_rows += [
+        [],
+        ["OFFICIAL FILING TOTALS"],
+        ["Total Output VAT", output_total],
+        ["Total Input VAT", input_total],
+        ["Net VAT", net_vat],
+        [],
+        ["DETAIL RECONCILIATION"],
+        ["Extracted Detail Output VAT", extracted_output],
+        ["Extracted Detail Input VAT", extracted_input],
+        ["Extracted Detail Net VAT", extracted_net],
+        ["Detail vs Filing Difference", round(extracted_net - net_vat, 2)],
+        [],
+    ]
 
-    detail.writerow(["DETAIL RECONCILIATION"])
-    detail.writerow(["Extracted Detail Output VAT", total_output])
-    detail.writerow(["Extracted Detail Input VAT", total_input])
-    detail.writerow(["Extracted Detail Net VAT", calculated_net])
-    detail.writerow(["Detail vs Filing Difference", round(calculated_net - net_vat, 2)])
-    detail.writerow([])
-
-    # ==========================================================
-    # SETTLEMENT JOURNAL SECTION
-    # ==========================================================
     settlement_preview = _build_vat_settlement_preview(input_total, output_total)
     journal_lines = settlement_preview.get("journal_lines") or []
 
-    detail.writerow(["SETTLEMENT JOURNAL"])
-    detail.writerow(["Account Code", "Account Name", "Debit", "Credit"])
+    detail_rows += [
+        ["SETTLEMENT JOURNAL"],
+        ["Account Code", "Account Name", "Debit", "Credit"],
+    ]
 
     debit_total = 0.0
     credit_total = 0.0
 
     for jl in journal_lines:
-        debit = float(jl.get("debit") or 0)
-        credit = float(jl.get("credit") or 0)
+        debit = _money(jl.get("debit"))
+        credit = _money(jl.get("credit"))
 
         debit_total += debit
         credit_total += credit
 
-        detail.writerow([
+        detail_rows.append([
             jl.get("account"),
             jl.get("name"),
             debit,
             credit,
         ])
 
-    detail.writerow([])
-    detail.writerow(["JOURNAL BALANCE CHECK"])
-    detail.writerow(["Debit Total", debit_total])
-    detail.writerow(["Credit Total", credit_total])
-    detail.writerow(["Difference", round(debit_total - credit_total, 2)])
-    detail.writerow([])
+    detail_rows += [
+        [],
+        ["JOURNAL BALANCE CHECK"],
+        ["Debit Total", debit_total],
+        ["Credit Total", credit_total],
+        ["Difference", round(debit_total - credit_total, 2)],
+        [],
+        ["This document is prepared by FinSage, no stamp required"],
+    ]
 
-    detail.writerow(["---"])
-    detail.writerow(["This document is prepared by FinSage, no stamp required"])
-    detail.writerow(["---"])
+    # CSV bytes
+    summary_csv_io = io.StringIO()
+    csv.writer(summary_csv_io).writerows(summary_rows)
+    summary_csv = summary_csv_io.getvalue()
 
-    detail_csv = detail_io.getvalue()
-    detail_io.close()
+    detail_csv_io = io.StringIO()
+    csv.writer(detail_csv_io).writerows(detail_rows)
+    detail_csv = detail_csv_io.getvalue()
 
+    # XLSX bytes
+    summary_xlsx = _build_vat_summary_xlsx(summary_rows)
+    detail_xlsx = _build_vat_detail_xlsx(detail_rows)
+
+    # PDF bytes
     summary_pdf = generate_vat_return_pdf(
         filing,
         ctx,
@@ -1159,31 +1232,36 @@ def vat_filing_export_pack(company_id: int):
         start_date=start_date,
         end_date=end_date,
     )
-    # ==========================================================
-    # ZIP RESPONSE
-    # ==========================================================
-    zip_buffer = io.BytesIO()
 
     safe_start = start_date.isoformat()
     safe_end = end_date.isoformat()
 
+    zip_buffer = io.BytesIO()
+
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(
             f"vat_return_summary_{company_id}_{safe_start}_{safe_end}.csv",
-            summary_csv
+            summary_csv,
         )
         zf.writestr(
             f"vat_supporting_schedule_{company_id}_{safe_start}_{safe_end}.csv",
-            detail_csv
+            detail_csv,
+        )
+        zf.writestr(
+            f"vat_return_summary_{company_id}_{safe_start}_{safe_end}.xlsx",
+            summary_xlsx,
+        )
+        zf.writestr(
+            f"vat_supporting_schedule_{company_id}_{safe_start}_{safe_end}.xlsx",
+            detail_xlsx,
         )
         zf.writestr(
             f"vat_return_summary_{company_id}_{safe_start}_{safe_end}.pdf",
-            summary_pdf
+            summary_pdf,
         )
-
         zf.writestr(
             f"vat_supporting_schedule_{company_id}_{safe_start}_{safe_end}.pdf",
-            detail_pdf
+            detail_pdf,
         )
 
     zip_buffer.seek(0)
