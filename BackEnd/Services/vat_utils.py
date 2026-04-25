@@ -264,6 +264,57 @@ def _serialise_vat_filing(row: dict):
         "updated_at": iso(row.get("updated_at")),
     }
 
+def _build_vat_settlement_preview(input_total: float, output_total: float):
+    input_total = round(float(input_total or 0), 2)
+    output_total = round(float(output_total or 0), 2)
+    net_vat = round(output_total - input_total, 2)
+
+    lines = []
+
+    if output_total > 0:
+        lines.append({
+            "account": "BS_CL_2310",
+            "name": "VAT Output",
+            "debit": output_total,
+            "credit": 0,
+        })
+
+    if input_total > 0:
+        lines.append({
+            "account": "BS_CA_1410",
+            "name": "VAT Input",
+            "debit": 0,
+            "credit": input_total,
+        })
+
+    if net_vat > 0:
+        lines.append({
+            "account": "BS_CL_2320",
+            "name": "VAT Payable",
+            "debit": 0,
+            "credit": net_vat,
+        })
+        settlement_type = "payable"
+
+    elif net_vat < 0:
+        lines.append({
+            "account": "BS_CA_1420",
+            "name": "VAT Receivable / Refund Due",
+            "debit": abs(net_vat),
+            "credit": 0,
+        })
+        settlement_type = "refund"
+
+    else:
+        settlement_type = "nil"
+
+    return {
+        "input_total": input_total,
+        "output_total": output_total,
+        "net_vat": net_vat,
+        "settlement_type": settlement_type,
+        "journal_lines": lines,
+    }
 
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat/periods", methods=["GET", "OPTIONS"])
 @require_auth
@@ -412,8 +463,6 @@ def vat_summary(company_id: int):
 @vat_utils_bp.route("/api/companies/<int:company_id>/vat/lines", methods=["GET", "OPTIONS"])
 @require_auth
 def vat_lines(company_id: int):
-    ...
-
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
 
@@ -422,11 +471,11 @@ def vat_lines(company_id: int):
         return jsonify({"error": "Not authorised"}), 403
 
     from_str = (request.args.get("from") or "").strip()
-    to_str   = (request.args.get("to") or "").strip()
+    to_str = (request.args.get("to") or "").strip()
 
     today = date.today()
     start_date = _parse_date(from_str, None)
-    end_date   = _parse_date(to_str, today)
+    end_date = _parse_date(to_str, today)
 
     if not start_date or not end_date:
         return jsonify({"error": "from and to are required"}), 400
@@ -435,47 +484,114 @@ def vat_lines(company_id: int):
 
     input_codes, output_codes = _get_vat_accounts(company_id)
     vat_codes = list(set(input_codes) | set(output_codes))
+
     if not vat_codes:
         return jsonify({"lines": []}), 200
 
     placeholders = ",".join(["%s"] * len(vat_codes))
 
     sql = f"""
-      SELECT
-        l.date AS date,
-        l.ref  AS ref,
-        l.account AS account_code,
-        a.name AS account_name,
-        l.debit AS debit,
-        l.credit AS credit
-      FROM {schema}.ledger l
-      LEFT JOIN {schema}.coa a
-        ON a.company_id = l.company_id
-       AND a.code = l.account
-      WHERE l.company_id = %s
-        AND l.date >= %s
-        AND l.date <= %s
-        AND l.account IN ({placeholders})
-      ORDER BY l.date DESC, l.id DESC
-      LIMIT 500;
+    WITH vat_lines AS (
+        SELECT
+            l.id,
+            l.journal_id,
+            l.date,
+            l.ref,
+            l.account AS vat_account_code,
+            vat_acc.name AS vat_account_name,
+            l.debit,
+            l.credit
+        FROM {schema}.ledger l
+        LEFT JOIN {schema}.coa vat_acc
+          ON vat_acc.company_id = l.company_id
+         AND vat_acc.code = l.account
+        WHERE l.company_id = %s
+          AND l.date >= %s
+          AND l.date <= %s
+          AND l.account IN ({placeholders})
+    ),
+    source_lines AS (
+        SELECT DISTINCT ON (vl.id)
+            vl.id AS vat_line_id,
+            src.account AS source_account_code,
+            src_acc.name AS source_account_name
+        FROM vat_lines vl
+        LEFT JOIN {schema}.ledger src
+          ON src.company_id = %s
+         AND src.journal_id = vl.journal_id
+         AND src.id <> vl.id
+         AND src.account NOT IN ({placeholders})
+        LEFT JOIN {schema}.coa src_acc
+          ON src_acc.company_id = src.company_id
+         AND src_acc.code = src.account
+        ORDER BY
+            vl.id,
+            ABS(COALESCE(src.debit, 0) - COALESCE(src.credit, 0)) DESC
+    )
+    SELECT
+        vl.date,
+        vl.ref,
+        vl.vat_account_code,
+        vl.vat_account_name,
+        sl.source_account_code,
+        sl.source_account_name,
+        vl.debit,
+        vl.credit
+    FROM vat_lines vl
+    LEFT JOIN source_lines sl
+      ON sl.vat_line_id = vl.id
+    ORDER BY vl.date DESC, vl.id DESC
+    LIMIT 500;
     """
 
+    params = (
+        int(company_id),
+        start_date,
+        end_date,
+        *vat_codes,
+        int(company_id),
+        *vat_codes,
+    )
+
     with db_service._conn_cursor() as (_conn, cur):
-        cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
+        cur.execute(sql, params)
         rows = cur.fetchall() or []
 
     lines = []
+
     for r in rows:
-        code = str(r.get("account_code") or "")
-        side = "input" if code in input_codes else ("output" if code in output_codes else None)
+        vat_code = str(r.get("vat_account_code") or "")
+        side = "input" if vat_code in input_codes else (
+            "output" if vat_code in output_codes else None
+        )
+
+        debit = float(r.get("debit") or 0)
+        credit = float(r.get("credit") or 0)
+
+        source_code = str(r.get("source_account_code") or "")
+        source_name = r.get("source_account_name") or ""
+
+        vat_name = r.get("vat_account_name") or ""
 
         lines.append({
-            "date": (r.get("date").isoformat() if r.get("date") else None),
+            "date": r.get("date").isoformat() if r.get("date") else None,
             "ref": r.get("ref") or "",
-            "account_code": code,
-            "account_name": r.get("account_name") or "",
-            "debit": float(r.get("debit") or 0),
-            "credit": float(r.get("credit") or 0),
+
+            # useful source account display
+            "source_account_code": source_code,
+            "source_account_name": source_name,
+
+            # actual VAT control account
+            "vat_account_code": vat_code,
+            "vat_account_name": vat_name,
+
+            # backwards compatibility for your existing frontend
+            "account_code": source_code or vat_code,
+            "account_name": source_name or vat_name,
+
+            "debit": debit,
+            "credit": credit,
+            "vat_amount": abs(debit - credit),
             "vat_side": side,
         })
 
@@ -528,6 +644,7 @@ def vat_prepare_filing(company_id: int):
     from_str = (payload.get("from") or "").strip()
     to_str = (payload.get("to") or "").strip()
     notes = (payload.get("notes") or "").strip() or None
+    preview_only = bool(payload.get("preview_only"))
 
     start_date = _parse_date(from_str, None)
     end_date = _parse_date(to_str, None)
@@ -548,13 +665,13 @@ def vat_prepare_filing(company_id: int):
 
     due_date = end_date + timedelta(days=filing_lag_days)
 
-    # Resolve label using the same period logic you already use
     period_label = None
     periods = (
         _make_vat_periods_for_year(start_date.year - 1, cfg)
         + _make_vat_periods_for_year(start_date.year, cfg)
         + _make_vat_periods_for_year(start_date.year + 1, cfg)
     )
+
     for p in periods:
         if p["start_date"] == start_date and p["end_date"] == end_date:
             period_label = p["label"]
@@ -573,16 +690,14 @@ def vat_prepare_filing(company_id: int):
     if vat_codes:
         placeholders = ",".join(["%s"] * len(vat_codes))
         sql = f"""
-          SELECT
-            account,
-            debit,
-            credit
+          SELECT account, debit, credit
           FROM {schema}.ledger
           WHERE company_id = %s
             AND date >= %s
             AND date <= %s
             AND account IN ({placeholders})
         """
+
         with db_service._conn_cursor() as (_conn, cur):
             cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
             rows = cur.fetchall() or []
@@ -598,7 +713,33 @@ def vat_prepare_filing(company_id: int):
             elif code in output_codes:
                 output_total += -bal
 
-    net_vat = output_total - input_total
+    input_total = round(float(input_total or 0), 2)
+    output_total = round(float(output_total or 0), 2)
+    net_vat = round(output_total - input_total, 2)
+
+    preview = _build_vat_settlement_preview(input_total, output_total)
+
+    if preview_only:
+        return jsonify({
+            "ok": True,
+            "period": {
+                "label": period_label,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "due_date": due_date.isoformat(),
+            },
+            "preview": preview,
+        }), 200
+
+    existing = db_service.get_vat_filing(company_id, start_date, end_date)
+
+    if existing and existing.get("settlement_journal_id"):
+        return jsonify({
+            "ok": True,
+            "already_posted": True,
+            "filing": _serialise_vat_filing(existing),
+            "preview": preview,
+        }), 200
 
     filing_id = db_service.upsert_vat_filing_prepared(
         company_id,
@@ -613,6 +754,25 @@ def vat_prepare_filing(company_id: int):
         prepared_by_user_id=int(current_user.get("id") or 0) or None,
         source="api",
     )
+
+    journal_id = None
+
+    if preview.get("settlement_type") != "nil":
+        journal_id = db_service.post_simple_journal(
+            company_id=company_id,
+            journal_date=end_date,
+            ref=f"VAT-{start_date.isoformat()}-{end_date.isoformat()}",
+            description=f"VAT settlement for {period_label}",
+            source="vat_filing",
+            source_id=filing_id,
+            lines=preview["journal_lines"],
+        )
+
+        db_service.mark_vat_filing_settlement_posted(
+            company_id,
+            filing_id,
+            journal_id=journal_id,
+        )
 
     saved = db_service.get_vat_filing(company_id, start_date, end_date)
 
@@ -630,7 +790,7 @@ def vat_prepare_filing(company_id: int):
             currency=(get_company_context(db_service, company_id) or {}).get("currency"),
             before_json=payload if isinstance(payload, dict) else {},
             after_json=_serialise_vat_filing(saved) or {},
-            message="VAT return prepared",
+            message="VAT return prepared and settlement journal posted",
             source="api",
         )
     except Exception:
@@ -639,5 +799,7 @@ def vat_prepare_filing(company_id: int):
     return jsonify({
         "ok": True,
         "filing_id": filing_id,
+        "journal_id": journal_id,
+        "preview": preview,
         "filing": _serialise_vat_filing(saved),
     }), 200

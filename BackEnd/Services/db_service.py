@@ -23495,6 +23495,18 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS notes TEXT;
 
         ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS settlement_journal_id INT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS settlement_status TEXT DEFAULT 'not_posted';
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS settled_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS settlement_paid_journal_id INT NULL;
+
+        ALTER TABLE {schema}.vat_filings
         ADD COLUMN IF NOT EXISTS prepared_at TIMESTAMPTZ;
 
         ALTER TABLE {schema}.vat_filings
@@ -23629,6 +23641,25 @@ class DatabaseService:
             cur.execute(sql)
             conn.commit()
 
+    def mark_vat_filing_settlement_posted(self, company_id: int, filing_id: int, *, journal_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        UPDATE {schema}.vat_filings
+        SET settlement_journal_id = %s,
+            settlement_status = 'posted',
+            updated_at = NOW()
+        WHERE company_id = %s
+        AND id = %s
+        RETURNING id
+        """
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(sql, (int(journal_id), int(company_id), int(filing_id)))
+            row = cur.fetchone()
+            conn.commit()
+            return bool(row)
+        
     def get_vat_filing(self, company_id: int, period_start, period_end):
         schema = self.company_schema(company_id)
         sql = f"""

@@ -12302,28 +12302,122 @@ function ensureVatScreen() {
         return;
       }
 
+      const preview = await apiFetch(ENDPOINTS.vatPrepareFiling(cid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: period.start_date,
+          to: period.end_date,
+          preview_only: true,
+        }),
+      });
+
+      showVatSettlementPreviewModal({
+        cid,
+        period,
+        preview: preview.preview,
+      });
+
+    } catch (err) {
+      console.error("Prepare VAT preview failed:", err);
+      alert(err?.message || "Failed to preview VAT return.");
+    }
+  });
+
+  console.log("ensureVatScreen: VAT layout initialised");
+}
+
+function showVatSettlementPreviewModal({ cid, period, preview }) {
+  const old = document.getElementById("vatSettlementPreviewModal");
+  old?.remove();
+
+  const fmt = (n) => typeof money === "function" ? money(n) : Number(n || 0).toFixed(2);
+
+  const rows = (preview?.journal_lines || []).map(l => `
+    <tr class="border-b">
+      <td class="py-2 pr-2">${l.account} — ${l.name}</td>
+      <td class="py-2 pr-2 text-right">${l.debit ? fmt(l.debit) : ""}</td>
+      <td class="py-2 pr-2 text-right">${l.credit ? fmt(l.credit) : ""}</td>
+    </tr>
+  `).join("");
+
+  const modal = document.createElement("div");
+  modal.id = "vatSettlementPreviewModal";
+  modal.className = "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4";
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-5 text-sm">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-slate-800">VAT Return Preview</h3>
+        <button id="vatPreviewCloseBtn" class="text-slate-400">✕</button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div>
+          <div class="text-xs text-slate-500">Input VAT</div>
+          <div class="font-semibold">${fmt(preview.input_total)}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">Output VAT</div>
+          <div class="font-semibold">${fmt(preview.output_total)}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">Net VAT</div>
+          <div class="font-semibold">${fmt(preview.net_vat)}</div>
+        </div>
+      </div>
+
+      <div class="font-semibold mb-2">Journal to be posted</div>
+
+      <table class="w-full text-xs">
+        <thead class="border-b text-slate-500">
+          <tr>
+            <th class="text-left py-2">Account</th>
+            <th class="text-right py-2">Debit</th>
+            <th class="text-right py-2">Credit</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div class="flex justify-end gap-2 mt-5">
+        <button id="vatPreviewCancelBtn" class="px-3 py-2 rounded border">Cancel</button>
+        <button id="vatPreviewPostBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
+          Confirm & Post
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+
+  document.getElementById("vatPreviewCloseBtn")?.addEventListener("click", close);
+  document.getElementById("vatPreviewCancelBtn")?.addEventListener("click", close);
+
+  document.getElementById("vatPreviewPostBtn")?.addEventListener("click", async () => {
+    try {
       const res = await apiFetch(ENDPOINTS.vatPrepareFiling(cid), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           from: period.start_date,
           to: period.end_date,
+          preview_only: false,
         }),
       });
 
-      if (res?.ok === false) {
-        throw new Error(res.error || "Failed to prepare VAT return");
-      }
+      if (res?.ok === false) throw new Error(res.error || "Failed to prepare VAT return");
 
+      close();
       await renderVatDashboard();
-      alert("VAT return prepared successfully.");
+      alert("VAT return prepared and settlement journal posted.");
     } catch (err) {
-      console.error("Prepare VAT filing failed:", err);
-      alert(err?.message || "Failed to prepare VAT return.");
+      console.error("VAT settlement post failed:", err);
+      alert(err?.message || "Failed to post VAT settlement.");
     }
   });
-
-  console.log("ensureVatScreen: VAT layout initialised");
 }
 
 async function bindVatPeriodFilter() {
