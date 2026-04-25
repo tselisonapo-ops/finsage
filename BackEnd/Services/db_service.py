@@ -6082,6 +6082,8 @@ class DatabaseService:
                         ''adjustment'',
                         ''revenue_run_reversal'',
                         ''opening_balance'',
+                        ''vat_filing'',
+                        ''vat_filing_payment'',
                         ''year_end''
                     ]::text[])
                 )',
