@@ -563,12 +563,14 @@ def generate_vat_supporting_pdf(
             extracted_output += vat_amount
 
         source_account = (
-            f"{_safe(line.get('source_account_code'))} {_safe(line.get('source_account_name'))}".strip()
+            _safe(line.get("source_account_name"))
+            or _safe(line.get("source_account_code"))
             or "-"
         )
 
         vat_account = (
-            f"{_safe(line.get('vat_account_code'))} {_safe(line.get('vat_account_name'))}".strip()
+            _safe(line.get("vat_account_name"))
+            or _safe(line.get("vat_account_code"))
             or "-"
         )
 

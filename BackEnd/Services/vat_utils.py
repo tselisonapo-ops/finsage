@@ -1195,10 +1195,8 @@ def vat_filing_export_pack(company_id: int):
         detail_rows.append([
             l.get("date"),
             l.get("ref"),
-            l.get("source_account_code"),
             l.get("source_account_name"),
             side,
-            l.get("vat_account_code"),
             l.get("vat_account_name"),
             debit,
             credit,
