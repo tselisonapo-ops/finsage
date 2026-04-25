@@ -156,13 +156,13 @@ def _get_vat_lines(company_id: int, start_date, end_date):
           )
 
           -- exclude by account names too
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%cash%'
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%bank%'
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%receivable%'
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%debtor%'
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%payable%'
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%creditor%'
-          AND COALESCE(src_acc.name, '') NOT ILIKE '%vat%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%cash%%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%bank%%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%receivable%%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%debtor%%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%payable%%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%creditor%%'
+            AND COALESCE(src_acc.name, '') NOT ILIKE '%%vat%%'
 
         ORDER BY
             vl.id,
