@@ -3894,6 +3894,57 @@ async function downloadVatFiling() {
   }
 }
 
+async function downloadVatPack() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) throw new Error("No company selected");
+
+  const period = parseVatPeriodSelection?.();
+  if (!period?.start_date || !period?.end_date) {
+    alert("Please select a VAT period first.");
+    return;
+  }
+
+  const qs = new URLSearchParams({
+    from: period.start_date,
+    to: period.end_date,
+  });
+
+  const url = `${ENDPOINTS.vatFilingPackExport(cid)}?${qs.toString()}`;
+
+  await downloadUrl(url, "vat_pack");
+}
+
+async function emailVatPack() {
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) throw new Error("No company selected");
+
+    const period = parseVatPeriodSelection?.();
+    if (!period?.start_date || !period?.end_date) {
+      alert("Please select a VAT period first.");
+      return;
+    }
+
+    const res = await apiFetch(ENDPOINTS.vatFilingPackEmail(cid), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: period.start_date,
+        to: period.end_date,
+      }),
+    });
+
+    if (res?.ok === false) {
+      throw new Error(res.error || "Failed to email VAT pack");
+    }
+
+    alert(res?.message || "VAT Pack email sent.");
+  } catch (err) {
+    console.error("emailVatPack failed:", err);
+    alert(err?.message || "Failed to email VAT Pack.");
+  }
+}
+
   // ==========================================================
   // 8) UTILITIES (safe anywhere after here)
   // ==========================================================
@@ -12334,6 +12385,11 @@ function ensureVatScreen() {
   document.getElementById("vatFilingExportBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
     downloadVatFiling();
+  });
+
+  document.getElementById("vatPackExportBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    downloadVatPack();
   });
 
   document.getElementById("vatEmailPackBtn")?.addEventListener("click", (e) => {
