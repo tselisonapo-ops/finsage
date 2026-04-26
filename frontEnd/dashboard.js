@@ -12309,9 +12309,26 @@ function showVatPaymentPreviewModal({ cid, period, payload, preview, isRefund })
   });
 }
 
-function showVatPaymentModal() {
+async function loadVatBankAccounts(cid) {
+  // Adjust this endpoint name if your bank accounts endpoint is named differently.
+  const res = await apiFetch(ENDPOINTS.bankAccounts?.(cid) || `/api/companies/${cid}/bank-accounts`, {
+    method: "GET",
+  });
+
+  return Array.isArray(res)
+    ? res
+    : (res?.accounts || res?.bank_accounts || res?.data || []);
+}
+
+async function showVatPaymentModal() {
   const old = document.getElementById("vatPaymentModal");
   old?.remove();
+
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) {
+    alert("No company selected");
+    return;
+  }
 
   const period = parseVatPeriodSelection?.();
   if (!period?.start_date || !period?.end_date) {
@@ -12322,20 +12339,49 @@ function showVatPaymentModal() {
   const netText = document.getElementById("vatNetAmount")?.textContent || "";
   const isRefund = netText.includes("-");
 
+  let bankAccounts = [];
+  try {
+    bankAccounts = await loadVatBankAccounts(cid);
+  } catch (e) {
+    console.warn("Could not load bank accounts:", e);
+  }
+
+  const bankOptions = bankAccounts.length
+    ? bankAccounts.map((b) => {
+        const gl =
+          b.gl_account ||
+          b.account_code ||
+          b.bank_gl_account ||
+          b.cash_account_code ||
+          b.ledger_account ||
+          "";
+
+        const name =
+          b.account_name ||
+          b.bank_name ||
+          b.name ||
+          "Bank account";
+
+        const label = `${name}${gl ? ` — ${gl}` : ""}`;
+
+        return `<option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">${label}</option>`;
+      }).join("")
+    : `<option value="BS_CA_1000" data-name="Cash & Bank">Cash & Bank — BS_CA_1000</option>`;
+
   const modal = document.createElement("div");
   modal.id = "vatPaymentModal";
   modal.className = "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4";
 
   modal.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 text-sm">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-5 text-sm">
       <div class="flex items-center justify-between mb-4">
         <h3 class="font-semibold text-slate-800">
-          ${isRefund ? "Record VAT Refund" : "Pay VAT"}
+          ${isRefund ? "Record VAT Refund Received" : "Record VAT Payment"}
         </h3>
         <button id="vatPaymentCloseBtn" class="text-slate-400">✕</button>
       </div>
 
-      <div class="space-y-3">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-slate-500">Payment / Receipt Date</label>
           <input id="vatPaymentDate" type="date"
@@ -12344,10 +12390,12 @@ function showVatPaymentModal() {
         </div>
 
         <div>
-          <label class="text-xs text-slate-500">Bank Account Code</label>
-          <input id="vatPaymentBankAccount" type="text"
-            class="w-full border rounded px-2 py-2 text-sm"
-            value="BS_CA_1000">
+          <label class="text-xs text-slate-500">Bank / Cash Account</label>
+          <select id="vatPaymentBankAccount"
+            class="w-full border rounded px-2 py-2 text-sm bg-white">
+            <option value="">Select bank account</option>
+            ${bankOptions}
+          </select>
         </div>
 
         <div>
@@ -12365,10 +12413,14 @@ function showVatPaymentModal() {
         </div>
       </div>
 
+      <div class="mt-4 text-xs text-slate-500">
+        This will preview the journal before posting.
+      </div>
+
       <div class="flex justify-end gap-2 mt-5">
         <button id="vatPaymentCancelBtn" class="px-3 py-2 rounded border">Cancel</button>
-        <button id="vatPaymentPostBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
-          ${isRefund ? "Record Refund" : "Post Payment"}
+        <button id="vatPaymentPreviewBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
+          Preview Journal
         </button>
       </div>
     </div>
@@ -12381,16 +12433,23 @@ function showVatPaymentModal() {
   document.getElementById("vatPaymentCloseBtn")?.addEventListener("click", close);
   document.getElementById("vatPaymentCancelBtn")?.addEventListener("click", close);
 
-  document.getElementById("vatPaymentPostBtn")?.addEventListener("click", async () => {
+  document.getElementById("vatPaymentPreviewBtn")?.addEventListener("click", async () => {
     try {
-      const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-      if (!cid) throw new Error("No company selected");
+      const bankSelect = document.getElementById("vatPaymentBankAccount");
+      const bankAccount = bankSelect?.value || "";
+      const bankAccountName = bankSelect?.selectedOptions?.[0]?.dataset?.name || "Bank";
+
+      if (!bankAccount) {
+        alert("Please select a bank/cash account.");
+        return;
+      }
 
       const payload = {
         from: period.start_date,
         to: period.end_date,
         payment_date: document.getElementById("vatPaymentDate")?.value,
-        bank_account: document.getElementById("vatPaymentBankAccount")?.value,
+        bank_account: bankAccount,
+        bank_account_name: bankAccountName,
         amount: document.getElementById("vatPaymentAmount")?.value,
         reference: document.getElementById("vatPaymentReference")?.value,
         preview_only: true,
@@ -12406,6 +12465,8 @@ function showVatPaymentModal() {
         throw new Error(previewRes.error || "Failed to preview VAT payment/refund");
       }
 
+      close();
+
       showVatPaymentPreviewModal({
         cid,
         period,
@@ -12413,8 +12474,6 @@ function showVatPaymentModal() {
         preview: previewRes.preview,
         isRefund,
       });
-
-      close();
     } catch (err) {
       console.error("VAT payment/refund preview failed:", err);
       alert(err?.message || "Failed to preview VAT payment/refund.");
