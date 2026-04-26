@@ -588,6 +588,11 @@ def _build_vat_settlement_preview(
     output_total = round(float(output_total or 0), 2)
     net_vat = round(output_total - input_total, 2)
 
+    vat_input = vat_input or {"role": "vat_input", "name": "VAT Input"}
+    vat_output = vat_output or {"role": "vat_output", "name": "VAT Output"}
+    vat_receivable = vat_receivable or {"role": "vat_receivable", "name": "VAT Receivable / Refund Due"}
+    vat_payable = vat_payable or {"role": "vat_payable", "name": "VAT Payable"}
+
     lines = []
 
     if output_total > 0:
@@ -992,29 +997,29 @@ def vat_prepare_filing(company_id: int):
                 "credits": total_cr,
             }), 400
 
-        entry = {
-            "date": end_date,
-            "ref": f"VAT-{period_label.replace(' ', '')}",
-            "description": f"VAT settlement for {period_label}",
-            "source": "vat_filing",
-            "source_id": filing_id,
-            "lines": lines,
-            "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
-            "created_by_user_id": int(current_user.get("id") or 0),
-            "prepared_by_user_id": int(current_user.get("id") or 0),
-        }
-
         resolved_lines = []
 
         for l in preview["journal_lines"]:
             acc = resolve_account_by_role(company_id, l["account_role"])
 
             resolved_lines.append({
-                "account": acc["code"],   # only now we use code
+                "account": acc["code"],
                 "name": acc["name"],
                 "debit": l["debit"],
                 "credit": l["credit"],
             })
+
+        entry = {
+            "date": end_date,
+            "ref": f"VAT-{period_label.replace(' ', '')}",
+            "description": f"VAT settlement for {period_label}",
+            "source": "vat_filing",
+            "source_id": filing_id,
+            "lines": resolved_lines,
+            "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
+            "created_by_user_id": int(current_user.get("id") or 0),
+            "prepared_by_user_id": int(current_user.get("id") or 0),
+        }
 
         journal_id = db_service.post_journal(
             company_id=company_id,
