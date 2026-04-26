@@ -599,34 +599,54 @@ def _build_vat_settlement_preview(
         lines.append({
             "account_role": "vat_output",
             "account_name": vat_output.get("name"),
+
+            # 👇 ADD THESE (for frontend display)
+            "account": vat_output.get("name"),
+            "name": vat_output.get("name"),
+
             "debit": output_total,
             "credit": 0,
         })
 
     if input_total > 0:
         lines.append({
-            "account_role": "vat_input",
-            "account_name": vat_input.get("name"),
-            "debit": 0,
-            "credit": input_total,
+            "account_role": "vat_output",
+            "account_name": vat_output.get("name"),
+
+            # 👇 ADD THESE (for frontend display)
+            "account": vat_output.get("name"),
+            "name": vat_output.get("name"),
+
+            "debit": output_total,
+            "credit": 0,
         })
 
     if net_vat > 0:
         lines.append({
-            "account_role": "vat_payable",
-            "account_name": vat_payable.get("name"),
-            "debit": 0,
-            "credit": net_vat,
-        })
+            "account_role": "vat_output",
+            "account_name": vat_output.get("name"),
+
+            # 👇 ADD THESE (for frontend display)
+            "account": vat_output.get("name"),
+            "name": vat_output.get("name"),
+
+            "debit": output_total,
+            "credit": 0,
+        })  
         settlement_type = "payable"
 
     elif net_vat < 0:
         lines.append({
-            "account_role": "vat_receivable",
-            "account_name": vat_receivable.get("name"),
-            "debit": abs(net_vat),
+            "account_role": "vat_output",
+            "account_name": vat_output.get("name"),
+
+            # 👇 ADD THESE (for frontend display)
+            "account": vat_output.get("name"),
+            "name": vat_output.get("name"),
+
+            "debit": output_total,
             "credit": 0,
-        })
+        })      
         settlement_type = "refund"
 
     else:
