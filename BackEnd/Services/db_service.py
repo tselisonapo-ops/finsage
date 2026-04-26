@@ -23763,6 +23763,10 @@ class DatabaseService:
             status,
             reference,
             notes,
+            settlement_journal_id,
+            payment_journal_id,
+            paid_at,
+            payment_reference,
             prepared_at,
             prepared_by_user_id,
             submitted_at,
@@ -23773,8 +23777,8 @@ class DatabaseService:
             updated_at
         FROM {schema}.vat_filings
         WHERE company_id = %s
-            AND period_start = %s
-            AND period_end = %s
+        AND period_start = %s
+        AND period_end = %s
         LIMIT 1
         """
         with self._conn_cursor() as (_conn, cur):
