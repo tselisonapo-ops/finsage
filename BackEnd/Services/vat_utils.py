@@ -598,55 +598,39 @@ def _build_vat_settlement_preview(
     if output_total > 0:
         lines.append({
             "account_role": "vat_output",
-            "account_name": vat_output.get("name"),
-
-            # 👇 ADD THESE (for frontend display)
-            "account": vat_output.get("name"),
-            "name": vat_output.get("name"),
-
+            "account": vat_output.get("name") or "VAT Output",
+            "name": vat_output.get("name") or "VAT Output",
             "debit": output_total,
             "credit": 0,
         })
 
     if input_total > 0:
         lines.append({
-            "account_role": "vat_output",
-            "account_name": vat_output.get("name"),
-
-            # 👇 ADD THESE (for frontend display)
-            "account": vat_output.get("name"),
-            "name": vat_output.get("name"),
-
-            "debit": output_total,
-            "credit": 0,
+            "account_role": "vat_input",
+            "account": vat_input.get("name") or "VAT Input",
+            "name": vat_input.get("name") or "VAT Input",
+            "debit": 0,
+            "credit": input_total,
         })
 
     if net_vat > 0:
         lines.append({
-            "account_role": "vat_output",
-            "account_name": vat_output.get("name"),
-
-            # 👇 ADD THESE (for frontend display)
-            "account": vat_output.get("name"),
-            "name": vat_output.get("name"),
-
-            "debit": output_total,
-            "credit": 0,
-        })  
+            "account_role": "vat_payable",
+            "account": vat_payable.get("name") or "VAT Payable",
+            "name": vat_payable.get("name") or "VAT Payable",
+            "debit": 0,
+            "credit": net_vat,
+        })
         settlement_type = "payable"
 
     elif net_vat < 0:
         lines.append({
-            "account_role": "vat_output",
-            "account_name": vat_output.get("name"),
-
-            # 👇 ADD THESE (for frontend display)
-            "account": vat_output.get("name"),
-            "name": vat_output.get("name"),
-
-            "debit": output_total,
+            "account_role": "vat_receivable",
+            "account": vat_receivable.get("name") or "VAT Receivable / Refund Due",
+            "name": vat_receivable.get("name") or "VAT Receivable / Refund Due",
+            "debit": abs(net_vat),
             "credit": 0,
-        })      
+        })
         settlement_type = "refund"
 
     else:
