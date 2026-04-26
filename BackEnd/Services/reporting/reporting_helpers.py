@@ -101,7 +101,7 @@ def label_period(date_from: Optional[date], date_to: Optional[date]) -> str:
 
 
 def want_export(fmt: str) -> bool:
-    return (fmt or "").lower() in ("csv", "xlsx", "pdf", "sars_xml")
+    return (fmt or "").lower() in ("csv", "xlsx", "pdf", "Tax Authority_xml")
 
 
 def make_columns(

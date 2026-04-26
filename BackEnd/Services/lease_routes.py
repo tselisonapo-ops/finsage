@@ -1352,47 +1352,35 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
                 "source_id": schedule_id,
             }
 
-            journal_id = db_service.insert_journal(int(company_id), journal_entry, cur=cur)
+            entry = {
+                "date": str(journal_date),
+                "ref": f"LEASE-{lease_id}-P{period_no}",
+                "description": desc,
+                "gross_amount": gross,
+                "net_amount": gross,
+                "vat_amount": float(sched.get("vat_portion") or 0.0),
+                "source": "lease_monthly",
+                "source_id": schedule_id,
+                "lines": lines,
+            }
+
+            journal_id = int(db_service.post_journal(int(company_id), entry, cur=cur) or 0)
             if journal_id <= 0:
-                raise ValueError("Failed to insert journal")
+                raise ValueError("Failed to post monthly lease journal")
 
-            for i, line in enumerate(lines, start=1):
-                db_service.insert_journal_line(
-                    int(company_id),
-                    int(journal_id),
-                    i,
-                    line,
-                    source="lease_monthly",
-                    source_id=schedule_id,
-                    cur=cur,
-                )
+            cur.execute(
+                f"""
+                UPDATE {schema}.lease_schedule
+                SET posted_journal_id=%s,
+                    posted_at=NOW()
+                WHERE id=%s
+                AND COALESCE(posted_journal_id,0)=0
+                """,
+                (journal_id, schedule_id),
+            )
 
-            # 6) write ledger lines + TB + notes
-            for line in lines:
-                db_service.insert_ledger(int(company_id), journal_id, journal_date, line, cur=cur)
-                db_service.update_trial_balance(int(company_id), line, cur=cur)
-
-                if db_service.requires_notes(line["account_code"]):
-                    db_service.insert_note(
-                        int(company_id),
-                        journal_id,
-                        line["account_code"],
-                        desc,
-                        cur=cur,
-                    )
-
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.lease_schedule
-                    SET posted_journal_id=%s,
-                        posted_at=NOW()
-                    WHERE id=%s
-                    AND COALESCE(posted_journal_id,0)=0
-                    """,
-                    (int(journal_id), schedule_id),
-                )
-                if cur.rowcount == 0:
-                    raise ValueError("Failed to mark schedule as posted (concurrent modification?)")
+            if cur.rowcount == 0:
+                raise ValueError("Failed to mark schedule as posted")
                 
             # 8) audit (best-effort)
             try:

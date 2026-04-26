@@ -27975,7 +27975,9 @@ class DatabaseService:
         rou_rows = self.fetch_all(
             f"""
             WITH dep_period AS (
-                SELECT s.lease_id, SUM(COALESCE(s.depreciation,0)) AS dep_period
+                SELECT
+                    s.lease_id,
+                    SUM(COALESCE(s.depreciation,0)) AS dep_period
                 FROM {schema}.lease_schedule s
                 JOIN {schema}.leases l ON l.id = s.lease_id
                 WHERE s.company_id=%s
@@ -27986,7 +27988,9 @@ class DatabaseService:
                 GROUP BY s.lease_id
             ),
             mods_period AS (
-                SELECT m.lease_id, SUM(COALESCE(m.rou_adjustment,0)) AS mods_period
+                SELECT
+                    m.lease_id,
+                    SUM(COALESCE(m.rou_adjustment,0)) AS mods_period
                 FROM {schema}.lease_modifications m
                 JOIN {schema}.leases l ON l.id = m.lease_id
                 WHERE m.company_id=%s
@@ -27996,8 +28000,10 @@ class DatabaseService:
                 {lease_status_sql}
                 GROUP BY m.lease_id
             ),
-            term_period AS (
-                SELECT t.lease_id, SUM(COALESCE(t.rou_nbv,0)) AS disposed_period
+            disposals_period AS (
+                SELECT
+                    t.lease_id,
+                    SUM(COALESCE(t.rou_nbv,0)) AS disposed_period
                 FROM {schema}.lease_terminations t
                 JOIN {schema}.leases l ON l.id = t.lease_id
                 WHERE t.company_id=%s
@@ -28010,52 +28016,65 @@ class DatabaseService:
             SELECT
                 l.id AS lease_id,
                 l.lease_name,
+                l.start_date,
 
-                CASE WHEN l.start_date < %s THEN COALESCE(l.opening_rou_asset,0) ELSE 0 END AS opening,
-                CASE WHEN l.start_date BETWEEN %s AND %s THEN COALESCE(l.opening_rou_asset,0) ELSE 0 END AS additions,
+                CASE
+                    WHEN l.start_date < %s
+                    THEN COALESCE(l.opening_rou_asset,0)
+                    ELSE 0
+                END AS opening,
 
-                COALESCE(mp.mods_period,0)     AS remeasurements,
-                COALESCE(dp.dep_period,0)      AS depreciation,
+                CASE
+                    WHEN l.start_date >= %s AND l.start_date <= %s
+                    THEN COALESCE(l.opening_rou_asset,0)
+                    ELSE 0
+                END AS additions,
+
+                COALESCE(mp.mods_period,0) AS remeasurements,
+                COALESCE(dp.dep_period,0) AS depreciation,
                 COALESCE(tp.disposed_period,0) AS disposals
 
             FROM {schema}.leases l
             LEFT JOIN dep_period dp ON dp.lease_id = l.id
             LEFT JOIN mods_period mp ON mp.lease_id = l.id
-            LEFT JOIN term_period tp ON tp.lease_id = l.id
+            LEFT JOIN disposals_period tp ON tp.lease_id = l.id
             WHERE l.company_id=%s
+            AND l.start_date <= %s
+            {lease_status_sql}
             ORDER BY l.start_date NULLS LAST, l.id
             """,
             (
-                int(company_id), from_date, to_date,     # dep_period
-                int(company_id), from_date, to_date,     # mods_period
-                int(company_id), from_date, to_date,     # term_period
-                from_date, from_date, to_date,           # opening/additions split
-                int(company_id),
+                int(company_id), from_date, to_date,
+                int(company_id), from_date, to_date,
+                int(company_id), from_date, to_date,
+                from_date,
+                from_date, to_date,
+                int(company_id), to_date,
             ),
             cur=cur,
         ) or []
 
         rou_table = []
-        for r in rou_rows:
-            opening = float(r.get("opening") or 0)
-            additions = float(r.get("additions") or 0)
-            mods = float(r.get("remeasurements") or 0)
-            dep = float(r.get("depreciation") or 0)
-            disp = float(r.get("disposals") or 0)
 
-            closing = opening + additions + mods - dep - disp
+        for r in rou_rows:
+            opening = float(r.get("opening") or 0.0)
+            additions = float(r.get("additions") or 0.0)
+            remeasurements = float(r.get("remeasurements") or 0.0)
+            depreciation = float(r.get("depreciation") or 0.0)
+            disposals = float(r.get("disposals") or 0.0)
+
+            closing = opening + additions + remeasurements - depreciation - disposals
 
             rou_table.append({
-                "lease_id": r.get("lease_id"),
-                "lease_name": r.get("lease_name"),
+                "lease_id": int(r.get("lease_id") or 0),
+                "lease_name": r.get("lease_name") or "",
                 "opening": round(opening, 2),
                 "additions": round(additions, 2),
-                "remeasurements": round(mods, 2),
-                "depreciation": round(dep, 2),
-                "disposals": round(disp, 2),
+                "remeasurements": round(remeasurements, 2),
+                "depreciation": round(depreciation, 2),
+                "disposals": round(disposals, 2),
                 "closing": round(closing, 2),
             })
-
         return {
             "company_id": int(company_id),
             "mode": "strict_posted_only",

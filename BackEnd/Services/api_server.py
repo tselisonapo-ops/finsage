@@ -862,9 +862,9 @@ def _ensure_vat_accounts_in_rows(company_id: int, rows: list) -> list:
     """
     needed = {
         "1410": ('VAT Input',  '1410', 'Asset',     'Current Assets',
-                 'Input VAT on purchases – recoverable from SARS', None),
+                 'Input VAT on purchases – recoverable from Tax Authority', None),
         "2310": ('VAT Output', '2310', 'Liability', 'Current Liabilities',
-                 'Output VAT on sales – payable to SARS', None),
+                 'Output VAT on sales – payable to Tax Authority', None),
     }
 
     present_codes = set()

@@ -12409,7 +12409,7 @@ async function showVatPaymentModal() {
           <label class="text-xs text-slate-500">Reference</label>
           <input id="vatPaymentReference" type="text"
             class="w-full border rounded px-2 py-2 text-sm"
-            placeholder="Bank/SARS reference">
+            placeholder="Bank/Tax Authority reference">
         </div>
       </div>
 
