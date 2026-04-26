@@ -23509,6 +23509,15 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS settlement_paid_journal_id INT NULL;
 
         ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS payment_journal_id INT;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS paid_at DATE;
+
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+
+        ALTER TABLE {schema}.vat_filings
         ADD COLUMN IF NOT EXISTS prepared_at TIMESTAMPTZ;
 
         ALTER TABLE {schema}.vat_filings
@@ -23662,6 +23671,44 @@ class DatabaseService:
             conn.commit()
             return bool(row)
 
+    def mark_vat_filing_payment_posted(
+        self,
+        company_id: int,
+        filing_id: int,
+        *,
+        journal_id: int,
+        paid_at=None,
+        payment_reference: str | None = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            UPDATE {schema}.vat_filings
+            SET
+                payment_journal_id = %s,
+                paid_at = %s,
+                payment_reference = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *;
+        """
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(
+                sql,
+                (
+                    int(journal_id),
+                    paid_at,
+                    payment_reference,
+                    int(company_id),
+                    int(filing_id),
+                ),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row
+    
     def ensure_company_vat_settlement_accounts(self, company_id: int) -> dict:
         schema = self.company_schema(company_id)
 
