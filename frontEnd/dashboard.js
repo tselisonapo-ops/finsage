@@ -12338,7 +12338,7 @@ async function showVatPaymentModal() {
   try {
     bankAccounts = await loadVatBankAccounts(cid);
     console.log("VAT bankAccounts", bankAccounts);
-    
+
   } catch (e) {
     console.warn("Could not load bank accounts:", e);
   }
@@ -12346,6 +12346,7 @@ async function showVatPaymentModal() {
   const bankOptions = bankAccounts.length
     ? bankAccounts.map((b) => {
         const gl =
+          b.ledger_account_code ||
           b.code ||
           b.gl_account_code ||
           b.linked_gl_account ||
@@ -12358,9 +12359,11 @@ async function showVatPaymentModal() {
           b.bank_name ||
           "Bank account";
 
+        const accountNo = b.account_number ? ` • ${b.account_number}` : "";
+
         return `
           <option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">
-            ${name}${gl ? ` — ${gl}` : ""}
+            ${name}${accountNo}${gl ? ` — ${gl}` : " — No GL linked"}
           </option>
         `;
       }).join("")
