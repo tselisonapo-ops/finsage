@@ -12342,24 +12342,17 @@ async function showVatPaymentModal() {
   }
 
   const bankOptions = bankAccounts.map((b) => {
-    const gl =
-      b.gl_account ||
-      b.account_code ||
-      b.bank_gl_account ||
-      b.cash_account_code ||
-      b.ledger_account ||
-      b.coa_code ||
-      "BS_CA_1000";
+    const gl = b.code || "";   // ✅ THIS is your GL account
 
     const name =
+      b.name ||
       b.account_name ||
       b.bank_name ||
-      b.name ||
       "Cash & Bank";
 
     return `
       <option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">
-        ${name}
+        ${name} — ${gl}
       </option>
     `;
   }).join("");
@@ -12433,6 +12426,11 @@ async function showVatPaymentModal() {
     const bankAccount = bankSelect?.value || "";
     const bankAccountName = bankSelect?.selectedOptions?.[0]?.dataset?.name || "Cash & Bank";
 
+    if (!bankAccount) {
+      document.getElementById("vatPaymentPreviewBox").innerHTML =
+        `<div class="p-3 text-red-600">Please select a bank account linked to a GL account.</div>`;
+      return; // ⛔ stop preview call
+    }
     const payload = {
       from: period.start_date,
       to: period.end_date,
@@ -12499,6 +12497,13 @@ async function showVatPaymentModal() {
 
   document.getElementById("vatPaymentPostBtn")?.addEventListener("click", async () => {
     try {
+      const bankAccount = document.getElementById("vatPaymentBankAccount")?.value;
+
+      if (!bankAccount) {
+        alert("Selected bank account has no GL account.");
+        return;
+      }
+
       const payload = await loadPreview();
 
       const res = await apiFetch(ENDPOINTS.vatFilingPay(cid), {
