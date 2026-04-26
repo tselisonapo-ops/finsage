@@ -10937,23 +10937,45 @@ class DatabaseService:
         $ck_lease_payments_reversal_sanity$;
 
         -- ==================================================
-        -- Uniques (anti-duplicate)
+        -- Lease payment indexes
+        -- Partial payments are allowed per schedule period.
+        -- Excess is blocked in application logic by comparing
+        -- SUM(amount_gross) against lease_schedule.payment.
         -- ==================================================
-        DO $uq_lease_payments_lease_date_amount_ref$
+
+        DO $drop_old_lease_payment_ref_unique$
         BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_indexes
-                WHERE schemaname='{schema}' AND indexname='uq_lease_payments_lease_date_amount_ref'
+            IF EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname='{schema}'
+                AND indexname='uq_lease_payments_lease_date_amount_ref'
             ) THEN
                 EXECUTE format(
-                    'CREATE UNIQUE INDEX uq_lease_payments_lease_date_amount_ref
-                    ON %I.lease_payments(lease_id, payment_date, amount_gross, COALESCE(reference, ''''))
-                    WHERE status <> ''void''',
+                    'DROP INDEX IF EXISTS %I.uq_lease_payments_lease_date_amount_ref',
                     '{schema}'
                 );
             END IF;
         END
-        $uq_lease_payments_lease_date_amount_ref$;
+        $drop_old_lease_payment_ref_unique$;
+
+        DO $lease_payments_lease_schedule_status_idx$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname='{schema}'
+                AND indexname='{schema}_lease_payments_lease_schedule_status_idx'
+            ) THEN
+                EXECUTE format(
+                    'CREATE INDEX %I
+                     ON %I.lease_payments(lease_id, schedule_id, status)',
+                    '{schema}_lease_payments_lease_schedule_status_idx',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $lease_payments_lease_schedule_status_idx$;
 
         DO $uq_lease_payments_one_reversal_per_original$
         BEGIN
@@ -19984,12 +20006,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v50")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v51")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=50,
+                    migration_version=51,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -25607,6 +25629,8 @@ class DatabaseService:
         amount_gross: float,
         amount_net: float = 0.0,
         vat_amount: float = 0.0,
+        interest_amount: float = 0.0,
+        principal_amount: float = 0.0,
         reference: str | None = None,
         notes: str | None = None,
         bank_account_code: str | None = None,
@@ -25616,15 +25640,17 @@ class DatabaseService:
         cur=None,
     ) -> int:
         schema = f"company_{int(company_id)}"
+
         row = self.fetch_one(f"""
             INSERT INTO {schema}.lease_payments (
                 company_id, lease_id, schedule_id, lessor_id,
                 payment_date,
                 amount_gross, amount_net, vat_amount,
+                interest_amount, principal_amount,
                 reference, notes, bank_account_code,
                 status, posted_journal_id, created_by
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id;
         """, (
             int(company_id),
@@ -25635,6 +25661,8 @@ class DatabaseService:
             float(amount_gross or 0.0),
             float(amount_net or 0.0),
             float(vat_amount or 0.0),
+            float(interest_amount or 0.0),
+            float(principal_amount or 0.0),
             (reference or None),
             (notes or None),
             (bank_account_code or None),
@@ -25995,13 +26023,14 @@ class DatabaseService:
         schedule_id: int | None = None,
     ) -> dict:
         """
-        Posts a lease payment as a journal entry + ledger lines.
+        Posts a lease payment as journal + ledger.
 
-        IMPORTANT DESIGN:
-        - Payment posting = cash/VAT/liability settlement ONLY.
-        - Monthly IFRS16 posting (interest + ROU depreciation) is posted separately.
-        - Therefore: this function MUST NOT write company_*.lease_schedule.posted_journal_id,
-        because that column is reserved for monthly posting.
+        Design:
+        - Allows partial payments per schedule period.
+        - Blocks payments that exceed remaining schedule amount.
+        - Allocates payment against remaining VAT, interest and principal.
+        - Does NOT update lease_schedule.posted_journal_id.
+        That field is reserved for monthly IFRS 16 recognition postings.
         """
         from decimal import Decimal, ROUND_HALF_UP
 
@@ -26012,20 +26041,18 @@ class DatabaseService:
         TOL = money("0.02")
 
         with self._conn_cursor() as (conn, cur):
-            # 1) Load lease (and ensure lessor exists)
             lease = self.get_lease_by_id(company_id, lease_id, cur=cur)
             if not lease:
                 raise ValueError("Lease not found")
 
             lessor_id = int(lease.get("lessor_id") or 0)
             if not lessor_id:
-                raise ValueError("Lease missing lessor_id (cannot post payment without a lessor)")
+                raise ValueError("Lease missing lessor_id")
 
             amt_in = money(amount)
             if amt_in <= money("0"):
                 raise ValueError("Amount must be > 0")
 
-            # 2) Resolve bank posting code
             if not bank_account_id:
                 raise ValueError("No bank account selected")
 
@@ -26037,19 +26064,21 @@ class DatabaseService:
             if not bank_code:
                 raise ValueError("Selected bank account has no ledger_account_code")
 
-            # 3) Resolve lease posting accounts (from settings)
             accts = self.get_lease_posting_accounts(company_id, cur=cur)
 
             def resolve(raw: str | None, label: str) -> str:
                 raw = (raw or "").strip()
                 if not raw:
                     raise ValueError(f"Missing {label} account in company settings")
+
                 row = self.get_account_row_for_posting(company_id, raw, cur=cur)
                 if not row:
                     raise ValueError(f"{label} '{raw}' not found in COA")
+
                 posting = (row[1] or "").strip()
                 if not posting:
                     raise ValueError(f"{label} resolved blank for '{raw}'")
+
                 return posting
 
             LIAB_CUR = resolve(accts.get("liability_current"), "Lease liability current")
@@ -26060,13 +26089,14 @@ class DatabaseService:
             INT_EXP = resolve(accts.get("interest_exp"), "Lease interest expense")
             VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
-            # 4) Choose schedule row (lock it)
+            # 1) Lock the schedule period
             if schedule_id:
                 sched = self.fetch_one(
                     f"""
                     SELECT *
                     FROM {schema}.lease_schedule
-                    WHERE id=%s AND lease_id=%s
+                    WHERE id=%s
+                    AND lease_id=%s
                     LIMIT 1
                     FOR UPDATE
                     """,
@@ -26074,7 +26104,7 @@ class DatabaseService:
                     cur=cur,
                 )
                 if not sched:
-                    raise ValueError("Invalid schedule_id (not found for this lease)")
+                    raise ValueError("Invalid schedule_id")
             else:
                 sched = self.fetch_one(
                     f"""
@@ -26092,86 +26122,125 @@ class DatabaseService:
                 if not sched:
                     raise ValueError("No schedule period found for payment_date")
 
-            # 5) Idempotency checks (DO NOT use lease_schedule.posted_journal_id!)
-            already_pay = self.fetch_one(
+            sched_id = int(sched["id"])
+            period_no = int(sched.get("period_no") or 0)
+
+            # 2) Expected schedule components
+            interest_expected = money(sched.get("interest") or 0)
+            principal_expected = money(sched.get("principal") or 0)
+            vat_expected = money(sched.get("vat_portion") or 0)
+
+            gross_expected = money(sched.get("payment") or 0)
+
+            # Fallback if schedule payment is blank or inconsistent
+            component_total = interest_expected + principal_expected + vat_expected
+            if gross_expected <= money("0"):
+                gross_expected = component_total
+
+            if gross_expected <= money("0"):
+                raise ValueError("Schedule payment amount is zero")
+
+            # 3) Already paid for this schedule period
+            paid_row = self.fetch_one(
                 f"""
-                SELECT id, posted_journal_id
+                SELECT
+                    COALESCE(SUM(amount_gross),0)     AS paid_gross,
+                    COALESCE(SUM(interest_amount),0)  AS paid_interest,
+                    COALESCE(SUM(principal_amount),0) AS paid_principal,
+                    COALESCE(SUM(vat_amount),0)       AS paid_vat
                 FROM {schema}.lease_payments
                 WHERE lease_id=%s
-                AND COALESCE(schedule_id,0)=COALESCE(%s,0)
+                AND schedule_id=%s
                 AND status='posted'
-                ORDER BY id DESC
-                LIMIT 1
                 """,
-                (int(lease_id), int(sched["id"])),
+                (int(lease_id), sched_id),
                 cur=cur,
-            )
-            if already_pay:
+            ) or {}
+
+            paid_gross = money(paid_row.get("paid_gross") or 0)
+            paid_interest = money(paid_row.get("paid_interest") or 0)
+            paid_principal = money(paid_row.get("paid_principal") or 0)
+            paid_vat = money(paid_row.get("paid_vat") or 0)
+
+            remaining_gross = gross_expected - paid_gross
+
+            if remaining_gross <= TOL:
                 return {
                     "ok": False,
-                    "error": "ALREADY_PAID",
-                    "schedule_id": int(sched["id"]),
-                    "journal_id": int(already_pay.get("posted_journal_id") or 0),
-                    "lease_payment_id": int(already_pay.get("id")),
+                    "error": "PERIOD_FULLY_PAID",
+                    "lease_id": int(lease_id),
+                    "schedule_id": sched_id,
+                    "period_no": period_no,
+                    "amount_expected": str(gross_expected),
+                    "amount_paid": str(paid_gross),
+                    "remaining": "0.00",
                 }
 
-            # 6) Compute allocation from schedule row
-            interest = money(sched.get("interest"))
-            principal = money(sched.get("principal"))
-            gross_expected = money(sched.get("payment") or 0)
-            vat_portion = money(sched.get("vat_portion") or 0)
+            if amt_in > remaining_gross + TOL:
+                return {
+                    "ok": False,
+                    "error": "PAYMENT_EXCEEDS_REMAINING",
+                    "lease_id": int(lease_id),
+                    "schedule_id": sched_id,
+                    "period_no": period_no,
+                    "amount_expected": str(gross_expected),
+                    "amount_paid": str(paid_gross),
+                    "remaining": str(remaining_gross),
+                    "amount_attempted": str(amt_in),
+                }
 
-            alloc = min(amt_in, gross_expected) if gross_expected > money("0") else amt_in
-            ratio = (alloc / gross_expected) if gross_expected > money("0") else money("0")
+            # 4) Allocate payment against remaining components
+            rem_vat = max(vat_expected - paid_vat, money("0"))
+            rem_interest = max(interest_expected - paid_interest, money("0"))
+            rem_principal = max(principal_expected - paid_principal, money("0"))
 
-            timing = (sched.get("payment_timing") or lease.get("payment_timing") or "").strip().lower()
+            alloc = amt_in
 
-            alloc_vat = money(vat_portion * ratio)
+            # VAT first because cash payment is gross; then interest/principal.
+            alloc_vat = min(alloc, rem_vat)
+            alloc -= alloc_vat
 
-            # ✅ Design A: payment flow is settlement only
-            alloc_interest = money("0")
-            alloc_principal = money(alloc - alloc_vat)
-            alloc_net = money(alloc - alloc_vat)
+            alloc_interest = min(alloc, rem_interest)
+            alloc -= alloc_interest
 
-            if (alloc_interest + alloc_principal + alloc_vat - alloc).copy_abs() > money("0.05"):
+            alloc_principal = min(alloc, rem_principal)
+            alloc -= alloc_principal
+
+            # If rounding leaves a tiny amount, push it to principal.
+            if alloc.copy_abs() <= TOL:
+                alloc_principal += alloc
+                alloc = money("0")
+
+            if alloc.copy_abs() > TOL:
                 raise ValueError(
-                    f"Allocation mismatch: interest({alloc_interest}) + principal({alloc_principal}) + vat({alloc_vat}) != alloc({alloc})"
+                    f"Allocation error: unallocated amount {alloc} for schedule {sched_id}"
                 )
 
-            # Duplicate prevention (same lease/date/amount/reference)
-            existing = self.fetch_one(
-                f"""
-                SELECT id, posted_journal_id, status
-                FROM {schema}.lease_payments
-                WHERE lease_id=%s
-                AND payment_date=%s
-                AND amount_gross=%s
-                AND COALESCE(reference,'')=COALESCE(%s,'')
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (int(lease_id), payment_date, float(amt_in), reference),
-                cur=cur,
-            )
-            if existing:
-                return {
-                    "ok": False,
-                    "error": "DUPLICATE_PAYMENT",
-                    "lease_payment_id": int(existing["id"]),
-                    "journal_id": int(existing.get("posted_journal_id") or 0) or None,
-                    "status": existing.get("status"),
-                }
+            alloc_net = alloc_interest + alloc_principal
 
-            # 7) Insert lease_payment row (draft)
+            if (alloc_net + alloc_vat - amt_in).copy_abs() > money("0.05"):
+                raise ValueError(
+                    f"Allocation mismatch: net({alloc_net}) + vat({alloc_vat}) != amount({amt_in})"
+                )
+
+            timing = (
+                sched.get("payment_timing")
+                or lease.get("payment_timing")
+                or ""
+            ).strip().lower()
+
+            # 5) Insert lease payment as draft
             pay_id = self.insert_lease_payment(
                 company_id=company_id,
                 lease_id=int(lease_id),
                 lessor_id=int(lessor_id),
-                schedule_id=int(sched["id"]),
+                schedule_id=sched_id,
                 payment_date=payment_date,
                 amount_gross=float(amt_in),
                 amount_net=float(alloc_net),
                 vat_amount=float(alloc_vat),
+                interest_amount=float(alloc_interest),
+                principal_amount=float(alloc_principal),
                 reference=reference,
                 notes=description,
                 bank_account_code=bank_code,
@@ -26179,33 +26248,49 @@ class DatabaseService:
                 created_by=user_id,
                 cur=cur,
             )
+
             if not pay_id:
                 raise ValueError("Failed to create lease payment record")
 
-            # 8) Build journal lines (payment only)
-            lines: list[dict] = []
-            lines.append({"account_code": bank_code, "debit": 0.0, "credit": float(alloc), "memo": "Lease payment (cash)"})
+            # 6) Build journal lines
+            lines: list[dict] = [
+                {
+                    "account_code": bank_code,
+                    "debit": 0.0,
+                    "credit": float(amt_in),
+                    "memo": "Lease payment (cash)",
+                }
+            ]
 
-            # (Optional) keep this for legacy flows; currently alloc_interest = 0 by design
             if alloc_interest > money("0"):
-                lines.append({"account_code": INT_EXP, "debit": float(alloc_interest), "credit": 0.0, "memo": "Lease interest"})
+                lines.append({
+                    "account_code": INT_EXP,
+                    "debit": float(alloc_interest),
+                    "credit": 0.0,
+                    "memo": "Lease interest",
+                })
 
             if alloc_principal > money("0"):
                 lines.append({
-                    "account_code": LIAB_NCUR or LIAB_CUR,  # reduce liability bucket (your chosen design)
+                    "account_code": LIAB_NCUR or LIAB_CUR,
                     "debit": float(alloc_principal),
                     "credit": 0.0,
-                    "memo": "Reduce lease liability"
+                    "memo": "Reduce lease liability",
                 })
 
             if alloc_vat > money("0"):
-                lines.append({"account_code": VAT_INPUT, "debit": float(alloc_vat), "credit": 0.0, "memo": "VAT input (lease payment)"})
+                lines.append({
+                    "account_code": VAT_INPUT,
+                    "debit": float(alloc_vat),
+                    "credit": 0.0,
+                    "memo": "VAT input (lease payment)",
+                })
 
             entry = {
                 "date": payment_date.isoformat(),
                 "ref": (reference or f"LEASEPAY-{pay_id}").strip(),
                 "description": description or f"Lease payment – {lease.get('lease_name') or f'Lease {lease_id}'}",
-                "gross_amount": float(alloc),
+                "gross_amount": float(amt_in),
                 "net_amount": float(alloc_net),
                 "vat_amount": float(alloc_vat),
                 "source": "lease_payment",
@@ -26217,15 +26302,23 @@ class DatabaseService:
             if journal_id <= 0:
                 raise ValueError("Failed to post lease payment journal")
 
-            # 9) Mark payment posted (ONLY the payment table)
-            self.set_lease_payment_posted(company_id, int(pay_id), journal_id, cur=cur, conn=conn)
+            self.set_lease_payment_posted(
+                company_id,
+                int(pay_id),
+                journal_id,
+                cur=cur,
+                conn=conn,
+            )
 
-            # 10) publish engagement posting activity (INSIDE transaction)
             if engagement_company_id and engagement_id:
                 currency_code = (
                     (lease.get("currency_code") or "").strip()
                     or (lease.get("currency") or "").strip()
-                    or (self.get_company_profile(company_id).get("currency") if self.get_company_profile(company_id) else "")
+                    or (
+                        self.get_company_profile(company_id).get("currency")
+                        if self.get_company_profile(company_id)
+                        else ""
+                    )
                     or "ZAR"
                 )
 
@@ -26241,7 +26334,7 @@ class DatabaseService:
                     prepared_by_user_id=user_id,
                     reviewer_user_id=None,
                     status="posted",
-                    amount=float(alloc),
+                    amount=float(amt_in),
                     currency_code=currency_code,
                     source_table="lease_payments",
                     source_id=int(pay_id),
@@ -26250,10 +26343,10 @@ class DatabaseService:
                     updated_by_user_id=user_id,
                 )
 
-                print("[post_lease_payment] engagement activity recorded", flush=True)
-
-            # 11) DO NOT touch lease_schedule.posted_journal_id here
-            fully_paid = (gross_expected > money("0")) and (alloc + TOL >= gross_expected)
+            fully_paid = (
+                gross_expected > money("0")
+                and (paid_gross + amt_in + TOL) >= gross_expected
+            )
 
             conn.commit()
 
@@ -26263,12 +26356,14 @@ class DatabaseService:
                 "journal_id": int(journal_id),
                 "lease_id": int(lease_id),
                 "lessor_id": int(lessor_id),
-                "schedule_id": int(sched["id"]),
-                "period_no": int(sched.get("period_no") or 0),
+                "schedule_id": sched_id,
+                "period_no": period_no,
                 "payment_timing": timing,
                 "amount_input": str(amt_in),
                 "amount_expected": str(gross_expected),
-                "amount_allocated": str(alloc),
+                "amount_paid_before": str(paid_gross),
+                "amount_remaining_before": str(remaining_gross),
+                "amount_allocated": str(amt_in),
                 "interest": str(alloc_interest),
                 "principal": str(alloc_principal),
                 "vat": str(alloc_vat),
