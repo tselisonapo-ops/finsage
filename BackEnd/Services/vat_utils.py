@@ -658,6 +658,7 @@ def resolve_account_by_role(company_id: int, role: str) -> dict:
         "vat_output": "vat_output",
         "vat_receivable": "vat_refund",
         "vat_payable": "vat_payable",
+        "bank": "cash",
     }
 
     cf_bucket = bucket_map.get(role_norm, role_norm)
@@ -1553,8 +1554,6 @@ def vat_filing_pay(company_id: int):
     end_date = _parse_date((payload.get("to") or "").strip(), None)
     payment_date = _parse_date((payload.get("payment_date") or "").strip(), date.today())
 
-    bank_account = (payload.get("bank_account") or "").strip()
-    bank_account_name = (payload.get("bank_account_name") or "Bank").strip() or "Bank"
     reference = (payload.get("reference") or "").strip()
     preview_only = bool(payload.get("preview_only"))
 
@@ -1565,9 +1564,6 @@ def vat_filing_pay(company_id: int):
 
     if not start_date or not end_date:
         return jsonify({"ok": False, "error": "from and to are required"}), 400
-
-    if not bank_account:
-        return jsonify({"ok": False, "error": "bank_account is required"}), 400
 
     filing = db_service.get_vat_filing(company_id, start_date, end_date)
     if not filing:
@@ -1610,6 +1606,8 @@ def vat_filing_pay(company_id: int):
     if not vat_payable or not vat_payable.get("code"):
         return jsonify({"ok": False, "error": "VAT payable account role is missing"}), 400
 
+    cash_bank = resolve_account_by_role(company_id, "bank")
+
     period_label = filing.get("period_label") or f"{start_date} to {end_date}"
 
     if net_vat > 0:
@@ -1625,8 +1623,8 @@ def vat_filing_pay(company_id: int):
             },
             {
                 "account_role": "bank",
-                "account": bank_account,
-                "name": bank_account_name,
+                "account": cash_bank["code"],
+                "name": cash_bank.get("name") or "Cash & Bank",
                 "debit": 0,
                 "credit": amount,
             },
@@ -1637,8 +1635,8 @@ def vat_filing_pay(company_id: int):
         lines = [
             {
                 "account_role": "bank",
-                "account": bank_account,
-                "name": bank_account_name,
+                "account": cash_bank["code"],
+                "name": cash_bank.get("name") or "Cash & Bank",
                 "debit": amount,
                 "credit": 0,
             },
@@ -1695,28 +1693,6 @@ def vat_filing_pay(company_id: int):
         "created_by_user_id": int(user.get("id") or 0),
         "prepared_by_user_id": int(user.get("id") or 0),
     }
-
-    resolved_lines = []
-
-    for l in preview["journal_lines"]:
-        if l.get("account_role") == "bank":
-            # ✅ DO NOT resolve bank — use selected account
-            resolved_lines.append({
-                "account": l["account"],
-                "name": l.get("name") or "Bank",
-                "debit": l["debit"],
-                "credit": l["credit"],
-            })
-        else:
-            # ✅ Resolve only VAT roles
-            acc = resolve_account_by_role(company_id, l["account_role"])
-
-            resolved_lines.append({
-                "account": acc["code"],
-                "name": acc["name"],
-                "debit": l["debit"],
-                "credit": l["credit"],
-            })
 
     journal_id = db_service.post_journal(company_id=company_id, entry=entry)
 
