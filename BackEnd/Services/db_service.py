@@ -35531,8 +35531,10 @@ class DatabaseService:
         include_drafts: bool = False,
     ) -> dict | None:
         """
-        Returns the first matching bill for vendor+number.
-        By default, only considers NON-DRAFT bills (matches the DB partial unique index).
+        Returns the first matching active bill for vendor+number.
+
+        By default, ignores draft/void/written_off/reversed bills,
+        matching the DB partial unique index.
         """
         schema = self.company_schema(company_id)
         num = (number or "").strip()
@@ -35550,13 +35552,21 @@ class DatabaseService:
         params = [int(company_id), int(vendor_id), num]
 
         if not include_drafts:
-            sql += " AND lower(coalesce(status,'')) <> 'draft' "
+            sql += """
+            AND lower(coalesce(status,'')) NOT IN (
+                'draft',
+                'void',
+                'written_off',
+                'reversed'
+            )
+            """
 
         if exclude_bill_id:
             sql += " AND id <> %s"
             params.append(int(exclude_bill_id))
 
         sql += " ORDER BY id DESC LIMIT 1;"
+
         return self.fetch_one(sql, tuple(params))
 
     def get_bill_allocated_total(self, company_id: int, bill_id: int) -> Decimal:
