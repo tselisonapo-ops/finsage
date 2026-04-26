@@ -23173,6 +23173,62 @@ function renderPPENoteHTML(payload) {
     `;
   }).join("");
 
+  const carryingHtml = `
+    <div class="border rounded-lg p-3">
+      <div class="font-semibold mb-2">Carrying amount (Net book value)</div>
+      <div class="overflow-auto">
+        <table class="w-full text-xs border">
+          <thead>
+            <tr class="bg-slate-50">
+              <th class="p-2 border text-left">Movement</th>
+              <th class="p-2 border text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="p-2 border">Opening carrying amount</td>
+              <td class="p-2 border text-right">${fmtMoney(summary?.opening_carrying || 0)}</td>
+            </tr>
+              <tr>
+                <td class="p-2 border">Additions / revaluations</td>
+                <td class="p-2 border text-right">${fmtMoney(
+                  Number(summary?.additions_cost || 0) +
+                  Number(summary?.subsequent_additions_cost || 0) +
+                  Number(summary?.revaluation_upward || 0) -
+                  Number(summary?.revaluation_downward || 0)
+                )}</td>
+              </tr>
+
+              <tr>
+                <td class="p-2 border">Depreciation</td>
+                <td class="p-2 border text-right">${fmtMoney(-(summary?.depreciation_charge || 0))}</td>
+              </tr>
+
+              <tr>
+                <td class="p-2 border">Impairment losses</td>
+                <td class="p-2 border text-right">${fmtMoney(-(summary?.impairment_losses || 0))}</td>
+              </tr>
+
+              <tr>
+                <td class="p-2 border">Impairment reversals</td>
+                <td class="p-2 border text-right">${fmtMoney(summary?.impairment_reversals || 0)}</td>
+              </tr>
+
+              <tr>
+                <td class="p-2 border">Disposals</td>
+                <td class="p-2 border text-right">${fmtMoney(-(summary?.disposals_carrying || 0))}</td>
+              </tr>
+
+              <tr class="font-semibold">
+                <td class="p-2 border">Closing carrying amount</td>
+                <td class="p-2 border text-right">${fmtMoney(summary?.closing_carrying || 0)}</td>
+              </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
   const revalHtml = revals.length ? `
     <div class="border rounded-lg p-3">
       <div class="font-semibold mb-2">Revaluation disclosures</div>
@@ -23239,8 +23295,9 @@ function renderPPENoteHTML(payload) {
         </div>
       </div>
 
-      ${sectionHtml}
-      ${revalHtml}
+    ${sectionHtml}
+    ${carryingHtml}
+    ${revalHtml}
     </div>
   `;
 }
