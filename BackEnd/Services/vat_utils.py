@@ -641,16 +641,45 @@ def _build_vat_settlement_preview(
     }
 
 def resolve_account_by_role(company_id: int, role: str) -> dict:
-    row = db_service.fetch_one("""
-        SELECT code, name
+    schema = db_service.company_schema(company_id)
+
+    role_norm = str(role or "").strip().lower()
+
+    # Map role to cf_bucket fallback
+    bucket_map = {
+        "vat_input": "vat_input",
+        "vat_output": "vat_output",
+        "vat_receivable": "vat_refund",
+        "vat_payable": "vat_payable",
+    }
+
+    cf_bucket = bucket_map.get(role_norm, role_norm)
+
+    row = db_service.fetch_one(
+        f"""
+        SELECT code, name, role, cf_bucket
         FROM {schema}.coa
         WHERE company_id = %s
-          AND role = %s
+          AND posting = TRUE
+          AND (
+                lower(coalesce(role, '')) = %s
+             OR lower(coalesce(cf_bucket, '')) = %s
+          )
+        ORDER BY
+          CASE
+            WHEN lower(coalesce(role, '')) = %s THEN 1
+            WHEN lower(coalesce(cf_bucket, '')) = %s THEN 2
+            ELSE 9
+          END
         LIMIT 1
-    """.format(schema=db_service.company_schema(company_id)), (company_id, role))
+        """,
+        (int(company_id), role_norm, cf_bucket, role_norm, cf_bucket),
+    )
 
     if not row:
-        raise ValueError(f"Account role '{role}' not configured")
+        raise ValueError(
+            f"Account role/cf_bucket '{role}' not configured in company COA"
+        )
 
     return {
         "code": row["code"],
