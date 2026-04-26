@@ -23051,7 +23051,15 @@ function bindGenerateNotesBtnReportsScreen() {
     const reg = NOTES_REGISTRY[noteKey];
     if (!reg) return alert("Unknown notes pack selected.");
 
-    const period = getCurrentStmtPeriodForNotes();
+    const periodKey =
+      document.getElementById("stmtPreset")?.value ||
+      document.getElementById("statementPreset")?.value ||
+      "this_year";
+
+    const period = buildPeriodParams(periodKey);
+
+    console.log("NOTES periodKey:", periodKey);
+    console.log("NOTES period:", period);
 
     try {
       btn.disabled = true;
@@ -23225,29 +23233,31 @@ function renderPPENoteHTML(payload) {
 }
 
 const NOTES_REGISTRY = {
-  ifrs16: {
-    label: "IFRS 16 Lease disclosures",
-    fetch: async (cid, period) => {
-      const q = { include_terminated: "1" };
+ifrs16: {
+  label: "IFRS 16 Lease disclosures",
+  fetch: async (cid, period) => {
+    const q = { include_terminated: "1" };
 
-      if (period.from && period.to) {
-        q.from = period.from;
-        q.to = period.to;
-        q.as_of = period.as_of || period.to;
-      } else {
-        q.preset = period.preset || "this_year";
-        if (period.as_of) q.as_of = period.as_of;
-      }
-
-      const url = ENDPOINTS.ifrs16.disclosure(cid, q);
-      const data = await window.apiFetch(url, { method: "GET" });
-      return {
-        data,
-        html: renderIFRS16DisclosureHTML(data),
-        meta: { q }
-      };
+    if (period.from && period.to) {
+      q.from = period.from;
+      q.to = period.to;
+      q.as_of = period.as_of || period.to;
+    } else {
+      q.preset = period.preset || "this_year";
     }
-  },
+
+    console.log("IFRS16 FINAL PARAMS:", q);
+
+    const url = ENDPOINTS.ifrs16.disclosure(cid, q);
+    const data = await window.apiFetch(url, { method: "GET" });
+
+    return {
+      data,
+      html: renderIFRS16DisclosureHTML(data),
+      meta: { q }
+    };
+  }
+},
 
   ias16_ppe: {
     label: "IAS 16 PPE disclosures",
