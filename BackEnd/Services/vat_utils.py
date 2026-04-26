@@ -249,13 +249,16 @@ def _get_vat_lines(company_id: int, start_date, end_date):
             l.debit,
             l.credit
         FROM {schema}.ledger l
+        LEFT JOIN {schema}.journal j
+        ON j.id = l.journal_id
         LEFT JOIN {schema}.coa vat_acc
-          ON vat_acc.company_id = l.company_id
-         AND vat_acc.code = l.account
+        ON vat_acc.company_id = l.company_id
+        AND vat_acc.code = l.account
         WHERE l.company_id = %s
-          AND l.date >= %s
-          AND l.date <= %s
-          AND l.account IN ({placeholders})
+        AND l.date >= %s
+        AND l.date <= %s
+        AND l.account IN ({placeholders})
+        AND COALESCE(j.source, '') NOT IN ('vat_filing', 'vat_filing_payment')
     ),
     source_lines AS (
         SELECT DISTINCT ON (vl.id)
@@ -774,17 +777,24 @@ def vat_summary(company_id: int):
     placeholders = ",".join(["%s"] * len(vat_codes))
 
     sql = f"""
-      SELECT
-        account,
-        date,
-        debit,
-        credit
-      FROM {schema}.ledger
-      WHERE company_id = %s
-        AND date >= %s
-        AND date <= %s
-        AND account IN ({placeholders})
+    SELECT
+        l.account,
+        l.date,
+        l.debit,
+        l.credit
+    FROM {schema}.ledger l
+    LEFT JOIN {schema}.journal j
+        ON j.id = l.journal_id
+    WHERE l.company_id = %s
+        AND l.date >= %s
+        AND l.date <= %s
+        AND l.account IN ({placeholders})
+        AND COALESCE(j.source, '') NOT IN ('vat_filing', 'vat_filing_payment')
     """
+
+    with db_service._conn_cursor() as (_conn, cur):
+        cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
+        
 
     with db_service._conn_cursor() as (_conn, cur):
         cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
@@ -950,12 +960,15 @@ def vat_prepare_filing(company_id: int):
     if vat_codes:
         placeholders = ",".join(["%s"] * len(vat_codes))
         sql = f"""
-          SELECT account, debit, credit
-          FROM {schema}.ledger
-          WHERE company_id = %s
-            AND date >= %s
-            AND date <= %s
-            AND account IN ({placeholders})
+        SELECT l.account, l.debit, l.credit
+        FROM {schema}.ledger l
+        LEFT JOIN {schema}.journal j
+            ON j.id = l.journal_id
+        WHERE l.company_id = %s
+            AND l.date >= %s
+            AND l.date <= %s
+            AND l.account IN ({placeholders})
+            AND COALESCE(j.source, '') NOT IN ('vat_filing', 'vat_filing_payment')
         """
 
         with db_service._conn_cursor() as (_conn, cur):
