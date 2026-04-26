@@ -1015,15 +1015,28 @@ const ENDPOINTS = {
   },
 
   ifrs16: {
-    disclosure: (companyId, { from = "", to = "", as_of = "", include_terminated = "1" } = {}) => {
+    disclosure: (
+      companyId,
+      { from = "", to = "", as_of = "", preset = "", include_terminated = "1" } = {}
+    ) => {
       const params = new URLSearchParams();
+
       if (from) params.append("from", String(from).slice(0, 10));
       if (to) params.append("to", String(to).slice(0, 10));
+
+      // ✅ add this
+      if (!from && !to && preset) {
+        params.append("preset", String(preset));
+      }
+
       if (as_of) params.append("as_of", String(as_of).slice(0, 10));
+
       if (include_terminated !== "" && include_terminated != null) {
         params.append("include_terminated", String(include_terminated));
       }
+
       const qs = params.toString();
+
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs16/disclosure${qs ? `?${qs}` : ""}`;
     },
   },
