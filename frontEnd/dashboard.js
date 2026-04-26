@@ -12337,25 +12337,34 @@ async function showVatPaymentModal() {
   let bankAccounts = [];
   try {
     bankAccounts = await loadVatBankAccounts(cid);
+    console.log("VAT bankAccounts", bankAccounts);
+    
   } catch (e) {
     console.warn("Could not load bank accounts:", e);
   }
 
-  const bankOptions = bankAccounts.map((b) => {
-    const gl = b.code || "";   // ✅ THIS is your GL account
+  const bankOptions = bankAccounts.length
+    ? bankAccounts.map((b) => {
+        const gl =
+          b.code ||
+          b.gl_account_code ||
+          b.linked_gl_account ||
+          b.account_code ||
+          "";
 
-    const name =
-      b.name ||
-      b.account_name ||
-      b.bank_name ||
-      "Cash & Bank";
+        const name =
+          b.name ||
+          b.account_name ||
+          b.bank_name ||
+          "Bank account";
 
-    return `
-      <option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">
-        ${name} — ${gl}
-      </option>
-    `;
-  }).join("");
+        return `
+          <option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">
+            ${name}${gl ? ` — ${gl}` : ""}
+          </option>
+        `;
+      }).join("")
+    : `<option value="" data-name="Cash & Bank">Cash & Bank</option>`;
 
   const modal = document.createElement("div");
   modal.id = "vatPaymentModal";

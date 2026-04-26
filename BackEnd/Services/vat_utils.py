@@ -652,37 +652,44 @@ def resolve_account_by_role(company_id: int, role: str) -> dict:
 
     role_norm = str(role or "").strip().lower()
 
-    # Map role to cf_bucket fallback
     bucket_map = {
         "vat_input": "vat_input",
         "vat_output": "vat_output",
         "vat_receivable": "vat_refund",
         "vat_payable": "vat_payable",
-        "bank": "cash",
     }
 
     cf_bucket = bucket_map.get(role_norm, role_norm)
 
+    # 1) Always prefer exact role
     row = db_service.fetch_one(
         f"""
         SELECT code, name, role, cf_bucket
         FROM {schema}.coa
         WHERE company_id = %s
           AND posting = TRUE
-          AND (
-                lower(coalesce(role, '')) = %s
-             OR lower(coalesce(cf_bucket, '')) = %s
-          )
-        ORDER BY
-          CASE
-            WHEN lower(coalesce(role, '')) = %s THEN 1
-            WHEN lower(coalesce(cf_bucket, '')) = %s THEN 2
-            ELSE 9
-          END
+          AND lower(coalesce(role, '')) = %s
+        ORDER BY code
         LIMIT 1
         """,
-        (int(company_id), role_norm, cf_bucket, role_norm, cf_bucket),
+        (int(company_id), role_norm),
     )
+
+    # 2) Do NOT fallback cash_bank to cf_bucket='cash'
+    # because it may pick Petty Cash or Bank Clearing.
+    if not row and role_norm != "cash_bank":
+        row = db_service.fetch_one(
+            f"""
+            SELECT code, name, role, cf_bucket
+            FROM {schema}.coa
+            WHERE company_id = %s
+              AND posting = TRUE
+              AND lower(coalesce(cf_bucket, '')) = %s
+            ORDER BY code
+            LIMIT 1
+            """,
+            (int(company_id), cf_bucket),
+        )
 
     if not row:
         raise ValueError(
@@ -1606,7 +1613,7 @@ def vat_filing_pay(company_id: int):
     if not vat_payable or not vat_payable.get("code"):
         return jsonify({"ok": False, "error": "VAT payable account role is missing"}), 400
 
-    cash_bank = resolve_account_by_role(company_id, "bank")
+    cash_bank = resolve_account_by_role(company_id, "cash_bank")
 
     period_label = filing.get("period_label") or f"{start_date} to {end_date}"
 

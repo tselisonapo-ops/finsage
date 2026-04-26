@@ -808,10 +808,25 @@ def _coa_role_from_text(
     # --- AR / cash / bank / VAT ---
     if any(k in text for k in ("accounts receivable", "trade receivable", "debtors")):
         return "ar"
-    if any(k in text for k in ("bank", "cash at bank")):
-        return "bank"
-    if any(k in text for k in ("cash", "petty cash")):
+
+    # Cash & Bank / bank account control ONLY
+    if (
+        "cash & bank" in text
+        or "cash and bank" in text
+        or "cash equivalents" in text
+        or "money held in bank accounts" in text
+        or "bank accounts and petty cash" in text
+    ):
+        return "cash_bank"
+
+    # Petty cash / cash account
+    if "petty cash" in text:
         return "cash"
+
+    # Do NOT classify bank charges as bank control
+    if "bank charges" in text or "bank fees" in text:
+        return ""
+
     if "vat receivable" in text or "refund due" in text:
         return "vat_receivable"
 
