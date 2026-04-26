@@ -12423,14 +12423,13 @@ async function showVatPaymentModal() {
 
   async function loadPreview() {
     const bankSelect = document.getElementById("vatPaymentBankAccount");
-    const bankAccount = bankSelect?.value || "";
-    const bankAccountName = bankSelect?.selectedOptions?.[0]?.dataset?.name || "Cash & Bank";
 
-    if (!bankAccount) {
-      document.getElementById("vatPaymentPreviewBox").innerHTML =
-        `<div class="p-3 text-red-600">Please select a bank account linked to a GL account.</div>`;
-      return; // ⛔ stop preview call
-    }
+    const bankAccount = bankSelect?.value || ""; // optional now
+    const bankAccountName =
+      bankSelect?.selectedOptions?.[0]?.dataset?.name ||
+      bankSelect?.selectedOptions?.[0]?.textContent?.trim() ||
+      "Cash & Bank";
+
     const payload = {
       from: period.start_date,
       to: period.end_date,
@@ -12497,12 +12496,6 @@ async function showVatPaymentModal() {
 
   document.getElementById("vatPaymentPostBtn")?.addEventListener("click", async () => {
     try {
-      const bankAccount = document.getElementById("vatPaymentBankAccount")?.value;
-
-      if (!bankAccount) {
-        alert("Selected bank account has no GL account.");
-        return;
-      }
 
       const payload = await loadPreview();
 
