@@ -12321,19 +12321,14 @@ async function loadVatBankAccounts(cid) {
 }
 
 async function showVatPaymentModal() {
-  const old = document.getElementById("vatPaymentModal");
-  old?.remove();
+  document.getElementById("vatPaymentModal")?.remove();
 
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid) {
-    alert("No company selected");
-    return;
-  }
+  if (!cid) return alert("No company selected");
 
   const period = parseVatPeriodSelection?.();
   if (!period?.start_date || !period?.end_date) {
-    alert("Please select a VAT period first.");
-    return;
+    return alert("Please select a VAT period first.");
   }
 
   const netText = document.getElementById("vatNetAmount")?.textContent || "";
@@ -12346,34 +12341,35 @@ async function showVatPaymentModal() {
     console.warn("Could not load bank accounts:", e);
   }
 
-  const bankOptions = bankAccounts.length
-    ? bankAccounts.map((b) => {
-        const gl =
-          b.gl_account ||
-          b.account_code ||
-          b.bank_gl_account ||
-          b.cash_account_code ||
-          b.ledger_account ||
-          "";
+  const bankOptions = bankAccounts.map((b) => {
+    const gl =
+      b.gl_account ||
+      b.account_code ||
+      b.bank_gl_account ||
+      b.cash_account_code ||
+      b.ledger_account ||
+      b.coa_code ||
+      "BS_CA_1000";
 
-        const name =
-          b.account_name ||
-          b.bank_name ||
-          b.name ||
-          "Bank account";
+    const name =
+      b.account_name ||
+      b.bank_name ||
+      b.name ||
+      "Cash & Bank";
 
-        const label = `${name}${gl ? ` — ${gl}` : ""}`;
-
-        return `<option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">${label}</option>`;
-      }).join("")
-    : `<option value="BS_CA_1000" data-name="Cash & Bank">Cash & Bank — BS_CA_1000</option>`;
+    return `
+      <option value="${gl}" data-name="${String(name).replaceAll('"', "&quot;")}">
+        ${name}
+      </option>
+    `;
+  }).join("");
 
   const modal = document.createElement("div");
   modal.id = "vatPaymentModal";
   modal.className = "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4";
 
   modal.innerHTML = `
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-5 text-sm">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl p-5 text-sm">
       <div class="flex items-center justify-between mb-4">
         <h3 class="font-semibold text-slate-800">
           ${isRefund ? "Record VAT Refund Received" : "Record VAT Payment"}
@@ -12393,8 +12389,7 @@ async function showVatPaymentModal() {
           <label class="text-xs text-slate-500">Bank / Cash Account</label>
           <select id="vatPaymentBankAccount"
             class="w-full border rounded px-2 py-2 text-sm bg-white">
-            <option value="">Select bank account</option>
-            ${bankOptions}
+            ${bankOptions || `<option value="BS_CA_1000" data-name="Cash & Bank">Cash & Bank</option>`}
           </select>
         </div>
 
@@ -12413,14 +12408,17 @@ async function showVatPaymentModal() {
         </div>
       </div>
 
-      <div class="mt-4 text-xs text-slate-500">
-        This will preview the journal before posting.
+      <div class="mt-5">
+        <div class="font-semibold text-slate-700 mb-2">Journal preview</div>
+        <div id="vatPaymentPreviewBox" class="border rounded-lg overflow-hidden text-xs">
+          <div class="p-3 text-slate-500">Loading preview...</div>
+        </div>
       </div>
 
       <div class="flex justify-end gap-2 mt-5">
         <button id="vatPaymentCancelBtn" class="px-3 py-2 rounded border">Cancel</button>
-        <button id="vatPaymentPreviewBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
-          Preview Journal
+        <button id="vatPaymentPostBtn" class="px-3 py-2 rounded bg-[var(--fs-navy)] text-white">
+          Confirm & Post
         </button>
       </div>
     </div>
@@ -12428,56 +12426,103 @@ async function showVatPaymentModal() {
 
   document.body.appendChild(modal);
 
+  const fmt = (n) => typeof money === "function" ? money(n) : Number(n || 0).toFixed(2);
+
+  async function loadPreview() {
+    const bankSelect = document.getElementById("vatPaymentBankAccount");
+    const bankAccount = bankSelect?.value || "";
+    const bankAccountName = bankSelect?.selectedOptions?.[0]?.dataset?.name || "Cash & Bank";
+
+    const payload = {
+      from: period.start_date,
+      to: period.end_date,
+      payment_date: document.getElementById("vatPaymentDate")?.value,
+      bank_account: bankAccount,
+      bank_account_name: bankAccountName,
+      amount: document.getElementById("vatPaymentAmount")?.value,
+      reference: document.getElementById("vatPaymentReference")?.value,
+      preview_only: true,
+    };
+
+    const previewRes = await apiFetch(ENDPOINTS.vatFilingPay(cid), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (previewRes?.ok === false) {
+      throw new Error(previewRes.error || "Failed to preview VAT payment/refund");
+    }
+
+    const rows = (previewRes.preview?.journal_lines || []).map((l) => `
+      <tr class="border-b">
+        <td class="py-2 px-3">${l.name || l.account || "-"}</td>
+        <td class="py-2 px-3 text-right">${l.debit ? fmt(l.debit) : ""}</td>
+        <td class="py-2 px-3 text-right">${l.credit ? fmt(l.credit) : ""}</td>
+      </tr>
+    `).join("");
+
+    document.getElementById("vatPaymentPreviewBox").innerHTML = `
+      <table class="w-full">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="text-left py-2 px-3">Account</th>
+            <th class="text-right py-2 px-3">Debit</th>
+            <th class="text-right py-2 px-3">Credit</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="p-3 text-slate-500">
+        Debit total: ${fmt(previewRes.preview?.debit_total)} |
+        Credit total: ${fmt(previewRes.preview?.credit_total)} |
+        Difference: ${fmt(previewRes.preview?.difference)}
+      </div>
+    `;
+
+    return payload;
+  }
+
   const close = () => modal.remove();
 
   document.getElementById("vatPaymentCloseBtn")?.addEventListener("click", close);
   document.getElementById("vatPaymentCancelBtn")?.addEventListener("click", close);
 
-  document.getElementById("vatPaymentPreviewBtn")?.addEventListener("click", async () => {
+  ["vatPaymentDate", "vatPaymentBankAccount", "vatPaymentAmount"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", () => {
+      loadPreview().catch((err) => {
+        document.getElementById("vatPaymentPreviewBox").innerHTML =
+          `<div class="p-3 text-red-600">${err.message}</div>`;
+      });
+    });
+  });
+
+  document.getElementById("vatPaymentPostBtn")?.addEventListener("click", async () => {
     try {
-      const bankSelect = document.getElementById("vatPaymentBankAccount");
-      const bankAccount = bankSelect?.value || "";
-      const bankAccountName = bankSelect?.selectedOptions?.[0]?.dataset?.name || "Bank";
+      const payload = await loadPreview();
 
-      if (!bankAccount) {
-        alert("Please select a bank/cash account.");
-        return;
-      }
-
-      const payload = {
-        from: period.start_date,
-        to: period.end_date,
-        payment_date: document.getElementById("vatPaymentDate")?.value,
-        bank_account: bankAccount,
-        bank_account_name: bankAccountName,
-        amount: document.getElementById("vatPaymentAmount")?.value,
-        reference: document.getElementById("vatPaymentReference")?.value,
-        preview_only: true,
-      };
-
-      const previewRes = await apiFetch(ENDPOINTS.vatFilingPay(cid), {
+      const res = await apiFetch(ENDPOINTS.vatFilingPay(cid), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, preview_only: false }),
       });
 
-      if (previewRes?.ok === false) {
-        throw new Error(previewRes.error || "Failed to preview VAT payment/refund");
+      if (res?.ok === false) {
+        throw new Error(res.error || "Failed to post VAT payment/refund");
       }
 
       close();
-
-      showVatPaymentPreviewModal({
-        cid,
-        period,
-        payload,
-        preview: previewRes.preview,
-        isRefund,
-      });
+      await renderVatDashboard();
+      alert(isRefund ? "VAT refund received recorded." : "VAT payment recorded.");
     } catch (err) {
-      console.error("VAT payment/refund preview failed:", err);
-      alert(err?.message || "Failed to preview VAT payment/refund.");
+      console.error("VAT payment/refund post failed:", err);
+      alert(err?.message || "Failed to post VAT payment/refund.");
     }
+  });
+
+  loadPreview().catch((err) => {
+    document.getElementById("vatPaymentPreviewBox").innerHTML =
+      `<div class="p-3 text-red-600">${err.message}</div>`;
   });
 }
 

@@ -1617,12 +1617,14 @@ def vat_filing_pay(company_id: int):
         desc = f"VAT payment for {period_label}"
         lines = [
             {
+                "account_role": "vat_payable",
                 "account": vat_payable["code"],
                 "name": vat_payable.get("name") or "VAT Payable",
                 "debit": amount,
                 "credit": 0,
             },
             {
+                "account_role": "bank",
                 "account": bank_account,
                 "name": bank_account_name,
                 "debit": 0,
@@ -1634,12 +1636,14 @@ def vat_filing_pay(company_id: int):
         desc = f"VAT refund received for {period_label}"
         lines = [
             {
+                "account_role": "bank",
                 "account": bank_account,
                 "name": bank_account_name,
                 "debit": amount,
                 "credit": 0,
             },
             {
+                "account_role": "vat_receivable",
                 "account": vat_receivable["code"],
                 "name": vat_receivable.get("name") or "VAT Receivable / Refund Due",
                 "debit": 0,
@@ -1695,14 +1699,24 @@ def vat_filing_pay(company_id: int):
     resolved_lines = []
 
     for l in preview["journal_lines"]:
-        acc = resolve_account_by_role(company_id, l["account_role"])
+        if l.get("account_role") == "bank":
+            # ✅ DO NOT resolve bank — use selected account
+            resolved_lines.append({
+                "account": l["account"],
+                "name": l.get("name") or "Bank",
+                "debit": l["debit"],
+                "credit": l["credit"],
+            })
+        else:
+            # ✅ Resolve only VAT roles
+            acc = resolve_account_by_role(company_id, l["account_role"])
 
-        resolved_lines.append({
-            "account": acc["code"],   # only now we use code
-            "name": acc["name"],
-            "debit": l["debit"],
-            "credit": l["credit"],
-        })
+            resolved_lines.append({
+                "account": acc["code"],
+                "name": acc["name"],
+                "debit": l["debit"],
+                "credit": l["credit"],
+            })
 
     journal_id = db_service.post_journal(company_id=company_id, entry=entry)
 
