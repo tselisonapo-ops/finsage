@@ -397,9 +397,20 @@ def can_approve_payment(user: dict, company_profile: dict, mode: str) -> bool:
 
     return is_company_owner(user, company_profile) or role in {"cfo", "admin"}
 
-def can_release_payment(user: dict, company_profile: dict, mode: str) -> bool:
+def can_release_payment(
+    user: dict,
+    company_profile: dict,
+    mode: str,
+    company_role: str | None = None,
+) -> bool:
+
     if is_assignment_execution_context(user):
-        role = normalize_role(user.get("user_role") or user.get("role") or user.get("system_role") or "")
+        role = normalize_role(
+            user.get("user_role")
+            or user.get("role")
+            or user.get("system_role")
+            or ""
+        )
         return role in {
             "reviewer",
             "audit_manager",
@@ -415,7 +426,8 @@ def can_release_payment(user: dict, company_profile: dict, mode: str) -> bool:
     if mode == "owner_managed":
         return True
 
-    role = (company_role(user) or "").strip().lower()
+    role = (company_role or "").strip().lower()
+
     return is_company_owner(user, company_profile) or role in {"cfo", "admin"}
 
 def can_decide_approvals(user: dict, company_profile: dict, mode: str) -> bool:

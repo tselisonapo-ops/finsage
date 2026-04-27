@@ -63092,12 +63092,12 @@ async function renderAPRecon() {
     out.innerHTML = `<div class="pill">Loading…</div>`;
 
     try {
-      if (!ENDPOINTS?.apRecon) {
-        out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Missing ENDPOINTS.apRecon</div>`;
+      if (!ENDPOINTS?.ap?.apRecon) {
+        out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Missing ENDPOINTS.ap.apRecon</div>`;
         return;
       }
 
-      const res = await apiFetch(ENDPOINTS.apRecon(companyId, asAt), { method: "GET" });
+      const res = await apiFetch(ENDPOINTS.ap.apRecon(companyId, asAt), { method: "GET" });
       const data = res.data || res;
 
       const vendors = (data.vendors || data.rows || []).slice(0, 300);
@@ -63315,7 +63315,7 @@ async function renderAPStatements() {
     out.innerHTML = `<div class="pill">Loading…</div>`;
 
     try {
-      const res = await apiFetch(ENDPOINTS.apStatement(companyId, vendorId, from, to), { method: "GET" });
+      const res = await apiFetch(ENDPOINTS.ap.apStatement(companyId, vendorId, from, to), { method: "GET" });
       const data = unwrapStatement(res);
       const rows = rowsFromPayload(data).slice(0, 800);
 
@@ -63609,12 +63609,12 @@ async function renderAPAging() {
     out.innerHTML = `<div class="pill">Loading…</div>`;
 
     try {
-      if (!ENDPOINTS?.apAging) {
-        out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Missing ENDPOINTS.apAging</div>`;
+      if (!ENDPOINTS?.ap?.apAging) {
+        out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Missing ENDPOINTS.ap.apAging</div>`;
         return;
       }
 
-      const res = await apiFetch(ENDPOINTS.apAging(companyId, asAt, vendorId), { method: "GET" });
+      const res = await apiFetch(ENDPOINTS.ap.apAging(companyId, asAt, vendorId), { method: "GET" });
       const data = res.data || res;
 
       // Expect backend similar to AR:
