@@ -34299,7 +34299,7 @@ class DatabaseService:
             SELECT id
             FROM {schema}.journal
             WHERE company_id = %s
-            AND reversed_journal_id = %s
+            AND reversed_by_journal_id = %s
             ORDER BY id DESC
             LIMIT 1
         """, (company_id, posted_journal_id))
