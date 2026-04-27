@@ -6044,6 +6044,12 @@ class DatabaseService:
             END IF;
 
             EXECUTE format(
+                'ALTER TABLE %I.journal DROP CONSTRAINT IF EXISTS %I',
+                '{schema}',
+                '{schema}_journal_source_check'
+            );
+
+            EXECUTE format(
                 'ALTER TABLE %I.journal
                 ADD CONSTRAINT %I
                 CHECK (
@@ -6055,6 +6061,7 @@ class DatabaseService:
                         ''bill'',
                         ''bill_reversal'',
                         ''payment'',
+                        ''vendor_payment'',
                         ''receipt'',
                         ''credit_note'',
                         ''debit_note'',

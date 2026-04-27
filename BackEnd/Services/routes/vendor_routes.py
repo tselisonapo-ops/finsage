@@ -669,6 +669,7 @@ def api_bills(company_id: int):
             "discount_rate": data.get("discount_rate"),
             "asset_id": data.get("asset_id"),
             "asset_acquisition_id": data.get("asset_acquisition_id"),
+            "posting_mode": data.get("posting_mode"),
         }
 
     lines = data.get("lines") or []
@@ -758,6 +759,12 @@ def api_bills(company_id: int):
 
     header["status"] = bill_status
 
+    is_asset_acq_bill = (
+        header.get("asset_id") not in (None, "", 0, "0")
+        and header.get("asset_acquisition_id") not in (None, "", 0, "0")
+        and str(header.get("posting_mode") or "").strip().lower() == "asset_acquisition"
+    )
+
     try:
         bid = db_service.insert_bill_with_lines(company_id, header, lines)
         db_service.ensure_bill_grni_link_table(company_id)
@@ -782,6 +789,13 @@ def api_bills(company_id: int):
             )
         except Exception:
             current_app.logger.exception("audit_log failed in api_bills (POST)")
+
+        if is_asset_acq_bill:
+            out = db_service.get_bill_full(company_id, bid) or {}
+            out["_posting_mode"] = "asset_acquisition"
+            out["_posting_skipped"] = True
+            out["_skip_reason"] = "Asset acquisition bill: GL posting is handled by asset acquisition journal."
+            return jsonify({"ok": True, "data": out}), 201
 
         if explicit_draft:
             out = db_service.get_bill_full(company_id, bid) or {}
@@ -1038,6 +1052,12 @@ def api_bill_detail(company_id: int, bill_id: int):
         bill_status = "approved"
 
     header["status"] = bill_status
+
+    is_asset_acq_bill = (
+        header.get("asset_id")
+        and header.get("asset_acquisition_id")
+        and str(header.get("posting_mode") or "").strip().lower() == "asset_acquisition"
+    )
 
     try:
         ok = db_service.update_bill_with_lines(company_id, bill_id, header, lines)
