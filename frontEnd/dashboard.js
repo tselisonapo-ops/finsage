@@ -58034,16 +58034,30 @@ async function openBillFromAssetAcquisition(acqId) {
   const linesBody = root.querySelector("#billLines");
   if (linesBody) linesBody.innerHTML = "";
 
+  const vatEnabledEl = root.querySelector("#apBillVatEnabled");
+  const vatModeEl = root.querySelector("#apBillVatMode");
+
+  if (vatEnabledEl) vatEnabledEl.checked = true;
+
+  if (vatModeEl) {
+    vatModeEl.value = "inclusive"; // 🔥 critical
+  }
+
+  vatEnabledEl?.dispatchEvent(new Event("change", { bubbles: true }));
+  vatModeEl?.dispatchEvent(new Event("change", { bubbles: true }));
+
+const vatRate = Number(prefill.vat_rate ?? 15);
+
   window.addBillLine?.({
     item_name: prefill.asset_code || "Asset acquisition",
     description: prefill.description || prefill.asset_name || "",
     quantity: 1,
     unit_price: Number(prefill.amount || 0),
     account_code: prefill.asset_account_code || "",
-    vat_code: "STANDARD",
-    vat_rate: 15,
+    vat_code: vatRate > 0 ? "STANDARD" : "ZERO",
+    vat_rate: vatRate,
   });
-
+  
   // lock account if requested
   const tr = root.querySelector("#billLines tr");
   if (tr && prefill.lock_account_code) {
