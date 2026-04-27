@@ -19420,6 +19420,9 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS vat_mode TEXT DEFAULT 'exclusive';
+
+        ALTER TABLE {schema}.bills
         ADD COLUMN IF NOT EXISTS reversed_journal_id INT NULL;
 
         ALTER TABLE {schema}.bills
@@ -34380,8 +34383,12 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         status = (header.get("status") or "draft").strip().lower()
-        incoming_no = (header.get("number") or "").strip()
+        vat_mode = (header.get("vat_mode") or "exclusive").strip().lower()
+        if vat_mode not in ("inclusive", "exclusive"):
+            vat_mode = "exclusive"
 
+        incoming_no = (header.get("number") or "").strip()
+        
         # ✅ auto-assign vendor invoice number if missing
         if not incoming_no:
             header["number"] = self.next_bill_number_cur(company_id, cur)
@@ -34420,8 +34427,16 @@ class DatabaseService:
             if not posting_code:
                 raise ValueError(f"Resolved posting code blank for '{raw}' (line {idx})")
 
-            net = max(0.0, (qty * price) - disc_line)
-            net = money(net)
+            gross = money(qty * price)
+
+            if vat_rate > 0 and vat_mode == "inclusive":
+                line_total = money(max(0.0, gross - disc_line))
+                net = money(line_total / (1 + (vat_rate / 100.0)))
+                vat = money(line_total - net)
+            else:
+                net = money(max(0.0, gross - disc_line))
+                vat = money(net * (vat_rate / 100.0)) if vat_rate > 0 else 0.0
+                line_total = money(net + vat)
 
             subtotal_net = money(subtotal_net + net)
             line_discount_total = money(line_discount_total + disc_line)
@@ -34440,8 +34455,8 @@ class DatabaseService:
                 "discount_amount": disc_line,
                 "net_amount": net,
                 "vat_rate": vat_rate,
-                "vat_amount": 0.0,
-                "total_amount": 0.0,
+                "vat_amount": vat,
+                "total_amount": line_total,
             })
 
         # ---- header discount ----
@@ -34464,13 +34479,7 @@ class DatabaseService:
 
         # ---- VAT after discount ----
         vat_total = 0.0
-        for pl in prepared:
-            rate = float(pl.get("vat_rate") or 0.0)
-            net = money(pl.get("net_amount") or 0.0)
-            vat = money(net * (rate / 100.0)) if rate > 0 else 0.0
-            pl["vat_amount"] = vat
-            pl["total_amount"] = money(net + vat)
-            vat_total = money(vat_total + vat)
+        vat_total = money(sum(float(pl.get("vat_amount") or 0.0) for pl in prepared))
 
         net_after = money(max(0.0, subtotal_net - header_disc_amt + other))
         grand_total = money(net_after + vat_total)
@@ -34614,6 +34623,10 @@ class DatabaseService:
 
         schema = self.company_schema(company_id)
 
+        vat_mode = (header.get("vat_mode") or "exclusive").strip().lower()
+        if vat_mode not in ("inclusive", "exclusive"):
+            vat_mode = "exclusive"
+
         if not (header.get("number") or "").strip():
             header["number"] = None
 
@@ -34694,8 +34707,16 @@ class DatabaseService:
                 if not posting_code:
                     raise ValueError(f"Resolved posting code blank for '{raw}' (line {idx})")
 
-                net = max(0.0, (qty * price) - disc_line)
-                net = money(net)
+                gross = money(qty * price)
+
+                if vat_rate > 0 and vat_mode == "inclusive":
+                    line_total = money(max(0.0, gross - disc_line))
+                    net = money(line_total / (1 + (vat_rate / 100.0)))
+                    vat = money(line_total - net)
+                else:
+                    net = money(max(0.0, gross - disc_line))
+                    vat = money(net * (vat_rate / 100.0)) if vat_rate > 0 else 0.0
+                    line_total = money(net + vat)
 
                 subtotal_net = money(subtotal_net + net)
                 line_discount_total = money(line_discount_total + disc_line)
@@ -34714,8 +34735,8 @@ class DatabaseService:
                     "discount_amount": disc_line,
                     "net_amount": net,
                     "vat_rate": vat_rate,
-                    "vat_amount": 0.0,
-                    "total_amount": 0.0,
+                    "vat_amount": vat,
+                    "total_amount": line_total,
                 })
 
             # -------------------------
@@ -34768,27 +34789,7 @@ class DatabaseService:
                     share = (base / vatable_net) if vatable_net > 0 else 0.0
                     disc_share_by_rate[rate] = money(disc_on_vatable_total * share)
 
-            for pl in prepared:
-                rate = float(pl.get("vat_rate") or 0.0)
-                net = money(pl.get("net_amount") or 0.0)
-
-                if rate > 0 and vatable_net > 0:
-                    base_rate = vatable_by_rate.get(rate, 0.0)
-                    disc_rate_total = disc_share_by_rate.get(rate, 0.0)
-
-                    disc_line_share = 0.0
-                    if base_rate > 0 and disc_rate_total > 0:
-                        disc_line_share = money(disc_rate_total * (net / base_rate))
-
-                    net_after = money(max(0.0, net - disc_line_share))
-                    vat = money(net_after * (rate / 100.0))
-                else:
-                    vat = 0.0
-
-                tot = money(net + vat)
-                pl["vat_amount"] = vat
-                pl["total_amount"] = tot
-                vat_total = money(vat_total + vat)
+                vat_total = money(sum(float(pl.get("vat_amount") or 0.0) for pl in prepared))
 
             net_after = money(max(0.0, subtotal_net - header_disc_amt + other))
             grand_total = money(net_after + vat_total)

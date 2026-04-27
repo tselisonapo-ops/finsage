@@ -59046,7 +59046,7 @@ function bindAP() {
       posting_mode: (root.querySelector("#billPostingMode")?.value || "").trim() || null,
       currency: (root.querySelector("#billCurrency")?.value || "").trim() || null,
       vat_enabled: !!root.querySelector("#apBillVatEnabled")?.checked,
-      discount_rate: parseDiscountRate(root.querySelector("#billDisc")?.value),
+      vat_mode: (root.querySelector("#apBillVatMode")?.value || "exclusive").toLowerCase(),      discount_rate: parseDiscountRate(root.querySelector("#billDisc")?.value),
       other_amount: toNum(root.querySelector("#billOther")?.value, 0),
       notes: (root.querySelector("#billMemo")?.value || "").trim(),
       lines,
@@ -59352,6 +59352,9 @@ function bindAP() {
       notes: form.notes || null,
       status,
 
+      vat_enabled: !!form.vat_enabled,
+      vat_mode: form.vat_mode || t.vat_mode || "exclusive",
+
       discount_rate: toDiscRate(form.discount_rate),
       discount_amount: toNum(t.discount_amount, 0),
       other_amount: toNum(t.other, toNum(form.other_amount, 0)),
@@ -59360,7 +59363,6 @@ function bindAP() {
       vat_amount: toNum(t.vat_amount, 0),
       total_amount: toNum(t.total_amount, 0),
 
-      // NEW
       asset_id: form.asset_id || null,
       asset_acquisition_id: form.asset_acquisition_id || null,
     };
