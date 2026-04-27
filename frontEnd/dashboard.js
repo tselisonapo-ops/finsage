@@ -1761,41 +1761,47 @@ const ENDPOINTS = {
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bills/${encodeURIComponent(billId)}`,
 
   ap: {
+    // GRNI
     grniOpen: (cid, qs = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/grni/open${qs ? `?${qs}` : ""}`,
+
+    // Payments
+    vendorPayments: (cid) =>
+      `${API_BASE}/api/companies/${cid}/ap/vendor_payments`,
+
+    vendorPaymentApprove: (cid, pid) =>
+      `${API_BASE}/api/companies/${cid}/ap/vendor_payments/${pid}/approve`,
+
+    vendorPaymentRelease: (cid, pid) =>
+      `${API_BASE}/api/companies/${cid}/ap/vendor_payments/${pid}/release`,
+
+    billAllocatePayment: (cid, billId) =>
+      `${API_BASE}/api/companies/${cid}/ap/bills/${billId}/allocate_payment`,
+
+    // Reports
+    apRecon: (cid, asAt) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/control-reconciliation?as_at=${encodeURIComponent(asAt)}`,
+
+    apStatement: (cid, vendorId, from, to) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/vendors/${encodeURIComponent(vendorId)}/statement?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+
+    apAging: (cid, asAt, vendorId = null) => {
+      const q = new URLSearchParams();
+      q.set("as_at", String(asAt || "").slice(0, 10));
+      if (vendorId) q.set("vendor_id", String(vendorId));
+      return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/aging?${q.toString()}`;
+    },
+
+    // Actions
+    reverseBill: (companyId, billId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/reverse`,
+
+    writeoffBill: (companyId, billId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/writeoff`,
+
+    voidBill: (companyId, billId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/void`,
   },
-
-  vendorPayments: (cid) => `${API_BASE}/api/companies/${cid}/ap/vendor_payments`,
-  vendorPaymentApprove: (cid, pid) => `${API_BASE}/api/companies/${cid}/ap/vendor_payments/${pid}/approve`,
-  vendorPaymentRelease: (cid, pid) => `${API_BASE}/api/companies/${cid}/ap/vendor_payments/${pid}/release`,
-  billAllocatePayment: (cid, billId) => `${API_BASE}/api/companies/${cid}/ap/bills/${billId}/allocate_payment`,
-
-  // ---------------------------
-  // AP Controls (Control Room)
-  // ---------------------------
-
-  // ✅ AP Control Reconciliation
-  apRecon: (cid, asAt) =>
-    `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/control-reconciliation?as_at=${encodeURIComponent(asAt)}`,
-
-  // ✅ Vendor Statement (ledger-based AP control)
-  apStatement: (cid, vendorId, from, to) =>
-    `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/vendors/${encodeURIComponent(vendorId)}/statement?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-
-  // ✅ AP Aging (optional vendor filter)
-  apAging: (cid, asAt, vendorId = null) => {
-    const q = new URLSearchParams();
-    q.set("as_at", String(asAt || "").slice(0, 10));
-    if (vendorId) q.set("vendor_id", String(vendorId));
-    return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/ap/aging?${q.toString()}`;
-  },
-
-  reverseBill: (companyId, billId) =>
-    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/reverse`,
-
-  writeoffBill: (companyId, billId) =>
-    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/writeoff`,
-
   // ==============================
   // Inventory / Catalog Studio
   // ==============================
@@ -63214,6 +63220,7 @@ async function renderAPStatements() {
           <input id="revDate" type="date" value="${isoToday()}" class="pill" />
           <button id="btnReverseBill" class="btn">Reverse</button>
           <button id="btnWriteoffBill" class="btn">Write-off</button>
+          <button id="btnVoidBill" class="btn">Void</button>
         </div>
 
         <div id="revOut" style="margin-top:10px;"></div>
@@ -63372,6 +63379,7 @@ async function renderAPStatements() {
       // -----------------------
       const btnReverse = mount.querySelector("#btnReverseBill");
       const btnWriteoff = mount.querySelector("#btnWriteoffBill");
+      const btnVoid = mount.querySelector("#btnVoidBill");
       const revOut = mount.querySelector("#revOut");
 
       const writeoffPanel = mount.querySelector("#writeoffPanel");
@@ -63486,6 +63494,49 @@ async function renderAPStatements() {
         }
       };
 
+      btnVoid.onclick = async () => {
+        const billId = mount.querySelector("#revBillId").value.trim();
+        const reason = mount.querySelector("#revReason").value.trim();
+
+        if (!billId) {
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a bill ID.</div>`;
+          return;
+        }
+
+        if (!confirm("Void this bill? Use this only when the journal was already reversed manually.")) {
+          return;
+        }
+
+        revOut.innerHTML = `<div class="pill">Voiding…</div>`;
+
+        try {
+          const voidUrl = ENDPOINTS?.ap?.voidBill
+            ? ENDPOINTS.ap.voidBill(companyId, billId)
+            : `/api/companies/${encodeURIComponent(companyId)}/ap/bills/${encodeURIComponent(billId)}/void`;
+
+          const resp = await apiFetch(voidUrl, {
+            method: "POST",
+            body: JSON.stringify({
+              reason: reason || "Voided after manual journal reversal",
+            }),
+          });
+
+          const row = resp?.data || resp;
+
+          revOut.innerHTML = `
+            <div class="pill" style="border-color:rgba(0,200,200,.35);">
+              ✅ Bill voided<br>
+              Status: ${esc(String(row?.status || "void"))}
+            </div>
+          `;
+
+          await run();
+        } catch (e) {
+          console.error("Void bill failed:", e);
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">${esc(e.message || e)}</div>`;
+        }
+      };
+
     } catch (e) {
       console.error("Vendor statement failed", e);
       out.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Error: ${esc(e.message || e)}</div>`;
@@ -63569,7 +63620,7 @@ async function renderAPAging() {
       // Expect backend similar to AR:
       // data.totals + data.vendors OR data.bills
       const totals = data.totals || {};
-      const vendors = (data.vendors || []).slice(0, 400);
+      const bills = (data.bills || data.rows || []).slice(0, 400);
 
       const tCur = totals["current"] ?? 0;
       const t030 = totals["1_30"] ?? totals["0_30"] ?? 0;
@@ -63607,8 +63658,8 @@ async function renderAPAging() {
         </div>
 
         <div style="margin-top:16px; display:flex; align-items:center; justify-content:space-between;">
-          <div style="font-weight:700; color:var(--fs-navy);">Vendors</div>
-          <span class="pill">Showing ${vendors.length} rows</span>
+          <div style="font-weight:700; color:var(--fs-navy);">Bills</div>
+          <span class="pill">Showing ${bills.length} rows</span>
         </div>
 
         <div style="margin-top:10px; overflow:auto;">
@@ -63616,7 +63667,8 @@ async function renderAPAging() {
             <thead>
               <tr>
                 <th align="left">Vendor</th>
-                <th align="left">Vendor ID</th>
+                <th align="left">Bill ID</th>
+                <th align="left">Bill No</th>
                 <th align="right">Current</th>
                 <th align="right">1-30</th>
                 <th align="right">31-60</th>
@@ -63626,16 +63678,17 @@ async function renderAPAging() {
               </tr>
             </thead>
             <tbody>
-              ${vendors.map(v => `
+              ${bills.map(b => `
                 <tr>
-                  <td>${esc(v.vendor_name || "")}</td>
-                  <td class="tabular-nums">${esc(String(v.vendor_id ?? ""))}</td>
-                  <td align="right" class="tabular-nums">${money(v.current || 0)}</td>
-                  <td align="right" class="tabular-nums">${money(v["1_30"] || 0)}</td>
-                  <td align="right" class="tabular-nums">${money(v["31_60"] || 0)}</td>
-                  <td align="right" class="tabular-nums">${money(v["61_90"] || 0)}</td>
-                  <td align="right" class="tabular-nums">${money(v["91_plus"] || 0)}</td>
-                  <td align="right" class="tabular-nums"><b>${money(v.total || 0)}</b></td>
+                  <td>${esc(b.vendor_name || "")}</td>
+                  <td class="tabular-nums">${esc(String(b.bill_id ?? b.id ?? ""))}</td>
+                  <td>${esc(b.number || b.bill_number || "")}</td>
+                  <td align="right" class="tabular-nums">${money(b.current || 0)}</td>
+                  <td align="right" class="tabular-nums">${money(b["1_30"] || 0)}</td>
+                  <td align="right" class="tabular-nums">${money(b["31_60"] || 0)}</td>
+                  <td align="right" class="tabular-nums">${money(b["61_90"] || 0)}</td>
+                  <td align="right" class="tabular-nums">${money(b["91_plus"] || 0)}</td>
+                  <td align="right" class="tabular-nums"><b>${money(b.total || 0)}</b></td>
                 </tr>
               `).join("")}
             </tbody>

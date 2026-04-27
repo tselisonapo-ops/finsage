@@ -40,7 +40,33 @@ def vendor_statement(cid: int, vendor_id: int):
         current_app.logger.exception("vendor_statement failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+@ap_reports_bp.route("/api/companies/<int:cid>/ap/bills/<int:bill_id>/void", methods=["POST", "OPTIONS"])
+@require_auth
+def void_bill(cid: int, bill_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
 
+    company_id = int(cid)
+    user = getattr(g, "current_user", {}) or {}
+
+    if user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason") or "Voided after manual journal reversal"
+
+    try:
+        data = db_service.void_bill_after_manual_journal_reversal(
+            company_id,
+            int(bill_id),
+            voided_by=user.get("id"),
+            reason=reason,
+        )
+        return jsonify({"ok": True, "data": data}), 200
+    except Exception as e:
+        current_app.logger.exception("void_bill failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
 @ap_reports_bp.route("/api/companies/<int:cid>/ap/control-reconciliation", methods=["GET","OPTIONS"])
 @require_auth
 def ap_control_reconciliation(cid: int):

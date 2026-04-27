@@ -34268,7 +34268,65 @@ class DatabaseService:
 
         hdr["lines"] = lines
         return hdr
+    
+    def void_bill_after_manual_journal_reversal(
+        self,
+        company_id: int,
+        bill_id: int,
+        *,
+        voided_by: int | None = None,
+        reason: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
 
+        bill = self.fetch_one(f"""
+            SELECT id, status, posted_journal_id, reversed_journal_id
+            FROM {schema}.bills
+            WHERE company_id = %s AND id = %s
+        """, (company_id, bill_id))
+
+        if not bill:
+            raise ValueError("Bill not found")
+
+        if str(bill.get("status") or "").lower() in ("void", "reversed", "written_off"):
+            return bill
+
+        posted_journal_id = bill.get("posted_journal_id")
+        if not posted_journal_id:
+            raise ValueError("Only posted bills can be voided")
+
+        reversal = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.journal
+            WHERE company_id = %s
+            AND reversed_journal_id = %s
+            ORDER BY id DESC
+            LIMIT 1
+        """, (company_id, posted_journal_id))
+
+        if not reversal:
+            raise ValueError("Cannot void this bill because its posted journal has not been reversed yet")
+
+        updated = self.fetch_one(f"""
+            UPDATE {schema}.bills
+            SET status = 'void',
+                reversed_journal_id = COALESCE(reversed_journal_id, %s),
+                reversed_at = NOW(),
+                reversed_by = %s,
+                reversal_reason = COALESCE(%s, reversal_reason),
+                updated_at = NOW()
+            WHERE company_id = %s AND id = %s
+            RETURNING id, status, number, posted_journal_id, reversed_journal_id
+        """, (
+            reversal["id"],
+            voided_by,
+            reason,
+            company_id,
+            bill_id,
+        ))
+
+        return updated
+    
     def list_unbilled_receipts(self, company_id: int, *, vendor_id: int, q: str = "", limit: int = 50, offset: int = 0):
         schema = f"company_{int(company_id)}"
         where = ["company_id=%s", "lower(tx_type)=lower('receipt')", "vendor_id=%s"]
@@ -39321,6 +39379,7 @@ class DatabaseService:
             raise ValueError("Inventory control resolved to blank posting code")
         return posting
 
+
     def get_vendor_statement(
         self,
         company_id: int,
@@ -39367,7 +39426,7 @@ class DatabaseService:
             AND a.company_id = %s
             WHERE b.company_id = %s
             AND b.vendor_id  = %s
-            AND LOWER(COALESCE(b.status,'')) NOT IN ('void')
+            AND LOWER(COALESCE(b.status,'')) NOT IN ('void', 'reversed', 'written_off')
             GROUP BY b.id
             ORDER BY b.bill_date DESC, b.id DESC;
             """,
@@ -39503,7 +39562,7 @@ class DatabaseService:
             ON a.bill_id=b.id
             AND a.company_id=%s
             WHERE b.company_id=%s
-            AND b.status IN ('posted','partial','approved')
+            AND LOWER(COALESCE(b.status,'')) IN ('posted','partial','approved')
             {where_vendor}
             GROUP BY b.id
             HAVING (b.total_amount - COALESCE(SUM(a.amount),0)) > 0
@@ -39578,17 +39637,57 @@ class DatabaseService:
                 "bills": data["bills"],
             })
 
+        bills_out = []
+
+        for v in vendors_out:
+            vendor_name = v.get("vendor_name") or ""
+            vendor_id = v.get("vendor_id")
+
+            for b in v.get("bills", []):
+                bucket = b.get("bucket")
+                outstanding = Decimal(str(b.get("outstanding") or 0))
+
+                row = {
+                    "vendor_id": vendor_id,
+                    "vendor_name": vendor_name,
+                    "bill_id": b.get("bill_id"),
+                    "number": b.get("number"),
+                    "bill_date": b.get("bill_date"),
+                    "due_date": b.get("due_date"),
+                    "days_past_due": b.get("days_past_due"),
+                    "bucket": bucket,
+                    "current": 0.0,
+                    "1_30": 0.0,
+                    "31_60": 0.0,
+                    "61_90": 0.0,
+                    "91_plus": 0.0,
+                    "total": float(outstanding),
+                }
+
+                if bucket in row:
+                    row[bucket] = float(outstanding)
+
+                bills_out.append(row)
+
         return {
             "company_id": int(company_id),
             "as_at": as_at.isoformat(),
             "vendors": sorted(vendors_out, key=lambda x: x["total"], reverse=True),
+            "bills": sorted(bills_out, key=lambda x: x["total"], reverse=True),
+            "rows": sorted(bills_out, key=lambda x: x["total"], reverse=True),
             "totals": {
                 "current": float(grand["current"]),
                 "1_30": float(grand["b1_30"]),
                 "31_60": float(grand["b31_60"]),
                 "61_90": float(grand["b61_90"]),
                 "91_plus": float(grand["b91_plus"]),
-                "total": float(grand["current"] + grand["b1_30"] + grand["b31_60"] + grand["b61_90"] + grand["b91_plus"]),
+                "total": float(
+                    grand["current"]
+                    + grand["b1_30"]
+                    + grand["b31_60"]
+                    + grand["b61_90"]
+                    + grand["b91_plus"]
+                ),
             },
         }
 
@@ -39794,143 +39893,6 @@ class DatabaseService:
         """
         return self.fetch_all(sql, tuple(statuses))
 
-
-    def get_vendor_statement(
-        self,
-        company_id: int,
-        vendor_id: int,
-        date_from: date,
-        date_to: date,
-    ) -> dict:
-        schema = self.company_schema(company_id)
-
-        # AP control posting code (the one you actually post to in ledger.account)
-        ap_posting = self._resolve_ap_control_posting(company_id)
-
-        # --------------------------
-        # 0) Opening balance as at date_from (AP control only)
-        # --------------------------
-        open_row = self.fetch_one(
-            f"""
-            SELECT COALESCE(SUM(l.credit - l.debit), 0)::numeric(18,2) AS bal
-            FROM {schema}.ledger l
-            WHERE l.company_id = %s
-            AND l.vendor_id  = %s
-            AND l.account    = %s
-            AND l.date < %s;
-            """,
-            (company_id, vendor_id, ap_posting, date_from),
-        ) or {}
-        opening = Decimal(str(open_row.get("bal") or "0"))
-
-        # --------------------------
-        # 1) Movements in period (ledger AP control only)
-        #    AP normal balance is credit, so movement = credit - debit
-        # --------------------------
-        rows = self.fetch_all(
-            f"""
-            SELECT
-            l.id,
-            l.date,
-            l.ref,
-            l.journal_id,
-            l.source,
-            l.source_id,
-            l.memo,
-            l.debit,
-            l.credit,
-            (l.credit - l.debit) AS movement
-            FROM {schema}.ledger l
-            WHERE l.company_id = %s
-            AND l.vendor_id  = %s
-            AND l.account    = %s
-            AND l.date BETWEEN %s AND %s
-            ORDER BY l.date ASC, l.id ASC;
-            """,
-            (company_id, vendor_id, ap_posting, date_from, date_to),
-        ) or []
-
-        running = opening
-        tx = []
-        for r in rows:
-            mv = Decimal(str(r.get("movement") or 0))
-            running += mv
-            tx.append({
-                "id": r.get("id"),
-                "date": r.get("date").isoformat() if hasattr(r.get("date"), "isoformat") else str(r.get("date")),
-                "ref": r.get("ref") or "",
-                "journal_id": r.get("journal_id"),
-                "source": r.get("source"),
-                "source_id": r.get("source_id"),
-                "memo": r.get("memo") or "",
-                "debit": float(r.get("debit") or 0),
-                "credit": float(r.get("credit") or 0),
-                "movement": float(mv),
-                "balance": float(running),
-            })
-
-        # --------------------------
-        # 2) Per-bill outstanding (bill-based using allocations)
-        per_bill = self.fetch_all(
-            f"""
-            SELECT
-            b.id,
-            b.number,
-            b.bill_date,
-            b.due_date,
-            b.status,
-            b.total_amount::numeric(18,2) AS total_amount,
-            COALESCE(SUM(a.amount), 0)::numeric(18,2) AS paid,
-            (b.total_amount - COALESCE(SUM(a.amount),0))::numeric(18,2) AS outstanding
-            FROM {schema}.bills b
-            LEFT JOIN {schema}.vendor_payment_allocations a
-            ON a.bill_id = b.id
-            AND a.company_id = %s
-            WHERE b.company_id = %s
-            AND b.vendor_id = %s
-            AND LOWER(COALESCE(b.status,'')) NOT IN ('void')
-            GROUP BY b.id
-            ORDER BY b.bill_date DESC, b.id DESC;
-            """,
-            (company_id, company_id, vendor_id),
-        ) or []
-
-        total_debit = sum(t["debit"] for t in tx)
-        total_credit = sum(t["credit"] for t in tx)
-
-        return {
-            "vendor_id": int(vendor_id),
-            "ap_account": ap_posting,
-            "from": date_from.isoformat(),
-            "to": date_to.isoformat(),
-            "opening_balance": float(opening),
-            "closing_balance": float(running),
-
-            # ✅ what the UI expects (same as AR)
-            "rows": tx,
-            "transactions": tx,
-
-            "totals": {
-                "debits": float(total_debit),
-                "credits": float(total_credit),
-                # for AP, net movement is usually credit - debit (what we used as movement)
-                "net_movement": float(sum(Decimal(str(t["movement"])) for t in tx)),
-            },
-
-            "per_bill": [
-                {
-                    "bill_id": int(r["id"]),
-                    "number": r.get("number"),
-                    "bill_date": r.get("bill_date").isoformat() if hasattr(r.get("bill_date"), "isoformat") else r.get("bill_date"),
-                    "due_date": r.get("due_date").isoformat() if hasattr(r.get("due_date"), "isoformat") else r.get("due_date"),
-                    "status": r.get("status"),
-                    "total_amount": float(r.get("total_amount") or 0),
-                    "paid": float(r.get("paid") or 0),
-                    "outstanding": float(r.get("outstanding") or 0),
-                }
-                for r in per_bill
-            ],
-        }
 
     def ap_aging(self, company_id: int, *, as_of: date) -> dict:
         schema = f"company_{company_id}"
