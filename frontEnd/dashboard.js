@@ -13070,8 +13070,7 @@ async function renderVatDashboard() {
         for (const r of rows) {
           const dt = String(r.date || r.txn_date || r.posted_at || r.created_at || "").slice(0, 10);
           const ref = r.ref || r.reference || r.doc_no || "";
-          const acct = r.account_code || r.account || "";
-          const acctName = r.account_name ? ` — ${r.account_name}` : "";
+          const acctName = r.account_name || r.account || "";
           const side = String(r.vat_side || "").trim() || (String(acct).includes("2310") ? "output" : "input");
 
           const dr = Number(r.debit || 0);
@@ -13082,7 +13081,7 @@ async function renderVatDashboard() {
           tr.innerHTML = `
             <td class="py-2 pr-2 text-slate-600">${esc(dt)}</td>
             <td class="py-2 pr-2 text-slate-600">${esc(ref)}</td>
-            <td class="py-2 pr-2 text-slate-700">${esc(acct)}${esc(acctName)}</td>
+            <td class="py-2 pr-2 text-slate-700">${esc(acctName)}</td>
             <td class="py-2 pr-2 text-slate-500">${esc(side.toUpperCase())}</td>
             <td class="py-2 pr-2 text-right text-slate-700">${dr ? esc(fmt(dr)) : ""}</td>
             <td class="py-2 pr-2 text-right text-slate-700">${cr ? esc(fmt(cr)) : ""}</td>
@@ -25503,11 +25502,11 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     modal?.classList.add("hidden");
   }
 
-  function accountLabel(ln = {}) {
+  function accountLabel(ln = {}, { showCode = false } = {}) {
     const code = String(ln.account_code || ln.account || "").trim();
     const name = String(ln.account_name || ln.name || ln.account_label || "").trim();
 
-    if (name && code) return `${name} (${code})`;
+    if (showCode && name && code) return `${name} (${code})`;
     return name || code || "";
   }
 
@@ -25520,7 +25519,7 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     }
 
     const rows = lines.map((ln) => ({
-      account_label: accountLabel(ln),
+      account_label: accountLabel(ln, { showCode: false }),
       memo: String(ln.memo || ""),
       debit: Number(ln.debit || 0),
       credit: Number(ln.credit || 0),
