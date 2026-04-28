@@ -1162,14 +1162,9 @@ html, body {
           <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
             <div class="card p-4">
               <h3 class="font-bold mb-1">Tax & Compliance</h3>
-              <div class="text-sm space-y-1">
-                <div>Current VAT Period: <span id="taxPeriod">—</span></div>
-                <div>Estimated VAT: <span id="taxAmount" class="font-semibold">ZAR 0.00</span></div>
-                <div>Due Date: <span id="taxDue">—</span></div>
-              </div>
-              <div class="mt-3 flex gap-2 text-xs">
-                <button id="btnTaxView" class="btn">View VAT Report</button>
-                <button id="btnTaxMarkFiled" class="btn">Mark as Filed</button>
+
+              <div id="taxComplianceCard" class="text-sm space-y-1">
+                <div class="text-xs text-slate-500">Loading VAT compliance...</div>
               </div>
             </div>
 

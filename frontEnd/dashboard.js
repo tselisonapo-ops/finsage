@@ -6962,11 +6962,7 @@ ensureWidget("renderInventorySnapshot", async () => {
 });
 
 // Tax
-ensureWidget("renderTaxComplianceCard", async () => {
-  _setText("taxPeriod", "—");
-  _setText("taxAmount", fmtMoney(0));
-  _setText("taxDue",    "—");
-});
+ensureWidget("renderTaxComplianceCard", renderTaxComplianceCard);
 
 // Setup + Health
 ensureWidget("renderSetupChecklistCard", async () => { /* static HTML already */ });
@@ -13071,7 +13067,8 @@ async function renderVatDashboard() {
           const dt = String(r.date || r.txn_date || r.posted_at || r.created_at || "").slice(0, 10);
           const ref = r.ref || r.reference || r.doc_no || "";
           const acctName = r.account_name || r.account || "";
-          const side = String(r.vat_side || "").trim() || (String(acct).includes("2310") ? "output" : "input");
+          const acct = String(r.account || r.account_code || r.account_name || "");
+          const side = String(r.vat_side || "").trim() || (acct.includes("2310") ? "output" : "input");
 
           const dr = Number(r.debit || 0);
           const cr = Number(r.credit || 0);
@@ -64134,125 +64131,164 @@ async function renderTaxComplianceCard() {
   const card = document.getElementById("taxComplianceCard");
   if (!card) return;
 
-  // No company or no VAT settings → hint to setup
-  if (!CURRENT_COMPANY || !CURRENT_COMPANY.vat_settings) {
-    card.innerHTML = `
-      <div class="text-xs text-slate-500">
-        Set up VAT in <span class="font-semibold">Company &amp; Setup</span> to get filing reminders.
-      </div>
-    `;
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY?.id;
+
+  if (!cid) {
+    card.innerHTML = `<div class="text-xs text-slate-500">No company selected.</div>`;
     return;
   }
-
-  const cfg = CURRENT_COMPANY.vat_settings || {};
-  const today = new Date();
-  const msPerDay = 1000 * 60 * 60 * 24;
-
-  const nextPeriod = computeNextVatPeriod(today, cfg);
-  if (!nextPeriod) {
-    card.innerHTML = `
-      <div class="text-xs text-slate-500">
-        VAT configuration saved, but no periods could be calculated for this year.
-      </div>
-    `;
-    return;
-  }
-
-  const dueDate  = nextPeriod.dueDate;
-  const daysLeft = Math.ceil((dueDate - today) / msPerDay);
-  const remDays  = parseInt(cfg.reminder_days_before, 10);
-  const reminderWindow = Number.isNaN(remDays) ? 7 : remDays;
-
-  let statusLine  = "";
-  let statusClass = "";
-
-  if (daysLeft < 0) {
-    statusLine = `VAT return for <span class="font-semibold">${nextPeriod.label}</span> is <span class="font-semibold">overdue</span>.`;
-    statusClass = "text-red-600";
-  } else if (daysLeft <= reminderWindow) {
-    statusLine = `VAT return for <span class="font-semibold">${nextPeriod.label}</span> is due in <span class="font-semibold">${daysLeft} day(s)</span>.`;
-    statusClass = "text-amber-600";
-  } else {
-    statusLine = `VAT compliance OK. Next return <span class="font-semibold">${nextPeriod.label}</span> due on <span class="font-semibold">${dueDate.toISOString().slice(0,10)}</span>.`;
-    statusClass = "text-emerald-700";
-  }
-
-  // 🔹 STATUS + AMOUNT PLACEHOLDER + BUTTONS
-  card.innerHTML = `
-    <div class="text-xs ${statusClass}">
-      ${statusLine}
-    </div>
-
-    <div id="taxComplianceAmount" class="text-xs text-slate-600 mt-1">
-      Calculating net VAT for this period…
-    </div>
-
-    <div class="mt-2 flex gap-2">
-      <button
-        id="btnViewVatReport"
-        class="px-3 py-1 rounded bg-[var(--fs-navy)] text-white text-xs"
-      >
-        View VAT Report
-      </button>
-      <button
-        id="btnMarkVatFiled"
-        class="px-3 py-1 rounded border text-xs"
-      >
-        Mark as Filed
-      </button>
-    </div>
-  `;
-
-  // 🔗 Wire buttons
-  document
-    .getElementById("btnViewVatReport")
-    ?.addEventListener("click", (e) => {
-      e.preventDefault();
-      switchScreen("vat");
-    });
-  if (!CURRENT_COMPANY || !CURRENT_COMPANY.id) return;
-  function companyId() {
-    return CURRENT_COMPANY.id || CURRENT
-  }
-
-  const filedBtn = document.getElementById("btnMarkVatFiled");
-  if (filedBtn) {
-    filedBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      alert("Mark-as-filed is not wired to backend yet.");
-    });
-  }
-
-  // 🔢 Pull actual net VAT from backend for this period
-  const amountEl = document.getElementById("taxComplianceAmount");
-  if (!amountEl) return;
 
   try {
-    const cid    = companyId();
-    const fromStr = nextPeriod.start.toISOString().slice(0, 10);
-    const toStr   = nextPeriod.end.toISOString().slice(0, 10);
+    const cfg = window.CURRENT_COMPANY?.vat_settings || {};
+    const today = new Date();
 
-    const data   = await apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr));
-    const input  = +data.input_total  || 0;
-    const output = +data.output_total || 0;
-    const net    = output - input;
+    let period = null;
 
-    let label;
-    if (net > 0)      label = "VAT payable";
-    else if (net < 0) label = "VAT refundable";
-    else              label = "No VAT due";
+    if (typeof computeCurrentVatPeriod === "function") {
+      period = computeCurrentVatPeriod(today, cfg);
+    }
 
-    amountEl.innerHTML = `
-      ${label}: <span class="font-semibold">${money(Math.abs(net))}</span>
-      <span class="text-[10px] text-slate-400 ml-1">
-        (${fromStr} - ${toStr})
-      </span>
+    if (!period) {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      period = {
+        label: "Current month",
+        start,
+        end,
+        dueDate: end,
+        start_date: fmtLocalDate(start),
+        end_date: fmtLocalDate(end),
+        due_date: fmtLocalDate(end),
+      };
+    }
+
+    if (!period.start_date && period.start) period.start_date = fmtLocalDate(period.start);
+    if (!period.end_date && period.end) period.end_date = fmtLocalDate(period.end);
+    if (!period.due_date && period.dueDate) period.due_date = fmtLocalDate(period.dueDate);
+
+    const fromStr = period.start_date;
+    const toStr = period.end_date;
+
+    const [summary, filingRes] = await Promise.all([
+      apiFetch(ENDPOINTS.vatSummary(cid, fromStr, toStr), { method: "GET" }),
+      apiFetch(ENDPOINTS.vatFilings(cid, fromStr, toStr), { method: "GET" }),
+    ]);
+
+    const input = Number(summary?.input_total || 0);
+    const output = Number(summary?.output_total || 0);
+    const net = Number(summary?.net_vat ?? (output - input));
+
+    const filing = filingRes?.filing || filingRes?.data?.filing || null;
+    const status = String(filing?.status || "open").toLowerCase();
+
+    const due = period.dueDate || new Date(period.due_date + "T00:00:00");
+    const daysLeft = daysBetweenLocal(new Date(), due);
+
+    let badgeClass = "bg-slate-100 text-slate-700";
+    let badgeText = "Open";
+    let statusText = `Due ${period.due_date || "—"}`;
+
+    if (status === "submitted") {
+      badgeClass = "bg-emerald-100 text-emerald-700";
+      badgeText = "Submitted";
+      statusText = filing?.submitted_at
+        ? `Submitted on ${String(filing.submitted_at).slice(0, 10)}`
+        : "Submitted";
+    } else if (status === "prepared") {
+      badgeClass = "bg-blue-100 text-blue-700";
+      badgeText = "Prepared";
+      statusText = filing?.prepared_at
+        ? `Prepared on ${String(filing.prepared_at).slice(0, 10)}`
+        : "Prepared, not yet submitted/paid";
+    } else if (daysLeft < 0) {
+      badgeClass = "bg-red-100 text-red-700";
+      badgeText = "Overdue";
+      statusText = `Outstanding VAT period. Due ${period.due_date || fmtLocalDate(due)}.`;
+    } else if (daysLeft <= 7) {
+      badgeClass = "bg-amber-100 text-amber-700";
+      badgeText = "Due soon";
+      statusText = `VAT return due in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`;
+    }
+
+    let netLabel = "No VAT due";
+    let netClass = "text-slate-700";
+
+    if (net > 0) {
+      netLabel = "VAT payable";
+      netClass = "text-red-600";
+    } else if (net < 0) {
+      netLabel = "VAT refundable";
+      netClass = "text-emerald-700";
+    }
+
+    card.innerHTML = `
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <div class="text-xs text-slate-500">Current VAT Period</div>
+          <div class="font-semibold">${period.label || `${fromStr} - ${toStr}`}</div>
+        </div>
+
+        <span class="px-2 py-1 rounded text-xs ${badgeClass}">
+          ${badgeText}
+        </span>
+      </div>
+
+      <div class="text-xs text-slate-500 mt-1">
+        ${statusText}
+      </div>
+
+      <div class="mt-2">
+        <div class="text-xs text-slate-500">${netLabel}</div>
+        <div class="font-semibold ${netClass}">
+          ${money(Math.abs(net))}
+        </div>
+      </div>
+
+      <div class="text-[11px] text-slate-400">
+        Input VAT: ${money(input)} • Output VAT: ${money(output)}
+      </div>
+
+      <div class="mt-3 flex gap-2 text-xs">
+        <button id="btnTaxView" class="btn">View VAT Report</button>
+        <button id="btnTaxMarkFiled" class="btn">Prepare Return</button>
+      </div>
     `;
+
+    document.getElementById("btnTaxView")?.addEventListener("click", async (e) => {
+      e.preventDefault();
+
+      ensureVatScreen?.();
+      switchScreen?.("vat");
+
+      await bindVatPeriodFilter?.();
+      await renderVatDashboard?.();
+    });
+
+    document.getElementById("btnTaxMarkFiled")?.addEventListener("click", async (e) => {
+      e.preventDefault();
+
+      ensureVatScreen?.();
+      switchScreen?.("vat");
+
+      await bindVatPeriodFilter?.();
+      await renderVatDashboard?.();
+
+      document.getElementById("vatFileNowBtn")?.click();
+    });
+
   } catch (err) {
-    console.error("renderTaxComplianceCard() VAT amount error", err);
-    amountEl.textContent = "Could not compute net VAT for this period.";
+    console.error("renderTaxComplianceCard error:", err);
+    card.innerHTML = `
+      <div class="text-xs text-red-600">
+        Could not load VAT compliance snapshot.
+      </div>
+    `;
   }
 }
+window.renderTaxComplianceCard = renderTaxComplianceCard;
 
 async function renderSetupChecklistCard(periodKey = "this_month") {
   const list = $("#setupChecklist");
