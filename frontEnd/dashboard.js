@@ -16840,13 +16840,29 @@ function populateJournalAccountOptions() {
   if (!list.length) return;
 
   const normCat = (a) => {
-    const c = (a.category || a.section || a.group || "").toString().toLowerCase();
-    if (c.includes("asset")) return "asset";
-    if (c.includes("liab")) return "liability";
-    if (c.includes("exp")) return "expense";
-    if (c.includes("rev") || c.includes("income")) return "income";
-    if (c.includes("equity")) return "equity";
-    if (c.includes("adjust")) return "adjustment";
+    const code = String(a.code || "").toUpperCase();
+    const category = String(a.category || "").toLowerCase();
+    const role = String(a.role || "").toUpperCase();
+    const standard = String(a.standard || "").toUpperCase();
+
+    if (category.includes("asset")) return "asset";
+    if (category.includes("liab")) return "liability";
+    if (category.includes("exp")) return "expense";
+
+    // ✅ FIXED revenue classification
+    const isRevenue =
+      code.startsWith("PL_REV") &&
+      category.includes("revenue") &&
+      (
+        role === "CONTRACT_REVENUE" ||
+        standard === "IFRS 15"
+      );
+
+    if (isRevenue) return "income"; // keep UI label same
+
+    if (category.includes("equity")) return "equity";
+    if (category.includes("adjust")) return "adjustment";
+
     return "";
   };
 
