@@ -17966,6 +17966,19 @@ async function loadLedger(companyId, selectedAccount, fromDate, toDate, layout) 
   });
 }
 
+function fmtLedgerDate(v) {
+  if (!v) return "";
+
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function renderLedgerTable(rows, meta) {
   const { accountCode, isAll, layout } = meta || {};
   const showBalance = !isAll;
@@ -18039,11 +18052,11 @@ function renderLedgerTable(rows, meta) {
     </div>
     <div class="max-h-[calc(100vh-260px)] overflow-y-auto border rounded">
       <table class="min-w-full text-xs">
-        <thead class="bg-slate-50 text-slate-500 sticky top-0">
-          <tr>
-            <th class="px-2 py-1 text-left bg-slate-50">Date</th>
-            <th class="px-2 py-1 text-left bg-slate-50">Ref</th>
-            <th class="px-2 py-1 text-left bg-slate-50">${isAll ? "Account" : "Narration"}</th>
+      <thead class="bg-slate-50 text-slate-500 sticky top-0">
+        <tr>
+          <th class="px-2 py-1 text-left bg-slate-50 min-w-[140px]">Date</th>
+          <th class="px-2 py-1 text-left bg-slate-50">Ref</th>
+          <th class="px-2 py-1 text-left bg-slate-50">${isAll ? "Account" : "Narration"}</th>
             ${isAll ? `<th class="px-2 py-1 text-left bg-slate-50">Narration</th>` : ""}
             <th class="px-2 py-1 text-right bg-slate-50">Debit</th>
             <th class="px-2 py-1 text-right bg-slate-50">Credit</th>
@@ -18176,7 +18189,7 @@ function renderLedgerTable(rows, meta) {
       // ─────────────────────────────
       const mainRow = `
         <tr class="border-b">
-          <td class="px-2 py-1 text-xs whitespace-nowrap">${r.date || ""}</td>
+          <td class="px-2 py-1 text-xs whitespace-nowrap">${fmtLedgerDate(r.date)}</td>
           <td class="px-2 py-1 text-xs whitespace-nowrap">${refVal}</td>
           ${
             isAll
@@ -25823,68 +25836,78 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     return name || code || "";
   }
 
-function renderLinesTableSimple(hostEl, lines = []) {
-  if (!hostEl) return;
+  function renderLinesTableSimple(hostEl, lines = []) {
+    if (!hostEl) return;
 
-  if (!Array.isArray(lines) || !lines.length) {
-    hostEl.innerHTML = `<div class="text-xs text-slate-500 px-3 py-2">No lines yet</div>`;
-    return;
-  }
+    if (!Array.isArray(lines) || !lines.length) {
+      hostEl.innerHTML = `<div class="text-xs text-slate-500 px-3 py-2">No lines yet</div>`;
+      return;
+    }
 
-  const ref =
-    document.getElementById("lpRef")?.value?.trim() ||
-    lines[0]?.ref ||
-    lines[0]?.reference ||
-    "";
+    const ref =
+      document.getElementById("lpRef")?.value?.trim() ||
+      lines[0]?.ref ||
+      lines[0]?.reference ||
+      "";
 
-  const rows = lines.map((ln) => ({
-    ref: String(ln.ref || ln.reference || ref || ""),
-    account_label: accountLabel(ln, { showCode: false }),
-    memo: String(ln.memo || ln.description || ""),
-    debit: Number(ln.debit || 0),
-    credit: Number(ln.credit || 0),
-  }));
+    const rows = lines.map((ln) => {
+      let memo = String(ln.memo || ln.description || "");
 
-  const totalDr = rows.reduce((a, r) => a + (r.debit || 0), 0);
-  const totalCr = rows.reduce((a, r) => a + (r.credit || 0), 0);
-  const balanced = Math.abs(totalDr - totalCr) < 0.005;
+      // ❌ REMOVE duplicated reference from memo
+      if (ref) {
+        const safeRef = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        memo = memo.replace(new RegExp(`\\s*\\[?${safeRef}\\]?`, "gi"), "").trim();
+      }
 
-  hostEl.innerHTML = `
-    <div class="border rounded overflow-auto">
-      <table class="min-w-[980px] w-full text-xs">
-        <thead class="bg-slate-50 border-b border-slate-200">
-          <tr>
-            <th class="px-2 py-2 text-left w-[120px]">Ref</th>
-            <th class="px-2 py-2 text-left w-[220px]">Account</th>
-            <th class="px-2 py-2 text-left">Memo</th>
-            <th class="px-2 py-2 text-right w-32">Debit</th>
-            <th class="px-2 py-2 text-right w-32">Credit</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(r => `
-            <tr class="border-b border-slate-100">
-              <td class="px-2 py-2 text-slate-500 whitespace-nowrap">${esc(r.ref)}</td>
-              <td class="px-2 py-2 whitespace-nowrap">${esc(r.account_label)}</td>
-              <td class="px-2 py-2 text-slate-600">${esc(r.memo)}</td>
-              <td class="px-2 py-2 text-right tabular-nums">${r.debit ? r.debit.toFixed(2) : ""}</td>
-              <td class="px-2 py-2 text-right tabular-nums">${r.credit ? r.credit.toFixed(2) : ""}</td>
+      return {
+        ref: String(ln.ref || ln.reference || ref || ""),
+        account_label: accountLabel(ln, { showCode: false }),
+        memo,
+        debit: Number(ln.debit || 0),
+        credit: Number(ln.credit || 0),
+      };
+    });
+
+    const totalDr = rows.reduce((a, r) => a + (r.debit || 0), 0);
+    const totalCr = rows.reduce((a, r) => a + (r.credit || 0), 0);
+    const balanced = Math.abs(totalDr - totalCr) < 0.005;
+
+    hostEl.innerHTML = `
+      <div class="border rounded overflow-auto">
+        <table class="min-w-[980px] w-full text-xs">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="px-2 py-2 text-left w-[220px]">Account</th>
+              <th class="px-2 py-2 text-left w-[120px]">Ref</th>
+              <th class="px-2 py-2 text-left">Memo</th>
+              <th class="px-2 py-2 text-right w-32">Debit</th>
+              <th class="px-2 py-2 text-right w-32">Credit</th>
             </tr>
-          `).join("")}
-        </tbody>
-        <tfoot class="bg-slate-50 border-t border-slate-200">
-          <tr>
-            <td class="px-2 py-2 text-right font-semibold" colspan="3">
-              ${balanced ? "Balanced ✓" : "Not balanced"}
-            </td>
-            <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalDr.toFixed(2)}</td>
-            <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalCr.toFixed(2)}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  `;
-}
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr class="border-b border-slate-100">
+                <td class="px-2 py-2 whitespace-nowrap">${esc(r.account_label)}</td>
+                <td class="px-2 py-2 text-slate-500 whitespace-nowrap">${esc(r.ref)}</td>
+                <td class="px-2 py-2 text-slate-600">${esc(r.memo)}</td>
+                <td class="px-2 py-2 text-right tabular-nums">${r.debit ? r.debit.toFixed(2) : ""}</td>
+                <td class="px-2 py-2 text-right tabular-nums">${r.credit ? r.credit.toFixed(2) : ""}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot class="bg-slate-50 border-t border-slate-200">
+            <tr>
+              <td class="px-2 py-2 text-right font-semibold" colspan="3">
+                ${balanced ? "Balanced ✓" : "Not balanced"}
+              </td>
+              <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalDr.toFixed(2)}</td>
+              <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalCr.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  }
 
   function _readLeasePayForm() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -27948,6 +27971,19 @@ window.leaseRegShowMsg = function leaseRegShowMsg(text, type = "info") {
   el.classList.toggle("text-slate-600", type === "info");
 };
 
+function fmtLeaseDateFull(v) {
+  if (!v) return "—";
+
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 window.paintLeaseRegTabs = function paintLeaseRegTabs(activeTab) {
   const normalize = window.normalizeLeaseRegTab;
   const active = normalize(activeTab);
@@ -28243,8 +28279,8 @@ window.renderLeaseRegTab = async function renderLeaseRegTab({ force = false } = 
               ${rows.map(r => `
                 <tr class="border-t">
                   <td class="p-2">${esc(r.period_no)}</td>
-                  <td class="p-2">${esc(String(r.period_start || "").slice(0,10))}</td>
-                  <td class="p-2">${esc(String(r.period_end || "").slice(0,10))}</td>
+                  <td class="p-2 whitespace-nowrap">${esc(fmtLeaseDateFull(r.period_start))}</td>
+                  <td class="p-2 whitespace-nowrap">${esc(fmtLeaseDateFull(r.period_end))}</td>
                   <td class="p-2 text-right tabular-nums">${esc(r.payment)}</td>
                   <td class="p-2 text-right tabular-nums">${esc(r.interest)}</td>
                   <td class="p-2 text-right tabular-nums">${esc(r.principal)}</td>

@@ -1101,8 +1101,23 @@ html, body {
     border-color var(--fs-fast) var(--fs-ease);
 }
 
-.card:hover {
+/* Global cards: keep normal app look */
+.card {
+  background: var(--fs-card);
+  border: 1px solid var(--fs-border);
+  border-radius: 14px;
+}
+
+/* Only dashboard cards get polish */
+#screen-dashboard .card {
+  border: 1px solid rgba(148,163,184,.28);
+  box-shadow: 0 8px 22px rgba(15,23,42,.045);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+#screen-dashboard .card:hover {
   transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(15,23,42,.075);
   border-color: rgba(0,200,200,.28);
 }
 
