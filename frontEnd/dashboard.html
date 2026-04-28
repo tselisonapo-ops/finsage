@@ -993,11 +993,6 @@ html, body {
   overflow-x: hidden;
 }
 
-/* Any wide table/list should scroll horizontally on small screens */
-.screen table {
-  min-width: max-content;
-}
-
 .screen .overflow-auto,
 .screen .overflow-x-auto {
   -webkit-overflow-scrolling: touch;
@@ -1077,10 +1072,6 @@ html, body {
   --fs-med: 220ms;
 }
 
-/* Screen transitions */
-.screen.active {
-  animation: fsScreenIn var(--fs-med) var(--fs-ease);
-}
 
 @keyframes fsScreenIn {
   from {
@@ -1091,14 +1082,6 @@ html, body {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* Cards */
-.card {
-  transition:
-    transform var(--fs-fast) var(--fs-ease),
-    box-shadow var(--fs-fast) var(--fs-ease),
-    border-color var(--fs-fast) var(--fs-ease);
 }
 
 /* Global cards: keep normal app look */
@@ -1121,19 +1104,6 @@ html, body {
   border-color: rgba(0,200,200,.28);
 }
 
-/* Buttons */
-button,
-.btn,
-.btn-highlight,
-.pill {
-  transition:
-    transform var(--fs-fast) var(--fs-ease),
-    box-shadow var(--fs-fast) var(--fs-ease),
-    background-color var(--fs-fast) var(--fs-ease),
-    border-color var(--fs-fast) var(--fs-ease),
-    color var(--fs-fast) var(--fs-ease);
-}
-
 #screen-dashboard button:hover,
 #screen-dashboard .btn:hover {
   transform: translateY(-1px);
@@ -1143,16 +1113,6 @@ button:active,
 .btn:active,
 .btn-highlight:active {
   transform: translateY(0) scale(.98);
-}
-
-/* Inputs/selects */
-input,
-select,
-textarea {
-  transition:
-    border-color var(--fs-fast) var(--fs-ease),
-    box-shadow var(--fs-fast) var(--fs-ease),
-    background-color var(--fs-fast) var(--fs-ease);
 }
 
 input:focus,
