@@ -5599,7 +5599,7 @@ function workQueueTargetScreen(item) {
     return "revenue";
   }
 
-  return "journal";
+  return "ledger";
 }
 
 async function renderAccountingWorkQueue(periodKey = "this_month") {

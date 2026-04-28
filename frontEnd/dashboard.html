@@ -806,6 +806,85 @@ html, body {
     background:#f1f5f9;             /* slate-100 */
     color:#64748b;                  /* slate-500 */
   }
+
+  /* Dashboard polish */
+  #screen-dashboard {
+    animation: fsFadeIn .25s ease-out;
+  }
+
+  @keyframes fsFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  #screen-dashboard .card {
+    border: 1px solid rgba(148,163,184,.28);
+    box-shadow: 0 8px 22px rgba(15,23,42,.045);
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+
+  #screen-dashboard .card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px rgba(15,23,42,.075);
+    border-color: rgba(0,200,200,.28);
+  }
+
+  /* KPI strip */
+  #screen-dashboard > .grid:first-child .card {
+    position: relative;
+    overflow: hidden;
+  }
+
+  #screen-dashboard > .grid:first-child .card::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 3px;
+    width: 100%;
+    background: linear-gradient(90deg, var(--fs-navy), var(--fs-teal));
+  }
+
+  /* Buttons */
+  #screen-dashboard button {
+    transition: background-color .14s ease, border-color .14s ease, transform .14s ease;
+  }
+
+  #screen-dashboard button:hover {
+    background: #f8fafc;
+    border-color: rgba(0,40,79,.28);
+    transform: translateY(-1px);
+  }
+
+  /* Work queue cards */
+  #cc-workqueue button {
+    animation: fsQueueIn .22s ease both;
+  }
+
+  @keyframes fsQueueIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Better chart area */
+  #analysisChartWrap {
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    border-radius: 14px;
+    border: 1px solid rgba(148,163,184,.24);
+    padding: 8px;
+  }
+
+  /* Respect users who dislike motion */
+  @media (prefers-reduced-motion: reduce) {
+    #screen-dashboard,
+    #screen-dashboard .card,
+    #screen-dashboard button,
+    #cc-workqueue button {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+    }
+  }
   </style>
 
 </head>
@@ -966,7 +1045,7 @@ html, body {
                   <h3 class="font-bold">🏦 Accounting Work Queue</h3>
                   <p class="text-xs text-slate-500">Items needing posting, billing or review</p>
                 </div>
-                <button data-nav="journal" class="px-3 py-1 border rounded-lg">Open Ledger</button>
+                <button data-nav="ledger" class="px-3 py-1 border rounded-lg">Open Ledger</button>
               </div>
 
               <div id="cc-workqueue" class="mt-4 space-y-2 text-sm">
