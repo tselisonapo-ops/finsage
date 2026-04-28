@@ -5309,6 +5309,50 @@ def api_dashboard_snapshot(company_id: int):
 
     return jsonify(payload), 200
 
+@app.get("/api/companies/<int:company_id>/accounting-work-queue")
+@require_auth
+def api_accounting_work_queue(company_id: int):
+    current_user = getattr(g, "current_user", None)
+
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+    limit = int(request.args.get("limit") or 20)
+
+    try:
+        data = db_service.get_accounting_work_queue(
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        )
+
+        # 🔍 Optional audit (consistent with your system)
+        try:
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(current_user.get("id") or 0),
+                module="dashboard",
+                action="view",
+                severity="info",
+                entity_type="accounting_work_queue",
+                entity_id=None,
+                entity_ref="dashboard",
+                before_json={},
+                after_json={"count": data.get("count")},
+                message="Viewed accounting work queue",
+            )
+        except Exception:
+            pass
+
+        return jsonify(data), 200
+
+    except Exception as ex:
+        current_app.logger.exception("Error loading accounting work queue: %s", ex)
+        return jsonify({"error": "Failed to load accounting work queue"}), 500
+    
 @app.route("/api/companies/<int:company_id>/customers", methods=["GET", "POST"])
 @require_auth
 def api_company_customers(company_id: int):

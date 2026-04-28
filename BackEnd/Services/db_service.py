@@ -61410,6 +61410,143 @@ class DatabaseService:
             },
         }
 
+    def get_accounting_work_queue(self, company_id: int, *, date_from=None, date_to=None, limit: int = 20):
+        schema = self.company_schema(company_id)
+
+        items = []
+
+        with self._conn_cursor() as (conn, cur):
+            # 1) Loan payments due this period
+            cur.execute(f"""
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(ls.scheduled_payment), 0) AS amount,
+                    MIN(ls.due_date) AS next_due
+                FROM {schema}.loan_schedules ls
+                JOIN {schema}.loans l
+                ON l.id = ls.loan_id
+                AND l.company_id = ls.company_id
+                WHERE ls.company_id = %s
+                AND ls.payment_status IN ('open', 'partial')
+                AND (%s IS NULL OR ls.due_date >= %s)
+                AND (%s IS NULL OR ls.due_date <= %s)
+                AND COALESCE(l.status, 'active') = 'active'
+            """, (company_id, date_from, date_from, date_to, date_to))
+
+            row = cur.fetchone() or {}
+            if not isinstance(row, dict):
+                cols = [d[0] for d in cur.description]
+                row = dict(zip(cols, row))
+
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "loan_payment_due",
+                    "title": "Loan payments due",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "hint": f"Next due: {row.get('next_due')}",
+                    "screen": "loans",
+                    "severity": "warning",
+                })
+
+            # 2) Contracts where revenue recognised exceeds billing
+            cur.execute(f"""
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(
+                        COALESCE(recognized_revenue_to_date, 0)
+                        - COALESCE(billed_to_date, 0)
+                    ), 0) AS amount
+                FROM {schema}.revenue_contracts
+                WHERE company_id = %s
+                AND COALESCE(recognized_revenue_to_date, 0) > COALESCE(billed_to_date, 0)
+                AND COALESCE(status, '') IN ('active', 'completed')
+            """, (company_id,))
+
+            row = cur.fetchone() or {}
+            if not isinstance(row, dict):
+                cols = [d[0] for d in cur.description]
+                row = dict(zip(cols, row))
+
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "revenue_ready_to_bill",
+                    "title": "Recognised revenue not billed",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "hint": "Create invoices for earned revenue.",
+                    "screen": "revenue",
+                    "severity": "info",
+                })
+
+            # 3) Contracts where billing exceeds recognised revenue
+            cur.execute(f"""
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(
+                        COALESCE(billed_to_date, 0)
+                        - COALESCE(recognized_revenue_to_date, 0)
+                    ), 0) AS amount
+                FROM {schema}.revenue_contracts
+                WHERE company_id = %s
+                AND COALESCE(billed_to_date, 0) > COALESCE(recognized_revenue_to_date, 0)
+                AND COALESCE(status, '') IN ('active', 'completed')
+            """, (company_id,))
+
+            row = cur.fetchone() or {}
+            if not isinstance(row, dict):
+                cols = [d[0] for d in cur.description]
+                row = dict(zip(cols, row))
+
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "billing_ahead_of_revenue",
+                    "title": "Billing ahead of recognition",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "hint": "Review contract liability / deferred income.",
+                    "screen": "revenue",
+                    "severity": "neutral",
+                })
+
+            # 4) Satisfied point-in-time obligations not yet recognised
+            cur.execute(f"""
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(ro.allocated_transaction_price), 0) AS amount,
+                    MIN(ro.satisfied_at) AS oldest_satisfied
+                FROM {schema}.revenue_obligations ro
+                JOIN {schema}.revenue_contracts rc
+                ON rc.id = ro.contract_id
+                AND rc.company_id = ro.company_id
+                WHERE ro.company_id = %s
+                AND ro.recognition_timing = 'point_in_time'
+                AND ro.satisfaction_status = 'satisfied'
+                AND COALESCE(ro.revenue_to_date, 0) < COALESCE(ro.allocated_transaction_price, 0)
+                AND COALESCE(rc.status, '') IN ('active', 'completed')
+            """, (company_id,))
+
+            row = cur.fetchone() or {}
+            if not isinstance(row, dict):
+                cols = [d[0] for d in cur.description]
+                row = dict(zip(cols, row))
+
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "pit_obligation_ready",
+                    "title": "Satisfied obligations pending recognition",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "hint": f"Oldest satisfied: {row.get('oldest_satisfied')}",
+                    "screen": "revenue",
+                    "severity": "warning",
+                })
+
+        return {
+            "items": items[:limit],
+            "count": len(items),
+        }
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

@@ -641,6 +641,19 @@ const ENDPOINTS = {
     return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/dashboard_snapshot${qs ? `?${qs}` : ""}`;
   },
 
+  accountingWorkQueue: (companyId, opts = {}) => {
+    const params = new URLSearchParams();
+
+    if (opts.preset) params.append("preset", opts.preset);
+    if (opts.from) params.append("from", opts.from);
+    if (opts.to) params.append("to", opts.to);
+    if (opts.limit) params.append("limit", opts.limit);
+
+    const qs = params.toString();
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accounting-work-queue${qs ? `?${qs}` : ""}`;
+  },
+
   // --- COA / metadata ---
   coa: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/coa`,
   coaFlat: (industry, sub) =>
@@ -5460,6 +5473,224 @@ function renderUsersTable(payload) {
   if (body) body.innerHTML = rows.join("");
 }
 
+const WORK_QUEUE_EXISTING = [
+  {
+    type: "lease_payment_due",
+    title: "Lease payments due this period",
+    screen: "leases",
+    source: "existing",
+  },
+  {
+    type: "revenue_recognised_not_billed",
+    title: "Revenue recognised but not billed",
+    screen: "revenue",
+    source: "existing",
+  },
+  {
+    type: "billing_ahead_of_revenue",
+    title: "Billing ahead of revenue",
+    screen: "revenue",
+    source: "existing",
+  },
+  {
+    type: "obligations_ready_to_invoice",
+    title: "Obligations ready to invoice",
+    screen: "revenue",
+    source: "existing",
+  },
+];
+
+const WORK_QUEUE_BACKEND_SUMMARY = [
+  {
+    type: "loan_payment_due",
+    title: "Loan payments due this period",
+    screen: "loans",
+    source: "backend_summary",
+  },
+  {
+    type: "contracts_with_outstanding_obligations",
+    title: "Contracts with outstanding obligations",
+    screen: "revenue",
+    source: "backend_summary",
+  },
+  {
+    type: "obligations_past_billing_date",
+    title: "Obligations past billing date",
+    screen: "revenue",
+    source: "backend_summary",
+  },
+  {
+    type: "invoices_without_recognition",
+    title: "Invoices without corresponding recognition",
+    screen: "revenue",
+    source: "backend_summary",
+  },
+];
+
+const WORK_QUEUE_DEFS = [
+  ...WORK_QUEUE_EXISTING,
+  ...WORK_QUEUE_BACKEND_SUMMARY,
+];
+
+function normaliseWorkQueueItems(data) {
+  const rawItems = Array.isArray(data?.items) ? data.items : [];
+
+  return rawItems.map((item) => {
+    const def = WORK_QUEUE_DEFS.find(d => d.type === item.type) || {};
+
+    return {
+      ...def,
+      ...item,
+      title: item.title || def.title || "Accounting check",
+      screen: item.screen || def.screen || "journal",
+      source: item.source || def.source || "backend_summary",
+    };
+  });
+}
+
+function workQueueSeverityClass(severity) {
+  const s = String(severity || "").toLowerCase();
+
+  if (s === "danger" || s === "error") {
+    return "border-red-100 bg-red-50 text-red-700";
+  }
+
+  if (s === "warning") {
+    return "border-amber-100 bg-amber-50 text-amber-700";
+  }
+
+  if (s === "success") {
+    return "border-emerald-100 bg-emerald-50 text-emerald-700";
+  }
+
+  if (s === "info") {
+    return "border-blue-100 bg-blue-50 text-blue-700";
+  }
+
+  return "border-slate-100 bg-slate-50 text-slate-700";
+}
+
+function workQueueIcon(type) {
+  const t = String(type || "").toLowerCase();
+
+  if (t.includes("lease")) return "🏢";
+  if (t.includes("loan")) return "🏦";
+  if (t.includes("billing")) return "🧾";
+  if (t.includes("invoice")) return "📄";
+  if (t.includes("obligation")) return "📌";
+  if (t.includes("recogn")) return "📊";
+
+  return "•";
+}
+
+function workQueueTargetScreen(item) {
+  const type = String(item?.type || "").toLowerCase();
+
+  if (item?.screen) return item.screen;
+
+  if (type.includes("lease")) return "leases";
+  if (type.includes("loan")) return "loans";
+  if (
+    type.includes("revenue") ||
+    type.includes("billing") ||
+    type.includes("obligation") ||
+    type.includes("invoice")
+  ) {
+    return "revenue";
+  }
+
+  return "journal";
+}
+
+async function renderAccountingWorkQueue(periodKey = "this_month") {
+  const host = document.getElementById("cc-workqueue");
+  if (!host) return;
+
+  const cid =
+    getActiveCompanyId?.() ||
+    window.CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY?.id;
+
+  if (!cid) {
+    host.innerHTML = `<div class="text-xs text-slate-400">No company selected.</div>`;
+    return;
+  }
+
+  host.innerHTML = `<div class="text-xs text-slate-400">Loading accounting checks...</div>`;
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.accountingWorkQueue(cid, {
+        preset: periodKey,
+        limit: 8,
+      }),
+      { method: "GET" }
+    );
+
+    const items = normaliseWorkQueueItems(data);
+
+    if (!items.length) {
+      host.innerHTML = `
+        <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-700">
+          ✅ No accounting work queue items for this period.
+        </div>
+      `;
+      return;
+    }
+
+    host.innerHTML = items.map((item) => {
+      const amount = Number(item.amount || 0);
+      const count = Number(item.count || 0);
+      const screen = workQueueTargetScreen(item);
+      const cls = workQueueSeverityClass(item.severity);
+      const icon = workQueueIcon(item.type);
+
+      const amountText =
+        amount !== 0 && typeof money === "function"
+          ? money(Math.abs(amount))
+          : amount !== 0
+            ? Number(Math.abs(amount)).toFixed(2)
+            : "";
+
+      return `
+        <button
+          type="button"
+          class="w-full text-left rounded-xl border ${cls} p-3 hover:shadow-sm transition"
+          data-workqueue-screen="${screen}"
+          data-workqueue-type="${String(item.type || "")}"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="font-semibold text-sm">
+                ${icon} ${item.title || "Accounting check"}
+              </div>
+              <div class="text-[11px] opacity-80 mt-1">
+                ${item.hint || "Open to review details."}
+              </div>
+            </div>
+
+            <div class="text-right shrink-0">
+              ${count ? `<div class="text-xs font-semibold">${count} item${count === 1 ? "" : "s"}</div>` : ""}
+              ${amountText ? `<div class="text-[11px] opacity-80">${amountText}</div>` : ""}
+            </div>
+          </div>
+        </button>
+      `;
+    }).join("");
+
+  } catch (err) {
+    console.error("renderAccountingWorkQueue error:", err);
+
+    host.innerHTML = `
+      <div class="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-700">
+        Could not load accounting work queue.
+      </div>
+    `;
+  }
+}
+
+window.renderAccountingWorkQueue = renderAccountingWorkQueue;
+
   /* ==============================
    * Sidebar Renderer (recursive)
    * ============================== */
@@ -5700,6 +5931,29 @@ async function setupNav() {
       }
 
       switchScreen?.("journal");
+    });
+  }
+
+  if (!window.__accountingWorkQueueBound) {
+    window.__accountingWorkQueueBound = true;
+
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-workqueue-screen]");
+      if (!btn) return;
+
+      e.preventDefault();
+
+      const screen = btn.dataset.workqueueScreen || "journal";
+
+      if (screen === "vat") {
+        ensureVatScreen?.();
+        switchScreen?.("vat");
+        await bindVatPeriodFilter?.();
+        await renderVatDashboard?.();
+        return;
+      }
+
+      switchScreen?.(screen);
     });
   }
 
@@ -11714,6 +11968,8 @@ async function loadDashboard() {
     await safeWidget("Fixed assets snapshot", window.renderFixedAssetsSnapshot, CURRENT_PERIOD_KEY);
     await safeWidget("Inventory snapshot", window.renderInventorySnapshot, CURRENT_PERIOD_KEY);
     await safeWidget("Tax compliance card", window.renderTaxComplianceCard, CURRENT_PERIOD_KEY);
+    await safeWidget("Accounting work queue", window.renderAccountingWorkQueue, CURRENT_PERIOD_KEY);
+    
     await safeWidget("Setup checklist card", window.renderSetupChecklistCard);
     await safeWidget("Health compliance card", window.renderHealthComplianceCard, CURRENT_PERIOD_KEY);
 
