@@ -978,6 +978,231 @@ html, body {
   .app.nav-collapsed .nav-item-link:hover::after {
     opacity: 1;
   }
+
+  /* Universal fixed-screen / modal scroll safety */
+.screen {
+  min-width: 0;
+}
+
+.screen.active {
+  overflow-x: hidden;
+}
+
+.main {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Any wide table/list should scroll horizontally on small screens */
+.screen table {
+  min-width: max-content;
+}
+
+.screen .overflow-auto,
+.screen .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fixed overlays must allow their internal shell to scroll */
+.fixed.inset-0 {
+  min-width: 0;
+}
+
+/* Generic modal children fix */
+.fixed.inset-0 > div {
+  min-width: 0;
+}
+
+/* Fullscreen modal shell safety */
+.fixed.inset-0 .bg-white,
+.fixed.inset-0 .card {
+  min-width: 0;
+}
+
+/* Custom modal/drawer safety */
+.drawer,
+.fs-modal-shell,
+#invoiceViewerModal > div,
+#billViewerModal > div,
+#faDepModal > div,
+#faActivityModal > div,
+#moduleNudgeModal .modal-dialog {
+  max-width: 100vw;
+  max-height: 100dvh;
+}
+
+/* Let modal content scroll */
+.fs-modal-body,
+#moduleNudgeModal .modal-dialog {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile: force fixed modals to fit screen */
+@media (max-width: 768px) {
+  .fixed.inset-0 {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #invoiceViewerModal,
+  #billViewerModal,
+  #faDepModal,
+  #faActivityModal,
+  #moduleNudgeModal {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #invoiceViewerModal > div,
+  #billViewerModal > div {
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+  }
+
+  .drawer {
+    inset: 8px !important;
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* FinSage motion system */
+:root {
+  --fs-ease: cubic-bezier(.2,.8,.2,1);
+  --fs-fast: 140ms;
+  --fs-med: 220ms;
+}
+
+/* Screen transitions */
+.screen.active {
+  animation: fsScreenIn var(--fs-med) var(--fs-ease);
+}
+
+@keyframes fsScreenIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Cards */
+.card {
+  transition:
+    transform var(--fs-fast) var(--fs-ease),
+    box-shadow var(--fs-fast) var(--fs-ease),
+    border-color var(--fs-fast) var(--fs-ease);
+}
+
+.card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0,200,200,.28);
+}
+
+/* Buttons */
+button,
+.btn,
+.btn-highlight,
+.pill {
+  transition:
+    transform var(--fs-fast) var(--fs-ease),
+    box-shadow var(--fs-fast) var(--fs-ease),
+    background-color var(--fs-fast) var(--fs-ease),
+    border-color var(--fs-fast) var(--fs-ease),
+    color var(--fs-fast) var(--fs-ease);
+}
+
+button:hover,
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+button:active,
+.btn:active,
+.btn-highlight:active {
+  transform: translateY(0) scale(.98);
+}
+
+/* Inputs/selects */
+input,
+select,
+textarea {
+  transition:
+    border-color var(--fs-fast) var(--fs-ease),
+    box-shadow var(--fs-fast) var(--fs-ease),
+    background-color var(--fs-fast) var(--fs-ease);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--fs-teal);
+  box-shadow: 0 0 0 3px rgba(0,200,200,.14);
+}
+
+/* Drawers and modals */
+.drawer.active,
+.fs-modal-overlay.open,
+#moduleNudgeModal:not(.hidden) {
+  animation: fsOverlayIn var(--fs-med) var(--fs-ease);
+}
+
+.drawer.active,
+.fs-modal-shell,
+#moduleNudgeModal .modal-card {
+  animation: fsPanelIn var(--fs-med) var(--fs-ease);
+}
+
+@keyframes fsOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fsPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Nav */
+.nav-item-link {
+  transition:
+    transform var(--fs-fast) var(--fs-ease),
+    background-color var(--fs-fast) var(--fs-ease),
+    color var(--fs-fast) var(--fs-ease);
+}
+
+.nav-item-link:hover {
+  transform: translateX(2px);
+}
+
+/* Tables */
+tbody tr {
+  transition: background-color var(--fs-fast) var(--fs-ease);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
   </style>
 
 </head>
@@ -7133,22 +7358,25 @@ html, body {
               <input type="hidden" id="bankId" />
 
               <div class="sm:col-span-2">
-                <label class="block text-xs text-slate-500 mb-1">Label</label>
-                <input id="bankName" class="border rounded px-2 py-1 w-full text-sm" placeholder="Main Current Account" />
-              </div>
-
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Bank name</label>
-                <input id="bankBankName" class="border rounded px-2 py-1 w-full text-sm" placeholder="FNB, Standard Bank…" />
-              </div>
-
-              <div>
                 <label class="block text-xs text-slate-500 mb-1">Account name</label>
-                <input id="bankAccountName" class="border rounded px-2 py-1 w-full text-sm" placeholder="FinSphere Solutions (Pty) Ltd" />
+                <input id="bankName" class="border rounded px-2 py-1 w-full text-sm"
+                      placeholder="e.g. Main Current Account" />
               </div>
 
               <div>
-                <label class="block text-xs text-slate-500 mb-1">Account number</label>
+                <label class="block text-xs text-slate-500 mb-1">Bank</label>
+                <input id="bankBankName" class="border rounded px-2 py-1 w-full text-sm"
+                      placeholder="e.g. FNB, Standard Bank" />
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Account Holder Name</label>
+                <input id="bankAccountName" class="border rounded px-2 py-1 w-full text-sm"
+                      placeholder="e.g. FinSphere Solutions (Pty) Ltd" />
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Account Number</label>
                 <input id="bankAccountNumber" class="border rounded px-2 py-1 w-full text-sm" />
               </div>
 
@@ -8965,11 +9193,10 @@ html, body {
 </div>
 
 <!-- Lease Payments Modal -->
-<div id="leasePayModal" class="hidden fixed inset-0 z-[120]">
+<div id="leasePayModal" class="hidden fixed inset-0 z-[120] overflow-auto">
   <div class="absolute inset-0 bg-black/40"></div>
 
-  <!-- Bigger modal container -->
-  <div class="relative mx-auto mt-8 w-[98vw] max-w-7xl bg-white rounded-2xl shadow-xl overflow-hidden">
+  <div class="relative mx-auto my-4 w-[98vw] max-w-7xl max-h-[calc(100dvh-2rem)] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
     <!-- header -->
     <div class="flex items-center justify-between px-4 py-3 border-b">
       <div class="min-w-0">
@@ -8984,7 +9211,7 @@ html, body {
     </div>
 
     <!-- body -->
-    <div class="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[72vh]">
+    <div class="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-auto">
       <!-- LEFT: form -->
       <div class="lg:col-span-4">
         <div class="border rounded-xl p-3">

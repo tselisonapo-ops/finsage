@@ -926,6 +926,7 @@ def _coa_role_from_text(
     if has_any(
         "contract income",
         "contract revenue",
+        "service income"
         "revenue recognized from contracts",
         "revenue recognition - ifrs 15",
         "revenue recognition ifrs 15",

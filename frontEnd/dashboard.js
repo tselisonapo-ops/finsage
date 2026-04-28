@@ -15619,26 +15619,51 @@ function detectSubledgerType(acct) {
 function detectFutureModuleHint(acct) {
   if (!acct) return null;
 
-  const txt = normalizeTxt([acct.name, acct.category, acct.subcategory, acct.section].join(" "));
+  const txt = normalizeTxt([
+    acct.category,
+    acct.subcategory,
+    acct.section,
+    acct.standard,
+  ].join(" "));
+
+  const code = String(acct.code || acct.account_code || "").toUpperCase();
+  const category = String(acct.category || "").trim().toLowerCase();
+  const role = String(acct.role || "").trim().toUpperCase();
+  const standard = String(acct.standard || "").trim().toUpperCase();
 
   const isPPE =
-    txt.includes("property plant") || txt.includes("equipment") || txt.includes("ppe") ||
-    txt.includes("motor vehicle") || txt.includes("vehicles") || txt.includes("computer equipment") ||
-    txt.includes("furniture") || txt.includes("machinery");
+    txt.includes("property plant") ||
+    txt.includes("equipment") ||
+    txt.includes("ppe") ||
+    txt.includes("motor vehicle") ||
+    txt.includes("vehicles") ||
+    txt.includes("computer equipment") ||
+    txt.includes("furniture") ||
+    txt.includes("machinery");
 
   const isLease =
-    txt.includes("lease") || txt.includes("right-of-use") || txt.includes("rou") || txt.includes("ifrs 16");
+    txt.includes("lease") ||
+    txt.includes("right-of-use") ||
+    txt.includes("rou") ||
+    standard === "IFRS 16";
 
   const isRevenue =
-    txt.includes("revenue") || txt.includes("sales") || txt.includes("income");
+    code.startsWith("PL_REV") &&
+    category.includes("revenue") &&
+    (
+      role === "CONTRACT_REVENUE" ||
+      standard === "IFRS 15"
+    );
 
   const isAmort =
-    txt.includes("amort") || txt.includes("intangible");
+    txt.includes("amort") ||
+    txt.includes("intangible");
 
   if (isPPE) return "ppe";
   if (isLease) return "lease";
   if (isAmort) return "amort";
   if (isRevenue) return "revenue";
+
   return null;
 }
 
