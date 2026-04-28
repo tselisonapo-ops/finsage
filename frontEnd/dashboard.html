@@ -962,28 +962,40 @@ html, body {
             <!-- 1) Accounting & Transactions -->
             <div class="card p-5 shadow-sage">
               <div class="flex items-center justify-between">
-                <h3 class="font-bold">🏦 Accounting & Transactions</h3>
-                <button data-nav="journal" class="px-3 py-1 border rounded-lg">Open</button>
+                <div>
+                  <h3 class="font-bold">🏦 Accounting & Transactions</h3>
+                  <p class="text-xs text-slate-500">Cash, journals, invoices and bills</p>
+                </div>
+                <button data-nav="journal" class="px-3 py-1 border rounded-lg">Open Ledger</button>
               </div>
-              <div class="mt-3 text-sm">
-                <div class="flex items-center justify-between">
-                  <span>Current Cash Balance</span>
-                  <span id="cc-cash" class="font-semibold">Demo Value</span>
+
+              <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div class="rounded-xl bg-slate-50 p-3">
+                  <div class="text-xs text-slate-500">Cash Balance</div>
+                  <div id="cc-cash" class="font-semibold text-slate-800">—</div>
                 </div>
-                <div class="mt-2 flex gap-2 flex-wrap">
-                  <button data-nav="ar" class="px-2 py-1 border rounded enterprise-only">New Invoice</button>
-                  <button data-nav="ap" class="px-2 py-1 border rounded enterprise-only">Enter Bill</button>
-                  <button data-action="recordTransfer" class="px-2 py-1 border rounded">Transfer</button>
+
+                <div class="rounded-xl bg-slate-50 p-3">
+                  <div class="text-xs text-slate-500">Unposted Journals</div>
+                  <div id="cc-unposted" class="font-semibold text-amber-700">—</div>
                 </div>
-                <div class="mt-3">
-                  <div class="flex items-center justify-between mb-1 text-sm">
-                    <span>COA recent usage</span>
-                    <span id="cc-coa-pct" class="text-slate-500 text-xs">Demo %</span>
-                  </div>
-                  <div class="w-full h-2 bg-slate-100 rounded">
-                    <div id="cc-coa-bar" class="h-2 rounded bg-[var(--fs-teal)]" style="width:50%"></div>
-                  </div>
+
+                <div class="rounded-xl bg-slate-50 p-3">
+                  <div class="text-xs text-slate-500">Receivables</div>
+                  <div id="cc-ar" class="font-semibold text-slate-800">—</div>
                 </div>
+
+                <div class="rounded-xl bg-slate-50 p-3">
+                  <div class="text-xs text-slate-500">Payables</div>
+                  <div id="cc-ap" class="font-semibold text-slate-800">—</div>
+                </div>
+              </div>
+
+              <div class="mt-4 flex gap-2 flex-wrap text-xs">
+                <button data-nav="ar" class="px-3 py-2 border rounded-lg enterprise-only">New Invoice</button>
+                <button data-nav="ap" class="px-3 py-2 border rounded-lg enterprise-only">Enter Bill</button>
+                <button data-nav="journal" class="px-3 py-2 border rounded-lg">Manual Journal</button>
+                <button data-action="recordTransfer" class="px-3 py-2 border rounded-lg">Transfer</button>
               </div>
             </div>
 

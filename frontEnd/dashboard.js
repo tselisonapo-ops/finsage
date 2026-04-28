@@ -5684,6 +5684,25 @@ async function setupNav() {
   renderNavMenu(NAV_MENU, host);
   bindNav();
 
+  // ✅ Add this here
+  if (!window.__recordTransferBound) {
+    window.__recordTransferBound = true;
+
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest('[data-action="recordTransfer"]');
+      if (!btn) return;
+
+      e.preventDefault();
+
+      if (typeof openTransferModal === "function") {
+        openTransferModal();
+        return;
+      }
+
+      switchScreen?.("journal");
+    });
+  }
+
   // Optional: soft-disable Credit Control if user can't approve
   const approvalsLink = host.querySelector('[data-nav="cust-approvals"]');
   if (approvalsLink) {
