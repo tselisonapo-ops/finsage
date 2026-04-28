@@ -885,6 +885,99 @@ html, body {
       transform: none !important;
     }
   }
+
+  /* Sidebar base */
+  .sidebar {
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+    border-right: 1px solid rgba(148,163,184,.25);
+  }
+
+  /* Logo area */
+  .sidebar .font-extrabold {
+    letter-spacing: .3px;
+  }
+
+  /* Nav items */
+  .nav-item-link {
+    position: relative;
+    transition: all .14s ease;
+  }
+
+  /* Hover */
+  .nav-item-link.hover:hover {
+    background: rgba(0,200,200,.08);
+    transform: translateX(2px);
+  }
+
+  /* Active state (important) */
+  .nav-item-link.active {
+    background: rgba(0,200,200,.12);
+    color: var(--fs-navy);
+  }
+
+  /* 🔥 Left accent bar for active */
+  .nav-item-link.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--fs-teal);
+  }
+
+  /* Section title */
+  .sidebar .uppercase {
+    font-weight: 600;
+    letter-spacing: .06em;
+  }
+
+  .sidebar {
+    animation: fsSidebarIn .25s ease-out;
+  }
+
+  @keyframes fsSidebarIn {
+    from {
+      opacity: 0;
+      transform: translateX(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @media (max-width: 768px) {
+    #openLeaseWizardNav {
+      display: none;
+    }
+  }
+
+  .nav-item-link {
+    position: relative;
+  }
+
+  .nav-item-link[data-label]::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 100%;
+    margin-left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #111827;
+    color: #fff;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s ease;
+  }
+
+  .app.nav-collapsed .nav-item-link:hover::after {
+    opacity: 1;
+  }
   </style>
 
 </head>
@@ -1155,7 +1248,13 @@ html, body {
                 <h3 class="font-bold mb-2">🔗 Quick Links</h3>
                 <div class="flex flex-col gap-2">
                   <button data-nav="coa" class="px-3 py-2 border rounded">Chart of Accounts</button>
-                  <button data-nav="ledger" class="px-3 py-2 border rounded">General Ledger</button>
+                  <button
+                    data-nav="ledger"
+                    data-label="General Ledger"
+                    class="nav-item-link px-3 py-2 border rounded"
+                  >
+                    General Ledger
+                  </button>
                   <button data-nav="trial" class="px-3 py-2 border rounded">Trial Balance</button>
                   <button data-nav="company" class="px-3 py-2 border rounded">Company &amp; Setup</button>
                 </div>
