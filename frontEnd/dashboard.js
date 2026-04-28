@@ -25823,59 +25823,68 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     return name || code || "";
   }
 
-  function renderLinesTableSimple(hostEl, lines = []) {
-    if (!hostEl) return;
+function renderLinesTableSimple(hostEl, lines = []) {
+  if (!hostEl) return;
 
-    if (!Array.isArray(lines) || !lines.length) {
-      hostEl.innerHTML = `<div class="text-xs text-slate-500 px-3 py-2">No lines yet</div>`;
-      return;
-    }
-
-    const rows = lines.map((ln) => ({
-      account_label: accountLabel(ln, { showCode: false }),
-      memo: String(ln.memo || ""),
-      debit: Number(ln.debit || 0),
-      credit: Number(ln.credit || 0),
-    }));
-
-    const totalDr = rows.reduce((a, r) => a + (r.debit || 0), 0);
-    const totalCr = rows.reduce((a, r) => a + (r.credit || 0), 0);
-    const balanced = Math.abs(totalDr - totalCr) < 0.005;
-
-    hostEl.innerHTML = `
-      <div class="border rounded overflow-hidden">
-        <table class="min-w-full text-xs">
-          <thead class="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th class="px-2 py-2 text-left w-[300px]">Account</th>
-              <th class="px-2 py-2 text-left">Memo</th>
-              <th class="px-2 py-2 text-right w-32">Debit</th>
-              <th class="px-2 py-2 text-right w-32">Credit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map(r => `
-              <tr class="border-b border-slate-100">
-                <td class="px-2 py-2">${esc(r.account_label)}</td>
-                <td class="px-2 py-2 text-slate-600">${esc(r.memo)}</td>
-                <td class="px-2 py-2 text-right tabular-nums">${r.debit ? r.debit.toFixed(2) : ""}</td>
-                <td class="px-2 py-2 text-right tabular-nums">${r.credit ? r.credit.toFixed(2) : ""}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-          <tfoot class="bg-slate-50 border-t border-slate-200">
-            <tr>
-              <td class="px-2 py-2 text-right font-semibold" colspan="2">
-                ${balanced ? "Balanced ✓" : "Not balanced"}
-              </td>
-              <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalDr.toFixed(2)}</td>
-              <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalCr.toFixed(2)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    `;
+  if (!Array.isArray(lines) || !lines.length) {
+    hostEl.innerHTML = `<div class="text-xs text-slate-500 px-3 py-2">No lines yet</div>`;
+    return;
   }
+
+  const ref =
+    document.getElementById("lpRef")?.value?.trim() ||
+    lines[0]?.ref ||
+    lines[0]?.reference ||
+    "";
+
+  const rows = lines.map((ln) => ({
+    ref: String(ln.ref || ln.reference || ref || ""),
+    account_label: accountLabel(ln, { showCode: false }),
+    memo: String(ln.memo || ln.description || ""),
+    debit: Number(ln.debit || 0),
+    credit: Number(ln.credit || 0),
+  }));
+
+  const totalDr = rows.reduce((a, r) => a + (r.debit || 0), 0);
+  const totalCr = rows.reduce((a, r) => a + (r.credit || 0), 0);
+  const balanced = Math.abs(totalDr - totalCr) < 0.005;
+
+  hostEl.innerHTML = `
+    <div class="border rounded overflow-auto">
+      <table class="min-w-[980px] w-full text-xs">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-2 py-2 text-left w-[120px]">Ref</th>
+            <th class="px-2 py-2 text-left w-[220px]">Account</th>
+            <th class="px-2 py-2 text-left">Memo</th>
+            <th class="px-2 py-2 text-right w-32">Debit</th>
+            <th class="px-2 py-2 text-right w-32">Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr class="border-b border-slate-100">
+              <td class="px-2 py-2 text-slate-500 whitespace-nowrap">${esc(r.ref)}</td>
+              <td class="px-2 py-2 whitespace-nowrap">${esc(r.account_label)}</td>
+              <td class="px-2 py-2 text-slate-600">${esc(r.memo)}</td>
+              <td class="px-2 py-2 text-right tabular-nums">${r.debit ? r.debit.toFixed(2) : ""}</td>
+              <td class="px-2 py-2 text-right tabular-nums">${r.credit ? r.credit.toFixed(2) : ""}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot class="bg-slate-50 border-t border-slate-200">
+          <tr>
+            <td class="px-2 py-2 text-right font-semibold" colspan="3">
+              ${balanced ? "Balanced ✓" : "Not balanced"}
+            </td>
+            <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalDr.toFixed(2)}</td>
+            <td class="px-2 py-2 text-right tabular-nums font-semibold">${totalCr.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+}
 
   function _readLeasePayForm() {
     const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
