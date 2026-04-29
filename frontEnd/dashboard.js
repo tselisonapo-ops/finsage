@@ -15256,6 +15256,7 @@ async function renderRecentJournals() {
     return;
   }
 
+  const url = buildRecentJournalUrl(cid);
   // ✅ server-side filter url (supports from/to/limit/q)
   const periodKey =
     document.getElementById("jrnlFilterPreset")?.value?.trim() ||
