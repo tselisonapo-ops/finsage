@@ -1065,6 +1065,28 @@ def api_bill_detail(company_id: int, bill_id: int):
     if target_status != "draft" and not number:
         return jsonify({"ok": False, "error": "Vendor invoice number is required before approving/posting"}), 400
 
+    try:
+        if header.get("asset_id") not in (None, "", 0, "0"):
+            header["asset_id"] = int(header["asset_id"])
+        else:
+            header["asset_id"] = bill.get("asset_id")
+
+        if header.get("asset_acquisition_id") not in (None, "", 0, "0"):
+            header["asset_acquisition_id"] = int(header["asset_acquisition_id"])
+        else:
+            header["asset_acquisition_id"] = bill.get("asset_acquisition_id")
+
+        if not header.get("posting_mode"):
+            header["posting_mode"] = bill.get("posting_mode") or (
+                "asset_acquisition"
+                if header.get("asset_id") and header.get("asset_acquisition_id")
+                else None
+            )
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "error": "asset_id and asset_acquisition_id must be integers when provided"
+        }), 400
     # --------------------------
     # ✅ DUPLICATE CHECK (UPDATE – exclude THIS bill)
     # Allow duplicates only if the OTHER matching bill is draft (or void/written_off if you want)

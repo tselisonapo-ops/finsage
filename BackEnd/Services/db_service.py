@@ -35085,6 +35085,17 @@ class DatabaseService:
         if not bill:
             raise ValueError("Bill not found")
 
+        asset_id = bill.get("asset_id")
+        asset_acq_id = bill.get("asset_acquisition_id")
+
+        if asset_id or asset_acq_id:
+            raise ValueError(
+                "ASSET_LINKED_BILL_NORMAL_POST_BLOCKED|"
+                "Asset-linked bills cannot be posted through normal AP GL. "
+                f"bill_id={bill_id}, asset_id={asset_id}, asset_acquisition_id={asset_acq_id}. "
+                "Use post_bill_with_asset_awareness() so the bill is linked to the asset acquisition journal."
+            )
+        
         bdate = bill.get("bill_date") or _date.today()
         if isinstance(bdate, str):
             try:
