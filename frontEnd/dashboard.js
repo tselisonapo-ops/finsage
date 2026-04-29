@@ -15385,33 +15385,35 @@ async function renderRecentJournals() {
 
   host.querySelector("#btnRecentJournalsExportCsv")?.addEventListener("click", async () => {
     try {
-      const base = window.ENDPOINTS.reports.journalRegisterExport(cid);
-      const url = new URL(toApiUrl(base), window.location.origin);
+      const cid =
+        (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
+        window.CURRENT_COMPANY_ID;
 
-      const from = document.getElementById("jrnlFilterFrom")?.value?.trim();
-      const to = document.getElementById("jrnlFilterTo")?.value?.trim();
-      const q = document.getElementById("jrnlFilterQ")?.value?.trim();
-      const limit = document.getElementById("jrnlFilterLimit")?.value?.trim();
+      if (!cid) return;
 
-      const preset =
+      const periodKey =
         document.getElementById("jrnlFilterPreset")?.value?.trim() ||
         document.getElementById("reportPreset")?.value?.trim() ||
         window.CURRENT_PERIOD_KEY ||
         "this_month";
 
-      if (from) url.searchParams.set("from", from);
-      if (to) url.searchParams.set("to", to);
+      const periodParams = buildPeriodParams(periodKey, { format: "xlsx" });
+      const params = new URLSearchParams();
 
-      if (!from && !to && preset) {
-        url.searchParams.set("preset", preset);
-      }
+      Object.entries(periodParams).forEach(([k, v]) => {
+        if (k !== "__label" && v != null && v !== "") params.set(k, v);
+      });
 
-      if (q) url.searchParams.set("q", q);
-      if (limit) url.searchParams.set("limit", limit);
+      const q = document.getElementById("jrnlFilterQ")?.value?.trim() || "";
+      const limit = document.getElementById("jrnlFilterLimit")?.value?.trim() || "";
 
-      url.searchParams.set("format", "xlsx");
+      if (q) params.set("q", q);
+      if (limit) params.set("limit", limit);
 
-      await downloadUrl(url.pathname + url.search, "journal_register");
+      await downloadUrl(
+        `${ENDPOINTS.reports.journalRegisterExport(cid)}?${params.toString()}`,
+        "journal_register"
+      );
     } catch (e) {
       console.error("Export failed:", e);
     }
@@ -18248,36 +18250,24 @@ function renderLedgerTable(rows, meta) {
 
     if (!cid) return;
 
-    const params = new URLSearchParams({ format: "xlsx" });
-
-    const from =
-      document.getElementById("ledgerFilterFrom")?.value?.trim() ||
-      document.getElementById("reportFrom")?.value?.trim() ||
-      "";
-
-    const to =
-      document.getElementById("ledgerFilterTo")?.value?.trim() ||
-      document.getElementById("reportTo")?.value?.trim() ||
-      "";
-
-    const preset =
+    const periodKey =
       document.getElementById("ledgerFilterPreset")?.value?.trim() ||
       document.getElementById("glPeriodFilter")?.value?.trim() ||
       document.getElementById("reportPreset")?.value?.trim() ||
       window.CURRENT_PERIOD_KEY ||
       "prev_year";
 
+    const periodParams = buildPeriodParams(periodKey, { format: "xlsx" });
+    const params = new URLSearchParams();
+
+    Object.entries(periodParams).forEach(([k, v]) => {
+      if (k !== "__label" && v != null && v !== "") params.set(k, v);
+    });
+
     const q =
       document.getElementById("ledgerSearch")?.value?.trim() ||
       document.getElementById("ledgerFilterQ")?.value?.trim() ||
       "";
-
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-
-    if (!from && !to && preset) {
-      params.set("preset", preset);
-    }
 
     if (q) params.set("q", q);
 
