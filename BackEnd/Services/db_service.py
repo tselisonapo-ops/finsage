@@ -59560,53 +59560,10 @@ class DatabaseService:
                     })
 
                     if existing:
-                        # If draft exists → reuse it
+                        # If a draft entry already exists for this obligation + period,
+                        # do not re-add it into preview again.
+                        # This prevents duplicate revenue lines.
                         if existing.get("status") == "draft":
-                            reused = self.fetch_one(
-                                f"""
-                                SELECT *
-                                FROM {schema}.revenue_recognition_entries
-                                WHERE id=%s
-                                """,
-                                (int(existing["id"]),),
-                                cur=cur,
-                            )
-
-                            if reused:
-                                entry = {
-                                    "contract_id": int(reused["contract_id"]),
-                                    "obligation_id": int(reused["obligation_id"]),
-                                    "period_start": period_start_s,
-                                    "period_end": period_end_s,
-                                    "revenue_required_to_date": float(reused["revenue_required_to_date"]),
-                                    "revenue_previously_recognized": float(reused["revenue_previously_recognized"]),
-                                    "revenue_delta_this_run": float(reused["revenue_delta_this_run"]),
-                                    "billed_to_date": float(reused["billed_to_date"]),
-                                    "cash_received_to_date": float(cash_to_date_contract),
-                                    "contract_asset_delta": float(reused["contract_asset_delta"]),
-                                    "contract_liability_delta": float(reused["contract_liability_delta"]),
-                                    "source_basis": reused.get("source_basis") or "system",
-                                    "notes": reused.get("notes"),
-                                    "validation": {},
-                                    "payload_json": reused.get("payload_json") or {},
-                                }
-
-                                # ✅ VALIDATION (correct placement)
-                                if entry["revenue_delta_this_run"] == 0 and (
-                                    entry["contract_asset_delta"] != 0 or entry["contract_liability_delta"] != 0
-                                ):
-                                    raise ValueError(
-                                        f"Invalid draft entry {reused['id']}: zero revenue with contract movement"
-                                    )
-
-                                # ✅ APPEND (must be OUTSIDE the raise block)
-                                contract_entries.append(entry)
-                                flat_entries.append(entry)
-
-                                contract_rev += Decimal(str(entry["revenue_delta_this_run"]))
-                                contract_ca += Decimal(str(entry["contract_asset_delta"]))
-                                contract_cl += Decimal(str(entry["contract_liability_delta"]))
-
                             continue
 
                         # If already posted → skip
@@ -59626,6 +59583,14 @@ class DatabaseService:
                     delta = Decimal(str(calc["revenue_delta_this_run"])).quantize(Decimal("0.01"))
                     ca_delta = Decimal(str(calc["contract_asset_delta"])).quantize(Decimal("0.01"))
                     cl_delta = Decimal(str(calc["contract_liability_delta"])).quantize(Decimal("0.01"))
+
+                    # 🚨 HARD STOP: cannot hit both sides
+                    if ca_delta != Decimal("0.00") and cl_delta != Decimal("0.00"):
+                        raise ValueError(
+                            f"Invalid calculation: obligation {obl.get('id')} "
+                            f"has both contract_asset_delta ({ca_delta}) "
+                            f"and contract_liability_delta ({cl_delta})"
+                        )
 
                     if delta < Decimal("0.00"):
                         delta = Decimal("0.00")
@@ -59763,6 +59728,28 @@ class DatabaseService:
         if allocated <= 0:
             blocking.append("missing_allocated_transaction_price")
 
+        # Prevent duplicate recognition for same obligation and period
+        if cur is not None:
+            cur.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM {schema}.revenue_recognition_runs
+                WHERE company_id = %s
+                  AND contract_id = %s
+                  AND obligation_id = %s
+                  AND period_end = %s
+                  AND COALESCE(status, '') NOT IN ('reversed', 'cancelled', 'void')
+                """,
+                (company_id, contract_id, obligation_id, period_end),
+            )
+
+            row = cur.fetchone()
+            existing_count = int(
+                (row[0] if not isinstance(row, dict) else row.get("count")) or 0
+            )
+
+            if existing_count > 0:
+                blocking.append("recognition_already_run_for_obligation_period")
         try:
             self.resolve_ifrs15_accounts(company_id, cur=cur)
         except Exception:
@@ -60080,7 +60067,9 @@ class DatabaseService:
         )
 
         run_payload = dict(data.get("payload_json") or {})
-        run_payload["journal_lines"] = preview.get("journal_lines") or []
+        # Do not persist preview journal lines.
+        # Posting must rebuild journal lines from entries.
+        run_payload.pop("journal_lines", None)
 
         with self._conn_cursor() as (conn, cur):
             existing_posted = self.fetch_one(
@@ -60748,48 +60737,47 @@ class DatabaseService:
                 except Exception:
                     pj = {}
 
-            jlines = (pj or {}).get("journal_lines") or []
-
-            # Build journal lines on demand if they were not pre-saved on the run
-            if not jlines:
-                try:
-                    jlines = self._build_revenue_recognition_journal_lines(
-                        company_id=company_id,
-                        run=run,
-                        entries=entries,
-                    )
-                except Exception as build_err:
-                    raise ValueError(f"Recognition run journal build failed: {build_err}")
-
-                if not jlines:
-                    debug_rows = []
-                    for e in entries:
-                        debug_rows.append({
-                            "entry_id": e.get("id"),
-                            "contract_id": e.get("contract_id"),
-                            "obligation_id": e.get("obligation_id"),
-                            "revenue_delta_this_run": e.get("revenue_delta_this_run"),
-                            "contract_asset_delta": e.get("contract_asset_delta"),
-                            "contract_liability_delta": e.get("contract_liability_delta"),
-                        })
-
-                    raise ValueError(
-                        "Recognition run has no journal lines. "
-                        f"Entry movements were: {debug_rows}"
-                    )
-                
-                # persist built lines back to payload_json so previews / later reads can reuse them
-                pj = dict(pj or {})
-                pj["journal_lines"] = jlines
-
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.revenue_recognition_runs
-                    SET payload_json = COALESCE(payload_json, '{{}}'::jsonb) || %s::jsonb
-                    WHERE id=%s
-                    """,
-                    (json.dumps({"journal_lines": jlines}), int(run_id)),
+            # Always rebuild journal lines at posting time.
+            # Never trust payload_json["journal_lines"] from preview/draft.
+            try:
+                jlines = self._build_revenue_recognition_journal_lines(
+                    company_id=company_id,
+                    run=run,
+                    entries=entries,
+                    cur=cur,
                 )
+            except Exception as build_err:
+                raise ValueError(f"Recognition run journal build failed: {build_err}")
+
+            if not jlines:
+                debug_rows = []
+                for e in entries:
+                    debug_rows.append({
+                        "entry_id": e.get("id"),
+                        "contract_id": e.get("contract_id"),
+                        "obligation_id": e.get("obligation_id"),
+                        "revenue_delta_this_run": e.get("revenue_delta_this_run"),
+                        "contract_asset_delta": e.get("contract_asset_delta"),
+                        "contract_liability_delta": e.get("contract_liability_delta"),
+                    })
+
+                raise ValueError(
+                    "Recognition run has no journal lines. "
+                    f"Entry movements were: {debug_rows}"
+                )
+
+            # Save rebuilt lines back for audit/display only
+            pj = dict(pj or {})
+            pj["journal_lines"] = jlines
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.revenue_recognition_runs
+                SET payload_json = COALESCE(payload_json, '{{}}'::jsonb) || %s::jsonb
+                WHERE id=%s
+                """,
+                (json.dumps({"journal_lines": jlines}), int(run_id)),
+            )
             run_ref = f"REV-RUN-{int(run_id)}"
             run_desc = f"Revenue recognition run {int(run_id)}"
 
