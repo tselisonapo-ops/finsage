@@ -15257,7 +15257,28 @@ async function renderRecentJournals() {
   }
 
   // ✅ server-side filter url (supports from/to/limit/q)
-  const url = buildRecentJournalUrl(cid);
+  const periodKey =
+    document.getElementById("jrnlFilterPreset")?.value?.trim() ||
+    document.getElementById("reportPreset")?.value?.trim() ||
+    window.CURRENT_PERIOD_KEY ||
+    "this_month";
+
+  const periodParams = buildPeriodParams(periodKey);
+
+  const params = new URLSearchParams();
+
+  Object.entries(periodParams).forEach(([k, v]) => {
+    if (k !== "__label" && v != null && v !== "") params.set(k, v);
+  });
+
+  const q = document.getElementById("jrnlFilterQ")?.value?.trim();
+  const limit = document.getElementById("jrnlFilterLimit")?.value?.trim();
+
+  if (q) params.set("q", q);
+  if (limit) params.set("limit", limit);
+
+  const url = `${ENDPOINTS.reports.journalRegister(cid)}?${params.toString()}`;
+
   const data = await apiFetch(url, { method: "GET" });
 
   // ✅ normalize: allow either [] OR {rows: []}
