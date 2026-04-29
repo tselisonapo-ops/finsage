@@ -64,7 +64,39 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
 
     ws.append(headers)
 
+    last_journal_id = None
+
     for row in rows:
+        row = dict(row)
+        journal_id = row.get("journal_id")
+
+        # Add spacing + journal header when journal changes
+        if journal_id and journal_id != last_journal_id:
+            if last_journal_id is not None:
+                ws.append([])
+
+            header_text = f"Journal {journal_id}"
+            ref = row.get("ref") or ""
+            date = row.get("date") or ""
+            desc = row.get("journal_description") or row.get("description") or ""
+
+            ws.append([f"{header_text} | {date} | {ref} | {desc}"] + [""] * (len(keys) - 1))
+
+            group_row = ws.max_row
+            ws.merge_cells(
+                start_row=group_row,
+                start_column=1,
+                end_row=group_row,
+                end_column=max(len(keys), 1),
+            )
+
+            cell = ws.cell(row=group_row, column=1)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill("solid", fgColor="DDEAF6")
+            cell.alignment = Alignment(vertical="center")
+
+            last_journal_id = journal_id
+
         clean_row = []
 
         for k in keys:
@@ -81,7 +113,7 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
 
         ws.append(clean_row)
 
-    header_fill = PatternFill("solid", fgColor="EAF2F8")
+    header_fill = PatternFill("solid", fgColor="EAF2F8") 
     debit_fill = PatternFill("solid", fgColor="F8FBFF")
     credit_fill = PatternFill("solid", fgColor="FFF8E7")
     thin = Side(style="thin", color="D9E2EC")
@@ -100,6 +132,20 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
     credit_col = keys.index("credit") + 1 if "credit" in keys else None
 
     for row_idx in range(2, ws.max_row + 1):
+
+        # Skip group header rows and blank separator rows
+        if ws.cell(row=row_idx, column=1).value and all(
+            ws.cell(row=row_idx, column=c).value in (None, "")
+            for c in range(2, ws.max_column + 1)
+        ):
+            continue
+
+        if all(
+            ws.cell(row=row_idx, column=c).value in (None, "")
+            for c in range(1, ws.max_column + 1)
+        ):
+            continue
+
         debit_num = 0
         credit_num = 0
 
@@ -111,10 +157,15 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
 
         row_fill = credit_fill if credit_num > 0 else debit_fill if debit_num > 0 else None
 
-        for col_idx in range(1, ws.max_column + 1):
+        for col_idx, key in enumerate(keys, start=1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.border = row_border
-            cell.alignment = Alignment(vertical="top")
+            wrap = key in {"memo", "description"}
+
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=wrap
+            )
 
             if row_fill:
                 cell.fill = row_fill
@@ -138,11 +189,33 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
                 cell.number_format = '#,##0.00'
                 cell.alignment = Alignment(horizontal="right", vertical="top")
 
-        ws.column_dimensions[get_column_letter(col_idx)].width = min(
-            max(max_len + 4, 12),
-            60
-        )
+        # smarter autofit per column type
+        if key == "memo":
+            width = min(max(max_len + 4, 25), 80)   # allow wide memo
+        elif key in {"description", "account_name"}:
+            width = min(max(max_len + 4, 20), 60)
+        elif key in {"date", "ref", "source"}:
+            width = min(max(max_len + 2, 12), 25)
+        else:
+            width = min(max(max_len + 3, 12), 40)
 
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    # 🔥 AUTO ROW HEIGHT FOR WRAPPED TEXT
+    for row_idx in range(2, ws.max_row + 1):
+        max_lines = 1
+
+        for col_idx, key in enumerate(keys, start=1):
+            if key in {"memo", "description"}:
+                val = ws.cell(row=row_idx, column=col_idx).value
+                if val:
+                    text = str(val)
+                    lines = text.count("\n") + (len(text) // 60) + 1
+                    max_lines = max(max_lines, lines)
+
+        ws.row_dimensions[row_idx].height = min(max_lines * 15, 120)
+
+    # existing line
     ws.freeze_panes = "A2"
 
     bio = BytesIO()
