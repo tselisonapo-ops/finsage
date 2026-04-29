@@ -90,30 +90,40 @@ def build_journal_register(db, company_id, date_from=None, date_to=None, q=None)
         params.append(date_to)
 
     if q:
-        where.append("(COALESCE(j.ref,'') ILIKE %s OR COALESCE(j.description,'') ILIKE %s)")
+        where.append("""
+            (
+                COALESCE(j.ref,'') ILIKE %s
+                OR COALESCE(j.description,'') ILIKE %s
+                OR COALESCE(l.memo,'') ILIKE %s
+                OR COALESCE(l.account,'') ILIKE %s
+                OR COALESCE(c.name,'') ILIKE %s
+            )
+        """)
         like = f"%{q}%"
-        params.extend([like, like])
+        params.extend([like, like, like, like, like])
 
     sql = f"""
     SELECT
-        j.id,
+        j.id AS journal_id,
         j.date,
         COALESCE(j.ref, '') AS ref,
         COALESCE(j.description, '') AS description,
         COALESCE(j.source, '') AS source,
-        COALESCE(j.net_amount, 0) AS net_amount,
-        COALESCE(j.vat_amount, 0) AS vat_amount,
-        COALESCE(j.gross_amount, 0) AS gross_amount,
-        COUNT(l.id) AS line_count,
-        COALESCE(SUM(l.debit), 0) AS debit_total,
-        COALESCE(SUM(l.credit), 0) AS credit_total
+        l.id AS line_id,
+        l.account AS account_code,
+        COALESCE(c.name, l.account) AS account_name,
+        COALESCE(l.memo, '') AS memo,
+        COALESCE(l.debit, 0) AS debit,
+        COALESCE(l.credit, 0) AS credit
     FROM {schema}.journal j
-    LEFT JOIN {schema}.ledger l
+    JOIN {schema}.ledger l
       ON l.journal_id = j.id
      AND l.company_id = j.company_id
+    LEFT JOIN {schema}.coa c
+      ON c.company_id = l.company_id
+     AND c.code = l.account
     WHERE {" AND ".join(where)}
-    GROUP BY j.id
-    ORDER BY j.date DESC, j.id DESC
+    ORDER BY j.date DESC, j.id DESC, l.id ASC
     """
 
     raw_rows = db.fetch_all(sql, tuple(params)) or []
@@ -123,19 +133,27 @@ def build_journal_register(db, company_id, date_from=None, date_to=None, q=None)
         rows.append({
             "date": str(r.get("date")) if r.get("date") else "",
             "ref": r.get("ref") or "",
-            "description": r.get("description") or "",
+            "journal_id": r.get("journal_id"),
             "source": r.get("source") or "",
-            "debit_total": float(r.get("debit_total") or 0),
-            "credit_total": float(r.get("credit_total") or 0),
+            "description": r.get("description") or "",
+            "account_code": r.get("account_code") or "",
+            "account_name": r.get("account_name") or "",
+            "memo": r.get("memo") or "",
+            "debit": float(r.get("debit") or 0),
+            "credit": float(r.get("credit") or 0),
         })
 
     columns = [
         {"key": "date", "label": "Date"},
         {"key": "ref", "label": "Ref"},
-        {"key": "description", "label": "Description"},
+        {"key": "journal_id", "label": "Journal ID"},
         {"key": "source", "label": "Source"},
-        {"key": "debit_total", "label": "Debit"},
-        {"key": "credit_total", "label": "Credit"},
+        {"key": "description", "label": "Description"},
+        {"key": "account_code", "label": "Account"},
+        {"key": "account_name", "label": "Account Name"},
+        {"key": "memo", "label": "Memo"},
+        {"key": "debit", "label": "Debit"},
+        {"key": "credit", "label": "Credit"},
     ]
 
     return rows, columns

@@ -1,5 +1,8 @@
 from decimal import Decimal
 
+from decimal import Decimal
+
+
 def build_general_ledger_report(
     db,
     company_id,
@@ -63,7 +66,7 @@ def build_general_ledger_report(
       ON c.company_id = l.company_id
      AND c.code = l.account
     WHERE {" AND ".join(where)}
-    ORDER BY l.account ASC, l.date ASC, l.id ASC
+    ORDER BY l.date ASC, l.journal_id ASC, l.id ASC
     """
 
     rows = db.fetch_all(sql, tuple(params)) or []
@@ -106,7 +109,7 @@ def build_general_ledger_report(
             total_credit += credit
 
             out_rows.append({
-                "date": str(r.get("date")) if r.get("date") else None,
+                "date": str(r.get("date")) if r.get("date") else "",
                 "ref": r.get("ref") or "",
                 "journal_id": r.get("journal_id"),
                 "source": r.get("source") or "",
@@ -131,32 +134,25 @@ def build_general_ledger_report(
         }
 
     else:
-        account_running = {}
-
         for r in rows:
-            acc = r.get("account_code") or ""
             debit = Decimal(str(r.get("debit") or 0))
             credit = Decimal(str(r.get("credit") or 0))
-
-            account_running.setdefault(acc, Decimal("0"))
-            account_running[acc] += debit - credit
 
             total_debit += debit
             total_credit += credit
 
             out_rows.append({
-                "date": str(r.get("date")) if r.get("date") else None,
+                "date": str(r.get("date")) if r.get("date") else "",
                 "ref": r.get("ref") or "",
                 "journal_id": r.get("journal_id"),
                 "source": r.get("source") or "",
                 "source_id": r.get("source_id"),
-                "account_code": acc,
+                "account_code": r.get("account_code") or "",
                 "account_name": r.get("account_name") or "",
                 "journal_description": r.get("journal_description") or "",
                 "memo": r.get("memo") or "",
                 "debit": float(debit),
                 "credit": float(credit),
-                "balance": float(account_running[acc]),
             })
 
         totals = {
@@ -177,7 +173,9 @@ def build_general_ledger_report(
         {"key": "memo", "label": "Memo"},
         {"key": "debit", "label": "Debit"},
         {"key": "credit", "label": "Credit"},
-        {"key": "balance", "label": "Running Balance"},
     ]
+
+    if account_code:
+        columns.append({"key": "balance", "label": "Running Balance"})
 
     return out_rows, columns, totals
