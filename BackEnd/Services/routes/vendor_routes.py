@@ -337,6 +337,10 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
                 funding = (acq.get("funding_source") or "").strip().lower()
                 already_posted = bool(acq.get("posted_journal_id"))
 
+                current_app.logger.warning(
+                    "ASSET_AWARE_DEBUG bill_id=%s asset_id=%s asset_acq_id=%s funding=%s already_posted=%s acq=%s",
+                    bill_id, asset_id, asset_acq_id, funding, already_posted, dict(acq or {})
+                )
                 # vendor_credit -> use acquisition posting as source of truth
                 if funding == "vendor_credit":
                     schema = f"company_{int(company_id)}"
@@ -424,6 +428,18 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
                 # grni -> continue into normal AP flow
                 elif funding == "grni":
                     pass
+
+                # grni -> continue into normal AP flow
+                elif funding == "grni":
+                    pass
+
+    # 🔒 Hard stop: asset-linked bills must never fall through to normal AP posting.
+    if asset_id or asset_acq_id:
+        raise Exception(
+            "ASSET_LINKED_BILL_FELL_THROUGH|"
+            f"bill_id={bill_id}, asset_id={asset_id}, asset_acquisition_id={asset_acq_id}. "
+            "Asset-linked bills must be handled by the asset acquisition branch, not normal AP."
+        )
 
     # --------------------------------------------------
     # Normal / GRNI bill flow
