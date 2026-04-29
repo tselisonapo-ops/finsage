@@ -18248,7 +18248,7 @@ function renderLedgerTable(rows, meta) {
       </table>
     </div>
   `;
-  
+
   host.querySelector("#btnLedgerExportCsv")?.addEventListener("click", async () => {
     const cid =
       (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
@@ -58426,6 +58426,13 @@ async function openBillFromAssetAcquisition(acqId) {
   if (!Array.isArray(window.VENDORS_CACHE) || window.VENDORS_CACHE.length === 0) {
     await window.fillBillVendorList?.();
   }
+  
+  window._CURRENT_ASSET_BILL_PREFILL = {
+    acquisition_id: prefill.asset_acquisition_id,
+    asset_id: prefill.asset_id,
+    bill_id: prefill.bill_id || prefill.ap_bill_id || null,
+    journal_id: prefill.posted_journal_id || prefill.journal_id || null,
+  };
 
   // normal bill form fields
   window.writeBillForm?.({
@@ -58700,6 +58707,12 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
   try {
     if (!vendorObj || !vendorObj.id) return false;
 
+    // ✅ skip modal if user is already working on an asset-acquisition bill
+    const ctx = window._CURRENT_ASSET_BILL_PREFILL;
+    if (ctx?.acquisition_id && !ctx?.bill_id && !ctx?.journal_id) {
+      return false;
+    }
+
     const linked = Array.isArray(vendorObj.linked_asset_acquisitions)
       ? vendorObj.linked_asset_acquisitions
       : [];
@@ -58710,58 +58723,64 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
       ? vendorObj.linked_assets
       : [];
 
-    const rows = linked
-      .filter((x) => {
-        const hasBill =
-          !!x?.bill_id ||
-          !!x?.ap_bill_id ||
-          !!x?.vendor_bill_id ||
-          String(x?.bill_status || "").trim() !== "";
+    const rows = linked.map((x) => {
+      const funding = String(x?.funding_source || "").trim().toLowerCase();
+      const status = String(x?.status || "").trim().toLowerCase();
 
-        const funding = String(x?.funding_source || "").trim().toLowerCase();
-        const status = String(x?.status || "").trim().toLowerCase();
+      const billId =
+        x?.bill_id ||
+        x?.ap_bill_id ||
+        x?.vendor_bill_id ||
+        null;
 
-        return (
-          x?.acquisition_id &&
-          funding === "vendor_credit" &&
-          !hasBill &&
-          status !== "cancelled" &&
-          status !== "completed"
-        );
-      })
-      .map((x) => {
-        const funding = String(x?.funding_source || "").trim().toLowerCase();
-        const status = String(x?.status || "").trim().toLowerCase();
-        const posted = !!x?.posted_journal_id;
+      const journalId =
+        x?.posted_journal_id ||
+        x?.journal_id ||
+        x?.posted_bill_journal_id ||
+        null;
 
-        const asset = linkedAssets.find(
-          (a) => Number(a?.asset_id || 0) === Number(x?.asset_id || 0)
-        );
+      const hasBill = !!billId || String(x?.bill_status || "").trim() !== "";
+      const hasJournal = !!journalId;
 
-        const assetLabel = asset?.asset_name
-          ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
-          : `Asset #${x?.asset_id || "—"}`;
+      const asset = linkedAssets.find(
+        (a) => Number(a?.asset_id || 0) === Number(x?.asset_id || 0)
+      );
 
-        const clickable =
-          x?.acquisition_id &&
-          funding === "vendor_credit" &&
-          status !== "cancelled" &&
-          status !== "completed";
+      const assetLabel = asset?.asset_name
+        ? `${asset.asset_name}${asset.asset_code ? ` (${asset.asset_code})` : ""}`
+        : `Asset #${x?.asset_id || "—"}`;
 
-        return {
-          acquisition_id: x?.acquisition_id,
-          asset_label: assetLabel,
-          reference: x?.vendor_invoice_no || x?.reference || "",
-          amount: x?.amount || x?.gross_amount || 0,
-          clickable,
-          status_label: posted ? "Posted acquisition" : status || "Draft",
-          bill_label: clickable
-            ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
-            : `<span class="ap-badge ap-badge--muted">Locked</span>`,
-        };
-      });
+      const clickable =
+        !!x?.acquisition_id &&
+        funding === "vendor_credit" &&
+        !hasBill &&
+        !hasJournal &&
+        status !== "cancelled" &&
+        status !== "completed";
 
-    if (!rows.length) return false;
+      return {
+        acquisition_id: x?.acquisition_id,
+        asset_id: x?.asset_id,
+        bill_id: billId,
+        journal_id: journalId,
+        asset_label: assetLabel,
+        reference: x?.vendor_invoice_no || x?.reference || "",
+        amount: x?.amount || x?.gross_amount || 0,
+        clickable,
+        status_label: hasBill
+          ? `Bill exists #${billId}`
+          : hasJournal
+            ? `Posted journal #${journalId}`
+            : status || "Draft",
+        bill_label: clickable
+          ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
+          : `<span class="ap-badge ap-badge--muted">Already linked</span>`,
+      };
+    });
+
+    // Only open modal if there is at least one actionable row.
+    const actionableRows = rows.filter(r => r.clickable);
+    if (!actionableRows.length) return false;
 
     showVendorLinkedAssetBillModal(vendorObj, rows);
     return true;
