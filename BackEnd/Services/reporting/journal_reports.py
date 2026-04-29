@@ -9,10 +9,23 @@ from flask import Response
 def export_xlsx(payload: dict, filename: str = "report.xlsx"):
     wb = Workbook()
     ws = wb.active
-    ws.title = str(payload.get("report_key") or "Report")[:31]
+    ws.title = str(payload.get("report_key") or payload.get("key") or "Report")[:31]
 
-    rows = payload.get("rows") or []
-    columns = payload.get("columns") or []
+    data = payload.get("data") or {}
+
+    rows = (
+        payload.get("rows")
+        or data.get("rows")
+        or payload.get("items")
+        or data.get("items")
+        or []
+    )
+
+    columns = (
+        payload.get("columns")
+        or data.get("columns")
+        or []
+    )
 
     headers = [c.get("label") or c.get("key") for c in columns]
     keys = [c.get("key") for c in columns]
@@ -20,6 +33,7 @@ def export_xlsx(payload: dict, filename: str = "report.xlsx"):
     ws.append(headers)
 
     for row in rows:
+        row = dict(row)
         ws.append([row.get(k, "") for k in keys])
 
     header_fill = PatternFill("solid", fgColor="EAF2F8")

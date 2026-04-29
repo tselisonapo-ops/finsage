@@ -370,6 +370,14 @@ def export_general_ledger(company_id):
             extra_meta=meta,
         )
 
+        current_app.logger.warning(
+            "EXPORT DEBUG rows=%s columns=%s payload_keys=%s data_keys=%s",
+            len(payload.get("rows") or []),
+            len(payload.get("columns") or []),
+            list(payload.keys()),
+            list((payload.get("data") or {}).keys()),
+        )
+
         try:
             return export_xlsx(payload, filename="general_ledger.xlsx")
         except Exception:
@@ -468,6 +476,14 @@ def export_journal_register(company_id):
             totals=totals,
             filters={"preset": request.args.get("preset"), "q": q},
             extra_meta=meta,
+        )
+
+        current_app.logger.warning(
+            "EXPORT DEBUG rows=%s columns=%s payload_keys=%s data_keys=%s",
+            len(payload.get("rows") or []),
+            len(payload.get("columns") or []),
+            list(payload.keys()),
+            list((payload.get("data") or {}).keys()),
         )
 
         return export_xlsx(payload, filename="journal_register.xlsx")
