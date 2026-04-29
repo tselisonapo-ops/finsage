@@ -35509,6 +35509,11 @@ class DatabaseService:
             b.status,
             b.notes,
             b.posted_journal_id,
+            b.asset_id,
+            b.asset_acquisition_id,
+            b.reversed_journal_id,
+            b.reversed_at,
+            b.reversal_reason,
 
             COALESCE(pay.paid_amount, 0)::numeric(18,2) AS paid_amount,
             GREATEST(b.total_amount - COALESCE(pay.paid_amount, 0), 0)::numeric(18,2) AS outstanding_amount,
@@ -35659,6 +35664,20 @@ class DatabaseService:
 
         header = self.get_bill_with_relations(company_id, bill_id) or base
 
+        # Preserve fields omitted by get_bill_with_relations()
+        for k in (
+            "asset_id",
+            "asset_acquisition_id",
+            "reversed_journal_id",
+            "reversed_at",
+            "reversal_reason",
+            "writeoff_journal_id",
+            "written_off_at",
+            "writeoff_reason",
+        ):
+            if k not in header or header.get(k) is None:
+                header[k] = base.get(k)
+                
         header["lines"] = self.fetch_all(
             f"""
             SELECT *
