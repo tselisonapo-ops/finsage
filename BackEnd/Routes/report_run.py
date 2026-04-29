@@ -11,7 +11,7 @@ from BackEnd.Services.reporting.tb_reports import build_trial_balance_report
 from BackEnd.Services.reporting.vat_reports import build_vat_report
 from BackEnd.Services.period_core import resolve_company_period
 from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
-from BackEnd.Services.reporting.journal_reports import build_journal_register
+from BackEnd.Services.reporting.journal_reports import build_journal_register, export_xlsx
 from BackEnd.Services.reporting.lease_reports import (
     build_lease_monthly_due_report,
     build_lease_payments_report,
@@ -371,7 +371,7 @@ def export_general_ledger(company_id):
         )
 
         try:
-            return export_csv(payload, filename="general_ledger.csv")
+            return export_xlsx(payload, filename="general_ledger.xlsx")
         except Exception:
             current_app.logger.exception("GL EXPORT CSV BUILD FAILED")
             return jsonify({
@@ -470,7 +470,7 @@ def export_journal_register(company_id):
             extra_meta=meta,
         )
 
-        return export_csv(payload, filename="journal_register.csv")
+        return export_xlsx(payload, filename="journal_register.xlsx")
 
     except Exception as e:
         current_app.logger.exception("export_journal_register failed")
