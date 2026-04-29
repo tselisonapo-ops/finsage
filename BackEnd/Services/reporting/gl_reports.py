@@ -19,9 +19,19 @@ def build_general_ledger_report(
     params = [int(company_id)]
     where = ["l.company_id = %s"]
 
+    journal_filter_sql = ""
+    journal_filter_params = []
+
     if account_code:
-        where.append("l.account = %s")
-        params.append(account_code)
+        journal_filter_sql = f"""
+        AND l.journal_id IN (
+            SELECT DISTINCT l2.journal_id
+            FROM {schema}.ledger l2
+            WHERE l2.company_id = %s
+                AND l2.account = %s
+        )
+        """
+        journal_filter_params.extend([int(company_id), account_code])
 
     if date_from:
         where.append("l.date >= %s")
@@ -66,10 +76,11 @@ def build_general_ledger_report(
       ON c.company_id = l.company_id
      AND c.code = l.account
     WHERE {" AND ".join(where)}
+    {journal_filter_sql}
     ORDER BY l.date ASC, l.journal_id ASC, l.id ASC
     """
 
-    rows = db.fetch_all(sql, tuple(params)) or []
+    rows = db.fetch_all(sql, tuple(params + journal_filter_params)) or []
 
     total_debit = Decimal("0")
     total_credit = Decimal("0")
@@ -118,8 +129,8 @@ def build_general_ledger_report(
                 "account_name": r.get("account_name") or "",
                 "journal_description": r.get("journal_description") or "",
                 "memo": r.get("memo") or "",
-                "debit": float(debit),
-                "credit": float(credit),
+                "debit": float(debit) if debit != Decimal("0.00") else "",
+                "credit": float(credit) if credit != Decimal("0.00") else "",
                 "balance": float(running),
             })
 
@@ -151,8 +162,8 @@ def build_general_ledger_report(
                 "account_name": r.get("account_name") or "",
                 "journal_description": r.get("journal_description") or "",
                 "memo": r.get("memo") or "",
-                "debit": float(debit),
-                "credit": float(credit),
+                "debit": float(debit) if debit != Decimal("0.00") else "",
+                "credit": float(credit) if credit != Decimal("0.00") else "",
             })
 
         totals = {

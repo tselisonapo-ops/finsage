@@ -39,27 +39,90 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
 
     for row in rows:
         row = dict(row)
-        ws.append([row.get(k, "") for k in keys])
+        clean_row = []
+
+        for k in keys:
+            v = row.get(k, "")
+
+            # remove 0.00 placeholders for debit/credit-style columns
+            if k in {"debit", "credit", "debit_total", "credit_total"}:
+                try:
+                    if float(v or 0) == 0:
+                        v = ""
+                except Exception:
+                    pass
+
+            clean_row.append(v)
+
+        ws.append(clean_row)
 
     header_fill = PatternFill("solid", fgColor="EAF2F8")
+    debit_fill = PatternFill("solid", fgColor="F8FBFF")
+    credit_fill = PatternFill("solid", fgColor="FFF8E7")
     thin = Side(style="thin", color="D9E2EC")
+    row_border = Border(bottom=thin)
 
     for cell in ws[1]:
         cell.font = Font(bold=True)
         cell.fill = header_fill
-        cell.border = Border(bottom=thin)
-        cell.alignment = Alignment(horizontal="center")
+        cell.border = row_border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    money_keys = {"debit", "credit", "balance", "debit_total", "credit_total"}
+
+    account_name_col = keys.index("account_name") + 1 if "account_name" in keys else None
+    debit_col = keys.index("debit") + 1 if "debit" in keys else None
+    credit_col = keys.index("credit") + 1 if "credit" in keys else None
+
+    for row_idx in range(2, ws.max_row + 1):
+        debit_num = 0
+        credit_num = 0
+
+        if debit_col:
+            try:
+                debit_num = float(ws.cell(row=row_idx, column=debit_col).value or 0)
+            except Exception:
+                debit_num = 0
+
+        if credit_col:
+            try:
+                credit_num = float(ws.cell(row=row_idx, column=credit_col).value or 0)
+            except Exception:
+                credit_num = 0
+
+        row_fill = credit_fill if credit_num > 0 else debit_fill if debit_num > 0 else None
+
+        for col_idx in range(1, ws.max_column + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.border = row_border
+            cell.alignment = Alignment(vertical="top")
+
+            if row_fill:
+                cell.fill = row_fill
+
+        if account_name_col and credit_num > 0:
+            ws.cell(row=row_idx, column=account_name_col).alignment = Alignment(
+                indent=2,
+                vertical="top"
+            )
 
     for col_idx, key in enumerate(keys, start=1):
         max_len = len(str(headers[col_idx - 1] or ""))
-        for row_idx in range(2, ws.max_row + 1):
-            value = ws.cell(row=row_idx, column=col_idx).value
+
+        for row_idx in range(1, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            value = cell.value
+
             max_len = max(max_len, len(str(value or "")))
 
-            if key in {"debit", "credit", "balance", "debit_total", "credit_total"}:
-                ws.cell(row=row_idx, column=col_idx).number_format = '#,##0.00'
+            if key in money_keys and row_idx > 1 and value not in ("", None):
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal="right", vertical="top")
 
-        ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, 12), 45)
+        ws.column_dimensions[get_column_letter(col_idx)].width = min(
+            max(max_len + 4, 12),
+            60
+        )
 
     ws.freeze_panes = "A2"
 
