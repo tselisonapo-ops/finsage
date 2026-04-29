@@ -35085,6 +35085,13 @@ class DatabaseService:
         if not bill:
             raise ValueError("Bill not found")
 
+        print("[ASSET GUARD DEBUG]", {
+            "bill_id": bill_id,
+            "asset_id": bill.get("asset_id"),
+            "asset_acquisition_id": bill.get("asset_acquisition_id"),
+            "keys": list(bill.keys()),
+        }, flush=True)
+
         asset_id = bill.get("asset_id")
         asset_acq_id = bill.get("asset_acquisition_id")
 
