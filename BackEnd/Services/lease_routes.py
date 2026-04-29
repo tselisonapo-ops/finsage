@@ -605,8 +605,8 @@ def create_lease(company_id: int):
                 line_no=idx,
                 line={
                     "account_code": line["account_code"],
-                    "description": line.get("memo") or line.get("description") or journal_entry["description"],
-                    "debit": float(line.get("debit") or 0.0),
+                    "description": line.get("description") or journal_entry["description"],
+                    "memo": line.get("memo") or line.get("description") or journal_entry["description"],                    "debit": float(line.get("debit") or 0.0),
                     "credit": float(line.get("credit") or 0.0),
                 },
                 source="leases",

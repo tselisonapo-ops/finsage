@@ -170,6 +170,7 @@ def build_lessee_opening_journal(
     lines.append({
         "account_code": rou_acct,
         "description": desc,
+        "memo": f"Dr ROU asset recognised for lease {lease.lease_name}",
         "debit": rou_amt,
         "credit": 0.0,
     })
@@ -178,7 +179,8 @@ def build_lessee_opening_journal(
     if cur_amt > 0:
         lines.append({
             "account_code": liab_cur_acct,
-            "description": desc + " – lease liability (current)",
+            "description": desc,
+            "memo": f"Cr current lease liability recognised for lease {lease.lease_name}",
             "debit": 0.0,
             "credit": cur_amt,
         })
@@ -186,7 +188,8 @@ def build_lessee_opening_journal(
     if ncur_amt > 0:
         lines.append({
             "account_code": liab_ncur_acct,
-            "description": desc + " – lease liability (non-current)",
+            "description": desc,
+            "memo": f"Cr non-current lease liability recognised for lease {lease.lease_name}",
             "debit": 0.0,
             "credit": ncur_amt,
         })
