@@ -68,25 +68,26 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
     asset_acq_id = bill.get("asset_acquisition_id")
     if asset_acq_id:
         schema = f"company_{int(company_id)}"
-        try:
-            acq_rows = db_service.fetch_all(
-                f"""
-                SELECT id, asset_id, funding_source, posted_journal_id
-                FROM {schema}.asset_acquisitions
-                WHERE company_id=%s AND id=%s
-                LIMIT 1
-                """,
-                (int(company_id), int(asset_acq_id)),
-            ) or []
-        except Exception:
-            acq_rows = []
 
-        acq = acq_rows[0] if acq_rows else None
+        acq = db_service.fetch_one(
+            f"""
+            SELECT id, asset_id, funding_source, posted_journal_id
+            FROM {schema}.asset_acquisitions
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+            """,
+            (int(company_id), int(asset_acq_id)),
+        )
+
         if acq:
             funding = (acq.get("funding_source") or "").strip().lower()
+            posted_journal_id = acq.get("posted_journal_id")
+
             if funding == "vendor_credit":
                 raise ValueError(
-                    "ASSET_ACQUISITION_LINKED|Vendor-credit asset bills must post via asset acquisition, not normal AP bill journal."
+                    "ASSET_ACQUISITION_LINKED|Vendor-credit asset bill must not use normal AP GL posting. "
+                    f"Use post_bill_with_asset_awareness(). acquisition_id={asset_acq_id}, "
+                    f"asset_posted_journal_id={posted_journal_id or 'NULL'}"
                 )
     # -----------------------------
     # 1) Controls
@@ -338,11 +339,44 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
 
                 # vendor_credit -> use acquisition posting as source of truth
                 if funding == "vendor_credit":
-                    if already_posted:
-                        raise Exception(
-                            "Linked vendor-credit asset acquisition is already posted. Normal bill GL posting is blocked."
-                        )
+                    schema = f"company_{int(company_id)}"
 
+                    # Case 1: acquisition already posted
+                    # Bill must NOT post GL again. Just link bill to acquisition journal.
+                    if already_posted:
+                        jid = int(acq.get("posted_journal_id"))
+
+                        cur.execute(f"""
+                            UPDATE {schema}.bills
+                            SET status='posted',
+                                posted_journal_id=%s,
+                                notes = COALESCE(notes, '') || CASE
+                                    WHEN COALESCE(notes, '') = '' THEN ''
+                                    ELSE E'\n'
+                                END || %s,
+                                updated_at=NOW()
+                            WHERE company_id=%s
+                            AND id=%s
+                        """, (
+                            jid,
+                            f"Linked to already-posted asset acquisition {asset_acq_id}; GL accounted via acquisition journal {jid}.",
+                            int(company_id),
+                            int(bill_id),
+                        ))
+
+                        conn.commit()
+
+                        return {
+                            "journal_id": jid,
+                            "mode": "asset_acquisition_existing",
+                            "asset_id": int(asset_id),
+                            "asset_acquisition_id": int(asset_acq_id),
+                            "posting_skipped": True,
+                            "skip_reason": "Bill linked to already-posted vendor-credit asset acquisition.",
+                        }
+
+                    # Case 2: acquisition not yet posted
+                    # Post acquisition journal, then mark bill as posted using that journal.
                     ppe_service.patch_acquisition_posting_fields(
                         cur,
                         company_id,
@@ -359,18 +393,21 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
                         user=user,
                     )
 
-                    schema = f"company_{int(company_id)}"
                     cur.execute(f"""
                         UPDATE {schema}.bills
-                        SET status='approved',
+                        SET status='posted',
+                            posted_journal_id=%s,
                             notes = COALESCE(notes, '') || CASE
                                 WHEN COALESCE(notes, '') = '' THEN ''
                                 ELSE E'\n'
                             END || %s,
                             updated_at=NOW()
-                        WHERE id=%s
+                        WHERE company_id=%s
+                        AND id=%s
                     """, (
+                        int(jid),
                         f"Linked to asset acquisition {asset_acq_id}; GL posted via acquisition journal {jid}.",
+                        int(company_id),
                         int(bill_id),
                     ))
 
@@ -381,6 +418,7 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
                         "mode": "asset_acquisition",
                         "asset_id": int(asset_id),
                         "asset_acquisition_id": int(asset_acq_id),
+                        "posting_skipped": True,
                     }
 
                 # grni -> continue into normal AP flow
@@ -765,6 +803,18 @@ def api_bills(company_id: int):
         and str(header.get("posting_mode") or "").strip().lower() == "asset_acquisition"
     )
 
+    if is_asset_acq_bill:
+        if not header.get("asset_id") or not header.get("asset_acquisition_id"):
+            return jsonify({
+                "ok": False,
+                "error": "Asset-linked bill requires both asset_id and asset_acquisition_id"
+            }), 400
+
+        if str(header.get("posting_mode")).strip().lower() != "asset_acquisition":
+            return jsonify({
+                "ok": False,
+                "error": "Invalid posting_mode for asset-linked bill"
+            }), 400
     try:
         bid = db_service.insert_bill_with_lines(company_id, header, lines)
         db_service.ensure_bill_grni_link_table(company_id)
@@ -790,24 +840,6 @@ def api_bills(company_id: int):
         except Exception:
             current_app.logger.exception("audit_log failed in api_bills (POST)")
 
-        if is_asset_acq_bill:
-            out = db_service.get_bill_full(company_id, bid) or {}
-
-            asset_journal_id = out.get("posted_journal_id")
-
-            # Better: link bill to acquisition journal if available
-            db_service.mark_asset_bill_as_accounted_via_acquisition(
-                company_id,
-                bid,
-                asset_acquisition_id=header.get("asset_acquisition_id"),
-            )
-
-            out = db_service.get_bill_full(company_id, bid) or {}
-            out["_posting_mode"] = "asset_acquisition"
-            out["_posting_skipped"] = True
-            out["_skip_reason"] = "GL already handled by asset acquisition journal."
-            return jsonify({"ok": True, "data": out}), 201
-
         if explicit_draft:
             out = db_service.get_bill_full(company_id, bid) or {}
             return jsonify({"ok": True, "data": out}), 201
@@ -822,6 +854,8 @@ def api_bills(company_id: int):
             out = db_service.get_bill_full(company_id, bid) or {}
             out["_posted_journal_id"] = result.get("journal_id")
             out["_posting_mode"] = result.get("mode")
+            out["_posting_skipped"] = result.get("posting_skipped", False)
+            out["_skip_reason"] = result.get("skip_reason")
 
             try:
                 actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
@@ -835,8 +869,12 @@ def api_bills(company_id: int):
                     entity_id=str(bid),
                     entity_ref=out.get("number") or f"BILL-{bid}",
                     before_json={},
-                    after_json={"posted_journal_id": int(result.get("journal_id") or 0)},
-                    message=f"Posted bill {out.get('number') or bid}",
+                    after_json={
+                        "posted_journal_id": int(result.get("journal_id") or 0),
+                        "mode": result.get("mode"),
+                        "posting_skipped": result.get("posting_skipped", False),
+                    },
+                    message=f"Posted/accounted bill {out.get('number') or bid}",
                     source="api",
                 )
             except Exception:
