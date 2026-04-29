@@ -32,19 +32,44 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
         rows = payload_or_rows or []
         columns = columns or []
 
-    headers = [c.get("label") or c.get("key") for c in columns]
+    rows = [dict(r) for r in rows]
+
+    # Keep these for sorting, but do not export them
+    hidden_keys = {"journal_id", "account_code", "source_id"}
+
+    columns = [
+        c for c in columns
+        if c.get("key") not in hidden_keys
+    ]
+
     keys = [c.get("key") for c in columns]
+    headers = [c.get("label") or c.get("key") for c in columns]
+
+    def money_num(v):
+        try:
+            return float(v or 0)
+        except Exception:
+            return 0.0
+
+    # Sort journal lines so debits appear first, then credits,
+    # while keeping journals grouped together.
+    rows.sort(
+        key=lambda r: (
+            str(r.get("date") or ""),
+            int(r.get("journal_id") or 0),
+            1 if money_num(r.get("credit")) > 0 else 0,
+            str(r.get("account_name") or ""),
+        )
+    )
 
     ws.append(headers)
 
     for row in rows:
-        row = dict(row)
         clean_row = []
 
         for k in keys:
             v = row.get(k, "")
 
-            # remove 0.00 placeholders for debit/credit-style columns
             if k in {"debit", "credit", "debit_total", "credit_total"}:
                 try:
                     if float(v or 0) == 0:
@@ -79,16 +104,10 @@ def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sh
         credit_num = 0
 
         if debit_col:
-            try:
-                debit_num = float(ws.cell(row=row_idx, column=debit_col).value or 0)
-            except Exception:
-                debit_num = 0
+            debit_num = money_num(ws.cell(row=row_idx, column=debit_col).value)
 
         if credit_col:
-            try:
-                credit_num = float(ws.cell(row=row_idx, column=credit_col).value or 0)
-            except Exception:
-                credit_num = 0
+            credit_num = money_num(ws.cell(row=row_idx, column=credit_col).value)
 
         row_fill = credit_fill if credit_num > 0 else debit_fill if debit_num > 0 else None
 
