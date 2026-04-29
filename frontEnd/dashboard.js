@@ -3996,10 +3996,8 @@ async function emailVatPack() {
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-  function fmt(n) {
-    const x = Number(n);
-    if (!Number.isFinite(x)) return "—";
-    return x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function fmt(v) {
+    return window.fmtMoney(v);
   }
 
   function esc(s) {
@@ -4062,7 +4060,18 @@ window.money = function money(n, currency) {
 
 // 4) Backwards-compatible alias (so old code keeps working)
 window.fmtMoney = function fmtMoney(n, currency) {
-  return window.money(n, currency);
+  const num = Number(n || 0);
+
+  if (Math.abs(num) < 0.005) return "";
+
+  if (typeof window.money === "function") {
+    return window.money(num, currency);
+  }
+
+  return num.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 // 6) Plain 2dp number (no currency symbol) for inputs
@@ -14420,8 +14429,8 @@ function renderJournalTable() {
             ${esc(label)} ${tag}
           </td>
 
-          <td class="px-2 py-2 text-right tabular-nums">${dr ? dr.toFixed(2) : ""}</td>
-          <td class="px-2 py-2 text-right tabular-nums">${cr ? cr.toFixed(2) : ""}</td>
+          <td class="px-2 py-2 text-right tabular-nums">${window.fmtMoney(dr)}</td>
+          <td class="px-2 py-2 text-right tabular-nums">${window.fmtMoney(cr)}</td>
 
           <td class="px-2 py-2 text-right">
             <button data-remove="${esc(id)}" class="text-[11px] text-red-500 hover:underline">✕</button>
@@ -18456,13 +18465,6 @@ async function renderTB(periodKey = CURRENT_PERIOD_KEY) {
 // Global period key + helpers
 // ==============================
 // Ensure fmt exists globally
-function fmt(v) {
-  const n = Number(v || 0);
-  return n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
 function fmtBracket(v) {
   const n = Number(v || 0);
   if (!n) return fmt(0);
@@ -26352,6 +26354,18 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
     el.classList.toggle("text-emerald-600", type === "ok");
   }
 
+  function fmtDate(v) {
+    if (!v) return "—";
+
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+
+    return d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+  }
 
   function setActiveTab(tab) {
     document.querySelectorAll('#screen-leases [data-lease-tab]').forEach((b) => {
@@ -26455,7 +26469,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       const jid = r.journal_id || r.posted_journal_id || "";
       return `
         <tr class="border-t">
-          <td class="p-2">${esc(String(r.payment_date || r.date || ""))}</td>
+          <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.payment_date || r.date))}</td>
           <td class="p-2 text-slate-700">${esc(String(r.reference || ""))}</td>
           <td class="p-2 text-right tabular-nums">${fmtMoney(r.amount_gross ?? r.amount ?? 0)}</td>
           <td class="p-2 text-right tabular-nums">${fmtMoney(r.interest_amount ?? 0)}</td>
@@ -28490,6 +28504,19 @@ window.bindLeaseTabs = function bindLeaseTabs() {
   }, true);
 };
 
+function fmtDate(v) {
+  if (!v) return "—";
+
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
   const esc = (s) =>
     String(s ?? "").replace(/[&<>"']/g, (m) => ({
@@ -28584,8 +28611,8 @@ window.renderLeaseRegisterView = async function renderLeaseRegisterView(mount) {
               <div class="text-xs text-slate-500">ID: ${esc(String(id))}</div>
             </td>
             <td class="p-2">${esc(r.lessor_name || "")}</td>
-            <td class="p-2">${esc(String(r.start_date || "").slice(0, 10))}</td>
-            <td class="p-2">${esc(String(r.end_date || "").slice(0, 10))}</td>
+              <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.start_date))}</td>
+              <td class="p-2 whitespace-nowrap">${esc(fmtDate(r.end_date))}</td>
             <td class="p-2 text-right">
               <button class="px-2 py-1 rounded border text-xs bg-white"
                 data-open-lease="${esc(String(id))}">
@@ -30580,6 +30607,19 @@ async function postLeaseJournal(lease) {
     URL.revokeObjectURL(url);
   }
 
+  function fmtAssetDate(v) {
+    if (!v) return "—";
+
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+
+    return d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+  }
+  
   function renderSummary(rows) {
     const total = rows.length;
 
@@ -30622,9 +30662,8 @@ async function postLeaseJournal(lease) {
       const name = esc(r.asset_name || r.name || `Asset ${id}`);
       const cls = esc(r.asset_class || r.class_name || "—");
 
-      const acquiredRaw = (r.acquisition_date || r.available_for_use_date || "—");
-      const acquired = esc(String(acquiredRaw).slice(0, 10));
-
+      const acquiredRaw = r.acquisition_date || r.available_for_use_date || "";
+      const acquired = esc(fmtAssetDate(acquiredRaw));
       const n = assetNums(r);
       const status = r.status || "—";
 
@@ -31486,11 +31525,16 @@ async function postLeaseJournal(lease) {
 
   function fmt(v) {
     if (v == null || v === "") return "";
+
     const n = Number(v);
-    if (Number.isFinite(n)) {
-      return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    return String(v);
+    if (!Number.isFinite(n)) return String(v);
+
+    if (Math.abs(n) < 0.005) return "";
+
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }
 
   function getColumns(reportType) {
