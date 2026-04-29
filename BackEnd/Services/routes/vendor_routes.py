@@ -792,9 +792,20 @@ def api_bills(company_id: int):
 
         if is_asset_acq_bill:
             out = db_service.get_bill_full(company_id, bid) or {}
+
+            asset_journal_id = out.get("posted_journal_id")
+
+            # Better: link bill to acquisition journal if available
+            db_service.mark_asset_bill_as_accounted_via_acquisition(
+                company_id,
+                bid,
+                asset_acquisition_id=header.get("asset_acquisition_id"),
+            )
+
+            out = db_service.get_bill_full(company_id, bid) or {}
             out["_posting_mode"] = "asset_acquisition"
             out["_posting_skipped"] = True
-            out["_skip_reason"] = "Asset acquisition bill: GL posting is handled by asset acquisition journal."
+            out["_skip_reason"] = "GL already handled by asset acquisition journal."
             return jsonify({"ok": True, "data": out}), 201
 
         if explicit_draft:

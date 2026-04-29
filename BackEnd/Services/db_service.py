@@ -34888,6 +34888,85 @@ class DatabaseService:
             conn.commit()
             return True
 
+    def mark_asset_bill_as_accounted_via_acquisition(
+        self,
+        company_id: int,
+        bill_id: int,
+        asset_acquisition_id: int,
+        *,
+        cur=None,
+    ) -> None:
+        schema = self.company_schema(company_id)
+
+        # Use existing cursor if provided (important for transactions)
+        if cur is None:
+            with self._conn_cursor() as (conn, cur):
+                self.mark_asset_bill_as_accounted_via_acquisition(
+                    company_id,
+                    bill_id,
+                    asset_acquisition_id,
+                    cur=cur,
+                )
+                conn.commit()
+                return
+
+        # 🔒 Lock bill row (prevents race conditions)
+        cur.execute(
+            f"""
+            SELECT id, status
+            FROM {schema}.bills
+            WHERE company_id=%s AND id=%s
+            FOR UPDATE
+            """,
+            (company_id, int(bill_id)),
+        )
+        bill = cur.fetchone()
+        if not bill:
+            raise Exception("Bill not found")
+
+        # 🔍 Get acquisition journal
+        cur.execute(
+            f"""
+            SELECT posted_journal_id
+            FROM {schema}.asset_acquisitions
+            WHERE company_id=%s AND id=%s
+            """,
+            (company_id, int(asset_acquisition_id)),
+        )
+        acq = cur.fetchone()
+
+        if not acq or not acq.get("posted_journal_id"):
+            raise Exception("Asset acquisition has no posted journal")
+
+        jid = int(acq["posted_journal_id"])
+
+        # ✅ Update bill → mark as posted via acquisition
+        cur.execute(
+            f"""
+            UPDATE {schema}.bills b
+            SET
+                status = 'posted',
+                posted_journal_id = %s,
+                notes = COALESCE(b.notes, '') ||
+                    CASE WHEN COALESCE(b.notes, '') = '' THEN '' ELSE E'\n' END ||
+                    %s,
+                updated_at = NOW()
+            WHERE b.company_id = %s
+            AND b.id = %s
+            AND b.posted_journal_id IS NULL
+            """,
+            (
+                jid,
+                f"GL accounted via asset acquisition journal {jid}",
+                company_id,
+                int(bill_id),
+            ),
+        )
+
+        if cur.rowcount != 1:
+            raise Exception("Failed to mark bill as accounted via acquisition")
+        
+
     def insert_bill_with_lines(self, company_id: int, header: dict, lines: list[dict]) -> int:
         with self._conn_cursor() as (conn, cur):
             bill_id = self._insert_bill_with_lines_cur(company_id, header, lines, cur)
