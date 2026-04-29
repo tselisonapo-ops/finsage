@@ -310,6 +310,13 @@ def export_general_ledger(company_id):
         db, date_from, date_to, meta = _resolve_range(company_id)
 
         current_app.logger.warning(
+            "GL EXPORT ARGS=%s RESOLVED date_from=%s date_to=%s",
+            dict(request.args),
+            date_from,
+            date_to,
+        )
+
+        current_app.logger.warning(
             "GL EXPORT RANGE company_id=%s date_from=%s date_to=%s meta=%s",
             company_id,
             date_from,
@@ -368,6 +375,13 @@ def export_general_ledger(company_id):
                 "q": q,
             },
             extra_meta=meta,
+        )
+
+        current_app.logger.warning(
+            "GL EXPORT ROWS DIRECT rows=%s columns=%s first_row=%s",
+            len(rows or []),
+            len(columns or []),
+            (rows or [None])[0],
         )
 
         current_app.logger.warning(
@@ -457,6 +471,13 @@ def export_journal_register(company_id):
         db, date_from, date_to, meta = _resolve_range(company_id)
         q = (request.args.get("q") or "").strip()
 
+        current_app.logger.warning(
+            "JRNL EXPORT ARGS=%s RESOLVED date_from=%s date_to=%s",
+            dict(request.args),
+            date_from,
+            date_to,
+        )
+
         rows, columns = build_journal_register(
             db,
             company_id,
@@ -481,6 +502,13 @@ def export_journal_register(company_id):
             totals=totals,
             filters={"preset": request.args.get("preset"), "q": q},
             extra_meta=meta,
+        )
+
+        current_app.logger.warning(
+            "JRNL EXPORT ROWS DIRECT rows=%s columns=%s first_row=%s",
+            len(rows or []),
+            len(columns or []),
+            (rows or [None])[0],
         )
 
         current_app.logger.warning(
