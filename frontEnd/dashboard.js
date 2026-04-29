@@ -59764,29 +59764,30 @@ function bindAP() {
 
     const t = form.totals || {};
 
-    const header = {
-      vendor_id: form.vendor_id,
-      bill_date: form.bill_date,
-      due_date: dueISO,
-      currency: form.currency || null,
-      number: form.number || null,
-      notes: form.notes || null,
-      status,
+  const header = {
+    vendor_id: form.vendor_id,
+    bill_date: form.bill_date,
+    due_date: dueISO,
+    currency: form.currency || null,
+    number: form.number || null,
+    notes: form.notes || null,
+    status,
 
-      vat_enabled: !!form.vat_enabled,
-      vat_mode: form.vat_mode || t.vat_mode || "exclusive",
+    vat_enabled: !!form.vat_enabled,
+    vat_mode: form.vat_mode || t.vat_mode || "exclusive",
 
-      discount_rate: toDiscRate(form.discount_rate),
-      discount_amount: toNum(t.discount_amount, 0),
-      other_amount: toNum(t.other, toNum(form.other_amount, 0)),
+    discount_rate: toDiscRate(form.discount_rate),
+    discount_amount: toNum(t.discount_amount, 0),
+    other_amount: toNum(t.other, toNum(form.other_amount, 0)),
 
-      subtotal_amount: toNum(t.subtotal_amount, 0),
-      vat_amount: toNum(t.vat_amount, 0),
-      total_amount: toNum(t.total_amount, 0),
+    subtotal_amount: toNum(t.subtotal_amount, 0),
+    vat_amount: toNum(t.vat_amount, 0),
+    total_amount: toNum(t.total_amount, 0),
 
-      asset_id: form.asset_id || null,
-      asset_acquisition_id: form.asset_acquisition_id || null,
-    };
+    asset_id: form.asset_id || null,
+    asset_acquisition_id: form.asset_acquisition_id || null,
+    posting_mode: form.posting_mode || null,
+  };
 
     const billId = parseInt(root.querySelector("#billId")?.value || "0", 10) || 0;
 
@@ -59853,7 +59854,10 @@ function bindAP() {
     setVal("billVendor", "");
     setVal("billVendorId", "");
     setVal("billNumber", "");
-
+    setVal("billAssetId", "");
+    setVal("billAssetAcquisitionId", "");
+    setVal("billPostingMode", "");
+    window._CURRENT_ASSET_BILL_PREFILL = null;
     const today = new Date().toISOString().slice(0, 10);
     setVal("billDate", today);
     setVal("billDue", "");
