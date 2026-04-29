@@ -34113,7 +34113,7 @@ class DatabaseService:
         return {"groups": len(groups), "actions": archived}
 
     def list_vendors(self, company_id: int, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        schema = f"company_{company_id}"
+        schema = self.company_schema(company_id)
 
         where_sql = ""
         if not include_inactive:
@@ -34122,6 +34122,7 @@ class DatabaseService:
         sql = f"""
             SELECT
                 v.*,
+
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
@@ -34133,7 +34134,8 @@ class DatabaseService:
                         ORDER BY a.id DESC
                     )
                     FROM {schema}.assets a
-                    WHERE a.supplier_id = v.id
+                    WHERE a.company_id = v.company_id
+                    AND a.supplier_id = v.id
                 ), '[]'::json) AS linked_assets,
 
                 COALESCE((
@@ -34146,12 +34148,41 @@ class DatabaseService:
                             'grn_no', ac.grn_no,
                             'reference', ac.reference,
                             'status', ac.status,
-                            'posted_journal_id', ac.posted_journal_id
+
+                            -- asset acquisition journal
+                            'posted_journal_id', ac.posted_journal_id,
+
+                            -- AP bill capture state
+                            'bill_id', lb.bill_id,
+                            'bill_number', lb.bill_number,
+                            'bill_status', lb.bill_status,
+                            'bill_posted_journal_id', lb.bill_posted_journal_id,
+                            'bill_reversed_journal_id', lb.bill_reversed_journal_id,
+                            'bill_total_amount', lb.bill_total_amount,
+                            'bill_created_at', lb.bill_created_at
                         )
                         ORDER BY ac.id DESC
                     )
                     FROM {schema}.asset_acquisitions ac
-                    WHERE ac.supplier_id = v.id
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            b.id AS bill_id,
+                            b.number AS bill_number,
+                            b.status AS bill_status,
+                            b.posted_journal_id AS bill_posted_journal_id,
+                            b.reversed_journal_id AS bill_reversed_journal_id,
+                            b.total_amount AS bill_total_amount,
+                            b.created_at AS bill_created_at
+                        FROM {schema}.bills b
+                        WHERE b.company_id = ac.company_id
+                        AND b.vendor_id = v.id
+                        AND b.asset_id = ac.asset_id
+                        AND b.asset_acquisition_id = ac.id
+                        ORDER BY b.created_at DESC, b.id DESC
+                        LIMIT 1
+                    ) lb ON TRUE
+                    WHERE ac.company_id = v.company_id
+                    AND ac.supplier_id = v.id
                 ), '[]'::json) AS linked_asset_acquisitions
 
             FROM {schema}.vendors v
@@ -34159,12 +34190,14 @@ class DatabaseService:
             ORDER BY v.name ASC;
         """
         return self.fetch_all(sql) or []
-
+    
     def get_vendor(self, company_id: int, vendor_id: int) -> Optional[Dict[str, Any]]:
-        schema = f"company_{company_id}"
+        schema = self.company_schema(company_id)
+
         sql = f"""
             SELECT
                 v.*,
+
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
@@ -34176,7 +34209,8 @@ class DatabaseService:
                         ORDER BY a.id DESC
                     )
                     FROM {schema}.assets a
-                    WHERE a.supplier_id = v.id
+                    WHERE a.company_id = v.company_id
+                    AND a.supplier_id = v.id
                 ), '[]'::json) AS linked_assets,
 
                 COALESCE((
@@ -34189,19 +34223,50 @@ class DatabaseService:
                             'grn_no', ac.grn_no,
                             'reference', ac.reference,
                             'status', ac.status,
-                            'posted_journal_id', ac.posted_journal_id
+
+                            -- asset acquisition journal
+                            'posted_journal_id', ac.posted_journal_id,
+
+                            -- AP bill capture state
+                            'bill_id', lb.bill_id,
+                            'bill_number', lb.bill_number,
+                            'bill_status', lb.bill_status,
+                            'bill_posted_journal_id', lb.bill_posted_journal_id,
+                            'bill_reversed_journal_id', lb.bill_reversed_journal_id,
+                            'bill_total_amount', lb.bill_total_amount,
+                            'bill_created_at', lb.bill_created_at
                         )
                         ORDER BY ac.id DESC
                     )
                     FROM {schema}.asset_acquisitions ac
-                    WHERE ac.supplier_id = v.id
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            b.id AS bill_id,
+                            b.number AS bill_number,
+                            b.status AS bill_status,
+                            b.posted_journal_id AS bill_posted_journal_id,
+                            b.reversed_journal_id AS bill_reversed_journal_id,
+                            b.total_amount AS bill_total_amount,
+                            b.created_at AS bill_created_at
+                        FROM {schema}.bills b
+                        WHERE b.company_id = ac.company_id
+                        AND b.vendor_id = v.id
+                        AND b.asset_id = ac.asset_id
+                        AND b.asset_acquisition_id = ac.id
+                        ORDER BY b.created_at DESC, b.id DESC
+                        LIMIT 1
+                    ) lb ON TRUE
+                    WHERE ac.company_id = v.company_id
+                    AND ac.supplier_id = v.id
                 ), '[]'::json) AS linked_asset_acquisitions
 
             FROM {schema}.vendors v
-            WHERE v.id = %s
+            WHERE v.company_id = %s
+            AND v.id = %s
             LIMIT 1;
         """
-        return self.fetch_one(sql, (int(vendor_id),))
+        return self.fetch_one(sql, (int(company_id), int(vendor_id)))
+
     def get_vendor_payment_by_id(self, company_id: int, payment_id: int) -> dict | None:
         schema = self.company_schema(company_id)
         return self.fetch_one(

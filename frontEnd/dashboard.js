@@ -58707,9 +58707,9 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
   try {
     if (!vendorObj || !vendorObj.id) return false;
 
-    // ✅ skip modal if user is already working on an asset-acquisition bill
+    // Skip if user is already working on a new asset-acquisition bill
     const ctx = window._CURRENT_ASSET_BILL_PREFILL;
-    if (ctx?.acquisition_id && !ctx?.bill_id && !ctx?.journal_id) {
+    if (ctx?.acquisition_id && !ctx?.bill_id) {
       return false;
     }
 
@@ -58727,20 +58727,15 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
       const funding = String(x?.funding_source || "").trim().toLowerCase();
       const status = String(x?.status || "").trim().toLowerCase();
 
-      const billId =
-        x?.bill_id ||
-        x?.ap_bill_id ||
-        x?.vendor_bill_id ||
-        null;
+      // IMPORTANT:
+      // posted_journal_id is the ASSET acquisition journal.
+      // Do NOT use it to decide whether the AP bill exists.
+      const billId = x?.bill_id || null;
+      const billStatus = String(x?.bill_status || "").trim().toLowerCase();
 
-      const journalId =
-        x?.posted_journal_id ||
-        x?.journal_id ||
-        x?.posted_bill_journal_id ||
-        null;
-
-      const hasBill = !!billId || String(x?.bill_status || "").trim() !== "";
-      const hasJournal = !!journalId;
+      const hasActiveBill =
+        !!billId &&
+        !["void", "reversed", "written_off"].includes(billStatus);
 
       const asset = linkedAssets.find(
         (a) => Number(a?.asset_id || 0) === Number(x?.asset_id || 0)
@@ -58753,8 +58748,7 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
       const clickable =
         !!x?.acquisition_id &&
         funding === "vendor_credit" &&
-        !hasBill &&
-        !hasJournal &&
+        !hasActiveBill &&
         status !== "cancelled" &&
         status !== "completed";
 
@@ -58762,24 +58756,22 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
         acquisition_id: x?.acquisition_id,
         asset_id: x?.asset_id,
         bill_id: billId,
-        journal_id: journalId,
+        bill_status: billStatus,
+        asset_journal_id: x?.posted_journal_id || null,
         asset_label: assetLabel,
         reference: x?.vendor_invoice_no || x?.reference || "",
         amount: x?.amount || x?.gross_amount || 0,
         clickable,
-        status_label: hasBill
-          ? `Bill exists #${billId}`
-          : hasJournal
-            ? `Posted journal #${journalId}`
-            : status || "Draft",
+        status_label: hasActiveBill
+          ? `Bill ${billStatus || "captured"} #${billId}`
+          : status || "Draft",
         bill_label: clickable
           ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
-          : `<span class="ap-badge ap-badge--muted">Already linked</span>`,
+          : `<span class="ap-badge ap-badge--muted">Already captured</span>`,
       };
     });
 
-    // Only open modal if there is at least one actionable row.
-    const actionableRows = rows.filter(r => r.clickable);
+    const actionableRows = rows.filter((r) => r.clickable);
     if (!actionableRows.length) return false;
 
     showVendorLinkedAssetBillModal(vendorObj, rows);
