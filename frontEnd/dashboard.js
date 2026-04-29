@@ -15208,42 +15208,37 @@ function syncJournalFilterInputs() {
 // - Uses q for reference/description search
 // ============================
 function buildRecentJournalUrl(cid) {
+  const presetEl = document.getElementById("jrnlFilterPreset");
+  const fromEl = document.getElementById("jrnlFrom");
+  const toEl = document.getElementById("jrnlTo");
+  const searchEl = document.getElementById("jrnlSearchRef");
+
   let url = ENDPOINTS.journal.recent(cid);
 
-  const preset =
-    document.getElementById("jrnlFilterPreset")?.value?.trim() ||
-    document.getElementById("reportPreset")?.value?.trim() ||
-    window.CURRENT_PERIOD_KEY ||
-    "this_month";
-
-  const periodParams = buildPeriodParams(preset);
-
   const params = new URLSearchParams();
+  params.set("limit", "200"); // safe default
 
-  Object.entries(periodParams).forEach(([k, v]) => {
-    if (k !== "__label" && v != null && v !== "") {
-      params.set(k, v);
-    }
-  });
+  const preset = presetEl ? presetEl.value : "current_month";
 
-  const q =
-    document.getElementById("jrnlSearchRef")?.value?.trim() ||
-    document.getElementById("jrnlFilterQ")?.value?.trim() ||
-    "";
+  const from = fromEl ? String(fromEl.value || "").trim() : "";
+  const to = toEl ? String(toEl.value || "").trim() : "";
+  const q = searchEl ? String(searchEl.value || "").trim() : "";
 
-  const limit =
-    document.getElementById("jrnlFilterLimit")?.value?.trim() ||
-    "200";
+  // only pass from/to if not "all"
+  if (preset !== "all") {
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+  }
 
-  params.set("limit", limit);
-
+  // ✅ optional backend search support (recommended)
+  // If your backend ignores q, no harm.
   if (q) params.set("q", q);
 
   const qs = params.toString();
   if (qs) url += (url.includes("?") ? "&" : "?") + qs;
-
   return url;
 }
+
 // ============================
 // Journal: render recent journals list
 // (keeps your table layout)
