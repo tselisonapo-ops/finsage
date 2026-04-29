@@ -6,26 +6,31 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
 from flask import Response
 
-def export_xlsx(payload: dict, filename: str = "report.xlsx"):
+def export_xlsx(payload_or_rows, columns=None, filename: str = "report.xlsx", sheet_name: str = "Report"):
     wb = Workbook()
     ws = wb.active
-    ws.title = str(payload.get("report_key") or payload.get("key") or "Report")[:31]
+    ws.title = sheet_name[:31]
 
-    data = payload.get("data") or {}
+    if columns is None:
+        payload = payload_or_rows or {}
+        data = payload.get("data") or {}
 
-    rows = (
-        payload.get("rows")
-        or data.get("rows")
-        or payload.get("items")
-        or data.get("items")
-        or []
-    )
+        rows = (
+            payload.get("rows")
+            or data.get("rows")
+            or payload.get("items")
+            or data.get("items")
+            or []
+        )
 
-    columns = (
-        payload.get("columns")
-        or data.get("columns")
-        or []
-    )
+        columns = (
+            payload.get("columns")
+            or data.get("columns")
+            or []
+        )
+    else:
+        rows = payload_or_rows or []
+        columns = columns or []
 
     headers = [c.get("label") or c.get("key") for c in columns]
     keys = [c.get("key") for c in columns]

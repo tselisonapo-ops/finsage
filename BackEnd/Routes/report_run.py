@@ -379,7 +379,12 @@ def export_general_ledger(company_id):
         )
 
         try:
-            return export_xlsx(payload, filename="general_ledger.xlsx")
+            return export_xlsx(
+                rows,
+                columns,
+                filename="general_ledger.xlsx",
+                sheet_name="General Ledger",
+            )
         except Exception:
             current_app.logger.exception("GL EXPORT CSV BUILD FAILED")
             return jsonify({
@@ -486,7 +491,12 @@ def export_journal_register(company_id):
             list((payload.get("data") or {}).keys()),
         )
 
-        return export_xlsx(payload, filename="journal_register.xlsx")
+        return export_xlsx(
+            rows,
+            columns,
+            filename="journal_register.xlsx",
+            sheet_name="Journal Register",
+        )
 
     except Exception as e:
         current_app.logger.exception("export_journal_register failed")
