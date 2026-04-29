@@ -15391,29 +15391,34 @@ async function renderRecentJournals() {
 
       if (!cid) return;
 
-      const periodKey =
-        document.getElementById("jrnlFilterPreset")?.value?.trim() ||
-        document.getElementById("reportPreset")?.value?.trim() ||
-        window.CURRENT_PERIOD_KEY ||
-        "this_month";
-
-      const periodParams = buildPeriodParams(periodKey, { format: "xlsx" });
-      const params = new URLSearchParams();
-
-      Object.entries(periodParams).forEach(([k, v]) => {
-        if (k !== "__label" && v != null && v !== "") params.set(k, v);
-      });
-
-      const q = document.getElementById("jrnlFilterQ")?.value?.trim() || "";
-      const limit = document.getElementById("jrnlFilterLimit")?.value?.trim() || "";
-
-      if (q) params.set("q", q);
-      if (limit) params.set("limit", limit);
-
-      await downloadUrl(
-        `${ENDPOINTS.reports.journalRegisterExport(cid)}?${params.toString()}`,
-        "journal_register"
+      const url = new URL(
+        toApiUrl(ENDPOINTS.reports.journalRegisterExport(cid)),
+        window.location.origin
       );
+
+      const preset = document.getElementById("jrnlFilterPreset")?.value?.trim() || "current_month";
+      const from = document.getElementById("jrnlFrom")?.value?.trim() || "";
+      const to = document.getElementById("jrnlTo")?.value?.trim() || "";
+      const q = document.getElementById("jrnlSearchRef")?.value?.trim() || "";
+
+      url.searchParams.set("format", "xlsx");
+
+      if (preset && preset !== "custom" && preset !== "all") {
+        url.searchParams.set("preset", preset);
+      }
+
+      if (preset === "custom") {
+        if (from) url.searchParams.set("from", from);
+        if (to) url.searchParams.set("to", to);
+      }
+
+      if (preset === "all") {
+        url.searchParams.set("preset", "all");
+      }
+
+      if (q) url.searchParams.set("q", q);
+
+      await downloadUrl(url.pathname + url.search, "journal_register");
     } catch (e) {
       console.error("Export failed:", e);
     }
@@ -18243,6 +18248,7 @@ function renderLedgerTable(rows, meta) {
       </table>
     </div>
   `;
+  
   host.querySelector("#btnLedgerExportCsv")?.addEventListener("click", async () => {
     const cid =
       (typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null) ||
@@ -18251,17 +18257,17 @@ function renderLedgerTable(rows, meta) {
     if (!cid) return;
 
     const periodKey =
-      document.getElementById("ledgerFilterPreset")?.value?.trim() ||
-      document.getElementById("glPeriodFilter")?.value?.trim() ||
-      document.getElementById("reportPreset")?.value?.trim() ||
+      document.getElementById("ledgerPeriod")?.value?.trim() ||
       window.CURRENT_PERIOD_KEY ||
-      "prev_year";
+      "this_year";
 
     const periodParams = buildPeriodParams(periodKey, { format: "xlsx" });
     const params = new URLSearchParams();
 
     Object.entries(periodParams).forEach(([k, v]) => {
-      if (k !== "__label" && v != null && v !== "") params.set(k, v);
+      if (k !== "__label" && v != null && v !== "") {
+        params.set(k, v);
+      }
     });
 
     const q =
