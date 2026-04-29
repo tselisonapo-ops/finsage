@@ -4,7 +4,7 @@ from flask import send_file
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
-
+from flask import Response
 
 def export_xlsx(payload: dict, filename: str = "report.xlsx"):
     wb = Workbook()
@@ -48,11 +48,12 @@ def export_xlsx(payload: dict, filename: str = "report.xlsx"):
     wb.save(bio)
     bio.seek(0)
 
-    return send_file(
-        bio,
-        as_attachment=True,
-        download_name=filename,
+    return Response(
+        bio.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
     )
 
 def build_journal_register(db, company_id, date_from=None, date_to=None, q=None):

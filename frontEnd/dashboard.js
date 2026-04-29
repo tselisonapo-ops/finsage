@@ -15310,7 +15310,7 @@ async function renderRecentJournals() {
     <div class="flex items-center justify-between gap-3 mb-3">
       <div class="text-sm font-semibold">Recent Journals</div>
       <div class="flex items-center gap-2">
-        <button id="btnRecentJournalsExportCsv" class="btn">Export CSV</button>
+        <button id="btnRecentJournalsExportCsv" class="btn">Export Excel</button>
       </div>
     </div>
 
@@ -15393,12 +15393,23 @@ async function renderRecentJournals() {
       const q = document.getElementById("jrnlFilterQ")?.value?.trim();
       const limit = document.getElementById("jrnlFilterLimit")?.value?.trim();
 
+      const preset =
+        document.getElementById("jrnlFilterPreset")?.value?.trim() ||
+        document.getElementById("reportPreset")?.value?.trim() ||
+        window.CURRENT_PERIOD_KEY ||
+        "this_month";
+
       if (from) url.searchParams.set("from", from);
       if (to) url.searchParams.set("to", to);
+
+      if (!from && !to && preset) {
+        url.searchParams.set("preset", preset);
+      }
+
       if (q) url.searchParams.set("q", q);
       if (limit) url.searchParams.set("limit", limit);
 
-      url.searchParams.set("format", "csv");
+      url.searchParams.set("format", "xlsx");
 
       await downloadUrl(url.pathname + url.search, "journal_register");
     } catch (e) {
@@ -18057,7 +18068,7 @@ function renderLedgerTable(rows, meta) {
   const headerHtml = `
     <div class="flex items-center justify-between gap-3 mb-2">
       <div class="text-[11px] text-slate-500">Ledger: ${label}</div>
-      <button id="btnLedgerExportCsv" class="btn whitespace-nowrap">Export CSV</button>
+      <button id="btnLedgerExportCsv" class="btn whitespace-nowrap">Export Excel</button>
     </div>
     <div class="max-h-[calc(100vh-260px)] overflow-y-auto border rounded">
       <table class="min-w-full text-xs">
@@ -18237,7 +18248,7 @@ function renderLedgerTable(rows, meta) {
 
     if (!cid) return;
 
-    const params = new URLSearchParams({ format: "csv" });
+    const params = new URLSearchParams({ format: "xlsx" });
 
     const from =
       document.getElementById("ledgerFilterFrom")?.value?.trim() ||
@@ -18251,9 +18262,10 @@ function renderLedgerTable(rows, meta) {
 
     const preset =
       document.getElementById("ledgerFilterPreset")?.value?.trim() ||
+      document.getElementById("glPeriodFilter")?.value?.trim() ||
       document.getElementById("reportPreset")?.value?.trim() ||
       window.CURRENT_PERIOD_KEY ||
-      "this_month";
+      "prev_year";
 
     const q =
       document.getElementById("ledgerSearch")?.value?.trim() ||
