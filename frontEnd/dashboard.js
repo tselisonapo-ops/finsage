@@ -63613,6 +63613,23 @@ window.renderAPRecon = renderAPRecon;
 // ==============================
 // 4) VENDOR STATEMENTS (ledger-based)
 // ==============================
+async function resolveBillIdByRef(companyId, ref) {
+  if (!ref) return null;
+
+  const res = await apiFetch(
+    `/api/companies/${companyId}/bills?number=${encodeURIComponent(ref)}`,
+    { method: "GET" }
+  );
+
+  const rows = res?.data || res || [];
+  return rows?.[0]?.id || null;
+}
+
+async function getBillIdFromInput(companyId) {
+  const ref = document.querySelector("#revBillRef")?.value?.trim();
+  return await resolveBillIdByRef(companyId, ref);
+}
+
 async function renderAPStatements() {
   const companyId = CURRENT_COMPANY_ID;
 
@@ -63655,8 +63672,7 @@ async function renderAPStatements() {
         </div>
 
         <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
-          <input id="revBillId" placeholder="Bill ID" class="pill" style="width:140px;" />
-          <input id="revReason" placeholder="Reason (optional)" class="pill" style="width:320px;" />
+          <input id="revBillRef" placeholder="Bill reference (e.g. BILL-SUP-002-2509)" class="pill" style="width:240px;" />          <input id="revReason" placeholder="Reason (optional)" class="pill" style="width:320px;" />
           <input id="revDate" type="date" value="${isoToday()}" class="pill" />
           <button id="btnReverseBill" class="btn">Reverse</button>
           <button id="btnWriteoffBill" class="btn">Write-off</button>
@@ -63829,12 +63845,17 @@ async function renderAPStatements() {
 
       // ✅ REVERSE BILL (endpoint optional)
       btnReverse.onclick = async () => {
-        const billId = mount.querySelector("#revBillId").value.trim();
+        const billId = await getBillIdFromInput(companyId);
+
+        if (!billId) {
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Bill not found.</div>`;
+          return;
+        }
         const reason = mount.querySelector("#revReason").value.trim();
         const dateStr = (mount.querySelector("#revDate").value || isoToday()).slice(0, 10);
 
         if (!billId) {
-          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a bill ID.</div>`;
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a bill reference.</div>`;
           return;
         }
 
@@ -63882,7 +63903,12 @@ async function renderAPStatements() {
 
       // ✅ CONFIRM WRITE-OFF (endpoint expected: /ap/bills/:id/writeoff)
       btnConfirmWriteoff.onclick = async () => {
-        const billId = mount.querySelector("#revBillId").value.trim();
+        const billId = await getBillIdFromInput(companyId);
+
+        if (!billId) {
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Bill not found.</div>`;
+          return;
+        }
         const acct = mount.querySelector("#writeoffAccount").value.trim();
         const dateStr = (mount.querySelector("#writeoffDate").value || isoToday()).slice(0, 10);
         const reason = mount.querySelector("#writeoffReason").value.trim();
@@ -63935,11 +63961,16 @@ async function renderAPStatements() {
       };
 
       btnVoid.onclick = async () => {
-        const billId = mount.querySelector("#revBillId").value.trim();
+        const billId = await getBillIdFromInput(companyId);
+
+        if (!billId) {
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Bill not found.</div>`;
+          return;
+        }
         const reason = mount.querySelector("#revReason").value.trim();
 
         if (!billId) {
-          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a bill ID.</div>`;
+          revOut.innerHTML = `<div class="pill" style="border-color:#fca5a5;">Enter a bill reference.</div>`;
           return;
         }
 
