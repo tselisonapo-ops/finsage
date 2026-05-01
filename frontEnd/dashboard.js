@@ -37739,19 +37739,23 @@ function bindAssetRecordsPickerModal({ cid }) {
     syncRevenueMainWidthState(); // add this
   }
 
-  async function loadRevenueCustomers() {
+  async function loadRevenueCustomers(force = false) {
     const sel = $("revCustomerId");
     if (!sel) return;
 
+    const keep = String(sel.value || "");
+
     let customers =
-      (Array.isArray(window.CUSTOMERS) && window.CUSTOMERS.length)
+      (!force && Array.isArray(window.CUSTOMERS) && window.CUSTOMERS.length)
         ? window.CUSTOMERS
         : [];
 
-    if (!customers.length) {
+    if (force || !customers.length) {
       try {
         customers = await fetchCustomersFromBackend?.(true) || [];
-      } catch (_) {
+        window.CUSTOMERS = customers;
+      } catch (e) {
+        console.warn("[Revenue] loadRevenueCustomers failed", e);
         customers = [];
       }
     }
@@ -37764,6 +37768,25 @@ function bindAssetRecordsPickerModal({ cid }) {
         </option>
       `).join("")}
     `;
+
+    if (keep && [...sel.options].some(o => String(o.value) === keep)) {
+      sel.value = keep;
+    }
+  }
+
+  function bindRevenueCustomerDropdownRefresh() {
+    const sel = $("revCustomerId");
+    if (!sel || sel.dataset.boundCustomerRefresh === "1") return;
+
+    sel.addEventListener("pointerdown", async () => {
+      await loadRevenueCustomers(true);
+    });
+
+    sel.addEventListener("focus", async () => {
+      await loadRevenueCustomers(true);
+    });
+
+    sel.dataset.boundCustomerRefresh = "1";
   }
 
   async function refreshSelectedContractDeep() {
@@ -40472,6 +40495,7 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     $("revBtnNewContract")?.addEventListener("click", async () => {
       try {
         await loadRevenueCustomers();
+        bindRevenueCustomerDropdownRefresh();
         await loadRevenueObligationCatalog?.();   // <-- add this
         hydrateContractForm({});
         setContractViewMode("form");
@@ -40909,6 +40933,7 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     bindContractEditButton();
     bindBackToPreview();
     await loadRevenueCustomers();
+    bindRevenueCustomerDropdownRefresh();
     await loadRevenueObligationCatalog?.();   // <-- add this
     bindRevenueObligationCatalogPicker?.();   // <-- add this
     await loadRuns();
