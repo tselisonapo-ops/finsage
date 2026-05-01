@@ -42035,46 +42035,59 @@ function updateInvoiceActionButtons() {
   const canApprove = !!FS.policy.canApproveInvoice(role, cid);
   const canDraft = !!FS.policy.canCreateInvoiceDraft?.(role, cid);
 
-  // ✅ use your REAL ids from HTML
   const btnDraft = document.getElementById("invSaveDraft");
-  const btnReq   = document.getElementById("invApprove"); // you are using this as “Request approval / Approve” button
+  const btnReq   = document.getElementById("invApprove");
   const btnPost  = document.getElementById("invPost");
+  const btnSend  = document.getElementById("invSend");
 
-  // Draft
-  if (btnDraft) {
-    btnDraft.disabled = !canDraft;
-    btnDraft.classList.toggle("opacity-50", !canDraft);
-  }
+  const hide = (btn) => btn?.classList.add("hidden");
+  const show = (btn) => btn?.classList.remove("hidden");
 
-  // OWNER-MANAGED
+  [btnDraft, btnReq, btnPost, btnSend].forEach(hide);
+
+  // OWNER-MANAGED: no approval queue, no draft button
   if (mode === FS.control.MODES.OWNER) {
-    // Owner can post; keep “Approve/Request” hidden if you want
-    btnReq?.classList.add("hidden");
-    btnPost?.classList.remove("hidden");
+    show(btnPost);
+    show(btnSend);
+
     if (btnPost) {
-      btnPost.disabled = !canApprove; // will be true in owner mode
+      btnPost.disabled = !canApprove;
       btnPost.classList.toggle("opacity-50", btnPost.disabled);
     }
+
+    if (btnSend) {
+      btnSend.disabled = !canApprove;
+      btnSend.classList.toggle("opacity-50", btnSend.disabled);
+    }
+
     return;
   }
 
-  // ASSISTED / CONTROLLED
+  // ASSISTED / CONTROLLED APPROVER
   if (canApprove) {
-    // Approver sees Post
-    btnReq?.classList.add("hidden");
-    btnPost?.classList.remove("hidden");
+    show(btnPost);
+    show(btnSend);
+
     if (btnPost) {
       btnPost.disabled = false;
       btnPost.classList.remove("opacity-50");
     }
-  } else {
-    // Maker sees Request Approval (your invApprove button)
-    btnPost?.classList.add("hidden");
-    btnReq?.classList.remove("hidden");
-    if (btnReq) {
-      btnReq.disabled = false;
-      btnReq.classList.remove("opacity-50");
+
+    if (btnSend) {
+      btnSend.disabled = false;
+      btnSend.classList.remove("opacity-50");
     }
+
+    return;
+  }
+
+  // ASSISTED / CONTROLLED MAKER
+  show(btnReq);
+
+  if (btnReq) {
+    btnReq.textContent = "Save for Approval";
+    btnReq.disabled = !canDraft;
+    btnReq.classList.toggle("opacity-50", btnReq.disabled);
   }
 }
 
@@ -42868,18 +42881,44 @@ function bindInvoicePostingUI() {
   if (btnDraft && btnDraft.dataset.bound !== "1") {
     btnDraft.dataset.bound = "1";
     btnDraft.type = "button";
+
     btnDraft.addEventListener("click", async (e) => {
       e.preventDefault();
+
       try {
-        // NEW: makers submit for approval using Save Draft button
-        const res = await commitInvoice("submit_for_approval");
-        // draft saved → you can reset or keep open; keeping your behavior:
+        const { canApprove, mode } = getInvoiceRoleContext();
+
+        let action;
+
+        if (mode === FS.control.MODES.OWNER) {
+          // Owner-managed: no approval queue, post directly
+          action = "approve_post";
+        } else if (canApprove) {
+          // Approver in controlled/assisted mode can also post
+          action = "approve_post";
+        } else {
+          // Maker/clerk: submit into approval workflow
+          action = "submit_for_approval";
+        }
+
+        const res = await commitInvoice(action);
+
+        if (res?.flow === "post") {
+          await renderCashFlow?.(CURRENT_PERIOD_KEY);
+          alert("Invoice posted ✅");
+        } else if (res?.flow === "sent_to_inbox") {
+          alert("Sent to Approvals inbox. Awaiting review.");
+        } else {
+          alert("Invoice saved ✅");
+        }
+
         window.resetInvoiceForm?.();
         await renderDraftInvoiceList?.();
+
         return res;
       } catch (err) {
-        console.error("Draft error:", err);
-        alert(err.message || "Could not save draft.");
+        console.error("Invoice action error:", err);
+        alert(err.message || "Could not process invoice.");
       } finally {
         refreshButtons();
       }
@@ -44370,10 +44409,6 @@ async function saveInvoiceDraft(statusOverride = "draft") {
 
     if (saved?.id && document.getElementById("invId")) {
       document.getElementById("invId").value = saved.id;
-    }
-
-    if (saved?.number && document.getElementById("invNumber")) {
-      document.getElementById("invNumber").value = saved.number;
     }
 
     if (saved?.number && document.getElementById("invNumber")) {
@@ -59822,10 +59857,12 @@ function bindAP() {
     }
 
     const saved = res?.data || res;
-    window.writeBillForm?.(saved);
 
-    // ✅ if you want to immediately clear for a new bill:
-    //window.clearBillForm?.({ keepCurrency: true });
+    if (status === "draft") {
+      window.clearBillForm?.({ keepCurrency: true });
+    } else {
+      window.writeBillForm?.(saved);
+    }
 
     return saved;
   }
