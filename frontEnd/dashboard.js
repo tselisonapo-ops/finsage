@@ -4742,8 +4742,8 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "VAT & Tax", screen: "vat", icon: "🧮", minRole: "assistant", permission: "can_view_reports" },
 
         { name: "Financial Statements", screen: "reports", icon: "📈", minRole: "junior", permission: "can_prepare_financials" },
-        { name: "Income Statement (P&L)", screen: "reports-pnl", icon: "🧮", minRole: "junior", permission: "can_prepare_financials" },
-        { name: "Balance Sheet", screen: "reports-bs", icon: "🏛️", minRole: "junior", permission: "can_prepare_financials" },
+        //{ name: "Income Statement (P&L)", screen: "reports-pnl", icon: "🧮", minRole: "junior", permission: "can_prepare_financials" },
+        //{ name: "Balance Sheet", screen: "reports-bs", icon: "🏛️", minRole: "junior", permission: "can_prepare_financials" },
       ],
     },
 
