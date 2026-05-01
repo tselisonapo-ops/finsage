@@ -59955,12 +59955,14 @@ class DatabaseService:
             cur.execute(
                 f"""
                 SELECT COUNT(*)
-                FROM {schema}.revenue_recognition_runs
-                WHERE company_id = %s
-                  AND contract_id = %s
-                  AND obligation_id = %s
-                  AND period_end = %s
-                  AND COALESCE(status, '') NOT IN ('reversed', 'cancelled', 'void')
+                FROM {schema}.revenue_recognition_entries e
+                JOIN {schema}.revenue_recognition_runs r
+                ON r.id = e.run_id
+                WHERE e.company_id = %s
+                AND e.contract_id = %s
+                AND e.obligation_id = %s
+                AND e.period_end = %s
+                AND COALESCE(r.status, '') NOT IN ('reversed', 'cancelled', 'void')
                 """,
                 (company_id, contract_id, obligation_id, period_end),
             )
