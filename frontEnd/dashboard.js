@@ -37600,7 +37600,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       }
     }
 
-    else if (pattern === "billing_before_revenue" || pattern === "cash_before_service") {
+    else if (pattern === "billing_before_revenue") {
       setText("revBillHistObligationName", p.obligation_name || "—");
       setText("revBillHistSettlementPattern", p.settlement_pattern || "—");
       setText("revBillHistAllocated", money(p.allocated_transaction_price || 0));
@@ -37608,6 +37608,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       setText("revBillHistRecognised", money(p.recognized_to_date_posted || 0));
 
       const diff = Number(p.billed_to_date || 0) - Number(p.recognized_to_date_posted || 0);
+
       setText(
         "revBillHistPosition",
         diff > 0 ? `Liability ${money(diff)}`
@@ -37617,7 +37618,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
       setText(
         "revBillingBeforeRevenueMsg",
-        "Billing is ahead of revenue for this obligation/contract. Use Billing Overview and linked invoices to track allocation; do not create invoices from recognition preview here."
+        "Billing is ahead of revenue. The invoice should credit Contract Liability until revenue is earned."
       );
 
       if (openBtn) {
@@ -37633,6 +37634,85 @@ function bindAssetRecordsPickerModal({ cid }) {
       if (createBtn) {
         createBtn.classList.add("hidden");
         createBtn.onclick = null;
+      }
+    }
+
+    else if (pattern === "cash_before_service") {
+      setText("revBillHistObligationName", p.obligation_name || "—");
+      setText("revBillHistSettlementPattern", p.settlement_pattern || "—");
+      setText("revBillHistAllocated", money(p.allocated_transaction_price || 0));
+      setText("revBillHistBilled", money(p.billed_to_date || 0));
+      setText("revBillHistRecognised", money(p.recognized_to_date_posted || 0));
+
+      const liability =
+        Number(p.cash_received_to_date || 0) +
+        Number(p.billed_to_date || 0) -
+        Number(p.recognized_to_date_posted || 0);
+
+      setText(
+        "revBillHistPosition",
+        liability > 0 ? `Liability ${money(liability)}`
+        : liability < 0 ? `Asset ${money(Math.abs(liability))}`
+        : "Neutral"
+      );
+
+      setText(
+        "revBillingBeforeRevenueMsg",
+        "Cash was received before service. You may still create the invoice; posting must credit Contract Liability until revenue is earned."
+      );
+
+      if (openBtn) {
+        const hasLinkedInvoice = !!p.linked_invoice?.invoice_id;
+        openBtn.classList.toggle("hidden", !hasLinkedInvoice);
+        openBtn.onclick = async () => {
+          if (!p.linked_invoice?.invoice_id) return;
+          await switchScreen("ar-invoices");
+          await window.loadInvoiceIntoForm?.(p.linked_invoice.invoice_id);
+        };
+      }
+
+      if (createBtn) {
+        createBtn.classList.remove("hidden");
+        createBtn.disabled = false;
+        createBtn.style.pointerEvents = "auto";
+        createBtn.style.opacity = "1";
+
+        createBtn.onclick = async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const payload = {
+            customer_id: p.customer_id || state.selectedContract?.customer_id || null,
+            customer_name: state.selectedContract?.customer_name || "",
+            revenue_contract_id: p.contract_id || state.selectedContract?.id || null,
+            revenue_contract_number: p.contract_number || state.selectedContract?.contract_number || "",
+            revenue_contract_title: p.contract_title || state.selectedContract?.contract_title || "",
+            revenue_obligation_id: p.obligation_id || null,
+            invoice_date: new Date().toISOString().slice(0, 10),
+            currency: resolveCurrency(
+              p.contract_currency || state.selectedContract?.contract_currency || "ZAR"
+            ),
+            billing_level: p.obligation_id ? "obligation" : "contract",
+            settlement_pattern: "cash_before_service",
+            posting_treatment: "contract_liability",
+            memo: `Advance invoice for ${p.contract_title || p.obligation_name || "contract"}`,
+            line: {
+              item_name: p.obligation_name || p.contract_title || "Advance contract billing",
+              description: "Cash received before service; defer to contract liability.",
+              quantity: 1,
+              unit_price: Number(
+                p.available_to_bill ||
+                p.allocated_transaction_price ||
+                p.cash_received_to_date ||
+                0
+              ),
+              revenue_obligation_id: p.obligation_id || null,
+              posting_treatment: "contract_liability"
+            }
+          };
+
+          await redirectToInvoiceFromRevenueBilling(payload);
+        };
       }
     }
 

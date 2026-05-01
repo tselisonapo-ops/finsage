@@ -876,6 +876,82 @@ def api_record_revenue_cash_event(company_id: int, contract_id: int):
     body = request.get_json(silent=True) or {}
 
     try:
+        # --------------------------
+        # Resolve contract + settlement pattern
+        # --------------------------
+        contract = db_service.get_revenue_contract(
+            company_id=company_id,
+            contract_id=int(contract_id),
+        ) or {}
+
+        payload_json = contract.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            import json
+            try:
+                payload_json = json.loads(payload_json)
+            except Exception:
+                payload_json = {}
+
+        settlement_pattern = (
+            payload_json.get("settlement_pattern")
+            or payload_json.get("ifrs15_settlement_pattern")
+            or ""
+        ).strip().lower()
+
+        amount = float(body.get("amount") or 0)
+        payment_date = body.get("event_date")
+        customer_id = (body.get("payload_json") or {}).get("customer_id")
+        currency = body.get("currency") or "ZAR"
+
+        if amount <= 0:
+            raise ValueError("Cash receipt amount must be greater than zero")
+
+        journal_id = None
+
+        if settlement_pattern == "cash_before_service":
+            ifrs15_accounts = db_service.resolve_ifrs15_accounts(company_id)
+
+            BANK_ACCOUNT = body.get("bank_account_code") or "BS_CA_1000"
+            LIABILITY_ACCOUNT = ifrs15_accounts.get("contract_liability_account")
+
+            if not LIABILITY_ACCOUNT:
+                raise ValueError("Contract liability account not configured")
+
+            ref = body.get("reference") or f"RCPT-{contract.get('contract_number') or contract_id}"
+
+            journal_id = db_service.post_journal(
+                company_id,
+                {
+                    "date": payment_date,
+                    "ref": ref,
+                    "description": "Cash received before service (IFRS 15)",
+                    "gross_amount": amount,
+                    "net_amount": amount,
+                    "vat_amount": 0,
+                    "currency": currency,
+                    "source": "revenue_cash_receipt",
+                    "source_id": None,
+                    "lines": [
+                        {
+                            "account_code": BANK_ACCOUNT,
+                            "debit": amount,
+                            "credit": 0,
+                            "description": "Cash received",
+                        },
+                        {
+                            "account_code": LIABILITY_ACCOUNT,
+                            "debit": 0,
+                            "credit": amount,
+                            "description": "Contract liability (advance)",
+                        },
+                    ],
+                },
+            )
+
+        body.setdefault("payload_json", {})
+        body["payload_json"]["journal_id"] = journal_id
+        body["payload_json"]["settlement_pattern"] = settlement_pattern
+
         out = db_service.record_revenue_cash_event(
             company_id,
             contract_id,

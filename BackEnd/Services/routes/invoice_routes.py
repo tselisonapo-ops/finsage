@@ -603,33 +603,50 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
         if ifrs15_accounts:
             invoice_amt = amt
 
-            if remaining_contract_asset > 0:
-                clear_amt = min(remaining_contract_asset, invoice_amt)
-                clear_amt = money(clear_amt)
-
-                if clear_amt > 0:
-                    jlines.append({
-                        "account_code": ifrs15_accounts["contract_asset_account"],
-                        "dc": "C",
-                        "amount": clear_amt
-                    })
-
-                remaining = money(invoice_amt - clear_amt)
-                remaining_contract_asset = money(remaining_contract_asset - clear_amt)
-
-                if remaining > 0:
-                    jlines.append({
-                        "account_code": ifrs15_accounts["contract_liability_account"],
-                        "dc": "C",
-                        "amount": remaining
-                    })
-            else:
+            if settlement_pattern in ("cash_before_service", "billing_before_revenue"):
                 jlines.append({
                     "account_code": ifrs15_accounts["contract_liability_account"],
                     "dc": "C",
                     "amount": invoice_amt
                 })
+                continue
 
+            if settlement_pattern == "revenue_before_billing":
+                if remaining_contract_asset > 0:
+                    clear_amt = min(remaining_contract_asset, invoice_amt)
+                    clear_amt = money(clear_amt)
+
+                    if clear_amt > 0:
+                        jlines.append({
+                            "account_code": ifrs15_accounts["contract_asset_account"],
+                            "dc": "C",
+                            "amount": clear_amt
+                        })
+
+                    remaining = money(invoice_amt - clear_amt)
+                    remaining_contract_asset = money(remaining_contract_asset - clear_amt)
+
+                    if remaining > 0:
+                        jlines.append({
+                            "account_code": acct,
+                            "dc": "C",
+                            "amount": remaining
+                        })
+                else:
+                    jlines.append({
+                        "account_code": acct,
+                        "dc": "C",
+                        "amount": invoice_amt
+                    })
+
+                continue
+
+            # fallback IFRS 15 behavior: normal revenue
+            jlines.append({
+                "account_code": acct,
+                "dc": "C",
+                "amount": invoice_amt
+            })
             continue
 
         # ✅ NORMAL REVENUE (NO CONTRACT)

@@ -58885,6 +58885,199 @@ class DatabaseService:
             "allows_contract_pool_billing": method in {"progress", "periodic", "manual"},
         }
 
+    def record_revenue_cash_event(
+        self,
+        company_id: int,
+        contract_id: int,
+        data: dict,
+        user_id: int,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        def _run(_cur):
+            _cur.execute(
+                f"""
+                INSERT INTO {schema}.revenue_cash_events (
+                    company_id,
+                    contract_id,
+                    obligation_id,
+                    event_date,
+                    event_type,
+                    source_receipt_id,
+                    amount,
+                    currency,
+                    notes,
+                    payload_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    data.get("obligation_id"),
+                    data.get("event_date"),
+                    data.get("event_type", "receipt"),
+                    data.get("source_receipt_id"),
+                    float(data.get("amount") or 0),
+                    data.get("currency") or "ZAR",
+                    data.get("notes"),
+                    json.dumps(data.get("payload_json") or {}),
+                ),
+            )
+
+            row = _cur.fetchone()
+            return int(row["id"] if isinstance(row, dict) else row[0])
+
+        if cur:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            try:
+                out = _run(_cur)
+                conn.commit()
+                return out
+            except Exception:
+                conn.rollback()
+                raise
+
+    def auto_allocate_customer_advance_to_invoice(
+        self,
+        company_id: int,
+        *,
+        customer_id: int,
+        contract_id: int,
+        invoice_id: int,
+        amount: float,
+        currency: str = "ZAR",
+        cur=None,
+    ) -> dict:
+        from decimal import Decimal, ROUND_HALF_UP
+
+        def money(x):
+            return float(
+                Decimal(str(x or 0)).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+            )
+
+        schema = self.company_schema(company_id)
+
+        def _run(_cur):
+            target = money(amount)
+
+            if target <= 0:
+                return {
+                    "allocated": 0.0,
+                    "remaining": 0.0,
+                    "allocations": [],
+                }
+
+            _cur.execute(
+                f"""
+                SELECT
+                    e.id,
+                    e.amount,
+                    COALESCE((
+                        SELECT SUM((a->>'amount')::numeric)
+                        FROM jsonb_array_elements(
+                            COALESCE(e.payload_json->'invoice_allocations', '[]'::jsonb)
+                        ) a
+                    ), 0) AS allocated_amount
+                FROM {schema}.revenue_cash_events e
+                WHERE e.company_id = %s
+                AND e.contract_id = %s
+                AND e.event_type IN ('receipt', 'advance_receipt', 'manual')
+                AND COALESCE((e.payload_json->>'customer_id')::int, %s) = %s
+                AND COALESCE(e.currency, %s) = %s
+                ORDER BY e.event_date ASC, e.id ASC
+                FOR UPDATE;
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    int(customer_id),
+                    int(customer_id),
+                    currency,
+                    currency,
+                ),
+            )
+
+            rows = _cur.fetchall() or []
+
+            remaining = target
+            allocations = []
+
+            for r in rows:
+                event_id = int(r["id"] if isinstance(r, dict) else r[0])
+                event_amount = money(r["amount"] if isinstance(r, dict) else r[1])
+                already_allocated = money(r["allocated_amount"] if isinstance(r, dict) else r[2])
+
+                available = money(event_amount - already_allocated)
+                if available <= 0:
+                    continue
+
+                alloc = money(min(available, remaining))
+                if alloc <= 0:
+                    continue
+
+                _cur.execute(
+                    f"""
+                    UPDATE {schema}.revenue_cash_events
+                    SET payload_json =
+                        jsonb_set(
+                            COALESCE(payload_json, '{{}}'::jsonb),
+                            '{{invoice_allocations}}',
+                            COALESCE(payload_json->'invoice_allocations', '[]'::jsonb)
+                            || jsonb_build_array(
+                                jsonb_build_object(
+                                    'invoice_id', %s,
+                                    'amount', %s,
+                                    'allocated_at', NOW()
+                                )
+                            ),
+                            true
+                        )
+                    WHERE id = %s;
+                    """,
+                    (
+                        int(invoice_id),
+                        alloc,
+                        int(event_id),
+                    ),
+                )
+
+                allocations.append({
+                    "cash_event_id": event_id,
+                    "invoice_id": int(invoice_id),
+                    "amount": alloc,
+                })
+
+                remaining = money(remaining - alloc)
+
+                if remaining <= 0:
+                    break
+
+            return {
+                "allocated": money(target - remaining),
+                "remaining": money(remaining),
+                "allocations": allocations,
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            try:
+                out = _run(_cur)
+                conn.commit()
+                return out
+            except Exception:
+                conn.rollback()
+                raise
+
     def record_revenue_billing_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         import json
 

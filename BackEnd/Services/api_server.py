@@ -916,6 +916,103 @@ def _first_contact_email(inv: dict) -> str | None:
                     return e
     return None
 
+def record_invoice_revenue_billing_and_allocation(
+    *,
+    company_id: int,
+    invoice_id: int,
+    inv: dict,
+    journal_id: int,
+    user_id: int,
+):
+    revenue_contract_id = inv.get("revenue_contract_id")
+    if not revenue_contract_id:
+        return None
+
+    contract = db_service.get_revenue_contract(
+        company_id=company_id,
+        contract_id=int(revenue_contract_id),
+    ) or {}
+
+    payload_json = contract.get("payload_json") or {}
+    if isinstance(payload_json, str):
+        import json
+        try:
+            payload_json = json.loads(payload_json)
+        except Exception:
+            payload_json = {}
+
+    settlement_pattern = (
+        payload_json.get("settlement_pattern")
+        or payload_json.get("ifrs15_settlement_pattern")
+        or ""
+    ).strip().lower()
+
+    obligation_ids = [
+        l.get("revenue_obligation_id")
+        for l in inv.get("lines", [])
+        if l.get("revenue_obligation_id")
+    ]
+
+    if obligation_ids:
+        billing_amount = float(sum(
+            float(l.get("net_amount") or 0.0)
+            for l in inv.get("lines", [])
+            if l.get("revenue_obligation_id")
+        ))
+        billing_obligation_id = (
+            int(obligation_ids[0])
+            if len(set(obligation_ids)) == 1
+            else None
+        )
+    else:
+        billing_amount = float(sum(
+            float(l.get("net_amount") or 0.0)
+            for l in inv.get("lines", [])
+        ))
+        billing_obligation_id = None
+
+    db_service.record_revenue_billing_event(
+        company_id=company_id,
+        contract_id=int(revenue_contract_id),
+        data={
+            "event_date": inv.get("invoice_date"),
+            "event_type": "invoice",
+            "source_invoice_id": int(invoice_id),
+            "obligation_id": billing_obligation_id,
+            "amount": billing_amount,
+            "currency": inv.get("currency") or "ZAR",
+            "notes": f"From AR invoice {inv.get('number') or invoice_id}",
+            "payload_json": {
+                "customer_id": int(inv.get("customer_id") or 0),
+                "source": "ar_invoice_post",
+                "invoice_number": inv.get("number"),
+                "auto_allocate": True,
+                "settlement_pattern": settlement_pattern,
+                "journal_id": int(journal_id),
+            },
+        },
+        user_id=int(user_id or 0),
+    )
+
+    if settlement_pattern == "cash_before_service":
+        allocation = db_service.auto_allocate_customer_advance_to_invoice(
+            company_id=company_id,
+            customer_id=int(inv.get("customer_id") or 0),
+            contract_id=int(revenue_contract_id),
+            invoice_id=int(invoice_id),
+            amount=float(billing_amount),
+            currency=inv.get("currency") or "ZAR",
+        )
+
+        current_app.logger.info("Auto allocation result: %s", allocation)
+
+        if allocation.get("remaining", 0) > 0:
+            current_app.logger.warning(
+                "Invoice not fully covered by advances. Remaining: %s",
+                allocation["remaining"],
+            )
+
+    return True
 
 def _first_contact_email_from_contacts(contacts):
     """
@@ -6059,7 +6156,27 @@ def create_invoice(cid: int):
 
         try:
             revenue_contract_id = header.get("revenue_contract_id")
+
             if revenue_contract_id:
+                contract = db_service.get_revenue_contract(
+                    company_id=company_id,
+                    contract_id=int(revenue_contract_id),
+                ) or {}
+
+                payload_json = contract.get("payload_json") or {}
+                if isinstance(payload_json, str):
+                    import json
+                    try:
+                        payload_json = json.loads(payload_json)
+                    except Exception:
+                        payload_json = {}
+
+                settlement_pattern = (
+                    payload_json.get("settlement_pattern")
+                    or payload_json.get("ifrs15_settlement_pattern")
+                    or ""
+                ).strip().lower()
+
                 obligation_ids = [
                     l.get("revenue_obligation_id")
                     for l in inv.get("lines", [])
@@ -6067,22 +6184,23 @@ def create_invoice(cid: int):
                 ]
 
                 if obligation_ids:
-                    billing_amount = float(
-                        sum(
-                            (l.get("net_amount") or 0.0)
-                            for l in inv.get("lines", [])
-                            if l.get("revenue_obligation_id")
-                        )
-                    )
+                    billing_amount = float(sum(
+                        float(l.get("net_amount") or 0.0)
+                        for l in inv.get("lines", [])
+                        if l.get("revenue_obligation_id")
+                    ))
+
                     billing_obligation_id = (
                         int(obligation_ids[0])
                         if len(set(obligation_ids)) == 1
                         else None
                     )
                 else:
-                    billing_amount = float(
-                        sum((l.get("net_amount") or 0.0) for l in inv.get("lines", []))
-                    )
+                    billing_amount = float(sum(
+                        float(l.get("net_amount") or 0.0)
+                        for l in inv.get("lines", [])
+                    ))
+
                     billing_obligation_id = None
 
                 db_service.record_revenue_billing_event(
@@ -6100,10 +6218,40 @@ def create_invoice(cid: int):
                             "customer_id": int(cust_id),
                             "source": "ar_invoice_post",
                             "invoice_number": inv.get("number"),
+                            "auto_allocate": True,
+                            "settlement_pattern": settlement_pattern,
+                            "journal_id": int(journal_id),
                         },
                     },
                     user_id=int(user.get("id") or 0),
                 )
+
+                if settlement_pattern == "cash_before_service":
+                    try:
+                        allocation = db_service.auto_allocate_customer_advance_to_invoice(
+                            company_id=company_id,
+                            customer_id=int(cust_id),
+                            contract_id=int(revenue_contract_id),
+                            invoice_id=int(invoice_id),
+                            amount=float(billing_amount),
+                            currency=inv.get("currency") or header.get("currency") or "ZAR",
+                        )
+
+                        current_app.logger.info("Auto allocation result: %s", allocation)
+
+                        if allocation.get("remaining", 0) > 0:
+                            current_app.logger.warning(
+                                "Invoice not fully covered by advances. Remaining: %s",
+                                allocation["remaining"],
+                            )
+
+                    except Exception:
+                        current_app.logger.exception(
+                            "create_invoice: auto allocation failed | invoice_id=%s contract_id=%r",
+                            invoice_id,
+                            revenue_contract_id,
+                        )
+
         except Exception:
             current_app.logger.exception(
                 "create_invoice: record_revenue_billing_event failed | invoice_id=%s contract_id=%r",
@@ -6446,26 +6594,18 @@ def update_invoice(cid: int, invoice_id: int):
                 require_approved=require_customer_approved,
             )
 
-            # >>> ADD THIS BLOCK HERE <<<
-            revenue_contract_id = header.get("revenue_contract_id")
-            if revenue_contract_id:
-                db_service.record_revenue_billing_event(
+            try:
+                record_invoice_revenue_billing_and_allocation(
                     company_id=company_id,
-                    contract_id=int(revenue_contract_id),
-                    data={
-                        "event_date": header.get("invoice_date"),
-                        "event_type": "invoice",
-                        "source_invoice_id": int(invoice_id),
-                        "amount": float(inv.get("total_amount") or inv.get("gross_amount") or 0.0),
-                        "currency": inv.get("currency") or header.get("currency") or "ZAR",
-                        "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-                        "payload_json": {
-                            "customer_id": int(cust_id),
-                            "source": "ar_invoice_post",
-                            "invoice_number": inv.get("number"),
-                        },
-                    },
+                    invoice_id=int(invoice_id),
+                    inv=inv,
+                    journal_id=int(journal_id),
                     user_id=int(user.get("id") or 0),
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "invoice revenue billing/allocation failed | invoice_id=%s",
+                    invoice_id,
                 )
 
             posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
@@ -6624,48 +6764,18 @@ def post_invoice(cid: int, invoice_id: int):
             require_approved=require_approved,
         )
 
-        revenue_contract_id = inv.get("revenue_contract_id")
-
-        if revenue_contract_id:
-            obligation_ids = [
-                l.get("revenue_obligation_id")
-                for l in inv.get("lines", [])
-                if l.get("revenue_obligation_id")
-            ]
-
-            if obligation_ids:
-                billing_amount = float(
-                    sum(
-                        (l.get("net_amount") or 0.0)
-                        for l in inv.get("lines", [])
-                        if l.get("revenue_obligation_id")
-                    )
-                )
-
-                billing_obligation_id = (
-                    int(obligation_ids[0])
-                    if len(set(obligation_ids)) == 1
-                    else None
-                )
-            else:
-                billing_amount = float(
-                    sum((l.get("net_amount") or 0.0) for l in inv.get("lines", []))
-                )
-                billing_obligation_id = None
-
-            db_service.record_revenue_billing_event(
+        try:
+            record_invoice_revenue_billing_and_allocation(
                 company_id=company_id,
-                contract_id=int(revenue_contract_id),
-                data={
-                    "event_date": inv.get("invoice_date"),
-                    "event_type": "invoice",
-                    "source_invoice_id": int(invoice_id),
-                    "obligation_id": billing_obligation_id,
-                    "amount": billing_amount,
-                    "currency": inv.get("currency") or "ZAR",
-                    "notes": f"From AR invoice {inv.get('number') or invoice_id}",
-                },
+                invoice_id=int(invoice_id),
+                inv=inv,
+                journal_id=int(journal_id),
                 user_id=int(user.get("id") or 0),
+            )
+        except Exception:
+            current_app.logger.exception(
+                "post_invoice: invoice revenue billing/allocation failed | invoice_id=%s",
+                invoice_id,
             )
 
         posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
