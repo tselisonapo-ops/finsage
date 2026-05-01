@@ -34559,6 +34559,16 @@ class DatabaseService:
 
         # ---- insert or update header ----
         bill_id = None
+
+        print("[INSERT BILL DEBUG BEFORE SAVE]", {
+            "header_id": header.get("id"),
+            "header_asset_id": header.get("asset_id"),
+            "header_asset_acquisition_id": header.get("asset_acquisition_id"),
+            "posting_mode": header.get("posting_mode"),
+            "number": header.get("number"),
+            "status": header.get("status"),
+        }, flush=True)
+
         if header.get("id"):  # UPDATE flow
             bill_id = int(header["id"])
             cur.execute(
@@ -34567,7 +34577,10 @@ class DatabaseService:
                 SET vendor_id=%s, number=%s, bill_date=%s, due_date=%s, currency=%s,
                     subtotal_amount=%s, discount_amount=%s, discount_rate=%s,
                     vat_amount=%s, total_amount=%s, other_amount=%s,
-                    status=%s, notes=%s, updated_at=NOW()
+                    status=%s, notes=%s,
+                    asset_id=%s,
+                    asset_acquisition_id=%s,
+                    updated_at=NOW()
                 WHERE company_id=%s AND id=%s
                 """,
                 (
@@ -34584,11 +34597,28 @@ class DatabaseService:
                     other,
                     header.get("status") or "draft",
                     header.get("notes"),
+                    header.get("asset_id"),
+                    header.get("asset_acquisition_id"),
                     int(company_id),
                     bill_id,
                 ),
             )
-            cur.execute(f"DELETE FROM {schema}.bill_lines WHERE company_id=%s AND bill_id=%s", (company_id, bill_id))
+
+            cur.execute(
+                f"""
+                SELECT id, asset_id, asset_acquisition_id
+                FROM {schema}.bills
+                WHERE company_id=%s AND id=%s
+                """,
+                (int(company_id), int(bill_id)),
+            )
+            print("[UPDATE BILL DB CHECK]", cur.fetchone(), flush=True)
+
+            cur.execute(
+                f"DELETE FROM {schema}.bill_lines WHERE company_id=%s AND bill_id=%s",
+                (company_id, bill_id)
+            )
+
         else:  # INSERT flow
             cur.execute(
                 f"""
@@ -34620,10 +34650,22 @@ class DatabaseService:
                     header.get("asset_acquisition_id"),
                 ),
             )
+
             row = cur.fetchone()
             if not row:
                 raise ValueError("Failed to insert bill header")
+
             bill_id = row["id"] if isinstance(row, dict) else row[0]
+
+            cur.execute(
+                f"""
+                SELECT id, asset_id, asset_acquisition_id
+                FROM {schema}.bills
+                WHERE company_id=%s AND id=%s
+                """,
+                (int(company_id), int(bill_id)),
+            )
+            print("[INSERT BILL DB CHECK]", cur.fetchone(), flush=True)
 
             # ---- insert lines ----
             for pl in prepared:
@@ -34652,7 +34694,6 @@ class DatabaseService:
                         pl["total_amount"],
                     ),
                 )
-
             # ---- insert GRN links ----
             grni_links = header.get("grni_links") or []
             if grni_links:
