@@ -32701,9 +32701,9 @@ class DatabaseService:
         if accrued_interest > 0:
             self._append_journal_line(
                 lines,
-                account_code=accounts.get("accrued_interest_account_code"),
-                account_name=acct_name(accounts.get("accrued_interest_account_code")),
-                description=f"{base_desc} - accrued interest settlement",
+                account_code=accounts.get("interest_expense_account_code"),
+                account_name=acct_name(accounts.get("interest_expense_account_code")),
+                description=f"{base_desc} - late interest",
                 debit=accrued_interest,
                 credit=0,
             )
@@ -33268,15 +33268,34 @@ class DatabaseService:
             interest = _money(remaining_interest * ratio)
             principal = _money(payment - interest)
 
+        accrued_interest = Decimal("0.00")
+        warnings = []
+
+        due_date = _safe_date(sched.get("due_date"))
+        payment_date = _safe_date(payment_row.get("payment_date"))
+
+        if due_date and payment_date and payment_date > due_date:
+            days_late = (payment_date - due_date).days
+            annual_rate = _money(loan_row.get("annual_interest_rate")) / Decimal("100")
+            daily_rate = annual_rate / Decimal("365")
+            balance = _money(sched.get("opening_balance"))
+
+            accrued_interest = _money(balance * daily_rate * Decimal(days_late))
+
+            if accrued_interest > 0:
+                warnings.append(
+                    f"Late payment interest calculated for {days_late} day(s)"
+                )
+
         return {
             "principal_amount": float(principal),
             "interest_amount": float(interest),
-            "accrued_interest_amount": 0.0,
+            "accrued_interest_amount": float(accrued_interest),
             "fees_amount": 0.0,
             "penalties_amount": 0.0,
-            "total_amount": float(payment),
+            "total_amount": float(payment + accrued_interest),
             "method_used": "amortised_schedule",
-            "warnings": [],
+            "warnings": warnings,
         }
 
     def _calc_straight_line(self, conn, company_id, loan_row, payment_row):
