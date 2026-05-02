@@ -23683,6 +23683,12 @@ const NOTES_REGISTRY = {
       console.log("IFRS15 FINAL PARAMS:", q);
 
       if (!q.date_from || !q.date_to) {
+        console.error("🚨 IFRS15 MISSING DATES DEBUG");
+        console.log("period input →", period);
+        console.log("resolved p →", p);
+        console.log("q →", q);
+        console.log("DOM preset →", document.getElementById("stmtPreset")?.value);
+
         throw new Error("Revenue disclosure requires date_from and date_to.");
       }
 
