@@ -2097,6 +2097,15 @@ const ENDPOINTS = {
     contracts: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts`,
 
+    disclosure: (companyId, params = {}) => {
+      const q = new URLSearchParams();
+
+      if (params.date_from) q.set("date_from", params.date_from);
+      if (params.date_to) q.set("date_to", params.date_to);
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/disclosure?${q.toString()}`;
+    },
+
     contract: (companyId, contractId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/contracts/${encodeURIComponent(contractId)}`,
 
@@ -23589,32 +23598,96 @@ function renderPPENoteHTML(payload) {
   `;
 }
 
+function renderRevenueDisclosureHTML(payload) {
+  const s = payload?.summary || {};
+
+  return `
+    <div class="text-sm space-y-4">
+      <div>
+        <div class="font-semibold text-slate-800">IFRS 15 Revenue disclosures</div>
+        <div class="text-slate-500 text-xs mt-0.5">
+          Period: ${escHtml(payload?.date_from || "")} → ${escHtml(payload?.date_to || "")}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Total revenue</div>
+          <div class="font-semibold mt-1">${fmtMoney(s.total_revenue || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Contract assets</div>
+          <div class="font-semibold mt-1">${fmtMoney(s.contract_assets || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Contract liabilities</div>
+          <div class="font-semibold mt-1">${fmtMoney(s.contract_liabilities || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Receivables from contracts</div>
+          <div class="font-semibold mt-1">${fmtMoney(s.gross_receivables_from_contracts || 0)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 const NOTES_REGISTRY = {
-ifrs16: {
-  label: "IFRS 16 Lease disclosures",
-  fetch: async (cid, period) => {
-    const q = { include_terminated: "1" };
+  ifrs16: {
+    label: "IFRS 16 Lease disclosures",
+    fetch: async (cid, period) => {
+      const q = { include_terminated: "1" };
 
-    if (period.from && period.to) {
-      q.from = period.from;
-      q.to = period.to;
-      q.as_of = period.as_of || period.to;
-    } else {
-      q.preset = period.preset || "this_year";
+      if (period.from && period.to) {
+        q.from = period.from;
+        q.to = period.to;
+        q.as_of = period.as_of || period.to;
+      } else {
+        q.preset = period.preset || "this_year";
+      }
+
+      console.log("IFRS16 FINAL PARAMS:", q);
+
+      const url = ENDPOINTS.ifrs16.disclosure(cid, q);
+      const data = await window.apiFetch(url, { method: "GET" });
+
+      return {
+        data,
+        html: renderIFRS16DisclosureHTML(data),
+        meta: { q }
+      };
     }
+  },
 
-    console.log("IFRS16 FINAL PARAMS:", q);
+  ifrs15_revenue: {
+    label: "IFRS 15 Revenue disclosures",
+    fetch: async (cid, period) => {
+      const q = {};
 
-    const url = ENDPOINTS.ifrs16.disclosure(cid, q);
-    const data = await window.apiFetch(url, { method: "GET" });
+      if (period?.from && period?.to) {
+        q.date_from = period.from;
+        q.date_to = period.to;
+      } else {
+        const r = computePeriodRange(period?.preset || "this_year");
+        q.date_from = r?.from;
+        q.date_to = r?.to;
+      }
 
-    return {
-      data,
-      html: renderIFRS16DisclosureHTML(data),
-      meta: { q }
-    };
-  }
-},
+      if (!q.date_from || !q.date_to) {
+        throw new Error("Revenue disclosure requires date_from and date_to.");
+      }
+
+      const url = ENDPOINTS.revenue.disclosure(cid, q);
+      const resp = await window.apiFetch(url, { method: "GET" });
+      const payload = resp?.data || resp;
+
+      return {
+        data: payload,
+        html: renderRevenueDisclosureHTML(payload),
+        meta: { q, period },
+      };
+    }
+  },
 
   ias16_ppe: {
     label: "IAS 16 PPE disclosures",

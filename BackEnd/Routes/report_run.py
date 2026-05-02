@@ -47,6 +47,11 @@ from BackEnd.Services.reporting.revenue_reports import (
     build_revenue_runs_report,
 )
 
+from BackEnd.Services.reporting.disclosure_builders import (
+    build_ppe_disclosure,
+    build_lease_disclosure,
+)
+
 report_bp = Blueprint("report_bp", __name__)
 
 
@@ -1597,4 +1602,60 @@ def export_revenue_recognition_entries(company_id):
         return export_csv(payload, filename="revenue_recognition_entries.csv")
     except Exception as e:
         current_app.logger.exception("export_revenue_recognition_entries failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
+
+
+@report_bp.route("/api/companies/<int:company_id>/disclosures/ppe/export", methods=["GET"])
+def export_ppe_disclosure(company_id):
+    deny = _deny_report_export_access(company_id, "ppe_disclosure")
+    if deny:
+        return deny
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        payload = build_ppe_disclosure(
+            db=db,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(payload, "ppe_disclosure")
+
+    except Exception as e:
+        current_app.logger.exception("export_ppe_disclosure failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@report_bp.route("/api/companies/<int:company_id>/disclosures/leases/export", methods=["GET"])
+def export_lease_disclosure(company_id):
+    deny = _deny_report_export_access(company_id, "lease_disclosure")
+    if deny:
+        return deny
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        payload = build_lease_disclosure(
+            db=db,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            as_of=date_to,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(payload, "lease_disclosure")
+
+    except Exception as e:
+        current_app.logger.exception("export_lease_disclosure failed")
         return jsonify({"ok": False, "error": str(e)}), 400
