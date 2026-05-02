@@ -20540,31 +20540,21 @@ function bindReportsScreen() {
   const toggleBtn = document.getElementById("toggleFsNoteEditorBtn");
 
   if (toggleBtn) {
-    toggleBtn.addEventListener("click", () => {
+    toggleBtn.onclick = () => {
       const panel = document.getElementById("fsNotesPanel");
       if (!panel) return;
 
       panel.classList.toggle("hidden");
 
       if (!panel.classList.contains("hidden")) {
-        if (typeof loadFinancialStatementNote === "function") {
+        const noteKey = getEditorNoteKeyFromNotesPack();
 
-          const pack = document.getElementById("notesPack")?.value;
+        const fsNoteKeySel = document.getElementById("fsNoteKey");
+        if (fsNoteKeySel) fsNoteKeySel.value = noteKey;
 
-          const map = {
-            "ias16_ppe": "ias16_ppe_policy",
-            "ifrs16": "ifrs16_lease_policy",
-            "ifrs15_revenue": "ifrs15_revenue_policy",
-          };
-
-          const noteKey = map[pack] || "ifrs15_revenue_policy";
-
-          const fsNoteKeySel = document.getElementById("fsNoteKey");
-          if (fsNoteKeySel) fsNoteKeySel.value = noteKey;
-          loadFinancialStatementNote(noteKey);
-        }
+        loadFinancialStatementNote(noteKey);
       }
-    });
+    };
   }
   // ----------------------------
   // Export button
@@ -24243,6 +24233,18 @@ async function resetFinancialStatementNote() {
   }
 }
 
+function getEditorNoteKeyFromNotesPack() {
+  const pack = document.getElementById("notesPack")?.value;
+
+  const map = {
+    ifrs16: "ifrs16_lease_policy",
+    ias16_ppe: "ias16_ppe_policy",
+    ifrs15_revenue: "ifrs15_revenue_policy",
+  };
+
+  return map[pack] || "ifrs15_revenue_policy";
+}
+
 function bindFinancialStatementNotesEditor() {
   const loadBtn = document.getElementById("loadFsNoteBtn");
   const saveBtn = document.getElementById("saveFsNoteBtn");
@@ -24250,7 +24252,10 @@ function bindFinancialStatementNotesEditor() {
   const keySelect = document.getElementById("fsNoteKey");
 
   if (loadBtn) {
-    loadBtn.onclick = () => loadFinancialStatementNote();
+    loadBtn.onclick = () => {
+      const key = document.getElementById("fsNoteKey")?.value;
+      loadFinancialStatementNote(key);
+    };
   }
 
   if (saveBtn) {
