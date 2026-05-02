@@ -23641,25 +23641,54 @@ function renderRevenueDisclosureHTML(payload) {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div class="border rounded-lg p-3">
-          <div class="text-xs text-slate-500">Total revenue</div>
-          <div class="font-semibold mt-1">${fmtMoney(s.total_revenue || 0)}</div>
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">Revenue recognised in the period</div>
+        <div class="text-xs text-slate-500 mb-1">
+          Revenue recognised from contracts with customers during the reporting period.
         </div>
-
-        <div class="border rounded-lg p-3">
-          <div class="text-xs text-slate-500">Contract assets</div>
-          <div class="font-semibold mt-1">${fmtMoney(s.contract_assets || 0)}</div>
+        <div class="text-lg font-semibold">
+          ${fmtMoney(s.total_revenue || 0)}
         </div>
+      </div>
 
-        <div class="border rounded-lg p-3">
-          <div class="text-xs text-slate-500">Contract liabilities</div>
-          <div class="font-semibold mt-1">${fmtMoney(s.contract_liabilities || 0)}</div>
-        </div>
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">Contract balances</div>
 
-        <div class="border rounded-lg p-3">
-          <div class="text-xs text-slate-500">Receivables from contracts</div>
-          <div class="font-semibold mt-1">${fmtMoney(s.gross_receivables_from_contracts || 0)}</div>
+        <div class="overflow-auto">
+          <table class="w-full text-xs border">
+            <thead>
+              <tr class="bg-slate-50">
+                <th class="p-2 border text-left">Balance type</th>
+                <th class="p-2 border text-left">Explanation</th>
+                <th class="p-2 border text-right">Closing balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="p-2 border">Contract assets</td>
+                <td class="p-2 border">Revenue recognised exceeds amounts billed.</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(s.contract_assets || payload?.contract_assets || 0)}
+                </td>
+              </tr>
+
+              <tr>
+                <td class="p-2 border">Contract liabilities / deferred income</td>
+                <td class="p-2 border">Amounts billed exceed revenue recognised.</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(s.contract_liabilities || payload?.contract_liabilities || 0)}
+                </td>
+              </tr>
+
+              <tr>
+                <td class="p-2 border">Receivables from contracts</td>
+                <td class="p-2 border">Unconditional rights to consideration from customers.</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(s.gross_receivables_from_contracts || receivables?.gross_receivables || 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
