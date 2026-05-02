@@ -23414,11 +23414,18 @@ function getCurrentStmtPeriodForNotes() {
 }
 
 function saveRenderedNotesState(noteKey, html, meta = {}) {
+  const q = meta.q || {};
+  const p = meta.period || {};
+
   window._notesState = {
     noteKey,
     html,
     meta,
-    period: meta.period || meta.q || null,
+    period: {
+      from: q.date_from || p.from || null,
+      to: q.date_to || p.to || null,
+      preset: p.preset || null,
+    },
     renderedAt: new Date().toISOString(),
   };
 }
@@ -23663,20 +23670,39 @@ const NOTES_REGISTRY = {
   ifrs15_revenue: {
     label: "IFRS 15 Revenue disclosures",
     fetch: async (cid, period) => {
-      const p = period?.params || period || {};
       const q = {};
 
-      if (p.from && p.to) {
-        q.date_from = p.from;
-        q.date_to = p.to;
-      } else if (p.preset || period?.preset) {
-        const r = computePeriodRange(p.preset || period.preset || "this_year");
-        q.date_from = r?.from;
-        q.date_to = r?.to;
-      }
+      const p = period?.params || period || {};
+
+      q.date_from =
+        p.date_from ||
+        p.from ||
+        period?.from ||
+        window._stmtPeriod?.from;
+
+      q.date_to =
+        p.date_to ||
+        p.to ||
+        period?.to ||
+        window._stmtPeriod?.to;
 
       if (!q.date_from || !q.date_to) {
-        console.warn("Revenue disclosure period problem:", { period, p, q });
+        const preset =
+          p.preset ||
+          period?.preset ||
+          window._stmtPeriod?.preset ||
+          document.getElementById("stmtPreset")?.value ||
+          "this_year";
+
+        const r = computePeriodRange(preset);
+
+        q.date_from = r?.from || null;
+        q.date_to = r?.to || null;
+      }
+
+      console.log("IFRS15 disclosure params:", { period, p, q });
+
+      if (!q.date_from || !q.date_to) {
         throw new Error("Revenue disclosure requires date_from and date_to.");
       }
 
@@ -23687,7 +23713,14 @@ const NOTES_REGISTRY = {
       return {
         data: payload,
         html: renderRevenueDisclosureHTML(payload),
-        meta: { q, period },
+        meta: {
+          q,
+          period: {
+            from: q.date_from,
+            to: q.date_to,
+            preset: window._stmtPeriod?.preset || null,
+          },
+        },
       };
     }
   },
