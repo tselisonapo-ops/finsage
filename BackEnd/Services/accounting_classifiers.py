@@ -981,18 +981,38 @@ def _coa_role_from_text(
         ):
             return "loan_payable_noncurrent"
 
-        if has_any("accrued interest", "interest payable"):
+        # Loan interest accrual only — do not classify generic Accrued Expenses
+        if has_any(
+            "accrued interest",
+            "interest payable",
+            "accrued interest expense",
+            "loan interest payable",
+            "loan interest accrued",
+        ):
             return "loan_accrued_interest"
 
     if is_expense:
-        if has_any("lease interest"):
+        # --- Lease interest (must stay separate) ---
+        if has_any("lease interest", "interest on lease"):
             return "lease_interest_expense"
 
-        if has_any("interest expense", "finance cost", "borrowing cost"):
-            if not has_any("lease interest"):
+        # --- Loan interest ONLY ---
+        if has_any(
+            "interest expense",
+            "loan interest",
+            "interest on loan",
+            "overdraft interest",
+        ):
+            if not has_any("lease"):
                 return "loan_interest_expense"
 
-        if has_any("loan fee expense", "facility fee expense", "arrangement fee expense"):
+        # --- Loan fees ---
+        if has_any(
+            "loan fee expense",
+            "facility fee",
+            "arrangement fee",
+            "bank facility fee",
+        ):
             return "loan_fees_expense"
 
     if is_asset:
