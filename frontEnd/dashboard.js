@@ -24227,21 +24227,26 @@ async function resetFinancialStatementNote() {
 }
 
 function bindFinancialStatementNotesEditor() {
-  document.getElementById("loadFsNoteBtn")?.addEventListener("click", () => {
-    loadFinancialStatementNote();
-  });
+  const loadBtn = document.getElementById("loadFsNoteBtn");
+  const saveBtn = document.getElementById("saveFsNoteBtn");
+  const resetBtn = document.getElementById("resetFsNoteBtn");
+  const keySelect = document.getElementById("fsNoteKey");
 
-  document.getElementById("saveFsNoteBtn")?.addEventListener("click", () => {
-    saveFinancialStatementNote();
-  });
+  if (loadBtn) {
+    loadBtn.onclick = () => loadFinancialStatementNote();
+  }
 
-  document.getElementById("resetFsNoteBtn")?.addEventListener("click", () => {
-    resetFinancialStatementNote();
-  });
+  if (saveBtn) {
+    saveBtn.onclick = () => saveFinancialStatementNote();
+  }
 
-  document.getElementById("fsNoteKey")?.addEventListener("change", (e) => {
-    loadFinancialStatementNote(e.target.value);
-  });
+  if (resetBtn) {
+    resetBtn.onclick = () => resetFinancialStatementNote();
+  }
+
+  if (keySelect) {
+    keySelect.onchange = (e) => loadFinancialStatementNote(e.target.value);
+  }
 }
 
 function num(v) {
