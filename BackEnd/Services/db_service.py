@@ -44397,9 +44397,17 @@ class DatabaseService:
         """
 
         cur.execute(sql, params)
-        cols = [d[0] for d in cur.description]
         rows = cur.fetchall()
-        return [dict(zip(cols, row)) for row in rows]
+
+        out = []
+        for row in rows:
+            if isinstance(row, dict):
+                out.append(dict(row))  # already a dict → keep as-is
+            else:
+                cols = [d[0] for d in cur.description]
+                out.append(dict(zip(cols, row)))  # tuple → map properly
+
+        return out
 
     def get_ppe_asset_rollforward(
         self,
