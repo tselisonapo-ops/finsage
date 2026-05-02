@@ -62221,7 +62221,15 @@ class DatabaseService:
 
         return dict(row or {})
 
-    def build_ppe_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
+    def build_ppe_policy_note_text(
+        self,
+        company_id: int,
+        date_from,
+        date_to,
+        *,
+        cur=None,
+    ) -> str:
+
         if cur is None:
             with self._conn_cursor() as (_conn, cur):
                 return self.build_ppe_policy_note_text(
@@ -62233,39 +62241,54 @@ class DatabaseService:
 
         summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to)
 
-        closing_carrying = _money(summary.get("closing_carrying"))
-        additions = _money(summary.get("additions_cost")) + _money(summary.get("subsequent_additions_cost"))
-        depreciation = _money(summary.get("depreciation_charge"))
-        impairment_losses = _money(summary.get("impairment_losses"))
-        revaluation_upward = _money(summary.get("revaluation_upward"))
-        revaluation_downward = _money(summary.get("revaluation_downward"))
+        def fmt(v):
+            try:
+                return f"{float(v or 0):,.2f}"
+            except Exception:
+                return "0.00"
 
+        closing_carrying = fmt(summary.get("closing_carrying"))
+        additions = fmt(
+            (summary.get("additions_cost") or 0)
+            + (summary.get("subsequent_additions_cost") or 0)
+        )
+        depreciation = fmt(summary.get("depreciation_charge"))
+        impairment_losses = float(summary.get("impairment_losses") or 0)
+        revaluation_upward = float(summary.get("revaluation_upward") or 0)
+        revaluation_downward = float(summary.get("revaluation_downward") or 0)
+
+        # -----------------------------------
+        # Optional movements section
+        # -----------------------------------
         extra_lines = []
 
         if impairment_losses:
             extra_lines.append(
-                f"Impairment losses recognised during the reporting period amounted to R{impairment_losses:,.2f}."
+                f"Impairment losses recognised during the reporting period amounted to R{fmt(impairment_losses)}."
             )
 
         if revaluation_upward or revaluation_downward:
             extra_lines.append(
-                f"Revaluation movements recognised during the reporting period comprised upward revaluations of R{revaluation_upward:,.2f} and downward revaluations of R{revaluation_downward:,.2f}."
+                f"Revaluation movements recognised during the reporting period comprised upward revaluations of R{fmt(revaluation_upward)} and downward revaluations of R{fmt(revaluation_downward)}."
             )
 
         extra_text = "\n\n".join(extra_lines)
 
+        # -----------------------------------
+        # Final note (IAS 1 structured)
+        # -----------------------------------
         return f"""
-    Property, plant and equipment are initially recognised at cost. Cost includes the purchase price and expenditure directly attributable to bringing the asset to the location and condition necessary for it to operate in the manner intended by management.
+    Property, plant and equipment are initially recognised at cost. Cost includes the purchase price and any costs directly attributable to bringing the asset to the location and condition necessary for it to operate as intended by management.
 
-    Subsequent expenditure is capitalised only when it is probable that future economic benefits associated with the item will flow to the company and the cost can be measured reliably. Day-to-day repairs and maintenance are recognised in profit or loss as incurred.
+    Subsequent expenditure is capitalised only when it is probable that future economic benefits associated with the item will flow to the company and the cost can be measured reliably. All other repairs and maintenance are recognised in profit or loss as incurred.
 
-    Property, plant and equipment are subsequently measured at cost less accumulated depreciation and accumulated impairment losses, unless a different measurement basis is applied to a specific class of assets. Depreciation is recognised so as to allocate the depreciable amount of each asset over its estimated useful life.
+    Property, plant and equipment are subsequently measured at cost less accumulated depreciation and accumulated impairment losses, unless a revaluation model is applied to specific asset classes.
 
-    The residual values, useful lives and depreciation methods of assets are reviewed at each reporting date. Changes in estimates are accounted for prospectively.
+    Depreciation is recognised so as to allocate the depreciable amount of assets over their estimated useful lives. The residual values, useful lives and depreciation methods are reviewed at each reporting date and adjusted prospectively where necessary.
 
-    Management applies judgement in determining the useful lives, residual values and depreciation methods of property, plant and equipment. These estimates are based on expected usage, wear and tear, technical or commercial obsolescence and asset replacement plans.
+    The determination of useful lives, residual values and depreciation methods requires the use of judgement and is based on expected usage of the assets, physical wear and tear, technical or commercial obsolescence, and asset replacement strategies.
 
-    During the reporting period, additions to property, plant and equipment amounted to R{additions:,.2f}. Depreciation charged for the period amounted to R{depreciation:,.2f}. The closing carrying amount of property, plant and equipment was R{closing_carrying:,.2f}.
+    During the reporting period, additions to property, plant and equipment amounted to R{additions}. Depreciation charged for the period amounted to R{depreciation}. The closing carrying amount of property, plant and equipment was R{closing_carrying}.
     {extra_text}
     """.strip()
 
