@@ -23609,8 +23609,31 @@ function renderPPENoteHTML(payload) {
 function renderRevenueDisclosureHTML(payload) {
   const s = payload?.summary || {};
 
+  const byCategory = Array.isArray(payload?.revenue_by_category)
+    ? payload.revenue_by_category
+    : [];
+
+  const timing = Array.isArray(payload?.revenue_timing)
+    ? payload.revenue_timing
+    : [];
+
+  const unsatisfied = Array.isArray(payload?.unsatisfied_performance_obligations)
+    ? payload.unsatisfied_performance_obligations
+    : [];
+
+  const judgments = Array.isArray(payload?.significant_judgments?.items)
+    ? payload.significant_judgments.items
+    : [];
+
+  const receivables = payload?.receivables_from_contracts || {};
+
+  const tableEmpty = `
+    <div class="text-xs text-slate-500">No data available for this section.</div>
+  `;
+
   return `
     <div class="text-sm space-y-4">
+
       <div>
         <div class="font-semibold text-slate-800">IFRS 15 Revenue disclosures</div>
         <div class="text-slate-500 text-xs mt-0.5">
@@ -23623,19 +23646,224 @@ function renderRevenueDisclosureHTML(payload) {
           <div class="text-xs text-slate-500">Total revenue</div>
           <div class="font-semibold mt-1">${fmtMoney(s.total_revenue || 0)}</div>
         </div>
+
         <div class="border rounded-lg p-3">
           <div class="text-xs text-slate-500">Contract assets</div>
           <div class="font-semibold mt-1">${fmtMoney(s.contract_assets || 0)}</div>
         </div>
+
         <div class="border rounded-lg p-3">
           <div class="text-xs text-slate-500">Contract liabilities</div>
           <div class="font-semibold mt-1">${fmtMoney(s.contract_liabilities || 0)}</div>
         </div>
+
         <div class="border rounded-lg p-3">
           <div class="text-xs text-slate-500">Receivables from contracts</div>
           <div class="font-semibold mt-1">${fmtMoney(s.gross_receivables_from_contracts || 0)}</div>
         </div>
       </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">1. Revenue by category</div>
+        ${
+          byCategory.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Category</th>
+                      <th class="p-2 border text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${byCategory.map(r => `
+                      <tr>
+                        <td class="p-2 border">${escHtml(r.category || "Uncategorised")}</td>
+                        <td class="p-2 border text-right">${fmtMoney(r.amount || 0)}</td>
+                      </tr>
+                    `).join("")}
+                    <tr class="font-semibold bg-slate-50">
+                      <td class="p-2 border">Total</td>
+                      <td class="p-2 border text-right">${fmtMoney(s.total_revenue || 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            `
+            : tableEmpty
+        }
+      </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">2. Revenue timing</div>
+        ${
+          timing.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Recognition timing</th>
+                      <th class="p-2 border text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${timing.map(r => `
+                      <tr>
+                        <td class="p-2 border">
+                          ${escHtml(
+                            String(r.timing || "unknown")
+                              .replaceAll("_", " ")
+                              .replace(/\b\w/g, c => c.toUpperCase())
+                          )}
+                        </td>
+                        <td class="p-2 border text-right">${fmtMoney(r.amount || 0)}</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : tableEmpty
+        }
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">3. Contract assets</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between">
+              <span>Closing contract assets</span>
+              <b>${fmtMoney(s.contract_assets || payload?.contract_assets || 0)}</b>
+            </div>
+            <div class="text-slate-500 mt-2">
+              Contract assets arise when revenue recognised exceeds amounts billed to customers.
+            </div>
+          </div>
+        </div>
+
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">4. Contract liabilities / deferred income</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between">
+              <span>Closing contract liabilities</span>
+              <b>${fmtMoney(s.contract_liabilities || payload?.contract_liabilities || 0)}</b>
+            </div>
+            <div class="text-slate-500 mt-2">
+              Contract liabilities arise when amounts billed exceed revenue recognised.
+            </div>
+          </div>
+        </div>
+
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">5. Receivables from contracts</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between">
+              <span>Gross receivables</span>
+              <b>${fmtMoney(
+                s.gross_receivables_from_contracts ||
+                receivables.gross_receivables ||
+                0
+              )}</b>
+            </div>
+            <div class="text-slate-500 mt-2">
+              Receivables represent unconditional rights to consideration from customers.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">6. Unsatisfied performance obligations</div>
+        ${
+          unsatisfied.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Contract</th>
+                      <th class="p-2 border text-left">Obligation</th>
+                      <th class="p-2 border text-left">Timing</th>
+                      <th class="p-2 border text-left">Expected completion</th>
+                      <th class="p-2 border text-right">Allocated price</th>
+                      <th class="p-2 border text-right">Revenue to date</th>
+                      <th class="p-2 border text-right">Remaining</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${unsatisfied.map(r => `
+                      <tr>
+                        <td class="p-2 border">
+                          ${escHtml(r.contract_number || "")}
+                          ${r.contract_title ? `<div class="text-slate-500">${escHtml(r.contract_title)}</div>` : ""}
+                        </td>
+                        <td class="p-2 border">${escHtml(r.obligation_name || "")}</td>
+                        <td class="p-2 border">${escHtml(String(r.recognition_timing || "").replaceAll("_", " "))}</td>
+                        <td class="p-2 border">${escHtml(r.end_date || "")}</td>
+                        <td class="p-2 border text-right">${fmtMoney(r.allocated_transaction_price || 0)}</td>
+                        <td class="p-2 border text-right">${fmtMoney(r.revenue_to_date || 0)}</td>
+                        <td class="p-2 border text-right font-semibold">${fmtMoney(r.remaining_amount || 0)}</td>
+                      </tr>
+                    `).join("")}
+                    <tr class="font-semibold bg-slate-50">
+                      <td class="p-2 border" colspan="6">Total remaining unsatisfied obligations</td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(unsatisfied.reduce((t, r) => t + Number(r.remaining_amount || 0), 0))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            `
+            : tableEmpty
+        }
+      </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">7. Significant judgments</div>
+
+        <div class="text-xs text-slate-600 mb-3">
+          ${escHtml(payload?.significant_judgments?.basis || "Judgments are based on recognition timing, progress methods, billing methods, financing components and variable consideration.")}
+        </div>
+
+        ${
+          judgments.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Recognition timing</th>
+                      <th class="p-2 border text-left">Progress method</th>
+                      <th class="p-2 border text-left">Recognition trigger</th>
+                      <th class="p-2 border text-left">Billing method</th>
+                      <th class="p-2 border text-left">Significant financing</th>
+                      <th class="p-2 border text-right">Variable consideration estimate</th>
+                      <th class="p-2 border text-right">Constrained amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${judgments.map(r => `
+                      <tr>
+                        <td class="p-2 border">${escHtml(String(r.recognition_timing || "").replaceAll("_", " "))}</td>
+                        <td class="p-2 border">${escHtml(String(r.progress_method || "N/A").replaceAll("_", " "))}</td>
+                        <td class="p-2 border">${escHtml(String(r.recognition_trigger || "N/A").replaceAll("_", " "))}</td>
+                        <td class="p-2 border">${escHtml(String(r.billing_method || "N/A").replaceAll("_", " "))}</td>
+                        <td class="p-2 border">${r.has_significant_financing_component ? "Yes" : "No"}</td>
+                        <td class="p-2 border text-right">${fmtMoney(r.variable_consideration_est || 0)}</td>
+                        <td class="p-2 border text-right">${fmtMoney(r.variable_consideration_constrained || 0)}</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : tableEmpty
+        }
+      </div>
+
     </div>
   `;
 }
