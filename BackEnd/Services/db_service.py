@@ -62236,13 +62236,29 @@ class DatabaseService:
         *,
         cur=None,
     ) -> dict:
+        # Build the fresh system draft first
+        built = self.get_or_build_financial_statement_note(
+            company_id=company_id,
+            note_key=note_key,
+            period_from=period_from,
+            period_to=period_to,
+            cur=cur,
+        )
+
+        fresh_system_draft = built.get("system_draft") or built.get("content_text") or ""
+        fresh_hash = _note_hash(fresh_system_draft)
+        note_title = built.get("note_title") or note_key
+
         schema = self.company_schema(company_id)
 
         row = self.fetch_one(
             f"""
             UPDATE {schema}.financial_statement_notes
             SET
-                content_text = COALESCE(system_draft, content_text),
+                note_title = %s,
+                content_text = %s,
+                system_draft = %s,
+                last_generated_hash = %s,
                 source = 'system',
                 is_custom = FALSE,
                 updated_at = NOW()
@@ -62252,11 +62268,24 @@ class DatabaseService:
             AND period_to IS NOT DISTINCT FROM %s
             RETURNING *;
             """,
-            (int(company_id), note_key, period_from, period_to),
+            (
+                note_title,
+                fresh_system_draft,
+                fresh_system_draft,
+                fresh_hash,
+                int(company_id),
+                note_key,
+                period_from,
+                period_to,
+            ),
             cur=cur,
         )
 
-        return dict(row or {})
+        note = dict(row or {})
+        note["current_generated_hash"] = fresh_hash
+        note["is_outdated"] = False
+
+        return note
 
     def build_ppe_policy_note_text(
         self,
