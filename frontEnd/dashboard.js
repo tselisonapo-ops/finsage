@@ -23418,6 +23418,7 @@ function saveRenderedNotesState(noteKey, html, meta = {}) {
     noteKey,
     html,
     meta,
+    period: meta.period || meta.q || null,
     renderedAt: new Date().toISOString(),
   };
 }
@@ -23662,18 +23663,20 @@ const NOTES_REGISTRY = {
   ifrs15_revenue: {
     label: "IFRS 15 Revenue disclosures",
     fetch: async (cid, period) => {
+      const p = period?.params || period || {};
       const q = {};
 
-      if (period?.from && period?.to) {
-        q.date_from = period.from;
-        q.date_to = period.to;
-      } else {
-        const r = computePeriodRange(period?.preset || "this_year");
+      if (p.from && p.to) {
+        q.date_from = p.from;
+        q.date_to = p.to;
+      } else if (p.preset || period?.preset) {
+        const r = computePeriodRange(p.preset || period.preset || "this_year");
         q.date_from = r?.from;
         q.date_to = r?.to;
       }
 
       if (!q.date_from || !q.date_to) {
+        console.warn("Revenue disclosure period problem:", { period, p, q });
         throw new Error("Revenue disclosure requires date_from and date_to.");
       }
 
