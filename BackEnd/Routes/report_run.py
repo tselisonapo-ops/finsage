@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, g
 
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
@@ -12,6 +12,7 @@ from BackEnd.Services.reporting.vat_reports import build_vat_report
 from BackEnd.Services.period_core import resolve_company_period
 from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
 from BackEnd.Services.reporting.journal_reports import build_journal_register, export_xlsx
+from BackEnd.Services.credit_policy import can_manage_fs_notes
 from BackEnd.Services.reporting.lease_reports import (
     build_lease_monthly_due_report,
     build_lease_payments_report,
@@ -50,6 +51,7 @@ from BackEnd.Services.reporting.revenue_reports import (
 from BackEnd.Services.reporting.disclosure_builders import (
     build_ppe_disclosure,
     build_lease_disclosure,
+    build_revenue_disclosure,
 )
 
 report_bp = Blueprint("report_bp", __name__)
@@ -1659,3 +1661,160 @@ def export_lease_disclosure(company_id):
     except Exception as e:
         current_app.logger.exception("export_lease_disclosure failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+    
+@report_bp.route("/api/companies/<int:company_id>/disclosures/revenue/export", methods=["GET"])
+def export_revenue_disclosure(company_id):
+    deny = _deny_report_export_access(company_id, "revenue_disclosure")
+    if deny:
+        return deny
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        payload = build_revenue_disclosure(
+            db=db,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(payload, "revenue_disclosure")
+
+    except Exception as e:
+        current_app.logger.exception("export_revenue_disclosure failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@report_bp.route("/api/companies/<int:company_id>/fs-notes/<string:note_key>", methods=["GET"])
+@require_auth
+def get_fs_note(company_id, note_key):
+    user = getattr(g, "current_user", {}) or {}
+
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        note = db.get_or_build_financial_statement_note(
+            company_id=company_id,
+            note_key=note_key,
+            period_from=date_from,
+            period_to=date_to,
+        )
+
+        return jsonify({"ok": True, "note": note, "period_meta": meta}), 200
+
+    except Exception as e:
+        current_app.logger.exception("get_fs_note failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
+@report_bp.route("/api/companies/<int:company_id>/fs-notes/<string:note_key>", methods=["POST"])
+@require_auth
+def save_fs_note(company_id, note_key):
+    user = getattr(g, "current_user", {}) or {}
+
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
+
+    if not can_manage_fs_notes(user):
+        return jsonify({"ok": False, "error": "Only senior finance or governance roles can edit financial statement notes"}), 403
+
+    try:
+        db = _get_db()
+        payload = request.get_json(force=True, silent=True) or {}
+        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        before = db.get_or_build_financial_statement_note(
+            company_id=company_id,
+            note_key=note_key,
+            period_from=date_from,
+            period_to=date_to,
+        )
+
+        note = db.save_financial_statement_note(
+            company_id=company_id,
+            note_key=note_key,
+            note_title=payload.get("note_title") or before.get("note_title") or note_key,
+            period_from=date_from,
+            period_to=date_to,
+            content_text=payload.get("content_text") or "",
+            system_draft=before.get("system_draft"),
+            source="user",
+            is_custom=True,
+            payload_json=payload.get("payload_json") or {},
+        )
+
+        db.audit_log(
+            company_id=company_id,
+            actor_user_id=int(user.get("id") or 0),
+            module="financial_statements",
+            action="update",
+            severity="warning",
+            entity_type="financial_statement_note",
+            entity_id=str(note.get("id") or note_key),
+            entity_ref=note_key,
+            before_json=before or {},
+            after_json=note or {},
+            message=f"Financial statement note updated: {note_key}",
+        )
+
+        return jsonify({"ok": True, "note": note, "period_meta": meta}), 200
+
+    except Exception as e:
+        current_app.logger.exception("save_fs_note failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
+@report_bp.route("/api/companies/<int:company_id>/fs-notes/<string:note_key>/reset", methods=["POST"])
+@require_auth
+def reset_fs_note(company_id, note_key):
+    user = getattr(g, "current_user", {}) or {}
+
+    if int(user.get("company_id") or 0) != int(company_id):
+        return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
+
+    if not can_manage_fs_notes(user):
+        return jsonify({"ok": False, "error": "Only senior finance or governance roles can reset financial statement notes"}), 403
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        before = db.get_or_build_financial_statement_note(
+            company_id=company_id,
+            note_key=note_key,
+            period_from=date_from,
+            period_to=date_to,
+        )
+
+        note = db.reset_financial_statement_note(
+            company_id=company_id,
+            note_key=note_key,
+            period_from=date_from,
+            period_to=date_to,
+        )
+
+        db.audit_log(
+            company_id=company_id,
+            actor_user_id=int(user.get("id") or 0),
+            module="financial_statements",
+            action="reset",
+            severity="warning",
+            entity_type="financial_statement_note",
+            entity_id=str(note.get("id") or note_key),
+            entity_ref=note_key,
+            before_json=before or {},
+            after_json=note or {},
+            message=f"Financial statement note reset to system draft: {note_key}",
+        )
+
+        return jsonify({"ok": True, "note": note, "period_meta": meta}), 200
+
+    except Exception as e:
+        current_app.logger.exception("reset_fs_note failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    

@@ -2262,6 +2262,7 @@ tbody tr {
 
               <div class="flex flex-wrap gap-2 items-center">
                 <span class="text-xs font-medium text-slate-500">Statements Notes</span>
+
                 <select id="notesPack" class="px-3 py-2 border rounded text-sm">
                   <option value="ifrs16">IFRS 16 Lease disclosures</option>
                   <option value="ias16_ppe">IAS 16 PPE disclosures</option>
@@ -2272,6 +2273,53 @@ tbody tr {
                   class="px-3 py-2 bg-[var(--fs-teal)] text-white rounded shadow-sage">
                   Generate Notes
                 </button>
+
+                <button id="toggleFsNoteEditorBtn"
+                  class="px-3 py-2 border rounded text-sm">
+                  Edit Notes
+                </button>
+              </div>
+            </div>
+
+            <div id="fsNotesPanel" class="hidden mt-4 border rounded-xl bg-white shadow-sm p-4">
+              <div class="flex flex-wrap gap-2 items-center justify-between">
+                <div>
+                  <h3 class="font-bold text-slate-800">Financial Statement Notes Editor</h3>
+                  <p class="text-xs text-slate-500">Review, edit and save notes before export.</p>
+                </div>
+
+                <div class="flex flex-wrap gap-2 items-center">
+                  <select id="fsNoteKey" class="px-3 py-2 border rounded text-sm">
+                    <option value="ias16_ppe_policy">IAS 16 PPE policy note</option>
+                    <option value="ifrs16_lease_policy">IFRS 16 lease policy note</option>
+                    <option value="ifrs15_revenue_policy">IFRS 15 revenue policy note</option>
+                    <option value="ifrs15_revenue_disclosure">IFRS 15 revenue disclosure note</option>
+                  </select>
+
+                  <button id="loadFsNoteBtn" class="btn">Load</button>
+                  <button id="saveFsNoteBtn" class="btn-highlight">Save</button>
+                  <button id="resetFsNoteBtn" class="btn-secondary">Reset</button>
+                </div>
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-2 items-center">
+                <span id="fsNoteStatus" class="pill">Not loaded</span>
+                <span id="fsNotePeriod" class="text-xs text-slate-500"></span>
+              </div>
+
+              <input id="fsNoteTitleInput"
+                class="mt-3 w-full px-3 py-2 border rounded text-sm font-semibold"
+                placeholder="Note title" />
+
+              <textarea id="fsNoteEditor"
+                class="mt-3 w-full border rounded p-3 text-sm leading-6"
+                style="min-height:300px;"
+                placeholder="Load a note to edit..."></textarea>
+
+              <div class="mt-3">
+                <div class="text-xs font-semibold text-slate-500 mb-1">System draft preview</div>
+                <pre id="fsNoteSystemDraft"
+                  class="text-xs bg-slate-50 border rounded p-3 whitespace-pre-wrap max-h-44 overflow-auto"></pre>
               </div>
             </div>
 

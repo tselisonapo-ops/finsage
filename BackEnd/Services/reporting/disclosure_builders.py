@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List
-
+from BackEnd.Services.reporting.revenue_disclosure_builder import build_revenue_disclosure_payload
 
 def _d(v: Any) -> Decimal:
     try:
@@ -366,3 +366,89 @@ def _ifrs16_strict_to_rows(strict: Dict[str, Any]) -> List[Dict[str, Any]]:
             add(label, maturity.get(key, 0))
 
     return rows
+
+def build_revenue_disclosure(
+    db,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+) -> Dict[str, Any]:
+    """
+    IFRS 15 revenue disclosure document/export builder.
+    Converts revenue disclosure data into rows suitable for PDF, Excel and CSV export.
+    """
+
+    ctx = db.get_company_context(company_id) if hasattr(db, "get_company_context") else {}
+    ctx = ctx or {}
+
+    data = build_revenue_disclosure_payload(
+        db,
+        company_id,
+        date_from,
+        date_to,
+    )
+
+    summary = data.get("summary") or {}
+    timing = data.get("revenue_timing") or []
+    categories = data.get("revenue_by_category") or []
+    unsatisfied = data.get("unsatisfied_performance_obligations") or []
+
+    rows = [
+        {
+            "label": "Revenue recognised",
+            "values": {"amount": _money(summary.get("total_revenue"))},
+            "row_type": "total",
+        },
+        {
+            "label": "Contract assets",
+            "values": {"amount": _money(summary.get("contract_assets"))},
+        },
+        {
+            "label": "Contract liabilities",
+            "values": {"amount": _money(summary.get("contract_liabilities"))},
+        },
+        {
+            "label": "Receivables from contracts with customers",
+            "values": {"amount": _money(summary.get("gross_receivables_from_contracts"))},
+        },
+    ]
+
+    if timing:
+        rows.append({"label": "Revenue by timing of recognition", "values": {}, "row_type": "header"})
+        for r in timing:
+            rows.append({
+                "label": r.get("timing") or "Unknown",
+                "values": {"amount": _money(r.get("amount"))},
+            })
+
+    if categories:
+        rows.append({"label": "Revenue by category", "values": {}, "row_type": "header"})
+        for r in categories:
+            rows.append({
+                "label": r.get("category") or "Uncategorised",
+                "values": {"amount": _money(r.get("amount"))},
+            })
+
+    remaining_total = sum(_money(r.get("remaining_amount")) for r in unsatisfied)
+    if remaining_total:
+        rows.append({"label": "Unsatisfied performance obligations", "values": {}, "row_type": "header"})
+        rows.append({
+            "label": "Transaction price allocated to unsatisfied or partially unsatisfied performance obligations",
+            "values": {"amount": _money(remaining_total)},
+            "row_type": "total",
+        })
+
+    return {
+        "meta": {
+            "company_id": company_id,
+            "company_name": ctx.get("company_name") or ctx.get("name"),
+            "currency": ctx.get("currency") or "ZAR",
+            "statement": "revenue_disclosure",
+            "report_name": "Revenue Disclosure",
+            "standard": "IFRS 15",
+            "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+        },
+        "columns": [{"key": "amount", "label": "Amount"}],
+        "rows": rows,
+        "source": data,
+    }

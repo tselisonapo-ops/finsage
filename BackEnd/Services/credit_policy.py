@@ -1,6 +1,11 @@
 from BackEnd.Services.company_context import normalize_role
+from BackEnd.Services.company import company_role, is_company_owner
+
+
 from flask import jsonify
 import sys
+from typing import Optional
+
 from typing import Optional
 
 if sys.version_info >= (3, 10):
@@ -994,3 +999,66 @@ def can_manage_loans(user: dict, company_profile: dict, mode: str) -> bool:
 def can_release_loan_funds(user: dict, company_profile: dict) -> bool:
     role = company_role(user)
     return is_company_owner(user, company_profile) or role in {"cfo", "admin"}
+
+def can_manage_fs_notes(user: dict, company_profile: dict, mode: str) -> bool:
+    """
+    Controls who can EDIT financial statement notes (high governance action).
+    """
+
+    if not user:
+        return False
+
+    # Assignment context → allow senior practitioner roles
+    from BackEnd.Services.company import is_assignment_execution_context
+    if is_assignment_execution_context(user):
+        role = normalize_role(
+            user.get("user_role")
+            or user.get("role")
+            or user.get("system_role")
+            or ""
+        )
+
+        return role in {
+            "reviewer",
+            "audit_manager",
+            "client_service_manager",
+            "engagement_partner",
+            "quality_control_reviewer",
+            "audit_partner",
+            "owner",
+            "admin",
+        }
+
+    # Core company context
+    role = company_role(user)
+    is_owner = is_company_owner(user, company_profile)
+
+    mode = (mode or "owner_managed").strip().lower()
+
+    # -------------------------
+    # OWNER MANAGED
+    # -------------------------
+    if mode == "owner_managed":
+        return is_owner or role in {
+            "admin",
+            "cfo",
+            "manager",
+            "senior",
+        }
+
+    # -------------------------
+    # ASSISTED
+    # -------------------------
+    if mode == "assisted":
+        return is_owner or role in {
+            "admin",
+            "cfo",
+        }
+
+    # -------------------------
+    # CONTROLLED (STRICT GOVERNANCE)
+    # -------------------------
+    return is_owner or role in {
+        "admin",
+        "cfo",
+    }

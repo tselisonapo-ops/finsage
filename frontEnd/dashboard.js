@@ -2012,6 +2012,26 @@ const ENDPOINTS = {
     revenueRecognitionRunsExport: (cid) => `/api/companies/${cid}/reports/revenue-recognition-runs/export`,
 
     revenueRecognitionEntriesExport: (cid) => `/api/companies/${cid}/reports/revenue-recognition-entries/export`,
+
+    ppeDisclosureExport: (cid) =>
+      `/api/companies/${cid}/disclosures/ppe/export`,
+
+    leaseDisclosureExport: (cid) =>
+      `/api/companies/${cid}/disclosures/leases/export`,
+
+    revenueDisclosureExport: (cid) =>
+      `/api/companies/${cid}/disclosures/revenue/export`,
+
+    // ---------------------------------
+    // Editable financial statement notes
+    // GET = load note
+    // POST = save note
+    // ---------------------------------
+    fsNote: (cid, noteKey) =>
+      `/api/companies/${cid}/fs-notes/${encodeURIComponent(noteKey)}`,
+
+    fsNoteReset: (cid, noteKey) =>
+      `/api/companies/${cid}/fs-notes/${encodeURIComponent(noteKey)}/reset`,
   },
 
   // --- Dashboard / snapshots ---
@@ -6919,6 +6939,9 @@ function inferReportKeyFromExportUrl(url) {
     ["/statements/income-statement/export", "income_statement"],
     ["/statements/cash-flow/export", "cash_flow"],
     ["/statements/socie/export", "socie"],
+    ["/disclosures/ppe/export", "ppe_disclosure"],
+    ["/disclosures/leases/export", "lease_disclosure"],
+    ["/disclosures/revenue/export", "revenue_disclosure"],
   ];
 
   return map.find(([needle]) => s.includes(needle))?.[1] || null;
@@ -20048,6 +20071,9 @@ function isNotesOpen() {
 }
 
 function bindReportsScreen() {
+  if (typeof bindFinancialStatementNotesEditor === "function") {
+    bindFinancialStatementNotesEditor();
+  }
   const typeSel     = document.getElementById("stmtType");
   const formatSel   = document.getElementById("stmtFormat");
   const templateSel = document.getElementById("stmtTemplate");
@@ -20203,41 +20229,41 @@ function bindReportsScreen() {
 
   window.updateDetailControlsForBasis = updateDetailControlsForBasis;
 
-function collectStmtOpts() {
-  const presetKey = presetSel?.value || "this_year";
-  const t = (typeSel?.value || "pnl").toLowerCase();
+  function collectStmtOpts() {
+    const presetKey = presetSel?.value || "this_year";
+    const t = (typeSel?.value || "pnl").toLowerCase();
 
-  const basis   = (basisSel?.value || "external");
-  const compare = (compareSel?.value || "none");
+    const basis   = (basisSel?.value || "external");
+    const compare = (compareSel?.value || "none");
 
-  const opts = {
-    preset:   presetKey,
-    template: (templateSel?.value || "ifrs"),
-    basis,
-    compare,
-    detail:   (detailSel?.value || "summary"),
-    format:   (formatSel?.value || "json"),
-  };
+    const opts = {
+      preset:   presetKey,
+      template: (templateSel?.value || "ifrs"),
+      basis,
+      compare,
+      detail:   (detailSel?.value || "summary"),
+      format:   (formatSel?.value || "json"),
+    };
 
-  // CF
-  if (t === "cf") {
-    const uiColsMode = Number(colsModeSel?.value || 1);
-    opts.method = (cfMethodSel?.value || "direct");
-    opts.cols_mode = uiColsMode;
+    // CF
+    if (t === "cf") {
+      const uiColsMode = Number(colsModeSel?.value || 1);
+      opts.method = (cfMethodSel?.value || "direct");
+      opts.cols_mode = uiColsMode;
+      return opts;
+    }
+
+    // ✅ Non-CF cols mode
+    opts.cols_mode = normalizeColsMode();
+
+    // ✅ HARD GUARANTEE:
+    // external pnl/bs with compare MUST be 2 columns minimum
+    if (basis === "external" && (t === "pnl" || t === "bs") && compare !== "none") {
+      opts.cols_mode = Math.max(2, Number(opts.cols_mode || 1));
+    }
+
     return opts;
   }
-
-  // ✅ Non-CF cols mode
-  opts.cols_mode = normalizeColsMode();
-
-  // ✅ HARD GUARANTEE:
-  // external pnl/bs with compare MUST be 2 columns minimum
-  if (basis === "external" && (t === "pnl" || t === "bs") && compare !== "none") {
-    opts.cols_mode = Math.max(2, Number(opts.cols_mode || 1));
-  }
-
-  return opts;
-}
 
   // ✅ Rerender statement viewer automatically
   let rerenderTimer = null;
@@ -20345,6 +20371,7 @@ function collectStmtOpts() {
     if (window.renderDashboardByRoleAndPeriod) {
       window.renderDashboardByRoleAndPeriod();
     }    
+
     // ✅ Keep Statement Viewer period in sync with Financial Statements period filter
     const stmtPresetSel = document.getElementById("stmtPreset");
     const stmtTypeSel   = document.getElementById("stmtType");
@@ -20507,6 +20534,38 @@ function collectStmtOpts() {
   // Render button
   renderBtn?.addEventListener("click", () => rerender({ debounceMs: 0 }));
 
+  // ----------------------------
+  // FS Notes Editor toggle
+  // ----------------------------
+  const toggleBtn = document.getElementById("toggleFsNoteEditorBtn");
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const panel = document.getElementById("fsNotesPanel");
+      if (!panel) return;
+
+      panel.classList.toggle("hidden");
+
+      if (!panel.classList.contains("hidden")) {
+        if (typeof loadFinancialStatementNote === "function") {
+
+          const pack = document.getElementById("notesPack")?.value;
+
+          const map = {
+            "ias16_ppe": "ias16_ppe_policy",
+            "ifrs16": "ifrs16_lease_policy",
+            "ifrs15_revenue": "ifrs15_revenue_policy",
+          };
+
+          const noteKey = map[pack] || "ifrs15_revenue_policy";
+
+          const fsNoteKeySel = document.getElementById("fsNoteKey");
+          if (fsNoteKeySel) fsNoteKeySel.value = noteKey;
+          loadFinancialStatementNote(noteKey);
+        }
+      }
+    });
+  }
   // ----------------------------
   // Export button
   // ----------------------------
@@ -22982,9 +23041,16 @@ async function exportStatement(stmtType, format) {
   let fmt = String(format || "xlsx").toLowerCase();
   if (fmt === "json") fmt = "xlsx";
 
-  if (!["xlsx", "pdf"].includes(fmt)) {
-    alert("Statement exports support XLSX or PDF only.");
-    return;
+  if (t === "notes") {
+    if (!["csv", "xlsx", "pdf"].includes(fmt)) {
+      alert("Notes exports support CSV, Excel or PDF.");
+      return;
+    }
+  } else {
+    if (!["xlsx", "pdf"].includes(fmt)) {
+      alert("Statement exports support XLSX or PDF only.");
+      return;
+    }
   }
 
   let url = "";
@@ -22994,6 +23060,10 @@ async function exportStatement(stmtType, format) {
     socie: "socie",
     cf: "cash_flow",
     tb: "trial_balance",
+
+    ppe_disclosure: "ppe_disclosure",
+    lease_disclosure: "lease_disclosure",
+    revenue_disclosure: "revenue_disclosure",
   };
 
   switch (t) {
@@ -23012,9 +23082,29 @@ async function exportStatement(stmtType, format) {
     case "tb":
       url = ENDPOINTS.reports.trialBalanceExport(cid);
       break;
-    case "notes":
-      url = ENDPOINTS.notes(cid, from, to, fmt);
+    case "notes": {
+      const pack = document.getElementById("notesPack")?.value || "ifrs15_revenue";
+
+      let reportKey = null;
+
+      if (pack === "ias16_ppe") {
+        url = ENDPOINTS.reports.ppeDisclosureExport(cid);
+        reportKey = "ppe_disclosure";
+      } else if (pack === "ifrs16") {
+        url = ENDPOINTS.reports.leaseDisclosureExport(cid);
+        reportKey = "lease_disclosure";
+      } else if (pack === "ifrs15_revenue") {
+        url = ENDPOINTS.reports.revenueDisclosureExport(cid);
+        reportKey = "revenue_disclosure";
+      } else {
+        return alert("Unknown notes pack.");
+      }
+
+      // 🔥 IMPORTANT: attach reportKey to opts for later use
+      window.__notesReportKey = reportKey;
+
       break;
+    }
     default:
       return alert("Unknown statement type.");
   }
@@ -23044,7 +23134,12 @@ async function exportStatement(stmtType, format) {
 
   url = addQueryParamsAbs(url, params);
 
-  await downloadUrl(url, reportKeyMap[t] || null);
+  const finalReportKey =
+    t === "notes"
+      ? window.__notesReportKey
+      : reportKeyMap[t] || null;
+
+  await downloadUrl(url, finalReportKey);
 }
 
 // --- expose widget renderers globally ---
@@ -24016,6 +24111,138 @@ ifrs15_revenue: {
     }
   }
 };
+
+window.FS_NOTES_STATE = {
+  current: null,
+};
+
+function getStmtPeriodParams() {
+  const preset =
+    document.getElementById("stmtPreset")?.value ||
+    window.CURRENT_PERIOD_KEY ||
+    "this_year";
+
+  const pr = computePeriodRange(preset) || {};
+
+  return {
+    preset,
+    from: pr.from || null,
+    to: pr.to || null,
+  };
+}
+
+function buildFsNoteQuery() {
+  const p = getStmtPeriodParams();
+  const q = new URLSearchParams();
+
+  q.set("preset", p.preset);
+  if (p.from) q.set("from", p.from);
+  if (p.to) q.set("to", p.to);
+
+  return q.toString();
+}
+
+async function loadFinancialStatementNote(noteKey = null) {
+  const cid =
+    typeof getActiveCompanyId === "function"
+      ? getActiveCompanyId()
+      : window.CURRENT_COMPANY_ID;
+
+  if (!cid) return alert("No active company.");
+
+  const key = noteKey || document.getElementById("fsNoteKey")?.value;
+  if (!key) return alert("Select a note.");
+
+  const url = `${ENDPOINTS.reports.fsNote(cid, key)}?${buildFsNoteQuery()}`;
+  const res = await apiFetch(url);
+
+  const note = res.note || res.data || res;
+  window.FS_NOTES_STATE.current = note;
+
+  document.getElementById("fsNoteTitleInput").value = note.note_title || key;
+  document.getElementById("fsNoteEditor").value = note.content_text || "";
+  document.getElementById("fsNoteSystemDraft").textContent = note.system_draft || "";
+
+  const status = document.getElementById("fsNoteStatus");
+  if (status) {
+    status.textContent = note.is_custom
+      ? "Edited by user"
+      : "System generated";
+
+    if (note.is_outdated) {
+      status.textContent += " · Outdated";
+    }
+  }
+
+  const period = document.getElementById("fsNotePeriod");
+  if (period) {
+    period.textContent = `${note.period_from || ""} to ${note.period_to || ""}`;
+  }
+}
+
+async function saveFinancialStatementNote() {
+  const cid =
+    typeof getActiveCompanyId === "function"
+      ? getActiveCompanyId()
+      : window.CURRENT_COMPANY_ID;
+
+  const note = window.FS_NOTES_STATE.current;
+  if (!cid || !note?.note_key) return alert("Load a note first.");
+
+  const content = document.getElementById("fsNoteEditor")?.value || "";
+  const title = document.getElementById("fsNoteTitleInput")?.value || note.note_title || note.note_key;
+
+  const url = `${ENDPOINTS.reports.fsNote(cid, note.note_key)}?${buildFsNoteQuery()}`;
+
+  await apiFetch(url, {
+    method: "POST",
+    body: JSON.stringify({
+      note_title: title,
+      content_text: content,
+    }),
+  });
+
+  await loadFinancialStatementNote(note.note_key);
+}
+
+async function resetFinancialStatementNote() {
+  const cid =
+    typeof getActiveCompanyId === "function"
+      ? getActiveCompanyId()
+      : window.CURRENT_COMPANY_ID;
+
+  const note = window.FS_NOTES_STATE.current;
+  if (!cid || !note?.note_key) return alert("Load a note first.");
+
+  if (!confirm("Reset this note to the system draft? Your edits will be replaced.")) return;
+
+  const url = `${ENDPOINTS.reports.fsNoteReset(cid, note.note_key)}?${buildFsNoteQuery()}`;
+
+  await apiFetch(url, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  await loadFinancialStatementNote(note.note_key);
+}
+
+function bindFinancialStatementNotesEditor() {
+  document.getElementById("loadFsNoteBtn")?.addEventListener("click", () => {
+    loadFinancialStatementNote();
+  });
+
+  document.getElementById("saveFsNoteBtn")?.addEventListener("click", () => {
+    saveFinancialStatementNote();
+  });
+
+  document.getElementById("resetFsNoteBtn")?.addEventListener("click", () => {
+    resetFinancialStatementNote();
+  });
+
+  document.getElementById("fsNoteKey")?.addEventListener("change", (e) => {
+    loadFinancialStatementNote(e.target.value);
+  });
+}
 
 function num(v) {
   const n = Number(v);

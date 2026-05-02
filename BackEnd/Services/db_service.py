@@ -28,6 +28,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
 from flask import current_app
+import hashlib
 
 from dateutil.relativedelta import relativedelta
 from psycopg2 import errorcodes
@@ -57,6 +58,7 @@ from BackEnd.Services.reporting.reporting_helpers import (
     choose_layout,
     build_compare_range,
 )
+from BackEnd.Services.reporting.revenue_disclosure_builder import build_revenue_disclosure_payload
 
 if TYPE_CHECKING:
     from BackEnd.Services.lease_engine import LeaseScheduleResult
@@ -76,6 +78,18 @@ if not DB_CONNECTION_STRING:
 #  Top-level helper functions (module level, NOT inside class)
 # ============================================================
 
+
+
+def _note_hash(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _money(v) -> float:
+    try:
+        return round(float(v or 0), 2)
+    except Exception:
+        return 0.0
+        
 def _safe_str(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
@@ -19400,6 +19414,59 @@ class DatabaseService:
             '{schema}','{schema}_revenue_recognition_entries_run_fk','{schema}');
         END IF;
         END $$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.accounting_policies (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+
+            policy_type TEXT NOT NULL,
+            policy_key TEXT NOT NULL,
+
+            category_name TEXT NULL,
+            measurement_basis TEXT NULL,
+            recognition_basis TEXT NULL,
+            depreciation_method TEXT NULL,
+            useful_life_min NUMERIC(10,2) NULL,
+            useful_life_max NUMERIC(10,2) NULL,
+
+            revenue_recognition_timing TEXT NULL,
+            revenue_progress_method TEXT NULL,
+            wording_style TEXT NULL,
+
+            policy_text_override TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id, policy_type, policy_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.financial_statement_notes (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+
+            note_key TEXT NOT NULL,
+            note_title TEXT NOT NULL,
+
+            period_from DATE NULL,
+            period_to DATE NULL,
+
+            content_text TEXT NOT NULL,
+            system_draft TEXT NULL,
+
+            source TEXT NOT NULL DEFAULT 'system'
+                CHECK (source IN ('system', 'user', 'hybrid')),
+
+            is_custom BOOLEAN NOT NULL DEFAULT FALSE,
+            last_generated_hash TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id, note_key, period_from, period_to)
+        );
         """
         ddl_ap = """
         -- ==================================================
@@ -61984,152 +62051,366 @@ class DatabaseService:
             "count": len(items),
         }
 
-    def build_revenue_disclosure(db, company_id, date_from, date_to):
-        schema = db.company_schema(company_id)
+    def build_revenue_disclosure(self, company_id: int, date_from, date_to):
+        return build_revenue_disclosure_payload(
+            self,
+            int(company_id),
+            date_from,
+            date_to,
+        )
 
-        def one(sql, params=()):
-            return db.fetch_one(sql, params) or {}
 
-        def all_(sql, params=()):
-            return db.fetch_all(sql, params) or []
+    def get_financial_statement_note(
+        self,
+        company_id: int,
+        note_key: str,
+        period_from,
+        period_to,
+        *,
+        cur=None,
+    ) -> Optional[dict]:
+        schema = self.company_schema(company_id)
 
-        revenue_by_category = all_(f"""
-            SELECT
-                COALESCE(
-                    ro.payload_json->>'catalog_item_type',
-                    ro.payload_json->>'catalog_item_label',
-                    ro.obligation_name,
-                    'Uncategorised'
-                ) AS category,
-                SUM(e.revenue_delta_this_run) AS amount
-            FROM {schema}.revenue_recognition_entries e
-            JOIN {schema}.revenue_recognition_runs r ON r.id = e.run_id
-            LEFT JOIN {schema}.revenue_obligations ro ON ro.id = e.obligation_id
-            WHERE e.company_id = %s
-            AND r.status = 'posted'
-            AND e.period_end BETWEEN %s AND %s
-            GROUP BY 1
-            ORDER BY amount DESC;
-        """, (company_id, date_from, date_to))
-
-        revenue_timing = all_(f"""
-            SELECT
-                COALESCE(ro.recognition_timing, 'unknown') AS timing,
-                SUM(e.revenue_delta_this_run) AS amount
-            FROM {schema}.revenue_recognition_entries e
-            JOIN {schema}.revenue_recognition_runs r ON r.id = e.run_id
-            LEFT JOIN {schema}.revenue_obligations ro ON ro.id = e.obligation_id
-            WHERE e.company_id = %s
-            AND r.status = 'posted'
-            AND e.period_end BETWEEN %s AND %s
-            GROUP BY 1;
-        """, (company_id, date_from, date_to))
-
-        contract_balances = one(f"""
-            SELECT
-                SUM(
-                    CASE
-                        WHEN COALESCE(recognized_revenue_to_date,0) > COALESCE(billed_to_date,0)
-                        THEN COALESCE(recognized_revenue_to_date,0) - COALESCE(billed_to_date,0)
-                        ELSE 0
-                    END
-                ) AS contract_assets,
-
-                SUM(
-                    CASE
-                        WHEN COALESCE(billed_to_date,0) > COALESCE(recognized_revenue_to_date,0)
-                        THEN COALESCE(billed_to_date,0) - COALESCE(recognized_revenue_to_date,0)
-                        ELSE 0
-                    END
-                ) AS contract_liabilities
-            FROM {schema}.revenue_contracts
-            WHERE company_id = %s;
-        """, (company_id,))
-
-        receivables = one(f"""
-            SELECT
-                COALESCE(SUM(total_amount),0) AS gross_receivables
-            FROM {schema}.invoices
+        return self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.financial_statement_notes
             WHERE company_id = %s
-            AND revenue_contract_id IS NOT NULL
-            AND status IN ('approved','posted','issued')
-            AND reversed_journal_id IS NULL
-            AND writeoff_journal_id IS NULL;
-        """, (company_id,))
+            AND note_key = %s
+            AND period_from IS NOT DISTINCT FROM %s
+            AND period_to IS NOT DISTINCT FROM %s
+            LIMIT 1;
+            """,
+            (int(company_id), note_key, period_from, period_to),
+            cur=cur,
+        )
 
-        unsatisfied_obligations = all_(f"""
-            SELECT
-                rc.id AS contract_id,
-                rc.contract_number,
-                rc.contract_title,
-                rc.end_date,
-                ro.id AS obligation_id,
-                ro.obligation_name,
-                ro.recognition_timing,
-                COALESCE(ro.allocated_transaction_price,0) AS allocated_transaction_price,
-                COALESCE(ro.revenue_to_date,0) AS revenue_to_date,
-                GREATEST(
-                    COALESCE(ro.allocated_transaction_price,0) - COALESCE(ro.revenue_to_date,0),
-                    0
-                ) AS remaining_amount
-            FROM {schema}.revenue_obligations ro
-            JOIN {schema}.revenue_contracts rc ON rc.id = ro.contract_id
-            WHERE ro.company_id = %s
-            AND COALESCE(ro.obligation_status,'') NOT IN ('cancelled','void')
-            AND GREATEST(
-                    COALESCE(ro.allocated_transaction_price,0) - COALESCE(ro.revenue_to_date,0),
-                    0
-                ) > 0
-            ORDER BY rc.end_date NULLS LAST, rc.contract_number;
-        """, (company_id,))
 
-        judgments = all_(f"""
+    def save_financial_statement_note(
+        self,
+        company_id: int,
+        note_key: str,
+        note_title: str,
+        period_from,
+        period_to,
+        content_text: str,
+        *,
+        system_draft: str | None = None,
+        source: str = "user",
+        is_custom: bool = True,
+        payload_json: dict | None = None,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        payload_json = payload_json or {}
+        last_generated_hash = _note_hash(system_draft or content_text or "")
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.financial_statement_notes (
+                company_id,
+                note_key,
+                note_title,
+                period_from,
+                period_to,
+                content_text,
+                system_draft,
+                source,
+                is_custom,
+                last_generated_hash,
+                payload_json,
+                updated_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s::jsonb,
+                NOW()
+            )
+            ON CONFLICT (company_id, note_key, period_from, period_to)
+            DO UPDATE SET
+                note_title = EXCLUDED.note_title,
+                content_text = EXCLUDED.content_text,
+                system_draft = EXCLUDED.system_draft,
+                source = EXCLUDED.source,
+                is_custom = EXCLUDED.is_custom,
+                last_generated_hash = EXCLUDED.last_generated_hash,
+                payload_json = EXCLUDED.payload_json,
+                updated_at = NOW()
+            RETURNING *;
+            """,
+            (
+                int(company_id),
+                note_key,
+                note_title,
+                period_from,
+                period_to,
+                content_text or "",
+                system_draft,
+                source,
+                bool(is_custom),
+                last_generated_hash,
+                _json_dumps(payload_json),
+            ),
+            cur=cur,
+        )
+
+        return dict(row or {})
+
+
+    def reset_financial_statement_note(
+        self,
+        company_id: int,
+        note_key: str,
+        period_from,
+        period_to,
+        *,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.financial_statement_notes
+            SET
+                content_text = COALESCE(system_draft, content_text),
+                source = 'system',
+                is_custom = FALSE,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND note_key = %s
+            AND period_from IS NOT DISTINCT FROM %s
+            AND period_to IS NOT DISTINCT FROM %s
+            RETURNING *;
+            """,
+            (int(company_id), note_key, period_from, period_to),
+            cur=cur,
+        )
+
+        return dict(row or {})
+
+    def build_ppe_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
+        summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to)
+
+        closing_carrying = _money(summary.get("closing_carrying"))
+        additions = _money(summary.get("additions_cost")) + _money(summary.get("subsequent_additions_cost"))
+        depreciation = _money(summary.get("depreciation_charge"))
+        impairment_losses = _money(summary.get("impairment_losses"))
+        revaluation_upward = _money(summary.get("revaluation_upward"))
+        revaluation_downward = _money(summary.get("revaluation_downward"))
+
+        extra_lines = []
+
+        if impairment_losses:
+            extra_lines.append(
+                f"Impairment losses recognised during the reporting period amounted to R{impairment_losses:,.2f}."
+            )
+
+        if revaluation_upward or revaluation_downward:
+            extra_lines.append(
+                f"Revaluation movements recognised during the reporting period comprised upward revaluations of R{revaluation_upward:,.2f} and downward revaluations of R{revaluation_downward:,.2f}."
+            )
+
+        extra_text = "\n\n".join(extra_lines)
+
+        return f"""
+    Property, plant and equipment are initially recognised at cost. Cost includes the purchase price and expenditure directly attributable to bringing the asset to the location and condition necessary for it to operate in the manner intended by management.
+
+    Subsequent expenditure is capitalised only when it is probable that future economic benefits associated with the item will flow to the company and the cost can be measured reliably. Day-to-day repairs and maintenance are recognised in profit or loss as incurred.
+
+    Property, plant and equipment are subsequently measured at cost less accumulated depreciation and accumulated impairment losses, unless a different measurement basis is applied to a specific class of assets. Depreciation is recognised so as to allocate the depreciable amount of each asset over its estimated useful life.
+
+    The residual values, useful lives and depreciation methods of assets are reviewed at each reporting date. Changes in estimates are accounted for prospectively.
+
+    Management applies judgement in determining the useful lives, residual values and depreciation methods of property, plant and equipment. These estimates are based on expected usage, wear and tear, technical or commercial obsolescence and asset replacement plans.
+
+    During the reporting period, additions to property, plant and equipment amounted to R{additions:,.2f}. Depreciation charged for the period amounted to R{depreciation:,.2f}. The closing carrying amount of property, plant and equipment was R{closing_carrying:,.2f}.
+    {extra_text}
+    """.strip()
+
+
+    def build_lease_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
+        d = self.get_ifrs16_disclosure_strict(
+            company_id,
+            from_date=date_from,
+            to_date=date_to,
+            as_of=date_to,
+            include_terminated=True,
+            cur=cur,
+        )
+
+        rou = d.get("rou") or {}
+        liability = d.get("liability") or {}
+        pnl = d.get("pnl") or {}
+        maturity = d.get("maturity_analysis") or {}
+        exemptions = d.get("exemptions") or {}
+
+        short_term = exemptions.get("short_term_lease_expense")
+        low_value = exemptions.get("low_value_lease_expense")
+
+        exemption_text = ""
+        if short_term is not None or low_value is not None:
+            exemption_text = (
+                f"\n\nShort-term lease expense recognised during the period amounted to R{_money(short_term):,.2f}. "
+                f"Low-value lease expense recognised during the period amounted to R{_money(low_value):,.2f}."
+            )
+
+        return f"""
+    The company accounts for leases in accordance with IFRS 16 Leases. At the commencement date of a lease, the company recognises a right-of-use asset and a corresponding lease liability, except for leases that qualify for recognition exemptions.
+
+    The lease liability is initially measured at the present value of lease payments that are not paid at commencement date. Lease payments are discounted using the interest rate implicit in the lease where that rate can be readily determined. Where that rate cannot be readily determined, the company uses its incremental borrowing rate.
+
+    The right-of-use asset is initially measured at cost and subsequently depreciated over the shorter of the lease term and the useful life of the underlying asset. The lease liability is subsequently measured using the effective interest method and is remeasured when there is a change in lease payments, lease term or other relevant lease assumptions.
+
+    Management applies judgement in determining the lease term, including whether extension or termination options are reasonably certain to be exercised. Estimation is also involved in determining the incremental borrowing rate where the rate implicit in the lease cannot be readily determined.
+
+    For the reporting period, depreciation on right-of-use assets amounted to R{_money(pnl.get("depreciation")):,.2f}, and interest expense on lease liabilities amounted to R{_money(pnl.get("interest")):,.2f}. The closing carrying amount of right-of-use assets was R{_money(rou.get("closing_rou_nbv_as_of")):,.2f}, and the closing lease liability was R{_money(liability.get("closing_liability_as_of")):,.2f}. Undiscounted future lease payments amounted to R{_money(maturity.get("undiscounted_net_total")):,.2f}.{exemption_text}
+    """.strip()
+
+    def build_revenue_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
+        schema = self.company_schema(company_id)
+
+        rows = self.fetch_all(
+            f"""
             SELECT DISTINCT
-                ro.recognition_timing,
-                ro.progress_method,
-                ro.recognition_trigger,
-                rc.billing_method,
-                rc.has_significant_financing_component,
-                rc.variable_consideration_est,
-                rc.variable_consideration_constrained
-            FROM {schema}.revenue_obligations ro
-            JOIN {schema}.revenue_contracts rc ON rc.id = ro.contract_id
-            WHERE ro.company_id = %s;
-        """, (company_id,))
+                recognition_timing,
+                progress_method,
+                recognition_trigger
+            FROM {schema}.revenue_obligations
+            WHERE company_id = %s;
+            """,
+            (int(company_id),),
+            cur=cur,
+        ) or []
 
-        total_revenue = one(f"""
-            SELECT COALESCE(SUM(e.revenue_delta_this_run),0) AS amount
-            FROM {schema}.revenue_recognition_entries e
-            JOIN {schema}.revenue_recognition_runs r ON r.id = e.run_id
-            WHERE e.company_id = %s
-            AND r.status = 'posted'
-            AND e.period_end BETWEEN %s AND %s;
-        """, (company_id, date_from, date_to))
+        has_over_time = any((r.get("recognition_timing") or "") == "over_time" for r in rows)
+        has_point = any((r.get("recognition_timing") or "") == "point_in_time" for r in rows)
 
-        return {
-            "company_id": company_id,
-            "date_from": str(date_from),
-            "date_to": str(date_to),
+        lines = [
+            "Revenue is recognised in accordance with IFRS 15 Revenue from Contracts with Customers. Revenue is recognised when control of promised goods or services transfers to the customer, at an amount that reflects the consideration to which the company expects to be entitled in exchange for those goods or services.",
+            "",
+            "The company applies the five-step model to contracts with customers by identifying the contract, identifying the performance obligations, determining the transaction price, allocating the transaction price to the performance obligations and recognising revenue when, or as, the performance obligations are satisfied.",
+            "",
+            "Management applies judgement in identifying distinct performance obligations, determining whether revenue is recognised over time or at a point in time, estimating variable consideration where applicable and assessing whether a significant financing component exists.",
+        ]
 
-            "summary": {
-                "total_revenue": float(total_revenue.get("amount") or 0),
-                "contract_assets": float(contract_balances.get("contract_assets") or 0),
-                "contract_liabilities": float(contract_balances.get("contract_liabilities") or 0),
-                "gross_receivables_from_contracts": float(receivables.get("gross_receivables") or 0),
-            },
+        if has_over_time:
+            lines.extend([
+                "",
+                "For performance obligations satisfied over time, revenue is recognised by measuring progress towards complete satisfaction of the performance obligation. The method used to measure progress is selected based on the nature of the goods or services promised and the manner in which control transfers to the customer.",
+            ])
 
-            "revenue_by_category": revenue_by_category,
-            "revenue_timing": revenue_timing,
-            "contract_assets": contract_balances.get("contract_assets") or 0,
-            "contract_liabilities": contract_balances.get("contract_liabilities") or 0,
-            "receivables_from_contracts": receivables,
-            "unsatisfied_performance_obligations": unsatisfied_obligations,
+        if has_point:
+            lines.extend([
+                "",
+                "For performance obligations satisfied at a point in time, revenue is recognised when control transfers to the customer. Indicators of transfer of control may include the customer obtaining legal title, physical possession, acceptance of the asset, or the present right to payment.",
+            ])
 
-            "significant_judgments": {
-                "basis": "Generated from contract billing methods, recognition timing, progress methods, recognition triggers, financing component flags, and variable consideration fields.",
-                "items": judgments,
-            },
+        return "\n".join(lines)
+
+    def build_revenue_disclosure_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
+        d = self.build_revenue_disclosure(company_id, date_from, date_to)
+
+        summary = d.get("summary") or {}
+        timing = d.get("revenue_timing") or []
+        categories = d.get("revenue_by_category") or []
+        unsatisfied = d.get("unsatisfied_performance_obligations") or []
+
+        lines = [
+            f"Revenue recognised during the reporting period amounted to R{_money(summary.get('total_revenue')):,.2f}.",
+            "",
+            f"Contract assets amounted to R{_money(summary.get('contract_assets')):,.2f}, while contract liabilities amounted to R{_money(summary.get('contract_liabilities')):,.2f}.",
+            f"Gross receivables from contracts with customers amounted to R{_money(summary.get('gross_receivables_from_contracts')):,.2f}.",
+        ]
+
+        if timing:
+            lines.append("")
+            lines.append("Revenue is recognised at the following timing:")
+            for r in timing:
+                lines.append(f"- {r.get('timing')}: R{_money(r.get('amount')):,.2f}")
+
+        if categories:
+            lines.append("")
+            lines.append("Revenue by category is as follows:")
+            for r in categories:
+                lines.append(f"- {r.get('category')}: R{_money(r.get('amount')):,.2f}")
+
+        remaining_total = sum(_money(r.get("remaining_amount")) for r in unsatisfied)
+        if remaining_total:
+            lines.append("")
+            lines.append(
+                f"The aggregate amount of transaction price allocated to unsatisfied or partially satisfied performance obligations amounted to R{remaining_total:,.2f}."
+            )
+
+        return "\n".join(lines)
+
+    def get_or_build_financial_statement_note(
+        self,
+        company_id: int,
+        note_key: str,
+        period_from,
+        period_to,
+        *,
+        cur=None,
+    ) -> dict:
+        builders = {
+            "ias16_ppe_policy": (
+                "Property, plant and equipment",
+                lambda: self.build_ppe_policy_note_text(company_id, period_from, period_to, cur=cur),
+            ),
+            "ifrs16_lease_policy": (
+                "Leases",
+                lambda: self.build_lease_policy_note_text(company_id, period_from, period_to, cur=cur),
+            ),
+            "ifrs15_revenue_policy": (
+                "Revenue recognition",
+                lambda: self.build_revenue_policy_note_text(company_id, period_from, period_to, cur=cur),
+            ),
+            "ifrs15_revenue_disclosure": (
+                "Revenue from contracts with customers",
+                lambda: self.build_revenue_disclosure_note_text(company_id, period_from, period_to, cur=cur),
+            ),
         }
+
+        if note_key not in builders:
+            raise ValueError(f"Unsupported financial statement note: {note_key}")
+
+        note_title, builder = builders[note_key]
+        system_draft = builder()
+        generated_hash = _note_hash(system_draft)
+
+        existing = self.get_financial_statement_note(
+            company_id,
+            note_key,
+            period_from,
+            period_to,
+            cur=cur,
+        )
+
+        if existing:
+            existing = dict(existing)
+            existing["system_draft"] = system_draft
+            existing["current_generated_hash"] = generated_hash
+            existing["is_outdated"] = bool(
+                existing.get("last_generated_hash")
+                and existing.get("last_generated_hash") != generated_hash
+            )
+            return existing
+
+        return self.save_financial_statement_note(
+            company_id,
+            note_key,
+            note_title,
+            period_from,
+            period_to,
+            system_draft,
+            system_draft=system_draft,
+            source="system",
+            is_custom=False,
+            payload_json={"auto_created": True},
+            cur=cur,
+        )
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
