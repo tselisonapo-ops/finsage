@@ -23030,7 +23030,12 @@ async function exportStatement(stmtType, format) {
   }
 
   let fmt = String(format || "xlsx").toLowerCase();
-  if (fmt === "json") fmt = "xlsx";
+
+  if (t === "notes" && ["json", "html"].includes(fmt)) {
+    fmt = "xlsx";
+  } else if (fmt === "json") {
+    fmt = "xlsx";
+  }
 
   if (t === "notes") {
     if (!["csv", "xlsx", "pdf"].includes(fmt)) {
