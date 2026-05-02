@@ -2100,8 +2100,21 @@ const ENDPOINTS = {
     disclosure: (companyId, params = {}) => {
       const q = new URLSearchParams();
 
-      if (params.date_from) q.set("date_from", params.date_from);
-      if (params.date_to) q.set("date_to", params.date_to);
+      const dateFrom = params.date_from || params.from || params.start_date;
+      const dateTo   = params.date_to || params.to || params.end_date;
+      const preset   = params.preset;
+
+      if (dateFrom) q.set("date_from", dateFrom);
+      if (dateTo) q.set("date_to", dateTo);
+      if (preset) q.set("preset", preset);
+
+      console.log("ENDPOINTS.revenue.disclosure params:", {
+        params,
+        dateFrom,
+        dateTo,
+        preset,
+        url: q.toString(),
+      });
 
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revenue/disclosure?${q.toString()}`;
     },
@@ -23930,39 +23943,38 @@ const NOTES_REGISTRY = {
     }
   },
 
-  ifrs15_revenue: {
-    label: "IFRS 15 Revenue disclosures",
-    fetch: async (cid, period) => {
-      const q = {};
+ifrs15_revenue: {
+  label: "IFRS 15 Revenue disclosures",
+  fetch: async (cid, period) => {
+    const q = {};
 
-      if (period?.from && period?.to) {
-        q.date_from = period.from;
-        q.date_to = period.to;
-      } else {
-        q.preset =
-          period?.preset ||
-          document.getElementById("stmtPreset")?.value ||
-          "this_year";
-      }
+    const p = period?.params || period || {};
 
-      console.log("IFRS15 period received:", period);
-      console.log("IFRS15 FINAL PARAMS:", q);
-
-      if ((!q.date_from || !q.date_to) && !q.preset) {
-        throw new Error("Revenue disclosure requires date_from/date_to or preset.");
-      }
-
-      const url = ENDPOINTS.revenue.disclosure(cid, q);
-      const resp = await window.apiFetch(url, { method: "GET" });
-      const payload = resp?.data || resp;
-
-      return {
-        data: payload,
-        html: renderRevenueDisclosureHTML(payload),
-        meta: { q, period },
-      };
+    if (p.from && p.to) {
+      q.date_from = p.from;
+      q.date_to = p.to;
+    } else {
+      q.preset =
+        p.preset ||
+        period?.preset ||
+        document.getElementById("stmtPreset")?.value ||
+        "this_year";
     }
-  },
+
+    console.log("IFRS15 period received:", period);
+    console.log("IFRS15 FINAL PARAMS:", q);
+
+    const url = ENDPOINTS.revenue.disclosure(cid, q);
+    const resp = await window.apiFetch(url, { method: "GET" });
+    const payload = resp?.data || resp;
+
+    return {
+      data: payload,
+      html: renderRevenueDisclosureHTML(payload),
+      meta: { q, period },
+    };
+  }
+},
 
   ias16_ppe: {
     label: "IAS 16 PPE disclosures",
