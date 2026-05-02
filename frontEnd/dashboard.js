@@ -20567,7 +20567,16 @@ function bindReportsScreen() {
         exportBtn.dataset.busy = "1";
         exportBtn.disabled = true;
 
-        await exportStatement(typeSel.value, formatSel.value);
+        const panel = document.getElementById("fsNotesPanel");
+        const editorOpen = panel && !panel.classList.contains("hidden");
+        const canvasHasNotes = !!window._notesState?.html;
+
+        const exportType =
+          editorOpen || canvasHasNotes
+            ? "notes"
+            : typeSel.value;
+
+        await exportStatement(exportType, formatSel.value);
       } finally {
         exportBtn.dataset.busy = "0";
         exportBtn.disabled = false;
