@@ -62305,8 +62305,33 @@ class DatabaseService:
                     cur=cur,
                 )
 
-        summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to)
+        summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to) or {}
 
+        # fallback: use PPE disclosure payload/table if summary came back empty/zero
+        if not any(float(summary.get(k) or 0) for k in (
+            "additions_cost",
+            "subsequent_additions_cost",
+            "closing_carrying",
+            "depreciation_charge",
+        )):
+            disclosure = self.get_ppe_disclosure_by_class(
+                cur,
+                company_id,
+                date_from,
+                date_to,
+            ) or []
+
+            if isinstance(disclosure, list):
+                summary = {
+                    "additions_cost": sum(float(r.get("additions_cost") or 0) for r in disclosure if isinstance(r, dict)),
+                    "subsequent_additions_cost": sum(float(r.get("subsequent_additions_cost") or 0) for r in disclosure if isinstance(r, dict)),
+                    "closing_carrying": sum(float(r.get("closing_carrying") or 0) for r in disclosure if isinstance(r, dict)),
+                    "depreciation_charge": sum(float(r.get("depreciation_charge") or 0) for r in disclosure if isinstance(r, dict)),
+                    "impairment_losses": sum(float(r.get("impairment_losses") or 0) for r in disclosure if isinstance(r, dict)),
+                    "revaluation_upward": sum(float(r.get("revaluation_upward") or 0) for r in disclosure if isinstance(r, dict)),
+                    "revaluation_downward": sum(float(r.get("revaluation_downward") or 0) for r in disclosure if isinstance(r, dict)),
+                }
+                
         def fmt(v):
             try:
                 return f"{float(v or 0):,.2f}"
