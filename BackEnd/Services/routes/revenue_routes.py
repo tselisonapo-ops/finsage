@@ -4,6 +4,7 @@ from .invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.company import company_policy
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.credit_policy import can_decide_request
+from BackEnd.Services.period_core import resolve_company_period
 
 revenue_bp = Blueprint("revenue", __name__)
 
@@ -1421,16 +1422,22 @@ def api_revenue_disclosure(company_id: int):
     if deny:
         return deny
 
-    date_from = request.args.get("date_from")
-    date_to = request.args.get("date_to")
-
-    if not date_from or not date_to:
-        return jsonify({
-            "ok": False,
-            "error": "date_from and date_to are required"
-        }), 400
-
     try:
+        date_from, date_to, period_meta = resolve_company_period(
+            db_service,
+            int(company_id),
+            request,
+            mode="range",
+        )
+
+        current_app.logger.warning(
+            "REVENUE DISCLOSURE RANGE company=%s date_from=%s date_to=%s meta=%s",
+            company_id,
+            date_from,
+            date_to,
+            period_meta,
+        )
+
         out = db_service.build_revenue_disclosure(
             company_id=int(company_id),
             date_from=date_from,
@@ -1440,6 +1447,7 @@ def api_revenue_disclosure(company_id: int):
         return jsonify({
             "ok": True,
             "data": out,
+            "period_meta": period_meta,
         }), 200
 
     except Exception as e:
