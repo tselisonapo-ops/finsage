@@ -62307,6 +62307,14 @@ class DatabaseService:
 
         summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to) or {}
 
+        current_app.logger.warning(
+            "PPE NOTE SUMMARY BEFORE FALLBACK company_id=%s from=%s to=%s summary=%s",
+            company_id,
+            date_from,
+            date_to,
+            summary,
+        )
+
         def num(v):
             try:
                 return float(v)
@@ -62327,6 +62335,13 @@ class DatabaseService:
                 date_to,
             ) or []
 
+            current_app.logger.warning(
+                "PPE DISCLOSURE TYPE=%s LEN=%s SAMPLE=%s",
+                type(disclosure).__name__,
+                len(disclosure) if isinstance(disclosure, list) else None,
+                disclosure[:3] if isinstance(disclosure, list) else disclosure,
+            )
+
             if isinstance(disclosure, list):
                 summary = {
                     "additions_cost": sum(num(r.get("additions_cost")) for r in disclosure if isinstance(r, dict)),
@@ -62338,6 +62353,10 @@ class DatabaseService:
                     "revaluation_downward": sum(num(r.get("revaluation_downward")) for r in disclosure if isinstance(r, dict)),
                 }
 
+                current_app.logger.warning(
+                    "PPE NOTE SUMMARY AFTER FALLBACK summary=%s",
+                    summary,
+                )
         def fmt(v):
             try:
                 return f"{float(v or 0):,.2f}"
