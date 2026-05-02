@@ -24218,12 +24218,29 @@ async function resetFinancialStatementNote() {
 
   const url = `${ENDPOINTS.reports.fsNoteReset(cid, note.note_key)}?${buildFsNoteQuery()}`;
 
-  await apiFetch(url, {
+  const res = await apiFetch(url, {
     method: "POST",
     body: JSON.stringify({}),
   });
 
-  await loadFinancialStatementNote(note.note_key);
+  const freshNote = res.note || res.data || res;
+  window.FS_NOTES_STATE.current = freshNote;
+
+  document.getElementById("fsNoteTitleInput").value = freshNote.note_title || note.note_key;
+  document.getElementById("fsNoteEditor").value = freshNote.content_text || "";
+  document.getElementById("fsNoteSystemDraft").textContent = freshNote.system_draft || "";
+
+  const status = document.getElementById("fsNoteStatus");
+  if (status) {
+    status.textContent = freshNote.is_custom ? "Edited by user" : "System generated";
+    if (freshNote.is_outdated) status.textContent += " · Outdated";
+  }
+
+  // 👉 ADD IT HERE (end of function)
+  const period = document.getElementById("fsNotePeriod");
+  if (period) {
+    period.textContent = `${freshNote.period_from || ""} to ${freshNote.period_to || ""}`;
+  }
 }
 
 function bindFinancialStatementNotesEditor() {
