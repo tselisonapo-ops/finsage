@@ -23021,10 +23021,6 @@ async function exportStatement(stmtType, format) {
   const from = pr.from || null;
   const to = pr.to || null;
 
-  if (t === "notes") {
-    if (typeof restoreNotesIfPresent === "function" && restoreNotesIfPresent()) return;
-  }
-
   if (typeof updateStmtViewerMethodVisibility === "function") {
     updateStmtViewerMethodVisibility(t);
   }
@@ -23134,6 +23130,8 @@ async function exportStatement(stmtType, format) {
     t === "notes"
       ? window.__notesReportKey
       : reportKeyMap[t] || null;
+
+  console.log("[EXPORT URL]", url, finalReportKey);
 
   await downloadUrl(url, finalReportKey);
 }
