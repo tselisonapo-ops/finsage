@@ -32609,6 +32609,10 @@ class DatabaseService:
 
             bank_row = self.get_company_bank_account(company_id, bank_account_id) if bank_account_id else None
             bank_code = ((bank_row or {}).get("ledger_account_code") or "").strip()
+
+            # fallback from payload/loan row if bank row not available
+            bank_code = bank_code or ((loan_row or {}).get("bank_account_code") or "").strip()
+
             resolved["bank_account_code"] = bank_code
             if not bank_code:
                 missing_roles.append("bank_account_code")
@@ -32621,14 +32625,23 @@ class DatabaseService:
             }
 
             for field_name, role in role_map.items():
-                coa = self._get_coa_role_account(cur, schema, role)
-                code = ((coa or {}).get("code") or "").strip()
+                # 1. prefer explicit account selected/saved on loan
+                code = ((loan_row or {}).get(field_name) or "").strip()
+
+                # 2. fallback to COA role mapping
+                if not code:
+                    coa = self._get_coa_role_account(cur, schema, role)
+                    code = ((coa or {}).get("code") or "").strip()
+
                 resolved[field_name] = code
+
                 if not code:
                     missing_roles.append(role)
 
         if missing_roles:
-            raise ValueError("Missing required loan posting accounts: " + ", ".join(missing_roles))
+            raise ValueError(
+                "Missing required loan posting accounts: " + ", ".join(missing_roles)
+            )
 
         return resolved
 
