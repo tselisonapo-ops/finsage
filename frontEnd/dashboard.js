@@ -23672,24 +23672,21 @@ const NOTES_REGISTRY = {
     fetch: async (cid, period) => {
       const q = {};
 
-      const p = period?.from && period?.to
-        ? period
-        : buildPeriodParams(period?.preset || "this_year");
-
-      q.date_from = p.from;
-      q.date_to = p.to;
+      if (period?.from && period?.to) {
+        q.date_from = period.from;
+        q.date_to = period.to;
+      } else {
+        q.preset =
+          period?.preset ||
+          document.getElementById("stmtPreset")?.value ||
+          "this_year";
+      }
 
       console.log("IFRS15 period received:", period);
       console.log("IFRS15 FINAL PARAMS:", q);
 
-      if (!q.date_from || !q.date_to) {
-        console.error("🚨 IFRS15 MISSING DATES DEBUG");
-        console.log("period input →", period);
-        console.log("resolved p →", p);
-        console.log("q →", q);
-        console.log("DOM preset →", document.getElementById("stmtPreset")?.value);
-
-        throw new Error("Revenue disclosure requires date_from and date_to.");
+      if ((!q.date_from || !q.date_to) && !q.preset) {
+        throw new Error("Revenue disclosure requires date_from/date_to or preset.");
       }
 
       const url = ENDPOINTS.revenue.disclosure(cid, q);
@@ -23699,7 +23696,7 @@ const NOTES_REGISTRY = {
       return {
         data: payload,
         html: renderRevenueDisclosureHTML(payload),
-        meta: { q, period: p },
+        meta: { q, period },
       };
     }
   },
