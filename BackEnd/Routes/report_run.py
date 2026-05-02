@@ -13,6 +13,7 @@ from BackEnd.Services.period_core import resolve_company_period
 from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
 from BackEnd.Services.reporting.journal_reports import build_journal_register, export_xlsx
 from BackEnd.Services.credit_policy import can_manage_fs_notes
+from BackEnd.Services.company import company_policy
 from BackEnd.Services.reporting.lease_reports import (
     build_lease_monthly_due_report,
     build_lease_payments_report,
@@ -1721,11 +1722,16 @@ def save_fs_note(company_id, note_key):
     if int(user.get("company_id") or 0) != int(company_id):
         return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
 
-    if not can_manage_fs_notes(user):
-        return jsonify({"ok": False, "error": "Only senior finance or governance roles can edit financial statement notes"}), 403
-
     try:
         db = _get_db()
+
+        pol = company_policy(company_id)
+        mode = pol.get("mode") or "owner_managed"
+        company_profile = pol.get("company") or db.get_company_profile(company_id) or {}
+
+        if not can_manage_fs_notes(user, company_profile, mode):
+            return jsonify({"ok": False, "error": "Only senior finance or governance roles can edit financial statement notes"}), 403
+
         payload = request.get_json(force=True, silent=True) or {}
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
 
@@ -1777,12 +1783,25 @@ def reset_fs_note(company_id, note_key):
     if int(user.get("company_id") or 0) != int(company_id):
         return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
 
-    if not can_manage_fs_notes(user):
-        return jsonify({"ok": False, "error": "Only senior finance or governance roles can reset financial statement notes"}), 403
-
     try:
         db = _get_db()
-        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+
+        pol = company_policy(company_id)
+        mode = pol.get("mode") or "owner_managed"
+        company_profile = pol.get("company") or db.get_company_profile(company_id) or {}
+
+        if not can_manage_fs_notes(user, company_profile, mode):
+            return jsonify({
+                "ok": False,
+                "error": "Only senior finance or governance roles can reset financial statement notes"
+            }), 403
+
+        date_from, date_to, meta = resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
 
         before = db.get_or_build_financial_statement_note(
             company_id=company_id,
@@ -1817,4 +1836,3 @@ def reset_fs_note(company_id, note_key):
     except Exception as e:
         current_app.logger.exception("reset_fs_note failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-    
