@@ -44450,8 +44450,14 @@ class DatabaseService:
         ORDER BY m.event_date, m.source_table, m.source_id;
         """
         cur.execute(sql, params)
-        cols = [d[0] for d in cur.description]
         rows = cur.fetchall()
+
+        # If using RealDictCursor → rows are already dicts
+        if rows and isinstance(rows[0], dict):
+            return rows
+
+        # Fallback (if normal cursor ever used)
+        cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in rows]
 
     def get_ppe_revaluation_note(
@@ -44708,19 +44714,34 @@ class DatabaseService:
             asset_classes=asset_classes,
         )
 
+        # ✅ Normalize disclosure shape
+        if isinstance(disclosure, dict):
+            if isinstance(disclosure.get("rows"), list):
+                disclosure = disclosure.get("rows")
+            elif isinstance(disclosure.get("data"), list):
+                disclosure = disclosure.get("data")
+            else:
+                disclosure = [disclosure]
+
+        if not isinstance(disclosure, list):
+            disclosure = []
+
         def s(key: str) -> float:
             total = 0.0
 
             for r in disclosure:
+                if not isinstance(r, dict):
+                    continue
+
                 v = r.get(key)
 
                 try:
                     total += float(v or 0)
                 except (TypeError, ValueError):
-                    # 🔥 skip bad rows (like 'opening_cost')
                     continue
 
             return round(total, 2)
+
         return {
             "opening_cost": s("opening_cost"),
             "opening_accum_dep": s("opening_accum_dep"),
