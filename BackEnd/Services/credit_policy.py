@@ -1,6 +1,4 @@
 from BackEnd.Services.company_context import normalize_role
-from BackEnd.Services.company import company_role, is_company_owner
-
 
 from flask import jsonify
 import sys
