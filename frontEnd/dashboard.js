@@ -23663,70 +23663,76 @@ function renderRevenueDisclosureHTML(payload) {
         </div>
       </div>
 
-      <div class="border rounded-lg p-3">
-        <div class="font-semibold mb-2">1. Revenue by category</div>
-        ${
-          byCategory.length
-            ? `
-              <div class="overflow-auto">
-                <table class="w-full text-xs border">
-                  <thead>
-                    <tr class="bg-slate-50">
-                      <th class="p-2 border text-left">Category</th>
-                      <th class="p-2 border text-right">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${byCategory.map(r => `
-                      <tr>
-                        <td class="p-2 border">${escHtml(r.category || "Uncategorised")}</td>
-                        <td class="p-2 border text-right">${fmtMoney(r.amount || 0)}</td>
-                      </tr>
-                    `).join("")}
-                    <tr class="font-semibold bg-slate-50">
-                      <td class="p-2 border">Total</td>
-                      <td class="p-2 border text-right">${fmtMoney(s.total_revenue || 0)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            `
-            : tableEmpty
-        }
-      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 
-      <div class="border rounded-lg p-3">
-        <div class="font-semibold mb-2">2. Revenue timing</div>
-        ${
-          timing.length
-            ? `
-              <div class="overflow-auto">
-                <table class="w-full text-xs border">
-                  <thead>
-                    <tr class="bg-slate-50">
-                      <th class="p-2 border text-left">Recognition timing</th>
-                      <th class="p-2 border text-right">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${timing.map(r => `
-                      <tr>
-                        <td class="p-2 border">
-                          ${escHtml(
-                            String(r.timing || "unknown")
-                              .replaceAll("_", " ")
-                              .replace(/\b\w/g, c => c.toUpperCase())
-                          )}
-                        </td>
-                        <td class="p-2 border text-right">${fmtMoney(r.amount || 0)}</td>
+        <!-- 1. Revenue by category -->
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">1. Revenue by category</div>
+          ${
+            byCategory.length
+              ? `
+                <div class="overflow-auto">
+                  <table class="w-full text-xs border">
+                    <thead>
+                      <tr class="bg-slate-50">
+                        <th class="p-2 border text-left">Category</th>
+                        <th class="p-2 border text-right">Revenue</th>
                       </tr>
-                    `).join("")}
-                  </tbody>
-                </table>
-              </div>
-            `
-            : tableEmpty
-        }
+                    </thead>
+                    <tbody>
+                      ${byCategory.map(r => `
+                        <tr>
+                          <td class="p-2 border">${escHtml(r.category || "Uncategorised")}</td>
+                          <td class="p-2 border text-right">${fmtMoney(r.amount || 0)}</td>
+                        </tr>
+                      `).join("")}
+                      <tr class="font-semibold bg-slate-50">
+                        <td class="p-2 border">Total</td>
+                        <td class="p-2 border text-right">${fmtMoney(s.total_revenue || 0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              `
+              : tableEmpty
+          }
+        </div>
+
+        <!-- 2. Revenue timing -->
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">2. Revenue timing</div>
+          ${
+            timing.length
+              ? `
+                <div class="overflow-auto">
+                  <table class="w-full text-xs border">
+                    <thead>
+                      <tr class="bg-slate-50">
+                        <th class="p-2 border text-left">Recognition timing</th>
+                        <th class="p-2 border text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${timing.map(r => `
+                        <tr>
+                          <td class="p-2 border">
+                            ${escHtml(
+                              String(r.timing || "unknown")
+                                .replaceAll("_", " ")
+                                .replace(/\b\w/g, c => c.toUpperCase())
+                            )}
+                          </td>
+                          <td class="p-2 border text-right">${fmtMoney(r.amount || 0)}</td>
+                        </tr>
+                      `).join("")}
+                    </tbody>
+                  </table>
+                </div>
+              `
+              : tableEmpty
+          }
+        </div>
+
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
