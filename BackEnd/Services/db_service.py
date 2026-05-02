@@ -62191,30 +62191,40 @@ class DatabaseService:
         return dict(row or {})
 
     def build_ppe_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
-        summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to)
+        close_cur = False
 
-        closing_carrying = _money(summary.get("closing_carrying"))
-        additions = _money(summary.get("additions_cost")) + _money(summary.get("subsequent_additions_cost"))
-        depreciation = _money(summary.get("depreciation_charge"))
-        impairment_losses = _money(summary.get("impairment_losses"))
-        revaluation_upward = _money(summary.get("revaluation_upward"))
-        revaluation_downward = _money(summary.get("revaluation_downward"))
+        if cur is None:
+            conn = self.get_connection()
+            cur = conn.cursor()
+            close_cur = True
+        else:
+            conn = None
 
-        extra_lines = []
+        try:
+            summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to)
 
-        if impairment_losses:
-            extra_lines.append(
-                f"Impairment losses recognised during the reporting period amounted to R{impairment_losses:,.2f}."
-            )
+            closing_carrying = _money(summary.get("closing_carrying"))
+            additions = _money(summary.get("additions_cost")) + _money(summary.get("subsequent_additions_cost"))
+            depreciation = _money(summary.get("depreciation_charge"))
+            impairment_losses = _money(summary.get("impairment_losses"))
+            revaluation_upward = _money(summary.get("revaluation_upward"))
+            revaluation_downward = _money(summary.get("revaluation_downward"))
 
-        if revaluation_upward or revaluation_downward:
-            extra_lines.append(
-                f"Revaluation movements recognised during the reporting period comprised upward revaluations of R{revaluation_upward:,.2f} and downward revaluations of R{revaluation_downward:,.2f}."
-            )
+            extra_lines = []
 
-        extra_text = "\n\n".join(extra_lines)
+            if impairment_losses:
+                extra_lines.append(
+                    f"Impairment losses recognised during the reporting period amounted to R{impairment_losses:,.2f}."
+                )
 
-        return f"""
+            if revaluation_upward or revaluation_downward:
+                extra_lines.append(
+                    f"Revaluation movements recognised during the reporting period comprised upward revaluations of R{revaluation_upward:,.2f} and downward revaluations of R{revaluation_downward:,.2f}."
+                )
+
+            extra_text = "\n\n".join(extra_lines)
+
+            return f"""
     Property, plant and equipment are initially recognised at cost. Cost includes the purchase price and expenditure directly attributable to bringing the asset to the location and condition necessary for it to operate in the manner intended by management.
 
     Subsequent expenditure is capitalised only when it is probable that future economic benefits associated with the item will flow to the company and the cost can be measured reliably. Day-to-day repairs and maintenance are recognised in profit or loss as incurred.
@@ -62228,6 +62238,17 @@ class DatabaseService:
     During the reporting period, additions to property, plant and equipment amounted to R{additions:,.2f}. Depreciation charged for the period amounted to R{depreciation:,.2f}. The closing carrying amount of property, plant and equipment was R{closing_carrying:,.2f}.
     {extra_text}
     """.strip()
+
+        finally:
+            if close_cur:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 
     def build_lease_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
