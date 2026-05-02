@@ -18694,21 +18694,20 @@ async function renderTBMini(periodKey = CURRENT_PERIOD_KEY) {
 function normalizeStmtType(raw) {
   const v = String(raw || "").trim().toLowerCase();
 
-  if (["pnl","profit_and_loss","profit&loss","profit & loss"].includes(v)) return "pnl";
-  if (["bs","balance_sheet","balance sheet"].includes(v)) return "bs";
-  if (t === "socie" || t === "equity") return "socie";
-  if (["cf","cash_flow","cash flow"].includes(v)) return "cf";
-  if (["tb","trial_balance","trial balance"].includes(v)) return "tb";
-  if (["notes","notes_to_statements","notes to statements"].includes(v)) return "notes";
+  if (["pnl", "profit_and_loss", "profit&loss", "profit & loss", "pl"].includes(v)) return "pnl";
+  if (["bs", "balance_sheet", "balance sheet"].includes(v)) return "bs";
+  if (["socie", "equity"].includes(v)) return "socie";
+  if (["cf", "cash_flow", "cash flow"].includes(v)) return "cf";
+  if (["tb", "trial_balance", "trial balance"].includes(v)) return "tb";
+  if (["notes", "notes_to_statements", "notes to statements"].includes(v)) return "notes";
 
-  // fallback keyword detection
   if (v.includes("profit") || v.includes("loss") || v.includes("p&l")) return "pnl";
   if (v.includes("balance")) return "bs";
   if (v.includes("cash")) return "cf";
   if (v.includes("trial")) return "tb";
   if (v.includes("note")) return "notes";
 
-  return v;
+  return v || "pnl";
 }
 
 async function renderPnLSummary(periodKey = CURRENT_PERIOD_KEY) {
@@ -20567,16 +20566,20 @@ function bindReportsScreen() {
         exportBtn.dataset.busy = "1";
         exportBtn.disabled = true;
 
-        const panel = document.getElementById("fsNotesPanel");
-        const editorOpen = panel && !panel.classList.contains("hidden");
-        const canvasHasNotes = !!window._notesState?.html;
+        const selectedType = normalizeStmtType(typeSel.value);
+        const exportType = selectedType === "notes" ? "notes" : typeSel.value;
 
-        const exportType =
-          editorOpen || canvasHasNotes
-            ? "notes"
-            : typeSel.value;
+        console.log("[EXPORT CLICK]", {
+          stmtType: typeSel.value,
+          exportType,
+          format: formatSel.value,
+          notesPack: document.getElementById("notesPack")?.value,
+        });
 
         await exportStatement(exportType, formatSel.value);
+      } catch (e) {
+        console.error("Export failed:", e);
+        alert(e.message || "Export failed.");
       } finally {
         exportBtn.dataset.busy = "0";
         exportBtn.disabled = false;
@@ -22839,17 +22842,6 @@ function renderSOCIEHtml(stmt) {
     </div>
   `;
 }
-
-// helper – normalize type dropdown value to backend key
-function normalizeStmtType(t) {
-  const s = String(t || "").toLowerCase();
-  if (s.startsWith("p&l") || s.startsWith("pnl") || s === "pl") return "pnl";
-  if (s.startsWith("bs") || s.includes("balance")) return "bs";
-  if (s.startsWith("cf") || s.includes("cash")) return "cf";
-  if (s.startsWith("tb")) return "tb";
-  return s || "pnl";
-}
-
 
 // ✅ Keep compare + cols mode in sync, and re-render when needed
 function syncCompareVsColsMode({ rerender = true } = {}) {
