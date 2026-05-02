@@ -44716,10 +44716,47 @@ class DatabaseService:
 
         # ✅ Normalize disclosure shape
         if isinstance(disclosure, dict):
-            if isinstance(disclosure.get("rows"), list):
+            # If the disclosure already includes a ready-made summary, use it directly
+            if isinstance(disclosure.get("summary"), dict):
+                return disclosure.get("summary")
+
+            data = disclosure.get("data")
+
+            if isinstance(data, dict):
+                # If API-style response contains ready-made summary
+                if isinstance(data.get("summary"), dict):
+                    return data.get("summary")
+
+                sections = data.get("sections")
+
+                # Main shape used by PPE disclosure endpoint
+                if isinstance(sections, dict) and isinstance(sections.get("raw"), list):
+                    disclosure = sections.get("raw")
+
+                elif isinstance(data.get("raw"), list):
+                    disclosure = data.get("raw")
+
+                elif isinstance(data.get("rows"), list):
+                    disclosure = data.get("rows")
+
+                elif isinstance(data.get("data"), list):
+                    disclosure = data.get("data")
+
+                else:
+                    disclosure = []
+
+            elif isinstance(disclosure.get("sections"), dict) and isinstance(disclosure["sections"].get("raw"), list):
+                disclosure = disclosure["sections"]["raw"]
+
+            elif isinstance(disclosure.get("raw"), list):
+                disclosure = disclosure.get("raw")
+
+            elif isinstance(disclosure.get("rows"), list):
                 disclosure = disclosure.get("rows")
+
             elif isinstance(disclosure.get("data"), list):
                 disclosure = disclosure.get("data")
+
             else:
                 disclosure = [disclosure]
 
@@ -44765,7 +44802,7 @@ class DatabaseService:
             "closing_reserve": s("closing_reserve"),
             "closing_carrying": s("closing_carrying"),
         }
-
+    
     def get_ppe_note_sections(
         self,
         cur,
