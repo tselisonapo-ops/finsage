@@ -20083,12 +20083,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v51")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v52")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=51,
+                    migration_version=52,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
