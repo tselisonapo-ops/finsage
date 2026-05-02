@@ -23672,27 +23672,14 @@ const NOTES_REGISTRY = {
     fetch: async (cid, period) => {
       const q = {};
 
-      // ✅ SAME PATTERN AS IFRS16
-      if (period?.params?.from && period?.params?.to) {
-        q.date_from = period.params.from;
-        q.date_to = period.params.to;
+      const p = period?.from && period?.to
+        ? period
+        : buildPeriodParams(period?.preset || "this_year");
 
-      } else if (period?.from && period?.to) {
-        q.date_from = period.from;
-        q.date_to = period.to;
+      q.date_from = p.from;
+      q.date_to = p.to;
 
-      } else if (period?.preset) {
-        const r = computePeriodRange(period.preset);
-        q.date_from = r?.from;
-        q.date_to = r?.to;
-
-      } else {
-        const preset = document.getElementById("stmtPreset")?.value || "this_year";
-        const r = computePeriodRange(preset);
-        q.date_from = r?.from;
-        q.date_to = r?.to;
-      }
-
+      console.log("IFRS15 period received:", period);
       console.log("IFRS15 FINAL PARAMS:", q);
 
       if (!q.date_from || !q.date_to) {
@@ -23706,7 +23693,7 @@ const NOTES_REGISTRY = {
       return {
         data: payload,
         html: renderRevenueDisclosureHTML(payload),
-        meta: { q }
+        meta: { q, period: p },
       };
     }
   },
