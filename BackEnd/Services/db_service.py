@@ -44709,8 +44709,18 @@ class DatabaseService:
         )
 
         def s(key: str) -> float:
-            return round(sum(float(r.get(key) or 0) for r in disclosure), 2)
+            total = 0.0
 
+            for r in disclosure:
+                v = r.get(key)
+
+                try:
+                    total += float(v or 0)
+                except (TypeError, ValueError):
+                    # 🔥 skip bad rows (like 'opening_cost')
+                    continue
+
+            return round(total, 2)
         return {
             "opening_cost": s("opening_cost"),
             "opening_accum_dep": s("opening_accum_dep"),
