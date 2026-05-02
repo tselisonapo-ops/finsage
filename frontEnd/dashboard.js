@@ -23672,35 +23672,28 @@ const NOTES_REGISTRY = {
     fetch: async (cid, period) => {
       const q = {};
 
-      const p = period?.params || period || {};
+      // ✅ SAME PATTERN AS IFRS16
+      if (period?.params?.from && period?.params?.to) {
+        q.date_from = period.params.from;
+        q.date_to = period.params.to;
 
-      q.date_from =
-        p.date_from ||
-        p.from ||
-        period?.from ||
-        window._stmtPeriod?.from;
+      } else if (period?.from && period?.to) {
+        q.date_from = period.from;
+        q.date_to = period.to;
 
-      q.date_to =
-        p.date_to ||
-        p.to ||
-        period?.to ||
-        window._stmtPeriod?.to;
+      } else if (period?.preset) {
+        const r = computePeriodRange(period.preset);
+        q.date_from = r?.from;
+        q.date_to = r?.to;
 
-      if (!q.date_from || !q.date_to) {
-        const preset =
-          p.preset ||
-          period?.preset ||
-          window._stmtPeriod?.preset ||
-          document.getElementById("stmtPreset")?.value ||
-          "this_year";
-
+      } else {
+        const preset = document.getElementById("stmtPreset")?.value || "this_year";
         const r = computePeriodRange(preset);
-
-        q.date_from = r?.from || null;
-        q.date_to = r?.to || null;
+        q.date_from = r?.from;
+        q.date_to = r?.to;
       }
 
-      console.log("IFRS15 disclosure params:", { period, p, q });
+      console.log("IFRS15 FINAL PARAMS:", q);
 
       if (!q.date_from || !q.date_to) {
         throw new Error("Revenue disclosure requires date_from and date_to.");
@@ -23713,14 +23706,7 @@ const NOTES_REGISTRY = {
       return {
         data: payload,
         html: renderRevenueDisclosureHTML(payload),
-        meta: {
-          q,
-          period: {
-            from: q.date_from,
-            to: q.date_to,
-            preset: window._stmtPeriod?.preset || null,
-          },
-        },
+        meta: { q }
       };
     }
   },
