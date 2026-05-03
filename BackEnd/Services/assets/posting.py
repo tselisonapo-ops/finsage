@@ -4678,129 +4678,24 @@ def get_class_policy(cur, schema: str, company_id: int, asset_class: str | None)
 
 def build_dep_preview_journal_lines(cur, schema: str, company_id: int, asset_row: dict, dep_row: dict) -> list[dict]:
     amt = dep_row.get("depreciation_amount") or dep_row.get("amount") or 0
+
     try:
         amt = Decimal(str(amt))
     except Exception:
         amt = Decimal("0")
 
     if amt <= 0:
-        amt = Decimal("0.00")  # keep lines, show zero amounts
+        amt = Decimal("0.00")
 
-    # 1) Dedicated accounts on asset (optional)
-    dep_exp_raw = (
-        asset_row.get("dep_expense_account_code")
-        or asset_row.get("depreciation_expense_account_code")
-        or ""
-    )
-    acc_dep_raw = (
-        asset_row.get("accum_dep_account_code")
-        or asset_row.get("accumulated_depreciation_account_code")
-        or ""
+    dep_exp_code, acc_dep_code = resolve_depreciation_accounts(
+        cur,
+        schema,
+        company_id,
+        asset_row,
     )
 
-    dep_exp = _coa_find_by_code(cur, schema, company_id, dep_exp_raw)
-    acc_dep = _coa_find_by_code(cur, schema, company_id, acc_dep_raw)
-
-    text = " ".join([
-        str(asset_row.get("asset_class") or ""),
-        str(asset_row.get("standard") or ""),
-        str(asset_row.get("measurement_basis") or ""),
-        str(asset_row.get("name") or ""),
-    ]).lower()
-
-    is_rou = any(k in text for k in ("right-of-use", "right of use", "rou", "ifrs 16", "lease"))
-    is_int = any(k in text for k in ("intangible", "ias 38"))
-
-    # 2) Role-based defaults
-    if not dep_exp:
-        if is_rou:
-            dep_exp = (
-                _coa_find_by_role(cur, schema, company_id, "depreciation_expense_rou")
-                or _coa_find_by_role(cur, schema, company_id, "amortisation_expense_rou")
-                or _coa_find_by_role(cur, schema, company_id, "depreciation_expense_ppe")  # fallback
-                or _coa_find_by_role(cur, schema, company_id, "depreciation_expense")
-            )
-        elif is_int:
-            dep_exp = (
-                _coa_find_by_role(cur, schema, company_id, "amortisation_expense")
-                or _coa_find_by_role(cur, schema, company_id, "depreciation_expense_ppe")
-                or _coa_find_by_role(cur, schema, company_id, "depreciation_expense")
-            )
-        else:
-            dep_exp = (
-                _coa_find_by_role(cur, schema, company_id, "depreciation_expense_ppe")
-                or _coa_find_by_role(cur, schema, company_id, "depreciation_expense")
-            )
-
-    if not acc_dep:
-        if is_rou:
-            acc_dep = (
-                _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation_rou")
-                or _coa_find_by_role(cur, schema, company_id, "accumulated_amortization_rou")
-            )
-        elif is_int:
-            # you currently only store accumulated amort as a normal COA row; role might be blank
-            acc_dep = (
-                _coa_find_by_role(cur, schema, company_id, "accumulated_amortization")
-                or _coa_find_by_role(cur, schema, company_id, "accumulated_amortisation")
-                or _coa_find_by_name(cur, schema, company_id, patterns=["%accum%amort%"], is_contra=True)
-            )
-        else:
-            acc_dep = (
-                _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")
-                or _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation")
-            )
-
-    # 2) Role-based generic defaults (company-specific, not industry-specific)
-    #    (You can let users configure these in Settings -> Control accounts style UI)
-    if not dep_exp:
-        dep_exp = (
-            _coa_find_by_role(cur, schema, company_id, "depreciation_expense_ppe")
-            or _coa_find_by_role(cur, schema, company_id, "depreciation_expense")
-            or _coa_find_by_role(cur, schema, company_id, "amortisation_expense")  # optional
-        )
-
-    if not acc_dep:
-        acc_dep = (
-            _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")
-            or _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation")
-        )
-
-    # 3) Heuristic fallback by name (only if role not configured)
-    #    - expense: non-contra, section usually Expense
-    #    - accumulated dep: contra-asset
-    if not dep_exp:
-        dep_exp = _coa_find_by_name(
-            cur, schema, company_id,
-            patterns=["%depreciation%", "%amortisation%", "%amortization%"],
-            section="Expense",
-            is_contra=False
-        ) or _coa_find_by_name(
-            cur, schema, company_id,
-            patterns=["%depreciation%", "%amortisation%", "%amortization%"],
-            is_contra=False
-        )
-
-    if not acc_dep:
-        acc_dep = _coa_find_by_name(
-            cur, schema, company_id,
-            patterns=["%accum%depr%", "%accumulated%depr%", "%accum%amort%"],
-            is_contra=True
-            ) or _coa_find_by_name(
-                cur, schema, company_id,
-                patterns=["%accum%depr%", "%accumulated%depr%", "%accum%amort%"]
-            )
-
-    if acc_dep == "BS_NCA_1590":
-        acc_dep = (
-            _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")
-            or _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation")
-            or acc_dep
-        )
-
-    # 4) Still not found -> show “missing” so UI pushes configuration
-    dep_exp_code = dep_exp or "MISSING_DEP_EXPENSE_ACCT"
-    acc_dep_code = acc_dep or "MISSING_ACC_DEP_ACCT"
+    dep_exp_code = dep_exp_code or "MISSING_DEP_EXPENSE_ACCT"
+    acc_dep_code = acc_dep_code or "MISSING_ACC_DEP_ACCT"
 
     return [
         {
