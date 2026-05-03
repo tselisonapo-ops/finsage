@@ -4736,8 +4736,7 @@ def build_dep_preview_journal_lines(cur, schema: str, company_id: int, asset_row
         if is_rou:
             acc_dep = (
                 _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation_rou")
-                or _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")  # fallback
-                or _coa_find_by_role(cur, schema, company_id, "accumulated_depreciation")
+                or _coa_find_by_role(cur, schema, company_id, "accumulated_amortization_rou")
             )
         elif is_int:
             # you currently only store accumulated amort as a normal COA row; role might be blank
