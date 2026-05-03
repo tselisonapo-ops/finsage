@@ -4476,8 +4476,12 @@ def resolve_depreciation_accounts(
 
     # Generic PPE role only after specific matching
     if not acc_dep_code:
-        acc_dep_code = coa_first_by_role(cur, schema, company_id, "accumulated_depreciation_ppe")
-
+        acc_dep_code = _first_coa_role(
+            cur,
+            schema,
+            company_id,
+            _acc_dep_roles_for_asset(asset),
+        )
     # Then generic name fallback excluding ROU
     if not acc_dep_code:
         acc_dep_code = first_code_by_name(
@@ -4515,7 +4519,6 @@ def _acc_dep_roles_for_asset(asset: dict) -> list[str]:
     if "building" in g or "land" in g:
         return [
             "accumulated_depreciation_buildings",
-            "accumulated_depreciation_ppe",
         ]
 
     if "furniture" in g or "fittings" in g:
@@ -4523,7 +4526,6 @@ def _acc_dep_roles_for_asset(asset: dict) -> list[str]:
             "accumulated_depreciation_furniture",
             "accumulated_depreciation_office_furniture",
             "accumulated_depreciation_equipment",
-            "accumulated_depreciation_ppe",
         ]
 
     if "vehicle" in g or "truck" in g or "lorry" in g:
@@ -4531,22 +4533,23 @@ def _acc_dep_roles_for_asset(asset: dict) -> list[str]:
             "accumulated_depreciation_heavy_vehicles",
             "accumulated_depreciation_motor_vehicles",
             "accumulated_depreciation_equipment",
-            "accumulated_depreciation_ppe",
         ]
 
-    if "computer" in g or "office equipment" in g:
+    if "computer" in g:
         return [
             "accumulated_depreciation_computer_equipment",
+            "accumulated_depreciation_equipment",
+        ]
+
+    if "office equipment" in g:
+        return [
             "accumulated_depreciation_office_equipment",
             "accumulated_depreciation_equipment",
-            "accumulated_depreciation_ppe",
         ]
 
     return [
         "accumulated_depreciation_equipment",
-        "accumulated_depreciation_ppe",
     ]
-
 
 def _dep_exp_roles_for_asset(asset: dict) -> list[str]:
     g = str(asset.get("asset_class_group") or asset.get("asset_class") or "").lower()
