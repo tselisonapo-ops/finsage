@@ -4280,6 +4280,26 @@ def resolve_depreciation_accounts(
 
     rou = is_rou_asset_record(asset)
 
+    # -------------------------------------------------
+    # Class/group-driven role defaults
+    # -------------------------------------------------
+    if not rou:
+        if not acc_dep_code:
+            acc_dep_code = _first_coa_role(
+                cur,
+                schema,
+                company_id,
+                _acc_dep_roles_for_asset(asset),
+            )
+
+        if not dep_exp_code:
+            dep_exp_code = _first_coa_role(
+                cur,
+                schema,
+                company_id,
+                _dep_exp_roles_for_asset(asset),
+            )
+
     def first_code_by_name(patterns, *, section=None, is_contra=None, exclude_patterns=None):
         patterns = [p for p in (patterns or []) if (p or "").strip()]
         if not patterns:
@@ -4480,6 +4500,70 @@ def resolve_depreciation_accounts(
         )
 
     return dep_exp_code, acc_dep_code
+
+def _first_coa_role(cur, schema: str, company_id: int, roles: list[str]) -> str | None:
+    for role in roles:
+        code = _coa_find_by_role(cur, schema, company_id, role)
+        if code:
+            return code
+    return None
+
+
+def _acc_dep_roles_for_asset(asset: dict) -> list[str]:
+    g = str(asset.get("asset_class_group") or asset.get("asset_class") or "").lower()
+
+    if "building" in g or "land" in g:
+        return [
+            "accumulated_depreciation_buildings",
+            "accumulated_depreciation_ppe",
+        ]
+
+    if "furniture" in g or "fittings" in g:
+        return [
+            "accumulated_depreciation_furniture",
+            "accumulated_depreciation_office_furniture",
+            "accumulated_depreciation_equipment",
+            "accumulated_depreciation_ppe",
+        ]
+
+    if "vehicle" in g or "truck" in g or "lorry" in g:
+        return [
+            "accumulated_depreciation_heavy_vehicles",
+            "accumulated_depreciation_motor_vehicles",
+            "accumulated_depreciation_equipment",
+            "accumulated_depreciation_ppe",
+        ]
+
+    if "computer" in g or "office equipment" in g:
+        return [
+            "accumulated_depreciation_computer_equipment",
+            "accumulated_depreciation_office_equipment",
+            "accumulated_depreciation_equipment",
+            "accumulated_depreciation_ppe",
+        ]
+
+    return [
+        "accumulated_depreciation_equipment",
+        "accumulated_depreciation_ppe",
+    ]
+
+
+def _dep_exp_roles_for_asset(asset: dict) -> list[str]:
+    g = str(asset.get("asset_class_group") or asset.get("asset_class") or "").lower()
+
+    if "building" in g or "land" in g:
+        return ["depreciation_expense_buildings", "depreciation_expense_ppe", "depreciation_expense"]
+
+    if "furniture" in g or "fittings" in g:
+        return ["depreciation_expense_furniture", "depreciation_expense_office_furniture", "depreciation_expense_ppe", "depreciation_expense"]
+
+    if "vehicle" in g or "truck" in g or "lorry" in g:
+        return ["depreciation_expense_heavy_vehicles", "depreciation_expense_motor_vehicles", "depreciation_expense_ppe", "depreciation_expense"]
+
+    if "computer" in g or "office equipment" in g:
+        return ["depreciation_expense_computer_equipment", "depreciation_expense_office_equipment", "depreciation_expense_ppe", "depreciation_expense"]
+
+    return ["depreciation_expense_equipment", "depreciation_expense_ppe", "depreciation_expense"]
 
 def _coa_find_by_code(cur, schema: str, company_id: int, code: str | None, *, include_non_posting: bool = False) -> str | None:
     code = (code or "").strip()

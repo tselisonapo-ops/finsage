@@ -1028,13 +1028,19 @@ def _coa_role_from_text(
     # ----------------------------
     # asset-class detection
     # ----------------------------
-    is_buildings = has_any("building", "buildings")
-    is_furniture = has_any("office furniture", "furniture", "fixtures", "fixtures & fittings")
-    is_computers = has_any("computer equipment", "computer", "server", "laptop", "it hardware")
-    is_vehicles = has_any("motor vehicle", "motor vehicles", "vehicle", "vehicles", "fleet")
-    is_equipment = has_any("construction equipment", "equipment", "machinery", "machine", "tools")
+    is_land = has_any("land")
+    is_buildings = has_any("building", "buildings", "premises", "warehouse")
+    is_furniture = has_any("office furniture", "furniture", "fixtures", "fixtures & fittings", "fittings")
+    is_computers = has_any("computer equipment", "computer", "server", "laptop", "it hardware", "it equipment")
+    is_office_equipment = has_any("office equipment", "printer", "scanner", "photocopier", "copier", "projector")
+    is_motor_vehicles = has_any("motor vehicle", "motor vehicles", "vehicle", "vehicles", "fleet", "car", "bakkie", "van", "pickup")
+    is_heavy_vehicles = has_any("lorry", "lorries", "truck", "trucks", "tipper", "heavy vehicle", "haulage vehicle")
+    is_construction_equipment = has_any("construction equipment", "tlb", "backhoe", "back dipper", "grader", "loader", "dozer", "bulldozer", "crane", "cement mixer")
+    is_mining_equipment = has_any("mining equipment", "mine equipment", "haul truck", "dump truck", "excavator", "crusher", "drill rig")
+    is_manufacturing_equipment = has_any("manufacturing equipment", "production equipment", "factory equipment", "plant", "machinery", "machine")
+    is_tools = has_any("tools", "small equipment")
+    is_leasehold = has_any("leasehold", "improvement", "renovation")
     is_intangible = has_any("intangible", "software", "license", "licence", "trademark")
-
     # ----------------------------
     # Expense side
     # ----------------------------
@@ -1051,18 +1057,27 @@ def _coa_role_from_text(
         if "depreciation" in text or "depr" in text:
             if is_buildings:
                 return "depreciation_expense_buildings"
-            if is_furniture:
-                return "depreciation_expense_office_furniture"
+            if is_heavy_vehicles:
+                return "depreciation_expense_heavy_vehicles"
+            if is_motor_vehicles:
+                return "depreciation_expense_motor_vehicles"
+            if is_mining_equipment:
+                return "depreciation_expense_mining_equipment"
+            if is_construction_equipment:
+                return "depreciation_expense_construction_equipment"
+            if is_manufacturing_equipment:
+                return "depreciation_expense_manufacturing_equipment"
             if is_computers:
                 return "depreciation_expense_computer_equipment"
-            if is_vehicles:
-                return "depreciation_expense_motor_vehicles"
-            if is_equipment:
-                return "depreciation_expense_equipment"
+            if is_office_equipment:
+                return "depreciation_expense_office_equipment"
+            if is_furniture:
+                return "depreciation_expense_office_furniture"
+            if is_tools:
+                return "depreciation_expense_tools"
+            if is_leasehold:
+                return "depreciation_expense_leasehold_improvements"
             return "depreciation_expense_ppe"
-
-        if "amort" in text:
-            return "amortisation_expense"
 
     # ----------------------------
     # Asset contra side
@@ -1076,14 +1091,26 @@ def _coa_role_from_text(
 
         if is_buildings:
             return "accumulated_depreciation_buildings"
-        if is_furniture:
-            return "accumulated_depreciation_office_furniture"
+        if is_heavy_vehicles:
+            return "accumulated_depreciation_heavy_vehicles"
+        if is_motor_vehicles:
+            return "accumulated_depreciation_motor_vehicles"
+        if is_mining_equipment:
+            return "accumulated_depreciation_mining_equipment"
+        if is_construction_equipment:
+            return "accumulated_depreciation_construction_equipment"
+        if is_manufacturing_equipment:
+            return "accumulated_depreciation_manufacturing_equipment"
         if is_computers:
             return "accumulated_depreciation_computer_equipment"
-        if is_vehicles:
-            return "accumulated_depreciation_motor_vehicles"
-        if is_equipment:
-            return "accumulated_depreciation_equipment"
+        if is_office_equipment:
+            return "accumulated_depreciation_office_equipment"
+        if is_furniture:
+            return "accumulated_depreciation_office_furniture"
+        if is_tools:
+            return "accumulated_depreciation_tools"
+        if is_leasehold:
+            return "accumulated_depreciation_leasehold_improvements"
 
         return "accumulated_depreciation_ppe"
 
