@@ -570,6 +570,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
       FROM base b
       LEFT JOIN posted_flags pf ON pf.asset_id = b.id
       LEFT JOIN gl_cost gc ON gc.asset_id = b.id
+      WHERE pf.any_posted = TRUE
 
       ORDER BY b.id DESC
       LIMIT %s OFFSET %s

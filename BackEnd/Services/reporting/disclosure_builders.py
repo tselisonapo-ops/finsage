@@ -216,49 +216,43 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
     with db._conn_cursor() as (_conn, cur):
         # Opening posted cost
         cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(a.cost), 0) AS amount
-            FROM {schema}.assets a
-            WHERE a.company_id = %s
-              AND EXISTS (
-                  SELECT 1
-                  FROM {schema}.asset_acquisitions acq
-                  WHERE acq.asset_id = a.id
-                    AND acq.company_id = a.company_id
-                    AND lower(acq.status) = 'posted'
-                    AND acq.acquisition_date <= %s
-              )
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
+            FROM {schema}.asset_acquisitions acq
+            JOIN {schema}.assets a ON a.id = acq.asset_id
+            JOIN {schema}.journal j ON j.id = acq.posted_journal_id
+            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
+            WHERE acq.company_id = %s
+                AND lower(acq.status) = 'posted'
+                AND acq.acquisition_date <= %s
+                AND jl.account_code = a.asset_account_code
         """), (company_id, open_as_of))
         opening_cost = _d((cur.fetchone() or {}).get("amount"))
 
         # Closing posted cost
         cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(a.cost), 0) AS amount
-            FROM {schema}.assets a
-            WHERE a.company_id = %s
-              AND EXISTS (
-                  SELECT 1
-                  FROM {schema}.asset_acquisitions acq
-                  WHERE acq.asset_id = a.id
-                    AND acq.company_id = a.company_id
-                    AND lower(acq.status) = 'posted'
-                    AND acq.acquisition_date <= %s
-              )
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
+            FROM {schema}.asset_acquisitions acq
+            JOIN {schema}.assets a ON a.id = acq.asset_id
+            JOIN {schema}.journal j ON j.id = acq.posted_journal_id
+            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
+            WHERE acq.company_id = %s
+                AND lower(acq.status) = 'posted'
+                AND acq.acquisition_date <= %s
+                AND jl.account_code = a.asset_account_code
         """), (company_id, date_to))
         closing_cost = _d((cur.fetchone() or {}).get("amount"))
 
         # Additions in period
         cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(a.cost), 0) AS amount
-            FROM {schema}.assets a
-            WHERE a.company_id = %s
-              AND EXISTS (
-                  SELECT 1
-                  FROM {schema}.asset_acquisitions acq
-                  WHERE acq.asset_id = a.id
-                    AND acq.company_id = a.company_id
-                    AND lower(acq.status) = 'posted'
-                    AND acq.acquisition_date BETWEEN %s AND %s
-              )
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
+            FROM {schema}.asset_acquisitions acq
+            JOIN {schema}.assets a ON a.id = acq.asset_id
+            JOIN {schema}.journal j ON j.id = acq.posted_journal_id
+            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
+            WHERE acq.company_id = %s
+                AND lower(acq.status) = 'posted'
+                AND acq.acquisition_date BETWEEN %s AND %s
+                AND jl.account_code = a.asset_account_code
         """), (company_id, date_from, date_to))
         additions = _d((cur.fetchone() or {}).get("amount"))
 
@@ -326,7 +320,18 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         """), (company_id, date_from, date_to))
         revaluation = _d((cur.fetchone() or {}).get("amount"))
 
-    disposals = Decimal("0")
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(ABS(jl.credit - jl.debit)), 0) AS amount
+            FROM {schema}.asset_disposals disp
+            JOIN {schema}.assets a ON a.id = disp.asset_id
+            JOIN {schema}.journal j ON j.id = disp.posted_journal_id
+            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
+            WHERE disp.company_id = %s
+            AND lower(disp.status) = 'posted'
+            AND disp.disposal_date BETWEEN %s AND %s
+            AND jl.account_code = a.asset_account_code
+        """), (company_id, date_from, date_to))
+        disposals = _d((cur.fetchone() or {}).get("amount"))
 
     opening_carrying = opening_cost - opening_acc_dep
     closing_carrying = closing_cost - closing_acc_dep - impairment
