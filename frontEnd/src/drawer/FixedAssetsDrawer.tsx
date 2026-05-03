@@ -124,6 +124,24 @@ type CoaRow = {
 
 type DepreciationMethod = "SL" | "RB" | "UOP";
 
+const ASSET_CLASS_GROUPS = [
+  "Land and buildings",
+  "Plant and machinery",
+  "Vehicles",
+  "Heavy vehicles",
+  "Construction equipment",
+  "Mining equipment",
+  "Manufacturing equipment",
+  "Computer equipment",
+  "Office equipment",
+  "Furniture and fittings",
+  "Tools and small equipment",
+  "Leasehold improvements",
+  "Other PPE",
+] as const;
+
+type AssetClassGroup = typeof ASSET_CLASS_GROUPS[number];
+
 type CreateAssetPayload = {
   entry_mode?: AssetEntryMode;
   posting_date?: string | null;
@@ -132,6 +150,7 @@ type CreateAssetPayload = {
   asset_code: string;
   asset_name: string;
   asset_class: string;
+  asset_class_group?: AssetClassGroup | string | null;
   category?: string | null;
 
   location?: string | null;
@@ -357,6 +376,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     asset_code: "",
     asset_name: "",
     asset_class: "",
+    asset_class_group: "",
     category: "",
 
     location: "",
@@ -519,6 +539,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       asset_code: String(defaults.assetCode || ""),
       asset_name: String(defaults.assetName || ""),
       asset_class: String(defaults.assetClass || ""),
+      asset_class_group: String(defaults.assetClassGroup || defaults.asset_class_group || ""),
       category: String(defaults.category || ""),
       location: String(defaults.location || ""),
       serial_no: String(defaults.serialNo || ""),
@@ -643,7 +664,13 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     }
     if (!form.asset_code.trim()) return setErr("Asset code is required.");
     if (!form.asset_name.trim()) return setErr("Asset name is required.");
-    if (!form.asset_class.trim()) return setErr("Asset class is required.");
+    if (!String(form.asset_class_group || "").trim()) {
+      return setErr("Asset class group is required.");
+    }
+
+    if (!String(form.asset_class || "").trim()) {
+      return setErr("Asset class label is required.");
+    }
     if (!form.acquisition_date) return setErr("Acquisition date is required.");
 
     const resolvedPostingDate =
@@ -964,13 +991,27 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               />
             </div>
             <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class *</div>
-              <input
-                value={form.asset_class}
-                onChange={(e) => setForm((p) => ({ ...p, asset_class: e.target.value }))}
-                placeholder="Vehicles / IT / Furniture..."
+              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class group *</div>
+              <select
+                value={String(form.asset_class_group || "")}
+                onChange={(e) => {
+                  const group = e.target.value;
+
+                  setForm((p) => ({
+                    ...p,
+                    asset_class_group: group,
+                    asset_class: String(p.asset_class || "").trim() ? p.asset_class : group,
+                  }));
+                }}
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              />
+              >
+                <option value="">Select asset class group...</option>
+                {ASSET_CLASS_GROUPS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -982,6 +1023,19 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               placeholder="e.g. Motor Vehicle - Toyota"
               style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
             />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class label</div>
+            <input
+              value={form.asset_class}
+              onChange={(e) => setForm((p) => ({ ...p, asset_class: e.target.value }))}
+              placeholder="e.g. Lorries, Motor vehicles, TLBs, Servers"
+              style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+            />
+            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
+              Use this for the company’s own class name. The group above keeps reporting consistent.
+            </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

@@ -12308,6 +12308,7 @@ class DatabaseService:
             asset_code TEXT NOT NULL,              -- unique per company
             asset_name TEXT NOT NULL,
             asset_class TEXT NOT NULL,             -- e.g. Land, Buildings, Vehicles, Plant, IT, Furniture
+            asset_class_group TEXT NULL,
             category TEXT NULL,                    -- optional grouping
 
             location TEXT NULL,
@@ -12335,6 +12336,9 @@ class DatabaseService:
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ NULL
         );
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS asset_class_group TEXT NULL;
 
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS supplier_id INT NULL,
@@ -12660,6 +12664,9 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS asset_usage_lookup_idx
         ON {schema}.asset_usage (company_id, asset_id, status, period_end DESC, id DESC);
 
+        CREATE INDEX IF NOT EXISTS {schema}_assets_company_class_group_idx
+        ON {schema}.assets(company_id, asset_class_group);
+        
         CREATE TABLE IF NOT EXISTS {schema}.asset_acquisitions (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,

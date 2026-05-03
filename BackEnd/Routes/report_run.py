@@ -1633,14 +1633,15 @@ def export_ppe_disclosure(company_id):
                 period_to=date_to,
             )
 
-            payload = build_ppe_disclosure(
-                db=db,
-                company_id=company_id,
-                date_from=date_from,
-                date_to=date_to,
-            )
+            with db._conn_cursor() as (_conn, cur):
+                ppe_payload = db.get_ppe_note_payload(
+                    cur,
+                    company_id,
+                    date_from,
+                    date_to,
+                )
 
-            ppe_note = build_ppe_note_export_payload(note, payload)
+            ppe_note = build_ppe_note_export_payload(note, ppe_payload)
 
             return export_fs_notes_pdf(
                 [ppe_note],

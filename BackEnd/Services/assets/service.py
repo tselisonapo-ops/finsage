@@ -580,6 +580,32 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
     return fetchall(cur)
 
+def normalize_asset_class_group(asset_class="", asset_name="", category=""):
+    text = " ".join([
+        str(asset_class or ""),
+        str(asset_name or ""),
+        str(category or ""),
+    ]).lower()
+
+    rules = [
+        ("Land and buildings", ["land", "building", "property", "premises", "warehouse"]),
+        ("Mining equipment", ["mining", "mine", "haul truck", "dump truck", "excavator", "crusher", "drill rig"]),
+        ("Construction equipment", ["construction", "tlb", "backhoe", "back dipper", "grader", "loader", "dozer", "bulldozer", "cement mixer"]),
+        ("Heavy vehicles", ["lorry", "lorries", "truck", "trucks", "tipper", "heavy vehicle"]),
+        ("Vehicles", ["vehicle", "car", "bakkie", "van", "pickup", "motor"]),
+        ("Manufacturing equipment", ["manufacturing", "production", "factory", "machine", "machinery", "plant"]),
+        ("Computer equipment", ["computer", "laptop", "server", "printer", "scanner", "it equipment"]),
+        ("Office equipment", ["office equipment", "photocopier", "copier", "telephone", "projector"]),
+        ("Furniture and fittings", ["furniture", "fittings", "desk", "chair", "boardroom"]),
+        ("Tools and small equipment", ["tool", "tools", "small equipment"]),
+        ("Leasehold improvements", ["leasehold", "improvement", "renovation"]),
+    ]
+
+    for group, keywords in rules:
+        if any(k in text for k in keywords):
+            return group
+
+    return "Other PPE"
 
 def create_asset(cur, company_id, payload):
     schema = company_schema(company_id)
@@ -691,13 +717,28 @@ def create_asset(cur, company_id, payload):
         opening_accum_dep = None
         opening_impairment = None
 
+    asset_class = str(payload.get("asset_class") or "").strip()
+    asset_name = str(payload.get("asset_name") or "").strip()
+    category = str(payload.get("category") or "").strip() or None
+
+    if not asset_class:
+        raise Exception("asset_class is required")
+
+    asset_class_group = str(payload.get("asset_class_group") or "").strip()
+    if not asset_class_group:
+        asset_class_group = normalize_asset_class_group(
+            asset_class=asset_class,
+            asset_name=asset_name,
+            category=category or "",
+        )
+
     # ----------------------------
     # INSERT
     # ----------------------------
     cur.execute(_q(schema, """
       INSERT INTO {schema}.assets(
         company_id,
-        asset_code, asset_name, asset_class, category, location, serial_no, notes,
+        asset_code, asset_name, asset_class, asset_class_group, category, location, serial_no, notes,
 
         acquisition_date, available_for_use_date, cost, residual_value,
         depreciation_method, useful_life_months,
@@ -719,7 +760,7 @@ def create_asset(cur, company_id, payload):
       )
       VALUES (
         %s,
-        %s,%s,%s,%s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,%s,%s,
 
         %s,%s,%s,%s,
         %s,%s,
@@ -740,8 +781,8 @@ def create_asset(cur, company_id, payload):
       RETURNING id
     """), (
       company_id,
-      payload["asset_code"], payload["asset_name"], payload["asset_class"],
-      payload.get("category"), payload.get("location"), payload.get("serial_no"), payload.get("notes"),
+      payload["asset_code"], asset_name, asset_class, asset_class_group,
+      category, payload.get("location"), payload.get("serial_no"), payload.get("notes"),
 
       payload["acquisition_date"], payload.get("available_for_use_date"),
       cost, residual_value,
@@ -766,7 +807,7 @@ def create_asset(cur, company_id, payload):
 
 # ✅ whitelist for safe updates
 _ASSET_UPDATE_ALLOWED = {
-    "asset_code", "asset_name", "asset_class", "category",
+    "asset_code", "asset_name", "asset_class", "asset_class_group", "category",
     "location", "serial_no", "notes",
     "acquisition_date", "available_for_use_date",
     "cost", "residual_value",
