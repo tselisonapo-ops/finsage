@@ -185,17 +185,7 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
         ],
     }
 
-def build_ppe_disclosure(
-    db,
-    company_id: int,
-    date_from: date,
-    date_to: date,
-) -> Dict[str, Any]:
-    """
-    IAS 16 PPE disclosure.
-    Uses trial balance opening/closing and depreciation/account movement clues.
-    """
-
+def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) -> Dict[str, Any]:
     ctx = db.get_company_context(company_id) if hasattr(db, "get_company_context") else {}
     ctx = ctx or {}
 
@@ -203,19 +193,16 @@ def build_ppe_disclosure(
 
     tb_open = db.get_trial_balance(company_id, None, open_as_of) or []
     tb_close = db.get_trial_balance(company_id, None, date_to) or []
-    tb_period = db.get_trial_balance(company_id, date_from, date_to) or []
 
     open_by = _tb_map(tb_open)
     close_by = _tb_map(tb_close)
-
-    all_codes = set(open_by.keys()) | set(close_by.keys())
 
     opening_cost = Decimal("0")
     opening_acc_dep = Decimal("0")
     closing_cost = Decimal("0")
     closing_acc_dep = Decimal("0")
 
-    for code in all_codes:
+    for code in set(open_by.keys()) | set(close_by.keys()):
         r = close_by.get(code) or open_by.get(code) or {}
         if not _is_ppe_row(r):
             continue
@@ -230,37 +217,14 @@ def build_ppe_disclosure(
             opening_cost += open_amt
             closing_cost += close_amt
 
-    # Period movements
-    additions = Decimal("0")
-    disposals = Decimal("0")
-    depreciation = Decimal("0")
-    impairment = Decimal("0")
-    revaluation = Decimal("0")
-
-    for r in tb_period:
-        txt = _row_text(r)
-
-        if _is_ppe_row(r) and not _is_accum_dep_row(r):
-            amt = _signed_asset_amount(r)
-            if amt > 0:
-                additions += amt
-            elif amt < 0:
-                disposals += abs(amt)
-
-        if "depreciation" in txt and "accum" not in txt and ("ias 16" in txt or "ppe" in txt or "equipment" in txt):
-            # P/L depreciation expense is usually debit positive
-            depreciation += abs(_d(r.get("debit_total") or r.get("debit")) - _d(r.get("credit_total") or r.get("credit")))
-
-        if "impairment" in txt:
-            impairment += abs(_d(r.get("debit_total") or r.get("debit")) - _d(r.get("credit_total") or r.get("credit")))
-
-        if "revaluation" in txt:
-            revaluation += _d(r.get("credit_total") or r.get("credit")) - _d(r.get("debit_total") or r.get("debit"))
-
     opening_carrying = opening_cost - opening_acc_dep
     closing_carrying = closing_cost - closing_acc_dep
 
-    columns = [{"key": "amount", "label": "Amount"}]
+    additions = max(Decimal("0"), closing_cost - opening_cost)
+    disposals = Decimal("0")
+    revaluation = Decimal("0")
+    impairment = Decimal("0")
+    depreciation = max(Decimal("0"), closing_acc_dep - opening_acc_dep)
 
     rows = [
         {"label": "Opening cost", "values": {"amount": _money(opening_cost)}},
@@ -288,10 +252,9 @@ def build_ppe_disclosure(
             "standard": "IAS 16",
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
         },
-        "columns": columns,
+        "columns": [{"key": "amount", "label": "Amount"}],
         "rows": rows,
     }
-
 
 def build_lease_disclosure(
     db,
