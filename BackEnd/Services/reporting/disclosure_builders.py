@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List
 from BackEnd.Services.reporting.revenue_disclosure_builder import build_revenue_disclosure_payload
+from decimal import Decimal, ROUND_HALF_UP
 
 def _d(v: Any) -> Decimal:
     try:
@@ -14,10 +15,21 @@ def _d(v: Any) -> Decimal:
         return Decimal("0")
 
 
-def _money(v: Any) -> float:
-    return float(_d(v).quantize(Decimal("0.01")))
 
+def _money(v, places=2) -> float:
+    """
+    Normalize any numeric input to a rounded float (financial-safe).
 
+    - Accepts: None, int, float, str, Decimal
+    - Returns: float rounded to given decimal places (default 2)
+    """
+    try:
+        d = Decimal(str(v or 0))
+        q = Decimal("1." + ("0" * places))  # e.g. 1.00
+        return float(d.quantize(q, rounding=ROUND_HALF_UP))
+    except Exception:
+        return 0.0
+    
 def _row_text(r: Dict[str, Any]) -> str:
     return " ".join(str(r.get(k) or "") for k in (
         "code", "name", "account_name", "section", "category", "standard", "role"
@@ -83,6 +95,94 @@ def _tb_map(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             out[code] = r
     return out
 
+def _row(label, amount=None, row_type="normal"):
+    return {
+        "label": label,
+        "values": {"amount": _money(amount)} if amount is not None else {},
+        "row_type": row_type,
+    }
+
+
+    
+def _ifrs16_rou_rows(strict):
+    rou = strict.get("rou") or {}
+
+    return [
+        _row("Opening carrying amount", rou.get("opening_rou_asset_total")),
+        _row("Additions", rou.get("additions_period")),
+        _row("Remeasurements / modifications", rou.get("remeasurements_modifications_period")),
+        _row("Depreciation", -_money(rou.get("depreciation_charge_period"))),
+        _row("Derecognition / terminations", -_money(rou.get("terminations_nbv_disposed_period"))),
+        _row("Closing carrying amount", rou.get("closing_rou_nbv_as_of"), "total"),
+    ]
+
+
+def _ifrs16_liability_rows(strict):
+    recon = strict.get("liability_reconciliation") or {}
+
+    return [
+        _row("Opening lease liability", recon.get("opening_liability")),
+        _row("Additions from new leases", recon.get("additions_new_leases")),
+        _row("Interest accretion", recon.get("interest_accretion")),
+        _row("Principal reduction", -_money(recon.get("principal_reduction"))),
+        _row("Remeasurements / modifications", recon.get("remeasurements_modifications")),
+        _row("Derecognitions / terminations", -_money(recon.get("derecognitions_terminations"))),
+        _row("Closing lease liability", recon.get("closing_liability"), "total"),
+    ]
+
+
+def _ifrs16_maturity_rows(strict):
+    maturity = strict.get("maturity_analysis") or {}
+    rows = []
+
+    for r in maturity.get("rows") or []:
+        rows.append(_row(r.get("bucket") or "", r.get("undiscounted_net")))
+
+    rows.append(_row("Undiscounted future lease payments", maturity.get("undiscounted_net_total"), "total"))
+    rows.append(_row("Carrying amount of lease liability", maturity.get("carrying_amount_liability"), "subtotal"))
+    rows.append(_row("Discount gap", maturity.get("discount_gap")))
+
+    return rows
+
+def build_lease_note_export_payload(db, company_id, period_from, period_to, *, cur=None):
+    note = db.get_or_build_financial_statement_note(
+        company_id,
+        "ifrs16_lease_policy",
+        period_from,
+        period_to,
+        cur=cur,
+    )
+
+    strict = db.get_ifrs16_disclosure_strict(
+        company_id,
+        from_date=period_from,
+        to_date=period_to,
+        as_of=period_to,
+        include_terminated=True,
+        cur=cur,
+    )
+
+    return {
+        "title": "Leases",
+        "text": note.get("content_text") or note.get("system_draft") or "",
+        "sections": [
+            {
+                "title": "Right-of-use assets",
+                "rows": _ifrs16_rou_rows(strict),
+                "amount_keys": ["amount"],
+            },
+            {
+                "title": "Lease liabilities",
+                "rows": _ifrs16_liability_rows(strict),
+                "amount_keys": ["amount"],
+            },
+            {
+                "title": "Maturity analysis",
+                "rows": _ifrs16_maturity_rows(strict),
+                "amount_keys": ["amount"],
+            },
+        ],
+    }
 
 def build_ppe_disclosure(
     db,

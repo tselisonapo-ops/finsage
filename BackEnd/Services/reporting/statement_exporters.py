@@ -13,6 +13,11 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+from reportlab.platypus import KeepTogether
+from xml.sax.saxutils import escape
+
 
 
 THIN = Side(style="thin", color="D9E2F3")
@@ -20,6 +25,88 @@ HEADER_FILL = PatternFill("solid", fgColor="D9EAF7")
 SUBTOTAL_FILL = PatternFill("solid", fgColor="EEF4FB")
 TITLE_FILL = PatternFill("solid", fgColor="BFD7EA")
 
+
+def _pdf_amount(v):
+    try:
+        if v is None or v == "":
+            return ""
+        n = float(v)
+        if abs(n) < 0.000001:
+            n = 0.0
+        return f"({abs(n):,.2f})" if n < 0 else f"{n:,.2f}"
+    except Exception:
+        return "" if v is None else str(v)
+
+
+def _note_para(text, style):
+    text = escape(str(text or "")).replace("\n", "<br/>")
+    return Paragraph(text, style)
+
+
+def _financial_table(rows, amount_keys=None):
+    """
+    Plain FS-style table:
+    no Excel grid,
+    only total lines,
+    professional PDF spacing.
+    """
+    amount_keys = amount_keys or ["amount"]
+
+    data = []
+    row_types = []
+
+    for r in rows or []:
+        label = r.get("label") or r.get("name") or ""
+        values = r.get("values") or {}
+        rt = r.get("row_type") or "normal"
+
+        row = [Paragraph(escape(label), ParagraphStyle(
+            "tbl_label",
+            fontName="Helvetica-Bold" if rt in ("header", "subtotal", "total") else "Helvetica",
+            fontSize=9,
+            leading=11,
+            alignment=TA_LEFT,
+        ))]
+
+        for k in amount_keys:
+            row.append(Paragraph(_pdf_amount(values.get(k)), ParagraphStyle(
+                "tbl_amt",
+                fontName="Helvetica-Bold" if rt in ("subtotal", "total") else "Helvetica",
+                fontSize=9,
+                leading=11,
+                alignment=TA_RIGHT,
+            )))
+
+        data.append(row)
+        row_types.append(rt)
+
+    if not data:
+        return None
+
+    table = Table(data, colWidths=[125 * mm, *([32 * mm] * len(amount_keys))], hAlign="LEFT")
+
+    style = TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ])
+
+    for idx, rt in enumerate(row_types):
+        if rt == "header":
+            style.add("TOPPADDING", (0, idx), (-1, idx), 7)
+            style.add("BOTTOMPADDING", (0, idx), (-1, idx), 3)
+
+        if rt == "subtotal":
+            style.add("LINEABOVE", (1, idx), (-1, idx), 0.4, colors.black)
+
+        if rt == "total":
+            style.add("LINEABOVE", (1, idx), (-1, idx), 0.7, colors.black)
+            style.add("LINEBELOW", (1, idx), (-1, idx), 0.7, colors.black)
+
+    table.setStyle(style)
+    return table
 
 def _clean_number(v: Any) -> Any:
     try:
@@ -457,25 +544,12 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     period_to = period.get("to")
 
     cols = _payload_columns(payload)
-
     if len(cols) == 1:
         cols[0] = {**cols[0], "label": "Amount"}
 
     payload = {**payload, "columns": cols}
-
     headers, flat_rows = _flatten_payload(payload)
     col_keys = [c.get("key") for c in cols]
-
-    def fmt_pdf_amount(v: Any) -> str:
-        try:
-            if v is None or v == "":
-                return ""
-            num = float(v)
-            if abs(num) < 0.000001:
-                num = 0.0
-            return f"({abs(num):,.2f})" if num < 0 else f"{num:,.2f}"
-        except Exception:
-            return "" if v is None else str(v)
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -488,95 +562,137 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     )
 
     styles = getSampleStyleSheet()
-    story = []
+    title_style = ParagraphStyle(
+        "fs_title",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        leading=17,
+        spaceAfter=6,
+    )
+    meta_style = ParagraphStyle(
+        "fs_meta",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=11,
+    )
 
-    story.append(Paragraph(f"<b>{title}</b>", styles["Title"]))
+    story = [
+        Paragraph(escape(title), title_style),
+    ]
 
     if company_name:
-        story.append(Paragraph(f"<b>{company_name}</b>", styles["Heading3"]))
+        story.append(Paragraph(f"<b>{escape(company_name)}</b>", meta_style))
 
     if period_from or period_to:
-        if period_from:
-            story.append(Paragraph(f"Period: {period_from} to {period_to or ''}", styles["BodyText"]))
-        else:
-            story.append(Paragraph(f"As at: {period_to or ''}", styles["BodyText"]))
+        label = f"Period: {period_from or ''} to {period_to or ''}" if period_from else f"As at: {period_to or ''}"
+        story.append(Paragraph(escape(label), meta_style))
 
     if currency:
-        story.append(Paragraph(f"Currency: {currency}", styles["BodyText"]))
+        story.append(Paragraph(f"Currency: {escape(currency)}", meta_style))
 
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 10))
 
-    # Header row: no "Line Item"; keep Amount above the numeric column(s)
-    amount_headers = []
-    for h in headers[1:]:
-        amount_headers.append(h or "Amount")
-
-    data = [["", *amount_headers]]
-
-    for item in flat_rows:
-        vals = item.get("values") or {}
-        row = [item.get("label") or ""]
-
-        for key in col_keys:
-            row.append(fmt_pdf_amount(vals.get(key, "")))
-
-        data.append(row)
-
-    num_cols = max(1, len(col_keys))
-
-    # Compact financial-statement layout, not Excel-like full-width layout
-    if num_cols == 1:
-        col_widths = [135 * mm, 30 * mm]
-    elif num_cols == 2:
-        col_widths = [105 * mm, 32 * mm, 32 * mm]
-    elif num_cols == 3:
-        col_widths = [90 * mm, 30 * mm, 30 * mm, 30 * mm]
-    else:
-        desc_width = 78 * mm
-        amount_width = 25 * mm
-        col_widths = [desc_width, *([amount_width] * num_cols)]
-
-    table = Table(data, colWidths=col_widths, repeatRows=0, hAlign="LEFT")
-
-    style = TableStyle([
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-
-        ("ALIGN", (0, 0), (0, -1), "LEFT"),
-        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-
-        ("LINEBELOW", (1, 0), (-1, 0), 0.5, colors.black),
-
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
-
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING", (1, 0), (-1, -1), 2),
-        ("LINEBELOW", (0, 0), (0, 0), 0, colors.white),
-    ])
-
-    for idx, item in enumerate(flat_rows, start=1):
-        rt = item.get("row_type") or "normal"
-
-        if rt == "header":
-            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-            style.add("TOPPADDING", (0, idx), (-1, idx), 8)
-            style.add("BOTTOMPADDING", (0, idx), (-1, idx), 3)
-
-        elif rt == "subtotal":
-            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-            style.add("LINEABOVE", (-1, idx), (-1, idx), 0.4, colors.black)
-
-        elif rt == "total":
-            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
-            style.add("LINEABOVE", (-1, idx), (-1, idx), 0.7, colors.black)
-            style.add("LINEBELOW", (-1, idx), (-1, idx), 0.7, colors.black)
-
-    table.setStyle(style)
-    story.append(table)
+    tbl = _financial_table(flat_rows, col_keys)
+    if tbl:
+        story.append(tbl)
 
     doc.build(story)
+
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+def export_fs_notes_pdf(notes: List[Dict[str, Any]], filename: str = "financial_statement_notes.pdf") -> Response:
+    """
+    notes shape:
+    [
+      {
+        "title": "Leases",
+        "text": "...policy wording...",
+        "sections": [
+          {"title": "Right-of-use assets", "rows": [...]},
+          {"title": "Lease liabilities", "rows": [...]},
+        ]
+      }
+    ]
+    """
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+
+    note_title = ParagraphStyle(
+        "note_title",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        spaceBefore=8,
+        spaceAfter=6,
+    )
+
+    section_title = ParagraphStyle(
+        "section_title",
+        parent=styles["Heading3"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=13,
+        spaceBefore=8,
+        spaceAfter=4,
+    )
+
+    body = ParagraphStyle(
+        "note_body",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        spaceAfter=7,
+    )
+
+    story = []
+
+    for note in notes or []:
+        title = note.get("title") or "Note"
+        text = note.get("text") or ""
+
+        block = [
+            Paragraph(escape(title), note_title),
+            _note_para(text, body),
+        ]
+
+        for sec in note.get("sections") or []:
+            rows = sec.get("rows") or []
+            if not rows:
+                continue
+
+            block.append(Paragraph(escape(sec.get("title") or ""), section_title))
+
+            amount_keys = sec.get("amount_keys") or ["amount"]
+            tbl = _financial_table(rows, amount_keys)
+            if tbl:
+                block.append(tbl)
+                block.append(Spacer(1, 6))
+
+        story.append(KeepTogether(block))
+        story.append(Spacer(1, 10))
+
+    doc.build(story)
+
     pdf_bytes = buffer.getvalue()
     buffer.close()
 
