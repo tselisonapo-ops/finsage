@@ -434,7 +434,10 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
         (
           COALESCE(b.opening_cost,0)::numeric
           + COALESCE(gc.cost_gl,0)::numeric
-          + CASE WHEN pf.any_posted THEN 0::numeric ELSE COALESCE(b.cost,0)::numeric END
+          + CASE
+              WHEN COALESCE(gc.cost_gl,0) <> 0 THEN 0::numeric
+              ELSE COALESCE(b.cost,0)::numeric
+            END
         )::numeric(18,2) AS cost_total,
 
         COALESCE((
@@ -475,8 +478,11 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
               (
                 COALESCE(b.opening_cost,0)::numeric
                 + COALESCE(gc.cost_gl,0)::numeric
-                + CASE WHEN pf.any_posted THEN 0::numeric ELSE COALESCE(b.cost,0)::numeric END
-              )
+                  + CASE
+                      WHEN COALESCE(gc.cost_gl,0) <> 0 THEN 0::numeric
+                      ELSE COALESCE(b.cost,0)::numeric
+                    END
+               )
               + COALESCE((
                 SELECT SUM(COALESCE(r.revaluation_change,0)::numeric)
                 FROM {{schema}}.asset_revaluations r
@@ -515,8 +521,11 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
           ((
             COALESCE(b.opening_cost,0)::numeric
             + COALESCE(gc.cost_gl,0)::numeric
-            + CASE WHEN pf.any_posted THEN 0::numeric ELSE COALESCE(b.cost,0)::numeric END
-          ) + COALESCE((
+            + CASE
+                WHEN COALESCE(gc.cost_gl,0) <> 0 THEN 0::numeric
+                ELSE COALESCE(b.cost,0)::numeric
+              END
+            ) + COALESCE((
             SELECT SUM(COALESCE(r.revaluation_change,0)::numeric)
             FROM {{schema}}.asset_revaluations r
             WHERE r.company_id=b.company_id
