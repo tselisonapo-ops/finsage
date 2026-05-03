@@ -29,6 +29,7 @@ from BackEnd.Services.reporting.loan_reports import (
 from BackEnd.Services.reporting.statement_exporters import (
     export_statement_pdf,
     export_statement_xlsx,
+    export_fs_notes_pdf,
 )
 from BackEnd.Services.reporting.control_reports import (
     build_ap_aging_report,
@@ -53,6 +54,10 @@ from BackEnd.Services.reporting.disclosure_builders import (
     build_ppe_disclosure,
     build_lease_disclosure,
     build_revenue_disclosure,
+    build_lease_note_export_payload,
+   
+    build_ppe_note_export_payload,
+    build_revenue_note_export_payload,
 )
 
 report_bp = Blueprint("report_bp", __name__)
@@ -1618,6 +1623,29 @@ def export_ppe_disclosure(company_id):
     try:
         db = _get_db()
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+        fmt = (request.args.get("format") or "xlsx").lower()
+
+        if fmt == "pdf":
+            note = db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key="ias16_ppe_policy",
+                period_from=date_from,
+                period_to=date_to,
+            )
+
+            payload = build_ppe_disclosure(
+                db=db,
+                company_id=company_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+
+            ppe_note = build_ppe_note_export_payload(note, payload)
+
+            return export_fs_notes_pdf(
+                [ppe_note],
+                filename="ppe_disclosure.pdf",
+            )
 
         payload = build_ppe_disclosure(
             db=db,
@@ -1634,8 +1662,7 @@ def export_ppe_disclosure(company_id):
     except Exception as e:
         current_app.logger.exception("export_ppe_disclosure failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
-
+    
 @report_bp.route("/api/companies/<int:company_id>/disclosures/leases/export", methods=["GET"])
 def export_lease_disclosure(company_id):
     deny = _deny_report_export_access(company_id, "lease_disclosure")
@@ -1646,6 +1673,23 @@ def export_lease_disclosure(company_id):
         db = _get_db()
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
 
+        fmt = (request.args.get("format") or "xlsx").lower()
+
+        # ✅ PDF: proper FS note export with wording + designed tables
+        if fmt == "pdf":
+            lease_note = build_lease_note_export_payload(
+                db,
+                company_id,
+                date_from,
+                date_to,
+            )
+
+            return export_fs_notes_pdf(
+                [lease_note],
+                filename="lease_disclosure.pdf",
+            )
+
+        # ✅ Excel/CSV/etc: keep existing table export
         payload = build_lease_disclosure(
             db=db,
             company_id=company_id,
@@ -1672,6 +1716,29 @@ def export_revenue_disclosure(company_id):
     try:
         db = _get_db()
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+        fmt = (request.args.get("format") or "xlsx").lower()
+
+        if fmt == "pdf":
+            policy = db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key="ifrs15_revenue_policy",
+                period_from=date_from,
+                period_to=date_to,
+            )
+
+            disclosure = db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key="ifrs15_revenue_disclosure",
+                period_from=date_from,
+                period_to=date_to,
+            )
+
+            revenue_note = build_revenue_note_export_payload(policy, disclosure)
+
+            return export_fs_notes_pdf(
+                [revenue_note],
+                filename="revenue_disclosure.pdf",
+            )
 
         payload = build_revenue_disclosure(
             db=db,
@@ -1688,7 +1755,7 @@ def export_revenue_disclosure(company_id):
     except Exception as e:
         current_app.logger.exception("export_revenue_disclosure failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
+    
 @report_bp.route("/api/companies/<int:company_id>/fs-notes/<string:note_key>", methods=["GET"])
 @require_auth
 def get_fs_note(company_id, note_key):

@@ -552,3 +552,30 @@ def build_revenue_disclosure(
         "rows": rows,
         "source": data,
     }
+
+def build_ppe_note_export_payload(note, payload):
+    return {
+        "title": note.get("note_title") or "Property, plant and equipment",
+        "text": note.get("content_text") or note.get("system_draft") or "",
+        "sections": [
+            {
+                "title": "Property, plant and equipment movement",
+                "rows": payload.get("rows") or [],
+                "amount_keys": ["amount"],
+            }
+        ],
+    }
+
+
+def build_revenue_note_export_payload(policy_note, disclosure_note):
+    text_parts = [
+        policy_note.get("content_text") or policy_note.get("system_draft") or "",
+        "",
+        disclosure_note.get("content_text") or disclosure_note.get("system_draft") or "",
+    ]
+
+    return {
+        "title": "Revenue from contracts with customers",
+        "text": "\n".join([t for t in text_parts if t is not None]).strip(),
+        "sections": [],
+    }
