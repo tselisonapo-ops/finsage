@@ -579,63 +579,47 @@ def build_ppe_note_export_payload(note, payload):
     }
 
 
-def build_revenue_note_export_payload(policy_note, disclosure_note):
-    d = disclosure_note or {}
+def build_revenue_note_export_payload(policy_note, disclosure_data):
+    d = disclosure_data or {}
     p = policy_note or {}
 
     policy_text = p.get("content_text") or p.get("system_draft") or ""
 
-    def fmt(v):
-        try:
-            n = float(v or 0)
-            return f"R{n:,.2f}"
-        except:
-            return "R0.00"
-
-    revenue_total = d.get("revenue_total")
-    contract_assets = d.get("contract_assets")
-    contract_liabilities = d.get("contract_liabilities")
-    receivables = d.get("receivables")
-
-    over_time = d.get("over_time")
-    point_in_time = d.get("point_in_time")
-
-    categories = d.get("revenue_by_category") or []
-
-    lines = []
-
-    # Policy
-    lines.append(policy_text.strip())
-    lines.append("")
-
-    # Revenue total
-    lines.append(f"Revenue recognised during the period: {fmt(revenue_total)}")
-    lines.append("")
-
-    # Contract balances
-    lines.append("Contract balances:")
-    lines.append(f"Contract assets: {fmt(contract_assets)}")
-    lines.append(f"Contract liabilities: {fmt(contract_liabilities)}")
-    lines.append(f"Receivables: {fmt(receivables)}")
-    lines.append("")
-
-    # Timing
-    lines.append("Revenue timing:")
-    lines.append(f"Over time: {fmt(over_time)}")
-    lines.append(f"Point in time: {fmt(point_in_time)}")
-    lines.append("")
-
-    # Categories
-    if categories:
-        lines.append("Revenue by category:")
-        for c in categories:
-            name = c.get("category") or c.get("name") or "Other"
-            amount = fmt(c.get("amount"))
-            lines.append(f"{name}: {amount}")
-        lines.append("")
-
     return {
         "title": "Revenue from contracts with customers",
-        "text": "\n".join(lines).strip(),
-        "sections": [],  # no tables needed
+        "text": policy_text.strip(),
+        "sections": [
+            {
+                "title": "Revenue recognised",
+                "rows": [
+                    _row("Revenue recognised during the period", d.get("revenue_total"), "total"),
+                ],
+                "amount_keys": ["amount"],
+            },
+            {
+                "title": "Contract balances",
+                "rows": [
+                    _row("Contract assets", d.get("contract_assets")),
+                    _row("Contract liabilities", d.get("contract_liabilities")),
+                    _row("Receivables", d.get("receivables")),
+                ],
+                "amount_keys": ["amount"],
+            },
+            {
+                "title": "Revenue timing",
+                "rows": [
+                    _row("Over time", d.get("over_time")),
+                    _row("Point in time", d.get("point_in_time")),
+                ],
+                "amount_keys": ["amount"],
+            },
+            {
+                "title": "Revenue by category",
+                "rows": [
+                    _row(c.get("category") or c.get("name") or "Other", c.get("amount"))
+                    for c in (d.get("revenue_by_category") or [])
+                ],
+                "amount_keys": ["amount"],
+            },
+        ],
     }
