@@ -555,16 +555,27 @@ def build_revenue_disclosure(
     }
 
 def build_ppe_note_export_payload(note, payload):
+    rows = payload.get("rows") or []
+
+    if not rows:
+        sections = payload.get("sections") or {}
+        if isinstance(sections, dict):
+            for sec in sections.get("sections") or []:
+                title = (sec.get("title") or "").lower()
+                if "carrying" in title or "net book" in title or "movement" in title:
+                    rows = sec.get("rows") or sec.get("lines") or []
+                    break
+
     return {
         "title": note.get("note_title") or "Property, plant and equipment",
         "text": note.get("content_text") or note.get("system_draft") or "",
         "sections": [
             {
                 "title": "Property, plant and equipment movement",
-                "rows": payload.get("rows") or [],
+                "rows": rows,
                 "amount_keys": ["amount"],
             }
-        ],
+        ] if rows else [],
     }
 
 

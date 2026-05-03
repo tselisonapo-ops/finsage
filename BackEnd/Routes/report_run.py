@@ -56,7 +56,7 @@ from BackEnd.Services.reporting.disclosure_builders import (
     build_lease_disclosure,
     build_revenue_disclosure,
     build_lease_note_export_payload,
-   
+   _money,
     build_ppe_note_export_payload,
     build_revenue_note_export_payload,
 )
@@ -1728,14 +1728,35 @@ def export_revenue_disclosure(company_id):
                 period_to=date_to,
             )
 
-            disclosure = db.get_or_build_financial_statement_note(
+            revenue_payload = build_revenue_disclosure(
+                db=db,
                 company_id=company_id,
-                note_key="ifrs15_revenue_disclosure",
-                period_from=date_from,
-                period_to=date_to,
+                date_from=date_from,
+                date_to=date_to,
             )
 
-            revenue_note = build_revenue_note_export_payload(policy, disclosure)
+            source = revenue_payload.get("source") or {}
+            summary = source.get("summary") or {}
+
+            disclosure_data = {
+                "revenue_total": summary.get("total_revenue"),
+                "contract_assets": summary.get("contract_assets"),
+                "contract_liabilities": summary.get("contract_liabilities"),
+                "receivables": summary.get("gross_receivables_from_contracts"),
+                "over_time": sum(
+                    _money(r.get("amount"))
+                    for r in source.get("revenue_timing") or []
+                    if str(r.get("timing") or "").lower().replace("_", " ") == "over time"
+                ),
+                "point_in_time": sum(
+                    _money(r.get("amount"))
+                    for r in source.get("revenue_timing") or []
+                    if str(r.get("timing") or "").lower().replace("_", " ") == "point in time"
+                ),
+                "revenue_by_category": source.get("revenue_by_category") or [],
+            }
+
+            revenue_note = build_revenue_note_export_payload(policy, disclosure_data)
 
             return export_fs_notes_pdf(
                 [revenue_note],
