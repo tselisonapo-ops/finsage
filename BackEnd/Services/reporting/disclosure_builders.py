@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Dict, List
 from BackEnd.Services.reporting.revenue_disclosure_builder import build_revenue_disclosure_payload
 from decimal import Decimal, ROUND_HALF_UP
-
+from BackEnd.Services.db_service import db_service
 def _d(v: Any) -> Decimal:
     try:
         if v in (None, ""):
@@ -15,7 +15,20 @@ def _d(v: Any) -> Decimal:
     except Exception:
         return Decimal("0")
 
+def _q(schema: str, sql: str) -> str:
+    """
+    Injects schema safely into SQL templates that use {schema}.
+    Example usage:
+        cur.execute(_q(schema, "SELECT * FROM {schema}.assets"))
+    """
+    if not schema:
+        raise ValueError("Schema is required")
 
+    # Basic safety check (avoid SQL injection via schema name)
+    if not schema.replace("_", "").isalnum():
+        raise ValueError(f"Invalid schema name: {schema}")
+
+    return sql.replace("{schema}", schema)
 
 def _money(v, places=2) -> float:
     """
@@ -186,45 +199,137 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
     }
 
 def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) -> Dict[str, Any]:
+    """
+    IAS 16 PPE disclosure.
+    Source:
+    - Posted asset acquisitions for cost/additions
+    - Posted depreciation table for accumulated depreciation
+    - Posted impairments/revaluations where available
+    """
+
     ctx = db.get_company_context(company_id) if hasattr(db, "get_company_context") else {}
     ctx = ctx or {}
+    schema = db_service.company_schema(company_id)
 
     open_as_of = date_from - timedelta(days=1)
 
-    tb_open = db.get_trial_balance(company_id, None, open_as_of) or []
-    tb_close = db.get_trial_balance(company_id, None, date_to) or []
+    with db._conn_cursor() as (_conn, cur):
+        # Opening posted cost
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(a.cost), 0) AS amount
+            FROM {schema}.assets a
+            WHERE a.company_id = %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM {schema}.asset_acquisitions acq
+                  WHERE acq.asset_id = a.id
+                    AND acq.company_id = a.company_id
+                    AND lower(acq.status) = 'posted'
+                    AND acq.acquisition_date <= %s
+              )
+        """), (company_id, open_as_of))
+        opening_cost = _d((cur.fetchone() or {}).get("amount"))
 
-    open_by = _tb_map(tb_open)
-    close_by = _tb_map(tb_close)
+        # Closing posted cost
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(a.cost), 0) AS amount
+            FROM {schema}.assets a
+            WHERE a.company_id = %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM {schema}.asset_acquisitions acq
+                  WHERE acq.asset_id = a.id
+                    AND acq.company_id = a.company_id
+                    AND lower(acq.status) = 'posted'
+                    AND acq.acquisition_date <= %s
+              )
+        """), (company_id, date_to))
+        closing_cost = _d((cur.fetchone() or {}).get("amount"))
 
-    opening_cost = Decimal("0")
-    opening_acc_dep = Decimal("0")
-    closing_cost = Decimal("0")
-    closing_acc_dep = Decimal("0")
+        # Additions in period
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(a.cost), 0) AS amount
+            FROM {schema}.assets a
+            WHERE a.company_id = %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM {schema}.asset_acquisitions acq
+                  WHERE acq.asset_id = a.id
+                    AND acq.company_id = a.company_id
+                    AND lower(acq.status) = 'posted'
+                    AND acq.acquisition_date BETWEEN %s AND %s
+              )
+        """), (company_id, date_from, date_to))
+        additions = _d((cur.fetchone() or {}).get("amount"))
 
-    for code in set(open_by.keys()) | set(close_by.keys()):
-        r = close_by.get(code) or open_by.get(code) or {}
-        if not _is_ppe_row(r):
-            continue
+        # Opening accumulated depreciation
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(x.accumulated_depreciation), 0) AS amount
+            FROM (
+                SELECT DISTINCT ON (d.asset_id)
+                    d.asset_id,
+                    d.accumulated_depreciation
+                FROM {schema}.asset_depreciation d
+                WHERE d.company_id = %s
+                  AND lower(d.status) = 'posted'
+                  AND d.period_end <= %s
+                ORDER BY d.asset_id, d.period_end DESC, d.id DESC
+            ) x
+        """), (company_id, open_as_of))
+        opening_acc_dep = _d((cur.fetchone() or {}).get("amount"))
 
-        open_amt = _signed_asset_amount(open_by.get(code) or {})
-        close_amt = _signed_asset_amount(close_by.get(code) or {})
+        # Closing accumulated depreciation
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(x.accumulated_depreciation), 0) AS amount
+            FROM (
+                SELECT DISTINCT ON (d.asset_id)
+                    d.asset_id,
+                    d.accumulated_depreciation
+                FROM {schema}.asset_depreciation d
+                WHERE d.company_id = %s
+                  AND lower(d.status) = 'posted'
+                  AND d.period_end <= %s
+                ORDER BY d.asset_id, d.period_end DESC, d.id DESC
+            ) x
+        """), (company_id, date_to))
+        closing_acc_dep = _d((cur.fetchone() or {}).get("amount"))
 
-        if _is_accum_dep_row(r):
-            opening_acc_dep += abs(open_amt)
-            closing_acc_dep += abs(close_amt)
-        else:
-            opening_cost += open_amt
-            closing_cost += close_amt
+        # Depreciation charge in period
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(d.depreciation_amount), 0) AS amount
+            FROM {schema}.asset_depreciation d
+            WHERE d.company_id = %s
+              AND lower(d.status) = 'posted'
+              AND d.period_end BETWEEN %s AND %s
+        """), (company_id, date_from, date_to))
+        depreciation = _d((cur.fetchone() or {}).get("amount"))
+
+        # Optional impairments
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(
+                COALESCE(i.impairment_amount,0) - COALESCE(i.reversal_amount,0)
+            ), 0) AS amount
+            FROM {schema}.asset_impairments i
+            WHERE i.company_id = %s
+              AND lower(i.status) = 'posted'
+              AND i.impairment_date BETWEEN %s AND %s
+        """), (company_id, date_from, date_to))
+        impairment = _d((cur.fetchone() or {}).get("amount"))
+
+        # Optional revaluations
+        cur.execute(_q(schema, """
+            SELECT COALESCE(SUM(COALESCE(r.revaluation_change,0)), 0) AS amount
+            FROM {schema}.asset_revaluations r
+            WHERE r.company_id = %s
+              AND lower(r.status) = 'posted'
+              AND r.revaluation_date BETWEEN %s AND %s
+        """), (company_id, date_from, date_to))
+        revaluation = _d((cur.fetchone() or {}).get("amount"))
+
+    disposals = Decimal("0")
 
     opening_carrying = opening_cost - opening_acc_dep
-    closing_carrying = closing_cost - closing_acc_dep
-
-    additions = max(Decimal("0"), closing_cost - opening_cost)
-    disposals = Decimal("0")
-    revaluation = Decimal("0")
-    impairment = Decimal("0")
-    depreciation = max(Decimal("0"), closing_acc_dep - opening_acc_dep)
+    closing_carrying = closing_cost - closing_acc_dep - impairment
 
     rows = [
         {"label": "Opening cost", "values": {"amount": _money(opening_cost)}},
