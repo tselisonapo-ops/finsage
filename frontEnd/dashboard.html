@@ -9275,7 +9275,7 @@ tbody tr {
 <div id="leasePayModal" class="hidden fixed inset-0 z-[120] overflow-auto">
   <div class="absolute inset-0 bg-black/40"></div>
 
-  <div class="relative mx-auto my-2 sm:my-4 w-[98vw] sm:w-[96vw] max-w-[1600px] max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] bg-white rounded-xl sm:rounded-2xl shadow-xl overflow-hidden flex flex-col">
+  <div class="relative ml-auto mr-3 my-2 w-[calc(100vw-2rem)] lg:w-[calc(100vw-18rem)] h-[calc(100dvh-1rem)] bg-white rounded-xl sm:rounded-2xl shadow-xl overflow-hidden flex flex-col">
 
     <!-- header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-3 border-b">
@@ -9291,7 +9291,7 @@ tbody tr {
     </div>
 
     <!-- body -->
-    <div class="p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-[380px_1fr] gap-4 flex-1 min-h-0 overflow-auto">
+    <div class="p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-4 flex-1 min-h-0 overflow-hidden">
 
       <!-- LEFT: form -->
       <div class="min-w-0">
@@ -9330,19 +9330,19 @@ tbody tr {
       </div>
 
       <!-- RIGHT -->
-      <div class="min-w-0 flex flex-col gap-4">
+      <div class="min-w-0 flex flex-col gap-4 h-full overflow-hidden">
 
-        <div class="border rounded-xl p-3 min-w-0">
+        <div class="border rounded-xl p-3 min-w-0 flex-shrink-0">
           <div class="text-sm font-semibold mb-2">Preview journal lines</div>
 
           <div
             id="lpPreviewLines"
             class="border rounded bg-slate-50 p-2 overflow-auto w-full min-w-0"
-            style="max-height: 380px;"
+            style="height: 210px;"
           ></div>
         </div>
 
-        <div class="border rounded-xl p-3 flex flex-col flex-1 min-h-[260px] min-w-0">
+        <div class="border rounded-xl p-3 flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
           <div class="flex items-center justify-between mb-2">
             <div class="text-sm font-semibold">Payment history</div>
           </div>
