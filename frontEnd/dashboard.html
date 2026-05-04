@@ -2144,27 +2144,23 @@ tbody tr {
           <div class="card p-4 flex flex-col h-full">
 
             <!-- Header: title + controls -->
-            <div class="flex items-start gap-4 mb-2">
-              <div>
+            <div class="flex flex-col xl:flex-row xl:items-start gap-3 mb-2">
+              <div class="min-w-[220px] max-w-[320px]">
                 <h3 class="font-bold text-slate-900 text-sm">General Ledger</h3>
-                <p class="text-[11px] text-slate-500 mt-0.5">
-                  Drill into accounts, switch layouts (single / two-line / journal breakdown)
-                  and filter by period.
+                <p class="text-[11px] text-slate-500 mt-0.5 leading-tight">
+                  Drill into accounts, switch layouts and filter by period.
                 </p>
               </div>
 
-              <div class="ml-auto flex items-center gap-2">
-
-                <!-- Account dropdown -->
+              <div class="w-full xl:w-auto xl:ml-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 <select
                   id="ledgerAccount"
-                  class="px-3 py-2 border rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  class="w-full min-w-0 px-3 py-2 border rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
                 ></select>
 
-                <!-- Period dropdown -->
                 <select
                   id="ledgerPeriod"
-                  class="px-3 py-2 border rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  class="w-full min-w-0 px-3 py-2 border rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
                 >
                   <option value="this_month">This month</option>
                   <option value="prev_month">Previous month</option>
@@ -2176,20 +2172,18 @@ tbody tr {
                   <option value="prev_year">Previous financial year</option>
                 </select>
 
-                <!-- Layout dropdown -->
                 <select
                   id="ledgerLayout"
-                  class="px-3 py-2 border rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  class="w-full min-w-0 px-3 py-2 border rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
                 >
                   <option value="single">Single line</option>
                   <option value="two">Two-line detail</option>
                   <option value="journal">Journal breakdown</option>
                 </select>
 
-                <!-- Refresh button -->
                 <button
                   id="refreshLedger"
-                  class="btn text-xs px-3 py-2 bg-slate-900 text-white rounded hover:bg-slate-800"
+                  class="w-full px-3 py-2 bg-slate-900 text-white rounded hover:bg-slate-800 text-xs"
                 >
                   Refresh
                 </button>
@@ -9281,84 +9275,78 @@ tbody tr {
 <div id="leasePayModal" class="hidden fixed inset-0 z-[120] overflow-auto">
   <div class="absolute inset-0 bg-black/40"></div>
 
-  <div class="relative mx-auto my-4 w-[98vw] max-w-7xl max-h-[calc(100dvh-2rem)] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
+  <div class="relative mx-auto my-2 sm:my-4 w-[98vw] sm:w-[96vw] max-w-[1600px] max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] bg-white rounded-xl sm:rounded-2xl shadow-xl overflow-hidden flex flex-col">
+
     <!-- header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-3 border-b">
       <div class="min-w-0">
         <div class="text-sm font-semibold">Lease Payment</div>
         <div id="lpHdrMeta" class="text-xs text-slate-500 truncate"></div>
       </div>
 
       <div class="flex items-center gap-2">
-        <button id="lpBtnRefresh" type="button" class="btn">Refresh</button>
-        <button id="lpBtnClose" type="button" class="btn">Close</button>
+        <button id="lpBtnRefresh" type="button" class="btn flex-1 sm:flex-none">Refresh</button>
+        <button id="lpBtnClose" type="button" class="btn flex-1 sm:flex-none">Close</button>
       </div>
     </div>
 
     <!-- body -->
-    <div class="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-auto">
+    <div class="p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-[380px_1fr] gap-4 flex-1 min-h-0 overflow-auto">
+
       <!-- LEFT: form -->
-      <div class="lg:col-span-4">
+      <div class="min-w-0">
         <div class="border rounded-xl p-3">
           <div class="text-sm font-semibold mb-2">Payment details</div>
 
           <input id="lpLeaseId" type="hidden" value="">
           <input id="lpScheduleId" type="hidden" value="">
 
-          <div class="grid grid-cols-2 gap-2">
-            <label class="text-xs text-slate-600 col-span-2">Payment date</label>
-            <input id="lpDate" type="date" class="border rounded px-2 py-1 col-span-2">
+          <div class="grid grid-cols-1 gap-2">
+            <label class="text-xs text-slate-600">Payment date</label>
+            <input id="lpDate" type="date" class="border rounded px-2 py-2">
 
-            <label class="text-xs text-slate-600 col-span-2">Amount</label>
-            <input id="lpAmount" inputmode="decimal" class="border rounded px-2 py-1 col-span-2" placeholder="e.g. 15000">
+            <label class="text-xs text-slate-600">Amount</label>
+            <input id="lpAmount" inputmode="decimal" class="border rounded px-2 py-2" placeholder="e.g. 15000">
 
-            <label class="text-xs text-slate-600 col-span-2">Bank account</label>
-            <select id="lpBankId" class="border rounded px-2 py-1 col-span-2"></select>
+            <label class="text-xs text-slate-600">Bank account</label>
+            <select id="lpBankId" class="border rounded px-2 py-2 min-w-0"></select>
 
-            <label class="text-xs text-slate-600 col-span-2">Reference</label>
-            <input id="lpRef" class="border rounded px-2 py-1 col-span-2" placeholder="Optional">
+            <label class="text-xs text-slate-600">Reference</label>
+            <input id="lpRef" class="border rounded px-2 py-2" placeholder="Optional">
 
-            <label class="text-xs text-slate-600 col-span-2">Description</label>
-            <input id="lpDesc" class="border rounded px-2 py-1 col-span-2" placeholder="Optional">
+            <label class="text-xs text-slate-600">Description</label>
+            <input id="lpDesc" class="border rounded px-2 py-2" placeholder="Optional">
 
-            <div class="col-span-2 flex gap-2 mt-2">
-              <button id="lpBtnPreview" type="button" class="btn">Preview</button>
-              <button id="lpBtnPost" type="button" class="px-3 py-2 bg-[var(--fs-navy)] text-white rounded">
+            <div class="flex flex-col sm:flex-row gap-2 mt-2">
+              <button id="lpBtnPreview" type="button" class="btn w-full sm:w-auto">Preview</button>
+              <button id="lpBtnPost" type="button" class="w-full sm:w-auto px-3 py-2 bg-[var(--fs-navy)] text-white rounded">
                 Post Payment
               </button>
             </div>
 
-            <div id="lpMsg" class="col-span-2 text-xs hidden"></div>
+            <div id="lpMsg" class="text-xs hidden"></div>
           </div>
         </div>
       </div>
 
-      <!-- RIGHT: preview (top) + history (bottom) -->
-      <div class="lg:col-span-8 flex flex-col gap-4">
-        <!-- ✅ Journal preview (narrower, aligned to left, not full width) -->
-        <div class="border rounded-xl p-3">
+      <!-- RIGHT -->
+      <div class="min-w-0 flex flex-col gap-4">
+
+        <div class="border rounded-xl p-3 min-w-0">
           <div class="text-sm font-semibold mb-2">Preview journal lines</div>
 
-          <!--
-            ✅ width control:
-            - w-full on small screens
-            - on lg: cap width so it ends near the balance line
-            Tweak max-w-[640px] to whatever matches your table nicely.
-          -->
           <div
             id="lpPreviewLines"
-            class="border rounded bg-slate-50 p-2 overflow-auto w-full"
-            style="max-height: 360px;"
+            class="border rounded bg-slate-50 p-2 overflow-auto w-full min-w-0"
+            style="max-height: 380px;"
           ></div>
         </div>
 
-        <!-- ✅ History BELOW preview, scrollable -->
-        <div class="border rounded-xl p-3 flex flex-col flex-1 min-h-0">
+        <div class="border rounded-xl p-3 flex flex-col flex-1 min-h-[260px] min-w-0">
           <div class="flex items-center justify-between mb-2">
             <div class="text-sm font-semibold">Payment history</div>
           </div>
 
-          <!-- Scrollable history area (fills remaining height) -->
           <div id="lpHistory" class="flex-1 min-h-0 overflow-auto"></div>
 
           <div class="text-xs text-slate-500 mt-2">
@@ -9369,7 +9357,6 @@ tbody tr {
     </div>
   </div>
 </div>
-
 
 <!-- Receive Stock Modal -->
 <div id="invReceiveModal" class="hidden fixed inset-0 z-[85]">
