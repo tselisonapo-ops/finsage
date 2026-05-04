@@ -33506,10 +33506,16 @@ class DatabaseService:
                 FROM {schema}.loan_schedules
                 WHERE company_id = %s
                 AND loan_id = %s
+                AND schedule_version = %s
                 AND payment_status IN ('open','partial')
-                ORDER BY due_date
+                ORDER BY due_date ASC, period_no ASC, id ASC
                 LIMIT 1
-            """, (company_id, loan_row["id"]))
+            """, 
+                (
+                    company_id,
+                    loan_row["id"],
+                    int(loan_row.get("schedule_version") or 1),
+                ))
 
             row = cur.fetchone()
             cols = [d[0] for d in cur.description] if cur.description else []
@@ -33560,6 +33566,9 @@ class DatabaseService:
                 )
 
         return {
+            "schedule_id": sched.get("id"),
+            "schedule_version": sched.get("schedule_version"),
+            "schedule_due_date": str(sched.get("due_date")),
             "principal_amount": float(principal),
             "interest_amount": float(interest),
             "accrued_interest_amount": float(accrued_interest),
