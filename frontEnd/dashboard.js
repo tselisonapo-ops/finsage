@@ -35144,6 +35144,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     bankAccounts: [],
     lastPaymentDraft: null,
     viewMode: "preview",
+    lastPreviewPayloadKey: null,
   };
 
   function getCid() {
@@ -35378,6 +35379,42 @@ function bindAssetRecordsPickerModal({ cid }) {
       sel.innerHTML = `<option value="">Failed to load assets</option>`;
     }
   }
+
+  function ias23PayloadKey(payload) {
+    return JSON.stringify({
+      loan_name: payload.loan_name,
+      loan_reference: payload.loan_reference,
+      start_date: payload.start_date,
+      maturity_date: payload.maturity_date,
+      principal_amount: payload.principal_amount,
+      ias23_link: payload.ias23_link,
+    });
+  }
+
+  function validateIAS23Payload(payload) {
+    if (!payload.ias23_link) return true;
+
+    if (!payload.ias23_link.asset_id) {
+      alert("IAS 23 is enabled, but no qualifying asset is selected.");
+      return false;
+    }
+
+    if (!payload.ias23_link.capitalization_start_date) {
+      alert("IAS 23 is enabled, but capitalisation start date is missing.");
+      return false;
+    }
+
+    if (
+      !Number.isFinite(Number(payload.ias23_link.capitalization_ratio)) ||
+      Number(payload.ias23_link.capitalization_ratio) <= 0 ||
+      Number(payload.ias23_link.capitalization_ratio) > 1
+    ) {
+      alert("Capitalisation ratio must be greater than 0 and not more than 1.");
+      return false;
+    }
+
+    return true;
+  } 
 
   function getLoanFormPayload() {
     calculateLoanTerm();
@@ -35998,6 +36035,14 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!cid) return null;
 
     const payload = getLoanFormPayload();
+    if (!validateIAS23Payload(payload)) return null;
+
+    const currentKey = ias23PayloadKey(payload);
+
+    if (currentKey !== LOANS_STATE.lastPreviewPayloadKey) {
+      alert("Please preview the loan before saving. This confirms the IAS 23 asset link and journal setup.");
+      return null;
+    }
     if (!payload.loan_name) {
       alert("Loan name is required.");
       return null;
@@ -36463,6 +36508,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     try {
       const payload = getLoanFormPayload();
 
+      if (!validateIAS23Payload(payload)) return null;
       if (!payload.loan_name) throw new Error("Loan name is required.");
       if (!payload.lender_name) throw new Error("Lender / loan holder is required.");
       if (!payload.start_date) throw new Error("Start date is required.");
@@ -36492,6 +36538,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       });
 
       if (pushToMainTab) setLoanTab("loan-journal");
+      LOANS_STATE.lastPreviewPayloadKey = ias23PayloadKey(payload);
       return entry;
     } catch (e) {
       console.error("[Loans] previewLoanInceptionJournal failed", e);
