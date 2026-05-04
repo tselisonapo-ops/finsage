@@ -36192,6 +36192,24 @@ function bindAssetRecordsPickerModal({ cid }) {
     return `${ENDPOINTS.reports.loanRegisterExport(cid)}?${qs.toString()}`;
   }
 
+  function toInputDate(v) {
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v).slice(0, 10);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function getNextLoanPaymentDate() {
+    const loan = LOANS_STATE.loanDetail?.loan || {};
+    const schedule = LOANS_STATE.loanDetail?.schedule || [];
+
+    const openRow = schedule.find(r =>
+      ["open", "partial"].includes(String(r.payment_status || "").toLowerCase())
+    );
+
+    return toInputDate(openRow?.due_date || loan.next_due_date || loan.first_payment_date);
+  }
+
   function loanScheduleExportUrl() {
     const cid = getCid();
     const loanId = selectedLoanId();
@@ -36343,7 +36361,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!loan?.id) return alert("Select a loan first.");
 
     $("#loanPaymentLoanName").value = loan.loan_name || "";
-    $("#loanPaymentDate").value = new Date().toISOString().slice(0, 10);
+    $("#loanPaymentDate").value = getNextLoanPaymentDate();
     $("#loanPaymentAmount").value = loan.payment_amount || "";
     $("#loanPaymentBankAccountId").value = loan.bank_account_id || "";
     $("#loanPaymentReference").value = "";
