@@ -35380,6 +35380,8 @@ function bindAssetRecordsPickerModal({ cid }) {
   }
 
   function getLoanFormPayload() {
+    calculateLoanTerm();
+
     const linkAsset = !!$("#loanLinkAssetToggle")?.checked;
 
     return {
@@ -36670,24 +36672,18 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-  async function createNewLoan() {
-    const loan = newLoanTemplate();
-
-    LOANS_STATE.currentLoanId = null;
-    LOANS_STATE.loanDetail = {
-      loan,
-      schedule: [],
-      payments: [],
-      journals: [],
-    };
+  async function editCurrentLoan() {
+    const loan = LOANS_STATE.loanDetail?.loan;
+    if (!loan?.id) {
+      return alert("Select a loan first.");
+    }
 
     await loadAssetsForLoanLink();
 
-    resetLoanScreenForNewLoan(loan);
-    renderLoanPreview({});
+    fillLoanForm(loan);
     setLoanViewMode("form");
     setLoanTab("loan-overview");
-    applyLoanButtonsByMode();
+    setLoanGlAccountsVisible(false);
   }
 
   async function createNewLoan() {
@@ -36728,9 +36724,16 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("#loanEditBtn")?.addEventListener("click", editCurrentLoan);
     // term auto-calc
     ["input", "change"].forEach((ev) => {
-      $("#loanStartDate")?.addEventListener(ev, calculateLoanTerm);
-      $("#loanEndDate")?.addEventListener(ev, calculateLoanTerm);
-      $("#loanPaymentFrequency")?.addEventListener(ev, calculateLoanTerm);
+      document.addEventListener(ev, (e) => {
+        const id = e.target?.id;
+        if (
+          id === "loanStartDate" ||
+          id === "loanEndDate" ||
+          id === "loanPaymentFrequency"
+        ) {
+          calculateLoanTerm();
+        }
+      });
     });
     bindLoanActionButtons();
 
