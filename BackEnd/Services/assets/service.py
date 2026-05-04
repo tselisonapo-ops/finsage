@@ -4,7 +4,7 @@ from BackEnd.Services.assets.ppe_db import fetchall, fetchone
 from decimal import Decimal
 from datetime import date
 from BackEnd.Services.assets.posting import generate_single_asset_depreciation
-
+from flask import current_app
 
 def _q(schema: str, sql: str) -> str:
     return sql.replace("{schema}", schema)
@@ -245,14 +245,22 @@ def get_asset_with_balances(cur, company_id, asset_id, as_at=None):
     return fetchone(cur)
 
 def get_asset(cur, company_id, asset_id):
-    schema = company_schema(company_id)
-    cur.execute(_q(schema, """
-      SELECT *
-      FROM {schema}.assets
-      WHERE company_id=%s AND id=%s
-      LIMIT 1
-    """), (company_id, asset_id))
-    return fetchone(cur)
+    rows = list_assets(
+        cur,
+        company_id,
+        status=None,
+        asset_class=None,
+        q=None,
+        limit=1,
+        offset=0,
+        as_at=date.today()
+    )
+
+    for r in rows:
+        if int(r.get("id")) == int(asset_id):
+            return r
+
+    return None
 
 def create_subsequent_measurement(
     cur,
@@ -590,6 +598,53 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
     return fetchall(cur)
 
+def is_asset_class_potentially_qualifying(asset: dict) -> bool:
+    txt = " ".join([
+        str(asset.get("asset_name") or ""),
+        str(asset.get("asset_class") or ""),
+        str(asset.get("asset_class_group") or ""),
+        str(asset.get("category") or ""),
+        str(asset.get("notes") or ""),
+    ]).lower()
+
+    qualifying_keywords = (
+        "building",
+        "construction",
+        "project",
+        "development",
+        "plant",
+        "factory",
+        "warehouse",
+        "mine",
+        "mining",
+        "infrastructure",
+        "leasehold improvement",
+        "major installation",
+        "work in progress",
+        "wip",
+        "asset under construction",
+    )
+
+    excluded_keywords = (
+        "laptop",
+        "computer",
+        "printer",
+        "phone",
+        "furniture",
+        "motor vehicle",
+        "vehicle",
+        "car",
+        "bakkie",
+        "truck",
+        "tools",
+        "small equipment",
+    )
+
+    if any(k in txt for k in excluded_keywords):
+        return False
+
+    return any(k in txt for k in qualifying_keywords)
+
 def normalize_asset_class_group(asset_class="", asset_name="", category=""):
     text = " ".join([
         str(asset_class or ""),
@@ -731,6 +786,17 @@ def create_asset(cur, company_id, payload):
     asset_name = str(payload.get("asset_name") or "").strip()
     category = str(payload.get("category") or "").strip() or None
 
+    # IAS 23 qualifying asset policy
+    if payload.get("is_qualifying_asset") is True:
+        if not is_asset_class_potentially_qualifying(payload):
+            # OPTION 1 (recommended): soft warning
+            current_app.logger.warning(
+                f"[IAS23] Asset marked qualifying but does not match policy: {asset_name}"
+            )
+
+            # OPTION 2 (strict mode) – only if you want enforcement
+            # raise Exception("This asset does not meet qualifying asset policy criteria.")
+
     if not asset_class:
         raise Exception("asset_class is required")
 
@@ -766,28 +832,30 @@ def create_asset(cur, company_id, payload):
         measurement_basis, revaluation_reserve_account_code,
         revaluation_surplus_to_pnl_account_code, revaluation_deficit_pnl_account_code,
         impairment_loss_account_code, impairment_reversal_account_code,
-        held_for_sale_account_code
-      )
-      VALUES (
-        %s,
-        %s,%s,%s,%s,%s,%s,%s,%s,
+        held_for_sale_account_code,
+        is_qualifying_asset, ready_for_use_date
+        )
+        VALUES (
+            %s,
+            %s,%s,%s,%s,%s,%s,%s,%s,
 
-        %s,%s,%s,%s,
-        %s,%s,
-        %s,
-        %s,%s,
-        %s,%s,
+            %s,%s,%s,%s,
+            %s,%s,
+            %s,
+            %s,%s,
+            %s,%s,
 
-        %s,%s,%s,%s,
+            %s,%s,%s,%s,
 
-        %s,
-        %s,%s,
-        %s,%s,%s,
-        %s,%s,
-        COALESCE(%s,'cost'), %s,
-        %s,%s,
-        %s,%s,%s
-      )
+            %s,
+            %s,%s,
+            %s,%s,%s,
+            %s,%s,
+            COALESCE(%s,'cost'), %s,
+            %s,%s,
+            %s,%s,%s,
+            %s,%s   -- 👈 ADD THESE TWO (new fields)
+        )
       RETURNING id
     """), (
       company_id,
@@ -812,6 +880,8 @@ def create_asset(cur, company_id, payload):
       payload.get("revaluation_surplus_to_pnl_account_code"), payload.get("revaluation_deficit_pnl_account_code"),
       payload.get("impairment_loss_account_code"), payload.get("impairment_reversal_account_code"),
       payload.get("held_for_sale_account_code"),
+      bool(payload.get("is_qualifying_asset") or False),
+      payload.get("ready_for_use_date") or None,
     ))
     return cur.fetchone()["id"]
 
@@ -835,6 +905,7 @@ _ASSET_UPDATE_ALLOWED = {
     "impairment_loss_account_code",
     "impairment_reversal_account_code",
     "held_for_sale_account_code",
+    "is_qualifying_asset", "ready_for_use_date",
 }
 
 
@@ -846,6 +917,8 @@ def update_asset(cur, company_id, asset_id, payload):
       SELECT
         acquisition_date,
         available_for_use_date,
+        ready_for_use_date,
+        is_qualifying_asset,
         depreciation_method,
         useful_life_months,
         rb_rate_percent,
@@ -857,6 +930,25 @@ def update_asset(cur, company_id, asset_id, payload):
     if not current:
         raise Exception("asset not found")
 
+    # IAS 23 / borrowing costs mapping
+    if "available_for_use_date" in payload and "ready_for_use_date" not in payload:
+        payload["ready_for_use_date"] = payload.get("available_for_use_date")
+
+    if "ready_for_use_date" in payload and "available_for_use_date" not in payload:
+        payload["available_for_use_date"] = payload.get("ready_for_use_date")
+
+    if "is_qualifying_asset" in payload:
+        payload["is_qualifying_asset"] = bool(payload.get("is_qualifying_asset"))
+
+    # IAS 23 qualifying asset policy
+    if payload.get("is_qualifying_asset") is True:
+        check_payload = {**current, **payload}
+
+        if not is_asset_class_potentially_qualifying(check_payload):
+            current_app.logger.warning(
+                f"[IAS23] Asset {asset_id} marked qualifying but does not match policy"
+            )
+
     dep_method = (payload.get("depreciation_method") or current.get("depreciation_method") or "SL").upper()
 
     useful_life = payload.get("useful_life_months", current.get("useful_life_months"))
@@ -865,6 +957,7 @@ def update_asset(cur, company_id, asset_id, payload):
 
     acquisition_date = payload.get("acquisition_date")
     available_for_use_date = payload.get("available_for_use_date")
+    ready_for_use_date = payload.get("ready_for_use_date")
 
     if not acquisition_date:
         acquisition_date = current.get("acquisition_date")
@@ -874,6 +967,11 @@ def update_asset(cur, company_id, asset_id, payload):
 
     payload["acquisition_date"] = acquisition_date
     payload["available_for_use_date"] = available_for_use_date
+
+    if ready_for_use_date in ("", None):
+        ready_for_use_date = current.get("ready_for_use_date") or available_for_use_date
+
+    payload["ready_for_use_date"] = ready_for_use_date
 
     if not acquisition_date:
         raise Exception("acquisition_date is required")

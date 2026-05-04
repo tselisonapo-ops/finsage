@@ -31679,6 +31679,23 @@ async function postLeaseJournal(lease) {
               </div>
 
               <div>
+                <label class="text-xs text-slate-500">Ready for use date</label>
+                <input id="faEditReadyDate" type="date" class="w-full border rounded px-3 py-2 text-sm" />
+              </div>
+
+              <div class="flex items-center gap-2 mt-2">
+                <input id="faEditQualifying" type="checkbox" />
+                <label class="text-xs text-slate-600">
+                  Qualifying asset (IAS 23)
+                </label>
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">In service / acquisition date</label>
+                <input id="faEditDate" type="date" class="w-full border rounded px-3 py-2 text-sm bg-slate-50 text-slate-500" readonly />
+              </div>
+
+              <div>
                 <label class="block text-xs text-slate-500 mb-1">Cost</label>
                 <input id="faEditCost" type="number" step="0.01" class="w-full border rounded px-3 py-2 text-sm text-right bg-slate-50 text-slate-500" readonly />
               </div>
@@ -31813,6 +31830,19 @@ async function postLeaseJournal(lease) {
     const isoDt = rawDt ? toISODate(rawDt) : "";
     setVal("faEditDate", isoDt);
 
+    // IAS 23 ready-for-use / capitalisation stop date
+    const rawReadyDt = pick(
+      r.ready_for_use_date,
+      r.available_for_use_date,
+      r.available_for_use_on,
+      r.date_available_for_use
+    );
+
+    setVal("faEditReadyDate", rawReadyDt ? toISODate(rawReadyDt) : "");
+
+    const q = document.getElementById("faEditQualifying");
+    if (q) q.checked = !!r.is_qualifying_asset;
+
     const n = assetNums(r);
     setVal("faEditCost", pick(r.cost, n.cost));
     setVal("faEditUsefulLife", pick(r.useful_life_months, r.useful_life, r.life_months));
@@ -31898,6 +31928,15 @@ async function postLeaseJournal(lease) {
       custodian: document.getElementById("faEditCustodian")?.value.trim() || null,
       notes: document.getElementById("faEditNotes")?.value.trim() || null,
     };
+
+    payload.available_for_use_date =
+      document.getElementById("faEditReadyDate")?.value || null;
+
+    payload.ready_for_use_date =
+      document.getElementById("faEditReadyDate")?.value || null;
+
+    payload.is_qualifying_asset =
+      !!document.getElementById("faEditQualifying")?.checked;
 
     if (!usefulLifeLocked) {
       const lifeVal = document.getElementById("faEditUsefulLife")?.value ?? "";
@@ -35264,6 +35303,17 @@ function bindAssetRecordsPickerModal({ cid }) {
     return s;
   }
 
+  function bindIAS23Toggle() {
+    const toggle = $("#loanLinkAssetToggle");
+    const section = $("#loanAssetLinkSection");
+
+    if (!toggle || !section) return;
+
+    toggle.addEventListener("change", () => {
+      section.classList.toggle("hidden", !toggle.checked);
+    });
+  }
+
   function newLoanTemplate() {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -35291,37 +35341,82 @@ function bindAssetRecordsPickerModal({ cid }) {
     };
   }
 
-  function getLoanFormPayload() {
-    return {
-      loan_name: ($("#loanName")?.value || "").trim(),
-      loan_reference: ($("#loanReference")?.value || "").trim(),
-      lender_name: ($("#loanLender")?.value || "").trim(),
-      loan_type: ($("#loanType")?.value || "term_loan").trim(),
-      start_date: $("#loanStartDate")?.value || null,
-      maturity_date: $("#loanEndDate")?.value || null,
-      first_payment_date: $("#loanFirstPaymentDate")?.value || null,
-      principal_amount: Number($("#loanPrincipalAmount")?.value || 0),
-      annual_interest_rate: Number($("#loanInterestRate")?.value || 0),
-      interest_method: ($("#loanInterestMethod")?.value || "amortised_fixed_payment").trim(),
-      term_count: Number($("#loanTermCount")?.value || 0),
-      payment_frequency: ($("#loanPaymentFrequency")?.value || "monthly").trim(),
-      balloon_amount: Number($("#loanBalloonAmount")?.value || 0),
-      fees_amount: Number($("#loanFeesAmount")?.value || 0),
-      accrued_interest_opening: Number($("#loanAccruedOpening")?.value || 0),
-      repayment_holiday_count: Number($("#loanRepaymentHolidayCount")?.value || 0),
-      variable_rate: !!$("#loanVariableRate")?.checked,
-      currency: resolveLoanCurrency($("#loanCurrency")?.value),
-      bank_account_id: Number($("#loanBankAccountId")?.value || 0) || null,
-      interest_expense_account_code: ($("#loanInterestExpenseAccountCode")?.value || "").trim(),
-      accrued_interest_account_code: ($("#loanAccruedInterestAccountCode")?.value || "").trim(),
-      loan_payable_current_account_code: ($("#loanPayableCurrentAccountCode")?.value || "").trim(),
-      loan_payable_noncurrent_account_code: ($("#loanPayableNonCurrentAccountCode")?.value || "").trim(),
-      fees_asset_account_code: ($("#loanFeesAssetAccountCode")?.value || "").trim() || null,
-      fees_expense_account_code: ($("#loanFeesExpenseAccountCode")?.value || "").trim() || null,
-      agreement_reference: ($("#loanAgreementReference")?.value || "").trim() || null,
-      notes: ($("#loanNotes")?.value || "").trim() || null,
-    };
+  async function loadAssetsForLoanLink() {
+    const cid = getCid();
+    if (!cid) return;
+
+    const sel = $("#loanLinkedAssetId");
+    if (!sel) return;
+
+    sel.innerHTML = `<option value="">Loading assets...</option>`;
+
+    try {
+      const url =
+        (window.ENDPOINTS?.assets?.list
+          ? window.ENDPOINTS.assets.list(cid, { limit: 500, offset: 0, q: "" })
+          : `/api/companies/${cid}/assets?limit=500&offset=0`);
+
+      const res = await apiFetch(url);
+
+      const rows = Array.isArray(res)
+        ? res
+        : (res?.items || res?.data || []);
+
+      sel.innerHTML = `
+        <option value="">Select asset</option>
+        ${rows.map(a => `
+          <option value="${a.id}">
+            ${escapeHtml(a.asset_name || a.name || `Asset ${a.id}`)}
+            ${a.asset_class ? ` (${escapeHtml(a.asset_class)})` : ""}
+          </option>
+        `).join("")}
+      `;
+    } catch (e) {
+      console.warn("Failed to load assets for IAS23 link", e);
+      sel.innerHTML = `<option value="">Failed to load assets</option>`;
+    }
   }
+
+function getLoanFormPayload() {
+  const linkAsset = !!$("#loanLinkAssetToggle")?.checked;
+
+  return {
+    loan_name: ($("#loanName")?.value || "").trim(),
+    loan_reference: ($("#loanReference")?.value || "").trim(),
+    lender_name: ($("#loanLender")?.value || "").trim(),
+    loan_type: ($("#loanType")?.value || "term_loan").trim(),
+    start_date: $("#loanStartDate")?.value || null,
+    maturity_date: $("#loanEndDate")?.value || null,
+    first_payment_date: $("#loanFirstPaymentDate")?.value || null,
+    principal_amount: Number($("#loanPrincipalAmount")?.value || 0),
+    annual_interest_rate: Number($("#loanInterestRate")?.value || 0),
+    interest_method: ($("#loanInterestMethod")?.value || "amortised_fixed_payment").trim(),
+    term_count: Number($("#loanTermCount")?.value || 0),
+    payment_frequency: ($("#loanPaymentFrequency")?.value || "monthly").trim(),
+    balloon_amount: Number($("#loanBalloonAmount")?.value || 0),
+    fees_amount: Number($("#loanFeesAmount")?.value || 0),
+    accrued_interest_opening: Number($("#loanAccruedOpening")?.value || 0),
+    repayment_holiday_count: Number($("#loanRepaymentHolidayCount")?.value || 0),
+    variable_rate: !!$("#loanVariableRate")?.checked,
+    currency: resolveLoanCurrency($("#loanCurrency")?.value),
+    bank_account_id: Number($("#loanBankAccountId")?.value || 0) || null,
+    interest_expense_account_code: ($("#loanInterestExpenseAccountCode")?.value || "").trim(),
+    accrued_interest_account_code: ($("#loanAccruedInterestAccountCode")?.value || "").trim(),
+    loan_payable_current_account_code: ($("#loanPayableCurrentAccountCode")?.value || "").trim(),
+    loan_payable_noncurrent_account_code: ($("#loanPayableNonCurrentAccountCode")?.value || "").trim(),
+    fees_asset_account_code: ($("#loanFeesAssetAccountCode")?.value || "").trim() || null,
+    fees_expense_account_code: ($("#loanFeesExpenseAccountCode")?.value || "").trim() || null,
+    agreement_reference: ($("#loanAgreementReference")?.value || "").trim() || null,
+    notes: ($("#loanNotes")?.value || "").trim() || null,
+
+    ias23_link: linkAsset ? {
+      asset_id: Number($("#loanLinkedAssetId")?.value || 0) || null,
+      capitalization_start_date: $("#loanCapStartDate")?.value || null,
+      capitalization_ratio: Number($("#loanCapRatio")?.value || 1),
+      notes: ($("#loanCapNotes")?.value || "").trim() || null,
+    } : null,
+  };
+}
 
   function fillLoanForm(loan) {
     loan = loan || {};
@@ -35922,6 +36017,27 @@ function bindAssetRecordsPickerModal({ cid }) {
     if (!(Number(payload.term_count) > 0)) {
       alert("Term must be greater than zero.");
       return null;
+    }
+
+    if (payload.ias23_link) {
+      if (!payload.ias23_link.asset_id) {
+        alert("Select the qualifying asset for IAS 23 capitalisation.");
+        return null;
+      }
+
+      if (!payload.ias23_link.capitalization_start_date) {
+        alert("Capitalisation start date is required.");
+        return null;
+      }
+
+      if (
+        !Number.isFinite(Number(payload.ias23_link.capitalization_ratio)) ||
+        Number(payload.ias23_link.capitalization_ratio) <= 0 ||
+        Number(payload.ias23_link.capitalization_ratio) > 1
+      ) {
+        alert("Capitalisation ratio must be greater than 0 and not more than 1.");
+        return null;
+      }
     }
 
     try {
@@ -36552,19 +36668,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-  function editCurrentLoan() {
-    const loan = LOANS_STATE.loanDetail?.loan;
-    if (!loan?.id) {
-      return alert("Select a loan first.");
-    }
-
-    fillLoanForm(loan);
-    setLoanViewMode("form");
-    setLoanTab("loan-overview");
-    setLoanGlAccountsVisible(false);
-  }
-
-  function createNewLoan() {
+  async function createNewLoan() {
     const loan = newLoanTemplate();
 
     LOANS_STATE.currentLoanId = null;
@@ -36575,8 +36679,30 @@ function bindAssetRecordsPickerModal({ cid }) {
       journals: [],
     };
 
+    await loadAssetsForLoanLink();
+
     resetLoanScreenForNewLoan(loan);
-    renderLoanPreview({}); // optional reset
+    renderLoanPreview({});
+    setLoanViewMode("form");
+    setLoanTab("loan-overview");
+    applyLoanButtonsByMode();
+  }
+
+  async function createNewLoan() {
+    const loan = newLoanTemplate();
+
+    LOANS_STATE.currentLoanId = null;
+    LOANS_STATE.loanDetail = {
+      loan,
+      schedule: [],
+      payments: [],
+      journals: [],
+    };
+
+    await loadAssetsForLoanLink();
+
+    resetLoanScreenForNewLoan(loan);
+    renderLoanPreview({});
     setLoanViewMode("form");
     setLoanTab("loan-overview");
     applyLoanButtonsByMode();
@@ -36590,6 +36716,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     await renderLoanRegister();
     await applyLoanApprovalHandoff();
     applyLoanButtonsByMode();
+    bindIAS23Toggle();
 
     $("#loanNewBtn")?.addEventListener("click", createNewLoan);
     $("#loanSaveBtn")?.addEventListener("click", saveLoan);

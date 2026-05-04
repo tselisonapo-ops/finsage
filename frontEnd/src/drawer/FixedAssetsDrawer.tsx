@@ -158,6 +158,8 @@ type CreateAssetPayload = {
   notes?: string | null;
 
   acquisition_date: string;
+  is_qualifying_asset?: boolean;
+  ready_for_use_date?: string | null;
   available_for_use_date?: string | null;
 
   cost: number;
@@ -408,6 +410,8 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     dep_expense_account_code: "",
     disposal_gain_account_code: "",
     disposal_loss_account_code: "",
+    is_qualifying_asset: false, // ✅ ADD THIS
+
   }));
 
   const carryingAmount = useMemo(() => {
@@ -546,6 +550,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       notes: String(defaults.notes || ""),
       acquisition_date: String(defaults.acquisitionDate || postingDate || todayIso()),
       available_for_use_date: String(defaults.availableForUseDate || ""),
+      is_qualifying_asset: Boolean(defaults.is_qualifying_asset || defaults.isQualifyingAsset || false),
       cost: Number(defaults.cost || 0),
       residual_value: Number(defaults.residualValue || 0),
 
@@ -725,6 +730,8 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
         serial_no: form.serial_no?.trim() ? form.serial_no.trim() : null,
         notes: form.notes?.trim() ? form.notes.trim() : null,
         available_for_use_date: form.available_for_use_date?.trim() ? form.available_for_use_date.trim() : null,
+        is_qualifying_asset: !!form.is_qualifying_asset,
+        ready_for_use_date: form.available_for_use_date?.trim() ? form.available_for_use_date.trim() : null,
 
         opening_as_at: isOpeningBalance ? (form.opening_as_at?.trim() || null) : null,
         opening_cost: isOpeningBalance ? Number(form.opening_cost ?? form.cost ?? 0) : null,
@@ -1089,6 +1096,28 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 onChange={(e) => setForm((p) => ({ ...p, available_for_use_date: e.target.value }))}
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!form.is_qualifying_asset}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    is_qualifying_asset: e.target.checked,
+                  }))
+                }
+              />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                Qualifying asset (IAS 23)
+              </span>
+            </label>
+
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
+              Tick this for assets that take time to get ready (e.g. construction, large projects).
             </div>
           </div>
 

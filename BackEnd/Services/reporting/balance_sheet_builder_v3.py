@@ -169,15 +169,30 @@ def _is_current_bucket(row: Dict[str, Any], kind: str) -> Optional[bool]:
 
 def _is_ppe(row: Dict[str, Any]) -> bool:
     tag = str(row.get("standard") or row.get("ifrs_tag") or row.get("std_tag") or "").upper()
-    txt = _norm(row.get("section"), row.get("category"), _tb_name(row), tag)
+    section = str(row.get("section") or "").strip().lower()
+    category = str(row.get("category") or "").strip().lower()
+    name = str(_tb_name(row) or "").strip().lower()
 
-    if "IAS 16" in tag:
+    # Exclude ROU and investment property from IAS 16 PPE rollup
+    if "right-of-use" in name or "right of use" in name or "rou" in name:
+        return False
+    if "investment property" in name or "ias 40" in tag:
+        return False
+
+    # Strict PPE bucket
+    if category == "property, plant & equipment":
         return True
-    if "property, plant" in txt or "plant and equipment" in txt or "ppe" in txt:
+
+    if category in ("property, plant and equipment", "ppe"):
         return True
 
-    return any(k in txt for k in ("equipment", "vehicle", "plant", "machinery", "motor", "construction equipment"))
+    # IAS 16 fallback only if it is an asset cost account, not depreciation/impairment
+    if "IAS 16" in tag and section in ("asset", "assets"):
+        if "accum" in name or "depreciation" in name or "impairment" in name:
+            return False
+        return True
 
+    return False
 
 import re
 from typing import Any, Dict

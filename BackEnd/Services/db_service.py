@@ -12354,6 +12354,10 @@ class DatabaseService:
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS accum_impairment_account_code TEXT NULL;
 
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS is_qualifying_asset BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS ready_for_use_date DATE NULL;
+
         -- optional safety: only allow the two modes
         -- ==================================================
         -- UOP usage mode rules (corrected)
@@ -16221,6 +16225,36 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_loans_bank_idx
         ON {schema}.loans(company_id, bank_account_id);
+
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_borrowing_links (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            asset_id INT NOT NULL,
+            loan_id INT NOT NULL,
+            capitalization_start_date DATE NOT NULL,
+            capitalization_end_date DATE NULL,
+            capitalization_ratio NUMERIC(9,6) NOT NULL DEFAULT 1.0,
+            status TEXT NOT NULL DEFAULT 'active',
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_borrowing_costs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            asset_id INT NOT NULL,
+            loan_id INT NOT NULL,
+            journal_id INT NULL,
+            payment_id INT NULL,
+            interest_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            capitalized_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expensed_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            capitalization_ratio NUMERIC(9,6) NOT NULL DEFAULT 1.0,
+            capitalization_date DATE NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.loan_schedules (
             id SERIAL PRIMARY KEY,
@@ -20090,12 +20124,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v52")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v53")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=52,
+                    migration_version=53,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -32763,14 +32797,40 @@ class DatabaseService:
             )
 
         if interest > 0:
-            self._append_journal_line(
-                lines,
-                account_code=accounts.get("interest_expense_account_code"),
-                account_name=acct_name(accounts.get("interest_expense_account_code")),
-                description=f"{base_desc} - interest",
-                debit=interest,
-                credit=0,
+            ias23 = self.get_capitalizable_interest(
+                conn,
+                company_id,
+                loan_id=int(loan_row.get("id")),
+                payment_date=payment_row.get("payment_date"),
+                interest_amount=interest,
             )
+
+            cap_amount = _money(ias23.get("amount"))
+            exp_amount = _money(ias23.get("expense_amount"))
+
+            if cap_amount > 0:
+                asset_code = ias23.get("asset_account_code")
+
+                self._append_journal_line(
+                    lines,
+                    account_code=asset_code,
+                    account_name=acct_name(asset_code),
+                    description=f"{base_desc} - capitalised borrowing costs",
+                    debit=cap_amount,
+                    credit=0,
+                )
+
+            if exp_amount > 0:
+                interest_code = accounts.get("interest_expense_account_code")
+
+                self._append_journal_line(
+                    lines,
+                    account_code=interest_code,
+                    account_name=acct_name(interest_code),
+                    description=f"{base_desc} - interest expense",
+                    debit=exp_amount,
+                    credit=0,
+                )
 
         if accrued_interest > 0:
             self._append_journal_line(
@@ -46453,6 +46513,111 @@ class DatabaseService:
             "limit": limit,
             "offset": offset,
             "summary": summary,
+        }
+
+    def get_capitalizable_interest(
+        self,
+        conn,
+        company_id: int,
+        *,
+        loan_id: int,
+        payment_date,
+        interest_amount,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        interest_amount = _money(interest_amount)
+        if interest_amount <= 0:
+            return {
+                "capitalize": False,
+                "asset_id": None,
+                "asset_account_code": None,
+                "amount": Decimal("0.00"),
+                "expense_amount": Decimal("0.00"),
+                "capitalization_ratio": Decimal("0.000000"),
+                "link_id": None,
+            }
+
+        payment_date = _safe_date(payment_date)
+        if not payment_date:
+            raise ValueError("payment_date is required for IAS 23 capitalization check")
+
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT
+                    abl.id AS link_id,
+                    abl.asset_id,
+                    abl.loan_id,
+                    abl.capitalization_ratio,
+                    a.asset_account_code,
+                    a.is_qualifying_asset,
+                    a.ready_for_use_date
+                FROM {schema}.asset_borrowing_links abl
+                JOIN {schema}.assets a
+                ON a.company_id = abl.company_id
+                AND a.id = abl.asset_id
+                WHERE abl.company_id = %s
+                AND abl.loan_id = %s
+                AND abl.status = 'active'
+                AND COALESCE(a.is_qualifying_asset, FALSE) = TRUE
+                AND abl.capitalization_start_date <= %s
+                AND (
+                        abl.capitalization_end_date IS NULL
+                        OR abl.capitalization_end_date >= %s
+                )
+                AND (
+                        a.ready_for_use_date IS NULL
+                        OR a.ready_for_use_date > %s
+                )
+                ORDER BY abl.id DESC
+                LIMIT 1
+            """, (
+                company_id,
+                loan_id,
+                payment_date,
+                payment_date,
+                payment_date,
+            ))
+
+            row = cur.fetchone()
+            if not row:
+                return {
+                    "capitalize": False,
+                    "asset_id": None,
+                    "asset_account_code": None,
+                    "amount": Decimal("0.00"),
+                    "expense_amount": interest_amount,
+                    "capitalization_ratio": Decimal("0.000000"),
+                    "link_id": None,
+                }
+
+            if not isinstance(row, dict):
+                cols = [d[0] for d in cur.description]
+                row = dict(zip(cols, row))
+
+        ratio = Decimal(str(row.get("capitalization_ratio") or "1.0"))
+        if ratio < 0:
+            ratio = Decimal("0")
+        if ratio > 1:
+            ratio = Decimal("1")
+
+        cap_amount = _money(interest_amount * ratio)
+        expense_amount = _money(interest_amount - cap_amount)
+
+        asset_account_code = (row.get("asset_account_code") or "").strip()
+        if cap_amount > 0 and not asset_account_code:
+            raise ValueError(
+                f"IAS 23 capitalization failed: asset {row.get('asset_id')} has no asset_account_code"
+            )
+
+        return {
+            "capitalize": cap_amount > 0,
+            "asset_id": row.get("asset_id"),
+            "asset_account_code": asset_account_code or None,
+            "amount": cap_amount,
+            "expense_amount": expense_amount,
+            "capitalization_ratio": ratio,
+            "link_id": row.get("link_id"),
         }
 
     def create_asset_revaluation(
