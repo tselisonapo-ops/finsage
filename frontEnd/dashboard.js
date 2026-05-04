@@ -35421,13 +35421,12 @@ function getLoanFormPayload() {
   function fillLoanForm(loan) {
     loan = loan || {};
 
-    calculateLoanTerm();
-
     $("#loanName").value = loan.loan_name || "";
     $("#loanReference").value = loan.loan_reference || "";
     $("#loanLender").value = loan.lender_name || "";
     $("#loanType").value = loan.loan_type || "term_loan";
     $("#loanStartDate").value = loan.start_date || "";
+    $("#loanEndDate").value = loan.maturity_date || ""; // ⚠️ IMPORTANT (you were missing this)
     $("#loanFirstPaymentDate").value = loan.first_payment_date || "";
     $("#loanPrincipalAmount").value = loan.principal_amount ?? "";
     $("#loanInterestRate").value = loan.annual_interest_rate ?? "";
@@ -35453,6 +35452,7 @@ function getLoanFormPayload() {
     $("#loanStatusPill").textContent = loan.status || "New";
     $("#loanRefPill").textContent = loan.loan_reference || "";
     $("#loanRefPill").classList.toggle("hidden", !loan.loan_reference);
+    calculateLoanTerm();
   }
 
   function resetLoanScreenForNewLoan(loan = newLoanTemplate()) {
