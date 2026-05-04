@@ -35221,8 +35221,10 @@ function bindAssetRecordsPickerModal({ cid }) {
       return;
     }
 
-    const d1 = new Date(start);
-    const d2 = new Date(end);
+    const [sy, sm, sd] = start.split("-").map(Number);
+    const [ey, em, ed] = end.split("-").map(Number);
+    const d1 = new Date(sy, sm - 1, sd);
+    const d2 = new Date(ey, em - 1, ed);
 
     if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime()) || d2 < d1) {
       termEl.value = "";
@@ -35377,46 +35379,46 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-function getLoanFormPayload() {
-  const linkAsset = !!$("#loanLinkAssetToggle")?.checked;
+  function getLoanFormPayload() {
+    const linkAsset = !!$("#loanLinkAssetToggle")?.checked;
 
-  return {
-    loan_name: ($("#loanName")?.value || "").trim(),
-    loan_reference: ($("#loanReference")?.value || "").trim(),
-    lender_name: ($("#loanLender")?.value || "").trim(),
-    loan_type: ($("#loanType")?.value || "term_loan").trim(),
-    start_date: $("#loanStartDate")?.value || null,
-    maturity_date: $("#loanEndDate")?.value || null,
-    first_payment_date: $("#loanFirstPaymentDate")?.value || null,
-    principal_amount: Number($("#loanPrincipalAmount")?.value || 0),
-    annual_interest_rate: Number($("#loanInterestRate")?.value || 0),
-    interest_method: ($("#loanInterestMethod")?.value || "amortised_fixed_payment").trim(),
-    term_count: Number($("#loanTermCount")?.value || 0),
-    payment_frequency: ($("#loanPaymentFrequency")?.value || "monthly").trim(),
-    balloon_amount: Number($("#loanBalloonAmount")?.value || 0),
-    fees_amount: Number($("#loanFeesAmount")?.value || 0),
-    accrued_interest_opening: Number($("#loanAccruedOpening")?.value || 0),
-    repayment_holiday_count: Number($("#loanRepaymentHolidayCount")?.value || 0),
-    variable_rate: !!$("#loanVariableRate")?.checked,
-    currency: resolveLoanCurrency($("#loanCurrency")?.value),
-    bank_account_id: Number($("#loanBankAccountId")?.value || 0) || null,
-    interest_expense_account_code: ($("#loanInterestExpenseAccountCode")?.value || "").trim(),
-    accrued_interest_account_code: ($("#loanAccruedInterestAccountCode")?.value || "").trim(),
-    loan_payable_current_account_code: ($("#loanPayableCurrentAccountCode")?.value || "").trim(),
-    loan_payable_noncurrent_account_code: ($("#loanPayableNonCurrentAccountCode")?.value || "").trim(),
-    fees_asset_account_code: ($("#loanFeesAssetAccountCode")?.value || "").trim() || null,
-    fees_expense_account_code: ($("#loanFeesExpenseAccountCode")?.value || "").trim() || null,
-    agreement_reference: ($("#loanAgreementReference")?.value || "").trim() || null,
-    notes: ($("#loanNotes")?.value || "").trim() || null,
+    return {
+      loan_name: ($("#loanName")?.value || "").trim(),
+      loan_reference: ($("#loanReference")?.value || "").trim(),
+      lender_name: ($("#loanLender")?.value || "").trim(),
+      loan_type: ($("#loanType")?.value || "term_loan").trim(),
+      start_date: $("#loanStartDate")?.value || null,
+      maturity_date: $("#loanEndDate")?.value || null,
+      first_payment_date: $("#loanFirstPaymentDate")?.value || null,
+      principal_amount: Number($("#loanPrincipalAmount")?.value || 0),
+      annual_interest_rate: Number($("#loanInterestRate")?.value || 0),
+      interest_method: ($("#loanInterestMethod")?.value || "amortised_fixed_payment").trim(),
+      term_count: Number($("#loanTermCount")?.value || 0),
+      payment_frequency: ($("#loanPaymentFrequency")?.value || "monthly").trim(),
+      balloon_amount: Number($("#loanBalloonAmount")?.value || 0),
+      fees_amount: Number($("#loanFeesAmount")?.value || 0),
+      accrued_interest_opening: Number($("#loanAccruedOpening")?.value || 0),
+      repayment_holiday_count: Number($("#loanRepaymentHolidayCount")?.value || 0),
+      variable_rate: !!$("#loanVariableRate")?.checked,
+      currency: resolveLoanCurrency($("#loanCurrency")?.value),
+      bank_account_id: Number($("#loanBankAccountId")?.value || 0) || null,
+      interest_expense_account_code: ($("#loanInterestExpenseAccountCode")?.value || "").trim(),
+      accrued_interest_account_code: ($("#loanAccruedInterestAccountCode")?.value || "").trim(),
+      loan_payable_current_account_code: ($("#loanPayableCurrentAccountCode")?.value || "").trim(),
+      loan_payable_noncurrent_account_code: ($("#loanPayableNonCurrentAccountCode")?.value || "").trim(),
+      fees_asset_account_code: ($("#loanFeesAssetAccountCode")?.value || "").trim() || null,
+      fees_expense_account_code: ($("#loanFeesExpenseAccountCode")?.value || "").trim() || null,
+      agreement_reference: ($("#loanAgreementReference")?.value || "").trim() || null,
+      notes: ($("#loanNotes")?.value || "").trim() || null,
 
-    ias23_link: linkAsset ? {
-      asset_id: Number($("#loanLinkedAssetId")?.value || 0) || null,
-      capitalization_start_date: $("#loanCapStartDate")?.value || null,
-      capitalization_ratio: Number($("#loanCapRatio")?.value || 1),
-      notes: ($("#loanCapNotes")?.value || "").trim() || null,
-    } : null,
-  };
-}
+      ias23_link: linkAsset ? {
+        asset_id: Number($("#loanLinkedAssetId")?.value || 0) || null,
+        capitalization_start_date: $("#loanCapStartDate")?.value || null,
+        capitalization_ratio: Number($("#loanCapRatio")?.value || 1),
+        notes: ($("#loanCapNotes")?.value || "").trim() || null,
+      } : null,
+    };
+  }
 
   function fillLoanForm(loan) {
     loan = loan || {};
@@ -35431,8 +35433,8 @@ function getLoanFormPayload() {
     $("#loanPrincipalAmount").value = loan.principal_amount ?? "";
     $("#loanInterestRate").value = loan.annual_interest_rate ?? "";
     $("#loanInterestMethod").value = loan.interest_method || "amortised_fixed_payment";
-    $("#loanTermCount").value = loan.term_count ?? "";
     $("#loanPaymentFrequency").value = loan.payment_frequency || "monthly";
+    $("#loanTermCount").value = "";
     $("#loanBalloonAmount").value = loan.balloon_amount ?? 0;
     $("#loanFeesAmount").value = loan.fees_amount ?? 0;
     $("#loanAccruedOpening").value = loan.accrued_interest_opening ?? 0;
@@ -36725,10 +36727,11 @@ function getLoanFormPayload() {
     $("#loanPaymentBtn")?.addEventListener("click", openLoanPaymentModal);
     $("#loanEditBtn")?.addEventListener("click", editCurrentLoan);
     // term auto-calc
-    $("#loanStartDate")?.addEventListener("change", calculateLoanTerm);
-    $("#loanEndDate")?.addEventListener("change", calculateLoanTerm);
-    $("#loanPaymentFrequency")?.addEventListener("change", calculateLoanTerm);
-
+    ["input", "change"].forEach((ev) => {
+      $("#loanStartDate")?.addEventListener(ev, calculateLoanTerm);
+      $("#loanEndDate")?.addEventListener(ev, calculateLoanTerm);
+      $("#loanPaymentFrequency")?.addEventListener(ev, calculateLoanTerm);
+    });
     bindLoanActionButtons();
 
     $("#loanFilterStatus")?.addEventListener("change", renderLoanRegister);
