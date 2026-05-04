@@ -32401,10 +32401,15 @@ class DatabaseService:
             FROM {schema}.loan_schedules
             WHERE company_id=%s
             AND loan_id=%s
+            AND schedule_version = (
+                SELECT schedule_version
+                FROM {schema}.loans
+                WHERE company_id=%s AND id=%s
+            )
             AND payment_status IN ('open','partial')
             ORDER BY due_date ASC, period_no ASC, id ASC
             LIMIT 1
-        """, (company_id, loan_id))
+        """, (company_id, loan_id, company_id, loan_id))
         first_open = cur.fetchone()
 
         if not first_open:
@@ -32534,20 +32539,15 @@ class DatabaseService:
                 FROM {schema}.loan_schedules
                 WHERE company_id=%s
                 AND loan_id=%s
+                AND schedule_version = (
+                    SELECT schedule_version
+                    FROM {schema}.loans
+                    WHERE company_id=%s AND id=%s
+                )
                 AND payment_status IN ('open','partial')
                 ORDER BY due_date ASC, period_no ASC
                 FOR UPDATE
-            """, (company_id, loan_id))
-        else:
-            cur.execute(f"""
-                SELECT *
-                FROM {schema}.loan_schedules
-                WHERE company_id=%s
-                AND loan_id=%s
-                AND payment_status IN ('open','partial')
-                ORDER BY due_date ASC, period_no ASC
-                FOR UPDATE
-            """, (company_id, loan_id))
+            """, (company_id, loan_id, company_id, loan_id))
 
         rows = cur.fetchall() or []
         cols = [d[0] for d in cur.description]
@@ -32639,6 +32639,10 @@ class DatabaseService:
         if amount_paid <= 0:
             raise ValueError("amount_paid must be > 0")
 
+        reference = (data.get("reference") or "").strip()
+        if not reference:
+            raise ValueError("payment reference is required")
+
         bank_account_id = int(data.get("bank_account_id") or 0)
         if bank_account_id <= 0:
             raise ValueError("bank_account_id is required")
@@ -32691,7 +32695,7 @@ class DatabaseService:
                 payment_date,
                 amount_paid,
                 bank_account_id,
-                (data.get("reference") or "").strip() or None,
+                reference,
                 (data.get("description") or "").strip() or None,
                 bool(data.get("auto_calculate_split", True)),
                 "schedule_order" if bool(data.get("auto_calculate_split", True)) else "manual",
@@ -33433,6 +33437,7 @@ class DatabaseService:
                         FROM {schema}.loan_schedules s
                         WHERE s.company_id = l.company_id
                         AND s.loan_id = l.id
+                        AND s.schedule_version = l.schedule_version   -- 🔥 CRITICAL FIX
                         AND s.payment_status IN ('open','partial')
                     ),
                     updated_at = NOW()
