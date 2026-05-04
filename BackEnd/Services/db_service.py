@@ -31448,44 +31448,51 @@ class DatabaseService:
         with conn.cursor() as cur:
             sql = f"""
                 SELECT
-                    id,
-                    loan_name,
-                    loan_reference,
-                    lender_name,
-                    loan_type,
-                    start_date,
-                    first_payment_date,
-                    maturity_date,
-                    principal_amount,
-                    annual_interest_rate,
-                    payment_amount,
-                    outstanding_principal,
-                    outstanding_interest,
-                    next_due_date,
-                    status,
-                    created_at,
-                    updated_at
-                FROM {schema}.loans
-                WHERE company_id = %s
+                    l.id,
+                    l.loan_name,
+                    l.loan_reference,
+                    l.lender_name,
+                    l.loan_type,
+                    l.start_date,
+                    l.first_payment_date,
+                    l.maturity_date,
+                    l.principal_amount,
+                    l.annual_interest_rate,
+                    l.payment_amount,
+                    l.outstanding_principal,
+                    l.outstanding_interest,
+                    l.next_due_date,
+                    l.status,
+                    l.created_at,
+                    l.updated_at,
+                    EXISTS (
+                        SELECT 1
+                        FROM {schema}.asset_borrowing_links abl
+                        WHERE abl.company_id = l.company_id
+                        AND abl.loan_id = l.id
+                        AND abl.status = 'active'
+                    ) AS has_ias23_link
+                FROM {schema}.loans l
+                WHERE l.company_id = %s
             """
             params = [company_id]
 
             if status:
-                sql += " AND status = %s"
+                sql += " AND l.status = %s"
                 params.append(status)
 
             if q:
                 sql += """
                     AND (
-                        loan_name ILIKE %s
-                        OR COALESCE(loan_reference,'') ILIKE %s
-                        OR lender_name ILIKE %s
+                        l.loan_name ILIKE %s
+                        OR COALESCE(l.loan_reference,'') ILIKE %s
+                        OR l.lender_name ILIKE %s
                     )
                 """
                 like = f"%{q}%"
                 params.extend([like, like, like])
 
-            sql += " ORDER BY created_at DESC, id DESC LIMIT %s"
+            sql += " ORDER BY l.created_at DESC, l.id DESC LIMIT %s"
             params.append(limit)
 
             cur.execute(sql, tuple(params))
@@ -31586,8 +31593,37 @@ class DatabaseService:
             """, (company_id, loan_id, loan_id, company_id, loan_id))
             journals = _rows_to_dicts(cur, cur.fetchall() or [])
 
+            cur.execute(f"""
+                SELECT
+                    abl.id AS link_id,
+                    abl.asset_id,
+                    abl.loan_id,
+                    abl.capitalization_start_date,
+                    abl.capitalization_end_date,
+                    abl.capitalization_ratio,
+                    abl.status,
+                    abl.notes,
+                    a.asset_code,
+                    a.asset_name,
+                    a.asset_class,
+                    a.asset_class_group,
+                    a.is_qualifying_asset,
+                    a.ready_for_use_date,
+                    a.available_for_use_date,
+                    a.asset_account_code
+                FROM {schema}.asset_borrowing_links abl
+                JOIN {schema}.assets a
+                ON a.company_id = abl.company_id
+                AND a.id = abl.asset_id
+                WHERE abl.company_id = %s
+                AND abl.loan_id = %s
+                LIMIT 1
+            """, (company_id, loan_id))
+
+            ias23_link = _row_to_dict(cur, cur.fetchone())
             return {
                 "loan": loan,
+                "ias23_link": ias23_link,
                 "schedule": schedule,
                 "payments": payments,
                 "journals": journals,
@@ -31839,6 +31875,9 @@ class DatabaseService:
         if principal_amount <= 0:
             raise ValueError("principal_amount must be > 0")
 
+        if data.get("ias23_link") and not data["ias23_link"].get("asset_id"):
+            raise ValueError("IAS 23 enabled but asset_id missing")
+
         with conn.cursor() as cur:
             cur.execute(f"""
                 INSERT INTO {schema}.loans (
@@ -31925,7 +31964,31 @@ class DatabaseService:
             row = cur.fetchone()
             loan_id = row["id"] if isinstance(row, dict) else row[0]
 
-        conn.commit()
+            ias23 = data.get("ias23_link")
+
+            if ias23 and ias23.get("asset_id"):
+                cur.execute(f"""
+                    INSERT INTO {schema}.asset_borrowing_links (
+                        company_id,
+                        asset_id,
+                        loan_id,
+                        capitalization_start_date,
+                        capitalization_end_date,
+                        capitalization_ratio,
+                        status,
+                        notes
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    company_id,
+                    int(ias23.get("asset_id")),
+                    int(loan_id),
+                    _safe_date(ias23.get("capitalization_start_date")),
+                    _safe_date(ias23.get("capitalization_end_date")),
+                    Decimal(str(ias23.get("capitalization_ratio") or 1)),
+                    "active",
+                    (ias23.get("notes") or "").strip() or None
+                ))
 
         out = self.generate_loan_schedule(conn, company_id, loan_id=loan_id, user_id=user_id)
 
@@ -31970,7 +32033,10 @@ class DatabaseService:
 
         out["inception_journal_id"] = journal_id
         out["inception_journal"] = entry
+
+        conn.commit()
         return out
+        
 
     def backfill_loan_inception_journal(self, company_id: int, loan_id: int, *, user_id=None) -> int:
         with self._conn_cursor() as (conn, cur):
@@ -32224,17 +32290,88 @@ class DatabaseService:
                 loan_id,
             ))
 
-        conn.commit()
+            ias23 = data.get("ias23_link")
 
+            # lock existing link
+            cur.execute(f"""
+                SELECT id
+                FROM {schema}.asset_borrowing_links
+                WHERE company_id = %s AND loan_id = %s
+                FOR UPDATE
+            """, (company_id, loan_id))
+            existing_link = cur.fetchone()
+
+            # CASE 1: no link requested → delete if exists
+            if not ias23 or not ias23.get("asset_id"):
+                if existing_link:
+                    cur.execute(f"""
+                        DELETE FROM {schema}.asset_borrowing_links
+                        WHERE company_id = %s AND loan_id = %s
+                    """, (company_id, loan_id))
+
+            # CASE 2: link provided
+            else:
+                asset_id = int(ias23.get("asset_id"))
+
+                if existing_link:
+                    # UPDATE
+                    cur.execute(f"""
+                        UPDATE {schema}.asset_borrowing_links
+                        SET
+                            asset_id = %s,
+                            capitalization_start_date = %s,
+                            capitalization_end_date = %s,
+                            capitalization_ratio = %s,
+                            notes = %s,
+                            status = 'active'
+                        WHERE company_id = %s AND loan_id = %s
+                    """, (
+                        asset_id,
+                        _safe_date(ias23.get("capitalization_start_date")),
+                        _safe_date(ias23.get("capitalization_end_date")),
+                        Decimal(str(ias23.get("capitalization_ratio") or 1)),
+                        (ias23.get("notes") or "").strip() or None,
+                        company_id,
+                        loan_id
+                    ))
+                else:
+                    # INSERT
+                    cur.execute(f"""
+                        INSERT INTO {schema}.asset_borrowing_links (
+                            company_id,
+                            asset_id,
+                            loan_id,
+                            capitalization_start_date,
+                            capitalization_end_date,
+                            capitalization_ratio,
+                            status,
+                            notes
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (
+                        company_id,
+                        asset_id,
+                        loan_id,
+                        _safe_date(ias23.get("capitalization_start_date")),
+                        _safe_date(ias23.get("capitalization_end_date")),
+                        Decimal(str(ias23.get("capitalization_ratio") or 1)),
+                        "active",
+                        (ias23.get("notes") or "").strip() or None
+                    ))
+
+    
         if needs_schedule_refresh:
-            return self.generate_loan_schedule(
+            out = self.generate_loan_schedule(
                 conn,
                 company_id,
                 loan_id=loan_id,
                 user_id=user_id,
             )
+        else:
+            out = self.get_loan_full(conn, company_id, loan_id)
 
-        return self.get_loan_full(conn, company_id, loan_id)
+        conn.commit()
+        return out
 
     def _row_to_dict_from_cursor(self, cur, row):
         if not row:

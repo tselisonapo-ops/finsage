@@ -87,6 +87,13 @@ def api_create_loan(company_id: int):
     g.user_id = user_id
 
     raw = request.get_json(silent=True) or {}
+
+    current_app.logger.warning(
+        "LOAN CREATE RAW >>> ias23_link=%s full=%s",
+        raw.get("ias23_link"),
+        raw,
+    )
+
     if not isinstance(raw, dict):
         return jsonify({"ok": False, "error": "JSON body must be an object"}), 400
 
@@ -238,6 +245,12 @@ def api_update_loan(company_id: int, loan_id: int):
         return deny
 
     data = request.get_json(silent=True) or {}
+    current_app.logger.warning(
+        "LOAN UPDATE RAW >>> loan_id=%s ias23_link=%s full=%s",
+        loan_id,
+        data.get("ias23_link"),
+        data,
+    )
 
     try:
         user = getattr(g, "current_user", None) or {}
