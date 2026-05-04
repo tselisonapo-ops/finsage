@@ -33546,7 +33546,8 @@ class DatabaseService:
         payment_date = _safe_date(payment_row.get("payment_date"))
 
         if due_date and payment_date and payment_date > due_date:
-            days_late = (payment_date - due_date).days
+            overdue_start = due_date + timedelta(days=1)
+            days_late = (payment_date - overdue_start).days + 1
             annual_rate = _money(loan_row.get("annual_interest_rate")) / Decimal("100")
             daily_rate = annual_rate / Decimal("365")
             balance = _money(sched.get("opening_balance"))
