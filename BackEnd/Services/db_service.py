@@ -33293,6 +33293,7 @@ class DatabaseService:
                 AND id = %s
                 FOR UPDATE
             """, (company_id, payment_id))
+
             payment_row = cur.fetchone()
             if not payment_row:
                 raise ValueError("payment not found")
@@ -33327,6 +33328,7 @@ class DatabaseService:
                 AND id = %s
                 LIMIT 1
             """, (company_id, payment_id))
+
             payment_row = cur.fetchone()
             payment_cols = [d[0] for d in cur.description]
             payment = self._row_to_dict(payment_row, payment_cols)
@@ -33348,7 +33350,12 @@ class DatabaseService:
             "notes": payment.get("notes"),
         }
 
-        preview_entry = self.preview_loan_payment_journal(conn, company_id, data=preview_data)
+        preview_entry = self.preview_loan_payment_journal(
+            conn,
+            company_id,
+            data=preview_data,
+        )
+
         preview_entry["source"] = "loan_payment"
         preview_entry["source_id"] = payment_id
         preview_entry["ref"] = payment.get("reference") or f"LOAN-PAY-{payment_id}"
@@ -33373,14 +33380,19 @@ class DatabaseService:
                 AND payment_id = %s
                 ORDER BY allocation_order ASC, id ASC
             """, (company_id, payment_id))
+
             alloc_rows = cur.fetchall() or []
             alloc_cols = [d[0] for d in cur.description]
             allocs = [self._row_to_dict(x, alloc_cols) for x in alloc_rows]
+
+            touched_schedule_ids = set()
 
             for a in allocs:
                 sched_id = a.get("loan_schedule_id")
                 if not sched_id:
                     continue
+
+                touched_schedule_ids.add(sched_id)
 
                 if a["allocation_type"] == "interest":
                     cur.execute(f"""
@@ -33396,7 +33408,14 @@ class DatabaseService:
                             )
                         WHERE company_id = %s
                         AND id = %s
-                    """, (a["amount"], a["amount"], company_id, payment_id, company_id, sched_id))
+                    """, (
+                        a["amount"],
+                        a["amount"],
+                        company_id,
+                        payment_id,
+                        company_id,
+                        sched_id,
+                    ))
 
                 elif a["allocation_type"] == "principal":
                     cur.execute(f"""
@@ -33412,37 +33431,40 @@ class DatabaseService:
                             )
                         WHERE company_id = %s
                         AND id = %s
-                    """, (a["amount"], a["amount"], company_id, payment_id, company_id, sched_id))
+                    """, (
+                        a["amount"],
+                        a["amount"],
+                        company_id,
+                        payment_id,
+                        company_id,
+                        sched_id,
+                    ))
 
-            cur.execute(f"""
-                UPDATE {schema}.loan_schedules
-                SET payment_status = CASE
-                    WHEN COALESCE(paid_principal,0) >= COALESCE(scheduled_principal,0)
-                    AND COALESCE(paid_interest,0) >= COALESCE(scheduled_interest,0)
-                        THEN 'paid'
-                    WHEN COALESCE(paid_amount,0) > 0
-                        THEN 'partial'
-                    ELSE payment_status
-                END
-                WHERE company_id = %s
-                AND loan_id = (
-                    SELECT loan_id
-                    FROM {schema}.loan_payments
+            for sched_id in touched_schedule_ids:
+                cur.execute(f"""
+                    UPDATE {schema}.loan_schedules
+                    SET payment_status = CASE
+                        WHEN COALESCE(paid_principal, 0) >= COALESCE(scheduled_principal, 0) - 0.01
+                        AND COALESCE(paid_interest, 0) >= COALESCE(scheduled_interest, 0) - 0.01
+                            THEN 'paid'
+                        WHEN COALESCE(paid_amount, 0) > 0
+                            THEN 'partial'
+                        ELSE payment_status
+                    END
                     WHERE company_id = %s
-                        AND id = %s
-                )
-            """, (company_id, company_id, payment_id))
+                    AND id = %s
+                """, (company_id, sched_id))
 
             cur.execute(f"""
                 UPDATE {schema}.loans l
                 SET
                     outstanding_principal = GREATEST(
                         0,
-                        COALESCE(l.outstanding_principal,0) - COALESCE(p.principal_amount,0)
+                        COALESCE(l.outstanding_principal, 0) - COALESCE(p.principal_amount, 0)
                     ),
                     outstanding_interest = GREATEST(
                         0,
-                        COALESCE(l.outstanding_interest,0) - COALESCE(p.accrued_interest_amount,0)
+                        COALESCE(l.outstanding_interest, 0) - COALESCE(p.accrued_interest_amount, 0)
                     ),
                     last_payment_date = p.payment_date,
                     next_due_date = (
@@ -33450,8 +33472,8 @@ class DatabaseService:
                         FROM {schema}.loan_schedules s
                         WHERE s.company_id = l.company_id
                         AND s.loan_id = l.id
-                        AND s.schedule_version = l.schedule_version   -- 🔥 CRITICAL FIX
-                        AND s.payment_status IN ('open','partial')
+                        AND s.schedule_version = l.schedule_version
+                        AND s.payment_status IN ('open', 'partial')
                     ),
                     updated_at = NOW()
                 FROM {schema}.loan_payments p
@@ -33462,6 +33484,7 @@ class DatabaseService:
             """, (payment_id, company_id))
 
         conn.commit()
+
         return {
             "payment_id": payment_id,
             "posted_journal_id": journal_id,
