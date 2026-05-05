@@ -22936,7 +22936,7 @@ class DatabaseService:
             # --------------------------------------------------
             source = (j.get("source") or "").strip().lower()
             source_id = j.get("source_id")
-            
+
             if source == "lease_payment":
                 # ---- 1. Find original lease payment ----
                 cur.execute(f"""
@@ -26311,7 +26311,25 @@ class DatabaseService:
             bank_code = (bank.get("ledger_account_code") or "").strip()
             if not bank_code:
                 raise ValueError("Selected bank account has no ledger_account_code")
+            
+            clean_ref = (reference or "").strip()
 
+            if clean_ref:
+                dup = self.fetch_one(f"""
+                    SELECT id, posted_journal_id, status
+                    FROM {schema}.lease_payments
+                    WHERE company_id = %s
+                    AND lease_id = %s
+                    AND LOWER(TRIM(reference)) = LOWER(TRIM(%s))
+                    AND COALESCE(status, '') IN ('draft', 'posted')
+                    LIMIT 1
+                """, (int(company_id), int(lease_id), clean_ref), cur=cur)
+
+                if dup:
+                    raise ValueError(
+                        f"DUPLICATE_LEASE_PAYMENT_REFERENCE|{clean_ref}|payment_id={dup.get('id')}"
+                    )
+                    
             accts = self.get_lease_posting_accounts(company_id, cur=cur)
 
             def resolve(raw: str | None, label: str) -> str:
@@ -26489,7 +26507,7 @@ class DatabaseService:
                 vat_amount=float(alloc_vat),
                 interest_amount=float(alloc_interest),
                 principal_amount=float(alloc_principal),
-                reference=reference,
+                reference=clean_ref or None,
                 notes=description,
                 bank_account_code=bank_code,
                 status="draft",
@@ -26536,7 +26554,7 @@ class DatabaseService:
 
             entry = {
                 "date": payment_date.isoformat(),
-                "ref": (reference or f"LEASEPAY-{pay_id}").strip(),
+                "ref": (clean_ref or f"LEASEPAY-{pay_id}").strip(),
                 "description": description or f"Lease payment – {lease.get('lease_name') or f'Lease {lease_id}'}",
                 "gross_amount": float(amt_in),
                 "net_amount": float(alloc_net),
