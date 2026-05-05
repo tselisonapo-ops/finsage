@@ -22830,36 +22830,40 @@ class DatabaseService:
     def reverse_journal(self, company_id: int, journal_id: int, payload: Optional[Dict[str, Any]] = None) -> int:
         payload = payload or {}
         schema = self.company_schema(company_id)
-      # self.ensure_company_schema(company_id)
 
-        # Choose reversal date
-        rev_date_iso = (payload.get("date") or date.today().isoformat())
+        rev_date_iso = payload.get("date") or date.today().isoformat()
         rev_date = date.fromisoformat(str(rev_date_iso)[:10])
 
-        # ✅ period lock gate for reversal action
         if self.is_date_locked(company_id, tx_date=rev_date, module="gl"):
             raise ValueError(f"PERIOD_LOCKED|gl|{rev_date.isoformat()}")
 
         reason = (payload.get("reason") or "").strip() or None
 
         with self._conn_cursor() as (conn, cur):
-            # ---- Load original journal ----
-            cur.execute(
-                f"""
-                SELECT id, date, ref, description, reversal_of_journal_id, reversed_by_journal_id
+            cur.execute(f"""
+                SELECT
+                    id, date, ref, description,
+                    reversal_of_journal_id,
+                    reversed_by_journal_id,
+                    source,
+                    source_id
                 FROM {schema}.journal
-                WHERE id=%s
-                """,
-                (journal_id,),
-            )
+                WHERE id = %s
+            """, (journal_id,))
+
             row = cur.fetchone()
             if not row:
                 raise ValueError("Journal not found")
 
-            # dict/tuple safe
             j = row if isinstance(row, dict) else {
-                "id": row[0], "date": row[1], "ref": row[2], "description": row[3],
-                "reversal_of_journal_id": row[4], "reversed_by_journal_id": row[5],
+                "id": row[0],
+                "date": row[1],
+                "ref": row[2],
+                "description": row[3],
+                "reversal_of_journal_id": row[4],
+                "reversed_by_journal_id": row[5],
+                "source": row[6],
+                "source_id": row[7],
             }
 
             if j.get("reversed_by_journal_id") or j.get("reversal_of_journal_id"):
@@ -22869,21 +22873,17 @@ class DatabaseService:
             if ref0.startswith("AUTO-"):
                 raise ValueError("System journals (AUTO-*) cannot be reversed")
 
-            # ---- Load original ledger lines (✅ correct column names) ----
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 SELECT account, debit, credit, memo
                 FROM {schema}.ledger
-                WHERE journal_id=%s
+                WHERE journal_id = %s
                 ORDER BY id ASC
-                """,
-                (journal_id,),
-            )
+            """, (journal_id,))
+
             rows = cur.fetchall() or []
             if not rows:
                 raise ValueError("Journal has no ledger lines to reverse")
 
-            # ---- Create reversal journal header ----
             rev_ref = f"REV-{journal_id}"
             rev_desc = f"Reversal of {journal_id}" + (f" | {reason}" if reason else "")
 
@@ -22892,48 +22892,159 @@ class DatabaseService:
                 "ref": rev_ref,
                 "description": rev_desc,
                 "is_reversal": True,
-
-                # ✅ this reversal points to the original
                 "reversal_of_journal_id": journal_id,
             }
 
             reversal_journal_id = self.insert_journal(company_id, rev_entry, cur=cur)
 
-            # ---- Insert mirrored ledger lines + update TB ----
             je_date = rev_date.isoformat()
 
             for r in rows:
                 ln = r if isinstance(r, dict) else {
-                    "account": r[0], "debit": r[1], "credit": r[2], "memo": r[3],
+                    "account": r[0],
+                    "debit": r[1],
+                    "credit": r[2],
+                    "memo": r[3],
                 }
 
                 dr = float(ln.get("debit") or 0.0)
                 cr = float(ln.get("credit") or 0.0)
 
                 mirrored = {
-                    "account_code": ln.get("account"),   # ✅ your insert_ledger expects account_code
-                    "debit": cr,                         # swap
-                    "credit": dr,                        # swap
+                    "account_code": ln.get("account"),
+                    "debit": cr,
+                    "credit": dr,
                     "memo": (ln.get("memo") or "")[:240],
-                    "description": (ln.get("memo") or ""),  # optional
+                    "description": ln.get("memo") or "",
                 }
 
                 self.insert_ledger(company_id, reversal_journal_id, je_date, mirrored, ref=rev_ref, cur=cur)
                 self.update_trial_balance(company_id, mirrored, cur=cur)
 
-            # ---- Mark linkage on journal rows ----
             cur.execute(
-                f"UPDATE {schema}.journal SET reversed_by_journal_id=%s WHERE id=%s",
+                f"UPDATE {schema}.journal SET reversed_by_journal_id = %s WHERE id = %s",
                 (reversal_journal_id, journal_id),
             )
+
             cur.execute(
-                f"UPDATE {schema}.journal SET reversal_of_journal_id=%s WHERE id=%s",
+                f"UPDATE {schema}.journal SET reversal_of_journal_id = %s WHERE id = %s",
                 (journal_id, reversal_journal_id),
             )
 
+            # --------------------------------------------------
+            # Module state rollback / reactivation after reversal
+            # --------------------------------------------------
+            source = (j.get("source") or "").strip().lower()
+            source_id = j.get("source_id")
+            
+            if source == "lease_payment":
+                # ---- 1. Find original lease payment ----
+                cur.execute(f"""
+                    SELECT id, lease_id, schedule_id, amount_gross, amount_net, vat_amount
+                    FROM {schema}.lease_payments
+                    WHERE company_id = %s
+                    AND posted_journal_id = %s
+                    AND status = 'posted'
+                    LIMIT 1
+                """, (company_id, journal_id))
+
+                p = cur.fetchone()
+                if not p:
+                    return  # nothing to reverse safely
+
+                p = p if isinstance(p, dict) else {
+                    "id": p[0],
+                    "lease_id": p[1],
+                    "schedule_id": p[2],
+                    "amount_gross": p[3],
+                    "amount_net": p[4],
+                    "vat_amount": p[5],
+                }
+
+                original_payment_id = p["id"]
+
+                # ---- 2. Insert reversal lease payment ----
+                cur.execute(f"""
+                    INSERT INTO {schema}.lease_payments (
+                        company_id,
+                        lease_id,
+                        schedule_id,
+                        payment_date,
+                        amount_gross,
+                        amount_net,
+                        vat_amount,
+                        status,
+                        reverses_payment_id,
+                        posted_journal_id,
+                        posted_at,
+                        reference,
+                        notes
+                    )
+                    VALUES (
+                        %s, %s, %s,
+                        %s,
+                        %s * -1,
+                        %s * -1,
+                        %s * -1,
+                        'posted',
+                        %s,
+                        %s,
+                        NOW(),
+                        %s,
+                        %s
+                    )
+                    RETURNING id
+                """, (
+                    company_id,
+                    p["lease_id"],
+                    p["schedule_id"],
+                    rev_date.isoformat(),
+                    p["amount_gross"],
+                    p["amount_net"],
+                    p["vat_amount"],
+                    original_payment_id,
+                    reversal_journal_id,
+                    f"REV-{original_payment_id}",
+                    f"Reversal of payment {original_payment_id}",
+                ))
+
+                reversal_payment_id = cur.fetchone()[0]
+
+                # ---- 3. Update original payment ----
+                cur.execute(f"""
+                    UPDATE {schema}.lease_payments
+                    SET
+                        status = 'reversed',
+                        reversed_by_payment_id = %s,
+                        posted_journal_id = NULL,
+                        posted_at = NULL
+                    WHERE id = %s
+                """, (reversal_payment_id, original_payment_id))
+
+            elif source == "lease_monthly" and source_id:
+                cur.execute(f"""
+                    UPDATE {schema}.lease_schedule
+                    SET
+                        posted_journal_id = NULL,
+                        posted_at = NULL
+                    WHERE company_id = %s
+                    AND id = %s
+                """, (company_id, source_id))
+
+            elif source == "loan_payment":
+                cur.execute(f"""
+                    UPDATE {schema}.loan_payments
+                    SET
+                        status = 'reversed',
+                        reversed_at = NOW()
+                    WHERE company_id = %s
+                    AND posted_journal_id = %s
+                    AND status = 'posted'
+                """, (company_id, journal_id))
+
             conn.commit()
             return reversal_journal_id
-    
+        
     def get_account_balance_from_tb(self, company_id: int, code: str, *, cur=None) -> float:
         schema = self.company_schema(company_id)
 
