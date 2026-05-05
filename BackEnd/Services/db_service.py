@@ -62413,32 +62413,39 @@ class DatabaseService:
 
     def get_accounting_work_queue(self, company_id: int, *, date_from=None, date_to=None, limit: int = 20):
         schema = self.company_schema(company_id)
-
         items = []
 
         with self._conn_cursor() as (conn, cur):
-            # 1) Loan payments due this period
+
+            # 1) Loan payments due
             cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        ls.id AS schedule_id,
+                        ls.loan_id,
+                        ls.due_date,
+                        ls.scheduled_payment
+                    FROM {schema}.loan_schedules ls
+                    JOIN {schema}.loans l
+                        ON l.id = ls.loan_id
+                        AND l.company_id = ls.company_id
+                    WHERE ls.company_id = %s
+                    AND ls.payment_status IN ('open', 'partial')
+                    AND (%s IS NULL OR ls.due_date >= %s)
+                    AND (%s IS NULL OR ls.due_date <= %s)
+                    AND COALESCE(l.status, 'active') = 'active'
+                    ORDER BY ls.due_date ASC, ls.period_no ASC, ls.id ASC
+                )
                 SELECT
                     COUNT(*) AS count,
-                    COALESCE(SUM(ls.scheduled_payment), 0) AS amount,
-                    MIN(ls.due_date) AS next_due
-                FROM {schema}.loan_schedules ls
-                JOIN {schema}.loans l
-                ON l.id = ls.loan_id
-                AND l.company_id = ls.company_id
-                WHERE ls.company_id = %s
-                AND ls.payment_status IN ('open', 'partial')
-                AND (%s IS NULL OR ls.due_date >= %s)
-                AND (%s IS NULL OR ls.due_date <= %s)
-                AND COALESCE(l.status, 'active') = 'active'
+                    COALESCE(SUM(scheduled_payment), 0) AS amount,
+                    MIN(due_date) AS next_due,
+                    (ARRAY_AGG(loan_id ORDER BY due_date ASC, schedule_id ASC))[1] AS loan_id,
+                    (ARRAY_AGG(schedule_id ORDER BY due_date ASC, schedule_id ASC))[1] AS schedule_id
+                FROM due
             """, (company_id, date_from, date_from, date_to, date_to))
 
             row = cur.fetchone() or {}
-            if not isinstance(row, dict):
-                cols = [d[0] for d in cur.description]
-                row = dict(zip(cols, row))
-
             if int(row.get("count") or 0) > 0:
                 items.append({
                     "type": "loan_payment_due",
@@ -62448,27 +62455,90 @@ class DatabaseService:
                     "hint": f"Next due: {row.get('next_due')}",
                     "screen": "loans",
                     "severity": "warning",
+                    "target": {
+                        "screen": "loans",
+                        "tab": "payments",
+                        "loan_id": row.get("loan_id"),
+                        "schedule_id": row.get("schedule_id"),
+                        "action": "record_payment",
+                    },
                 })
 
-            # 2) Contracts where revenue recognised exceeds billing
+            # 1B) Lease payments due
             cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        s.id AS schedule_id,
+                        s.lease_id,
+                        s.period_end,
+                        s.payment
+                    FROM {schema}.lease_schedule s
+                    JOIN {schema}.leases l
+                        ON l.id = s.lease_id
+                        AND l.company_id = s.company_id
+                    WHERE s.company_id = %s
+                    AND COALESCE(s.is_active, TRUE) = TRUE
+                    AND COALESCE(l.status, 'active') = 'active'
+                    AND (%s IS NULL OR s.period_end >= %s)
+                    AND (%s IS NULL OR s.period_end <= %s)
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM {schema}.lease_payments p
+                        WHERE p.company_id = s.company_id
+                        AND p.lease_id = s.lease_id
+                        AND p.schedule_id = s.id
+                        AND COALESCE(p.status, '') IN ('draft', 'posted')
+                    )
+                    ORDER BY s.period_end ASC, s.id ASC
+                )
                 SELECT
                     COUNT(*) AS count,
-                    COALESCE(SUM(
-                        COALESCE(recognized_revenue_to_date, 0)
-                        - COALESCE(billed_to_date, 0)
-                    ), 0) AS amount
-                FROM {schema}.revenue_contracts
-                WHERE company_id = %s
-                AND COALESCE(recognized_revenue_to_date, 0) > COALESCE(billed_to_date, 0)
-                AND COALESCE(status, '') IN ('active', 'completed')
+                    COALESCE(SUM(payment), 0) AS amount,
+                    MIN(period_end) AS next_due,
+                    (ARRAY_AGG(lease_id ORDER BY period_end ASC, schedule_id ASC))[1] AS lease_id,
+                    (ARRAY_AGG(schedule_id ORDER BY period_end ASC, schedule_id ASC))[1] AS schedule_id
+                FROM due
+            """, (company_id, date_from, date_from, date_to, date_to))
+
+            row = cur.fetchone() or {}
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "lease_payment_due",
+                    "title": "Lease payments outstanding",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "hint": f"Next lease due: {row.get('next_due')}",
+                    "screen": "leases",
+                    "severity": "warning",
+                    "target": {
+                        "screen": "leases",
+                        "tab": "payments",
+                        "lease_id": row.get("lease_id"),
+                        "schedule_id": row.get("schedule_id"),
+                        "action": "record_lease_payment",
+                    },
+                })
+
+            # 2) Recognised revenue not billed
+            cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        id AS contract_id,
+                        COALESCE(recognized_revenue_to_date, 0) - COALESCE(billed_to_date, 0) AS amount
+                    FROM {schema}.revenue_contracts
+                    WHERE company_id = %s
+                    AND COALESCE(recognized_revenue_to_date, 0) > COALESCE(billed_to_date, 0)
+                    AND COALESCE(status, '') IN ('active', 'completed')
+                    ORDER BY id ASC
+                )
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(amount), 0) AS amount,
+                    (ARRAY_AGG(contract_id ORDER BY contract_id ASC))[1] AS contract_id
+                FROM due
             """, (company_id,))
 
             row = cur.fetchone() or {}
-            if not isinstance(row, dict):
-                cols = [d[0] for d in cur.description]
-                row = dict(zip(cols, row))
-
             if int(row.get("count") or 0) > 0:
                 items.append({
                     "type": "revenue_ready_to_bill",
@@ -62478,27 +62548,34 @@ class DatabaseService:
                     "hint": "Create invoices for earned revenue.",
                     "screen": "revenue",
                     "severity": "info",
+                    "target": {
+                        "screen": "revenue",
+                        "tab": "billing",
+                        "contract_id": row.get("contract_id"),
+                        "action": "bill_recognised_revenue",
+                    },
                 })
 
-            # 3) Contracts where billing exceeds recognised revenue
+            # 3) Billing ahead of revenue
             cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        id AS contract_id,
+                        COALESCE(billed_to_date, 0) - COALESCE(recognized_revenue_to_date, 0) AS amount
+                    FROM {schema}.revenue_contracts
+                    WHERE company_id = %s
+                    AND COALESCE(billed_to_date, 0) > COALESCE(recognized_revenue_to_date, 0)
+                    AND COALESCE(status, '') IN ('active', 'completed')
+                    ORDER BY id ASC
+                )
                 SELECT
                     COUNT(*) AS count,
-                    COALESCE(SUM(
-                        COALESCE(billed_to_date, 0)
-                        - COALESCE(recognized_revenue_to_date, 0)
-                    ), 0) AS amount
-                FROM {schema}.revenue_contracts
-                WHERE company_id = %s
-                AND COALESCE(billed_to_date, 0) > COALESCE(recognized_revenue_to_date, 0)
-                AND COALESCE(status, '') IN ('active', 'completed')
+                    COALESCE(SUM(amount), 0) AS amount,
+                    (ARRAY_AGG(contract_id ORDER BY contract_id ASC))[1] AS contract_id
+                FROM due
             """, (company_id,))
 
             row = cur.fetchone() or {}
-            if not isinstance(row, dict):
-                cols = [d[0] for d in cur.description]
-                row = dict(zip(cols, row))
-
             if int(row.get("count") or 0) > 0:
                 items.append({
                     "type": "billing_ahead_of_revenue",
@@ -62508,30 +62585,43 @@ class DatabaseService:
                     "hint": "Review contract liability / deferred income.",
                     "screen": "revenue",
                     "severity": "neutral",
+                    "target": {
+                        "screen": "revenue",
+                        "tab": "contracts",
+                        "contract_id": row.get("contract_id"),
+                        "action": "review_contract_liability",
+                    },
                 })
 
-            # 4) Satisfied point-in-time obligations not yet recognised
+            # 4) Satisfied obligations pending recognition
             cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        ro.id AS obligation_id,
+                        ro.contract_id,
+                        ro.satisfied_at,
+                        ro.allocated_transaction_price AS amount
+                    FROM {schema}.revenue_obligations ro
+                    JOIN {schema}.revenue_contracts rc
+                        ON rc.id = ro.contract_id
+                        AND rc.company_id = ro.company_id
+                    WHERE ro.company_id = %s
+                    AND ro.recognition_timing = 'point_in_time'
+                    AND ro.satisfaction_status = 'satisfied'
+                    AND COALESCE(ro.revenue_to_date, 0) < COALESCE(ro.allocated_transaction_price, 0)
+                    AND COALESCE(rc.status, '') IN ('active', 'completed')
+                    ORDER BY ro.satisfied_at ASC NULLS LAST, ro.id ASC
+                )
                 SELECT
                     COUNT(*) AS count,
-                    COALESCE(SUM(ro.allocated_transaction_price), 0) AS amount,
-                    MIN(ro.satisfied_at) AS oldest_satisfied
-                FROM {schema}.revenue_obligations ro
-                JOIN {schema}.revenue_contracts rc
-                ON rc.id = ro.contract_id
-                AND rc.company_id = ro.company_id
-                WHERE ro.company_id = %s
-                AND ro.recognition_timing = 'point_in_time'
-                AND ro.satisfaction_status = 'satisfied'
-                AND COALESCE(ro.revenue_to_date, 0) < COALESCE(ro.allocated_transaction_price, 0)
-                AND COALESCE(rc.status, '') IN ('active', 'completed')
+                    COALESCE(SUM(amount), 0) AS amount,
+                    MIN(satisfied_at) AS oldest_satisfied,
+                    (ARRAY_AGG(contract_id ORDER BY satisfied_at ASC NULLS LAST, obligation_id ASC))[1] AS contract_id,
+                    (ARRAY_AGG(obligation_id ORDER BY satisfied_at ASC NULLS LAST, obligation_id ASC))[1] AS obligation_id
+                FROM due
             """, (company_id,))
 
             row = cur.fetchone() or {}
-            if not isinstance(row, dict):
-                cols = [d[0] for d in cur.description]
-                row = dict(zip(cols, row))
-
             if int(row.get("count") or 0) > 0:
                 items.append({
                     "type": "pit_obligation_ready",
@@ -62541,6 +62631,13 @@ class DatabaseService:
                     "hint": f"Oldest satisfied: {row.get('oldest_satisfied')}",
                     "screen": "revenue",
                     "severity": "warning",
+                    "target": {
+                        "screen": "revenue",
+                        "tab": "recognition",
+                        "contract_id": row.get("contract_id"),
+                        "obligation_id": row.get("obligation_id"),
+                        "action": "recognise_obligation",
+                    },
                 })
 
         return {

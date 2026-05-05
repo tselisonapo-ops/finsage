@@ -5029,7 +5029,25 @@ def api_dashboard_snapshot(company_id: int):
             cash += closing
         elif any(k in name for k in ["receivable", "trade receivable", "accounts receivable", "debtors"]):
             ar_total += closing
-        elif any(k in name for k in ["payable", "trade payable", "accounts payable", "creditors"]):
+        elif (
+            any(k in name for k in ["trade payable", "accounts payable", "supplier payable", "vendor payable", "creditors"])
+            and not any(k in name for k in [
+                "loan payable",
+                "vat payable",
+                "vat output",
+                "vat input",
+                "paye",
+                "withholding",
+                "lease liability",
+                "deferred income",
+                "tax payable",
+                "income tax",
+                "provision",
+                "accrual",
+                "borrowings",
+                "bank overdraft",
+            ])
+        ):
             ap_total += abs(closing)
 
     revenue = cogs = gross_profit = expenses = net_profit = 0.0

@@ -5704,12 +5704,13 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
             : "";
 
       return `
-        <button
-          type="button"
-          class="w-full text-left rounded-xl border ${cls} p-3 hover:shadow-sm transition"
-          data-workqueue-screen="${screen}"
-          data-workqueue-type="${String(item.type || "")}"
-        >
+          <button
+            type="button"
+            class="w-full text-left rounded-xl border ${cls} p-3 hover:shadow-sm transition"
+            data-workqueue-screen="${screen}"
+            data-workqueue-type="${String(item.type || "")}"
+            data-workqueue-target="${targetJson}"
+          >
           <div class="flex items-start justify-between gap-3">
             <div>
               <div class="font-semibold text-sm">
@@ -5742,6 +5743,40 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
 
 window.renderAccountingWorkQueue = renderAccountingWorkQueue;
 
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-workqueue-type]");
+  if (!btn) return;
+
+  let target = {};
+  try {
+    target = JSON.parse(decodeURIComponent(btn.dataset.workqueueTarget || "%7B%7D"));
+  } catch {
+    target = {};
+  }
+
+  const screen = target.screen || btn.dataset.workqueueScreen || "ledger";
+
+  if (screen === "loans") {
+    showScreen?.("loans");
+    window.FS_WORKQUEUE_TARGET = target;
+    return;
+  }
+
+  if (screen === "revenue") {
+    showScreen?.("revenue");
+    window.FS_WORKQUEUE_TARGET = target;
+    return;
+  }
+
+  if (screen === "leases") {
+    showScreen?.("leases");
+    window.FS_WORKQUEUE_TARGET = target;
+    return;
+  }
+
+  showScreen?.(screen);
+});
   /* ==============================
    * Sidebar Renderer (recursive)
    * ============================== */
@@ -12530,7 +12565,17 @@ async function renderDashboardKPIs(periodKey = "this_month") {
       }, 0);
 
     const ap = tbRows
-      .filter(r => /payable|creditor/i.test(`${r.name || ""} ${r.category || ""} ${r.section || ""}`))
+      .filter(r => {
+        const txt = `${r.name || ""} ${r.category || ""} ${r.section || ""}`.toLowerCase();
+
+        const isTradePayable =
+          /accounts payable|trade payable|supplier payable|vendor payable|creditors/.test(txt);
+
+        const excludeNonBills =
+          /loan payable|vat payable|vat output|vat input|paye|withholding|lease liability|deferred income|tax payable|income tax|provision|accrual|borrowings|bank overdraft/.test(txt);
+
+        return isTradePayable && !excludeNonBills;
+      })
       .reduce((sum, r) => {
         const raw = r.closing_balance_raw ?? r.closing_balance;
         return sum + Math.abs(Number(raw || 0));
