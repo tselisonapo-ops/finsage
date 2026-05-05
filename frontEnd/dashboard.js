@@ -5696,6 +5696,9 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
       const cls = workQueueSeverityClass(item.severity);
       const icon = workQueueIcon(item.type);
 
+      // ✅ ADD THIS
+      const targetJson = encodeURIComponent(JSON.stringify(item.target || {}));
+
       const amountText =
         amount !== 0 && typeof money === "function"
           ? money(Math.abs(amount))
@@ -5704,13 +5707,13 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
             : "";
 
       return `
-          <button
-            type="button"
-            class="w-full text-left rounded-xl border ${cls} p-3 hover:shadow-sm transition"
-            data-workqueue-screen="${screen}"
-            data-workqueue-type="${String(item.type || "")}"
-            data-workqueue-target="${targetJson}"
-          >
+        <button
+          type="button"
+          class="w-full text-left rounded-xl border ${cls} p-3 hover:shadow-sm transition"
+          data-workqueue-screen="${screen}"
+          data-workqueue-type="${String(item.type || "")}"
+          data-workqueue-target="${targetJson}"
+        >
           <div class="flex items-start justify-between gap-3">
             <div>
               <div class="font-semibold text-sm">
