@@ -1088,6 +1088,9 @@ def leases_monthly_due(company_id: int):
 
             schedule_id = int(r.get("schedule_id") or r.get("id") or 0)
 
+            payment_status = (r.get("payment_status") or "").strip().lower()
+            is_reversed_payment = payment_status in ("reversed", "void", "cancelled", "canceled")
+
             item = {
                 "lease_id": int(r["lease_id"]),
                 "lease_name": r.get("lease_name"),
@@ -1098,9 +1101,16 @@ def leases_monthly_due(company_id: int):
                 "schedule_id": schedule_id,
 
                 # ✅ NEW FLAGS
-                "is_paid": bool(r.get("paid")),
+                "is_paid": bool(r.get("paid")) and not is_reversed_payment,
+                "payment_id": r.get("payment_id"),
+                "payment_status": payment_status or None,
                 "payment_journal_id": r.get("payment_journal_id"),
+                "is_payment_reversed": is_reversed_payment,
+
                 "is_posted": bool(r.get("posted")),
+
+                "can_pay": not bool(r.get("paid")) or is_reversed_payment,
+                "can_post": not bool(r.get("posted")),
 
                 "amounts": {
                     "interest": float(r.get("interest") or 0),

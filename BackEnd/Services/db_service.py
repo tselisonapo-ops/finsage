@@ -25252,8 +25252,28 @@ class DatabaseService:
             WHERE p.company_id = s.company_id
             AND p.lease_id = s.lease_id
             AND p.schedule_id = s.id
-            AND p.status IN ('draft','posted')
+            AND COALESCE(p.status, '') IN ('draft','posted')
         ) AS paid,
+
+        (
+            SELECT p.id
+            FROM {schema}.lease_payments p
+            WHERE p.company_id = s.company_id
+            AND p.lease_id = s.lease_id
+            AND p.schedule_id = s.id
+            ORDER BY p.id DESC
+            LIMIT 1
+        ) AS payment_id,
+
+        (
+            SELECT p.status
+            FROM {schema}.lease_payments p
+            WHERE p.company_id = s.company_id
+            AND p.lease_id = s.lease_id
+            AND p.schedule_id = s.id
+            ORDER BY p.id DESC
+            LIMIT 1
+        ) AS payment_status,
 
         (
             SELECT p.posted_journal_id
@@ -25261,7 +25281,6 @@ class DatabaseService:
             WHERE p.company_id = s.company_id
             AND p.lease_id = s.lease_id
             AND p.schedule_id = s.id
-            AND p.status IN ('draft','posted')
             ORDER BY p.id DESC
             LIMIT 1
         ) AS payment_journal_id

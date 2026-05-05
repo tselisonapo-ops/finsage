@@ -25637,8 +25637,16 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
           const leaseId = r.lease_id ?? r.id ?? "";
           const periodNo = r.period_no ?? r.period ?? r.period_number ?? "";
           const due = (r?.amounts?.payment ?? null) ?? r.amount_due ?? r.due_amount ?? r.payment_amount ?? 0;
-          const isPaid = !!r.is_paid;
-          const isPosted = !!r.is_posted || !!r.payment_journal_id;
+          const paymentStatus = String(r.payment_status || "").toLowerCase();
+          const isPaymentReversed = ["reversed", "void", "cancelled", "canceled"].includes(paymentStatus);
+
+          const isPaid = !!r.is_paid && !isPaymentReversed;
+
+          // monthly IFRS 16 posting only, not payment journal
+          const isPosted = !!r.is_posted;
+
+          const canPay = !isPaid;
+          const canPost = !isPosted;
           
         console.log("[MONTHLY BUTTON FLAGS]", {
           leaseId,
@@ -25647,7 +25655,7 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
           payment_journal_id: r.payment_journal_id,
           isPaid,
           isPosted,
-});          
+        });          
           return `
             <tr class="border-t" data-lease-id="${escapeHtml(String(leaseId))}">
               <td class="p-2">
@@ -25660,25 +25668,25 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               <td class="p-2 text-right">
                 <button
                   class="px-2 py-1 rounded border text-xs ${
-                    isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"
+                    canPay ? "bg-white" : "bg-slate-100 text-slate-400 cursor-not-allowed"
                   }"
                   data-pay="1"
                   data-lease-id="${escapeHtml(String(leaseId))}"
                   data-schedule-id="${escapeHtml(String(r.schedule_id || ""))}"
                   data-due="${escapeHtml(String(due))}"
-                  ${isPaid ? "disabled" : ""}
+                  ${canPay ? "" : "disabled"}
                 >
-                  ${isPaid ? "Paid" : "Pay"}
+                  ${isPaid ? "Paid" : isPaymentReversed ? "Pay again" : "Pay"}
                 </button>
 
                 <button
                   class="px-2 py-1 rounded text-xs ml-2 ${
-                    isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"
+                    canPost ? "bg-slate-900 text-white" : "bg-slate-300 text-white cursor-not-allowed"
                   }"
                   data-lm-post="1"
                   data-lease-id="${escapeHtml(String(leaseId))}"
                   data-period-no="${escapeHtml(String(periodNo))}"
-                  ${isPosted ? "disabled" : ""}
+                  ${canPost ? "" : "disabled"}
                 >
                   ${isPosted ? "Posted" : "Post"}
                 </button>
