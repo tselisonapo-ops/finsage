@@ -22530,8 +22530,19 @@ class DatabaseService:
         entry_source_id = entry.get("source_id")
 
         def _run(cursor):
-            journal_id = self.insert_journal(company_id, entry, cur=cursor)
+            if ref:
+                existing = self.fetch_one(f"""
+                    SELECT id
+                    FROM {schema}.journal
+                    WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
+                    AND COALESCE(reversal_of_journal_id, 0) = 0
+                    LIMIT 1
+                """, (ref,), cur=cursor)
 
+                if existing:
+                    raise ValueError(f"DUPLICATE_JOURNAL_REF|{ref}|journal_id={existing.get('id')}")
+
+            journal_id = self.insert_journal(company_id, entry, cur=cursor)
             line_no = 1
             for line in lines:
                 self.insert_journal_line(

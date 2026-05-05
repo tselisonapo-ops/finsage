@@ -3680,6 +3680,28 @@ def api_journal(company_id: int):
         entry = request.get_json(force=True) or {}
         before_json = entry
 
+        ref = (entry.get("ref") or "").strip()
+
+        if ref:
+            existing = db_service.fetch_one(
+                f"""
+                SELECT id
+                FROM company_{company_id}.journal
+                WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
+                AND COALESCE(reversal_of_journal_id, 0) = 0
+                LIMIT 1
+                """,
+                (ref,),
+            )
+
+            if existing:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Duplicate journal reference: {ref}",
+                    "code": "DUPLICATE_JOURNAL_REF",
+                    "ref": ref,
+                    "journal_id": existing.get("id"),
+                }), 409
         # ✅ Ensure schema/table evolution ran BEFORE we select currency
         # (use your real ensure function name here)
         try:
