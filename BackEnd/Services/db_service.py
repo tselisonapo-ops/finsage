@@ -33573,12 +33573,11 @@ class DatabaseService:
                 AND payment_status IN ('open','partial')
                 ORDER BY due_date ASC, period_no ASC, id ASC
                 LIMIT 1
-            """, 
-                (
-                    company_id,
-                    loan_row["id"],
-                    int(loan_row.get("schedule_version") or 1),
-                ))
+            """, (
+                company_id,
+                loan_row["id"],
+                int(loan_row.get("schedule_version") or 1),
+            ))
 
             row = cur.fetchone()
             cols = [d[0] for d in cur.description] if cur.description else []
@@ -33598,20 +33597,6 @@ class DatabaseService:
 
         total_due = _money(remaining_interest + remaining_principal)
         payment = _money(payment_row["amount_paid"])
-
-        available_for_schedule = _money(payment - accrued_interest)
-
-        if available_for_schedule < 0:
-            raise ValueError("Payment amount is less than accrued interest due")
-
-        if available_for_schedule > total_due:
-            extra = available_for_schedule - total_due
-            principal = remaining_principal + extra
-            interest = remaining_interest
-        else:
-            ratio = available_for_schedule / total_due if total_due > 0 else Decimal("0")
-            interest = _money(remaining_interest * ratio)
-            principal = _money(available_for_schedule - interest)
 
         accrued_interest = Decimal("0.00")
         warnings = []
@@ -33633,12 +33618,26 @@ class DatabaseService:
                     f"Late payment interest calculated for {days_late} day(s)"
                 )
 
+        available_for_schedule = _money(payment - accrued_interest)
+
+        if available_for_schedule < 0:
+            raise ValueError("Payment amount is less than accrued interest due")
+
+        if available_for_schedule > total_due:
+            extra = available_for_schedule - total_due
+            principal = remaining_principal + extra
+            interest = remaining_interest
+        else:
+            ratio = available_for_schedule / total_due if total_due > 0 else Decimal("0")
+            interest = _money(remaining_interest * ratio)
+            principal = _money(available_for_schedule - interest)
+
         split_total = _money(
             principal
             + interest
             + accrued_interest
-            + Decimal("0.00")  # fees
-            + Decimal("0.00")  # penalties
+            + Decimal("0.00")
+            + Decimal("0.00")
         )
 
         remaining_input = _money(payment - split_total)
@@ -33647,17 +33646,14 @@ class DatabaseService:
             "schedule_id": sched.get("id"),
             "schedule_version": sched.get("schedule_version"),
             "schedule_due_date": str(sched.get("due_date")),
-
             "principal_amount": float(principal),
             "interest_amount": float(interest),
             "accrued_interest_amount": float(accrued_interest),
             "fees_amount": 0.0,
             "penalties_amount": 0.0,
-
             "amount_paid": float(payment),
             "total_amount": float(split_total),
             "remaining_input": float(remaining_input),
-
             "method_used": "amortised_schedule",
             "warnings": warnings,
         }
