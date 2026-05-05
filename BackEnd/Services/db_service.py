@@ -33468,6 +33468,51 @@ class DatabaseService:
             "status": "posted",
         }
 
+    def _calc_manual_payment_breakdown(self, payment_row: dict) -> dict:
+        principal = _money(payment_row.get("principal_amount"))
+        interest = _money(payment_row.get("interest_amount"))
+        accrued_interest = _money(payment_row.get("accrued_interest_amount"))
+        fees = _money(payment_row.get("fees_amount"))
+        penalties = _money(payment_row.get("penalties_amount"))
+        capitalised_borrowing_costs = _money(
+            payment_row.get("capitalised_borrowing_costs_amount")
+            or payment_row.get("capitalised_interest_amount")
+            or payment_row.get("borrowing_costs_amount")
+        )
+
+        amount_paid = _money(payment_row.get("amount_paid"))
+
+        split_total = (
+            principal
+            + interest
+            + accrued_interest
+            + fees
+            + penalties
+            + capitalised_borrowing_costs
+        )
+
+        if split_total <= 0 and amount_paid > 0:
+            principal = amount_paid
+            split_total = amount_paid
+
+        remaining = amount_paid - split_total
+
+        return {
+            "principal_amount": _money(principal),
+            "interest_amount": _money(interest),
+            "accrued_interest_amount": _money(accrued_interest),
+            "fees_amount": _money(fees),
+            "penalties_amount": _money(penalties),
+            "capitalised_borrowing_costs_amount": _money(capitalised_borrowing_costs),
+            "capitalised_interest_amount": _money(capitalised_borrowing_costs),
+            "borrowing_costs_amount": _money(capitalised_borrowing_costs),
+            "total_amount": _money(split_total),
+            "amount_paid": _money(amount_paid),
+            "remaining_input": _money(remaining),
+            "allocation_method": payment_row.get("allocation_method") or "manual",
+            "auto_calculate_split": False,
+        }
+
     def calculate_loan_payment_breakdown(
         self,
         conn,
@@ -33554,14 +33599,19 @@ class DatabaseService:
         total_due = _money(remaining_interest + remaining_principal)
         payment = _money(payment_row["amount_paid"])
 
-        if payment > total_due:
-            extra = payment - total_due
+        available_for_schedule = _money(payment - accrued_interest)
+
+        if available_for_schedule < 0:
+            raise ValueError("Payment amount is less than accrued interest due")
+
+        if available_for_schedule > total_due:
+            extra = available_for_schedule - total_due
             principal = remaining_principal + extra
             interest = remaining_interest
         else:
-            ratio = payment / total_due if total_due > 0 else Decimal("0")
+            ratio = available_for_schedule / total_due if total_due > 0 else Decimal("0")
             interest = _money(remaining_interest * ratio)
-            principal = _money(payment - interest)
+            principal = _money(available_for_schedule - interest)
 
         accrued_interest = Decimal("0.00")
         warnings = []
@@ -33583,16 +33633,31 @@ class DatabaseService:
                     f"Late payment interest calculated for {days_late} day(s)"
                 )
 
+        split_total = _money(
+            principal
+            + interest
+            + accrued_interest
+            + Decimal("0.00")  # fees
+            + Decimal("0.00")  # penalties
+        )
+
+        remaining_input = _money(payment - split_total)
+
         return {
             "schedule_id": sched.get("id"),
             "schedule_version": sched.get("schedule_version"),
             "schedule_due_date": str(sched.get("due_date")),
+
             "principal_amount": float(principal),
             "interest_amount": float(interest),
             "accrued_interest_amount": float(accrued_interest),
             "fees_amount": 0.0,
             "penalties_amount": 0.0,
-            "total_amount": float(payment + accrued_interest),
+
+            "amount_paid": float(payment),
+            "total_amount": float(split_total),
+            "remaining_input": float(remaining_input),
+
             "method_used": "amortised_schedule",
             "warnings": warnings,
         }
