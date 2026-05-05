@@ -32549,7 +32549,20 @@ class DatabaseService:
                 FOR UPDATE
             """, (company_id, loan_id, company_id, loan_id))
 
-        rows = cur.fetchall() or []
+            rows = cur.fetchall() or []
+        else:
+            # ✅ STANDARD PAYMENTS MUST ALSO LOAD SCHEDULES
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.loan_schedules
+                WHERE company_id=%s
+                AND loan_id=%s
+                AND payment_status IN ('open','partial')
+                ORDER BY due_date ASC, period_no ASC
+                FOR UPDATE
+            """, (company_id, loan_id))
+
+            rows = cur.fetchall() or []
         cols = [d[0] for d in cur.description]
         schedule_rows = [
             x if isinstance(x, dict) else dict(zip(cols, x))
