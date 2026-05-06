@@ -586,13 +586,13 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
             Initial direct costs
 
             <span className="info-wrap">
-              <button
-                type="button"
+              <span
                 className="info-tip"
+                tabIndex={0}
                 aria-label="Initial direct costs information"
               >
                 i
-              </button>
+              </span>
 
               <span className="info-popover">
                 Costs paid to third-party suppliers to obtain the lease, such as broker,
