@@ -434,10 +434,29 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
           AND acq.acquisition_date <= %s
           AND jl.account_code = a.asset_account_code
         GROUP BY acq.asset_id
-      )
+      ),
+        hfs AS (
+        SELECT DISTINCT ON (h.asset_id)
+            h.asset_id,
+            h.id AS hfs_id,
+            h.classification_date AS hfs_classification_date,
+            h.status AS hfs_status,
+            h.posted_journal_id AS hfs_posted_journal_id
+        FROM {schema}.asset_held_for_sale h
+        JOIN base b ON b.id = h.asset_id
+        WHERE h.company_id = %s
+            AND h.status = 'posted'
+            AND h.classification_date <= %s
+        ORDER BY h.asset_id, h.classification_date DESC, h.id DESC
+        )
 
       SELECT
         b.*,
+            hfs.hfs_id,
+            hfs.hfs_classification_date,
+            hfs.hfs_status,
+            hfs.hfs_posted_journal_id,
+            (hfs.hfs_id IS NOT NULL) AS is_held_for_sale,
 
         (
           COALESCE(b.opening_cost,0)::numeric
@@ -578,6 +597,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
       FROM base b
       LEFT JOIN posted_flags pf ON pf.asset_id = b.id
       LEFT JOIN gl_cost gc ON gc.asset_id = b.id
+      LEFT JOIN hfs ON hfs.asset_id = b.id
       WHERE pf.any_posted = TRUE
 
       ORDER BY b.id DESC
@@ -586,13 +606,17 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
     # ✅ base WHERE params first, then as_at params, then limit/offset
     cur.execute(sql, (
-        *params,          # <-- company_id, status, asset_class, q, q (in that order)
+        *params,
         as_at,            # posted_flags cutoff
         as_at,            # gl_cost cutoff
-        as_at, as_at, as_at,   # dep / reval / imp
-        as_at, as_at, as_at,   # carrying parts
-        as_at, as_at, as_at,   # nbv parts
-        as_at,                 # acc_dep
+
+        company_id,       # hfs company_id
+        as_at,            # hfs classification cutoff
+
+        as_at, as_at, as_at,
+        as_at, as_at, as_at,
+        as_at, as_at, as_at,
+        as_at,
         limit, offset
     ))
 

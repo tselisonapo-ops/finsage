@@ -2993,18 +2993,36 @@ def _to_date(x):
 def eligible_for_depreciation(asset: dict, period_end):
     pe = _to_date(period_end)
 
-    start = _to_date(
+    available = _to_date(
         asset.get("available_for_use_date")
-        or asset.get("in_service_date")      # keep fallback if other schemas exist
-        or asset.get("acquisition_date")
-        or asset.get("acquired_on")
+        or asset.get("ready_for_use_date")
+        or asset.get("in_service_date")
     )
 
     disposed = _to_date(asset.get("disposed_date"))
 
-    return bool(
-        pe and start and start <= pe and (disposed is None or disposed > pe)
-    )
+    hfs_date = _to_date(asset.get("hfs_classification_date"))
+    is_hfs = bool(asset.get("is_held_for_sale")) or bool(hfs_date)
+
+    if not pe:
+        return False
+
+    if bool(asset.get("is_qualifying_asset")) and not available:
+        return False
+
+    if not available:
+        return False
+
+    if available > pe:
+        return False
+
+    if disposed is not None and disposed <= pe:
+        return False
+
+    if is_hfs and hfs_date and hfs_date <= pe:
+        return False
+
+    return True
 
 def calc_monthly_dep(asset, cost_basis: Decimal, residual: Decimal) -> Decimal:
     """
@@ -3248,7 +3266,11 @@ def generate_depreciation_run(
         # -------------------------
         # ✅ effective start date per asset
         # -------------------------
-        start = a.get("available_for_use_date") or a.get("acquisition_date")
+        start = (
+            a.get("available_for_use_date")
+            or a.get("ready_for_use_date")
+            or a.get("in_service_date")
+        )
         eff_ps = period_start
         if start and start > eff_ps:
             eff_ps = start
@@ -4026,7 +4048,11 @@ def preview_depreciation_run(
             missing: list[str] = []
 
             method = (a.get("depreciation_method") or "").upper().strip()
-            start = a.get("available_for_use_date") or a.get("acquisition_date")
+            start = (
+                a.get("available_for_use_date")
+                or a.get("ready_for_use_date")
+                or a.get("in_service_date")
+            )
             disposed = a.get("disposed_date")
 
             if isinstance(start, datetime):
