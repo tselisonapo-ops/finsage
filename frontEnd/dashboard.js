@@ -29751,19 +29751,37 @@ window.postTerm = async function postTerm() {
   });
 
   window.addEventListener("message", async (event) => {
-    if (event.origin !== LEASE_WIZARD_ORIGIN) return;
+    console.log("[LEASE HOST] message received", {
+      origin: event.origin,
+      expected: LEASE_WIZARD_ORIGIN,
+      data: event.data,
+    });
+
+    if (event.origin !== LEASE_WIZARD_ORIGIN) {
+      console.warn("[LEASE HOST] origin mismatch", {
+        expected: LEASE_WIZARD_ORIGIN,
+        actual: event.origin,
+      });
+      return;
+    }
 
     const data = event.data || {};
 
     if (data.type === "lease_wizard_ready") {
+      console.log("[LEASE HOST] wizard ready, sending context");
       sendLeaseWizardContext();
+      return;
     }
 
     if (data.type === "lease_wizard_close") {
+      console.log("[LEASE HOST] closing lease drawer");
       leaseDrawer.classList.remove("active");
+      return;
     }
 
     if (data.type === "lease_create_ap_bill") {
+      console.log("[LEASE HOST] handling lease_create_ap_bill", data);
+
       leaseDrawer.classList.remove("active");
 
       localStorage.setItem(
@@ -29771,11 +29789,28 @@ window.postTerm = async function postTerm() {
         JSON.stringify(data.payload || {})
       );
 
-      await window.switchScreen?.("ap");
+      console.log("[LEASE HOST] switching to AP screen");
+
+      if (typeof window.switchScreen === "function") {
+        await window.switchScreen("ap");
+      } else {
+        console.warn("[LEASE HOST] switchScreen missing, using hash fallback");
+        location.hash = "screen-ap";
+      }
+
+      console.log("[LEASE HOST] AP screen switch complete");
 
       setTimeout(() => {
-        window.openBillFromLeaseDirectCost?.(data.payload || {});
-      }, 80);
+        console.log("[LEASE HOST] opening bill prefill");
+
+        if (typeof window.openBillFromLeaseDirectCost === "function") {
+          window.openBillFromLeaseDirectCost(data.payload || {});
+        } else {
+          console.warn("[LEASE HOST] openBillFromLeaseDirectCost missing");
+        }
+      }, 150);
+
+      return;
     }
   });
 })();

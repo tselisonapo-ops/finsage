@@ -371,7 +371,10 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
   }
 
   function handleDirectCostCreateApBill() {
+    console.log("[LEASE] Create AP Bill clicked");
+
     const action = "ap_bill";
+
     setDirectCostAction(action);
     setShowDirectCostPrompt(false);
 
@@ -389,6 +392,8 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       company_id: companyId,
     };
 
+    console.log("[LEASE] Posting AP bill redirect message", payload);
+
     window.parent?.postMessage(
       {
         type: "lease_create_ap_bill",
@@ -396,6 +401,8 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       },
       "*"
     );
+
+    console.log("[LEASE] postMessage dispatched");
   }
 
   async function handleDirectCostPaidNow() {
