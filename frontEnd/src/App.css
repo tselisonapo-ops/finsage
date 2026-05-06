@@ -730,28 +730,51 @@ button {
 .label-with-info {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  overflow: visible;
+  gap: 12px;
+}
+
+.lease-info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
 .lease-info-icon {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
+  background: #ffffff;
   color: #64748b;
-  background: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   line-height: 1;
   cursor: help;
-  user-select: none;
 }
 
-.lease-info-icon:hover {
-  background: #f8fafc;
+.lease-info-popover {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 26px;
+  width: 360px;
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  font-weight: 400;
+  z-index: 99999;
+  white-space: normal;
+}
+
+.lease-info-wrap:hover .lease-info-popover,
+.lease-info-wrap:focus-within .lease-info-popover {
+  display: block;
 }
