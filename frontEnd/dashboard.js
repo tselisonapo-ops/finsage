@@ -60688,7 +60688,7 @@ function bindAP() {
       window.clearBillForm({ keepCurrency: true });
     }
 
-    const vendorId = String(prefill.vendor_id || prefill.lessor_id || "").trim();
+    const vendorId = String(prefill.vendor_id || "").trim();
 
     // Try to resolve vendor name from cache if only id was passed
     let vendorName = String(prefill.vendor_name || "").trim();
@@ -61075,6 +61075,30 @@ function bindAP() {
   if (!document.querySelector("#billLines tr")) addBillLine();
   window.recalcBill?.({ force: true });
   bindBillVendorGuards();
+
+  // ✅ Apply lease direct cost prefill after AP screen has mounted
+  try {
+    const raw = localStorage.getItem("fs_lease_ap_bill_prefill");
+
+    if (raw) {
+      const prefill = JSON.parse(raw);
+
+      console.log("[AP] found lease AP prefill", prefill);
+
+      localStorage.removeItem("fs_lease_ap_bill_prefill");
+
+      setTimeout(() => {
+        if (typeof window.applyLeaseApPrefill === "function") {
+          console.log("[AP] applying lease AP prefill");
+          window.applyLeaseApPrefill(prefill);
+        } else {
+          console.warn("[AP] applyLeaseApPrefill missing");
+        }
+      }, 150);
+    }
+  } catch (e) {
+    console.warn("[AP] failed to apply lease AP prefill", e);
+  }
 }
 window.bindAP = bindAP;
 
