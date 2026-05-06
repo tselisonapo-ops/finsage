@@ -8106,6 +8106,9 @@ function openLeaseWizard(ctx = {}) {
     return;
   }
 
+  drawer.classList.remove("hidden");
+  drawer.style.display = "";
+  drawer.style.pointerEvents = "";
   drawer.classList.add("active");
 
   const LEASE_WIZARD_URL =
@@ -29685,9 +29688,13 @@ window.postTerm = async function postTerm() {
   const leaseCloseBtn = document.getElementById("closeLeaseWizard");
   const leaseFrame    = document.getElementById("leaseWizardFrame");
 
-  if (!leaseNavBtn || !leaseDrawer || !leaseFrame) return;
-  if (leaseNavBtn.dataset.bound === "1") return;
-  leaseNavBtn.dataset.bound = "1";
+  if (!leaseDrawer || !leaseFrame) {
+    console.warn("[LEASE HOST] drawer or iframe missing");
+    return;
+  }
+
+  if (window.__LEASE_WIZARD_BOUND__ === true) return;
+  window.__LEASE_WIZARD_BOUND__ = true;
 
   const IS_LOCAL =
     window.location.hostname === "localhost" ||
@@ -29703,6 +29710,25 @@ window.postTerm = async function postTerm() {
     ? "http://localhost:5173"
     : PROD_ORIGIN;
 
+  function closeLeaseDrawerHard() {
+    console.log("[LEASE HOST] hard close drawer");
+
+    leaseDrawer.classList.remove("active");
+    leaseDrawer.classList.add("hidden");
+
+    leaseDrawer.style.display = "none";
+    leaseDrawer.style.pointerEvents = "none";
+  }
+
+  function openLeaseDrawerHard() {
+    leaseDrawer.classList.remove("hidden");
+    leaseDrawer.style.display = "";
+    leaseDrawer.style.pointerEvents = "";
+    leaseDrawer.classList.add("active");
+  }
+
+  window.closeLeaseWizard = closeLeaseDrawerHard;
+
   function sendLeaseWizardContext() {
     const token =
       window.getToken?.() ||
@@ -29711,103 +29737,97 @@ window.postTerm = async function postTerm() {
       localStorage.getItem("authToken") ||
       sessionStorage.getItem("authToken");
 
-    const companyId = window.getActiveCompanyId?.();
+    const companyId =
+      window.getActiveCompanyId?.() ||
+      localStorage.getItem("company_id") ||
+      window.CURRENT_COMPANY_ID;
 
-    if (!token || !companyId || !leaseFrame.contentWindow) return;
+    if (!token || !companyId || !leaseFrame.contentWindow) {
+      console.warn("[LEASE HOST] cannot send context", {
+        hasToken: !!token,
+        companyId,
+        hasFrameWindow: !!leaseFrame.contentWindow,
+      });
+      return;
+    }
 
     leaseFrame.contentWindow.postMessage(
       {
         type: "lease_wizard_context",
         token,
         companyId,
-        source: "nav"
+        source: "nav",
       },
       LEASE_WIZARD_ORIGIN
     );
   }
 
-  leaseNavBtn.addEventListener("click", () => {
-    const cid = window.getActiveCompanyId?.();
-    if (!cid) {
-      alert("Select a company first.");
-      return;
-    }
+  if (leaseNavBtn) {
+    leaseNavBtn.addEventListener("click", () => {
+      const cid = window.getActiveCompanyId?.();
+      if (!cid) {
+        alert("Select a company first.");
+        return;
+      }
 
-    leaseDrawer.classList.add("active");
+      openLeaseDrawerHard();
 
-    if (leaseFrame.src !== LEASE_WIZARD_URL) {
-      leaseFrame.src = LEASE_WIZARD_URL;
-      leaseFrame.dataset.loaded = "0";
-    }
+      if (leaseFrame.src !== LEASE_WIZARD_URL) {
+        leaseFrame.src = LEASE_WIZARD_URL;
+        leaseFrame.dataset.loaded = "0";
+      }
 
-    if (leaseFrame.dataset.loaded === "1") {
-      sendLeaseWizardContext();
-    } else {
-      leaseFrame.addEventListener("load", () => {
-        leaseFrame.dataset.loaded = "1";
-        setTimeout(sendLeaseWizardContext, 150);
-      }, { once: true });
-    }
-  });
+      if (leaseFrame.dataset.loaded === "1") {
+        sendLeaseWizardContext();
+      } else {
+        leaseFrame.addEventListener("load", () => {
+          leaseFrame.dataset.loaded = "1";
+          setTimeout(sendLeaseWizardContext, 150);
+        }, { once: true });
+      }
+    });
+  }
+
+  leaseCloseBtn?.addEventListener("click", closeLeaseDrawerHard);
 
   window.addEventListener("message", async (event) => {
+    const data = event.data || {};
+
     console.log("[LEASE HOST] message received", {
       origin: event.origin,
       expected: LEASE_WIZARD_ORIGIN,
-      data: event.data,
+      type: data.type,
+      data,
     });
 
-    if (event.origin !== LEASE_WIZARD_ORIGIN) {
-      console.warn("[LEASE HOST] origin mismatch", {
-        expected: LEASE_WIZARD_ORIGIN,
-        actual: event.origin,
-      });
-      return;
-    }
-
-    const data = event.data || {};
+    if (event.origin !== LEASE_WIZARD_ORIGIN) return;
 
     if (data.type === "lease_wizard_ready") {
-      console.log("[LEASE HOST] wizard ready, sending context");
       sendLeaseWizardContext();
       return;
     }
 
     if (data.type === "lease_wizard_close") {
-      console.log("[LEASE HOST] closing lease drawer");
-      leaseDrawer.classList.remove("active");
+      closeLeaseDrawerHard();
       return;
     }
 
     if (data.type === "lease_create_ap_bill") {
-      console.log("[LEASE HOST] handling lease_create_ap_bill", data);
-
-      leaseDrawer.classList.remove("active");
+      closeLeaseDrawerHard();
 
       localStorage.setItem(
         "fs_lease_ap_bill_prefill",
         JSON.stringify(data.payload || {})
       );
 
-      console.log("[LEASE HOST] switching to AP screen");
-
       if (typeof window.switchScreen === "function") {
         await window.switchScreen("ap");
       } else {
-        console.warn("[LEASE HOST] switchScreen missing, using hash fallback");
         location.hash = "screen-ap";
       }
 
-      console.log("[LEASE HOST] AP screen switch complete");
-
       setTimeout(() => {
-        console.log("[LEASE HOST] opening bill prefill");
-
-        if (typeof window.openBillFromLeaseDirectCost === "function") {
-          window.openBillFromLeaseDirectCost(data.payload || {});
-        } else {
-          console.warn("[LEASE HOST] openBillFromLeaseDirectCost missing");
-        }
+        window.openBillFromLeaseDirectCost?.(data.payload || {});
       }, 150);
 
       return;
