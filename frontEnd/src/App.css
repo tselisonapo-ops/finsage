@@ -730,7 +730,9 @@ button {
 .label-with-info {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  width: fit-content;
+  position: relative;
 }
 
 .lease-info-wrap {
@@ -746,12 +748,18 @@ button {
   border: 1px solid #94a3b8;
   background: #ffffff;
   color: #475569;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
+
   cursor: pointer;
+  user-select: none;
+
   transition: all 0.15s ease;
 }
 
@@ -763,7 +771,9 @@ button {
 }
 
 .lease-info-popover {
-  position: absolute;
+  display: block !important;
+  position: absolute !important;
+
   top: 30px;
   left: 0;
 
@@ -784,10 +794,12 @@ button {
   font-weight: 400;
 
   white-space: normal;
-  z-index: 9999;
+  z-index: 999999;
 
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
+
   transform: translateY(6px);
 
   transition:
@@ -800,5 +812,6 @@ button {
 .lease-info-wrap:focus-within .lease-info-popover {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
   transform: translateY(0);
 }
