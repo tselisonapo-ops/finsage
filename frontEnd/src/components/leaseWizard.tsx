@@ -375,20 +375,27 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     setDirectCostAction(action);
     setShowDirectCostPrompt(false);
 
-    const params = new URLSearchParams({
+    const payload = {
       source: "lease",
       action,
+      lease_id: result?.lease_id || null,
       lease_name: form.lease_name || "",
-      lessor_id: String(form.lessor_id || ""),
-      amount: String(Number(form.initial_direct_costs || 0)),
-      vat_rate: String(Number(form.vat_rate || 0)),
+      lessor_id: form.lessor_id || null,
+      amount: Number(form.initial_direct_costs || 0),
+      vat_rate: Number(form.vat_rate || 0),
       asset_account: form.rou_asset_account || "BS_NCA_1610",
       description: `Initial direct cost - ${form.lease_name || "Lease"}`,
       reference: form.reference || "",
-      company_id: String(companyId),
-    });
+      company_id: companyId,
+    };
 
-    window.location.href = `/dashboard.html#screen-ap?${params.toString()}`;
+    window.parent?.postMessage(
+      {
+        type: "lease_create_ap_bill",
+        payload,
+      },
+      "*"
+    );
   }
 
   async function handleDirectCostPaidNow() {

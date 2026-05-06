@@ -29750,7 +29750,7 @@ window.postTerm = async function postTerm() {
     }
   });
 
-  window.addEventListener("message", (event) => {
+  window.addEventListener("message", async (event) => {
     if (event.origin !== LEASE_WIZARD_ORIGIN) return;
 
     const data = event.data || {};
@@ -29762,10 +29762,21 @@ window.postTerm = async function postTerm() {
     if (data.type === "lease_wizard_close") {
       leaseDrawer.classList.remove("active");
     }
-  });
 
-  leaseCloseBtn?.addEventListener("click", () => {
-    leaseDrawer.classList.remove("active");
+    if (data.type === "lease_create_ap_bill") {
+      leaseDrawer.classList.remove("active");
+
+      localStorage.setItem(
+        "fs_lease_ap_bill_prefill",
+        JSON.stringify(data.payload || {})
+      );
+
+      await window.switchScreen?.("ap");
+
+      setTimeout(() => {
+        window.openBillFromLeaseDirectCost?.(data.payload || {});
+      }, 80);
+    }
   });
 })();
 
