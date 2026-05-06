@@ -815,3 +815,52 @@ button {
   pointer-events: auto;
   transform: translateY(0);
 }
+
+.fs-tip-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: fit-content !important;
+}
+
+.fs-tip {
+  position: relative !important;
+  display: inline-flex !important;
+}
+
+.fs-tip-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: help;
+}
+
+.fs-tip-box {
+  display: none !important;
+  position: absolute !important;
+  top: 26px;
+  left: 0;
+  width: 380px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.14);
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 400;
+  z-index: 999999;
+  white-space: normal;
+}
+
+.fs-tip:hover .fs-tip-box,
+.fs-tip:focus-within .fs-tip-box {
+  display: block !important;
+}
