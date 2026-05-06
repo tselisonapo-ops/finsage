@@ -26811,9 +26811,13 @@ class DatabaseService:
             # allocate ALL net portion to principal
             alloc_principal = money(alloc - alloc_vat)
         else:
-            # arrears logic (your existing ratio split)
+            # arrears logic
             alloc_interest = money(interest * ratio)
-            alloc_principal = money(principal * ratio)
+
+            # IMPORTANT:
+            # principal becomes balancing figure
+            # to prevent 0.01 rounding drift
+            alloc_principal = money(alloc - alloc_interest - alloc_vat)
 
         lines = []
         lines.append({
