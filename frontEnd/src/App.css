@@ -663,3 +663,62 @@ button {
   font-size: 12px;
   color: #64748b;
 }
+
+/* =========================================
+   Advanced GL Mapping
+========================================= */
+
+.advanced-gl {
+  margin-top: 24px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 14px;
+}
+
+.advanced-gl summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f766e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.advanced-gl summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-gl summary::before {
+  content: "▸";
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+
+.advanced-gl[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced-gl-note {
+  margin-top: 10px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.advanced-gl-grid {
+  margin-top: 8px;
+}
+
+.account-helper {
+  opacity: 0.72;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #64748b;
+}

@@ -582,7 +582,17 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
         </div>
 
         <div className="field-row">
-          <label>Initial direct costs</label>
+          <label className="label-with-info">
+            Initial direct costs
+            <span
+              className="info-tip"
+              tabIndex={0}
+              data-tip="Costs paid to third-party suppliers to obtain the lease, such as broker, legal, installation, or setup fees. These are not automatically paid to the lessor. After saving the lease, FinSage can help you capture an AP bill where you select or create the vendor."
+            >
+              ⓘ
+            </span>
+          </label>
+
           <input
             type="number"
             name="initial_direct_costs"
@@ -612,76 +622,84 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
         <div className="field-row field-empty" />
       </div>
 
-      <h3>GL Accounts</h3>
+      <details className="advanced-gl">
+        <summary>Advanced GL mapping</summary>
 
-      <div className="lease-grid-3">
-        <div className="field-row">
-          <label>Lease liability account</label>
-          <input
-            type="text"
-            name="lease_liability_account"
-            value={form.lease_liability_account}
-            onChange={handleChange}
-          />
-          <div className="text-xs" style={{ opacity: 0.7, marginTop: 4 }}>
-            {formatAccount(form.lease_liability_account)}
-          </div>
+        <div className="advanced-gl-note">
+          FinSage will use the default IFRS 16 account mappings configured for your
+          company. Expand this section only if you want to override the defaults for
+          this lease.
         </div>
 
-        <div className="field-row">
-          <label>ROU asset account</label>
-          <input
-            type="text"
-            name="rou_asset_account"
-            value={form.rou_asset_account}
-            onChange={handleChange}
-          />
-          <div className="text-xs" style={{ opacity: 0.7, marginTop: 4 }}>
-            {formatAccount(form.rou_asset_account)}
+        <div className="lease-grid-3 advanced-gl-grid">
+          <div className="field-row">
+            <label>Lease liability account</label>
+            <input
+              type="text"
+              name="lease_liability_account"
+              value={form.lease_liability_account}
+              onChange={handleChange}
+            />
+            <div className="text-xs account-helper">
+              {formatAccount(form.lease_liability_account)}
+            </div>
           </div>
-        </div>
 
-        <div className="field-row">
-          <label>Interest expense account</label>
-          <input
-            type="text"
-            name="interest_expense_account"
-            value={form.interest_expense_account || ""}
-            onChange={handleChange}
-          />
-          <div className="text-xs" style={{ opacity: 0.7, marginTop: 4 }}>
-            {formatAccount(form.interest_expense_account)}
+          <div className="field-row">
+            <label>ROU asset account</label>
+            <input
+              type="text"
+              name="rou_asset_account"
+              value={form.rou_asset_account}
+              onChange={handleChange}
+            />
+            <div className="text-xs account-helper">
+              {formatAccount(form.rou_asset_account)}
+            </div>
           </div>
-        </div>
 
-        <div className="field-row">
-          <label>Depreciation expense account</label>
-          <input
-            type="text"
-            name="depreciation_expense_account"
-            value={form.depreciation_expense_account || ""}
-            onChange={handleChange}
-          />
-          <div className="text-xs" style={{ opacity: 0.7, marginTop: 4 }}>
-            {formatAccount(form.depreciation_expense_account)}
+          <div className="field-row">
+            <label>Interest expense account</label>
+            <input
+              type="text"
+              name="interest_expense_account"
+              value={form.interest_expense_account || ""}
+              onChange={handleChange}
+            />
+            <div className="text-xs account-helper">
+              {formatAccount(form.interest_expense_account)}
+            </div>
           </div>
-        </div>
 
-        <div className="field-row">
-          <label>Direct costs offset account</label>
-          <input
-            type="text"
-            name="direct_costs_offset_account"
-            value={form.direct_costs_offset_account || ""}
-            onChange={handleChange}
-          />
-          <div className="text-xs" style={{ opacity: 0.7, marginTop: 4 }}>
-            {formatAccount(form.direct_costs_offset_account)}
+          <div className="field-row">
+            <label>Depreciation expense account</label>
+            <input
+              type="text"
+              name="depreciation_expense_account"
+              value={form.depreciation_expense_account || ""}
+              onChange={handleChange}
+            />
+            <div className="text-xs account-helper">
+              {formatAccount(form.depreciation_expense_account)}
+            </div>
           </div>
-        </div>
 
-        <div className="field-row field-empty" />
-      </div>
+          <div className="field-row">
+            <label>Direct costs offset account</label>
+            <input
+              type="text"
+              name="direct_costs_offset_account"
+              value={form.direct_costs_offset_account || ""}
+              onChange={handleChange}
+            />
+            <div className="text-xs account-helper">
+              {formatAccount(form.direct_costs_offset_account)}
+            </div>
+          </div>
+
+          <div className="field-row field-empty" />
+        </div>
+      </details>
 
       {error && <div className="error">{error}</div>}
 
