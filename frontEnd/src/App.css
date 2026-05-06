@@ -249,7 +249,7 @@ button {
   font-family: inherit;
 }
 
-.lease-step-1 button,
+.lease-step-1 button:not(.info-tip),
 .wizard-buttons button,
 .lease-step-3 button {
   display: inline-flex;
@@ -269,7 +269,7 @@ button {
     background-color 0.12s ease;
 }
 
-.lease-step-1 button:hover,
+.lease-step-1 button:not(.info-tip):hover,
 .wizard-buttons button:hover,
 .lease-step-3 button:hover {
   transform: translateY(-1px);
@@ -277,7 +277,7 @@ button {
   background: #115e59;
 }
 
-.lease-step-1 button:disabled,
+.lease-step-1 button:not(.info-tip):disabled,
 .wizard-buttons button:disabled {
   cursor: default;
   background: #9ca3af;
