@@ -22910,6 +22910,8 @@ class DatabaseService:
 
             je_date = rev_date.isoformat()
 
+            line_no = 1
+
             for r in rows:
                 ln = r if isinstance(r, dict) else {
                     "account": r[0],
@@ -22929,9 +22931,30 @@ class DatabaseService:
                     "description": ln.get("memo") or "",
                 }
 
-                self.insert_ledger(company_id, reversal_journal_id, je_date, mirrored, ref=rev_ref, cur=cur)
+                # ✅ MISSING PART
+                self.insert_journal_line(
+                    company_id,
+                    reversal_journal_id,
+                    line_no,
+                    mirrored,
+                    source="journal_reversal",
+                    source_id=journal_id,
+                    cur=cur,
+                )
+
+                self.insert_ledger(
+                    company_id,
+                    reversal_journal_id,
+                    je_date,
+                    mirrored,
+                    ref=rev_ref,
+                    cur=cur,
+                )
+
                 self.update_trial_balance(company_id, mirrored, cur=cur)
 
+                line_no += 1
+                
             cur.execute(
                 f"UPDATE {schema}.journal SET reversed_by_journal_id = %s WHERE id = %s",
                 (reversal_journal_id, journal_id),
