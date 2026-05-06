@@ -585,20 +585,20 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
           <label className="label-with-info">
             Initial direct costs
 
-            <span className="info-wrap">
-              <span
-                className="info-tip"
-                tabIndex={0}
-                aria-label="Initial direct costs information"
+            <span className="relative group inline-flex">
+              <button
+                type="button"
+                className="w-5 h-5 rounded-full border border-slate-300 text-[11px] text-slate-500 flex items-center justify-center bg-white hover:bg-slate-50"
+                tabIndex={-1}
               >
                 i
-              </span>
+              </button>
 
-              <span className="info-popover">
+              <span className="absolute left-0 top-7 hidden group-hover:block z-50 w-72 rounded-lg border border-slate-200 bg-white shadow-lg p-3 text-[11px] text-slate-600 leading-relaxed">
                 Costs paid to third-party suppliers to obtain the lease, such as broker,
                 legal, installation, or setup fees. These are not automatically paid to
-                the lessor. After saving the lease, FinSage can help you capture an AP
-                bill where you select or create the vendor.
+                the lessor. After saving the lease, FinSage can help you capture an AP bill
+                where you select or create the vendor.
               </span>
             </span>
           </label>
