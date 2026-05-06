@@ -44896,6 +44896,13 @@ async function initReceivablesScreen() {
   await loadRevenueAccountsForInvoice?.();
   await renderDraftInvoiceList?.();
 
+  // ✅ Force invoice form/template to start clean when AR opens
+  if (!window.__AR_FIRST_OPEN_CLEANED__) {
+    window.__AR_FIRST_OPEN_CLEANED__ = true;
+    await window.resetInvoiceForm?.();
+    syncInvoiceDueDateLabel?.();
+  }
+
   updateInvoiceActionButtons();
 }
 
@@ -45170,6 +45177,19 @@ async function saveInvoiceToBackend() {
     }
 
     alert("Invoice saved to backend.");
+    console.log("Invoice saved:", res);
+    $("#invStatus") && ($("#invStatus").textContent = "Saved");
+
+    if (res && res.number && $("#invNumber")) {
+      $("#invNumber").value = res.number;
+    }
+
+    alert("Invoice saved to backend.");
+
+    // ✅ clear invoice template after save
+    await window.resetInvoiceForm?.();
+    await renderDraftInvoiceList?.();
+    syncInvoiceDueDateLabel?.();
   } catch (err) {
     console.error("saveInvoiceToBackend error:", err);
     alert("Error saving invoice. Check console / backend logs.");
