@@ -9276,13 +9276,13 @@ tbody tr {
 </div>
 
 <!-- Lease Payments Modal -->
-<div id="leasePayModal" class="hidden fixed inset-0 z-[120] overflow-auto">
+<div id="leasePayModal" class="hidden fixed inset-0 z-[120] overflow-hidden">
   <div class="absolute inset-0 bg-black/40"></div>
 
-  <div class="relative ml-auto mr-3 my-2 w-[calc(100vw-2rem)] lg:w-[calc(100vw-18rem)] h-[calc(100dvh-1rem)] bg-white rounded-xl sm:rounded-2xl shadow-xl overflow-hidden flex flex-col">
+  <div class="relative ml-auto mr-2 sm:mr-3 my-2 w-[calc(100vw-1rem)] lg:w-[calc(100vw-18rem)] h-[calc(100dvh-1rem)] bg-white rounded-xl sm:rounded-2xl shadow-xl overflow-hidden flex flex-col">
 
     <!-- header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-3 border-b">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-3 border-b flex-shrink-0">
       <div class="min-w-0">
         <div class="text-sm font-semibold">Lease Payment</div>
         <div id="lpHdrMeta" class="text-xs text-slate-500 truncate"></div>
@@ -9294,8 +9294,8 @@ tbody tr {
       </div>
     </div>
 
-    <!-- body -->
-    <div class="p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-4 flex-1 min-h-0 overflow-hidden">
+    <!-- body: whole body scrolls vertically -->
+    <div class="p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
 
       <!-- LEFT: form -->
       <div class="min-w-0">
@@ -9334,7 +9334,7 @@ tbody tr {
       </div>
 
       <!-- RIGHT -->
-      <div class="min-w-0 flex flex-col gap-4 h-full overflow-hidden">
+      <div class="min-w-0 flex flex-col gap-4 h-auto lg:h-full overflow-visible lg:overflow-hidden">
 
         <div class="border rounded-xl p-3 min-w-0 flex-shrink-0">
           <div class="text-sm font-semibold mb-2">Preview journal lines</div>
@@ -9346,14 +9346,14 @@ tbody tr {
           ></div>
         </div>
 
-        <div class="border rounded-xl p-3 flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-          <div class="flex items-center justify-between mb-2">
+        <div class="border rounded-xl p-3 flex flex-col flex-1 min-h-[260px] lg:min-h-0 min-w-0 overflow-hidden">
+          <div class="flex items-center justify-between mb-2 flex-shrink-0">
             <div class="text-sm font-semibold">Payment history</div>
           </div>
 
-          <div id="lpHistory" class="flex-1 min-h-0 overflow-auto"></div>
+          <div id="lpHistory" class="flex-1 min-h-0 overflow-auto max-w-full"></div>
 
-          <div class="text-xs text-slate-500 mt-2">
+          <div class="text-xs text-slate-500 mt-2 flex-shrink-0">
             Tip: Click a journal id to jump to Journal Desk and load it.
           </div>
         </div>

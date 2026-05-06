@@ -26715,8 +26715,8 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     }
 
     hostEl.innerHTML = `
-      <div class="border rounded overflow-hidden">
-        <table class="min-w-full text-xs">
+      <div class="border rounded overflow-auto max-w-full">
+        <table class="min-w-[760px] text-xs">
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
               <th class="px-2 py-2 text-left w-[110px]">Date</th>
