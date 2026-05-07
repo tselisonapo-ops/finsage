@@ -4832,31 +4832,30 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       minRole: "assistant",
       permission: "can_view_control_room",
       children: [
-        {
-          name: "AR Controls",
-          icon: "🧾",
-          isParent: true,
-          minRole: "assistant",
-          permission: "can_view_control_room",
-          children: [
-            { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
-            { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
-            { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_view_control_room" },
-          ],
-        },
-        {
-          name: "AP Controls",
-          icon: "🏦",
-          isParent: true,
-          minRole: "assistant",
-          permission: "can_view_control_room",
-          children: [
-            { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
-            { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
-            { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_view_control_room" },
-          ],
-        },
-
+      {
+        name: "AR Controls",
+        icon: "🧾",
+        isParent: true,
+        minRole: "assistant",
+        permission: "can_access_delegated_posting_workspace",
+        children: [
+          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+        ],
+      },
+      {
+        name: "AP Controls",
+        icon: "🏦",
+        isParent: true,
+        minRole: "assistant",
+        permission: "can_access_delegated_posting_workspace",
+        children: [
+          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+        ],
+      },
         { name: "Credit Control", screen: "cust-approvals", icon: "🧑‍⚖️", minRole: "credit controller" },
         { name: "Period Locking", screen: "period-locks", icon: "🔒", minRole: "cfo", permission: "can_lock_periods" },
         { name: "Audit Trail", screen: "audit-trail", icon: "🧾", minRole: "senior", permission: "can_view_control_room" },
@@ -6104,20 +6103,18 @@ const SCREEN_POLICY = {
   revenue: { auth: "private", minRole: "clerk", permission: "can_manage_ar" },
   "revenue-setup": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
 
-  // ✅ NEW: AR Control Room screens
-  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  // AR Control Room screens — delegated workspace only
+  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
 
   // AP (later)
   ap: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
-  // ✅ AP Control Room screens
-  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-
-
-  // Banking
+  // AP Control Room screens — delegated workspace only
+  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+    // Banking
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
   banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
   "bank-recon": { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
