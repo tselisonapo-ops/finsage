@@ -9533,6 +9533,22 @@ function formatDueMeta(row) {
   return `${diffDays} day${diffDays === 1 ? "" : "s"} remaining`;
 }
 
+function rqGetActiveEngagementId() {
+  let engagementId = window.getPractitionerActiveEngagementId?.();
+
+  if (!engagementId && PR_SELECTED_ENGAGEMENT?.id) {
+    engagementId = Number(PR_SELECTED_ENGAGEMENT.id);
+    window.setPractitionerActiveEngagementId?.(engagementId);
+  }
+
+  if (!engagementId && PR_SELECTED_ENGAGEMENT?.engagement_id) {
+    engagementId = Number(PR_SELECTED_ENGAGEMENT.engagement_id);
+    window.setPractitionerActiveEngagementId?.(engagementId);
+  }
+
+  return Number(engagementId || 0);
+}
+
 function getReviewQueueStateKey() {
   const f = PR_REVIEW_QUEUE_CACHE.filters || {};
   return JSON.stringify({
@@ -9590,7 +9606,7 @@ function buildReviewQueueQueryFilters() {
 
 async function fetchReviewQueueSummary(me) {
   const companyId = me?.company_id;
-  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+  const engagementId = rqGetActiveEngagementId();
 
   if (!companyId || !engagementId) {
     PR_REVIEW_QUEUE_CACHE.summary = null;
@@ -9606,7 +9622,7 @@ async function fetchReviewQueueSummary(me) {
 
 async function fetchReviewQueueRows(me) {
   const companyId = me?.company_id;
-  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+  const engagementId = rqGetActiveEngagementId();
 
   if (!companyId || !engagementId) {
     PR_REVIEW_QUEUE_CACHE.rows = [];
@@ -9637,7 +9653,7 @@ async function fetchReviewQueueRows(me) {
 
 async function fetchReviewQueueDetail(me, row) {
   const companyId = me?.company_id;
-  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+  const engagementId = rqGetActiveEngagementId();
   if (!companyId || !engagementId || !row?.queue_type || !row?.source_id) {
     PR_REVIEW_QUEUE_CACHE.detail = null;
     return null;
@@ -9921,16 +9937,21 @@ async function openSelectedReviewQueueDetail(me) {
 }
 
 async function loadReviewQueueScreenData(me, { force = false } = {}) {
-  if (PR_REVIEW_QUEUE_LOADING) return;
+  if (PR_REVIEW_QUEUE_LOADING) {
+    PR_REVIEW_QUEUE_LOADING = false;
+  }
+
   PR_REVIEW_QUEUE_LOADING = true;
 
+  const body = document.getElementById("rqTableBody");
+  const panel = document.getElementById("rqDetailPanel");
+
   try {
-    const body = document.getElementById("rqTableBody");
     if (body) body.innerHTML = getReviewQueueLoadingRowHtml();
 
-    const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+    const engagementId = rqGetActiveEngagementId();
+
     if (!engagementId) {
-      const panel = document.getElementById("rqDetailPanel");
       if (body) {
         body.innerHTML = `
           <tr><td colspan="9" class="rq-empty">Select an engagement first to view its review queue.</td></tr>
@@ -9954,6 +9975,34 @@ async function loadReviewQueueScreenData(me, { force = false } = {}) {
     renderReviewQueueSummary();
     renderReviewQueueRows();
     await openSelectedReviewQueueDetail(me);
+
+  } catch (err) {
+    console.error("loadReviewQueueScreenData failed:", err);
+
+    if (body) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="9" class="rq-empty">
+            ${escapeHtml(err?.message || "Failed to load review queue.")}
+          </td>
+        </tr>
+      `;
+    }
+
+    if (panel) {
+      panel.innerHTML = `
+        <div class="rq-empty">
+          ${escapeHtml(err?.message || "Failed to load review queue detail.")}
+        </div>
+      `;
+    }
+
+    PR_REVIEW_QUEUE_CACHE.summary = null;
+    PR_REVIEW_QUEUE_CACHE.rows = [];
+    PR_REVIEW_QUEUE_CACHE.selectedRow = null;
+    PR_REVIEW_QUEUE_CACHE.detail = null;
+    renderReviewQueueSummary();
+
   } finally {
     PR_REVIEW_QUEUE_LOADING = false;
   }
@@ -9976,7 +10025,7 @@ async function handleReviewQueueStatusAction(me, nextStatus) {
   if (!row || !nextStatus) return;
 
   const companyId = me?.company_id;
-  const engagementId = PR_SELECTED_ENGAGEMENT?.id;
+  const engagementId = rqGetActiveEngagementId();
   if (!companyId || !engagementId) return;
 
   await apiFetch(
@@ -10177,7 +10226,7 @@ async function bindReviewQueueEvents(me) {
       if (!ok) return;
 
       await apiFetch(
-        ENDPOINTS.reviewQueue.deactivate(me.company_id, PR_SELECTED_ENGAGEMENT.id, row.queue_type, row.source_id),
+        ENDPOINTS.reviewQueue.deactivate(me.company_id, rqGetActiveEngagementId(), row.queue_type, row.source_id),
         { method: "POST" }
       );
 
@@ -10943,7 +10992,18 @@ function syncSignoffFiltersUi() {
 }
 
 async function loadSignoffScreen(me) {
-  if (PR_SIGNOFF_VIEW_LOADING) return;
+  console.log("loadSignoffScreen ENTER", {
+    loading: PR_SIGNOFF_VIEW_LOADING,
+    me,
+    activeEngagement: window.getPractitionerActiveEngagementId?.(),
+    selected: PR_SELECTED_ENGAGEMENT
+  });
+
+  if (PR_SIGNOFF_VIEW_LOADING) {
+    console.warn("loadSignoffScreen blocked because PR_SIGNOFF_VIEW_LOADING is true");
+    PR_SIGNOFF_VIEW_LOADING = false;
+  }
+
   PR_SIGNOFF_VIEW_LOADING = true;
 
   const tbody = document.getElementById("psTableBody");
@@ -10961,10 +11021,7 @@ async function loadSignoffScreen(me) {
       if (tbody) {
         tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Select an engagement first to view sign-off steps.</td></tr>`;
       }
-
-      if (panel) {
-        panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
-      }
+      if (panel) panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
 
       PR_SIGNOFF_VIEW_CACHE.rows = [];
       PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
@@ -10978,7 +11035,6 @@ async function loadSignoffScreen(me) {
     renderSignoffSummary();
     renderSignoffRows();
     renderSignoffDetail();
-
   } catch (err) {
     console.error("loadSignoffScreen failed:", err);
 
@@ -10993,17 +11049,12 @@ async function loadSignoffScreen(me) {
     }
 
     if (panel) {
-      panel.innerHTML = `
-        <div class="ps-empty">
-          ${prEsc(err?.message || "Failed to load selected sign-off detail.")}
-        </div>
-      `;
+      panel.innerHTML = `<div class="ps-empty">${prEsc(err?.message || "Failed to load selected sign-off detail.")}</div>`;
     }
 
     PR_SIGNOFF_VIEW_CACHE.rows = [];
     PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
     renderSignoffSummary();
-
   } finally {
     PR_SIGNOFF_VIEW_LOADING = false;
   }
@@ -19339,53 +19390,18 @@ async function renderReviewQueueScreen(me) {
 }
 
 async function renderPartnerSignoffScreen(me) {
-  const container = document.getElementById("pr-main-content");
-  if (!container) return;
+  console.log("renderPartnerSignoffScreen ENTER", me);
 
-  container.innerHTML = `<div class="p-6">Loading sign-off...</div>`;
-
-  try {
-    const snapshot = await loadEngagementWorkflowSnapshot();
-    const readiness = snapshot.readiness;
-
-    const isReady = readiness?.isReadyForPartnerSignoff;
-
-    container.innerHTML = `
-      <div class="p-6 space-y-6">
-
-        ${renderEngagementReadinessCard(readiness)}
-
-        <div class="card p-5">
-          <div class="panel-title">Partner Sign-Off</div>
-
-          ${
-            !isReady
-              ? `
-              <div class="mt-4 text-amber-600 text-sm">
-                Cannot sign off. Resolve blockers first.
-              </div>
-              `
-              : `
-              <div class="mt-4">
-                <button id="finalSignoffBtn" class="px-4 py-2 bg-green-600 text-white rounded">
-                  Final Sign-Off
-                </button>
-              </div>
-              `
-          }
-        </div>
-      </div>
-    `;
-
-    if (isReady) {
-      document.getElementById("finalSignoffBtn").onclick = () => {
-        alert("✅ Engagement Signed Off");
-      };
-    }
-
-  } catch (err) {
-    container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
+  const host = document.getElementById("screen-partner-signoff");
+  if (!host) {
+    console.warn("screen-partner-signoff not found");
+    return;
   }
+
+  syncSignoffFiltersUi();
+  await populateSignoffAssignedFilter(me);
+  await bindSignoffScreen(me);
+  await loadSignoffScreen(me);
 }
 
 function drBuildToolbarHtml() {
