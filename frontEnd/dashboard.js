@@ -2695,6 +2695,16 @@ window.hasPermission = function hasPermission(key) {
   return perms[key] === true;
 };
 
+function getAuthPayloadSafe() {
+  try {
+    const token = window.getToken?.();
+    if (!token) return {};
+    return JSON.parse(atob(String(token).split(".")[1] || ""));
+  } catch {
+    return {};
+  }
+}
+
 window.populateInviteRoleSelect = function populateInviteRoleSelect() {
   const sel = document.getElementById("inviteRole");
   const scopeSel = document.getElementById("inviteAccessScope");
@@ -15148,6 +15158,7 @@ function wireReverseJournalClicks(host) {
       window.CURRENT_USER ||
       window.__FS_AUTH_USER__ ||
       window.AUTH_USER ||
+      getAuthPayloadSafe() ||
       {};
 
     const perms = u.permissions || {};
@@ -66365,6 +66376,10 @@ window.onMapsLoaded = onMapsLoaded;  // required by Google Maps
 // Full app bootstrap (heavy init)
 // ==============================
 async function bootstrapApp(currentUser) {
+  window.currentUser = currentUser;
+  window.CURRENT_USER = currentUser;
+  window.AUTH_USER = currentUser;
+  window.__FS_AUTH_USER__ = currentUser;
   console.log("bootstrapApp: starting for user", currentUser?.email);
 
   // ------------------------------------------------------------
@@ -66990,21 +67005,34 @@ async function enforceAuth() {
 
   if (!token) {
     window.currentUser = null;
+    window.CURRENT_USER = null;
+    window.AUTH_USER = null;
+    window.__FS_AUTH_USER__ = null;
     return null;
   }
 
   try {
     const me = await window.apiFetch(window.ENDPOINTS.auth.me, { method: "GET" });
+
+    // ✅ expose all aliases used by guards/screens
     window.currentUser = me;
+    window.CURRENT_USER = me;
+    window.AUTH_USER = me;
+    window.__FS_AUTH_USER__ = me;
+
     return me;
   } catch (err) {
     console.warn("enforceAuth: /me failed", err?.status, err?.message, err?.url);
 
     if (err?.status === 401 || err?.status === 403) {
-      window.clearToken?.(); // ✅ only if truly unauthorized
+      window.clearToken?.();
     }
 
     window.currentUser = null;
+    window.CURRENT_USER = null;
+    window.AUTH_USER = null;
+    window.__FS_AUTH_USER__ = null;
+
     return null;
   }
 }
