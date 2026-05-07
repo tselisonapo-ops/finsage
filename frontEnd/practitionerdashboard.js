@@ -9552,7 +9552,7 @@ function rqGetActiveEngagementId() {
 function getReviewQueueStateKey() {
   const f = PR_REVIEW_QUEUE_CACHE.filters || {};
   return JSON.stringify({
-    engagementId: PR_SELECTED_ENGAGEMENT?.id || null,
+    engagementId: rqGetActiveEngagementId() || null,
     queue_type: f.queue_type || "",
     status: f.status || "",
     priority: f.priority || "",
@@ -9634,7 +9634,14 @@ async function fetchReviewQueueRows(me) {
   const filters = buildReviewQueueQueryFilters();
   const url = ENDPOINTS.reviewQueue.list(companyId, engagementId, filters);
   const json = await apiFetch(url);
-  const rows = Array.isArray(json?.rows) ? json.rows : [];
+  const rows =
+    Array.isArray(json?.rows) ? json.rows :
+    Array.isArray(json?.data?.rows) ? json.data.rows :
+    Array.isArray(json?.items) ? json.items :
+    Array.isArray(json?.data?.items) ? json.data.items :
+    Array.isArray(json?.data) ? json.data :
+    Array.isArray(json) ? json :
+    [];
 
   PR_REVIEW_QUEUE_CACHE.rows = rows;
 
@@ -9881,10 +9888,17 @@ function closeReviewQueueAssignModal() {
 async function saveReviewQueueAssignModal(me) {
   const queueType = document.getElementById("rqAssignQueueType")?.value || "";
   const sourceId = document.getElementById("rqAssignSourceId")?.value || "";
-  if (!queueType || !sourceId) return;
+  const engagementId = rqGetActiveEngagementId();
+
+  if (!queueType || !sourceId || !engagementId) return;
 
   await apiFetch(
-    ENDPOINTS.reviewQueue.assign(me.company_id, queueType, sourceId),
+    ENDPOINTS.reviewQueue.assign(
+      me.company_id,
+      engagementId,
+      queueType,
+      sourceId
+    ),
     {
       method: "POST",
       body: JSON.stringify({
