@@ -15144,13 +15144,27 @@ function wireReverseJournalClicks(host) {
     const jid = Number(btn.getAttribute("data-reverse-journal") || 0);
     if (!jid) return;
 
+    const u =
+      window.CURRENT_USER ||
+      window.__FS_AUTH_USER__ ||
+      window.AUTH_USER ||
+      {};
+
+    const perms = u.permissions || {};
+
     const isDelegatedJournalUser =
-      window.__FS_DELEGATED_POSTING__ === true &&
-      window.__FS_POSTING_CONTEXT__?.engagementId &&
       (
-        window.CURRENT_USER?.permissions?.can_post_journals === true ||
-        window.__FS_AUTH_USER__?.permissions?.can_post_journals === true
-      );
+        window.__FS_DELEGATED_POSTING__ === true ||
+        u.is_delegated_company_access === true ||
+        u.access_scope === "delegated_workspace" ||
+        u.token_access_scope === "delegated_workspace"
+      ) &&
+      (
+        window.__FS_POSTING_CONTEXT__?.engagementId ||
+        u.engagement_id ||
+        u.permissions?._delegated_meta?.engagement_id
+      ) &&
+      perms.can_post_journals === true;
 
     if (!isDelegatedJournalUser && !canSeeRole?.("assistant")) {
       alert("Only Assistant and above can reverse journals.");
