@@ -41845,26 +41845,12 @@ class DatabaseService:
                 if not led_lines:
                     raise ValueError("Original ledger lines not found for this invoice journal")
 
-                # 5) Create reversal journal header (✅ use rev_date)
+                # 5) Build reversal journal and post through canonical post_journal()
                 rev_ref = f"REV-{inv_no}"
                 rev_desc = (reason or "").strip() or f"Reversal of invoice {inv_no}"
 
-                rev_entry = {
-                    "date": rev_date.isoformat(),  # ✅ changed
-                    "ref": rev_ref,
-                    "description": rev_desc,
-                    "gross_amount": money(jh.get("gross_amount")),
-                    "net_amount": money(jh.get("net_amount")),
-                    "vat_amount": money(jh.get("vat_amount")),
-                    "source": "invoice_reversal",
-                    "source_id": int(invoice_id),
-                }
+                rev_lines = []
 
-                reversal_journal_id = int(self.insert_journal(company_id, rev_entry, cur=cur) or 0)
-                if reversal_journal_id <= 0:
-                    raise ValueError("Failed to create reversal journal")
-
-                # 6) Insert reversing ledger lines + TB updates
                 for ln in led_lines:
                     acct = (ln.get("account") or "").strip()
                     if not acct:
@@ -41873,24 +41859,51 @@ class DatabaseService:
                     d = money(ln.get("debit"))
                     c = money(ln.get("credit"))
 
-                    rev_line = {
+                    rev_lines.append({
                         "account_code": acct,
                         "debit": c,
                         "credit": d,
                         "description": rev_desc,
                         "memo": ln.get("memo") or rev_desc,
-                    }
+                        "customer_id": ln.get("customer_id"),
+                    })
 
-                    self.insert_ledger(
-                        company_id=company_id,
-                        journal_id=reversal_journal_id,
-                        je_date=rev_entry["date"],  # ✅ already rev_date.isoformat()
-                        line=rev_line,
-                        ref=rev_ref,
-                        customer_id=ln.get("customer_id"),
-                        cur=cur,
-                    )
-                    self.update_trial_balance(company_id, rev_line, cur=cur)
+                if not rev_lines:
+                    raise ValueError("No valid lines found for reversal journal")
+
+                rev_entry = {
+                    "date": rev_date.isoformat(),
+                    "ref": rev_ref,
+                    "description": rev_desc,
+                    "gross_amount": money(jh.get("gross_amount")),
+                    "net_amount": money(jh.get("net_amount")),
+                    "vat_amount": money(jh.get("vat_amount")),
+                    "source": "invoice_reversal",
+                    "source_id": int(invoice_id),
+                    "lines": rev_lines,
+
+                    # optional but useful if available
+                    "prepared_by_user_id": reversed_by,
+                    "created_by_user_id": reversed_by,
+                    "updated_by_user_id": reversed_by,
+                }
+
+                reversal_journal_id = int(self.post_journal(company_id, rev_entry, cur=cur) or 0)
+
+                # mark reversal metadata
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.journal
+                    SET
+                        is_reversal = TRUE,
+                        reversal_of_journal_id = %s
+                    WHERE id = %s
+                    """,
+                    (posted_journal_id, reversal_journal_id),
+                )
+                
+                if reversal_journal_id <= 0:
+                    raise ValueError("Failed to create reversal journal")
 
                 # 7) Mark original journal + reversal journal
 
