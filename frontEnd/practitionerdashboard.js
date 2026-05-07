@@ -10719,10 +10719,23 @@ async function renderDeliverablesScreen(me) {
 ========================= */
 
 async function fetchSignoffRows(me) {
-  const engagement = getSelectedEngagementOrAlert();
-  if (!engagement) {
+  const engagement =
+    PR_SELECTED_ENGAGEMENT ||
+    window.FS_ENGAGEMENT_CONTEXT ||
+    window.__PR_SELECTED_ENGAGEMENT__ ||
+    null;
+
+  const engagementId =
+    engagement?.id ||
+    engagement?.engagement_id ||
+    window.__FS_CURRENT_ENGAGEMENT_ID__ ||
+    window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
+    "";
+
+  if (!engagementId) {
     PR_SIGNOFF_VIEW_CACHE.rows = [];
     PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
+    console.warn("Partner Sign-Off: no engagement selected/context found.");
     return [];
   }
 
@@ -10736,19 +10749,29 @@ async function fetchSignoffRows(me) {
     filters.status = "blocked";
   }
 
-  const url = ENDPOINTS.engagementOps.signoffStepsList(me.company_id, engagement.id, filters);
+  const url = ENDPOINTS.engagementOps.signoffStepsList(
+    me.company_id,
+    engagementId,
+    filters
+  );
+
   const json = await apiFetch(url);
-  const rows = Array.isArray(json?.rows) ? json.rows : [];
+
+  const rows =
+    Array.isArray(json?.rows) ? json.rows :
+    Array.isArray(json?.data?.rows) ? json.data.rows :
+    Array.isArray(json?.items) ? json.items :
+    Array.isArray(json?.data?.items) ? json.data.items :
+    Array.isArray(json?.data) ? json.data :
+    Array.isArray(json) ? json :
+    [];
 
   PR_SIGNOFF_VIEW_CACHE.rows = rows;
 
   const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
-  if (selected) {
-    PR_SIGNOFF_VIEW_CACHE.selectedRow =
-      rows.find((r) => Number(r.id) === Number(selected.id)) || rows[0] || null;
-  } else {
-    PR_SIGNOFF_VIEW_CACHE.selectedRow = rows[0] || null;
-  }
+  PR_SIGNOFF_VIEW_CACHE.selectedRow = selected
+    ? rows.find((r) => Number(r.id) === Number(selected.id)) || rows[0] || null
+    : rows[0] || null;
 
   return rows;
 }
@@ -10915,8 +10938,15 @@ async function loadSignoffScreen(me) {
     const tbody = document.getElementById("psTableBody");
     if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Loading sign-off steps...</td></tr>`;
 
-    const engagement = PR_SELECTED_ENGAGEMENT;
-    if (!engagement?.id) {
+      const engagementId =
+        PR_SELECTED_ENGAGEMENT?.id ||
+        PR_SELECTED_ENGAGEMENT?.engagement_id ||
+        window.FS_ENGAGEMENT_CONTEXT?.engagement_id ||
+        window.__FS_CURRENT_ENGAGEMENT_ID__ ||
+        window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
+        "";
+
+      if (!engagementId) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Select an engagement first to view sign-off steps.</td></tr>`;
       const panel = document.getElementById("psDetailPanel");
       if (panel) panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
@@ -18469,7 +18499,7 @@ async function renderOverrideLogScreen(me) {
   }
 
   async function setItemStatus(nextStatus) {
-    const itemId = document.getElementById("olItemId").value;
+    const itemId = document.getElementById("olItemId")?.value || "";
     if (!itemId) throw new Error("Save the item first.");
 
     const res = await fetch(ENDPOINTS.overrideLog.setStatus(companyId, itemId), {
@@ -18480,8 +18510,8 @@ async function renderOverrideLogScreen(me) {
       },
       body: JSON.stringify({
         status: nextStatus,
-        decision_outcome: document.getElementById("olDecisionOutcome").value.trim() || null,
-        resolution_summary: document.getElementById("olResolutionSummary").value.trim() || null
+        decision_outcome: document.getElementById("olDecisionOutcome")?.value?.trim() || null,
+        resolution_summary: document.getElementById("olResolutionSummary")?.value?.trim() || null
       })
     });
 
@@ -18489,66 +18519,69 @@ async function renderOverrideLogScreen(me) {
     if (!res.ok || !payload?.ok) {
       throw new Error(payload?.error || "Failed to update status");
     }
+
     return payload.data || {};
   }
 
-  document.getElementById("olRefreshBtn")?.addEventListener("click", loadDashboard);
+  host.onclick = async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || !host.contains(btn)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      if (btn.id === "olNewBtn" || btn.id === "olClearBtn") {
+        clearEditor();
+        return;
+      }
+
+      if (btn.id === "olRefreshBtn") {
+        await loadDashboard();
+        return;
+      }
+
+      if (btn.id === "olSaveBtn") {
+        const saved = await saveItem();
+        await loadDashboard();
+        if (saved?.id) await loadItem(saved.id);
+        setMessage("Override entry saved.", "success");
+        return;
+      }
+
+      if (btn.id === "olReviewBtn") {
+        const updated = await setItemStatus("under_review");
+        await loadDashboard();
+        if (updated?.id) await loadItem(updated.id);
+        setMessage("Marked under review.", "success");
+        return;
+      }
+
+      if (btn.id === "olResolveBtn") {
+        const updated = await setItemStatus("resolved");
+        await loadDashboard();
+        if (updated?.id) await loadItem(updated.id);
+        setMessage("Override item resolved.", "success");
+        return;
+      }
+
+      if (btn.id === "olCloseBtn") {
+        const updated = await setItemStatus("closed");
+        await loadDashboard();
+        if (updated?.id) await loadItem(updated.id);
+        setMessage("Override item closed.", "success");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage(err.message || "Action failed", "error");
+    }
+  };
+
   document.getElementById("olStatusFilter")?.addEventListener("change", loadDashboard);
   document.getElementById("olTypeFilter")?.addEventListener("change", loadDashboard);
   document.getElementById("olSeverityFilter")?.addEventListener("change", loadDashboard);
   document.getElementById("olSearch")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadDashboard();
-  });
-
-  document.getElementById("olNewBtn")?.addEventListener("click", clearEditor);
-  document.getElementById("olClearBtn")?.addEventListener("click", clearEditor);
-
-  document.getElementById("olSaveBtn")?.addEventListener("click", async () => {
-    try {
-      const saved = await saveItem();
-      await loadDashboard();
-      await loadItem(saved.id);
-      setMessage("Override entry saved.", "success");
-    } catch (err) {
-      console.error(err);
-      setMessage(err.message || "Failed to save", "error");
-    }
-  });
-
-  document.getElementById("olReviewBtn")?.addEventListener("click", async () => {
-    try {
-      const updated = await setItemStatus("under_review");
-      await loadDashboard();
-      await loadItem(updated.id);
-      setMessage("Marked under review.", "success");
-    } catch (err) {
-      console.error(err);
-      setMessage(err.message || "Failed to update status", "error");
-    }
-  });
-
-  document.getElementById("olResolveBtn")?.addEventListener("click", async () => {
-    try {
-      const updated = await setItemStatus("resolved");
-      await loadDashboard();
-      await loadItem(updated.id);
-      setMessage("Override item resolved.", "success");
-    } catch (err) {
-      console.error(err);
-      setMessage(err.message || "Failed to resolve", "error");
-    }
-  });
-
-  document.getElementById("olCloseBtn")?.addEventListener("click", async () => {
-    try {
-      const updated = await setItemStatus("closed");
-      await loadDashboard();
-      await loadItem(updated.id);
-      setMessage("Override item closed.", "success");
-    } catch (err) {
-      console.error(err);
-      setMessage(err.message || "Failed to close", "error");
-    }
   });
 
   clearEditor();
