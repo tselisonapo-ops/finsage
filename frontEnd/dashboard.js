@@ -15144,8 +15144,15 @@ function wireReverseJournalClicks(host) {
     const jid = Number(btn.getAttribute("data-reverse-journal") || 0);
     if (!jid) return;
 
-    // ✅ role gate
-    if (!canSeeRole?.("assistant")) {
+    const isDelegatedJournalUser =
+      window.__FS_DELEGATED_POSTING__ === true &&
+      window.__FS_POSTING_CONTEXT__?.engagementId &&
+      (
+        window.CURRENT_USER?.permissions?.can_post_journals === true ||
+        window.__FS_AUTH_USER__?.permissions?.can_post_journals === true
+      );
+
+    if (!isDelegatedJournalUser && !canSeeRole?.("assistant")) {
       alert("Only Assistant and above can reverse journals.");
       return;
     }
