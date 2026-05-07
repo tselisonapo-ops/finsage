@@ -4629,6 +4629,12 @@
       transform: none !important;
     }
   }
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
   </style>
 </head>
 <body>
@@ -4974,40 +4980,40 @@ window.safeRedirect = function (url, mode = "href") {
                 <div class="text-sm text-slate-500">Loading…</div>
               </div>
             </div>
-          </div>
 
-          <div class="card p-5" data-dashboard-role="manager partner">
-            <div class="panel-title">Team Capacity</div>
-            <div class="panel-subtitle mt-1">Reviewer pressure and workload balance.</div>
+            <div class="card p-5" data-dashboard-role="manager partner">
+              <div class="panel-title">Team Capacity</div>
+              <div class="panel-subtitle mt-1">Reviewer pressure and workload balance.</div>
 
-            <div class="mt-4 grid gap-3" data-bind="lists.staff_utilization">
-              <div class="text-sm text-slate-500">Loading…</div>
-            </div>
-          </div>
-
-          <div class="card p-5" data-dashboard-role="partner">
-            <div class="panel-title">Partner Analytics</div>
-            <div class="mt-4 space-y-4">
-              <div>
-                <div class="flex items-center justify-between text-sm">
-                  <div class="font-semibold text-slate-800">Engagement profitability</div>
-                  <div class="text-slate-500" data-bind="partner_analytics.engagement_profitability.value">--</div>
-                </div>
-                <div class="mt-2 mini-chart"><span data-bind-width="partner_analytics.engagement_profitability.percent"></span></div>
-                <div class="mt-2 text-sm text-slate-600" data-bind="partner_analytics.engagement_profitability.subtext">--</div>
-              </div>
-
-              <div>
-                <div class="flex items-center justify-between text-sm">
-                  <div class="font-semibold text-slate-800">Client service trends</div>
-                  <div class="text-slate-500" data-bind="partner_analytics.client_service_trends.value">--</div>
-                </div>
-                <div class="mt-2 mini-chart"><span data-bind-width="partner_analytics.client_service_trends.percent"></span></div>
-                <div class="mt-2 text-sm text-slate-600" data-bind="partner_analytics.client_service_trends.subtext">--</div>
+              <div class="mt-4 grid gap-3" data-bind="lists.staff_utilization">
+                <div class="text-sm text-slate-500">Loading…</div>
               </div>
             </div>
+
+            <div class="card p-5" data-dashboard-role="partner">
+              <div class="panel-title">Partner Analytics</div>
+              <div class="mt-4 space-y-4">
+                <div>
+                  <div class="flex items-center justify-between text-sm">
+                    <div class="font-semibold text-slate-800">Engagement profitability</div>
+                    <div class="text-slate-500" data-bind="partner_analytics.engagement_profitability.value">--</div>
+                  </div>
+                  <div class="mt-2 mini-chart"><span data-bind-width="partner_analytics.engagement_profitability.percent"></span></div>
+                  <div class="mt-2 text-sm text-slate-600" data-bind="partner_analytics.engagement_profitability.subtext">--</div>
+                </div>
+
+                <div>
+                  <div class="flex items-center justify-between text-sm">
+                    <div class="font-semibold text-slate-800">Client service trends</div>
+                    <div class="text-slate-500" data-bind="partner_analytics.client_service_trends.value">--</div>
+                  </div>
+                  <div class="mt-2 mini-chart"><span data-bind-width="partner_analytics.client_service_trends.percent"></span></div>
+                  <div class="mt-2 text-sm text-slate-600" data-bind="partner_analytics.client_service_trends.subtext">--</div>
+                </div>
+              </div>
+            </div>            
           </div>
-          
+
           <!-- RIGHT -->
           <div class="space-y-6">
             <div class="card p-5">
