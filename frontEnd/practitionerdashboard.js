@@ -10717,25 +10717,28 @@ async function renderDeliverablesScreen(me) {
 /* =========================
    PARTNER SIGNOFF
 ========================= */
+function psGetActiveEngagementId() {
+  let engagementId = window.getPractitionerActiveEngagementId?.();
+
+  if (!engagementId && PR_SELECTED_ENGAGEMENT?.id) {
+    engagementId = Number(PR_SELECTED_ENGAGEMENT.id);
+    window.setPractitionerActiveEngagementId?.(engagementId);
+  }
+
+  if (!engagementId && PR_SELECTED_ENGAGEMENT?.engagement_id) {
+    engagementId = Number(PR_SELECTED_ENGAGEMENT.engagement_id);
+    window.setPractitionerActiveEngagementId?.(engagementId);
+  }
+
+  return Number(engagementId || 0);
+}
 
 async function fetchSignoffRows(me) {
-  const engagement =
-    PR_SELECTED_ENGAGEMENT ||
-    window.FS_ENGAGEMENT_CONTEXT ||
-    window.__PR_SELECTED_ENGAGEMENT__ ||
-    null;
-
-  const engagementId =
-    engagement?.id ||
-    engagement?.engagement_id ||
-    window.__FS_CURRENT_ENGAGEMENT_ID__ ||
-    window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
-    "";
+  const engagementId = psGetActiveEngagementId();
 
   if (!engagementId) {
     PR_SIGNOFF_VIEW_CACHE.rows = [];
     PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
-    console.warn("Partner Sign-Off: no engagement selected/context found.");
     return [];
   }
 
@@ -10749,31 +10752,30 @@ async function fetchSignoffRows(me) {
     filters.status = "blocked";
   }
 
-  const url = ENDPOINTS.engagementOps.signoffStepsList(
-    me.company_id,
-    engagementId,
-    filters
+  const json = await apiFetch(
+    ENDPOINTS.engagementOps.signoffStepsList(
+      me.company_id,
+      engagementId,
+      filters
+    )
   );
 
-  const json = await apiFetch(url);
-
   const rows =
-    Array.isArray(json?.rows) ? json.rows :
-    Array.isArray(json?.data?.rows) ? json.data.rows :
-    Array.isArray(json?.items) ? json.items :
-    Array.isArray(json?.data?.items) ? json.data.items :
-    Array.isArray(json?.data) ? json.data :
-    Array.isArray(json) ? json :
+    json?.rows ||
+    json?.data?.rows ||
+    json?.items ||
+    json?.data?.items ||
+    json?.data ||
     [];
 
-  PR_SIGNOFF_VIEW_CACHE.rows = rows;
+  PR_SIGNOFF_VIEW_CACHE.rows = Array.isArray(rows) ? rows : [];
 
   const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
   PR_SIGNOFF_VIEW_CACHE.selectedRow = selected
-    ? rows.find((r) => Number(r.id) === Number(selected.id)) || rows[0] || null
-    : rows[0] || null;
+    ? PR_SIGNOFF_VIEW_CACHE.rows.find((r) => Number(r.id) === Number(selected.id)) || PR_SIGNOFF_VIEW_CACHE.rows[0] || null
+    : PR_SIGNOFF_VIEW_CACHE.rows[0] || null;
 
-  return rows;
+  return PR_SIGNOFF_VIEW_CACHE.rows;
 }
 
 function renderSignoffSummary() {
@@ -10936,20 +10938,20 @@ async function loadSignoffScreen(me) {
 
   try {
     const tbody = document.getElementById("psTableBody");
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Loading sign-off steps...</td></tr>`;
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Loading sign-off steps...</td></tr>`;
+    }
 
-      const engagementId =
-        PR_SELECTED_ENGAGEMENT?.id ||
-        PR_SELECTED_ENGAGEMENT?.engagement_id ||
-        window.FS_ENGAGEMENT_CONTEXT?.engagement_id ||
-        window.__FS_CURRENT_ENGAGEMENT_ID__ ||
-        window.__PR_ACTIVE_ENGAGEMENT_ID__ ||
-        "";
+    const engagementId = psGetActiveEngagementId();
 
-      if (!engagementId) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Select an engagement first to view sign-off steps.</td></tr>`;
+    if (!engagementId) {
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Select an engagement first to view sign-off steps.</td></tr>`;
+      }
+
       const panel = document.getElementById("psDetailPanel");
       if (panel) panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
+
       PR_SIGNOFF_VIEW_CACHE.rows = [];
       PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
       renderSignoffSummary();
@@ -10966,42 +10968,13 @@ async function loadSignoffScreen(me) {
 }
 
 async function bindSignoffScreen(me) {
-  if (PR_SIGNOFF_VIEW_EVENTS_BOUND) return;
-  PR_SIGNOFF_VIEW_EVENTS_BOUND = true;
+  const host = document.getElementById("screen-partner-signoff");
+  if (!host) return;
 
-  document.addEventListener("click", async (e) => {
-    const quickBtn = e.target.closest("[data-ps-quick]");
-    if (quickBtn) {
-      PR_SIGNOFF_ACTIVE_QUICK = quickBtn.dataset.psQuick || "all";
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      syncSignoffFiltersUi();
-      await loadSignoffScreen(me);
-      return;
-    }
-
-    if (e.target.id === "psNewBtn") {
-      await openSignoffModal(me, null);
-      return;
-    }
-
-    if (e.target.id === "psEditBtn") {
-      const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
-      if (!selected) return;
-      await openSignoffModal(me, selected);
-      return;
-    }
-
-    if (e.target.id === "psModalCloseBtn" || e.target.id === "psModalCancelBtn") {
-      closeSignoffModal();
-      return;
-    }
-
-    if (e.target.id === "psModalSaveBtn") {
-      await saveSignoffModal(me);
-      return;
-    }
-
+  host.onclick = async (e) => {
+    const btn = e.target.closest("button");
     const rowEl = e.target.closest("[data-ps-row='1']");
+
     if (rowEl) {
       const id = Number(rowEl.dataset.id || 0);
       PR_SIGNOFF_VIEW_CACHE.selectedRow =
@@ -11011,36 +10984,16 @@ async function bindSignoffScreen(me) {
       return;
     }
 
-    if (e.target.id === "psSearchBtn") {
-      PR_SIGNOFF_VIEW_CACHE.filters.q = (document.getElementById("psSearchInput")?.value || "").trim();
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      await loadSignoffScreen(me);
-      return;
-    }
+    if (!btn || !host.contains(btn)) return;
 
-    if (e.target.id === "psRefreshBtn") {
-      await loadSignoffScreen(me);
-      return;
-    }
-
-    if (e.target.id === "psPrevBtn") {
-      const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = Math.max(0, Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0) - limit);
-      await loadSignoffScreen(me);
-      return;
-    }
-
-    if (e.target.id === "psNextBtn") {
-      const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0) + limit;
-      await loadSignoffScreen(me);
-      return;
-    }
+    e.preventDefault();
+    e.stopPropagation();
 
     const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
-    if (!selected?.id) return;
 
     async function setStatus(status, extra = {}) {
+      if (!selected?.id) return;
+
       await apiFetch(
         ENDPOINTS.engagementOps.signoffStepsSetStatus(me.company_id, selected.id),
         {
@@ -11048,77 +11001,56 @@ async function bindSignoffScreen(me) {
           body: JSON.stringify({ status, ...extra })
         }
       );
+
       await loadSignoffScreen(me);
     }
 
-    if (e.target.id === "psMarkProgressBtn") return setStatus("in_progress");
-    if (e.target.id === "psMarkBlockedBtn") return setStatus("blocked");
-    if (e.target.id === "psMarkWaivedBtn") return setStatus("waived");
-    if (e.target.id === "psMarkCompletedBtn") {
-      return setStatus("completed", {
-        completed_at: new Date().toISOString()
-      });
+    if (btn.matches("[data-ps-quick]")) {
+      PR_SIGNOFF_ACTIVE_QUICK = btn.dataset.psQuick || "all";
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      syncSignoffFiltersUi();
+      await loadSignoffScreen(me);
+      return;
     }
 
-    if (e.target.id === "psDeactivateBtn") {
-      const ok = window.confirm("Deactivate this sign-off step?");
-      if (!ok) return;
+    if (btn.id === "psNewBtn") return openSignoffModal(me, null);
+    if (btn.id === "psEditBtn") return selected && openSignoffModal(me, selected);
+    if (btn.id === "psSearchBtn") {
+      PR_SIGNOFF_VIEW_CACHE.filters.q = document.getElementById("psSearchInput")?.value?.trim() || "";
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
+      return loadSignoffScreen(me);
+    }
+    if (btn.id === "psRefreshBtn") return loadSignoffScreen(me);
+    if (btn.id === "psPrevBtn") {
+      const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = Math.max(0, Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0) - limit);
+      return loadSignoffScreen(me);
+    }
+    if (btn.id === "psNextBtn") {
+      const limit = Number(PR_SIGNOFF_VIEW_CACHE.filters.limit || 100);
+      PR_SIGNOFF_VIEW_CACHE.filters.offset = Number(PR_SIGNOFF_VIEW_CACHE.filters.offset || 0) + limit;
+      return loadSignoffScreen(me);
+    }
+
+    if (btn.id === "psMarkProgressBtn") return setStatus("in_progress");
+    if (btn.id === "psMarkBlockedBtn") return setStatus("blocked");
+    if (btn.id === "psMarkWaivedBtn") return setStatus("waived");
+    if (btn.id === "psMarkCompletedBtn") {
+      return setStatus("completed", { completed_at: new Date().toISOString() });
+    }
+
+    if (btn.id === "psDeactivateBtn") {
+      if (!selected?.id) return;
+      if (!window.confirm("Deactivate this sign-off step?")) return;
 
       await apiFetch(
         ENDPOINTS.engagementOps.signoffStepsDeactivate(me.company_id, selected.id),
         { method: "POST" }
       );
+
       await loadSignoffScreen(me);
     }
-  });
-
-  document.addEventListener("change", async (e) => {
-    if (e.target.id === "psStatusFilter") {
-      PR_SIGNOFF_VIEW_CACHE.filters.status = e.target.value || "";
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      await loadSignoffScreen(me);
-      return;
-    }
-
-    if (e.target.id === "psYearEndFilter") {
-      PR_SIGNOFF_VIEW_CACHE.filters.reporting_year_end = e.target.value || "";
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      await loadSignoffScreen(me);
-      return;
-    }
-
-    if (e.target.id === "psAssignedFilter") {
-      PR_SIGNOFF_VIEW_CACHE.filters.assigned_user_id = e.target.value || "";
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      await loadSignoffScreen(me);
-      return;
-    }
-
-    if (e.target.id === "psLimitFilter") {
-      PR_SIGNOFF_VIEW_CACHE.filters.limit = Number(e.target.value || 100);
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      await loadSignoffScreen(me);
-    }
-  });
-
-  document.addEventListener("keydown", async (e) => {
-    if (e.target?.id === "psSearchInput" && e.key === "Enter") {
-      PR_SIGNOFF_VIEW_CACHE.filters.q = e.target.value.trim();
-      PR_SIGNOFF_VIEW_CACHE.filters.offset = 0;
-      await loadSignoffScreen(me);
-    }
-  });
-
-  document.getElementById("openPartnerSignoffBtn")?.addEventListener("click", async () => {
-    await openPartnerSignoffWithGate(window.__PR_ME__);
-  });
-}
-
-async function renderPartnerSignoffScreen(me) {
-  syncSignoffFiltersUi();
-  await populateSignoffAssignedFilter(me);
-  await bindSignoffScreen(me);
-  await loadSignoffScreen(me);
+  };
 }
 
 function prSetModalOpen(modalId, open) {
@@ -16917,6 +16849,62 @@ async function renderEngagementAcceptanceScreen(me) {
           </div>
         </aside>
       </div>
+
+      <div
+        id="eaDecisionModal"
+        class="modal-backdrop hidden"
+      >
+        <div class="modal-card modal-md">
+          <div class="modal-header">
+            <h3 id="eaDecisionTitle">Acceptance decision</h3>
+
+            <button
+              type="button"
+              class="icon-btn"
+              id="eaDecisionClose"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <div class="field">
+              <label for="eaDecisionNotes">
+                Decision notes
+              </label>
+
+              <textarea
+                id="eaDecisionNotes"
+                rows="6"
+                placeholder="Enter approval, return, or decline notes..."
+              ></textarea>
+            </div>
+
+            <div
+              id="eaDecisionMsg"
+              class="form-message"
+            ></div>
+          </div>
+
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="eaDecisionCancel"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="eaDecisionConfirm"
+            >
+              Confirm decision
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -17053,120 +17041,6 @@ function renderEngagementAcceptanceRows() {
   renderEngagementAcceptanceStats(rows);
 }
 
-async function openEngagementAcceptanceDetail(me, acceptanceId) {
-  const companyId = me?.company_id || window.currentUser?.company_id;
-  if (!companyId || !acceptanceId) return;
-
-  const detailHost = document.getElementById("eaDetailHost");
-  if (detailHost) {
-    detailHost.innerHTML = `<div class="empty-state">Loading detail...</div>`;
-  }
-
-  try {
-    const res = await apiFetch(
-      ENDPOINTS.engagementAcceptance.get(companyId, acceptanceId)
-    );
-
-    const row = res?.row || res || null;
-    if (!row) {
-      throw new Error("Acceptance detail not found.");
-    }
-
-    PR_ENGAGEMENT_ACCEPTANCE_CACHE.selectedRow = row;
-    PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail = row;
-
-    markSelectedAcceptanceRow(acceptanceId);
-    renderEngagementAcceptanceDetail(row);
-  } catch (err) {
-    console.error("openEngagementAcceptanceDetail failed", err);
-    if (detailHost) {
-      detailHost.innerHTML = `<div class="text-danger">${escapeHtml(err.message || "Failed to load detail")}</div>`;
-    }
-  }
-}
-
-function renderEngagementAcceptanceDetail(row) {
-  const host = document.getElementById("eaDetailHost");
-  if (!host) return;
-
-  const status = String(row.status || "").toLowerCase();
-  const canSubmit = status === "draft" || status === "returned";
-  const canDecide = status === "submitted" || status === "under_review";
-  const canEditAssessment = ["draft", "returned", "submitted", "under_review"].includes(status);
-
-  host.innerHTML = `
-    <div class="detail-grid">
-      <div class="detail-card">
-        <div class="detail-label">Customer</div>
-        <div class="detail-value">${escapeHtml(row.customer_name || "-")}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Type</div>
-        <div class="detail-value">${escapeHtml(titleize(row.acceptance_type || "-"))}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Risk band</div>
-        <div class="detail-value">${escapeHtml(titleize(row.risk_level || "-"))}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Status</div>
-        <div class="detail-value">${escapeHtml(titleize((row.status || "-").replaceAll("_", " ")))}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Assigned partner</div>
-        <div class="detail-value">${escapeHtml(row.assigned_partner_user_name || "-")}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Decision date</div>
-        <div class="detail-value">${formatShortDate(row.decision_date) || "-"}</div>
-      </div>
-    </div>
-
-    <div class="detail-section">
-      <h4>Checks</h4>
-      <ul class="simple-list">
-        <li>Independence cleared: <strong>${row.independence_cleared ? "Yes" : "No"}</strong></li>
-        <li>Conflicts checked: <strong>${row.conflicts_checked ? "Yes" : "No"}</strong></li>
-        <li>Competence confirmed: <strong>${row.competence_confirmed ? "Yes" : "No"}</strong></li>
-        <li>Capacity confirmed: <strong>${row.capacity_confirmed ? "Yes" : "No"}</strong></li>
-      </ul>
-    </div>
-
-    <div class="detail-section">
-      <h4>Client risk notes</h4>
-      <p>${escapeHtml(row.client_risk_notes || "No notes recorded.")}</p>
-    </div>
-
-    <div class="detail-section">
-      <h4>Service complexity notes</h4>
-      <p>${escapeHtml(row.service_complexity_notes || "No notes recorded.")}</p>
-    </div>
-
-    <div class="detail-section">
-      <h4>Preconditions notes</h4>
-      <p>${escapeHtml(row.preconditions_notes || "No notes recorded.")}</p>
-    </div>
-
-    <div class="detail-section">
-      <h4>Decision notes</h4>
-      <p>${escapeHtml(row.decision_notes || "No notes recorded.")}</p>
-    </div>
-
-    <div class="detail-actions">
-      ${canEditAssessment ? `<button class="btn btn-secondary" data-ea-edit="${row.id}">Edit assessment</button>` : ""}
-      ${canSubmit ? `<button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>` : ""}
-      ${canDecide ? `<button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}">Approve</button>` : ""}
-      ${canDecide ? `<button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>` : ""}
-      ${canDecide ? `<button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>` : ""}
-    </div>
-  `;
-}
-
 function markSelectedAcceptanceRow(id) {
   document.querySelectorAll("#eaTableBody tr[data-ea-id]").forEach((tr) => {
     tr.classList.toggle(
@@ -17174,6 +17048,35 @@ function markSelectedAcceptanceRow(id) {
       Number(tr.getAttribute("data-ea-id")) === Number(id)
     );
   });
+}
+
+function openEaDecisionModal(action, acceptanceId) {
+  PR_EA_DECISION_MODAL.action = action;
+  PR_EA_DECISION_MODAL.acceptanceId = acceptanceId;
+
+  const modal = document.getElementById("eaDecisionModal");
+  const title = document.getElementById("eaDecisionTitle");
+  const notes = document.getElementById("eaDecisionNotes");
+  const msg = document.getElementById("eaDecisionMsg");
+
+  if (title) {
+    title.textContent =
+      `${titleize(action)} engagement acceptance`;
+  }
+
+  if (notes) notes.value = "";
+  if (msg) msg.textContent = "";
+
+  modal?.classList.remove("hidden");
+}
+
+function closeEaDecisionModal() {
+  document
+    .getElementById("eaDecisionModal")
+    ?.classList.add("hidden");
+
+  PR_EA_DECISION_MODAL.action = null;
+  PR_EA_DECISION_MODAL.acceptanceId = null;
 }
 
 function bindEngagementAcceptanceScreen(me) {
@@ -17239,6 +17142,48 @@ function bindEngagementAcceptanceScreen(me) {
     };
   }
 
+  document.getElementById("eaDecisionClose")?.addEventListener(
+    "click",
+    closeEaDecisionModal
+  );
+
+  document.getElementById("eaDecisionCancel")?.addEventListener(
+    "click",
+    closeEaDecisionModal
+  );
+
+  document.getElementById("eaDecisionConfirm")?.addEventListener(
+    "click",
+    async () => {
+      const action = PR_EA_DECISION_MODAL.action;
+      const acceptanceId = PR_EA_DECISION_MODAL.acceptanceId;
+
+      if (!action || !acceptanceId) return;
+
+      const notes =
+        document.getElementById("eaDecisionNotes")
+          ?.value?.trim() || "";
+
+      try {
+        await applyEngagementAcceptanceDecision(
+          me,
+          acceptanceId,
+          action,
+          notes
+        );
+
+        closeEaDecisionModal();
+      } catch (err) {
+        const msg = document.getElementById("eaDecisionMsg");
+
+        if (msg) {
+          msg.textContent =
+            err.message || "Failed to apply decision";
+        }
+      }
+    }
+  );
+
   const detailHost = document.getElementById("eaDetailHost");
   if (detailHost) {
     detailHost.onclick = async (event) => {
@@ -17257,36 +17202,45 @@ function bindEngagementAcceptanceScreen(me) {
       const id = Number(btn.getAttribute("data-ea-id"));
       if (!id || !action) return;
 
-      await applyEngagementAcceptanceDecision(me, id, action);
+      if (action === "submit") {
+        await applyEngagementAcceptanceDecision(me, id, action, "");
+        return;
+      }
+
+      openEaDecisionModal(action, id);
     };
   }
 }
 
 
-async function applyEngagementAcceptanceDecision(me, acceptanceId, action) {
-  const companyId = me?.company_id || window.currentUser?.company_id;
+async function applyEngagementAcceptanceDecision(
+  me,
+  acceptanceId,
+  action,
+  decisionNotes = ""
+) {
+  const companyId =
+    me?.company_id ||
+    window.currentUser?.company_id;
+
   if (!companyId || !acceptanceId) return;
 
-  const decisionNotes = window.prompt(`Add ${action} note (optional):`, "") || "";
+  await apiFetch(
+    ENDPOINTS.engagementAcceptance.decision(
+      companyId,
+      acceptanceId
+    ),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        decision: action,
+        decision_notes: decisionNotes
+      })
+    }
+  );
 
-  try {
-    await apiFetch(
-      ENDPOINTS.engagementAcceptance.decision(companyId, acceptanceId),
-      {
-        method: "POST",
-        body: JSON.stringify({
-          action,
-          decision_notes: decisionNotes
-        })
-      }
-    );
-
-    await loadEngagementAcceptanceRows(me);
-    await openEngagementAcceptanceDetail(me, acceptanceId);
-  } catch (err) {
-    console.error("applyEngagementAcceptanceDecision failed", err);
-    window.alert(err.message || `Failed to ${action} item`);
-  }
+  await loadEngagementAcceptanceRows(me);
+  await openEngagementAcceptanceDetail(me, acceptanceId);
 }
 
 function setAcceptanceAssessmentMsg(message = "", type = "") {
@@ -17441,32 +17395,6 @@ function renderEngagementAcceptanceDetail(row) {
       ${canDecide ? `<button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>` : ""}
     </div>
   `;
-}
-
-async function applyEngagementAcceptanceDecision(me, acceptanceId, action) {
-  const companyId = me?.company_id || window.currentUser?.company_id;
-  if (!companyId || !acceptanceId) return;
-
-  const decisionNotes = window.prompt(`Add ${action} note:`, "") || "";
-
-  try {
-    await apiFetch(
-      ENDPOINTS.engagementAcceptance.decision(companyId, acceptanceId),
-      {
-        method: "POST",
-        body: JSON.stringify({
-          decision: action,
-          decision_notes: decisionNotes
-        })
-      }
-    );
-
-    await loadEngagementAcceptanceRows(me);
-    await openEngagementAcceptanceDetail(me, acceptanceId);
-  } catch (err) {
-    console.error("applyEngagementAcceptanceDecision failed", err);
-    window.alert(err.message || `Failed to ${action} item`);
-  }
 }
 
 async function renderRiskIndependenceScreen(me) {
