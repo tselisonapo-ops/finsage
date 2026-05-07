@@ -3310,6 +3310,7 @@ class DatabaseService:
             "can_view_engagements": False,
             "can_manage_engagements": False,
             "can_view_statement_interpretation": False,
+            "can_manage_loans": False,
 
             # delegated workspace shell
             "can_access_enterprise_dashboard": False,
@@ -3330,6 +3331,7 @@ class DatabaseService:
             perms["can_manage_ar"] = True
             perms["can_manage_ap"] = True
             perms["can_post_journals"] = True
+            perms["can_manage_loans"] = True  # ✅ add
             perms["can_prepare_financials"] = True
             perms["can_manage_fixed_assets"] = True
             perms["can_view_engagements"] = True
@@ -3350,6 +3352,7 @@ class DatabaseService:
             perms["can_view_engagements"] = True
             perms["can_manage_engagements"] = True
             perms["can_view_statement_interpretation"] = True
+            perms["can_manage_loans"] = True
 
         # executive / partner level
         if role in executive_roles:
@@ -3368,6 +3371,7 @@ class DatabaseService:
             perms["can_view_engagements"] = True
             perms["can_manage_engagements"] = True
             perms["can_view_statement_interpretation"] = True
+            perms["can_manage_loans"] = True
 
         # dual-dashboard roles should behave like enterprise executives in delegated workspace
         if role in dual_dashboard_roles:
@@ -3386,6 +3390,7 @@ class DatabaseService:
             "can_manage_ap",
             "can_manage_banking",
             "can_post_journals",
+            "can_manage_loans",
             "can_prepare_financials",
             "can_manage_fixed_assets",
             "can_approve",

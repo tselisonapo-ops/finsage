@@ -4745,9 +4745,15 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       icon: "🏦",
       isParent: true,
       minRole: "clerk",
-      permission: "can_manage_banking",
+      permission: "can_post_journals",
       children: [
-        { name: "Loan Register", screen: "loans", icon: "📘", minRole: "clerk", permission: "can_manage_banking" }
+        { 
+          name: "Loan Register", 
+          screen: "loans", 
+          icon: "📘", 
+          minRole: "clerk", 
+          permission: "can_manage_loans"
+        }
       ],
     },
 
@@ -6105,7 +6111,7 @@ const SCREEN_POLICY = {
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
   banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
   "bank-recon": { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
-  loans: { auth: "private", minRole: "assistant", permission: "can_post_journals" },  
+  loans: { auth: "private", minRole: "clerk", permission: "can_manage_loans" },
   // Accounting views
   ledger: { auth: "private", minRole: "assistant", permission: "can_view_reports" },
   trial:  { auth: "private", minRole: "assistant", permission: "can_view_reports" },
