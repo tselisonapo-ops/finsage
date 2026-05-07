@@ -10734,6 +10734,12 @@ function psGetActiveEngagementId() {
 }
 
 async function fetchSignoffRows(me) {
+  const companyId = me?.company_id || window.currentUser?.company_id;
+
+  if (!companyId) {
+    throw new Error("No company_id found for Partner Sign-Off.");
+  }
+
   const engagementId = psGetActiveEngagementId();
 
   if (!engagementId) {
@@ -10752,30 +10758,34 @@ async function fetchSignoffRows(me) {
     filters.status = "blocked";
   }
 
-  const json = await apiFetch(
-    ENDPOINTS.engagementOps.signoffStepsList(
-      me.company_id,
-      engagementId,
-      filters
-    )
+  const url = ENDPOINTS.engagementOps.signoffStepsList(
+    companyId,
+    engagementId,
+    filters
   );
 
+  console.log("Partner Sign-Off URL =", url);
+
+  const json = await apiFetch(url);
+  console.log("Partner Sign-Off API response =", json);
+
   const rows =
-    json?.rows ||
-    json?.data?.rows ||
-    json?.items ||
-    json?.data?.items ||
-    json?.data ||
+    Array.isArray(json?.rows) ? json.rows :
+    Array.isArray(json?.data?.rows) ? json.data.rows :
+    Array.isArray(json?.items) ? json.items :
+    Array.isArray(json?.data?.items) ? json.data.items :
+    Array.isArray(json?.data) ? json.data :
+    Array.isArray(json) ? json :
     [];
 
-  PR_SIGNOFF_VIEW_CACHE.rows = Array.isArray(rows) ? rows : [];
+  PR_SIGNOFF_VIEW_CACHE.rows = rows;
 
   const selected = PR_SIGNOFF_VIEW_CACHE.selectedRow;
   PR_SIGNOFF_VIEW_CACHE.selectedRow = selected
-    ? PR_SIGNOFF_VIEW_CACHE.rows.find((r) => Number(r.id) === Number(selected.id)) || PR_SIGNOFF_VIEW_CACHE.rows[0] || null
-    : PR_SIGNOFF_VIEW_CACHE.rows[0] || null;
+    ? rows.find((r) => Number(r.id) === Number(selected.id)) || rows[0] || null
+    : rows[0] || null;
 
-  return PR_SIGNOFF_VIEW_CACHE.rows;
+  return rows;
 }
 
 function renderSignoffSummary() {
@@ -10936,21 +10946,25 @@ async function loadSignoffScreen(me) {
   if (PR_SIGNOFF_VIEW_LOADING) return;
   PR_SIGNOFF_VIEW_LOADING = true;
 
+  const tbody = document.getElementById("psTableBody");
+  const panel = document.getElementById("psDetailPanel");
+
   try {
-    const tbody = document.getElementById("psTableBody");
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Loading sign-off steps...</td></tr>`;
     }
 
     const engagementId = psGetActiveEngagementId();
+    console.log("Partner Sign-Off engagementId =", engagementId);
 
     if (!engagementId) {
       if (tbody) {
         tbody.innerHTML = `<tr><td colspan="7" class="ps-empty">Select an engagement first to view sign-off steps.</td></tr>`;
       }
 
-      const panel = document.getElementById("psDetailPanel");
-      if (panel) panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
+      if (panel) {
+        panel.innerHTML = `<div class="ps-empty">Select an engagement first.</div>`;
+      }
 
       PR_SIGNOFF_VIEW_CACHE.rows = [];
       PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
@@ -10958,10 +10972,38 @@ async function loadSignoffScreen(me) {
       return;
     }
 
-    await fetchSignoffRows(me);
+    const rows = await fetchSignoffRows(me);
+    console.log("Partner Sign-Off rows =", rows);
+
     renderSignoffSummary();
     renderSignoffRows();
     renderSignoffDetail();
+
+  } catch (err) {
+    console.error("loadSignoffScreen failed:", err);
+
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="ps-empty">
+            ${prEsc(err?.message || "Failed to load sign-off steps.")}
+          </td>
+        </tr>
+      `;
+    }
+
+    if (panel) {
+      panel.innerHTML = `
+        <div class="ps-empty">
+          ${prEsc(err?.message || "Failed to load selected sign-off detail.")}
+        </div>
+      `;
+    }
+
+    PR_SIGNOFF_VIEW_CACHE.rows = [];
+    PR_SIGNOFF_VIEW_CACHE.selectedRow = null;
+    renderSignoffSummary();
+
   } finally {
     PR_SIGNOFF_VIEW_LOADING = false;
   }
