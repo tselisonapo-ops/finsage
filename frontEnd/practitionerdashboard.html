@@ -529,8 +529,34 @@
 
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.85rem;
+    }
+
+    .kpi-grid .card {
+      padding: 1rem;
+      min-height: 118px;
+    }
+
+    .kpi-grid .panel-subtitle {
+      font-size: 0.78rem;
+      line-height: 1rem;
+    }
+
+    .kpi-grid .metric-number {
+      font-size: 2rem;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .kpi-grid .text-sm {
+      font-size: 0.82rem;
+    }
+
+    @media (min-width: 1600px) {
+      .kpi-grid {
+        grid-template-columns: repeat(6, 1fr);
+      }
     }
 
     .main-grid {
@@ -4630,11 +4656,7 @@
     }
   }
 
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
-}
+
   </style>
 </head>
 <body>
