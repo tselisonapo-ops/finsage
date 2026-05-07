@@ -20676,9 +20676,10 @@ function applyDashboardData(me, cache = {}) {
   const topEngagement = engagements[0] || portfolioRows[0] || {};
 
   const totalEngagements =
+    Number(portfolioSummary.active_engagements || 0) ||
     engagements.length ||
-    Number(portfolioSummary.active_engagements || 0);
-
+    Number(portfolioSummary.portfolio_total || 0);
+    
   const upcomingDeadlines =
     Number(portfolioSummary.upcoming_due_dates || riskSummary.upcoming_due_dates || 0);
 
@@ -20796,14 +20797,9 @@ function applyDashboardData(me, cache = {}) {
   const workflowHost = document.getElementById("dashboardWorkflowReadinessHost");
 
   if (workflowHost) {
-    workflowHost.innerHTML = data?.workflowSnapshot?.readiness
-      ? renderEngagementReadinessCard(data.workflowSnapshot.readiness)
-      : `
-        <div class="card p-5">
-          <div class="panel-title">Engagement readiness</div>
-          <div class="panel-subtitle mt-1">Select an engagement to view workflow readiness.</div>
-        </div>
-      `;
+    workflowHost.innerHTML = cache?.workflowSnapshot?.readiness
+      ? renderEngagementReadinessCard(cache.workflowSnapshot.readiness)
+      : "";
   }
   bindText("engagement_scope.permissions_badge", permissionBadge(me?.role));
 
