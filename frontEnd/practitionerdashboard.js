@@ -17217,8 +17217,6 @@ function bindEngagementAcceptanceScreen(me) {
       if (editBtn) {
         const row = PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail;
         if (row) {
-          populateAcceptanceAssessmentModal(row);
-          openAcceptanceAssessmentModal();
         }
         return;
       }
@@ -17269,96 +17267,177 @@ function setAcceptanceAssessmentMsg(message = "", type = "") {
   el.className = `form-message${type ? ` ${type}` : ""}`;
 }
 
-function openAcceptanceAssessmentModal() {
-  document.getElementById("acceptanceAssessmentModal")?.classList.remove("hidden");
+async function getLatestRiskAssessmentForAcceptance(companyId, engagementId) {
+  if (!companyId || !engagementId) return null;
+
+  const res = await apiFetch(
+    ENDPOINTS.riskIndependence(companyId, {
+      engagement_id: engagementId,
+      active_only: true,
+      limit: 20,
+      offset: 0
+    }),
+    { method: "GET" }
+  );
+
+  const items =
+    Array.isArray(res?.data?.items) ? res.data.items :
+    Array.isArray(res?.items) ? res.items :
+    Array.isArray(res?.rows) ? res.rows :
+    [];
+
+  const completed = items.find((x) =>
+    ["approved", "completed", "cleared"].includes(String(x.status || "").toLowerCase())
+  );
+
+  return completed || items[0] || null;
 }
 
-function closeAcceptanceAssessmentModal() {
-  document.getElementById("acceptanceAssessmentModal")?.classList.add("hidden");
-  setAcceptanceAssessmentMsg("");
-}
-
-function populateAcceptanceAssessmentModal(row) {
-  if (!row) return;
-
-  document.getElementById("aaAcceptanceId").value = row.id || "";
-  document.getElementById("aaIndependenceCleared").checked = !!row.independence_cleared;
-  document.getElementById("aaConflictsChecked").checked = !!row.conflicts_checked;
-  document.getElementById("aaCompetenceConfirmed").checked = !!row.competence_confirmed;
-  document.getElementById("aaCapacityConfirmed").checked = !!row.capacity_confirmed;
-  document.getElementById("aaRiskLevel").value = row.risk_level || "normal";
-  document.getElementById("aaClientRiskNotes").value = row.client_risk_notes || "";
-  document.getElementById("aaServiceComplexityNotes").value = row.service_complexity_notes || "";
-  document.getElementById("aaPreconditionsNotes").value = row.preconditions_notes || "";
-  document.getElementById("aaDecisionNotes").value = row.decision_notes || "";
-}
-
-async function saveAcceptanceAssessment(me) {
+async function openEngagementAcceptanceDetail(me, acceptanceId) {
   const companyId = me?.company_id || window.currentUser?.company_id;
-  const acceptanceId = Number(document.getElementById("aaAcceptanceId")?.value || 0);
   if (!companyId || !acceptanceId) return;
 
-  const saveBtn = document.getElementById("acceptanceAssessmentSave");
+  const detailHost = document.getElementById("eaDetailHost");
+  if (detailHost) detailHost.innerHTML = `<div class="empty-state">Loading detail...</div>`;
 
   try {
-    if (saveBtn) saveBtn.disabled = true;
-    setAcceptanceAssessmentMsg("Saving assessment...");
-
-    const payload = {
-      acceptance_type: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.acceptance_type || "acceptance",
-      assigned_partner_user_id: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.assigned_partner_user_id || null,
-      risk_level: document.getElementById("aaRiskLevel")?.value || "normal",
-      independence_cleared: !!document.getElementById("aaIndependenceCleared")?.checked,
-      conflicts_checked: !!document.getElementById("aaConflictsChecked")?.checked,
-      competence_confirmed: !!document.getElementById("aaCompetenceConfirmed")?.checked,
-      capacity_confirmed: !!document.getElementById("aaCapacityConfirmed")?.checked,
-      client_risk_notes: document.getElementById("aaClientRiskNotes")?.value?.trim() || "",
-      service_complexity_notes: document.getElementById("aaServiceComplexityNotes")?.value?.trim() || "",
-      preconditions_notes: document.getElementById("aaPreconditionsNotes")?.value?.trim() || "",
-      decision_notes: document.getElementById("aaDecisionNotes")?.value?.trim() || "",
-      valid_from: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.valid_from || null,
-      valid_to: PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail?.valid_to || null
-    };
-
     const res = await apiFetch(
-      ENDPOINTS.engagementAcceptance.update(companyId, acceptanceId),
-      {
-        method: "PUT",
-        body: JSON.stringify(payload)
-      }
+      ENDPOINTS.engagementAcceptance.get(companyId, acceptanceId)
     );
 
-    const row = res?.row || res || null;
-    if (!row) {
-      throw new Error("Failed to save assessment.");
-    }
+    const row = res?.data || res?.row || res || null;
+    if (!row) throw new Error("Acceptance detail not found.");
 
-    PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail = row;
+    const riskAssessment = await getLatestRiskAssessmentForAcceptance(
+      companyId,
+      row.engagement_id
+    );
+
+    row.latest_risk_assessment = riskAssessment;
+
     PR_ENGAGEMENT_ACCEPTANCE_CACHE.selectedRow = row;
+    PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail = row;
 
-    setAcceptanceAssessmentMsg("Assessment saved.", "success");
-
+    markSelectedAcceptanceRow(acceptanceId);
     renderEngagementAcceptanceDetail(row);
-    await loadEngagementAcceptanceRows(me);
-
-    window.setTimeout(() => {
-      closeAcceptanceAssessmentModal();
-    }, 300);
   } catch (err) {
-    console.error(err);
-    setAcceptanceAssessmentMsg(err.message || "Failed to save assessment.", "error");
-  } finally {
-    if (saveBtn) saveBtn.disabled = false;
+    console.error("openEngagementAcceptanceDetail failed", err);
+    if (detailHost) {
+      detailHost.innerHTML = `<div class="text-danger">${escapeHtml(err.message || "Failed to load detail")}</div>`;
+    }
   }
 }
 
-function bindAcceptanceAssessmentModalEvents(me) {
-  document.getElementById("acceptanceAssessmentClose")?.addEventListener("click", closeAcceptanceAssessmentModal);
-  document.getElementById("acceptanceAssessmentCancel")?.addEventListener("click", closeAcceptanceAssessmentModal);
-  document.getElementById("acceptanceAssessmentBackdrop")?.addEventListener("click", closeAcceptanceAssessmentModal);
-  document.getElementById("acceptanceAssessmentSave")?.addEventListener("click", async () => {
-    await saveAcceptanceAssessment(me);
-  });
+function renderEngagementAcceptanceDetail(row) {
+  const host = document.getElementById("eaDetailHost");
+  if (!host) return;
+
+  const status = String(row.status || "").toLowerCase();
+  const canSubmit = status === "draft" || status === "returned";
+  const canDecide = status === "submitted" || status === "under_review";
+
+  const assessment = row.latest_risk_assessment || null;
+  const assessmentStatus = String(assessment?.status || "").toLowerCase();
+  const assessmentReady = ["approved", "completed", "cleared"].includes(assessmentStatus);
+
+  host.innerHTML = `
+    <div class="detail-grid">
+      <div class="detail-card">
+        <div class="detail-label">Customer</div>
+        <div class="detail-value">${escapeHtml(row.customer_name || "-")}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Engagement</div>
+        <div class="detail-value">${escapeHtml(row.engagement_name || "-")}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Type</div>
+        <div class="detail-value">${escapeHtml(titleize(row.acceptance_type || "-"))}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Status</div>
+        <div class="detail-value">${escapeHtml(titleize((row.status || "-").replaceAll("_", " ")))}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Assigned partner</div>
+        <div class="detail-value">${escapeHtml(row.assigned_partner_user_name || "-")}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Decision date</div>
+        <div class="detail-value">${formatShortDate(row.decision_date) || "-"}</div>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h4>Risk & Independence summary</h4>
+
+      ${
+        assessment
+          ? `
+            <ul class="simple-list">
+              <li>Assessment status: <strong>${escapeHtml(titleize(assessment.status || "draft"))}</strong></li>
+              <li>Risk level: <strong>${escapeHtml(titleize(assessment.risk_level || "normal"))}</strong></li>
+              <li>Independence cleared: <strong>${assessment.independence_cleared ? "Yes" : "No"}</strong></li>
+              <li>Conflicts checked: <strong>${assessment.conflicts_checked ? "Yes" : "No"}</strong></li>
+              <li>Competence confirmed: <strong>${assessment.competence_confirmed ? "Yes" : "No"}</strong></li>
+              <li>Capacity confirmed: <strong>${assessment.capacity_confirmed ? "Yes" : "No"}</strong></li>
+            </ul>
+
+            <p><strong>Assessment conclusion:</strong><br>
+              ${escapeHtml(assessment.decision_notes || assessment.assessment_conclusion || "No conclusion recorded.")}
+            </p>
+
+            <p><strong>Approval conditions / safeguards:</strong><br>
+              ${escapeHtml(assessment.preconditions_notes || assessment.approval_conditions || "No conditions recorded.")}
+            </p>
+          `
+          : `<div class="empty-state">No Risk & Independence assessment found for this engagement.</div>`
+      }
+    </div>
+
+    <div class="detail-section">
+      <h4>Acceptance decision notes</h4>
+      <p>${escapeHtml(row.decision_notes || "No acceptance decision notes recorded.")}</p>
+    </div>
+
+    <div class="detail-actions">
+      ${canSubmit ? `<button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>` : ""}
+      ${canDecide ? `<button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}" ${assessmentReady ? "" : "disabled title='Risk & Independence must be completed first'"}>Approve</button>` : ""}
+      ${canDecide ? `<button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>` : ""}
+      ${canDecide ? `<button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>` : ""}
+    </div>
+  `;
+}
+
+async function applyEngagementAcceptanceDecision(me, acceptanceId, action) {
+  const companyId = me?.company_id || window.currentUser?.company_id;
+  if (!companyId || !acceptanceId) return;
+
+  const decisionNotes = window.prompt(`Add ${action} note:`, "") || "";
+
+  try {
+    await apiFetch(
+      ENDPOINTS.engagementAcceptance.decision(companyId, acceptanceId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          decision: action,
+          decision_notes: decisionNotes
+        })
+      }
+    );
+
+    await loadEngagementAcceptanceRows(me);
+    await openEngagementAcceptanceDetail(me, acceptanceId);
+  } catch (err) {
+    console.error("applyEngagementAcceptanceDecision failed", err);
+    window.alert(err.message || `Failed to ${action} item`);
+  }
 }
 
 async function renderRiskIndependenceScreen(me) {
@@ -17366,14 +17445,30 @@ async function renderRiskIndependenceScreen(me) {
   if (!host) return;
 
   const companyId = me?.company_id || window.currentUser?.company_id;
-  const engagementId =
-    window.__FS_CURRENT_ENGAGEMENT_ID__ ||
-    window.FS_ENGAGEMENT_CONTEXT?.engagement_id ||
-    "";
+  if (!companyId) return;
 
   const canDecide =
     !!me?.permissions?.can_approve ||
-    (String(me?.user_type || "").toLowerCase() === "partner");
+    String(me?.user_type || "").toLowerCase() === "partner";
+
+  let RI_SELECTED_ENGAGEMENT = null;
+
+  const RI_ENDPOINTS = {
+    list: (companyId, params = {}) =>
+      ENDPOINTS.riskIndependence(companyId, params),
+
+    create: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/risk-independence`,
+
+    get: (companyId, id) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/risk-independence/${encodeURIComponent(id)}`,
+
+    update: (companyId, id) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/risk-independence/${encodeURIComponent(id)}`,
+
+    decision: (companyId, id) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/risk-independence/${encodeURIComponent(id)}/decision`
+  };
 
   host.innerHTML = `
     <div class="pr-risk-screen">
@@ -17382,31 +17477,48 @@ async function renderRiskIndependenceScreen(me) {
           <div>
             <h2 class="pr-screen__title">Risk & Independence</h2>
             <p class="pr-screen__subtitle">
-              Ethics, independence, conflict checks, and approval conditions for engagement oversight.
+              Complete ethics, independence, competence, capacity, and risk assessment before engagement acceptance.
             </p>
           </div>
-          <div class="pr-filter-actions">
-            <button class="btn btn-primary" id="riNewItemBtn">New assessment</button>
+          <button class="btn btn-primary" id="riNewItemBtn">New assessment</button>
+        </div>
+      </section>
+
+      <section class="pr-panel">
+        <div class="pr-panel__head">
+          <div>
+            <h3>Engagements requiring assessment</h3>
+            <p>Select an engagement first. The assessment is saved against the engagement, not the acceptance decision.</p>
           </div>
+        </div>
+
+        <div class="pr-risk-table-wrap">
+          <table class="pr-risk-table">
+            <thead>
+              <tr>
+                <th>Engagement</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th>Type</th>
+                <th>Partner</th>
+              </tr>
+            </thead>
+            <tbody id="riEngagementTableBody">
+              <tr><td colspan="5" class="pr-table-state">Loading engagements...</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
       <section class="pr-panel pr-risk-filter-panel">
-        <div class="pr-panel__head">
-          <div>
-            <h3>Filters</h3>
-            <p>Search and narrow risk assessments for this engagement.</p>
-          </div>
-        </div>
-
         <div class="pr-filter-grid pr-filter-grid--risk">
           <div class="pr-field">
-            <label class="pr-field__label">Search</label>
-            <input id="riSearch" class="pr-input" placeholder="Search engagement, client, notes..." />
+            <label class="pr-field__label">Search assessments</label>
+            <input id="riSearch" class="pr-input" placeholder="Search notes, engagement, client..." />
           </div>
 
           <div class="pr-field">
-            <label class="pr-field__label">Status</label>
+            <label class="pr-field__label">Assessment status</label>
             <select id="riStatusFilter" class="pr-select">
               <option value="">All statuses</option>
               <option value="draft">Draft</option>
@@ -17441,8 +17553,8 @@ async function renderRiskIndependenceScreen(me) {
         <div class="pr-panel">
           <div class="pr-panel__head">
             <div>
-              <h3>Assessments</h3>
-              <p>Click a row to review and edit the selected risk assessment.</p>
+              <h3>Risk & Independence assessments</h3>
+              <p>Click a row to review or update the assessment.</p>
             </div>
           </div>
 
@@ -17460,9 +17572,7 @@ async function renderRiskIndependenceScreen(me) {
                 </tr>
               </thead>
               <tbody id="riTableBody">
-                <tr>
-                  <td colspan="7" class="pr-table-state">Loading...</td>
-                </tr>
+                <tr><td colspan="7" class="pr-table-state">Select an engagement to load assessments.</td></tr>
               </tbody>
             </table>
           </div>
@@ -17472,8 +17582,8 @@ async function renderRiskIndependenceScreen(me) {
           <section class="pr-panel">
             <div class="pr-panel__head">
               <div>
-                <h3 id="riEditorTitle">New assessment</h3>
-                <p>Maintain risk flags, ethics checks, and conditions before sign-off.</p>
+                <h3 id="riEditorTitle">Assessment workspace</h3>
+                <p>This is the working assessment. Engagement Acceptance will only read the completed result.</p>
               </div>
             </div>
 
@@ -17483,8 +17593,13 @@ async function renderRiskIndependenceScreen(me) {
 
               <div class="pr-risk-form-grid">
                 <div class="pr-field">
-                  <label class="pr-field__label">Type</label>
-                  <select id="riAcceptanceType" class="pr-select">
+                  <label class="pr-field__label">Selected engagement</label>
+                  <input id="riEngagementLabel" class="pr-input" disabled />
+                </div>
+
+                <div class="pr-field">
+                  <label class="pr-field__label">Assessment type</label>
+                  <select id="riAssessmentType" class="pr-select">
                     <option value="acceptance">Acceptance</option>
                     <option value="continuance">Continuance</option>
                     <option value="independence">Independence</option>
@@ -17512,30 +17627,13 @@ async function renderRiskIndependenceScreen(me) {
                     <option value="critical">Critical</option>
                   </select>
                 </div>
-
-                <div class="pr-field">
-                  <label class="pr-field__label">Engagement</label>
-                  <input id="riEngagementLabel" class="pr-input" value="${escapeHtml(String(engagementId || ""))}" disabled />
-                </div>
               </div>
 
               <div class="pr-risk-check-grid">
-                <label class="pr-risk-check">
-                  <input type="checkbox" id="riIndependenceCleared" />
-                  <span>Independence cleared</span>
-                </label>
-                <label class="pr-risk-check">
-                  <input type="checkbox" id="riConflictsChecked" />
-                  <span>Conflicts checked</span>
-                </label>
-                <label class="pr-risk-check">
-                  <input type="checkbox" id="riCompetenceConfirmed" />
-                  <span>Competence confirmed</span>
-                </label>
-                <label class="pr-risk-check">
-                  <input type="checkbox" id="riCapacityConfirmed" />
-                  <span>Capacity confirmed</span>
-                </label>
+                <label class="pr-risk-check"><input type="checkbox" id="riIndependenceCleared" /> <span>Independence cleared</span></label>
+                <label class="pr-risk-check"><input type="checkbox" id="riConflictsChecked" /> <span>Conflicts checked</span></label>
+                <label class="pr-risk-check"><input type="checkbox" id="riCompetenceConfirmed" /> <span>Competence confirmed</span></label>
+                <label class="pr-risk-check"><input type="checkbox" id="riCapacityConfirmed" /> <span>Capacity confirmed</span></label>
               </div>
 
               <div class="pr-field">
@@ -17549,12 +17647,12 @@ async function renderRiskIndependenceScreen(me) {
               </div>
 
               <div class="pr-field">
-                <label class="pr-field__label">Approval conditions</label>
+                <label class="pr-field__label">Approval conditions / safeguards</label>
                 <textarea id="riPreconditionsNotes" class="input" rows="3"></textarea>
               </div>
 
               <div class="pr-field">
-                <label class="pr-field__label">Decision notes</label>
+                <label class="pr-field__label">Assessment conclusion</label>
                 <textarea id="riDecisionNotes" class="input" rows="3"></textarea>
               </div>
 
@@ -17571,7 +17669,7 @@ async function renderRiskIndependenceScreen(me) {
 
               <div class="pr-approval-center-actionbar">
                 <button class="btn btn-ghost" id="riClearBtn">Clear</button>
-                <button class="btn btn-primary" id="riSaveBtn">Save</button>
+                <button class="btn btn-primary" id="riSaveBtn">Save assessment</button>
               </div>
             </div>
           </section>
@@ -17579,13 +17677,13 @@ async function renderRiskIndependenceScreen(me) {
           <section class="pr-panel">
             <div class="pr-panel__head">
               <div>
-                <h3>Decision actions</h3>
-                <p>Partner or approver action on the selected assessment.</p>
+                <h3>Assessment decision</h3>
+                <p>Approve, return, or decline the selected Risk & Independence assessment.</p>
               </div>
             </div>
 
             <div class="pr-approval-center-actionbar">
-              <button class="btn btn-primary" id="riApproveBtn" ${canDecide ? "" : "style='display:none'"}>Approve</button>
+              <button class="btn btn-primary" id="riApproveBtn" ${canDecide ? "" : "style='display:none'"}>Approve assessment</button>
               <button class="btn" id="riReturnBtn" ${canDecide ? "" : "style='display:none'"}>Return</button>
               <button class="btn" id="riDeclineBtn" ${canDecide ? "" : "style='display:none'"}>Decline</button>
             </div>
@@ -17597,30 +17695,6 @@ async function renderRiskIndependenceScreen(me) {
     </div>
   `;
 
-  function riskBadgeClass(level) {
-    switch (String(level || "").toLowerCase()) {
-      case "critical":
-      case "high":
-        return "pr-badge is-danger";
-      case "low":
-        return "pr-badge is-good";
-      default:
-        return "pr-badge is-warning";
-    }
-  }
-
-  function statusBadgeClass(status) {
-    switch (String(status || "").toLowerCase()) {
-      case "approved":
-        return "pr-badge is-good";
-      case "declined":
-      case "returned":
-        return "pr-badge is-danger";
-      default:
-        return "pr-badge is-warning";
-    }
-  }
-
   function setActionMessage(message = "", kind = "") {
     const el = document.getElementById("riActionMessage");
     if (!el) return;
@@ -17628,11 +17702,33 @@ async function renderRiskIndependenceScreen(me) {
     el.textContent = message || "";
   }
 
-  function clearRiskEditor() {
+  function riskBadgeClass(level) {
+    const v = String(level || "").toLowerCase();
+    if (["critical", "high"].includes(v)) return "pr-badge is-danger";
+    if (v === "low") return "pr-badge is-good";
+    return "pr-badge is-warning";
+  }
+
+  function statusBadgeClass(status) {
+    const v = String(status || "").toLowerCase();
+    if (v === "approved") return "pr-badge is-good";
+    if (["declined", "returned"].includes(v)) return "pr-badge is-danger";
+    return "pr-badge is-warning";
+  }
+
+  function selectedEngagementId() {
+    return Number(document.getElementById("riEngagementId")?.value || 0);
+  }
+
+  function clearRiskEditor(keepEngagement = true) {
+    const currentEngagementId = keepEngagement ? selectedEngagementId() : 0;
+    const currentLabel = keepEngagement ? document.getElementById("riEngagementLabel")?.value || "" : "";
+
     document.getElementById("riEditorTitle").textContent = "New assessment";
     document.getElementById("riItemId").value = "";
-    document.getElementById("riEngagementId").value = engagementId || "";
-    document.getElementById("riAcceptanceType").value = "acceptance";
+    document.getElementById("riEngagementId").value = currentEngagementId || "";
+    document.getElementById("riEngagementLabel").value = currentLabel;
+    document.getElementById("riAssessmentType").value = "acceptance";
     document.getElementById("riStatus").value = "draft";
     document.getElementById("riRiskLevel").value = "normal";
     document.getElementById("riIndependenceCleared").checked = false;
@@ -17649,23 +17745,86 @@ async function renderRiskIndependenceScreen(me) {
     document.querySelectorAll(".pr-risk-row").forEach((row) => row.classList.remove("is-selected"));
   }
 
-  async function loadRiskItemIntoEditor(acceptanceId) {
-    const res = await fetch(
-      ENDPOINTS.engagementAcceptance.get(companyId, acceptanceId),
-      { headers: AUTH_HEADER() }
-    );
-    const payload = await res.json();
+  async function loadRiskEngagements() {
+    const body = document.getElementById("riEngagementTableBody");
+    if (!body) return;
 
-    if (!res.ok || !payload?.ok) {
-      throw new Error(payload?.error || "Failed to load risk item");
+    body.innerHTML = `<tr><td colspan="5" class="pr-table-state">Loading engagements...</td></tr>`;
+
+    const res = await apiFetch(
+      ENDPOINTS.engagements.list(companyId, { status: "", limit: 200, offset: 0 }),
+      { method: "GET" }
+    );
+
+    const rows =
+      Array.isArray(res) ? res :
+      Array.isArray(res?.rows) ? res.rows :
+      Array.isArray(res?.items) ? res.items :
+      Array.isArray(res?.data) ? res.data :
+      Array.isArray(res?.engagements) ? res.engagements :
+      [];
+
+    const usableRows = rows.filter((r) => {
+      const status = String(r.status || "").toLowerCase();
+      return !["declined", "closed", "cancelled", "archived"].includes(status);
+    });
+
+    if (!usableRows.length) {
+      body.innerHTML = `<tr><td colspan="5" class="pr-empty-state">No engagements available for assessment.</td></tr>`;
+      return;
     }
 
-    const item = payload.data || {};
+    body.innerHTML = usableRows.map((row) => {
+      const id = row.id || row.engagement_id;
+      return `
+        <tr class="pr-risk-engagement-row" data-engagement-id="${escapeHtml(id)}">
+          <td>
+            <div class="pr-risk-name">
+              <div class="pr-risk-name__title">${escapeHtml(row.name || row.engagement_name || "—")}</div>
+              <div class="pr-risk-name__meta">${escapeHtml(row.code || row.engagement_code || "")}</div>
+            </div>
+          </td>
+          <td>${escapeHtml(row.customer_name || row.client_name || "—")}</td>
+          <td>${escapeHtml(row.status || "draft")}</td>
+          <td>${escapeHtml(row.engagement_type || row.type || "—")}</td>
+          <td>${escapeHtml(row.partner_name || row.assigned_partner_user_name || "—")}</td>
+        </tr>
+      `;
+    }).join("");
+
+    body.querySelectorAll(".pr-risk-engagement-row").forEach((tr) => {
+      tr.addEventListener("click", async () => {
+        body.querySelectorAll(".pr-risk-engagement-row").forEach((r) => r.classList.remove("is-selected"));
+        tr.classList.add("is-selected");
+
+        const selectedId = Number(tr.dataset.engagementId || 0);
+        RI_SELECTED_ENGAGEMENT = usableRows.find((r) =>
+          Number(r.id || r.engagement_id) === selectedId
+        ) || null;
+
+        const label =
+          RI_SELECTED_ENGAGEMENT?.name ||
+          RI_SELECTED_ENGAGEMENT?.engagement_name ||
+          `Engagement #${selectedId}`;
+
+        document.getElementById("riEngagementId").value = selectedId || "";
+        document.getElementById("riEngagementLabel").value = label;
+
+        clearRiskEditor(true);
+        await loadRiskIndependence();
+      });
+    });
+  }
+
+  async function loadRiskItemIntoEditor(itemId) {
+    const payload = await apiFetch(RI_ENDPOINTS.get(companyId, itemId), { method: "GET" });
+    const item = payload?.data || payload?.row || payload || {};
 
     document.getElementById("riEditorTitle").textContent = `Assessment #${item.id}`;
     document.getElementById("riItemId").value = item.id || "";
     document.getElementById("riEngagementId").value = item.engagement_id || "";
-    document.getElementById("riAcceptanceType").value = item.acceptance_type || "acceptance";
+    document.getElementById("riEngagementLabel").value = item.engagement_name || item.engagement_code || `Engagement #${item.engagement_id || ""}`;
+    document.getElementById("riAssessmentType").value = item.assessment_type || item.acceptance_type || "acceptance";
     document.getElementById("riStatus").value = item.status || "draft";
     document.getElementById("riRiskLevel").value = item.risk_level || "normal";
     document.getElementById("riIndependenceCleared").checked = !!item.independence_cleared;
@@ -17674,21 +17833,22 @@ async function renderRiskIndependenceScreen(me) {
     document.getElementById("riCapacityConfirmed").checked = !!item.capacity_confirmed;
     document.getElementById("riClientRiskNotes").value = item.client_risk_notes || "";
     document.getElementById("riServiceComplexityNotes").value = item.service_complexity_notes || "";
-    document.getElementById("riPreconditionsNotes").value = item.preconditions_notes || "";
-    document.getElementById("riDecisionNotes").value = item.decision_notes || "";
+    document.getElementById("riPreconditionsNotes").value = item.preconditions_notes || item.approval_conditions || "";
+    document.getElementById("riDecisionNotes").value = item.decision_notes || item.assessment_conclusion || "";
     document.getElementById("riValidFrom").value = item.valid_from || "";
     document.getElementById("riValidTo").value = item.valid_to || "";
     setActionMessage("", "");
   }
 
   async function loadRiskIndependence() {
+    const engagement_id = selectedEngagementId();
     const q = document.getElementById("riSearch")?.value?.trim() || "";
     const status = document.getElementById("riStatusFilter")?.value || "";
     const risk_level = document.getElementById("riRiskFilter")?.value || "";
 
-    const res = await fetch(
-      ENDPOINTS.riskIndependence(companyId, {
-        engagement_id: engagementId || "",
+    const payload = await apiFetch(
+      RI_ENDPOINTS.list(companyId, {
+        engagement_id: engagement_id || "",
         status,
         risk_level,
         q,
@@ -17696,49 +17856,27 @@ async function renderRiskIndependenceScreen(me) {
         limit: 100,
         offset: 0
       }),
-      { headers: AUTH_HEADER() }
+      { method: "GET" }
     );
 
-    const payload = await res.json();
-    if (!res.ok || !payload?.ok) {
-      throw new Error(payload?.error || "Failed to load risk & independence data");
-    }
-
-    const summary = payload.data?.summary || {};
-    const items = payload.data?.items || [];
+    const summary = payload?.data?.summary || payload?.summary || {};
+    const items = payload?.data?.items || payload?.items || payload?.rows || [];
 
     document.getElementById("riStats").innerHTML = `
-      <div class="pr-summary-card">
-        <div class="pr-summary-card__label">Open reviews</div>
-        <div class="pr-summary-card__value">${Number(summary.open_reviews || 0)}</div>
-        <div class="pr-summary-card__hint">Awaiting review or decision.</div>
-      </div>
-      <div class="pr-summary-card">
-        <div class="pr-summary-card__label">High risk</div>
-        <div class="pr-summary-card__value pr-text-danger">${Number(summary.high_risk_items || 0)}</div>
-        <div class="pr-summary-card__hint">High and critical matters flagged.</div>
-      </div>
-      <div class="pr-summary-card">
-        <div class="pr-summary-card__label">Independence gaps</div>
-        <div class="pr-summary-card__value pr-text-warning">${Number(summary.independence_gaps || 0)}</div>
-        <div class="pr-summary-card__hint">Missing confirmations or checks.</div>
-      </div>
-      <div class="pr-summary-card">
-        <div class="pr-summary-card__label">Conditions logged</div>
-        <div class="pr-summary-card__value">${Number(summary.items_with_conditions || 0)}</div>
-        <div class="pr-summary-card__hint">Approval conditions and preconditions.</div>
-      </div>
+      <div class="pr-summary-card"><div class="pr-summary-card__label">Open reviews</div><div class="pr-summary-card__value">${Number(summary.open_reviews || 0)}</div><div class="pr-summary-card__hint">Awaiting review or decision.</div></div>
+      <div class="pr-summary-card"><div class="pr-summary-card__label">High risk</div><div class="pr-summary-card__value pr-text-danger">${Number(summary.high_risk_items || 0)}</div><div class="pr-summary-card__hint">High and critical matters flagged.</div></div>
+      <div class="pr-summary-card"><div class="pr-summary-card__label">Independence gaps</div><div class="pr-summary-card__value pr-text-warning">${Number(summary.independence_gaps || 0)}</div><div class="pr-summary-card__hint">Missing confirmations or checks.</div></div>
+      <div class="pr-summary-card"><div class="pr-summary-card__label">Conditions logged</div><div class="pr-summary-card__value">${Number(summary.items_with_conditions || 0)}</div><div class="pr-summary-card__hint">Approval conditions and safeguards.</div></div>
     `;
 
     const body = document.getElementById("riTableBody");
     if (!items.length) {
-      body.innerHTML = `<tr><td colspan="7" class="pr-empty-state">No risk & independence items found.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="pr-empty-state">No Risk & Independence assessments found for the selected engagement.</td></tr>`;
       return;
     }
 
     body.innerHTML = items.map((item) => {
       const independenceOk = item.independence_cleared && item.conflicts_checked;
-      const partnerName = item.assigned_partner_user_name || "—";
       const updated = item.updated_at ? new Date(item.updated_at).toLocaleDateString() : "—";
 
       return `
@@ -17752,12 +17890,8 @@ async function renderRiskIndependenceScreen(me) {
           <td>${escapeHtml(item.customer_name || "—")}</td>
           <td><span class="${riskBadgeClass(item.risk_level)}">${escapeHtml(item.risk_level || "normal")}</span></td>
           <td><span class="${statusBadgeClass(item.status)}">${escapeHtml(item.status || "draft")}</span></td>
-          <td>
-            <span class="${independenceOk ? "pr-badge is-good" : "pr-badge is-warning"}">
-              ${independenceOk ? "Cleared" : "Attention"}
-            </span>
-          </td>
-          <td>${escapeHtml(partnerName)}</td>
+          <td><span class="${independenceOk ? "pr-badge is-good" : "pr-badge is-warning"}">${independenceOk ? "Cleared" : "Attention"}</span></td>
+          <td>${escapeHtml(item.assigned_partner_user_name || "—")}</td>
           <td>${escapeHtml(updated)}</td>
         </tr>
       `;
@@ -17765,15 +17899,56 @@ async function renderRiskIndependenceScreen(me) {
 
     body.querySelectorAll(".pr-risk-row").forEach((row) => {
       row.addEventListener("click", async () => {
-        try {
-          document.querySelectorAll(".pr-risk-row").forEach((r) => r.classList.remove("is-selected"));
-          row.classList.add("is-selected");
-          await loadRiskItemIntoEditor(row.dataset.riId);
-        } catch (err) {
-          console.error(err);
-          setActionMessage(err.message || "Failed to load item", "error");
-        }
+        document.querySelectorAll(".pr-risk-row").forEach((r) => r.classList.remove("is-selected"));
+        row.classList.add("is-selected");
+        await loadRiskItemIntoEditor(row.dataset.riId);
       });
+    });
+  }
+
+  async function saveAssessment() {
+    const id = document.getElementById("riItemId")?.value || "";
+    const engagement_id = selectedEngagementId();
+
+    if (!engagement_id) throw new Error("Select an engagement before saving the assessment.");
+
+    const payload = {
+      engagement_id,
+      assessment_type: document.getElementById("riAssessmentType")?.value || "acceptance",
+      status: document.getElementById("riStatus")?.value || "draft",
+      risk_level: document.getElementById("riRiskLevel")?.value || "normal",
+      independence_cleared: !!document.getElementById("riIndependenceCleared")?.checked,
+      conflicts_checked: !!document.getElementById("riConflictsChecked")?.checked,
+      competence_confirmed: !!document.getElementById("riCompetenceConfirmed")?.checked,
+      capacity_confirmed: !!document.getElementById("riCapacityConfirmed")?.checked,
+      client_risk_notes: document.getElementById("riClientRiskNotes")?.value?.trim() || "",
+      service_complexity_notes: document.getElementById("riServiceComplexityNotes")?.value?.trim() || "",
+      preconditions_notes: document.getElementById("riPreconditionsNotes")?.value?.trim() || "",
+      decision_notes: document.getElementById("riDecisionNotes")?.value?.trim() || "",
+      valid_from: document.getElementById("riValidFrom")?.value || null,
+      valid_to: document.getElementById("riValidTo")?.value || null
+    };
+
+    const saved = await apiFetch(
+      id ? RI_ENDPOINTS.update(companyId, id) : RI_ENDPOINTS.create(companyId),
+      {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(payload)
+      }
+    );
+
+    return saved?.data || saved?.row || saved;
+  }
+
+  async function applyRiskDecision(decision) {
+    const id = document.getElementById("riItemId")?.value || "";
+    if (!id) throw new Error("Save the assessment before applying a decision.");
+
+    const decision_notes = document.getElementById("riDecisionNotes")?.value?.trim() || "";
+
+    return apiFetch(RI_ENDPOINTS.decision(companyId, id), {
+      method: "POST",
+      body: JSON.stringify({ decision, decision_notes })
     });
   }
 
@@ -17784,113 +17959,60 @@ async function renderRiskIndependenceScreen(me) {
     if (e.key === "Enter") loadRiskIndependence();
   });
 
-  document.getElementById("riNewItemBtn")?.addEventListener("click", clearRiskEditor);
-  document.getElementById("riClearBtn")?.addEventListener("click", clearRiskEditor);
+  document.getElementById("riNewItemBtn")?.addEventListener("click", () => clearRiskEditor(true));
+  document.getElementById("riClearBtn")?.addEventListener("click", () => clearRiskEditor(true));
 
   document.getElementById("riSaveBtn")?.addEventListener("click", async () => {
     try {
-      setActionMessage("", "");
-
-      const formState = {
-        id: document.getElementById("riItemId")?.value || "",
-        engagement_id: Number(document.getElementById("riEngagementId")?.value || 0),
-        acceptance_type: document.getElementById("riAcceptanceType")?.value || "acceptance",
-        status: document.getElementById("riStatus")?.value || "draft",
-        risk_level: document.getElementById("riRiskLevel")?.value || "normal",
-        independence_cleared: !!document.getElementById("riIndependenceCleared")?.checked,
-        conflicts_checked: !!document.getElementById("riConflictsChecked")?.checked,
-        competence_confirmed: !!document.getElementById("riCompetenceConfirmed")?.checked,
-        capacity_confirmed: !!document.getElementById("riCapacityConfirmed")?.checked,
-        client_risk_notes: document.getElementById("riClientRiskNotes")?.value?.trim() || "",
-        service_complexity_notes: document.getElementById("riServiceComplexityNotes")?.value?.trim() || "",
-        preconditions_notes: document.getElementById("riPreconditionsNotes")?.value?.trim() || "",
-        decision_notes: document.getElementById("riDecisionNotes")?.value?.trim() || "",
-        valid_from: document.getElementById("riValidFrom")?.value || null,
-        valid_to: document.getElementById("riValidTo")?.value || null
-      };
-
-      if (!formState.engagement_id) {
-        throw new Error("Engagement is required.");
-      }
-
-      const saved = await saveRiskIndependenceItem(companyId, formState);
+      setActionMessage("");
+      const saved = await saveAssessment();
       await loadRiskIndependence();
-      await loadRiskItemIntoEditor(saved.id);
+      if (saved?.id) await loadRiskItemIntoEditor(saved.id);
       setActionMessage("Assessment saved.", "success");
     } catch (err) {
       console.error(err);
-      setActionMessage(err.message || "Failed to save risk item", "error");
+      setActionMessage(err.message || "Failed to save assessment.", "error");
     }
   });
 
   document.getElementById("riApproveBtn")?.addEventListener("click", async () => {
-    const acceptanceId = document.getElementById("riItemId")?.value;
-    if (!acceptanceId) return setActionMessage("Save the item first before approving.", "error");
-
     try {
-      await submitRiskDecision(
-        companyId,
-        acceptanceId,
-        "approve",
-        document.getElementById("riDecisionNotes")?.value?.trim() || ""
-      );
+      await applyRiskDecision("approve");
       await loadRiskIndependence();
-      await loadRiskItemIntoEditor(acceptanceId);
       setActionMessage("Assessment approved.", "success");
     } catch (err) {
-      console.error(err);
-      setActionMessage(err.message || "Failed to approve", "error");
+      setActionMessage(err.message || "Failed to approve assessment.", "error");
     }
   });
 
   document.getElementById("riReturnBtn")?.addEventListener("click", async () => {
-    const acceptanceId = document.getElementById("riItemId")?.value;
-    if (!acceptanceId) return setActionMessage("Save the item first before returning.", "error");
-
     try {
-      await submitRiskDecision(
-        companyId,
-        acceptanceId,
-        "return",
-        document.getElementById("riDecisionNotes")?.value?.trim() || ""
-      );
+      await applyRiskDecision("return");
       await loadRiskIndependence();
-      await loadRiskItemIntoEditor(acceptanceId);
       setActionMessage("Assessment returned.", "success");
     } catch (err) {
-      console.error(err);
-      setActionMessage(err.message || "Failed to return", "error");
+      setActionMessage(err.message || "Failed to return assessment.", "error");
     }
   });
 
   document.getElementById("riDeclineBtn")?.addEventListener("click", async () => {
-    const acceptanceId = document.getElementById("riItemId")?.value;
-    if (!acceptanceId) return setActionMessage("Save the item first before declining.", "error");
-
     try {
-      await submitRiskDecision(
-        companyId,
-        acceptanceId,
-        "decline",
-        document.getElementById("riDecisionNotes")?.value?.trim() || ""
-      );
+      await applyRiskDecision("decline");
       await loadRiskIndependence();
-      await loadRiskItemIntoEditor(acceptanceId);
       setActionMessage("Assessment declined.", "success");
     } catch (err) {
-      console.error(err);
-      setActionMessage(err.message || "Failed to decline", "error");
+      setActionMessage(err.message || "Failed to decline assessment.", "error");
     }
   });
 
-  clearRiskEditor();
+  clearRiskEditor(false);
 
   try {
+    await loadRiskEngagements();
     await loadRiskIndependence();
   } catch (err) {
     console.error(err);
-    document.getElementById("riTableBody").innerHTML =
-      `<tr><td colspan="7" class="pr-table-state">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
+    setActionMessage(err.message || "Failed to load Risk & Independence.", "error");
   }
 }
 

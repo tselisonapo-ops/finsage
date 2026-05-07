@@ -8832,15 +8832,6 @@ class DatabaseService:
             assigned_partner_user_id INT NULL,
             decided_by_user_id INT NULL,
 
-            risk_level TEXT NOT NULL DEFAULT 'normal',          -- low, normal, high, critical
-            independence_cleared BOOLEAN NOT NULL DEFAULT FALSE,
-            conflicts_checked BOOLEAN NOT NULL DEFAULT FALSE,
-            competence_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
-            capacity_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
-
-            client_risk_notes TEXT NULL,
-            service_complexity_notes TEXT NULL,
-            preconditions_notes TEXT NULL,
             decision_notes TEXT NULL,
 
             valid_from DATE NULL,
@@ -8863,14 +8854,6 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS requested_by_user_id INT NULL,
             ADD COLUMN IF NOT EXISTS assigned_partner_user_id INT NULL,
             ADD COLUMN IF NOT EXISTS decided_by_user_id INT NULL,
-            ADD COLUMN IF NOT EXISTS risk_level TEXT,
-            ADD COLUMN IF NOT EXISTS independence_cleared BOOLEAN,
-            ADD COLUMN IF NOT EXISTS conflicts_checked BOOLEAN,
-            ADD COLUMN IF NOT EXISTS competence_confirmed BOOLEAN,
-            ADD COLUMN IF NOT EXISTS capacity_confirmed BOOLEAN,
-            ADD COLUMN IF NOT EXISTS client_risk_notes TEXT NULL,
-            ADD COLUMN IF NOT EXISTS service_complexity_notes TEXT NULL,
-            ADD COLUMN IF NOT EXISTS preconditions_notes TEXT NULL,
             ADD COLUMN IF NOT EXISTS decision_notes TEXT NULL,
             ADD COLUMN IF NOT EXISTS valid_from DATE NULL,
             ADD COLUMN IF NOT EXISTS valid_to DATE NULL,
@@ -8880,14 +8863,21 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
+        -- Legacy columns retained for backward compatibility.
+        -- Do not use these in new UI/backend logic.
+        ALTER TABLE {schema}.engagement_acceptance
+            ADD COLUMN IF NOT EXISTS risk_level TEXT NULL,
+            ADD COLUMN IF NOT EXISTS independence_cleared BOOLEAN NULL,
+            ADD COLUMN IF NOT EXISTS conflicts_checked BOOLEAN NULL,
+            ADD COLUMN IF NOT EXISTS competence_confirmed BOOLEAN NULL,
+            ADD COLUMN IF NOT EXISTS capacity_confirmed BOOLEAN NULL,
+            ADD COLUMN IF NOT EXISTS client_risk_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS service_complexity_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS preconditions_notes TEXT NULL;
+
         UPDATE {schema}.engagement_acceptance SET company_id = {company_id} WHERE company_id IS NULL;
         UPDATE {schema}.engagement_acceptance SET acceptance_type = 'acceptance' WHERE acceptance_type IS NULL OR BTRIM(acceptance_type) = '';
         UPDATE {schema}.engagement_acceptance SET status = 'draft' WHERE status IS NULL OR BTRIM(status) = '';
-        UPDATE {schema}.engagement_acceptance SET risk_level = 'normal' WHERE risk_level IS NULL OR BTRIM(risk_level) = '';
-        UPDATE {schema}.engagement_acceptance SET independence_cleared = FALSE WHERE independence_cleared IS NULL;
-        UPDATE {schema}.engagement_acceptance SET conflicts_checked = FALSE WHERE conflicts_checked IS NULL;
-        UPDATE {schema}.engagement_acceptance SET competence_confirmed = FALSE WHERE competence_confirmed IS NULL;
-        UPDATE {schema}.engagement_acceptance SET capacity_confirmed = FALSE WHERE capacity_confirmed IS NULL;
         UPDATE {schema}.engagement_acceptance SET is_active = TRUE WHERE is_active IS NULL;
         UPDATE {schema}.engagement_acceptance SET created_at = NOW() WHERE created_at IS NULL;
         UPDATE {schema}.engagement_acceptance SET updated_at = NOW() WHERE updated_at IS NULL;
@@ -8895,11 +8885,6 @@ class DatabaseService:
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN company_id SET DEFAULT {company_id};
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN acceptance_type SET DEFAULT 'acceptance';
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN status SET DEFAULT 'draft';
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN risk_level SET DEFAULT 'normal';
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN independence_cleared SET DEFAULT FALSE;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN conflicts_checked SET DEFAULT FALSE;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN competence_confirmed SET DEFAULT FALSE;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN capacity_confirmed SET DEFAULT FALSE;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN is_active SET DEFAULT TRUE;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN created_at SET DEFAULT NOW();
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN updated_at SET DEFAULT NOW();
@@ -8908,14 +8893,16 @@ class DatabaseService:
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN engagement_id SET NOT NULL;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN acceptance_type SET NOT NULL;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN status SET NOT NULL;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN risk_level SET NOT NULL;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN independence_cleared SET NOT NULL;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN conflicts_checked SET NOT NULL;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN competence_confirmed SET NOT NULL;
-        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN capacity_confirmed SET NOT NULL;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN is_active SET NOT NULL;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN created_at SET NOT NULL;
         ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN updated_at SET NOT NULL;
+
+        -- Convert old duplicated assessment columns to nullable legacy fields.
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN risk_level DROP NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN independence_cleared DROP NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN conflicts_checked DROP NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN competence_confirmed DROP NOT NULL;
+        ALTER TABLE {schema}.engagement_acceptance ALTER COLUMN capacity_confirmed DROP NOT NULL;
 
         DO $$
         BEGIN
@@ -9021,19 +9008,6 @@ class DatabaseService:
             IF NOT EXISTS (
                 SELECT 1 FROM pg_constraint c
                 JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_eng_acceptance_risk_chk' AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.engagement_acceptance
-                    ADD CONSTRAINT %I
-                    CHECK (risk_level IN (''low'', ''normal'', ''high'', ''critical''))',
-                    '{schema}', '{schema}_eng_acceptance_risk_chk'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
                 WHERE c.conname = '{schema}_eng_acceptance_validity_chk' AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
@@ -9063,6 +9037,258 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_eng_acceptance_decision_date_idx
             ON {schema}.engagement_acceptance(decision_date);
+            
+        -- ==================================================
+        -- RISK & INDEPENDENCE ASSESSMENTS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.risk_independence_assessments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            engagement_id INT NOT NULL,
+
+            assessment_type TEXT NOT NULL DEFAULT 'acceptance', -- acceptance, continuance, independence
+            status TEXT NOT NULL DEFAULT 'draft',               -- draft, submitted, under_review, approved, declined, returned
+            decision TEXT NULL,                                 -- approve, decline, return
+            decision_date TIMESTAMPTZ NULL,
+
+            requested_by_user_id INT NULL,
+            assigned_partner_user_id INT NULL,
+            reviewed_by_user_id INT NULL,
+
+            risk_level TEXT NOT NULL DEFAULT 'normal',          -- low, normal, high, critical
+            independence_cleared BOOLEAN NOT NULL DEFAULT FALSE,
+            conflicts_checked BOOLEAN NOT NULL DEFAULT FALSE,
+            competence_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+            capacity_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+
+            client_risk_notes TEXT NULL,
+            service_complexity_notes TEXT NULL,
+            preconditions_notes TEXT NULL,
+            decision_notes TEXT NULL,
+
+            valid_from DATE NULL,
+            valid_to DATE NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.risk_independence_assessments
+            ADD COLUMN IF NOT EXISTS company_id INT,
+            ADD COLUMN IF NOT EXISTS engagement_id INT,
+            ADD COLUMN IF NOT EXISTS assessment_type TEXT,
+            ADD COLUMN IF NOT EXISTS status TEXT,
+            ADD COLUMN IF NOT EXISTS decision TEXT NULL,
+            ADD COLUMN IF NOT EXISTS decision_date TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS requested_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS assigned_partner_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS reviewed_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS risk_level TEXT,
+            ADD COLUMN IF NOT EXISTS independence_cleared BOOLEAN,
+            ADD COLUMN IF NOT EXISTS conflicts_checked BOOLEAN,
+            ADD COLUMN IF NOT EXISTS competence_confirmed BOOLEAN,
+            ADD COLUMN IF NOT EXISTS capacity_confirmed BOOLEAN,
+            ADD COLUMN IF NOT EXISTS client_risk_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS service_complexity_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS preconditions_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS decision_notes TEXT NULL,
+            ADD COLUMN IF NOT EXISTS valid_from DATE NULL,
+            ADD COLUMN IF NOT EXISTS valid_to DATE NULL,
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN,
+            ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        UPDATE {schema}.risk_independence_assessments SET company_id = {company_id} WHERE company_id IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET assessment_type = 'acceptance' WHERE assessment_type IS NULL OR BTRIM(assessment_type) = '';
+        UPDATE {schema}.risk_independence_assessments SET status = 'draft' WHERE status IS NULL OR BTRIM(status) = '';
+        UPDATE {schema}.risk_independence_assessments SET risk_level = 'normal' WHERE risk_level IS NULL OR BTRIM(risk_level) = '';
+        UPDATE {schema}.risk_independence_assessments SET independence_cleared = FALSE WHERE independence_cleared IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET conflicts_checked = FALSE WHERE conflicts_checked IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET competence_confirmed = FALSE WHERE competence_confirmed IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET capacity_confirmed = FALSE WHERE capacity_confirmed IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET is_active = TRUE WHERE is_active IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET created_at = NOW() WHERE created_at IS NULL;
+        UPDATE {schema}.risk_independence_assessments SET updated_at = NOW() WHERE updated_at IS NULL;
+
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN company_id SET DEFAULT {company_id};
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN assessment_type SET DEFAULT 'acceptance';
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN status SET DEFAULT 'draft';
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN risk_level SET DEFAULT 'normal';
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN independence_cleared SET DEFAULT FALSE;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN conflicts_checked SET DEFAULT FALSE;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN competence_confirmed SET DEFAULT FALSE;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN capacity_confirmed SET DEFAULT FALSE;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN is_active SET DEFAULT TRUE;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN created_at SET DEFAULT NOW();
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN company_id SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN engagement_id SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN assessment_type SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN status SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN risk_level SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN independence_cleared SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN conflicts_checked SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN competence_confirmed SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN capacity_confirmed SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN is_active SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN created_at SET NOT NULL;
+        ALTER TABLE {schema}.risk_independence_assessments ALTER COLUMN updated_at SET NOT NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_engagement_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (engagement_id)
+                    REFERENCES %I.engagements(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ria_engagement_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_requested_by_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (requested_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ria_requested_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_partner_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (assigned_partner_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ria_partner_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_reviewed_by_fk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (reviewed_by_user_id)
+                    REFERENCES public.users(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ria_reviewed_by_fk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_type_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    CHECK (assessment_type IN (''acceptance'', ''continuance'', ''independence''))',
+                    '{schema}', '{schema}_ria_type_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_status_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    CHECK (status IN (''draft'', ''submitted'', ''under_review'', ''approved'', ''declined'', ''returned''))',
+                    '{schema}', '{schema}_ria_status_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_decision_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    CHECK (decision IS NULL OR decision IN (''approve'', ''decline'', ''return''))',
+                    '{schema}', '{schema}_ria_decision_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_risk_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    CHECK (risk_level IN (''low'', ''normal'', ''high'', ''critical''))',
+                    '{schema}', '{schema}_ria_risk_chk'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ria_validity_chk' AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.risk_independence_assessments
+                    ADD CONSTRAINT %I
+                    CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from)',
+                    '{schema}', '{schema}_ria_validity_chk'
+                );
+            END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ria_active_uq
+            ON {schema}.risk_independence_assessments(company_id, engagement_id, assessment_type)
+            WHERE is_active = TRUE;
+
+        CREATE INDEX IF NOT EXISTS {schema}_ria_company_idx
+            ON {schema}.risk_independence_assessments(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ria_engagement_idx
+            ON {schema}.risk_independence_assessments(engagement_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ria_status_idx
+            ON {schema}.risk_independence_assessments(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ria_risk_idx
+            ON {schema}.risk_independence_assessments(risk_level);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ria_partner_idx
+            ON {schema}.risk_independence_assessments(assigned_partner_user_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ria_decision_date_idx
+            ON {schema}.risk_independence_assessments(decision_date);\
             
         -- ==================================================
         -- ENGAGEMENT WORKING PAPERS
@@ -20124,12 +20350,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v53")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v54")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=53,
+                    migration_version=54,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -26386,7 +26612,6 @@ class DatabaseService:
                 accts.get("liability_noncurrent") or accts.get("liability_current"),
                 "Lease liability non-current",
             )
-            INT_EXP = resolve(accts.get("interest_exp"), "Lease interest expense")
             VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
             # 1) Lock the schedule period
@@ -26562,18 +26787,12 @@ class DatabaseService:
                 }
             ]
 
-            if alloc_interest > money("0"):
-                lines.append({
-                    "account_code": INT_EXP,
-                    "debit": float(alloc_interest),
-                    "credit": 0.0,
-                    "memo": "Lease interest",
-                })
-
-            if alloc_principal > money("0"):
+            # Interest is recognised by post_lease_month.
+            # The cash payment reduces the lease liability for the full net amount.
+            if alloc_net > money("0"):
                 lines.append({
                     "account_code": LIAB_NCUR or LIAB_CUR,
-                    "debit": float(alloc_principal),
+                    "debit": float(alloc_net),
                     "credit": 0.0,
                     "memo": "Reduce lease liability",
                 })
@@ -26725,6 +26944,100 @@ class DatabaseService:
         """
         return self.fetch_one(sql, params, cur=cur)
 
+    def sync_lease_payment_split_from_schedule(
+        self,
+        cur,
+        company_id: int,
+        *,
+        lease_id: int,
+        schedule_id: int,
+    ):
+        from decimal import Decimal, ROUND_HALF_UP
+
+        def money(x) -> Decimal:
+            return Decimal(str(x or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        schema = f"company_{int(company_id)}"
+
+        sched = self.fetch_one(
+            f"""
+            SELECT id, interest, principal, vat_portion
+            FROM {schema}.lease_schedule
+            WHERE company_id = %s
+            AND lease_id = %s
+            AND id = %s
+            LIMIT 1
+            """,
+            (int(company_id), int(lease_id), int(schedule_id)),
+            cur=cur,
+        )
+
+        if not sched:
+            return 0
+
+        rem_interest = money(sched.get("interest") or 0)
+        rem_principal = money(sched.get("principal") or 0)
+        rem_vat = money(sched.get("vat_portion") or 0)
+
+        payments = self.fetch_all(
+            f"""
+            SELECT id, amount_gross
+            FROM {schema}.lease_payments
+            WHERE company_id = %s
+            AND lease_id = %s
+            AND schedule_id = %s
+            AND COALESCE(status, '') IN ('draft', 'posted')
+            ORDER BY payment_date ASC, id ASC
+            """,
+            (int(company_id), int(lease_id), int(schedule_id)),
+            cur=cur,
+        ) or []
+
+        updated = 0
+
+        for p in payments:
+            alloc = money(p.get("amount_gross") or 0)
+
+            alloc_vat = min(alloc, rem_vat)
+            alloc -= alloc_vat
+            rem_vat -= alloc_vat
+
+            alloc_interest = min(alloc, rem_interest)
+            alloc -= alloc_interest
+            rem_interest -= alloc_interest
+
+            alloc_principal = min(alloc, rem_principal)
+            alloc -= alloc_principal
+            rem_principal -= alloc_principal
+
+            amount_net = money(alloc_interest + alloc_principal)
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.lease_payments
+                SET
+                    vat_amount = %s,
+                    interest_amount = %s,
+                    principal_amount = %s,
+                    amount_net = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    float(alloc_vat),
+                    float(alloc_interest),
+                    float(alloc_principal),
+                    float(amount_net),
+                    int(company_id),
+                    int(p["id"]),
+                ),
+            )
+
+            updated += cur.rowcount
+
+        return updated
+    
     def preview_lease_payment(
         self,
         *,
@@ -26786,7 +27099,6 @@ class DatabaseService:
 
         LIAB_CUR  = resolve(accts.get("liability_current"), "Lease liability current")
         LIAB_NCUR = resolve(accts.get("liability_noncurrent") or accts.get("liability_current"), "Lease liability non-current")
-        INT_EXP   = resolve(accts.get("interest_exp"), "Lease interest expense")
         VAT_INPUT = resolve(accts.get("vat_input"), "VAT input")
 
         # pick schedule period
@@ -26851,15 +27163,6 @@ class DatabaseService:
             "memo": f"{base_memo} [cash]",
         })
 
-        if alloc_interest > money("0"):
-            lines.append({
-                "account_code": INT_EXP,
-                "account_name": acct_name(INT_EXP),
-                "debit": float(alloc_interest),
-                "credit": 0.0,
-                "memo": f"{base_memo} [interest]",
-            })
-
         if alloc_vat > money("0"):
             lines.append({
                 "account_code": VAT_INPUT,
@@ -26869,13 +27172,15 @@ class DatabaseService:
                 "memo": f"{base_memo} [VAT input]",
             })
 
-        if alloc_principal > money("0"):
+        alloc_liability = money(alloc_interest + alloc_principal)
+
+        if alloc_liability > money("0"):
             lines.append({
                 "account_code": LIAB_CUR,
                 "account_name": acct_name(LIAB_CUR),
-                "debit": float(alloc_principal),
+                "debit": float(alloc_liability),
                 "credit": 0.0,
-                "memo": f"{base_memo} [principal]",
+                "memo": f"{base_memo} [lease liability settlement]",
             })
 
         # Ensure all signature params are "used" (also useful for UI/audit)
@@ -26909,7 +27214,6 @@ class DatabaseService:
 
             "posting": {
                 "bank_account_code": bank_code,
-                "interest_expense_code": INT_EXP,
                 "liability_current_code": LIAB_CUR,
                 "liability_noncurrent_code": LIAB_NCUR,
             },
@@ -55388,8 +55692,6 @@ class DatabaseService:
         row = cur.fetchone()
         return row["id"] if isinstance(row, dict) else row[0]
 
-
-
     def deactivate_engagement_escalation(
         self,
         cur,
@@ -57032,6 +57334,10 @@ class DatabaseService:
         )
         return cur.rowcount
     
+    # ============================================================
+    # Engagement Acceptance
+    # ============================================================
+
     def list_engagement_acceptance_items(
         self,
         cur,
@@ -57041,7 +57347,7 @@ class DatabaseService:
         customer_id: int = None,
         acceptance_type: str = "",
         status: str = "",
-        risk_level: str = "",
+        risk_level: str = "",  # kept for old callers; now resolved from latest R&I
         assigned_partner_user_id: int = None,
         q: str = "",
         active_only: bool = True,
@@ -57059,73 +57365,102 @@ class DatabaseService:
                 ea.status,
                 ea.decision,
                 ea.decision_date,
-                ea.risk_level,
-                ea.independence_cleared,
-                ea.conflicts_checked,
-                ea.competence_confirmed,
-                ea.capacity_confirmed,
-                ea.client_risk_notes,
-                ea.service_complexity_notes,
-                ea.preconditions_notes,
                 ea.decision_notes,
                 ea.valid_from,
                 ea.valid_to,
+                ea.requested_by_user_id,
                 ea.assigned_partner_user_id,
                 ea.decided_by_user_id,
+                ea.is_active,
                 ea.created_at,
                 ea.updated_at,
+
+                ria.id AS risk_assessment_id,
+                ria.status AS risk_assessment_status,
+                ria.risk_level,
+                ria.independence_cleared,
+                ria.conflicts_checked,
+                ria.competence_confirmed,
+                ria.capacity_confirmed,
+                ria.preconditions_notes AS risk_preconditions_notes,
+                ria.decision_notes AS risk_decision_notes,
 
                 e.engagement_code,
                 e.engagement_name,
                 e.engagement_type,
                 e.customer_id,
                 e.status AS engagement_status,
-
                 c.name AS customer_name,
 
-                TRIM(CONCAT(
-                    COALESCE(req.first_name, ''),
+                TRIM(CONCAT(COALESCE(req.first_name, ''),
                     CASE WHEN COALESCE(req.last_name, '') <> '' THEN ' ' || req.last_name ELSE '' END
                 )) AS requested_by_user_name,
 
-                TRIM(CONCAT(
-                    COALESCE(partner.first_name, ''),
+                TRIM(CONCAT(COALESCE(partner.first_name, ''),
                     CASE WHEN COALESCE(partner.last_name, '') <> '' THEN ' ' || partner.last_name ELSE '' END
                 )) AS assigned_partner_user_name,
 
-                TRIM(CONCAT(
-                    COALESCE(decider.first_name, ''),
+                TRIM(CONCAT(COALESCE(decider.first_name, ''),
                     CASE WHEN COALESCE(decider.last_name, '') <> '' THEN ' ' || decider.last_name ELSE '' END
                 )) AS decided_by_user_name
+
             FROM {schema}.engagement_acceptance ea
+
             JOIN {schema}.engagements e
-            ON e.id = ea.engagement_id
-            AND e.company_id = ea.company_id
+              ON e.id = ea.engagement_id
+             AND e.company_id = ea.company_id
+
             JOIN {schema}.customers c
-            ON c.id = e.customer_id
+              ON c.id = e.customer_id
+
+            LEFT JOIN LATERAL (
+                SELECT r.*
+                FROM {schema}.risk_independence_assessments r
+                WHERE r.company_id = ea.company_id
+                  AND r.engagement_id = ea.engagement_id
+                  AND r.is_active = TRUE
+                ORDER BY
+                    CASE r.status
+                        WHEN 'approved' THEN 1
+                        WHEN 'under_review' THEN 2
+                        WHEN 'submitted' THEN 3
+                        WHEN 'returned' THEN 4
+                        WHEN 'draft' THEN 5
+                        WHEN 'declined' THEN 6
+                        ELSE 99
+                    END,
+                    r.updated_at DESC,
+                    r.id DESC
+                LIMIT 1
+            ) ria ON TRUE
+
             LEFT JOIN public.users req
-            ON req.id = ea.requested_by_user_id
+              ON req.id = ea.requested_by_user_id
+
             LEFT JOIN public.users partner
-            ON partner.id = ea.assigned_partner_user_id
+              ON partner.id = ea.assigned_partner_user_id
+
             LEFT JOIN public.users decider
-            ON decider.id = ea.decided_by_user_id
+              ON decider.id = ea.decided_by_user_id
+
             WHERE ea.company_id = %s
-            AND (%s = FALSE OR ea.is_active = TRUE)
-            AND (%s IS NULL OR ea.engagement_id = %s)
-            AND (%s IS NULL OR e.customer_id = %s)
-            AND (%s = '' OR LOWER(ea.acceptance_type) = LOWER(%s))
-            AND (%s = '' OR LOWER(ea.status) = LOWER(%s))
-            AND (%s = '' OR LOWER(ea.risk_level) = LOWER(%s))
-            AND (%s IS NULL OR ea.assigned_partner_user_id = %s)
-            AND (
+              AND (%s = FALSE OR ea.is_active = TRUE)
+              AND (%s IS NULL OR ea.engagement_id = %s)
+              AND (%s IS NULL OR e.customer_id = %s)
+              AND (%s = '' OR LOWER(ea.acceptance_type) = LOWER(%s))
+              AND (%s = '' OR LOWER(ea.status) = LOWER(%s))
+              AND (%s = '' OR LOWER(COALESCE(ria.risk_level, 'normal')) = LOWER(%s))
+              AND (%s IS NULL OR ea.assigned_partner_user_id = %s)
+              AND (
                     %s = ''
                     OR COALESCE(e.engagement_name, '') ILIKE %s
                     OR COALESCE(e.engagement_code, '') ILIKE %s
                     OR COALESCE(c.name, '') ILIKE %s
-                    OR COALESCE(ea.client_risk_notes, '') ILIKE %s
-                    OR COALESCE(ea.service_complexity_notes, '') ILIKE %s
                     OR COALESCE(ea.decision_notes, '') ILIKE %s
-            )
+                    OR COALESCE(ria.client_risk_notes, '') ILIKE %s
+                    OR COALESCE(ria.service_complexity_notes, '') ILIKE %s
+                    OR COALESCE(ria.decision_notes, '') ILIKE %s
+              )
             ORDER BY
                 CASE ea.status
                     WHEN 'under_review' THEN 1
@@ -57141,7 +57476,7 @@ class DatabaseService:
             LIMIT %s OFFSET %s
         """
 
-        like = f"%{q.strip()}%"
+        like = f"%{(q or '').strip()}%"
         cur.execute(
             sql,
             (
@@ -57153,8 +57488,8 @@ class DatabaseService:
                 status.strip(), status.strip(),
                 risk_level.strip(), risk_level.strip(),
                 assigned_partner_user_id, assigned_partner_user_id,
-                q.strip(),
-                like, like, like, like, like, like,
+                (q or "").strip(),
+                like, like, like, like, like, like, like,
                 limit, offset,
             ),
         )
@@ -57170,9 +57505,23 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
-        sql = f"""
+        cur.execute(
+            f"""
             SELECT
                 ea.*,
+
+                ria.id AS risk_assessment_id,
+                ria.status AS risk_assessment_status,
+                ria.risk_level,
+                ria.independence_cleared,
+                ria.conflicts_checked,
+                ria.competence_confirmed,
+                ria.capacity_confirmed,
+                ria.client_risk_notes,
+                ria.service_complexity_notes,
+                ria.preconditions_notes,
+                ria.decision_notes AS risk_decision_notes,
+
                 e.engagement_code,
                 e.engagement_name,
                 e.engagement_type,
@@ -57180,268 +57529,61 @@ class DatabaseService:
                 e.status AS engagement_status,
                 c.name AS customer_name,
 
-                TRIM(CONCAT(
-                    COALESCE(req.first_name, ''),
+                TRIM(CONCAT(COALESCE(req.first_name, ''),
                     CASE WHEN COALESCE(req.last_name, '') <> '' THEN ' ' || req.last_name ELSE '' END
                 )) AS requested_by_user_name,
 
-                TRIM(CONCAT(
-                    COALESCE(partner.first_name, ''),
+                TRIM(CONCAT(COALESCE(partner.first_name, ''),
                     CASE WHEN COALESCE(partner.last_name, '') <> '' THEN ' ' || partner.last_name ELSE '' END
                 )) AS assigned_partner_user_name,
 
-                TRIM(CONCAT(
-                    COALESCE(decider.first_name, ''),
+                TRIM(CONCAT(COALESCE(decider.first_name, ''),
                     CASE WHEN COALESCE(decider.last_name, '') <> '' THEN ' ' || decider.last_name ELSE '' END
                 )) AS decided_by_user_name
+
             FROM {schema}.engagement_acceptance ea
+
             JOIN {schema}.engagements e
-            ON e.id = ea.engagement_id
-            AND e.company_id = ea.company_id
+              ON e.id = ea.engagement_id
+             AND e.company_id = ea.company_id
+
             JOIN {schema}.customers c
-            ON c.id = e.customer_id
-            LEFT JOIN public.users req
-            ON req.id = ea.requested_by_user_id
-            LEFT JOIN public.users partner
-            ON partner.id = ea.assigned_partner_user_id
-            LEFT JOIN public.users decider
-            ON decider.id = ea.decided_by_user_id
+              ON c.id = e.customer_id
+
+            LEFT JOIN LATERAL (
+                SELECT r.*
+                FROM {schema}.risk_independence_assessments r
+                WHERE r.company_id = ea.company_id
+                  AND r.engagement_id = ea.engagement_id
+                  AND r.is_active = TRUE
+                ORDER BY
+                    CASE r.status
+                        WHEN 'approved' THEN 1
+                        WHEN 'under_review' THEN 2
+                        WHEN 'submitted' THEN 3
+                        WHEN 'returned' THEN 4
+                        WHEN 'draft' THEN 5
+                        WHEN 'declined' THEN 6
+                        ELSE 99
+                    END,
+                    r.updated_at DESC,
+                    r.id DESC
+                LIMIT 1
+            ) ria ON TRUE
+
+            LEFT JOIN public.users req ON req.id = ea.requested_by_user_id
+            LEFT JOIN public.users partner ON partner.id = ea.assigned_partner_user_id
+            LEFT JOIN public.users decider ON decider.id = ea.decided_by_user_id
+
             WHERE ea.company_id = %s
-            AND ea.id = %s
+              AND ea.id = %s
             LIMIT 1
-        """
-        cur.execute(sql, (company_id, acceptance_id))
-        return cur.fetchone()
-
-
-    def create_engagement_acceptance(
-        self,
-        cur,
-        company_id: int,
-        *,
-        engagement_id: int,
-        acceptance_type: str,
-        assigned_partner_user_id: int = None,
-        risk_level: str = "normal",
-        independence_cleared: bool = False,
-        conflicts_checked: bool = False,
-        competence_confirmed: bool = False,
-        capacity_confirmed: bool = False,
-        client_risk_notes: str = "",
-        service_complexity_notes: str = "",
-        preconditions_notes: str = "",
-        decision_notes: str = "",
-        valid_from=None,
-        valid_to=None,
-        requested_by_user_id: int = None,
-        actor_user_id: int = None,
-    ):
-        schema = self.company_schema(company_id)
-
-        sql = f"""
-            INSERT INTO {schema}.engagement_acceptance (
-                company_id,
-                engagement_id,
-                acceptance_type,
-                status,
-                requested_by_user_id,
-                assigned_partner_user_id,
-                risk_level,
-                independence_cleared,
-                conflicts_checked,
-                competence_confirmed,
-                capacity_confirmed,
-                client_risk_notes,
-                service_complexity_notes,
-                preconditions_notes,
-                decision_notes,
-                valid_from,
-                valid_to,
-                created_by_user_id,
-                updated_by_user_id
-            )
-            VALUES (%s, %s, %s, 'draft', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-        cur.execute(
-            sql,
-            (
-                company_id,
-                engagement_id,
-                acceptance_type.strip().lower(),
-                requested_by_user_id,
-                assigned_partner_user_id,
-                risk_level.strip().lower() or "normal",
-                bool(independence_cleared),
-                bool(conflicts_checked),
-                bool(competence_confirmed),
-                bool(capacity_confirmed),
-                (client_risk_notes or "").strip(),
-                (service_complexity_notes or "").strip(),
-                (preconditions_notes or "").strip(),
-                (decision_notes or "").strip(),
-                valid_from,
-                valid_to,
-                actor_user_id,
-                actor_user_id,
-            ),
-        )
-        row = cur.fetchone()
-        return row["id"] if row else None
-
-
-    def update_engagement_acceptance(
-        self,
-        cur,
-        company_id: int,
-        *,
-        acceptance_id: int,
-        acceptance_type: str,
-        assigned_partner_user_id: int = None,
-        risk_level: str = "normal",
-        independence_cleared: bool = False,
-        conflicts_checked: bool = False,
-        competence_confirmed: bool = False,
-        capacity_confirmed: bool = False,
-        client_risk_notes: str = "",
-        service_complexity_notes: str = "",
-        preconditions_notes: str = "",
-        decision_notes: str = "",
-        valid_from=None,
-        valid_to=None,
-        actor_user_id: int = None,
-    ):
-        schema = self.company_schema(company_id)
-
-        sql = f"""
-            UPDATE {schema}.engagement_acceptance
-            SET
-                acceptance_type = %s,
-                assigned_partner_user_id = %s,
-                risk_level = %s,
-                independence_cleared = %s,
-                conflicts_checked = %s,
-                competence_confirmed = %s,
-                capacity_confirmed = %s,
-                client_risk_notes = %s,
-                service_complexity_notes = %s,
-                preconditions_notes = %s,
-                decision_notes = %s,
-                valid_from = %s,
-                valid_to = %s,
-                updated_by_user_id = %s,
-                updated_at = NOW()
-            WHERE company_id = %s
-            AND id = %s
-            AND is_active = TRUE
-            RETURNING id
-        """
-        cur.execute(
-            sql,
-            (
-                acceptance_type.strip().lower(),
-                assigned_partner_user_id,
-                risk_level.strip().lower() or "normal",
-                bool(independence_cleared),
-                bool(conflicts_checked),
-                bool(competence_confirmed),
-                bool(capacity_confirmed),
-                (client_risk_notes or "").strip(),
-                (service_complexity_notes or "").strip(),
-                (preconditions_notes or "").strip(),
-                (decision_notes or "").strip(),
-                valid_from,
-                valid_to,
-                actor_user_id,
-                company_id,
-                acceptance_id,
-            ),
+            """,
+            (company_id, acceptance_id),
         )
         return cur.fetchone()
 
 
-    def apply_engagement_acceptance_decision(
-        self,
-        cur,
-        company_id: int,
-        *,
-        acceptance_id: int,
-        action: str,
-        actor_user_id: int,
-        decision_notes: str = "",
-    ):
-        schema = self.company_schema(company_id)
-        action = (action or "").strip().lower()
-
-        if action == "submit":
-            sql = f"""
-                UPDATE {schema}.engagement_acceptance
-                SET
-                    status = 'submitted',
-                    decision = NULL,
-                    decision_date = NULL,
-                    decided_by_user_id = NULL,
-                    updated_by_user_id = %s,
-                    updated_at = NOW()
-                WHERE company_id = %s AND id = %s AND is_active = TRUE
-                RETURNING id
-            """
-            cur.execute(sql, (actor_user_id, company_id, acceptance_id))
-            return cur.fetchone()
-
-        if action == "approve":
-            sql = f"""
-                UPDATE {schema}.engagement_acceptance
-                SET
-                    status = 'approved',
-                    decision = 'approve',
-                    decision_date = NOW(),
-                    decided_by_user_id = %s,
-                    decision_notes = %s,
-                    updated_by_user_id = %s,
-                    updated_at = NOW()
-                WHERE company_id = %s AND id = %s AND is_active = TRUE
-                RETURNING id
-            """
-            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
-            return cur.fetchone()
-
-        if action == "decline":
-            sql = f"""
-                UPDATE {schema}.engagement_acceptance
-                SET
-                    status = 'declined',
-                    decision = 'decline',
-                    decision_date = NOW(),
-                    decided_by_user_id = %s,
-                    decision_notes = %s,
-                    updated_by_user_id = %s,
-                    updated_at = NOW()
-                WHERE company_id = %s AND id = %s AND is_active = TRUE
-                RETURNING id
-            """
-            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
-            return cur.fetchone()
-
-        if action == "return":
-            sql = f"""
-                UPDATE {schema}.engagement_acceptance
-                SET
-                    status = 'returned',
-                    decision = 'return',
-                    decision_date = NOW(),
-                    decided_by_user_id = %s,
-                    decision_notes = %s,
-                    updated_by_user_id = %s,
-                    updated_at = NOW()
-                WHERE company_id = %s AND id = %s AND is_active = TRUE
-                RETURNING id
-            """
-            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
-            return cur.fetchone()
-
-        raise ValueError("Unsupported action.")
-        
     def create_engagement_acceptance_item(
         self,
         cur,
@@ -57452,19 +57594,12 @@ class DatabaseService:
         status: str = "draft",
         requested_by_user_id: int = None,
         assigned_partner_user_id: int = None,
-        risk_level: str = "normal",
-        independence_cleared: bool = False,
-        conflicts_checked: bool = False,
-        competence_confirmed: bool = False,
-        capacity_confirmed: bool = False,
-        client_risk_notes: str = None,
-        service_complexity_notes: str = None,
-        preconditions_notes: str = None,
         decision_notes: str = None,
         valid_from=None,
         valid_to=None,
         created_by_user_id: int = None,
         updated_by_user_id: int = None,
+        **_legacy_ignored,
     ):
         schema = self.company_schema(company_id)
 
@@ -57477,23 +57612,13 @@ class DatabaseService:
                 status,
                 requested_by_user_id,
                 assigned_partner_user_id,
-                risk_level,
-                independence_cleared,
-                conflicts_checked,
-                competence_confirmed,
-                capacity_confirmed,
-                client_risk_notes,
-                service_complexity_notes,
-                preconditions_notes,
                 decision_notes,
                 valid_from,
                 valid_to,
                 created_by_user_id,
                 updated_by_user_id
             )
-            VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -57503,14 +57628,6 @@ class DatabaseService:
                 (status or "draft").strip().lower(),
                 requested_by_user_id,
                 assigned_partner_user_id,
-                (risk_level or "normal").strip().lower(),
-                bool(independence_cleared),
-                bool(conflicts_checked),
-                bool(competence_confirmed),
-                bool(capacity_confirmed),
-                client_risk_notes,
-                service_complexity_notes,
-                preconditions_notes,
                 decision_notes,
                 valid_from,
                 valid_to,
@@ -57531,18 +57648,11 @@ class DatabaseService:
         acceptance_type: str = None,
         status: str = None,
         assigned_partner_user_id: int = None,
-        risk_level: str = None,
-        independence_cleared: bool = None,
-        conflicts_checked: bool = None,
-        competence_confirmed: bool = None,
-        capacity_confirmed: bool = None,
-        client_risk_notes: str = None,
-        service_complexity_notes: str = None,
-        preconditions_notes: str = None,
         decision_notes: str = None,
         valid_from=None,
         valid_to=None,
         updated_by_user_id: int = None,
+        **_legacy_ignored,
     ):
         schema = self.company_schema(company_id)
 
@@ -57553,34 +57663,20 @@ class DatabaseService:
                 acceptance_type = COALESCE(%s, acceptance_type),
                 status = COALESCE(%s, status),
                 assigned_partner_user_id = COALESCE(%s, assigned_partner_user_id),
-                risk_level = COALESCE(%s, risk_level),
-                independence_cleared = COALESCE(%s, independence_cleared),
-                conflicts_checked = COALESCE(%s, conflicts_checked),
-                competence_confirmed = COALESCE(%s, competence_confirmed),
-                capacity_confirmed = COALESCE(%s, capacity_confirmed),
-                client_risk_notes = COALESCE(%s, client_risk_notes),
-                service_complexity_notes = COALESCE(%s, service_complexity_notes),
-                preconditions_notes = COALESCE(%s, preconditions_notes),
                 decision_notes = COALESCE(%s, decision_notes),
                 valid_from = COALESCE(%s, valid_from),
                 valid_to = COALESCE(%s, valid_to),
                 updated_by_user_id = COALESCE(%s, updated_by_user_id),
                 updated_at = NOW()
             WHERE company_id = %s
-            AND id = %s
+              AND id = %s
+              AND is_active = TRUE
+            RETURNING id
             """,
             (
                 acceptance_type.strip().lower() if isinstance(acceptance_type, str) else acceptance_type,
                 status.strip().lower() if isinstance(status, str) else status,
                 assigned_partner_user_id,
-                risk_level.strip().lower() if isinstance(risk_level, str) else risk_level,
-                independence_cleared,
-                conflicts_checked,
-                competence_confirmed,
-                capacity_confirmed,
-                client_risk_notes,
-                service_complexity_notes,
-                preconditions_notes,
                 decision_notes,
                 valid_from,
                 valid_to,
@@ -57626,7 +57722,9 @@ class DatabaseService:
                 updated_by_user_id = %s,
                 updated_at = NOW()
             WHERE company_id = %s
-            AND id = %s
+              AND id = %s
+              AND is_active = TRUE
+            RETURNING id
             """,
             (
                 normalized,
@@ -57640,6 +57738,10 @@ class DatabaseService:
         )
         return cur.rowcount
 
+
+    # ============================================================
+    # Risk & Independence Assessments
+    # ============================================================
 
     def get_risk_independence_summary(
         self,
@@ -57655,33 +57757,33 @@ class DatabaseService:
         cur.execute(
             f"""
             SELECT
-                COUNT(*) FILTER (WHERE (%s = FALSE OR ea.is_active = TRUE)) AS total_items,
+                COUNT(*) FILTER (WHERE (%s = FALSE OR ria.is_active = TRUE)) AS total_items,
                 COUNT(*) FILTER (
-                    WHERE (%s = FALSE OR ea.is_active = TRUE)
-                    AND ea.status IN ('submitted', 'under_review')
+                    WHERE (%s = FALSE OR ria.is_active = TRUE)
+                    AND ria.status IN ('submitted', 'under_review')
                 ) AS open_reviews,
                 COUNT(*) FILTER (
-                    WHERE (%s = FALSE OR ea.is_active = TRUE)
-                    AND ea.risk_level IN ('high', 'critical')
+                    WHERE (%s = FALSE OR ria.is_active = TRUE)
+                    AND ria.risk_level IN ('high', 'critical')
                 ) AS high_risk_items,
                 COUNT(*) FILTER (
-                    WHERE (%s = FALSE OR ea.is_active = TRUE)
+                    WHERE (%s = FALSE OR ria.is_active = TRUE)
                     AND (
-                            COALESCE(ea.independence_cleared, FALSE) = FALSE
-                        OR COALESCE(ea.conflicts_checked, FALSE) = FALSE
+                        COALESCE(ria.independence_cleared, FALSE) = FALSE
+                        OR COALESCE(ria.conflicts_checked, FALSE) = FALSE
                     )
                 ) AS independence_gaps,
                 COUNT(*) FILTER (
-                    WHERE (%s = FALSE OR ea.is_active = TRUE)
-                    AND COALESCE(BTRIM(ea.preconditions_notes), '') <> ''
+                    WHERE (%s = FALSE OR ria.is_active = TRUE)
+                    AND COALESCE(BTRIM(ria.preconditions_notes), '') <> ''
                 ) AS items_with_conditions
-            FROM {schema}.engagement_acceptance ea
+            FROM {schema}.risk_independence_assessments ria
             JOIN {schema}.engagements e
-            ON e.id = ea.engagement_id
-            AND e.company_id = ea.company_id
-            WHERE ea.company_id = %s
-            AND (%s IS NULL OR ea.engagement_id = %s)
-            AND (%s IS NULL OR e.customer_id = %s)
+              ON e.id = ria.engagement_id
+             AND e.company_id = ria.company_id
+            WHERE ria.company_id = %s
+              AND (%s IS NULL OR ria.engagement_id = %s)
+              AND (%s IS NULL OR e.customer_id = %s)
             """,
             (
                 active_only,
@@ -57711,21 +57813,341 @@ class DatabaseService:
         limit: int = 100,
         offset: int = 0,
     ):
-        return self.list_engagement_acceptance_items(
-            cur,
-            company_id,
-            engagement_id=engagement_id,
-            customer_id=customer_id,
-            acceptance_type="",
-            status=status,
-            risk_level=risk_level,
-            assigned_partner_user_id=None,
-            q=q,
-            active_only=active_only,
-            limit=limit,
-            offset=offset,
-        )
+        schema = self.company_schema(company_id)
 
+        sql = f"""
+            SELECT
+                ria.*,
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.customer_id,
+                e.status AS engagement_status,
+                c.name AS customer_name,
+
+                TRIM(CONCAT(COALESCE(partner.first_name, ''),
+                    CASE WHEN COALESCE(partner.last_name, '') <> '' THEN ' ' || partner.last_name ELSE '' END
+                )) AS assigned_partner_user_name,
+
+                TRIM(CONCAT(COALESCE(reviewer.first_name, ''),
+                    CASE WHEN COALESCE(reviewer.last_name, '') <> '' THEN ' ' || reviewer.last_name ELSE '' END
+                )) AS reviewed_by_user_name
+
+            FROM {schema}.risk_independence_assessments ria
+
+            JOIN {schema}.engagements e
+              ON e.id = ria.engagement_id
+             AND e.company_id = ria.company_id
+
+            JOIN {schema}.customers c
+              ON c.id = e.customer_id
+
+            LEFT JOIN public.users partner
+              ON partner.id = ria.assigned_partner_user_id
+
+            LEFT JOIN public.users reviewer
+              ON reviewer.id = ria.reviewed_by_user_id
+
+            WHERE ria.company_id = %s
+              AND (%s = FALSE OR ria.is_active = TRUE)
+              AND (%s IS NULL OR ria.engagement_id = %s)
+              AND (%s IS NULL OR e.customer_id = %s)
+              AND (%s = '' OR LOWER(ria.status) = LOWER(%s))
+              AND (%s = '' OR LOWER(ria.risk_level) = LOWER(%s))
+              AND (
+                    %s = ''
+                    OR COALESCE(e.engagement_name, '') ILIKE %s
+                    OR COALESCE(e.engagement_code, '') ILIKE %s
+                    OR COALESCE(c.name, '') ILIKE %s
+                    OR COALESCE(ria.client_risk_notes, '') ILIKE %s
+                    OR COALESCE(ria.service_complexity_notes, '') ILIKE %s
+                    OR COALESCE(ria.decision_notes, '') ILIKE %s
+              )
+            ORDER BY
+                CASE ria.status
+                    WHEN 'under_review' THEN 1
+                    WHEN 'submitted' THEN 2
+                    WHEN 'returned' THEN 3
+                    WHEN 'draft' THEN 4
+                    WHEN 'approved' THEN 5
+                    WHEN 'declined' THEN 6
+                    ELSE 99
+                END,
+                ria.updated_at DESC,
+                ria.id DESC
+            LIMIT %s OFFSET %s
+        """
+
+        like = f"%{(q or '').strip()}%"
+        cur.execute(
+            sql,
+            (
+                company_id,
+                active_only,
+                engagement_id, engagement_id,
+                customer_id, customer_id,
+                status.strip(), status.strip(),
+                risk_level.strip(), risk_level.strip(),
+                (q or "").strip(),
+                like, like, like, like, like, like,
+                limit, offset,
+            ),
+        )
+        return cur.fetchall()
+
+
+    def get_risk_independence_assessment_detail(
+        self,
+        cur,
+        company_id: int,
+        *,
+        assessment_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT
+                ria.*,
+                e.engagement_code,
+                e.engagement_name,
+                e.engagement_type,
+                e.customer_id,
+                e.status AS engagement_status,
+                c.name AS customer_name,
+
+                TRIM(CONCAT(COALESCE(partner.first_name, ''),
+                    CASE WHEN COALESCE(partner.last_name, '') <> '' THEN ' ' || partner.last_name ELSE '' END
+                )) AS assigned_partner_user_name,
+
+                TRIM(CONCAT(COALESCE(reviewer.first_name, ''),
+                    CASE WHEN COALESCE(reviewer.last_name, '') <> '' THEN ' ' || reviewer.last_name ELSE '' END
+                )) AS reviewed_by_user_name
+
+            FROM {schema}.risk_independence_assessments ria
+
+            JOIN {schema}.engagements e
+              ON e.id = ria.engagement_id
+             AND e.company_id = ria.company_id
+
+            JOIN {schema}.customers c
+              ON c.id = e.customer_id
+
+            LEFT JOIN public.users partner
+              ON partner.id = ria.assigned_partner_user_id
+
+            LEFT JOIN public.users reviewer
+              ON reviewer.id = ria.reviewed_by_user_id
+
+            WHERE ria.company_id = %s
+              AND ria.id = %s
+            LIMIT 1
+            """,
+            (company_id, assessment_id),
+        )
+        return cur.fetchone()
+
+
+    def create_risk_independence_assessment(
+        self,
+        cur,
+        company_id: int,
+        *,
+        engagement_id: int,
+        assessment_type: str = "acceptance",
+        status: str = "draft",
+        assigned_partner_user_id: int = None,
+        risk_level: str = "normal",
+        independence_cleared: bool = False,
+        conflicts_checked: bool = False,
+        competence_confirmed: bool = False,
+        capacity_confirmed: bool = False,
+        client_risk_notes: str = None,
+        service_complexity_notes: str = None,
+        preconditions_notes: str = None,
+        decision_notes: str = None,
+        valid_from=None,
+        valid_to=None,
+        requested_by_user_id: int = None,
+        created_by_user_id: int = None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.risk_independence_assessments (
+                company_id,
+                engagement_id,
+                assessment_type,
+                status,
+                requested_by_user_id,
+                assigned_partner_user_id,
+                risk_level,
+                independence_cleared,
+                conflicts_checked,
+                competence_confirmed,
+                capacity_confirmed,
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                company_id,
+                engagement_id,
+                (assessment_type or "acceptance").strip().lower(),
+                (status or "draft").strip().lower(),
+                requested_by_user_id,
+                assigned_partner_user_id,
+                (risk_level or "normal").strip().lower(),
+                bool(independence_cleared),
+                bool(conflicts_checked),
+                bool(competence_confirmed),
+                bool(capacity_confirmed),
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                created_by_user_id,
+                updated_by_user_id,
+            ),
+        )
+        row = cur.fetchone()
+        return row["id"] if row else None
+
+
+    def update_risk_independence_assessment(
+        self,
+        cur,
+        company_id: int,
+        *,
+        assessment_id: int,
+        assessment_type: str = None,
+        status: str = None,
+        assigned_partner_user_id: int = None,
+        risk_level: str = None,
+        independence_cleared: bool = None,
+        conflicts_checked: bool = None,
+        competence_confirmed: bool = None,
+        capacity_confirmed: bool = None,
+        client_risk_notes: str = None,
+        service_complexity_notes: str = None,
+        preconditions_notes: str = None,
+        decision_notes: str = None,
+        valid_from=None,
+        valid_to=None,
+        updated_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.risk_independence_assessments
+            SET
+                assessment_type = COALESCE(%s, assessment_type),
+                status = COALESCE(%s, status),
+                assigned_partner_user_id = COALESCE(%s, assigned_partner_user_id),
+                risk_level = COALESCE(%s, risk_level),
+                independence_cleared = COALESCE(%s, independence_cleared),
+                conflicts_checked = COALESCE(%s, conflicts_checked),
+                competence_confirmed = COALESCE(%s, competence_confirmed),
+                capacity_confirmed = COALESCE(%s, capacity_confirmed),
+                client_risk_notes = COALESCE(%s, client_risk_notes),
+                service_complexity_notes = COALESCE(%s, service_complexity_notes),
+                preconditions_notes = COALESCE(%s, preconditions_notes),
+                decision_notes = COALESCE(%s, decision_notes),
+                valid_from = COALESCE(%s, valid_from),
+                valid_to = COALESCE(%s, valid_to),
+                updated_by_user_id = COALESCE(%s, updated_by_user_id),
+                updated_at = NOW()
+            WHERE company_id = %s
+              AND id = %s
+              AND is_active = TRUE
+            RETURNING id
+            """,
+            (
+                assessment_type.strip().lower() if isinstance(assessment_type, str) else assessment_type,
+                status.strip().lower() if isinstance(status, str) else status,
+                assigned_partner_user_id,
+                risk_level.strip().lower() if isinstance(risk_level, str) else risk_level,
+                independence_cleared,
+                conflicts_checked,
+                competence_confirmed,
+                capacity_confirmed,
+                client_risk_notes,
+                service_complexity_notes,
+                preconditions_notes,
+                decision_notes,
+                valid_from,
+                valid_to,
+                updated_by_user_id,
+                company_id,
+                assessment_id,
+            ),
+        )
+        return cur.rowcount
+
+
+    def decide_risk_independence_assessment(
+        self,
+        cur,
+        company_id: int,
+        *,
+        assessment_id: int,
+        decision: str,
+        decision_notes: str = None,
+        reviewed_by_user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        normalized = (decision or "").strip().lower()
+        if normalized not in ("approve", "decline", "return"):
+            raise ValueError("Invalid decision. Use approve, decline, or return.")
+
+        mapped_status = {
+            "approve": "approved",
+            "decline": "declined",
+            "return": "returned",
+        }[normalized]
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.risk_independence_assessments
+            SET
+                decision = %s,
+                status = %s,
+                decision_date = NOW(),
+                decision_notes = COALESCE(%s, decision_notes),
+                reviewed_by_user_id = %s,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+              AND id = %s
+              AND is_active = TRUE
+            RETURNING id
+            """,
+            (
+                normalized,
+                mapped_status,
+                decision_notes,
+                reviewed_by_user_id,
+                reviewed_by_user_id,
+                company_id,
+                assessment_id,
+            ),
+        )
+        return cur.rowcount
+    
     def create_engagement_override_log_item(
         self,
         cur,

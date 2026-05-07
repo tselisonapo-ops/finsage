@@ -1389,6 +1389,13 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
                 (journal_id, schedule_id),
             )
 
+            db_service.sync_lease_payment_split_from_schedule(
+                cur,
+                int(company_id),
+                lease_id=int(lease_id),
+                schedule_id=int(schedule_id),
+            )
+
             if cur.rowcount == 0:
                 raise ValueError("Failed to mark schedule as posted")
                 
