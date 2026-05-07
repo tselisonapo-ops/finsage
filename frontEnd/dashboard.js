@@ -6105,8 +6105,7 @@ const SCREEN_POLICY = {
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
   banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
   "bank-recon": { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
-  loans: { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
-  
+  loans: { auth: "private", minRole: "assistant", permission: "can_post_journals" },  
   // Accounting views
   ledger: { auth: "private", minRole: "assistant", permission: "can_view_reports" },
   trial:  { auth: "private", minRole: "assistant", permission: "can_view_reports" },
