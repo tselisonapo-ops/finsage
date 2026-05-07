@@ -3300,6 +3300,7 @@ class DatabaseService:
             "can_manage_fixed_assets": False,
             "can_approve": False,
             "can_view_control_room": False,
+            "can_view_ar_ap_controls": False,
 
             "can_manage_users": False,
             "can_manage_company_setup": False,
@@ -3332,6 +3333,7 @@ class DatabaseService:
             perms["can_manage_ap"] = True
             perms["can_post_journals"] = True
             perms["can_manage_loans"] = True  # ✅ add
+            perms["can_view_ar_ap_controls"] = True
             perms["can_prepare_financials"] = True
             perms["can_manage_fixed_assets"] = True
             perms["can_view_engagements"] = True
@@ -3349,6 +3351,7 @@ class DatabaseService:
             perms["can_manage_company_setup"] = True
             perms["can_edit_tax_settings"] = True
             perms["can_view_control_room"] = True
+            perms["can_view_ar_ap_controls"] = True
             perms["can_view_engagements"] = True
             perms["can_manage_engagements"] = True
             perms["can_view_statement_interpretation"] = True
@@ -3368,6 +3371,7 @@ class DatabaseService:
             perms["can_edit_tax_settings"] = True
             perms["can_lock_periods"] = True
             perms["can_view_control_room"] = True
+            perms["can_view_ar_ap_controls"] = True
             perms["can_view_engagements"] = True
             perms["can_manage_engagements"] = True
             perms["can_view_statement_interpretation"] = True
@@ -3395,6 +3399,7 @@ class DatabaseService:
             "can_manage_fixed_assets",
             "can_approve",
             "can_view_control_room",
+            "can_view_ar_ap_controls",
             "can_manage_users",
             "can_manage_company_setup",
             "can_edit_tax_settings",
@@ -41901,7 +41906,7 @@ class DatabaseService:
                     """,
                     (posted_journal_id, reversal_journal_id),
                 )
-                
+
                 if reversal_journal_id <= 0:
                     raise ValueError("Failed to create reversal journal")
 

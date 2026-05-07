@@ -4837,11 +4837,11 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         icon: "🧾",
         isParent: true,
         minRole: "assistant",
-        permission: "can_access_delegated_posting_workspace",
+        permission: "can_view_ar_ap_controls",
         children: [
-          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_view_ar_ap_controls" },
         ],
       },
       {
@@ -4849,11 +4849,11 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         icon: "🏦",
         isParent: true,
         minRole: "assistant",
-        permission: "can_access_delegated_posting_workspace",
+        permission: "can_view_ar_ap_controls",
         children: [
-          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_view_ar_ap_controls" },
         ],
       },
         { name: "Credit Control", screen: "cust-approvals", icon: "🧑‍⚖️", minRole: "credit controller" },
@@ -6104,16 +6104,16 @@ const SCREEN_POLICY = {
   "revenue-setup": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
 
   // AR Control Room screens — delegated workspace only
-  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
 
   // AP (later)
   ap: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   // AP Control Room screens — delegated workspace only
-  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
-  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_access_delegated_posting_workspace" },
+  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
     // Banking
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
   banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
