@@ -9605,8 +9605,10 @@ function buildReviewQueueQueryFilters() {
 }
 
 async function fetchReviewQueueSummary(me) {
-  const companyId = me?.company_id;
+  const companyId = me?.company_id || window.currentUser?.company_id;
   const engagementId = rqGetActiveEngagementId();
+
+  console.log("fetchReviewQueueSummary", { companyId, engagementId });
 
   if (!companyId || !engagementId) {
     PR_REVIEW_QUEUE_CACHE.summary = null;
@@ -9614,8 +9616,18 @@ async function fetchReviewQueueSummary(me) {
   }
 
   const url = ENDPOINTS.reviewQueue.summary(companyId, engagementId);
+  console.log("Review Queue summary URL =", url);
+
   const json = await apiFetch(url);
-  const row = json?.row || null;
+  console.log("Review Queue summary response =", json);
+
+  const row =
+    json?.row ||
+    json?.data?.row ||
+    json?.data ||
+    json ||
+    null;
+
   PR_REVIEW_QUEUE_CACHE.summary = row;
   return row;
 }
@@ -10312,16 +10324,6 @@ async function bindReviewQueueEvents(me) {
     }
   });
 }
-
-async function renderReviewQueueScreen(me) {
-  const screen = document.getElementById("screen-review-queue");
-  if (!screen) return;
-
-  await bindReviewQueueEvents(me);
-  syncReviewQueueFiltersToUi();
-  await loadReviewQueueScreenData(me, { force: false });
-}
-
 
 function prEsc(value) {
   return String(value ?? "")
@@ -19339,67 +19341,30 @@ async function renderEngagementWorkingPapersSnapshot(me) {
 }
 
 async function renderReviewQueueScreen(me) {
-  const container = document.getElementById("pr-main-content");
-  if (!container) return;
+  const screen = document.getElementById("screen-review-queue");
+  if (!screen) return;
 
-  container.innerHTML = `<div class="p-6">Loading review queue...</div>`;
+  const body = document.getElementById("rqTableBody");
+  if (body) {
+    body.innerHTML = getReviewQueueLoadingRowHtml();
+  }
 
   try {
-    const snapshot = await loadEngagementWorkflowSnapshot();
-    const rows = snapshot.reviewQueue || [];
-
-    window.__PR_REVIEW_QUEUE_STATE__ = { rows };
-
-    container.innerHTML = `
-      <div class="p-6 space-y-6">
-        ${renderEngagementReadinessCard(snapshot.readiness)}
-
-        <div class="card p-5">
-          <div class="panel-title">Review Queue</div>
-
-          <div class="mt-4 grid gap-3">
-            ${
-              rows.length
-                ? rows.map((r) => `
-                  <div class="border rounded-xl p-4 flex justify-between">
-                    <div>
-                      <div class="font-semibold">${r.queue_type}</div>
-                      <div class="text-sm text-slate-500">Status: ${r.status}</div>
-                    </div>
-
-                    <div class="flex gap-2">
-                      <button data-rq-action="approve" data-rq-id="${r.source_id}" data-rq-type="${r.queue_type}" class="px-2 py-1 text-xs border rounded bg-green-50">Approve</button>
-                      <button data-rq-action="return" data-rq-id="${r.source_id}" data-rq-type="${r.queue_type}" class="px-2 py-1 text-xs border rounded bg-red-50">Return</button>
-                      <button data-rq-action="block" data-rq-id="${r.source_id}" data-rq-type="${r.queue_type}" class="px-2 py-1 text-xs border rounded">Block</button>
-                    </div>
-                  </div>
-                `).join("")
-                : `<div class="text-sm text-slate-500">No review items.</div>`
-            }
-          </div>
-        </div>
-      </div>
-    `;
-
-    document.querySelectorAll("[data-rq-action]").forEach(btn => {
-      btn.onclick = async () => {
-        const action = btn.dataset.rqAction;
-        const id = btn.dataset.rqId;
-        const type = btn.dataset.rqType;
-
-        const row = rows.find(r =>
-          String(r.source_id) === String(id) &&
-          String(r.queue_type) === String(type)
-        );
-        if (!row) return;
-
-        await resolveReviewQueueAction(row, action);
-        renderReviewQueueScreen(me);
-      };
-    });
-
+    await bindReviewQueueEvents(me);
+    syncReviewQueueFiltersToUi();
+    await loadReviewQueueScreenData(me, { force: true });
   } catch (err) {
-    container.innerHTML = `<div class="p-6 text-red-600">${err.message}</div>`;
+    console.error("renderReviewQueueScreen failed:", err);
+
+    if (body) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="9" class="rq-empty">
+            ${escapeHtml(err?.message || "Failed to load review queue.")}
+          </td>
+        </tr>
+      `;
+    }
   }
 }
 
@@ -20828,6 +20793,18 @@ function applyDashboardData(me, cache = {}) {
     portfolioSummary.service_trend_percent ?? 0
   );
 
+  const workflowHost = document.getElementById("dashboardWorkflowReadinessHost");
+
+  if (workflowHost) {
+    workflowHost.innerHTML = data?.workflowSnapshot?.readiness
+      ? renderEngagementReadinessCard(data.workflowSnapshot.readiness)
+      : `
+        <div class="card p-5">
+          <div class="panel-title">Engagement readiness</div>
+          <div class="panel-subtitle mt-1">Select an engagement to view workflow readiness.</div>
+        </div>
+      `;
+  }
   bindText("engagement_scope.permissions_badge", permissionBadge(me?.role));
 
   renderDashboardWorkQueue(engagements);
@@ -20937,6 +20914,20 @@ function resetDashboardCache() {
   };
 }
 
+async function loadDashboardWorkflowSnapshotSafe() {
+  const engagementId =
+    Number(window.__PR_CONTEXT__?.engagementId || window.getPractitionerActiveEngagementId?.() || 0) || 0;
+
+  if (!engagementId) return null;
+
+  try {
+    return await loadEngagementWorkflowSnapshot();
+  } catch (err) {
+    console.warn("Dashboard workflow snapshot failed:", err);
+    return null;
+  }
+}
+
 async function renderDashboardScreen(me, { force = false } = {}) {
   window.__PR_ME__ = me;
 
@@ -21026,6 +21017,12 @@ async function renderDashboardScreen(me, { force = false } = {}) {
       requests.push(Promise.resolve({ row: {} }));
     }
 
+    if (engagementId) {
+      requests.push(loadDashboardWorkflowSnapshotSafe());
+    } else {
+      requests.push(Promise.resolve(null));
+    }
+
     const [
       engagementsRes,
       portfolioSummaryRes,
@@ -21033,8 +21030,9 @@ async function renderDashboardScreen(me, { force = false } = {}) {
       actionSummaryRes,
       actionQueueRes,
       capacitySummaryRes,
-      riskSummaryRes
-    ] = await Promise.all(requests);
+      riskSummaryRes,
+      workflowSnapshotRes
+    ] = await Promise.all(requests); await Promise.all(requests);
 
     PR_DASHBOARD_CACHE = {
       loaded: true,
@@ -21044,7 +21042,8 @@ async function renderDashboardScreen(me, { force = false } = {}) {
       actionSummary: actionSummaryRes?.row || {},
       actionQueue: actionQueueRes?.rows || [],
       capacitySummary: capacitySummaryRes?.row || {},
-      riskSummary: riskSummaryRes?.row || {}
+      riskSummary: riskSummaryRes?.row || {},
+      workflowSnapshot: workflowSnapshotRes || null
     };
 
     applyDashboardData(me, PR_DASHBOARD_CACHE);
