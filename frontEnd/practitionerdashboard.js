@@ -16891,7 +16891,6 @@ async function renderEngagementAcceptanceScreen(me) {
   `;
 
   bindEngagementAcceptanceScreen(me);
-  bindAcceptanceAssessmentModalEvents(me);
   await loadEngagementAcceptanceRows(me);
 
 }
