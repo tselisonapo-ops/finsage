@@ -4742,11 +4742,11 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       icon: "🏦",
       isParent: true,
       minRole: "clerk",
-      permission: "can_manage_banking",
+      permissionAny: ["can_manage_banking", "can_post_journals"],
       children: [
         { name: "Bank Setup", screen: "bank-setup", icon: "⚙️", minRole: "clerk", permission: "can_manage_banking" },
-        { name: "Cashbook", screen: "banking", icon: "💳", minRole: "assistant", permission: "can_manage_banking" },
-        { name: "Bank Reconciliation", screen: "bank-recon", icon: "🧮", minRole: "assistant", permission: "can_manage_banking" },
+        { name: "Cashbook", screen: "banking", icon: "💳", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
+        { name: "Bank Reconciliation", screen: "bank-recon", icon: "🧮", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
       ],
     },
 
@@ -4830,18 +4830,18 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       icon: "🛡️",
       isParent: true,
       minRole: "assistant",
-      permission: "can_view_control_room",
+      permission: ["can_view_control_room", "can_view_ar_ap_controls"],
       children: [
       {
         name: "AR Controls",
         icon: "🧾",
         isParent: true,
         minRole: "assistant",
-        permission: "can_view_control_room",
+        permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
         children: [
-          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
-          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
-          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_view_control_room" },
+          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
         ],
       },
       {
@@ -4849,11 +4849,11 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         icon: "🏦",
         isParent: true,
         minRole: "assistant",
-        permission: "can_view_control_room",
+        permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
         children: [
-          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
-          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
-          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_view_control_room" },
+          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
         ],
       },
         { name: "Credit Control", screen: "cust-approvals", icon: "🧑‍⚖️", minRole: "credit controller" },
@@ -5951,10 +5951,19 @@ window.hasPermission = function hasPermission(key) {
 function canSeeMenuItem(item) {
   if (!item) return false;
 
-  // ✅ Senior Accountant sees all menu items
   if (window.isSeniorFullAccess?.()) return true;
 
   if (item.feature && !hasFeature(item.feature)) return false;
+
+  const perms = window.currentUser?.permissions || {};
+
+  if (Array.isArray(item.permissionAny) && item.permissionAny.length) {
+    return item.permissionAny.some((p) => perms[p] === true);
+  }
+
+  if (Array.isArray(item.permission) && item.permission.length) {
+    return item.permission.some((p) => perms[p] === true);
+  }
 
   if (item.permission) {
     return window.hasPermission?.(item.permission) === true;
@@ -5966,6 +5975,7 @@ function canSeeMenuItem(item) {
 
   return true;
 }
+
 window.canSeeMenuItem = canSeeMenuItem;
 
 function canOpenScreen(name) {
@@ -6297,23 +6307,6 @@ function hasFeature(flag) {
   if (flag in f) return !!f[flag];
   return true;
 }
-
-function canSeeMenuItem(item) {
-  if (!item) return false;
-
-  if (item.feature && !hasFeature(item.feature)) return false;
-
-  if (item.permission) {
-    return window.hasPermission?.(item.permission) === true;
-  }
-
-  if (item.minRole) {
-    return window.canSeeRole?.(item.minRole) === true;
-  }
-
-  return true;
-}
-window.canSeeMenuItem = canSeeMenuItem;
 
 function getStoredUser() {
   try {
