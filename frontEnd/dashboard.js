@@ -4077,6 +4077,61 @@ window.setCompanyCurrency = function setCompanyCurrency(code) {
   window.CURRENT_CURRENCY = c || null;
 };
 
+function bindSmartHeader() {
+  const header = document.getElementById("appHeader");
+  const hoverZone = document.getElementById("headerHoverZone");
+  const pinBtn = document.getElementById("headerPinBtn");
+  const collapseBtn = document.getElementById("headerCollapseBtn");
+
+  if (!header || !hoverZone || !pinBtn || !collapseBtn || header.dataset.bound === "1") return;
+  header.dataset.bound = "1";
+
+  let pinned = localStorage.getItem("fs_header_pinned") !== "false";
+  let collapsed = localStorage.getItem("fs_header_collapsed") === "true";
+
+  function apply() {
+    header.dataset.pinned = String(pinned);
+    header.dataset.collapsed = String(collapsed);
+
+    header.classList.toggle("header-unpinned", !pinned);
+    header.classList.toggle("header-collapsed", !pinned && collapsed);
+    header.classList.remove("header-peek");
+
+    pinBtn.textContent = pinned ? "📌" : "📍";
+    collapseBtn.textContent = collapsed ? "▼" : "▲";
+
+    localStorage.setItem("fs_header_pinned", String(pinned));
+    localStorage.setItem("fs_header_collapsed", String(collapsed));
+  }
+
+  pinBtn.addEventListener("click", () => {
+    pinned = !pinned;
+    if (pinned) collapsed = false;
+    else collapsed = true;
+    apply();
+  });
+
+  collapseBtn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    if (collapsed) pinned = false;
+    apply();
+  });
+
+  hoverZone.addEventListener("mouseenter", () => {
+    if (!pinned && collapsed) header.classList.add("header-peek");
+  });
+
+  header.addEventListener("mouseenter", () => {
+    if (!pinned && collapsed) header.classList.add("header-peek");
+  });
+
+  header.addEventListener("mouseleave", () => {
+    if (!pinned && collapsed) header.classList.remove("header-peek");
+  });
+
+  apply();
+}
+
 // 2) Resolve currency with clear priority
 function resolveCurrency(currency) {
   return (
@@ -4241,33 +4296,43 @@ function escHtml(s) {
   // ==========================================================
   // 11) AUTH UI HELPERS (depends on store/roles)
   // ==========================================================
-  function applyLoggedOutUI() {
-    const signinBtn = document.getElementById("signinBtn");
-    const signupBtn = document.getElementById("signupBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const dateRange = document.getElementById("dateRange");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const companyBadge = document.getElementById("companyBadge");
-    const userAvatar = document.getElementById("userAvatar");
-    const roleBadge = document.getElementById("roleBadge");
-    const userMenu = document.getElementById("userMenu");
+function applyLoggedOutUI() {
+  const signinBtn = document.getElementById("signinBtn");
+  const signupBtn = document.getElementById("signupBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const dateRange = document.getElementById("dateRange");
+  const refreshBtn = document.getElementById("refreshBtn");
+  const companyBadge = document.getElementById("companyBadge");
+  const userAvatar = document.getElementById("userAvatar");
+  const roleBadge = document.getElementById("roleBadge");
 
-    signinBtn && signinBtn.classList.remove("hidden");
-    if (signupBtn) signupBtn.classList.remove("hidden");
+  // ✅ NEW header account wrapper
+  const userMenuWrap = document.getElementById("userMenuWrap");
+  const userMenu = document.getElementById("userMenu");
 
-    logoutBtn && logoutBtn.classList.add("hidden");
-    dateRange && dateRange.classList.add("hidden");
-    refreshBtn && refreshBtn.classList.add("hidden");
-    roleBadge && roleBadge.classList.add("hidden");
-    userMenu && userMenu.classList.add("hidden");
+  signinBtn?.classList.remove("hidden");
+  signupBtn?.classList.remove("hidden");
 
-    if (companyBadge) {
-      companyBadge.textContent = "Your company";
-      companyBadge.classList.add("hidden");
-    }
-    if (userAvatar) userAvatar.textContent = "??";
+  logoutBtn?.classList.add("hidden");
+  dateRange?.classList.add("hidden");
+  refreshBtn?.classList.add("hidden");
+  roleBadge?.classList.add("hidden");
+
+  // ✅ hide whole account dropdown button
+  userMenuWrap?.classList.add("hidden");
+
+  // ✅ keep dropdown panel closed
+  userMenu?.classList.add("hidden");
+
+  if (companyBadge) {
+    companyBadge.textContent = "Your company";
+    companyBadge.classList.add("hidden");
   }
-window.applyLoggedOutUI = applyLoggedOutUI; // ✅ export
+
+  if (userAvatar) userAvatar.textContent = "??";
+}
+
+window.applyLoggedOutUI = applyLoggedOutUI;
 
   function applyAuthUI(user) {
     const signinBtn = document.getElementById("signinBtn");
@@ -4317,7 +4382,10 @@ window.applyLoggedOutUI = applyLoggedOutUI; // ✅ export
     const initials = email ? email[0].toUpperCase() : "U";
     if (userAvatar) userAvatar.textContent = initials;
 
-    if (userMenu) userMenu.classList.remove("hidden");
+    const userMenuWrap = document.getElementById("userMenuWrap");
+
+    userMenuWrap?.classList.remove("hidden");
+    userMenu?.classList.add("hidden");
 
     const accEmail = document.getElementById("accEmail");
     const accRole = document.getElementById("accRole");
@@ -4328,7 +4396,13 @@ window.applyLoggedOutUI = applyLoggedOutUI; // ✅ export
 
     signinBtn?.classList.add("hidden");
     signupBtn?.classList.add("hidden");
-    logoutBtn?.classList.remove("hidden");
+
+    // logout button now lives inside dropdown, so don't show it as standalone
+    logoutBtn?.classList.add("hidden");
+
+    userMenuWrap?.classList.remove("hidden");
+    userMenu?.classList.add("hidden");
+
     dateRange?.classList.remove("hidden");
     refreshBtn?.classList.remove("hidden");
   }
@@ -6945,6 +7019,24 @@ async function returnToPractitionerNative() {
 
   window.location.href = "practitionerdashboard.html#screen=assignments";
 }
+
+(function bindHeaderUserMenu() {
+  const btn = document.getElementById("userMenuButton");
+  const menu = document.getElementById("userMenu");
+
+  if (!btn || !menu || btn.dataset.bound === "1") return;
+
+  btn.dataset.bound = "1";
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.toggle("hidden");
+  });
+
+  document.addEventListener("click", () => {
+    menu.classList.add("hidden");
+  });
+})();
 
 function initDashboardModeSwitcher(currentMode = "internal") {
   const wrap = document.getElementById("dashboardModeSwitcherWrap");
@@ -67435,7 +67527,7 @@ document.addEventListener("input", (e) => {
 
 window.addEventListener("DOMContentLoaded", () => {
   init().catch((e) => console.error("🔥 init crashed", e));
-
+   bindSmartHeader();
   // ✅ TRACE modal closers
   (function traceQuoteModalClosers(){
     const modal = document.getElementById("quoteViewerModal");

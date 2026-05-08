@@ -1178,6 +1178,18 @@ tbody tr {
     scroll-behavior: auto !important;
   }
 }
+
+#appHeader.header-collapsed {
+  transform: translateY(calc(-100% + 8px));
+}
+
+#appHeader.header-collapsed.header-peek {
+  transform: translateY(0);
+}
+
+#appHeader.header-unpinned {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
   </style>
 
 </head>
@@ -1221,66 +1233,67 @@ tbody tr {
     
     <!-- Main -->
     <main class="main flex-1">
+      <div id="headerHoverZone" class="fixed top-0 left-0 right-0 h-3 z-[19]"></div>
       <!-- Header -->
-      <header class="sticky top-0 z-20 bg-white border-b border-[var(--fs-border)]">
-        <div class="max-w-[1300px] mx-auto px-4 py-2 flex items-center justify-between gap-3">
+      <header
+        id="appHeader"
+        class="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-[var(--fs-border)] transition-transform duration-200"
+        data-pinned="true"
+        data-collapsed="false"
+      >        
+        <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center justify-between gap-4">
 
-          <!-- LEFT -->
-          <div class="flex items-center gap-3 flex-nowrap">
-            <button id="mobileMenu" class="px-3 py-2 border rounded-lg bg-white text-slate-700" type="button" aria-label="Toggle navigation">
+          <!-- LEFT: Workspace identity -->
+          <div class="flex items-center gap-3 min-w-0">
+            <button
+              id="mobileMenu"
+              class="h-10 w-10 inline-flex items-center justify-center border rounded-xl bg-white text-slate-700 hover:bg-slate-50"
+              type="button"
+              aria-label="Toggle navigation"
+            >
               ☰
             </button>
 
-            <span id="companyBadge" class="pill whitespace-nowrap hidden md:inline">
-              Your company
-            </span>
+            <div class="h-10 w-10 rounded-xl bg-[var(--fs-navy)] text-white flex items-center justify-center font-bold shrink-0">
+              F
+            </div>
 
-            <div id="companySwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
-              <label for="companySwitcher" class="text-xs text-slate-500">Company</label>
-              <select id="companySwitcher" class="pill min-w-[180px]">
-                <option value="">Select company</option>
-              </select>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 min-w-0">
+                <div class="font-semibold text-[var(--fs-navy)] truncate">FinSage</div>
+                <span id="workspaceModeBadge" class="pill text-[11px] whitespace-nowrap">Workspace</span>
+              </div>
+
+              <div class="flex items-center gap-2 text-xs text-slate-500 min-w-0">
+                <span id="companyBadge" class="truncate max-w-[260px]">
+                  Your company
+                </span>
+                <span class="hidden md:inline">•</span>
+                <span id="headerScreenContext" class="hidden md:inline truncate">
+                  Command Center
+                </span>
+              </div>
             </div>
           </div>
 
-          <!-- RIGHT -->
-          <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
-
-            <!-- ✅ RETURN BUTTON -->
-            <button
-              id="returnToPractitionerBtn"
-              class="hidden whitespace-nowrap px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              ← Back to Workspace
-            </button>
-
-            <div id="userAvatar"
-              class="h-8 w-8 rounded-full border border-[var(--fs-border)]
-                    flex items-center justify-center text-sm text-[var(--fs-navy)]">
-              T
+          <!-- CENTER: Operational context -->
+          <div class="hidden xl:flex items-center gap-2 min-w-0">
+            <div id="companySwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
+              <span class="text-xs text-slate-500">Company</span>
+              <select id="companySwitcher" class="pill min-w-[220px]">
+                <option value="">Select company</option>
+              </select>
             </div>
 
-            <span id="roleBadge" class="pill whitespace-nowrap hidden md:inline"></span>
-
             <div id="dashboardModeSwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
-              <label for="dashboardModeSwitcher" class="text-xs text-slate-500">Dashboard</label>
+              <span class="text-xs text-slate-500">Dashboard</span>
               <select id="dashboardModeSwitcher" class="pill">
                 <option value="internal">Internal Dashboard</option>
                 <option value="practitioner">Practitioner Dashboard</option>
               </select>
             </div>
 
-            <button id="signinBtn" class="btn whitespace-nowrap">Sign In</button>
-            <button id="logoutBtn" class="btn hidden whitespace-nowrap">Sign Out</button>
-
-            <div id="userMenu" class="hidden flex-col text-xs text-right leading-tight whitespace-nowrap">
-              <button id="accountSettingsBtn" class="text-[var(--fs-navy)] hover:underline">
-                Account settings
-              </button>
-              <button id="changePasswordLink" class="text-[var(--fs-navy)] hover:underline">
-                Change password
-              </button>
-            </div>
+            <span id="roleBadge" class="pill whitespace-nowrap hidden md:inline"></span>
 
             <select id="dateRange" class="pill hidden whitespace-nowrap">
               <option value="3m">Last 3 months</option>
@@ -1288,11 +1301,77 @@ tbody tr {
               <option value="12m">Last 12 months</option>
               <option value="ytd">Year to date</option>
             </select>
+          </div>
 
-            <button id="refreshBtn"
-              class="px-3 py-2 rounded-lg bg-[var(--fs-navy)] text-white hidden whitespace-nowrap">
+          <!-- RIGHT: Actions -->
+          <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
+
+            <button
+              id="headerPinBtn"
+              type="button"
+              class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm hover:bg-slate-50"
+              title="Pin or unpin header"
+            >
+              📌
+            </button>
+
+            <button
+              id="headerCollapseBtn"
+              type="button"
+              class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm hover:bg-slate-50"
+              title="Collapse header"
+            >
+              ▲
+            </button>
+            <button
+              id="returnToPractitionerBtn"
+              class="hidden whitespace-nowrap px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              type="button"
+            >
+              ← Back to Workspace
+            </button>
+
+            <button
+              id="refreshBtn"
+              class="px-3 py-2 rounded-xl bg-[var(--fs-navy)] text-white hidden whitespace-nowrap"
+              type="button"
+            >
               Refresh
             </button>
+
+            <button id="signinBtn" class="btn whitespace-nowrap" type="button">Sign In</button>
+
+            <div id="userMenuWrap" class="relative hidden">
+              <button
+                id="userMenuButton"
+                type="button"
+                class="h-10 px-2 rounded-xl border border-[var(--fs-border)] bg-white hover:bg-slate-50 flex items-center gap-2"
+              >
+                <div
+                  id="userAvatar"
+                  class="h-8 w-8 rounded-full bg-slate-100 border border-[var(--fs-border)] flex items-center justify-center text-sm font-semibold text-[var(--fs-navy)]"
+                >
+                  T
+                </div>
+                <span class="hidden md:inline text-sm text-slate-700">Account</span>
+                <span class="text-xs text-slate-400">▼</span>
+              </button>
+
+              <div
+                id="userMenu"
+                class="hidden absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white shadow-lg p-2 text-sm z-50"
+              >
+                <button id="accountSettingsBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">
+                  Account settings
+                </button>
+                <button id="changePasswordLink" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">
+                  Change password
+                </button>
+                <button id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg text-red-600 hover:bg-red-50">
+                  Sign Out
+                </button>
+              </div>
+            </div>
 
           </div>
         </div>
