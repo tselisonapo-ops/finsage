@@ -5977,6 +5977,88 @@ function canOpenScreen(name) {
 }
 window.canOpenScreen = canOpenScreen;
 
+function getCurrentAccessScope() {
+  const me = window.currentUser || {};
+  const payload = getAuthPayloadSafe?.() || {};
+
+  return String(
+    me.token_access_scope ||
+    me.access_scope ||
+    payload.token_access_scope ||
+    payload.access_scope ||
+    "core"
+  ).trim().toLowerCase();
+}
+
+function isCoreInternalToken() {
+  const scope = getCurrentAccessScope();
+  return scope === "core" || scope === "internal";
+}
+
+function isDelegatedWorkspaceToken() {
+  const scope = getCurrentAccessScope();
+  const me = window.currentUser || {};
+  const payload = getAuthPayloadSafe?.() || {};
+
+  return (
+    scope === "delegated_workspace" ||
+    scope === "assignment" ||
+    me.is_delegated_company_access === true ||
+    payload.is_delegated_company_access === true ||
+    window.FS_DELEGATED_WORKSPACE?.isDelegatedPostingMode?.() === true
+  );
+}
+
+const DELEGATED_POSTING_SCREENS = new Set([
+  "journal",
+  "ar-invoices",
+  "quotes",
+  "revenue",
+  "ap",
+  "ifrs16",
+  "lease-wizard",
+  "leases",
+  "loans",
+  "fixedassets",
+  "ppe",
+  "ar-recon",
+  "ar-statements",
+  "ar-aging",
+  "ap-recon",
+  "ap-statements",
+  "ap-aging",
+  "control-room",
+]);
+
+function navItemHasDelegatedScreen(item) {
+  if (!item) return false;
+
+  if (item.screen && DELEGATED_POSTING_SCREENS.has(resolveScreenName(item.screen))) {
+    return true;
+  }
+
+  if (Array.isArray(item.children)) {
+    return item.children.some(navItemHasDelegatedScreen);
+  }
+
+  return false;
+}
+
+function isCoreInternalToken() {
+  const me = window.currentUser || {};
+  const payload = getAuthPayloadSafe?.() || {};
+
+  const scope = String(
+    me.token_access_scope ||
+    me.access_scope ||
+    payload.token_access_scope ||
+    payload.access_scope ||
+    "core"
+  ).trim().toLowerCase();
+
+  return scope === "core" || scope === "internal";
+}
+
 function shouldShowNavItem(item) {
   if (!item) return false;
 
@@ -5996,8 +6078,13 @@ function shouldShowNavItem(item) {
 
   if (item.screen) {
     if (!canOpenScreen(item.screen)) return false;
-    const access = window.guardScreenAccess?.(item.screen);
-    if (!access?.ok) return false;
+
+    // Core/internal token should see the nav item.
+    // Actual screen access is still guarded when the user opens the screen.
+    if (!isCoreInternalToken?.()) {
+      const access = window.guardScreenAccess?.(item.screen);
+      if (!access?.ok) return false;
+    }
   }
 
   if (!item.screen) {
@@ -6104,17 +6191,17 @@ const SCREEN_POLICY = {
   "revenue-setup": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
 
   // AR Control Room screens — delegated workspace only
-  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+  "control-room": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
 
   // AP (later)
   ap: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   // AP Control Room screens — delegated workspace only
-  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-  
+  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
   // Banking
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
   banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
@@ -38089,83 +38176,90 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
-  function toggleRevenueProgressDriverFields() {
-    const type = String($("revProgressType")?.value || "cost_to_cost").trim().toLowerCase();
+function toggleRevenueProgressDriverFields() {
+  const type = String($("revProgressType")?.value || "cost_to_cost").trim().toLowerCase();
 
-    const expected = $("revProgressExpectedCost");
-    const actual = $("revProgressActualCost");
-    const percent = $("revProgressPercent");
-    const milestone = $("revProgressMilestoneCode");
+  const expected = $("revProgressExpectedCost");
+  const actual = $("revProgressActualCost");
+  const percent = $("revProgressPercent");
+  const milestone = $("revProgressMilestoneCode");
 
-    const expectedWrap = $("revProgressExpectedCostWrap");
-    const actualWrap = $("revProgressActualCostWrap");
-    const percentWrap = $("revProgressPercentWrap");
-    const milestoneWrap = $("revProgressMilestoneCodeWrap");
+  const expectedWrap = $("revProgressExpectedCostWrap");
+  const actualWrap = $("revProgressActualCostWrap");
+  const percentWrap = $("revProgressPercentWrap");
+  const milestoneWrap = $("revProgressMilestoneCodeWrap");
 
-    const milestoneExtraWrap = $("revProgressMilestoneExtraWrap");
-    const unitsWrap = $("revProgressUnitsWrap");
+  const milestoneExtraWrap = $("revProgressMilestoneExtraWrap");
+  const unitsWrap = $("revProgressUnitsWrap");
 
-    const show = (el, yes) => {
-      if (!el) return;
-      el.classList.toggle("hidden", !yes);
-    };
+  const show = (el, yes) => {
+    if (!el) return;
+    el.classList.toggle("hidden", !yes);
+  };
 
-    const setEnabled = (el, yes) => {
-      if (!el) return;
-      el.disabled = !yes;
-      el.classList.toggle("bg-slate-100", !yes);
-      el.classList.toggle("cursor-not-allowed", !yes);
-    };
+  const showGrid = (el, yes) => {
+    if (!el) return;
+    el.classList.toggle("hidden", !yes);
+    el.classList.toggle("grid", yes);
+  };
 
-    show(expectedWrap, false);
-    show(actualWrap, false);
-    show(percentWrap, false);
-    show(milestoneWrap, false);
-    show(milestoneExtraWrap, false);
-    show(unitsWrap, false);
-    setEnabled(expected, false);
-    setEnabled(actual, false);
-    setEnabled(percent, false);
-    setEnabled(milestone, false);
+  const setEnabled = (el, yes) => {
+    if (!el) return;
+    el.disabled = !yes;
+    el.classList.toggle("bg-slate-100", !yes);
+    el.classList.toggle("cursor-not-allowed", !yes);
+  };
 
-    if (type === "cost_to_cost") {
-      show(expectedWrap, true);
-      show(actualWrap, true);
-      setEnabled(expected, true);
-      setEnabled(actual, true);
+  show(expectedWrap, false);
+  show(actualWrap, false);
+  show(percentWrap, false);
+  show(milestoneWrap, false);
+  showGrid(milestoneExtraWrap, false);
+  showGrid(unitsWrap, false);
 
-      if (percent) percent.value = "";
-      if (milestone) milestone.value = "";
-    }
+  setEnabled(expected, false);
+  setEnabled(actual, false);
+  setEnabled(percent, false);
+  setEnabled(milestone, false);
 
-    else if (type === "milestone") {
-      show(milestoneWrap, true);
-      show(milestoneExtraWrap, true);
-      setEnabled(milestone, true);
+  if (type === "cost_to_cost") {
+    show(expectedWrap, true);
+    show(actualWrap, true);
+    setEnabled(expected, true);
+    setEnabled(actual, true);
 
-      if (expected) expected.value = "0.00";
-      if (actual) actual.value = "0.00";
-      if (percent) percent.value = "";
-    }
-
-    else if (type === "units" || type === "units_delivered") {
-      show(unitsWrap, true);
-
-      if (expected) expected.value = "0.00";
-      if (actual) actual.value = "0.00";
-      if (percent) percent.value = "";
-      if (milestone) milestone.value = "";
-    }
-
-    else if (type === "manual" || type === "time_elapsed") {
-      show(percentWrap, true);
-      setEnabled(percent, true);
-
-      if (expected) expected.value = "0.00";
-      if (actual) actual.value = "0.00";
-      if (milestone) milestone.value = "";
-    }
+    if (percent) percent.value = "";
+    if (milestone) milestone.value = "";
   }
+
+  else if (type === "milestone") {
+    show(milestoneWrap, true);
+    showGrid(milestoneExtraWrap, true);
+    setEnabled(milestone, true);
+
+    if (expected) expected.value = "0.00";
+    if (actual) actual.value = "0.00";
+    if (percent) percent.value = "";
+  }
+
+  else if (type === "units" || type === "units_delivered") {
+    showGrid(unitsWrap, true);
+
+    if (expected) expected.value = "0.00";
+    if (actual) actual.value = "0.00";
+    if (percent) percent.value = "";
+    if (milestone) milestone.value = "";
+  }
+
+  else if (type === "manual" || type === "time_elapsed") {
+    show(percentWrap, true);
+    setEnabled(percent, true);
+
+    if (expected) expected.value = "0.00";
+    if (actual) actual.value = "0.00";
+    if (milestone) milestone.value = "";
+  }
+}
 
   function toggleObligationFields() {
     const timing = $("revRecognitionTiming")?.value || "point_in_time";

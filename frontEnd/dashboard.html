@@ -4706,10 +4706,16 @@ tbody tr {
                         <input id="revProgressPeriodEnd" type="date" class="w-full border rounded px-3 py-2 text-sm">
                       </div>
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Recognition Progress Method</label>
-                          <div class="text-[11px] text-slate-500 mb-1">
-                            Controls how IFRS 15 progress is measured for this obligation.
-                          </div>
+                        <div class="flex items-center gap-2 mb-1">
+                          <label class="block text-xs text-slate-500">Recognition Progress Method</label>
+
+                          <button
+                            type="button"
+                            class="rev-info-trigger inline-flex items-center justify-center w-4 h-4 rounded-full border border-slate-300 text-[10px] text-slate-500 bg-white hover:bg-slate-50"
+                            data-info-key="recognition_progress_method"
+                            aria-label="More info about Recognition Progress Method"
+                          >i</button>
+                        </div>
                         <select id="revProgressType" class="w-full border rounded px-3 py-2 text-sm">
                           <option value="cost_to_cost">Cost to cost</option>
                           <option value="milestone">Milestone</option>
@@ -4743,7 +4749,7 @@ tbody tr {
                       </div>
                     </div>
 
-                    <div id="revProgressMilestoneExtraWrap" class="hidden grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div id="revProgressMilestoneExtraWrap" class="hidden grid-cols-1 md:grid-cols-3 gap-3">
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Milestone Description</label>
                         <input id="revProgressMilestoneDescription" class="w-full border rounded px-3 py-2 text-sm">
@@ -4766,7 +4772,7 @@ tbody tr {
                       </div>
                     </div>
 
-                    <div id="revProgressUnitsWrap" class="hidden grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div id="revProgressUnitsWrap" class="hidden grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Unit of Measure</label>
                         <input id="revProgressUnitOfMeasure" class="w-full border rounded px-3 py-2 text-sm" placeholder="m², tons, km, hours">
