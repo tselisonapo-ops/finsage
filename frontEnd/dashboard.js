@@ -6080,6 +6080,26 @@ function isCoreInternalToken() {
   return scope === "core" || scope === "internal";
 }
 
+const DELEGATED_HIDDEN_SCREENS = new Set([
+  // company/admin setup
+  "users",
+  "company-my",
+  "company-update",
+  "company-vat",
+  "company-income-tax",
+  "company-structure",
+  "company-reporting",
+  "company-mgmt-packs",
+
+  // banking admin
+  "bank-setup",
+
+  // governance-only control room
+  "period-locks",
+  "audit-trail",
+  "approvals",
+]);
+
 function shouldShowNavItem(item) {
   if (!item) return false;
 
@@ -6093,6 +6113,7 @@ function shouldShowNavItem(item) {
       : typeof hasFeature === "function"
         ? hasFeature(item.feature)
         : true;
+
     if (!ok) return false;
   }
 
@@ -6100,36 +6121,43 @@ function shouldShowNavItem(item) {
     ? (resolveScreenName?.(item.screen) || item.screen)
     : null;
 
-  // ✅ delegated workspace: parent shows if any child is allowed
+  // ✅ delegated workspace: show broad workspace nav,
+  // but hide admin/governance-only screens.
   if (isDelegatedWorkspaceToken?.()) {
-    if (screen) {
-      return DELEGATED_POSTING_SCREENS.has(screen);
+    if (screen && DELEGATED_HIDDEN_SCREENS.has(screen)) {
+      return false;
     }
 
-    if (!canSeeMenuItem(item)) return false;
-
-    if (Array.isArray(item.children)) {
+    // For parent items, show parent if at least one child is visible.
+    if (!screen && Array.isArray(item.children)) {
       return item.children.some(shouldShowNavItem);
     }
 
-    return true;
+    // For parent items without screen/children, still respect menu permissions.
+    if (!screen) {
+      return canSeeMenuItem(item);
+    }
+
+    // For screen items, only require it to be enabled in app allowlist.
+    // Actual opening still goes through switchScreen + guardScreenAccess.
+    return canOpenScreen(screen);
   }
 
   // ✅ core/internal: show nav broadly; screen opening still guarded later
-  if (item.screen) {
-    if (!canOpenScreen(item.screen)) return false;
+  if (screen) {
+    if (!canOpenScreen(screen)) return false;
 
     if (!isCoreInternalToken?.()) {
-      const access = window.guardScreenAccess?.(item.screen);
+      const access = window.guardScreenAccess?.(screen);
       if (!access?.ok) return false;
     }
   }
 
-  if (!item.screen) {
+  if (!screen) {
     if (!canSeeMenuItem(item)) return false;
   }
 
-  if (!item.screen && Array.isArray(item.children)) {
+  if (!screen && Array.isArray(item.children)) {
     return item.children.some(shouldShowNavItem);
   }
 
@@ -6229,21 +6257,22 @@ const SCREEN_POLICY = {
   "revenue-setup": { auth: "private", minRole: "assistant", permission: "can_prepare_financials" },
 
   // AR Control Room screens — delegated workspace only
-  "control-room": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ar-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ar-statements": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ar-aging": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "control-room": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+  "ar-recon": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+  "ar-statements": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+  "ar-aging": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
 
   // AP (later)
   ap: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   // AP Control Room screens — delegated workspace only
-  "ap-recon": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ap-statements": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
-  "ap-aging": { auth: "private", minRole: "assistant", permission: "can_view_control_room" },
+  "ap-recon": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+  "ap-statements": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+  "ap-aging": { auth: "private", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+
   // Banking
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
-  banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
-  "bank-recon": { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
+  banking: { auth: "private", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
+  "bank-recon": { auth: "private", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
   loans: { auth: "private", minRole: "clerk", permission: "can_manage_loans" },
   // Accounting views
   ledger: { auth: "private", minRole: "assistant", permission: "can_view_reports" },
@@ -7225,11 +7254,24 @@ function guardScreenAccess(name) {
   }
 
   // Permission-first gate
-  if (rule.permission) {
+
+  if (Array.isArray(rule.permissionAny) && rule.permissionAny.length) {
+    const perms = window.currentUser?.permissions || {};
+
+    const ok = rule.permissionAny.some((p) => perms[p] === true);
+
+    if (!ok) {
+      return { ok: false, reason: "permission" };
+    }
+  }
+
+  else if (rule.permission) {
     if (!window.hasPermission?.(rule.permission)) {
       return { ok: false, reason: "permission" };
     }
-  } else if (rule.minRole && !window.canSeeRole(rule.minRole)) {
+  }
+
+  else if (rule.minRole && !window.canSeeRole(rule.minRole)) {
     return { ok: false, reason: "role" };
   }
 
