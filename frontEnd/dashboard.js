@@ -4830,7 +4830,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       icon: "🛡️",
       isParent: true,
       minRole: "assistant",
-      permission: ["can_view_control_room", "can_view_ar_ap_controls"],
+      permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
       children: [
       {
         name: "AR Controls",
@@ -6028,6 +6028,8 @@ const DELEGATED_POSTING_SCREENS = new Set([
   "ifrs16",
   "lease-wizard",
   "leases",
+  "banking",
+  "bank-recon",
   "loans",
   "fixedassets",
   "ppe",
@@ -6089,8 +6091,14 @@ function shouldShowNavItem(item) {
   if (item.screen) {
     if (!canOpenScreen(item.screen)) return false;
 
-    // Core/internal token should see the nav item.
-    // Actual screen access is still guarded when the user opens the screen.
+    const screen = resolveScreenName?.(item.screen) || item.screen;
+
+    // delegated workspace: show posting-related nav screens
+    if (isDelegatedWorkspaceToken?.()) {
+      return DELEGATED_POSTING_SCREENS.has(screen);
+    }
+
+    // core/internal: show nav item; screen opens are guarded later
     if (!isCoreInternalToken?.()) {
       const access = window.guardScreenAccess?.(item.screen);
       if (!access?.ok) return false;
