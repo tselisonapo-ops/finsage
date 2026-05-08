@@ -4830,14 +4830,14 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       icon: "🛡️",
       isParent: true,
       minRole: "assistant",
-      permission: "can_view_ar_ap_controls",
+      permission: "can_view_control_room",
       children: [
       {
         name: "AR Controls",
         icon: "🧾",
         isParent: true,
         minRole: "assistant",
-        permission: "can_view_ar_ap_controls",
+        permission: "can_view_control_room",
         children: [
           { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
           { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
