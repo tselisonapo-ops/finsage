@@ -58940,6 +58940,7 @@ class DatabaseService:
 
             data, financing_component_amount = self._normalize_and_validate_sfc(data)
             self._validate_contract_billing_method(data)
+            data = self._validate_contract_milestones(data)
 
             sql = f"""
             INSERT INTO {schema}.revenue_contracts (
@@ -59035,6 +59036,7 @@ class DatabaseService:
 
             data, financing_component_amount = self._normalize_and_validate_sfc(data, existing=before)
             self._validate_contract_billing_method(data)
+            data = self._validate_contract_milestones(data)
 
             customer_id = data.get("customer_id")
             if customer_id in ("", 0, "0"):
@@ -59323,9 +59325,17 @@ class DatabaseService:
 
             # final milestone check after full normalization
             if progress_method == "milestone":
-                if payload_json.get("milestone_basis") == "custom" and not str(payload_json.get("milestone_code") or "").strip():
-                    raise ValueError("Custom milestone obligations require milestone_code.")
+                milestone_basis = payload_json.get("milestone_basis") or "obligation"
+                milestone_code = str(payload_json.get("milestone_code") or "").strip()
 
+                if milestone_basis == "custom":
+                    if not milestone_code:
+                        raise ValueError("Custom milestone obligations require milestone_code.")
+
+                    known_codes = self._contract_milestone_codes(contract)
+                    if known_codes and milestone_code.lower() not in known_codes:
+                        raise ValueError(f"Milestone code '{milestone_code}' is not defined on the contract.")
+                    
             payload_json["catalog_item_type"] = data.get("catalog_item_type")
             payload_json["catalog_item_id"] = data.get("catalog_item_id")
             payload_json["catalog_item_code"] = data.get("catalog_item_code")
@@ -59756,14 +59766,46 @@ class DatabaseService:
         except (TypeError, ValueError):
             raise ValueError("billing_config.billing_day must be a valid integer.")
 
+        raw_milestones = billing_cfg.get("milestones") or []
+        if not isinstance(raw_milestones, list):
+            raw_milestones = []
+
         payload_json["billing_config"] = {
             "method": billing_method,
             "periodicity": str(billing_cfg.get("periodicity") or "").strip().lower() or None,
-            "billing_day": billing_day,
-            "auto_allocate_contract_pool": bool(billing_cfg.get("auto_allocate_contract_pool", True)),
-            "allow_obligation_override": bool(billing_cfg.get("allow_obligation_override", False)),
-            "milestone_basis": str(billing_cfg.get("milestone_basis") or "obligation").strip().lower(),
+
+            "billing_day": (
+                int(billing_cfg.get("billing_day"))
+                if billing_cfg.get("billing_day") not in (None, "", 0, "0")
+                else None
+            ),
+
+            "billing_weekday": (
+                str(billing_cfg.get("billing_weekday") or "").strip().lower() or None
+            ),
+
+            "billing_month": (
+                int(billing_cfg.get("billing_month"))
+                if billing_cfg.get("billing_month") not in (None, "", 0, "0")
+                else None
+            ),
+
+            "auto_allocate_contract_pool": bool(
+                billing_cfg.get("auto_allocate_contract_pool", True)
+            ),
+
+            "allow_obligation_override": bool(
+                billing_cfg.get("allow_obligation_override", False)
+            ),
+
+            "milestone_basis": str(
+                billing_cfg.get("milestone_basis") or "obligation"
+            ).strip().lower(),
+
             "notes": str(billing_cfg.get("notes") or "").strip() or None,
+
+            # ✅ NEW
+            "milestones": raw_milestones,
         }
 
         if body.get("status"):
@@ -59773,6 +59815,124 @@ class DatabaseService:
         return body
     
     VALID_CONTRACT_BILLING_METHODS = {"milestone", "progress", "periodic", "manual"}
+
+    def _normalize_contract_milestones(self, milestones) -> list[dict]:
+        if not milestones:
+            return []
+
+        if not isinstance(milestones, list):
+            raise ValueError("billing_config.milestones must be a list.")
+
+        allowed_triggers = {
+            "manual",
+            "date",
+            "progress_percent",
+            "certificate",
+            "approval",
+        }
+
+        out = []
+        seen = set()
+
+        for idx, raw in enumerate(milestones, start=1):
+            if not isinstance(raw, dict):
+                raise ValueError(f"Milestone row {idx} must be an object.")
+
+            code = str(raw.get("code") or "").strip()
+            description = str(raw.get("description") or "").strip()
+
+            if not code and not description:
+                continue
+
+            if not code:
+                raise ValueError(f"Milestone row {idx} requires a code.")
+
+            code_key = code.lower()
+            if code_key in seen:
+                raise ValueError(f"Duplicate milestone code: {code}")
+            seen.add(code_key)
+
+            trigger_type = str(raw.get("trigger_type") or "manual").strip().lower()
+            if trigger_type not in allowed_triggers:
+                raise ValueError(f"Invalid milestone trigger_type '{trigger_type}' for {code}.")
+
+            billing_amount = float(raw.get("billing_amount") or 0.0)
+
+            billing_percent_raw = raw.get("billing_percent")
+            billing_percent = (
+                None
+                if billing_percent_raw in (None, "")
+                else float(billing_percent_raw)
+            )
+
+            if billing_amount < 0:
+                raise ValueError(f"Milestone {code} billing_amount cannot be negative.")
+
+            if billing_percent is not None and (billing_percent < 0 or billing_percent > 100):
+                raise ValueError(f"Milestone {code} billing_percent must be between 0 and 100.")
+
+            if billing_amount <= 0 and billing_percent in (None, 0):
+                raise ValueError(f"Milestone {code} requires billing_amount or billing_percent.")
+
+            out.append({
+                "code": code,
+                "description": description or None,
+                "trigger_type": trigger_type,
+                "billing_amount": billing_amount,
+                "billing_percent": billing_percent,
+                "certificate_required": bool(raw.get("certificate_required", False)),
+                "approval_required": bool(raw.get("approval_required", False)),
+                "expected_completion_date": raw.get("expected_completion_date") or None,
+                "billing_enabled": raw.get("billing_enabled", True) is not False,
+            })
+
+        return out
+
+
+    def _validate_contract_milestones(self, data: dict) -> dict:
+        payload_json = data.get("payload_json") or {}
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+
+        billing_cfg = payload_json.get("billing_config") or {}
+        if not isinstance(billing_cfg, dict):
+            billing_cfg = {}
+
+        billing_method = str(data.get("billing_method") or billing_cfg.get("method") or "").strip().lower()
+        milestone_basis = str(billing_cfg.get("milestone_basis") or "obligation").strip().lower()
+
+        milestones = self._normalize_contract_milestones(
+            billing_cfg.get("milestones") or []
+        )
+
+        # Custom milestone billing should define at least one contract milestone.
+        if billing_method == "milestone" and milestone_basis == "custom" and not milestones:
+            raise ValueError("Custom milestone billing requires at least one billing milestone.")
+
+        billing_cfg["milestones"] = milestones
+        payload_json["billing_config"] = billing_cfg
+        data["payload_json"] = payload_json
+        return data
+
+
+    def _contract_milestone_codes(self, contract: dict) -> set[str]:
+        payload = contract.get("payload_json") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        billing_cfg = payload.get("billing_config") or {}
+        if not isinstance(billing_cfg, dict):
+            billing_cfg = {}
+
+        milestones = billing_cfg.get("milestones") or []
+        if not isinstance(milestones, list):
+            return set()
+
+        return {
+            str(m.get("code") or "").strip().lower()
+            for m in milestones
+            if isinstance(m, dict) and str(m.get("code") or "").strip()
+        }
 
     def _validate_contract_billing_method(self, data: dict):
         method = str(data.get("billing_method") or "").strip().lower()
@@ -60590,6 +60750,9 @@ class DatabaseService:
             units_total = float(data["units_total"]) if data.get("units_total") is not None else None
             milestone_code = (data.get("milestone_code") or "").strip() or None
             notes = data.get("notes")
+            payload_json = data.get("payload_json") or {}
+            if not isinstance(payload_json, dict):
+                payload_json = {}
 
             if update_type == "cost_to_cost":
                 if expected_total_cost is None or expected_total_cost <= 0:
@@ -60604,20 +60767,64 @@ class DatabaseService:
                 units_total = None
                 milestone_code = None
 
+                payload_json["cost_to_cost"] = {
+                    "expected_total_cost": expected_total_cost,
+                    "actual_cost_to_date": actual_cost_to_date,
+                }
+
             elif update_type in {"units", "units_delivered"}:
-                if units_total is None or units_total <= 0:
+
+                units_payload = payload_json.get("units") or {}
+                if not isinstance(units_payload, dict):
+                    units_payload = {}
+
+                units_done = (
+                    data.get("units_done")
+                    if data.get("units_done") is not None
+                    else units_payload.get("delivered_units")
+                )
+
+                units_total = (
+                    data.get("units_total")
+                    if data.get("units_total") is not None
+                    else units_payload.get("total_units")
+                )
+
+                certified_units = units_payload.get("certified_units")
+
+                units_done = float(units_done or 0.0)
+                units_total = float(units_total or 0.0)
+                certified_units = (
+                    None
+                    if certified_units in (None, "")
+                    else float(certified_units)
+                )
+
+                if units_total <= 0:
                     raise ValueError("Total units is required for units-based progress.")
-                if units_done is None or units_done < 0:
-                    raise ValueError("Units done is required for units-based progress.")
+                if units_done < 0:
+                    raise ValueError("Delivered units cannot be negative.")
                 if units_done > units_total:
-                    raise ValueError("Units done cannot exceed total units.")
+                    raise ValueError("Delivered units cannot exceed total units.")
+                if certified_units is not None and certified_units > units_total:
+                    raise ValueError("Certified units cannot exceed total units.")
+
+                recognition_units = certified_units if certified_units is not None else units_done
 
                 progress_percent = float(
-                    (Decimal(str(units_done)) / Decimal(str(units_total))) * Decimal("100")
+                    (Decimal(str(recognition_units)) / Decimal(str(units_total))) * Decimal("100")
                 )
+
                 expected_total_cost = None
                 actual_cost_to_date = None
                 milestone_code = None
+
+                payload_json["units"] = {
+                    "unit_of_measure": str(units_payload.get("unit_of_measure") or "").strip() or None,
+                    "delivered_units": units_done,
+                    "total_units": units_total,
+                    "certified_units": certified_units,
+                }
 
             elif update_type == "manual":
                 if progress_percent is None:
@@ -60631,24 +60838,51 @@ class DatabaseService:
                 units_total = None
                 milestone_code = None
 
+                payload_json["manual"] = {
+                    "progress_percent": progress_percent,
+                }
             elif update_type == "milestone":
+
+                milestone_payload = payload_json.get("milestone") or {}
+                if not isinstance(milestone_payload, dict):
+                    milestone_payload = {}
+
+                milestone_code = (
+                    data.get("milestone_code")
+                    or milestone_payload.get("code")
+                    or ""
+                )
+                milestone_code = str(milestone_code).strip() or None
+
                 if not milestone_code:
                     raise ValueError("Milestone code is required for milestone updates.")
 
-                milestone_map = {
-                    "planning_complete": 25.0,
-                    "execution_complete": 50.0,
-                    "project_complete": 100.0,
-                }
+                contract = self.get_revenue_contract(company_id, int(obl["contract_id"]), cur=cur)
+                known_codes = self._contract_milestone_codes(contract or {})
 
-                if milestone_code not in milestone_map:
-                    raise ValueError("Unknown milestone code.")
+                # If contract has a custom milestone table, code must exist there.
+                if known_codes and milestone_code.lower() not in known_codes:
+                    raise ValueError(f"Milestone code '{milestone_code}' is not defined on the contract.")
 
-                progress_percent = milestone_map[milestone_code]
+                status = str(milestone_payload.get("status") or "achieved").strip().lower()
+                if status not in {"pending", "achieved", "certified", "approved"}:
+                    raise ValueError("Invalid milestone status.")
+
+                # V1 rule:
+                # pending = 0%, achieved/certified/approved = 100%.
+                progress_percent = 0.0 if status == "pending" else 100.0
+
                 expected_total_cost = None
                 actual_cost_to_date = None
                 units_done = None
                 units_total = None
+
+                payload_json["milestone"] = {
+                    "code": milestone_code,
+                    "description": str(milestone_payload.get("description") or "").strip() or None,
+                    "status": status,
+                    "certificate_ref": str(milestone_payload.get("certificate_ref") or "").strip() or None,
+                }
 
             elif update_type == "time_elapsed":
                 progress_percent = float(data.get("progress_percent") or obl.get("progress_percent") or 0.0)
@@ -60659,6 +60893,10 @@ class DatabaseService:
                 units_done = None
                 units_total = None
                 milestone_code = None
+
+                payload_json["time_elapsed"] = {
+                    "progress_percent": progress_percent,
+                }
 
             else:
                 raise ValueError(f"Unsupported progress method '{update_type}'.")
@@ -60699,7 +60937,7 @@ class DatabaseService:
                     milestone_code,
                     int(user_id) if user_id else None,
                     notes,
-                    _json_dumps(data.get("payload_json") or {}),
+                    _json_dumps(payload_json),
                 )
             )
             row = dict(cur.fetchone())

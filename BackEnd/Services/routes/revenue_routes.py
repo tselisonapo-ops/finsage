@@ -64,25 +64,23 @@ def _normalize_revenue_contract_body(body: dict) -> dict:
     except (TypeError, ValueError):
         raise ValueError("billing_config.billing_day must be a valid integer.")
 
+    raw_billing_month = billing_cfg.get("billing_month")
+    try:
+        billing_month = int(raw_billing_month) if raw_billing_month not in (None, "", 0, "0") else None
+    except (TypeError, ValueError):
+        raise ValueError("billing_config.billing_month must be a valid integer.")
+
+    # ✅ NEW: preserve milestone table from frontend
+    raw_milestones = billing_cfg.get("milestones") or []
+    if not isinstance(raw_milestones, list):
+        raw_milestones = []
+
     payload_json["billing_config"] = {
         "method": billing_method,
         "periodicity": str(billing_cfg.get("periodicity") or "").strip().lower() or None,
-
-        "billing_day": (
-            int(billing_cfg.get("billing_day"))
-            if billing_cfg.get("billing_day") not in (None, "", 0, "0")
-            else None
-        ),
-
-        "billing_weekday": (
-            str(billing_cfg.get("billing_weekday") or "").strip().lower() or None
-        ),
-
-        "billing_month": (
-            int(billing_cfg.get("billing_month"))
-            if billing_cfg.get("billing_month") not in (None, "", 0, "0")
-            else None
-        ),
+        "billing_day": billing_day,
+        "billing_weekday": str(billing_cfg.get("billing_weekday") or "").strip().lower() or None,
+        "billing_month": billing_month,
 
         "auto_allocate_contract_pool": bool(
             billing_cfg.get("auto_allocate_contract_pool", True)
@@ -97,6 +95,9 @@ def _normalize_revenue_contract_body(body: dict) -> dict:
         ).strip().lower(),
 
         "notes": str(billing_cfg.get("notes") or "").strip() or None,
+
+        # ✅ NEW
+        "milestones": raw_milestones,
     }
 
     if body.get("status"):

@@ -37704,6 +37704,9 @@ function bindAssetRecordsPickerModal({ cid }) {
     const policy = getSelectedBillingPolicy();
 
     const billingCfg = c?.payload_json?.billing_config || {};
+    const milestones = Array.isArray(billingCfg.milestones)
+      ? billingCfg.milestones
+      : [];
     const milestoneBasis = billingCfg.milestone_basis || "obligation";
     const periodicity = billingCfg.periodicity || "";
     const billingDay = billingCfg.billing_day ?? "";
@@ -37749,6 +37752,43 @@ function bindAssetRecordsPickerModal({ cid }) {
       `
       : "";
 
+    const milestonePreviewHtml = milestones.length
+      ? `
+        <div>
+          <div class="text-slate-500 text-xs mb-1">Billing Milestones</div>
+          <div class="overflow-auto border rounded-lg">
+            <table class="min-w-[850px] w-full text-xs">
+              <thead class="bg-slate-50 text-slate-500">
+                <tr>
+                  <th class="px-3 py-2 text-left">Code</th>
+                  <th class="px-3 py-2 text-left">Description</th>
+                  <th class="px-3 py-2 text-left">Trigger</th>
+                  <th class="px-3 py-2 text-right">Amount</th>
+                  <th class="px-3 py-2 text-right">Percent</th>
+                  <th class="px-3 py-2 text-left">Certificate</th>
+                  <th class="px-3 py-2 text-left">Approval</th>
+                  <th class="px-3 py-2 text-left">Expected Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${milestones.map((m) => `
+                  <tr class="border-t">
+                    <td class="px-3 py-2">${esc(m.code || "—")}</td>
+                    <td class="px-3 py-2">${esc(m.description || "—")}</td>
+                    <td class="px-3 py-2">${esc(m.trigger_type || "—")}</td>
+                    <td class="px-3 py-2 text-right">${money(m.billing_amount || 0)}</td>
+                    <td class="px-3 py-2 text-right">${m.billing_percent != null ? esc(m.billing_percent) + "%" : "—"}</td>
+                    <td class="px-3 py-2">${m.certificate_required ? "Yes" : "No"}</td>
+                    <td class="px-3 py-2">${m.approval_required ? "Yes" : "No"}</td>
+                    <td class="px-3 py-2">${esc(toDateInputValue(m.expected_completion_date) || "—")}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `
+      : "";
     el.innerHTML = `
       <div class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -37786,7 +37826,7 @@ function bindAssetRecordsPickerModal({ cid }) {
             `
             : ""
         }
-
+        ${milestonePreviewHtml}
         ${billingHintHtml}
 
         <div class="flex items-center gap-2 flex-wrap pt-2 border-t">
@@ -38062,6 +38102,9 @@ function bindAssetRecordsPickerModal({ cid }) {
     const percentWrap = $("revProgressPercentWrap");
     const milestoneWrap = $("revProgressMilestoneCodeWrap");
 
+    const milestoneExtraWrap = $("revProgressMilestoneExtraWrap");
+    const unitsWrap = $("revProgressUnitsWrap");
+
     const show = (el, yes) => {
       if (!el) return;
       el.classList.toggle("hidden", !yes);
@@ -38078,7 +38121,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     show(actualWrap, false);
     show(percentWrap, false);
     show(milestoneWrap, false);
-
+    show(milestoneExtraWrap, false);
+    show(unitsWrap, false);
     setEnabled(expected, false);
     setEnabled(actual, false);
     setEnabled(percent, false);
@@ -38096,6 +38140,7 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     else if (type === "milestone") {
       show(milestoneWrap, true);
+      show(milestoneExtraWrap, true);
       setEnabled(milestone, true);
 
       if (expected) expected.value = "0.00";
@@ -38104,6 +38149,8 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
 
     else if (type === "units" || type === "units_delivered") {
+      show(unitsWrap, true);
+
       if (expected) expected.value = "0.00";
       if (actual) actual.value = "0.00";
       if (percent) percent.value = "";
@@ -38966,6 +39013,11 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     const billingCfg = c?.payload_json?.billing_config || {};
 
+    // ✅ ADD THIS HERE
+    if (typeof renderMilestoneRows === "function") {
+      renderMilestoneRows(billingCfg.milestones || []);
+    }
+
     if ($("revPeriodicity")) {
       $("revPeriodicity").value = billingCfg.periodicity || "";
     }
@@ -39307,6 +39359,88 @@ function bindAssetRecordsPickerModal({ cid }) {
     input.dataset.boundCatalog = "1";
   }
 
+  function blankMilestoneRow() {
+    return {
+      code: "",
+      description: "",
+      trigger_type: "manual",
+      billing_amount: 0,
+      billing_percent: null,
+      certificate_required: false,
+      approval_required: false,
+      expected_completion_date: "",
+      billing_enabled: true
+    };
+  }
+
+  function getMilestoneRowsFromUI() {
+    return Array.from(document.querySelectorAll("[data-rev-milestone-row]")).map((row) => ({
+      code: row.querySelector("[data-ms-code]")?.value?.trim() || "",
+      description: row.querySelector("[data-ms-description]")?.value?.trim() || "",
+      trigger_type: row.querySelector("[data-ms-trigger]")?.value || "manual",
+      billing_amount: num(row.querySelector("[data-ms-amount]")?.value),
+      billing_percent: row.querySelector("[data-ms-percent]")?.value === ""
+        ? null
+        : num(row.querySelector("[data-ms-percent]")?.value),
+      certificate_required: !!row.querySelector("[data-ms-cert]")?.checked,
+      approval_required: !!row.querySelector("[data-ms-approval]")?.checked,
+      expected_completion_date: row.querySelector("[data-ms-date]")?.value || null,
+      billing_enabled: true
+    })).filter(x => x.code || x.description || x.billing_amount || x.billing_percent);
+  }
+
+  function renderMilestoneRows(rows = []) {
+    const body = $("revMilestoneTableBody");
+    if (!body) return;
+
+    const data = Array.isArray(rows) && rows.length ? rows : [blankMilestoneRow()];
+
+    body.innerHTML = data.map((m) => `
+      <tr data-rev-milestone-row class="border-t">
+        <td class="px-2 py-2">
+          <input data-ms-code class="w-28 border rounded px-2 py-1 text-sm" value="${esc(m.code || "")}" placeholder="MS-001">
+        </td>
+
+        <td class="px-2 py-2">
+          <input data-ms-description class="w-56 border rounded px-2 py-1 text-sm" value="${esc(m.description || "")}" placeholder="Milestone description">
+        </td>
+
+        <td class="px-2 py-2">
+          <select data-ms-trigger class="w-36 border rounded px-2 py-1 text-sm">
+            <option value="manual" ${m.trigger_type === "manual" ? "selected" : ""}>Manual</option>
+            <option value="date" ${m.trigger_type === "date" ? "selected" : ""}>Date</option>
+            <option value="progress_percent" ${m.trigger_type === "progress_percent" ? "selected" : ""}>Progress %</option>
+            <option value="certificate" ${m.trigger_type === "certificate" ? "selected" : ""}>Certificate</option>
+            <option value="approval" ${m.trigger_type === "approval" ? "selected" : ""}>Approval</option>
+          </select>
+        </td>
+
+        <td class="px-2 py-2">
+          <input data-ms-amount type="number" step="0.01" class="w-32 border rounded px-2 py-1 text-sm text-right" value="${Number(m.billing_amount || 0).toFixed(2)}">
+        </td>
+
+        <td class="px-2 py-2">
+          <input data-ms-percent type="number" step="0.0001" class="w-24 border rounded px-2 py-1 text-sm text-right" value="${m.billing_percent ?? ""}">
+        </td>
+
+        <td class="px-2 py-2 text-center">
+          <input data-ms-cert type="checkbox" ${m.certificate_required ? "checked" : ""}>
+        </td>
+
+        <td class="px-2 py-2 text-center">
+          <input data-ms-approval type="checkbox" ${m.approval_required ? "checked" : ""}>
+        </td>
+
+        <td class="px-2 py-2">
+          <input data-ms-date type="date" class="w-36 border rounded px-2 py-1 text-sm" value="${esc(toDateInputValue(m.expected_completion_date) || "")}">
+        </td>
+
+        <td class="px-2 py-2">
+          <button type="button" class="btn-ghost text-xs" data-ms-remove>Remove</button>
+        </td>
+      </tr>
+    `).join("");
+  }
 
   function contractPayloadFromUI() {
     const hasFinancing = !!$("revHasFinancing")?.checked;
@@ -39350,6 +39484,7 @@ function bindAssetRecordsPickerModal({ cid }) {
             allow_obligation_override: !!$("revAllowObligationOverride")?.checked,
             auto_allocate_contract_pool: !!$("revAutoAllocateContractPool")?.checked,
             notes: $("revBillingConfigNotes")?.value?.trim() || null,
+            milestones: getMilestoneRowsFromUI()
           },
         financing: hasFinancing ? {
           role: $("revFinancingRole")?.value || "",
@@ -39734,14 +39869,36 @@ async function loadLatestRevenueProgressForSelectedObligation() {
   }
 
   function progressPayloadFromUI() {
+    const updateType = $("revProgressType")?.value || "cost_to_cost";
+
     return {
       period_end: $("revProgressPeriodEnd")?.value || null,
-      update_type: $("revProgressType")?.value || "cost_to_cost",
+      update_type: updateType,
+
       expected_total_cost: num($("revProgressExpectedCost")?.value),
       actual_cost_to_date: num($("revProgressActualCost")?.value),
       progress_percent: $("revProgressPercent")?.value === "" ? null : num($("revProgressPercent")?.value),
+
       milestone_code: $("revProgressMilestoneCode")?.value?.trim() || null,
       notes: $("revProgressNotes")?.value || "",
+
+      payload_json: {
+        driver: updateType,
+
+        milestone: {
+          code: $("revProgressMilestoneCode")?.value?.trim() || null,
+          description: $("revProgressMilestoneDescription")?.value?.trim() || null,
+          status: $("revProgressMilestoneStatus")?.value || null,
+          certificate_ref: $("revProgressCertificateRef")?.value?.trim() || null,
+        },
+
+        units: {
+          unit_of_measure: $("revProgressUnitOfMeasure")?.value?.trim() || null,
+          units_done: $("revProgressUnitsDone")?.value === "" ? null : num($("revProgressUnitsDone")?.value),
+          units_total: $("revProgressUnitsTotal")?.value === "" ? null : num($("revProgressUnitsTotal")?.value),
+          certified_units: $("revProgressCertifiedUnits")?.value === "" ? null : num($("revProgressCertifiedUnits")?.value),
+        }
+      }
     };
   }
 
@@ -41415,6 +41572,33 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     store?.set?.("fs_revenue_run_id", "");
   }
 
+  function bindMilestoneTable() {
+    const addBtn = $("revAddMilestoneRow");
+    const body = $("revMilestoneTableBody");
+
+    if (!addBtn || !body || addBtn.dataset.bound === "1") return;
+
+    addBtn.addEventListener("click", () => {
+      const rows = getMilestoneRowsFromUI();
+      rows.push(blankMilestoneRow());
+      renderMilestoneRows(rows);
+    });
+
+    body.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-ms-remove]");
+      if (!btn) return;
+
+      const row = btn.closest("[data-rev-milestone-row]");
+      row?.remove();
+
+      if (!body.querySelector("[data-rev-milestone-row]")) {
+        renderMilestoneRows([blankMilestoneRow()]);
+      }
+    });
+
+    addBtn.dataset.bound = "1";
+  }
+
   function bindRevenueContractActions() {
     const btnDraft  = document.getElementById("revSaveBtn");
     const btnSubmit = document.getElementById("revSubmitBtn");
@@ -41965,6 +42149,10 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       bindRevenueContractActions();
       bindRevenueSidebarRollDown();
       bindRevenueInfoTooltips();   // ✅ ADD HERE
+
+      // ADD HERE
+      bindMilestoneTable();
+      renderMilestoneRows([]);
       bound = true;
     }
 
