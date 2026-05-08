@@ -6021,25 +6021,34 @@ function isDelegatedWorkspaceToken() {
 
 const DELEGATED_POSTING_SCREENS = new Set([
   "journal",
+
+  "invoices",
   "ar-invoices",
   "quotes",
   "revenue",
+
+  "bills",
   "ap",
+
+  "banking",
+  "bank-recon",
+
   "ifrs16",
   "lease-wizard",
   "leases",
-  "banking",
-  "bank-recon",
+
+  "loan-register",
   "loans",
+
   "fixedassets",
   "ppe",
+
   "ar-recon",
   "ar-statements",
   "ar-aging",
   "ap-recon",
   "ap-statements",
   "ap-aging",
-  "control-room",
 ]);
 
 function navItemHasDelegatedScreen(item) {
@@ -6074,31 +6083,42 @@ function isCoreInternalToken() {
 function shouldShowNavItem(item) {
   if (!item) return false;
 
-  // ✅ Senior Accountant sees all nav items
   if (window.isSeniorFullAccess?.()) return true;
 
   if (item.enterpriseOnly && !window.CURRENT_COMPANY?.is_enterprise) return false;
 
   if (item.feature) {
-    const ok = (typeof featureAllowed === "function")
+    const ok = typeof featureAllowed === "function"
       ? featureAllowed(item.feature)
-      : (typeof hasFeature === "function")
+      : typeof hasFeature === "function"
         ? hasFeature(item.feature)
         : true;
     if (!ok) return false;
   }
 
-  if (item.screen) {
-    if (!canOpenScreen(item.screen)) return false;
+  const screen = item.screen
+    ? (resolveScreenName?.(item.screen) || item.screen)
+    : null;
 
-    const screen = resolveScreenName?.(item.screen) || item.screen;
-
-    // delegated workspace: show posting-related nav screens
-    if (isDelegatedWorkspaceToken?.()) {
+  // ✅ delegated workspace: parent shows if any child is allowed
+  if (isDelegatedWorkspaceToken?.()) {
+    if (screen) {
       return DELEGATED_POSTING_SCREENS.has(screen);
     }
 
-    // core/internal: show nav item; screen opens are guarded later
+    if (!canSeeMenuItem(item)) return false;
+
+    if (Array.isArray(item.children)) {
+      return item.children.some(shouldShowNavItem);
+    }
+
+    return true;
+  }
+
+  // ✅ core/internal: show nav broadly; screen opening still guarded later
+  if (item.screen) {
+    if (!canOpenScreen(item.screen)) return false;
+
     if (!isCoreInternalToken?.()) {
       const access = window.guardScreenAccess?.(item.screen);
       if (!access?.ok) return false;
