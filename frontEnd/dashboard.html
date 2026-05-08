@@ -1179,12 +1179,45 @@ tbody tr {
   }
 }
 
+#appHeader {
+  position: sticky;
+  top: 0;
+  overflow: hidden;
+  max-height: 86px;
+  transition:
+    max-height .22s ease,
+    transform .22s ease,
+    opacity .18s ease,
+    box-shadow .18s ease;
+}
+
 #appHeader.header-collapsed {
-  transform: translateY(calc(-100% + 8px));
+  max-height: 8px;
+  transform: translateY(0);
+  opacity: .96;
+}
+
+#appHeader.header-collapsed > div {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #appHeader.header-collapsed.header-peek {
-  transform: translateY(0);
+  max-height: 86px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+}
+
+#appHeader.header-collapsed.header-peek > div {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#appHeader.header-unpinned {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+#screensHost {
+  transition: padding-top .22s ease;
 }
 
 #appHeader.header-unpinned {
@@ -1241,7 +1274,7 @@ tbody tr {
         data-pinned="true"
         data-collapsed="false"
       >        
-        <div class="max-w-[1500px] mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <div class="w-full max-w-[1680px] mx-auto px-5 py-3 flex items-center justify-between gap-4">
 
           <!-- LEFT: Workspace identity -->
           <div class="flex items-center gap-3 min-w-0">
