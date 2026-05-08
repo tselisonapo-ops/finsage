@@ -4839,9 +4839,9 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         minRole: "assistant",
         permission: "can_view_ar_ap_controls",
         children: [
-          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
+          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
+          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permission: "can_view_control_room" },
         ],
       },
       {
@@ -4849,11 +4849,11 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         icon: "🏦",
         isParent: true,
         minRole: "assistant",
-        permission: "can_view_ar_ap_controls",
+        permission: "can_view_control_room",
         children: [
-          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_view_ar_ap_controls" },
+          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permission: "can_view_control_room" },
+          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permission: "can_view_control_room" },
+          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permission: "can_view_control_room" },
         ],
       },
         { name: "Credit Control", screen: "cust-approvals", icon: "🧑‍⚖️", minRole: "credit controller" },
