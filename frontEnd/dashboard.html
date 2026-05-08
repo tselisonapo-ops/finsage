@@ -979,250 +979,274 @@ html, body {
     opacity: 1;
   }
 
-  /* Universal fixed-screen / modal scroll safety */
-.screen {
-  min-width: 0;
-}
+    /* Universal fixed-screen / modal scroll safety */
+  .screen {
+    min-width: 0;
+  }
 
-.screen.active {
-  overflow-x: hidden;
-}
+  .screen.active {
+    overflow-x: hidden;
+  }
 
-.main {
-  overflow-y: auto;
-  overflow-x: hidden;
-}
+  .main {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
 
-.screen .overflow-auto,
-.screen .overflow-x-auto {
-  -webkit-overflow-scrolling: touch;
-}
+  .screen .overflow-auto,
+  .screen .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
 
-/* Fixed overlays must allow their internal shell to scroll */
-.fixed.inset-0 {
-  min-width: 0;
-}
-
-/* Generic modal children fix */
-.fixed.inset-0 > div {
-  min-width: 0;
-}
-
-/* Fullscreen modal shell safety */
-.fixed.inset-0 .bg-white,
-.fixed.inset-0 .card {
-  min-width: 0;
-}
-
-/* Custom modal/drawer safety */
-.drawer,
-.fs-modal-shell,
-#invoiceViewerModal > div,
-#billViewerModal > div,
-#faDepModal > div,
-#faActivityModal > div,
-#moduleNudgeModal .modal-dialog {
-  max-width: 100vw;
-  max-height: 100dvh;
-}
-
-/* Let modal content scroll */
-.fs-modal-body,
-#moduleNudgeModal .modal-dialog {
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Mobile: force fixed modals to fit screen */
-@media (max-width: 768px) {
+  /* Fixed overlays must allow their internal shell to scroll */
   .fixed.inset-0 {
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
+    min-width: 0;
   }
 
-  #invoiceViewerModal,
-  #billViewerModal,
-  #faDepModal,
-  #faActivityModal,
-  #moduleNudgeModal {
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
+  /* Generic modal children fix */
+  .fixed.inset-0 > div {
+    min-width: 0;
   }
 
+  /* Fullscreen modal shell safety */
+  .fixed.inset-0 .bg-white,
+  .fixed.inset-0 .card {
+    min-width: 0;
+  }
+
+  /* Custom modal/drawer safety */
+  .drawer,
+  .fs-modal-shell,
   #invoiceViewerModal > div,
-  #billViewerModal > div {
-    width: 100vw !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
-    border-radius: 0 !important;
+  #billViewerModal > div,
+  #faDepModal > div,
+  #faActivityModal > div,
+  #moduleNudgeModal .modal-dialog {
+    max-width: 100vw;
+    max-height: 100dvh;
   }
 
-  .drawer {
-    inset: 8px !important;
-    max-height: calc(100dvh - 16px);
+  /* Let modal content scroll */
+  .fs-modal-body,
+  #moduleNudgeModal .modal-dialog {
     overflow: auto;
     -webkit-overflow-scrolling: touch;
   }
-}
 
-/* FinSage motion system */
-:root {
-  --fs-ease: cubic-bezier(.2,.8,.2,1);
-  --fs-fast: 140ms;
-  --fs-med: 220ms;
-}
+  /* Mobile: force fixed modals to fit screen */
+  @media (max-width: 768px) {
+    .fixed.inset-0 {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
 
+    #invoiceViewerModal,
+    #billViewerModal,
+    #faDepModal,
+    #faActivityModal,
+    #moduleNudgeModal {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
 
-@keyframes fsScreenIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
+    #invoiceViewerModal > div,
+    #billViewerModal > div {
+      width: 100vw !important;
+      height: 100dvh !important;
+      max-height: 100dvh !important;
+      border-radius: 0 !important;
+    }
+
+    .drawer {
+      inset: 8px !important;
+      max-height: calc(100dvh - 16px);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
   }
-  to {
-    opacity: 1;
+
+  /* FinSage motion system */
+  :root {
+    --fs-ease: cubic-bezier(.2,.8,.2,1);
+    --fs-fast: 140ms;
+    --fs-med: 220ms;
+  }
+
+
+  @keyframes fsScreenIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Global cards: keep normal app look */
+  .card {
+    background: var(--fs-card);
+    border: 1px solid var(--fs-border);
+    border-radius: 14px;
+  }
+
+  /* Only dashboard cards get polish */
+  #screen-dashboard .card {
+    border: 1px solid rgba(148,163,184,.28);
+    box-shadow: 0 8px 22px rgba(15,23,42,.045);
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+
+  #screen-dashboard .card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px rgba(15,23,42,.075);
+    border-color: rgba(0,200,200,.28);
+  }
+
+  #screen-dashboard button:hover,
+  #screen-dashboard .btn:hover {
+    transform: translateY(-1px);
+  }
+
+  button:active,
+  .btn:active,
+  .btn-highlight:active {
+    transform: translateY(0) scale(.98);
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--fs-teal);
+    box-shadow: 0 0 0 3px rgba(0,200,200,.14);
+  }
+
+  /* Drawers and modals */
+  .drawer.active,
+  .fs-modal-overlay.open,
+  #moduleNudgeModal:not(.hidden) {
+    animation: fsOverlayIn var(--fs-med) var(--fs-ease);
+  }
+
+  .drawer.active,
+  .fs-modal-shell,
+  #moduleNudgeModal .modal-card {
+    animation: fsPanelIn var(--fs-med) var(--fs-ease);
+  }
+
+  @keyframes fsOverlayIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes fsPanelIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* Nav */
+  .nav-item-link {
+    transition:
+      transform var(--fs-fast) var(--fs-ease),
+      background-color var(--fs-fast) var(--fs-ease),
+      color var(--fs-fast) var(--fs-ease);
+  }
+
+  .nav-item-link:hover {
+    transform: translateX(2px);
+  }
+
+  /* Tables */
+  tbody tr {
+    transition: background-color var(--fs-fast) var(--fs-ease);
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  #appHeader {
+    position: sticky;
+    top: 0;
+    overflow: hidden;
+    max-height: 86px;
+    transition:
+      max-height .22s ease,
+      transform .22s ease,
+      opacity .18s ease,
+      box-shadow .18s ease;
+  }
+
+  #appHeader.header-collapsed {
+    max-height: 8px;
     transform: translateY(0);
+    opacity: .96;
   }
-}
 
-/* Global cards: keep normal app look */
-.card {
-  background: var(--fs-card);
-  border: 1px solid var(--fs-border);
-  border-radius: 14px;
-}
-
-/* Only dashboard cards get polish */
-#screen-dashboard .card {
-  border: 1px solid rgba(148,163,184,.28);
-  box-shadow: 0 8px 22px rgba(15,23,42,.045);
-  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
-}
-
-#screen-dashboard .card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 34px rgba(15,23,42,.075);
-  border-color: rgba(0,200,200,.28);
-}
-
-#screen-dashboard button:hover,
-#screen-dashboard .btn:hover {
-  transform: translateY(-1px);
-}
-
-button:active,
-.btn:active,
-.btn-highlight:active {
-  transform: translateY(0) scale(.98);
-}
-
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--fs-teal);
-  box-shadow: 0 0 0 3px rgba(0,200,200,.14);
-}
-
-/* Drawers and modals */
-.drawer.active,
-.fs-modal-overlay.open,
-#moduleNudgeModal:not(.hidden) {
-  animation: fsOverlayIn var(--fs-med) var(--fs-ease);
-}
-
-.drawer.active,
-.fs-modal-shell,
-#moduleNudgeModal .modal-card {
-  animation: fsPanelIn var(--fs-med) var(--fs-ease);
-}
-
-@keyframes fsOverlayIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes fsPanelIn {
-  from {
+  #appHeader.header-collapsed > div {
     opacity: 0;
-    transform: translateY(10px) scale(.985);
+    pointer-events: none;
   }
-  to {
+
+  #appHeader.header-collapsed.header-peek {
+    max-height: 86px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+  }
+
+  #appHeader.header-collapsed.header-peek > div {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    pointer-events: auto;
   }
-}
 
-/* Nav */
-.nav-item-link {
-  transition:
-    transform var(--fs-fast) var(--fs-ease),
-    background-color var(--fs-fast) var(--fs-ease),
-    color var(--fs-fast) var(--fs-ease);
-}
-
-.nav-item-link:hover {
-  transform: translateX(2px);
-}
-
-/* Tables */
-tbody tr {
-  transition: background-color var(--fs-fast) var(--fs-ease);
-}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
+  #appHeader.header-unpinned {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   }
-}
 
-#appHeader {
-  position: sticky;
-  top: 0;
-  overflow: hidden;
-  max-height: 86px;
-  transition:
-    max-height .22s ease,
-    transform .22s ease,
-    opacity .18s ease,
-    box-shadow .18s ease;
-}
+  #screensHost {
+    transition: padding-top .22s ease;
+  }
 
-#appHeader.header-collapsed {
-  max-height: 8px;
-  transform: translateY(0);
-  opacity: .96;
-}
+  #appHeader.header-unpinned {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  }
 
-#appHeader.header-collapsed > div {
-  opacity: 0;
-  pointer-events: none;
-}
+  #appHeader {
+    max-height: 165px;
+    overflow: hidden;
+    transition: max-height .22s ease, box-shadow .18s ease;
+  }
 
-#appHeader.header-collapsed.header-peek {
-  max-height: 86px;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
-}
+  #appHeader.header-collapsed {
+    max-height: 8px;
+  }
 
-#appHeader.header-collapsed.header-peek > div {
-  opacity: 1;
-  pointer-events: auto;
-}
+  #appHeader.header-collapsed > div {
+    opacity: 0;
+    pointer-events: none;
+  }
 
-#appHeader.header-unpinned {
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-}
+  #appHeader.header-collapsed.header-peek {
+    max-height: 165px;
+  }
 
-#screensHost {
-  transition: padding-top .22s ease;
-}
-
-#appHeader.header-unpinned {
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-}
+  #appHeader.header-collapsed.header-peek > div {
+    opacity: 1;
+    pointer-events: auto;
+  }
   </style>
 
 </head>
@@ -1270,142 +1294,111 @@ tbody tr {
       <!-- Header -->
       <header
         id="appHeader"
-        class="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-[var(--fs-border)] transition-transform duration-200"
+        class="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-[var(--fs-border)]"
         data-pinned="true"
         data-collapsed="false"
-      >        
-        <div class="w-full max-w-[1680px] mx-auto px-5 py-3 flex items-center justify-between gap-4">
+      >
+        <div class="w-full max-w-[1760px] mx-auto px-5 py-4">
 
-          <!-- LEFT: Workspace identity -->
-          <div class="flex items-center gap-3 min-w-0">
-            <button
-              id="mobileMenu"
-              class="h-10 w-10 inline-flex items-center justify-center border rounded-xl bg-white text-slate-700 hover:bg-slate-50"
-              type="button"
-              aria-label="Toggle navigation"
-            >
-              ☰
-            </button>
-
-            <div class="h-10 w-10 rounded-xl bg-[var(--fs-navy)] text-white flex items-center justify-center font-bold shrink-0">
-              F
-            </div>
-
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 min-w-0">
-                <div class="font-semibold text-[var(--fs-navy)] truncate">FinSage</div>
-                <span id="workspaceModeBadge" class="pill text-[11px] whitespace-nowrap">Workspace</span>
-              </div>
-
-              <div class="flex items-center gap-2 text-xs text-slate-500 min-w-0">
-                <span id="companyBadge" class="truncate max-w-[260px]">
-                  Your company
-                </span>
-                <span class="hidden md:inline">•</span>
-                <span id="headerScreenContext" class="hidden md:inline truncate">
-                  Command Center
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- CENTER: Operational context -->
-          <div class="hidden xl:flex items-center gap-2 min-w-0">
-            <div id="companySwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
-              <span class="text-xs text-slate-500">Company</span>
-              <select id="companySwitcher" class="pill min-w-[220px]">
-                <option value="">Select company</option>
-              </select>
-            </div>
-
-            <div id="dashboardModeSwitcherWrap" class="hidden items-center gap-2 whitespace-nowrap">
-              <span class="text-xs text-slate-500">Dashboard</span>
-              <select id="dashboardModeSwitcher" class="pill">
-                <option value="internal">Internal Dashboard</option>
-                <option value="practitioner">Practitioner Dashboard</option>
-              </select>
-            </div>
-
-            <span id="roleBadge" class="pill whitespace-nowrap hidden md:inline"></span>
-
-            <select id="dateRange" class="pill hidden whitespace-nowrap">
-              <option value="3m">Last 3 months</option>
-              <option value="6m" selected>Last 6 months</option>
-              <option value="12m">Last 12 months</option>
-              <option value="ytd">Year to date</option>
-            </select>
-          </div>
-
-          <!-- RIGHT: Actions -->
-          <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
-
-            <button
-              id="headerPinBtn"
-              type="button"
-              class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm hover:bg-slate-50"
-              title="Pin or unpin header"
-            >
-              📌
-            </button>
-
-            <button
-              id="headerCollapseBtn"
-              type="button"
-              class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm hover:bg-slate-50"
-              title="Collapse header"
-            >
-              ▲
-            </button>
-            <button
-              id="returnToPractitionerBtn"
-              class="hidden whitespace-nowrap px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              type="button"
-            >
-              ← Back to Workspace
-            </button>
-
-            <button
-              id="refreshBtn"
-              class="px-3 py-2 rounded-xl bg-[var(--fs-navy)] text-white hidden whitespace-nowrap"
-              type="button"
-            >
-              Refresh
-            </button>
-
-            <button id="signinBtn" class="btn whitespace-nowrap" type="button">Sign In</button>
-
-            <div id="userMenuWrap" class="relative hidden">
-              <button
-                id="userMenuButton"
-                type="button"
-                class="h-10 px-2 rounded-xl border border-[var(--fs-border)] bg-white hover:bg-slate-50 flex items-center gap-2"
-              >
-                <div
-                  id="userAvatar"
-                  class="h-8 w-8 rounded-full bg-slate-100 border border-[var(--fs-border)] flex items-center justify-center text-sm font-semibold text-[var(--fs-navy)]"
-                >
-                  T
-                </div>
-                <span class="hidden md:inline text-sm text-slate-700">Account</span>
-                <span class="text-xs text-slate-400">▼</span>
+          <!-- TOP ROW -->
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <button id="mobileMenu" class="h-11 w-11 inline-flex items-center justify-center border rounded-xl bg-white text-slate-700 hover:bg-slate-50" type="button">
+                ☰
               </button>
 
-              <div
-                id="userMenu"
-                class="hidden absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white shadow-lg p-2 text-sm z-50"
-              >
-                <button id="accountSettingsBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">
-                  Account settings
-                </button>
-                <button id="changePasswordLink" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">
-                  Change password
-                </button>
-                <button id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg text-red-600 hover:bg-red-50">
-                  Sign Out
-                </button>
+              <div class="h-12 w-12 rounded-2xl bg-[var(--fs-navy)] text-white flex items-center justify-center font-bold shrink-0">
+                F
+              </div>
+
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <div class="text-lg font-bold text-[var(--fs-navy)]">FinSage</div>
+                  <span id="workspaceModeBadge" class="pill text-[11px]">Workspace</span>
+                </div>
+                <div class="text-xs text-slate-500 truncate">
+                  <span id="companyBadge">Your company</span>
+                  <span> • </span>
+                  <span id="headerScreenContext">Command Center</span>
+                </div>
               </div>
             </div>
 
+            <div class="flex items-center gap-2">
+              <button id="headerPinBtn" type="button" class="h-10 px-3 rounded-xl border bg-white">📌</button>
+              <button id="headerCollapseBtn" type="button" class="h-10 px-3 rounded-xl border bg-white">▲</button>
+
+              <button id="returnToPractitionerBtn" class="hidden px-3 py-2 rounded-xl border bg-white text-sm font-semibold">
+                ← Back to Workspace
+              </button>
+
+              <button id="refreshBtn" class="px-4 py-2 rounded-xl bg-[var(--fs-navy)] text-white hidden">
+                Refresh
+              </button>
+
+              <button id="signinBtn" class="btn">Sign In</button>
+
+              <div id="userMenuWrap" class="relative hidden">
+                <button id="userMenuButton" type="button" class="h-10 px-2 rounded-xl border bg-white flex items-center gap-2">
+                  <div id="userAvatar" class="h-8 w-8 rounded-full bg-slate-100 border flex items-center justify-center text-sm font-semibold text-[var(--fs-navy)]">T</div>
+                  <span class="hidden md:inline text-sm">Account</span>
+                  <span class="text-xs text-slate-400">▼</span>
+                </button>
+
+                <div id="userMenu" class="hidden absolute right-0 mt-2 w-52 rounded-xl border bg-white shadow-lg p-2 text-sm z-50">
+                  <button id="accountSettingsBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">Account settings</button>
+                  <button id="changePasswordLink" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">Change password</button>
+                  <button id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg text-red-600 hover:bg-red-50">Sign Out</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ACTIVE PROFILE CARD ROW -->
+          <div class="mt-3 grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-3">
+            <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 flex flex-wrap items-center gap-3">
+              <div id="companySwitcherWrap" class="hidden items-center gap-2">
+                <span class="text-xs text-slate-500 uppercase tracking-wide">Company</span>
+                <select id="companySwitcher" class="pill min-w-[300px]">
+                  <option value="">Select company</option>
+                </select>
+              </div>
+
+              <div id="dashboardModeSwitcherWrap" class="hidden items-center gap-2">
+                <span class="text-xs text-slate-500 uppercase tracking-wide">View</span>
+                <select id="dashboardModeSwitcher" class="pill min-w-[190px]">
+                  <option value="internal">Internal Dashboard</option>
+                  <option value="practitioner">Practitioner Dashboard</option>
+                </select>
+              </div>
+
+              <span id="roleBadge" class="pill hidden"></span>
+
+              <select id="dateRange" class="pill hidden">
+                <option value="3m">Last 3 months</option>
+                <option value="6m" selected>Last 6 months</option>
+                <option value="12m">Last 12 months</option>
+                <option value="ytd">Year to date</option>
+              </select>
+            </div>
+
+            <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 min-w-[260px]">
+              <div class="text-[11px] uppercase tracking-wide text-slate-500">Active Profile</div>
+              <div id="headerProfileName" class="mt-2 text-sm font-bold text-slate-800">User</div>
+              <div id="headerProfileRole" class="text-xs text-slate-500">Role</div>
+              <div class="mt-3 flex gap-2 flex-wrap">
+                <span id="headerCompanyBadge" class="pill text-[11px]">
+                  Company
+                </span>
+
+                <span
+                  id="headerScopeBadge"
+                  class="pill text-[11px] bg-teal-50 text-teal-700"
+                >
+                  Scope
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </header>

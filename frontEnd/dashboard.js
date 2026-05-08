@@ -4345,6 +4345,11 @@ window.applyLoggedOutUI = applyLoggedOutUI;
     const roleBadge = document.getElementById("roleBadge");
     const userMenu = document.getElementById("userMenu");
 
+    const headerCompanyBadge = document.getElementById("headerCompanyBadge");
+    const headerProfileName = document.getElementById("headerProfileName");
+    const headerProfileRole = document.getElementById("headerProfileRole");
+    const headerScopeBadge = document.getElementById("headerScopeBadge");
+
     if (!user) {
       applyLoggedOutUI();
       return;
@@ -4372,6 +4377,24 @@ window.applyLoggedOutUI = applyLoggedOutUI;
 
     store.set("userRole", appRole);
     window.FS_USER_ROLE = appRole;
+
+    if (headerCompanyBadge) {
+      headerCompanyBadge.textContent = storedCompany || "Company";
+    }
+
+    if (headerProfileName) {
+      headerProfileName.textContent =
+        `${user.first_name || ""} ${user.last_name || ""}`.trim() || email;
+    }
+
+    if (headerProfileRole) {
+      headerProfileRole.textContent = roleLabel;
+    }
+
+    if (headerScopeBadge) {
+      headerScopeBadge.textContent =
+        user.token_access_scope || user.access_scope || "workspace";
+    }
 
     if (roleBadge) {
       roleBadge.textContent = roleLabel;
