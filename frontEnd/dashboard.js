@@ -4830,7 +4830,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       icon: "🛡️",
       isParent: true,
       minRole: "assistant",
-      permission: "can_view_control_room",
+      permission: "can_view_ar_ap_controls",
       children: [
       {
         name: "AR Controls",
@@ -6114,7 +6114,8 @@ const SCREEN_POLICY = {
   "ap-recon": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
   "ap-statements": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
   "ap-aging": { auth: "private", minRole: "assistant", permission: "can_view_ar_ap_controls" },
-    // Banking
+  
+  // Banking
   "bank-setup": { auth: "private", minRole: "clerk", permission: "can_manage_banking" },
   banking: { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
   "bank-recon": { auth: "private", minRole: "assistant", permission: "can_manage_banking" },
