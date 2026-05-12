@@ -584,8 +584,23 @@ def api_vendors(company_id: int):
         return jsonify({"ok": True, "data": vend}), 201
     except Exception as ex:
         current_app.logger.exception("insert vendor failed")
-        return jsonify({"ok": False, "error": "Failed to create vendor", "detail": str(ex)}), 500
 
+        msg = str(ex).lower()
+
+        if (
+            "vendors_name_email_uniq" in msg
+            or "duplicate key value violates unique constraint" in msg
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "Vendor already exists"
+            }), 409
+
+        return jsonify({
+            "ok": False,
+            "error": "Failed to create vendor",
+            "detail": str(ex)
+        }), 500
 
 @ap_bp.route("/api/companies/<int:company_id>/vendors/<int:vendor_id>", methods=["GET","PUT","DELETE","OPTIONS"])
 @require_auth
