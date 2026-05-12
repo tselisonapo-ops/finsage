@@ -243,7 +243,7 @@ def sync_company_coa_from_pool(
     missing: List[Dict[str, Any]] = []
 
     skipped_existing_scoped = 0
-    skipped_excluded_general = 0
+    skipped_excluded_by_profile = 0
     skipped_controls = 0
     skipped_canon_tc = 0
     added = 0
@@ -272,11 +272,16 @@ def sync_company_coa_from_pool(
         std = (p.get("standard") or "").strip()
 
         # Only filter GENERAL scoped rows
-        if tcs.startswith("G::"):
-            if should_exclude_account(name=name, section=section, category=category, flags=flags):
-                skipped_excluded_general += 1
-                existing_scoped.add(tcs)
-                continue
+        # Filter ALL scopes: General, Industry, and Sub-industry
+        if should_exclude_account(
+            name=name,
+            section=section,
+            category=category,
+            flags=flags,
+        ):
+            skipped_excluded_by_profile += 1
+            existing_scoped.add(tcs)
+            continue
 
         # (keep your control-reporting-code guard if you want; it’s now mostly redundant)
         # (keep your control-reporting-code guard if you want; it’s now mostly redundant)
@@ -505,7 +510,7 @@ def sync_company_coa_from_pool(
         f"added={added} missing={len(missing)} "
         f"skipped_canon_tc={skipped_canon_tc} "
         f"skipped_existing_scoped={skipped_existing_scoped} "
-        f"skipped_excluded_general={skipped_excluded_general} "
+        f"skipped_excluded_by_profile={skipped_excluded_by_profile} "
         f"skipped_controls={skipped_controls}"
     )
 
