@@ -6,7 +6,7 @@ import traceback
 def main():
     print("=== Posting TBR opening fixed assets ===")
 
-    ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     if ROOT not in sys.path:
         sys.path.insert(0, ROOT)
 
@@ -16,7 +16,7 @@ def main():
 
     from BackEnd.Services.db_service import db_service
     from BackEnd.Services.assets import service, posting  
-      
+
     company_id = int(os.getenv("COMPANY_ID", "0"))
     if not company_id:
         raise RuntimeError("Set COMPANY_ID before running this script")
