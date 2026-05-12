@@ -20424,6 +20424,7 @@ function bindReportsScreen() {
   if (typeof bindFinancialStatementNotesEditor === "function") {
     bindFinancialStatementNotesEditor();
   }
+  
   const typeSel     = document.getElementById("stmtType");
   const formatSel   = document.getElementById("stmtFormat");
   const templateSel = document.getElementById("stmtTemplate");
@@ -20446,6 +20447,8 @@ function bindReportsScreen() {
   if (typeof bindGenerateNotesBtnReportsScreen === "function") {
     bindGenerateNotesBtnReportsScreen();
   }
+
+  bindInterpretationToolbar();
 
   window._suppressStmtPresetChange = false;
 
@@ -25622,6 +25625,39 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
     console.error("renderStatementViewer apiFetch error:", err);
     canvas.innerHTML = `<div class="text-xs text-red-500">Error loading statement.</div>`;
   }
+}
+
+function bindInterpretationToolbar() {
+  const wrap = document.getElementById("statementInterpretationWrap");
+  const toggleBtn = document.getElementById("toggleInterpretationBtn");
+  const pinBtn = document.getElementById("pinInterpretationBtn");
+
+  if (!wrap || !toggleBtn) return;
+
+  const STORAGE_KEY = "fs_interpretation_collapsed";
+
+  // restore
+  const saved = localStorage.getItem(STORAGE_KEY);
+
+  if (saved === "true") {
+    wrap.classList.add("hidden");
+    toggleBtn.textContent = "Show Insights";
+  }
+
+  toggleBtn.addEventListener("click", () => {
+    const collapsed = wrap.classList.toggle("hidden");
+
+    toggleBtn.textContent =
+      collapsed ? "Show Insights" : "Hide Insights";
+
+    localStorage.setItem(STORAGE_KEY, collapsed);
+  });
+
+  pinBtn?.addEventListener("click", () => {
+    wrap.classList.remove("hidden");
+    localStorage.setItem(STORAGE_KEY, "false");
+    toggleBtn.textContent = "Hide Insights";
+  });
 }
 
 // ==============================
