@@ -7889,7 +7889,10 @@ async function switchScreen(name) {
   else if (isCatalogSubscreen) base = "inventory";
   else if (isRevenueWorkflow) base = "revenue";
   else if (isRevenueSetup) base = "revenue-setup";
-  else if (isProjectWorkflow) base = "projects";
+  else if (name === "projects" || name === "project-detail") base = "projects";
+  else if (name === "project-budgets") base = "project-budgets";
+  else if (name === "project-material-issues") base = "project-material-issues";
+  else if (name === "project-profitability") base = "project-profitability";
 
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
