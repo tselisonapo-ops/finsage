@@ -17654,10 +17654,9 @@ class DatabaseService:
         ALTER TABLE public.company_account_settings
         ADD COLUMN IF NOT EXISTS ppv_control_code TEXT;
 
-        # ============================================================
-        # PROJECT MANAGEMENT / JOB COSTING
-        # ============================================================
-
+        -- ============================================================
+        -- PROJECT MANAGEMENT / JOB COSTING
+        -- ============================================================
         CREATE TABLE IF NOT EXISTS {schema}.projects (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -17704,19 +17703,24 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_projects_customer_idx
         ON {schema}.projects(company_id, customer_id);
 
-        ALTER TABLE {schema}.projects
-        ADD CONSTRAINT {schema}_projects_status_chk
-        CHECK (
-            status IN (
-                'draft',
-                'approved',
-                'active',
-                'on_hold',
-                'completed',
-                'cancelled',
-                'closed'
-            )
-        );
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_projects_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.projects
+            ADD CONSTRAINT %I
+            CHECK (status IN (''draft'',''approved'',''active'',''on_hold'',''completed'',''cancelled'',''closed''))',
+            '{schema}',
+            '{schema}_projects_status_chk'
+            );
+        END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.project_tasks (
             id SERIAL PRIMARY KEY,
@@ -17755,17 +17759,32 @@ class DatabaseService:
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_tasks_name_uniq
         ON {schema}.project_tasks(company_id, project_id, lower(trim(task_name)));
 
-        ALTER TABLE {schema}.project_tasks
-        ADD CONSTRAINT {schema}_project_tasks_status_chk
-        CHECK (
-            status IN (
-                'open',
-                'in_progress',
-                'blocked',
-                'completed',
-                'cancelled'
-            )
-        );
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_tasks_status_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_tasks
+            ADD CONSTRAINT %I
+            CHECK (
+                status IN (
+                ''open'',
+                ''in_progress'',
+                ''blocked'',
+                ''completed'',
+                ''cancelled''
+                )
+            )',
+            '{schema}',
+            '{schema}_project_tasks_status_chk'
+            );
+        END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.project_cost_codes (
             id SERIAL PRIMARY KEY,
@@ -17817,17 +17836,62 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_project_budget_project_idx
         ON {schema}.project_budget_lines(company_id, project_id);
 
-        ALTER TABLE {schema}.project_budget_lines
-        ADD CONSTRAINT {schema}_project_budget_line_no_chk
-        CHECK (line_no > 0);
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_budget_line_no_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_budget_lines
+            ADD CONSTRAINT %I
+            CHECK (line_no > 0)',
+            '{schema}',
+            '{schema}_project_budget_line_no_chk'
+            );
+        END IF;
+        END $$;
 
-        ALTER TABLE {schema}.project_budget_lines
-        ADD CONSTRAINT {schema}_project_budget_qty_chk
-        CHECK (budget_qty >= 0);
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_budget_qty_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_budget_lines
+            ADD CONSTRAINT %I
+            CHECK (budget_qty >= 0)',
+            '{schema}',
+            '{schema}_project_budget_qty_chk'
+            );
+        END IF;
+        END $$;
 
-        ALTER TABLE {schema}.project_budget_lines
-        ADD CONSTRAINT {schema}_project_budget_amount_chk
-        CHECK (budget_amount >= 0);
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_project_budget_amount_chk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.project_budget_lines
+            ADD CONSTRAINT %I
+            CHECK (budget_amount >= 0)',
+            '{schema}',
+            '{schema}_project_budget_amount_chk'
+            );
+        END IF;
+        END $$;
 
         ALTER TABLE {schema}.purchase_orders
         ADD COLUMN IF NOT EXISTS project_id INT NULL,
@@ -20626,12 +20690,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v55")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v56")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=55,
+                    migration_version=56,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
