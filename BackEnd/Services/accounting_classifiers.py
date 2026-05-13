@@ -805,6 +805,31 @@ def _coa_role_from_text(
     def has_any(*terms: str) -> bool:
         return any(t in text for t in terms if t)
 
+    # ----------------------------
+    # helpers
+    # ----------------------------
+    is_expense = ("expense" in sec) or ("depreciation" in text) or ("amort" in text)
+    is_asset = ("asset" in sec) or ("accum" in text) or ("contra" in text)
+    is_liability = (
+        "liability" in sec
+        or "liab" in sec
+        or "liability" in cat
+        or "liab" in cat
+        or "payable" in text
+    )
+
+    is_rou = any(k in text for k in (
+        "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
+    ))
+
+    is_accum = any(k in text for k in (
+        "accumulated depreciation",
+        "accum depreciation",
+        "accum dep",
+        "accumulated amort",
+        "accum amort",
+    ))
+
     # --- AR / cash / bank / VAT ---
     if any(k in text for k in ("accounts receivable", "trade receivable", "debtors")):
         return "ar"
@@ -945,31 +970,6 @@ def _coa_role_from_text(
 
         if has_any("subcontractor", "subcontractor payments", "direct subcontractor"):
             return "direct_subcontractor_cost"
-        
-    # ----------------------------
-    # helpers
-    # ----------------------------
-    is_expense = ("expense" in sec) or ("depreciation" in text) or ("amort" in text)
-    is_asset = ("asset" in sec) or ("accum" in text) or ("contra" in text)
-    is_liability = (
-        "liability" in sec
-        or "liab" in sec
-        or "liability" in cat
-        or "liab" in cat
-        or "payable" in text
-    )
-
-    is_rou = any(k in text for k in (
-        "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
-    ))
-
-    is_accum = any(k in text for k in (
-        "accumulated depreciation",
-        "accum depreciation",
-        "accum dep",
-        "accumulated amort",
-        "accum amort",
-    ))
 
     # ----------------------------
     # IFRS 15 / contract liability
@@ -1033,7 +1033,7 @@ def _coa_role_from_text(
     if has_any(
         "contract income",
         "contract revenue",
-        "service income"
+        "service income",
         "revenue recognized from contracts",
         "revenue recognition - ifrs 15",
         "revenue recognition ifrs 15",
