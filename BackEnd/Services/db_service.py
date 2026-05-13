@@ -17492,6 +17492,16 @@ class DatabaseService:
             po_date DATE NOT NULL,
             status TEXT NOT NULL DEFAULT 'open',
             notes TEXT NULL,
+            project_id INT NULL,
+            task_id INT NULL,
+            requested_by INT NULL,
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+            expected_delivery_date DATE NULL,
+            delivery_location TEXT NULL,
+            po_type TEXT NOT NULL DEFAULT 'materials',
+            source TEXT NULL,
+            source_id INT NULL
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -17570,6 +17580,13 @@ class DatabaseService:
             unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
             vat_code TEXT NULL,
             memo TEXT NULL,
+            project_id INT NULL,
+            task_id INT NULL,
+            cost_code_id INT NULL,
+            required_date DATE NULL,
+            received_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+            cancelled_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+            line_status TEXT NOT NULL DEFAULT 'open'
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -17636,6 +17653,227 @@ class DatabaseService:
         -- Optional: PPV control in settings (public table)
         ALTER TABLE public.company_account_settings
         ADD COLUMN IF NOT EXISTS ppv_control_code TEXT;
+
+        # ============================================================
+        # PROJECT MANAGEMENT / JOB COSTING
+        # ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.projects (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_code TEXT NOT NULL,
+            project_name TEXT NOT NULL,
+            customer_id INT NULL,
+
+            project_type TEXT NOT NULL DEFAULT 'service',
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            start_date DATE NULL,
+            expected_end_date DATE NULL,
+            actual_end_date DATE NULL,
+
+            contract_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+            budget_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            billing_method TEXT NOT NULL DEFAULT 'milestone',
+            wip_account_code TEXT NULL,
+            revenue_account_code TEXT NULL,
+            cost_account_code TEXT NULL,
+
+            location TEXT NULL,
+            description TEXT NULL,
+            notes TEXT NULL,
+            meta JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by INT NULL,
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_projects_code_uniq
+        ON {schema}.projects(company_id, lower(trim(project_code)))
+        WHERE project_code IS NOT NULL AND trim(project_code) <> '';
+
+        CREATE INDEX IF NOT EXISTS {schema}_projects_status_idx
+        ON {schema}.projects(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_projects_customer_idx
+        ON {schema}.projects(company_id, customer_id);
+
+        ALTER TABLE {schema}.projects
+        ADD CONSTRAINT {schema}_projects_status_chk
+        CHECK (
+            status IN (
+                'draft',
+                'approved',
+                'active',
+                'on_hold',
+                'completed',
+                'cancelled',
+                'closed'
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_tasks (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+
+            task_code TEXT NULL,
+            task_name TEXT NOT NULL,
+            parent_task_id INT NULL,
+
+            status TEXT NOT NULL DEFAULT 'open',
+            start_date DATE NULL,
+            expected_end_date DATE NULL,
+            actual_end_date DATE NULL,
+
+            budget_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+            progress_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+
+            notes TEXT NULL,
+            meta JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_tasks_project_idx
+        ON {schema}.project_tasks(company_id, project_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_tasks_status_idx
+        ON {schema}.project_tasks(company_id, status);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_tasks_code_uniq
+        ON {schema}.project_tasks(company_id, project_id, lower(trim(task_code)))
+        WHERE task_code IS NOT NULL AND trim(task_code) <> '';
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_tasks_name_uniq
+        ON {schema}.project_tasks(company_id, project_id, lower(trim(task_name)));
+
+        ALTER TABLE {schema}.project_tasks
+        ADD CONSTRAINT {schema}_project_tasks_status_chk
+        CHECK (
+            status IN (
+                'open',
+                'in_progress',
+                'blocked',
+                'completed',
+                'cancelled'
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_cost_codes (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            cost_type TEXT NOT NULL DEFAULT 'materials',
+
+            default_account_code TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_cost_codes_uniq
+        ON {schema}.project_cost_codes(company_id, lower(trim(code)))
+        WHERE code IS NOT NULL AND trim(code) <> '';
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_cost_codes_active_idx
+        ON {schema}.project_cost_codes(company_id, is_active);
+
+        CREATE TABLE IF NOT EXISTS {schema}.project_budget_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            project_id INT NOT NULL REFERENCES {schema}.projects(id) ON DELETE CASCADE,
+            task_id INT NULL REFERENCES {schema}.project_tasks(id) ON DELETE SET NULL,
+            cost_code_id INT NULL REFERENCES {schema}.project_cost_codes(id) ON DELETE SET NULL,
+
+            line_no INT NOT NULL,
+            description TEXT NULL,
+
+            budget_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+            unit_cost NUMERIC(18,6) NOT NULL DEFAULT 0,
+            budget_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            source TEXT NULL,
+            source_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_budget_lines_uniq
+        ON {schema}.project_budget_lines(project_id, line_no);
+
+        CREATE INDEX IF NOT EXISTS {schema}_project_budget_project_idx
+        ON {schema}.project_budget_lines(company_id, project_id);
+
+        ALTER TABLE {schema}.project_budget_lines
+        ADD CONSTRAINT {schema}_project_budget_line_no_chk
+        CHECK (line_no > 0);
+
+        ALTER TABLE {schema}.project_budget_lines
+        ADD CONSTRAINT {schema}_project_budget_qty_chk
+        CHECK (budget_qty >= 0);
+
+        ALTER TABLE {schema}.project_budget_lines
+        ADD CONSTRAINT {schema}_project_budget_amount_chk
+        CHECK (budget_amount >= 0);
+
+        ALTER TABLE {schema}.purchase_orders
+        ADD COLUMN IF NOT EXISTS project_id INT NULL,
+        ADD COLUMN IF NOT EXISTS task_id INT NULL,
+        ADD COLUMN IF NOT EXISTS requested_by INT NULL,
+        ADD COLUMN IF NOT EXISTS approved_by INT NULL,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS expected_delivery_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS delivery_location TEXT NULL,
+        ADD COLUMN IF NOT EXISTS po_type TEXT NOT NULL DEFAULT 'materials',
+        ADD COLUMN IF NOT EXISTS source TEXT NULL,
+        ADD COLUMN IF NOT EXISTS source_id INT NULL;
+
+        ALTER TABLE {schema}.purchase_order_lines
+        ADD COLUMN IF NOT EXISTS project_id INT NULL,
+        ADD COLUMN IF NOT EXISTS task_id INT NULL,
+        ADD COLUMN IF NOT EXISTS cost_code_id INT NULL,
+        ADD COLUMN IF NOT EXISTS requisition_line_id INT NULL,
+        ADD COLUMN IF NOT EXISTS required_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS cancelled_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS line_status TEXT NOT NULL DEFAULT 'open';
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS project_id INT NULL,
+        ADD COLUMN IF NOT EXISTS task_id INT NULL,
+        ADD COLUMN IF NOT EXISTS cost_code_id INT NULL,
+        ADD COLUMN IF NOT EXISTS usage_type TEXT NULL;
+
+        ALTER TABLE {schema}.inventory_tx_lines
+        ADD COLUMN IF NOT EXISTS project_id INT NULL,
+        ADD COLUMN IF NOT EXISTS task_id INT NULL,
+        ADD COLUMN IF NOT EXISTS cost_code_id INT NULL,
+        ADD COLUMN IF NOT EXISTS usage_type TEXT NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_po_project_idx
+        ON {schema}.purchase_orders(company_id, project_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_pol_project_idx
+        ON {schema}.purchase_order_lines(company_id, project_id, task_id, cost_code_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inv_tx_project_idx
+        ON {schema}.inventory_tx(company_id, project_id, task_id, cost_code_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inv_tx_lines_project_idx
+        ON {schema}.inventory_tx_lines(company_id, project_id, task_id, cost_code_id);
+
 
         -- ==================================================
         -- POS  (FULL + CORRECT ORDER; FIXES SKIPPED ALTER)
@@ -19220,6 +19458,9 @@ class DatabaseService:
         SET contract_position_type = 'neutral'
         WHERE contract_position_type IS NULL;
 
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS project_id INT NULL;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -19276,6 +19517,9 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_revenue_contracts_approval_status_idx
         ON {schema}.revenue_contracts(company_id, approval_status, created_at DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_contracts_project_idx
+        ON {schema}.revenue_contracts(company_id, project_id);
 
         DO $$
         BEGIN
@@ -19336,6 +19580,28 @@ class DatabaseService:
                 );
             END IF;
         END $revenue_contracts_customer_fk$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_revenue_contracts_project_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.revenue_contracts
+            ADD CONSTRAINT %I
+            FOREIGN KEY (project_id)
+            REFERENCES %I.projects(id)
+            ON DELETE SET NULL',
+            '{schema}',
+            '{schema}_revenue_contracts_project_fk',
+            '{schema}'
+            );
+        END IF;
+        END $$;
 
         -- ==================================================
         -- IFRS 15: CONTRACT VERSIONS / MODIFICATIONS
@@ -20360,12 +20626,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v54")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v55")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=54,
+                    migration_version=55,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -29569,19 +29835,81 @@ class DatabaseService:
         """
         return self.bulk_insert(sql, rows)
 
-    def find_default_inventory_account_code(self, company_id: int, *, cur) -> str | None:
+    def find_default_inventory_account_code(
+        self,
+        company_id: int,
+        *,
+        cur,
+        prefer_project_wip: bool = False,
+    ) -> str | None:
         """
-        Industry-agnostic inventory asset detector.
+        Inventory / project WIP account resolver.
 
-        Works even when cf_bucket is NULL by ranking based on name/section/category/code.
+        Priority:
+        1. COA role-based lookup
+        2. Keyword fallback
+        3. Code-family fallback
 
-        Prefers:
-        - 'Inventory - Raw Materials', 'Inventory - Finished Goods'
-        - 'Vehicle Inventory'
-        - 'Work-in-Progress' / 'Project Work-in-Progress' (job-costing)
-        Avoids contra inventory (write-down/obsolescence/allowance).
+        Use prefer_project_wip=True when posting project material issues.
         """
         schema = f"company_{company_id}"
+
+        preferred_roles = (
+            [
+                "project_wip",
+                "inventory_raw_materials",
+                "inventory_spares_consumables",
+                "inventory",
+            ]
+            if prefer_project_wip
+            else [
+                "inventory",
+                "inventory_raw_materials",
+                "inventory_finished_goods",
+                "inventory_vehicle",
+                "inventory_spares_consumables",
+                "inventory_medical",
+                "inventory_fuel",
+                "inventory_uniforms",
+                "inventory_books_stationery",
+                "inventory_agriculture",
+                "inventory_mining",
+                "project_wip",
+            ]
+        )
+
+        cur.execute(
+            f"""
+            SELECT code, name, role
+            FROM {schema}.coa
+            WHERE company_id=%s
+            AND posting=true
+            AND role = ANY(%s)
+            ORDER BY
+            CASE role
+                WHEN 'project_wip' THEN 1
+                WHEN 'inventory' THEN 2
+                WHEN 'inventory_raw_materials' THEN 3
+                WHEN 'inventory_spares_consumables' THEN 4
+                WHEN 'inventory_finished_goods' THEN 5
+                WHEN 'inventory_vehicle' THEN 6
+                WHEN 'inventory_medical' THEN 7
+                WHEN 'inventory_fuel' THEN 8
+                WHEN 'inventory_uniforms' THEN 9
+                WHEN 'inventory_books_stationery' THEN 10
+                WHEN 'inventory_agriculture' THEN 11
+                WHEN 'inventory_mining' THEN 12
+                ELSE 99
+            END,
+            id ASC
+            LIMIT 1
+            """,
+            (int(company_id), preferred_roles),
+        )
+
+        row = cur.fetchone()
+        if row:
+            return (row.get("code") if isinstance(row, dict) else row[0]) or None
 
         cur.execute(
             f"""
@@ -29591,62 +29919,65 @@ class DatabaseService:
             AND posting=true
             ORDER BY
             CASE
-                -- 🚫 reject obvious contra / non-inventory
                 WHEN lower(coalesce(name,'')) LIKE '%%write-down%%' THEN 999
                 WHEN lower(coalesce(name,'')) LIKE '%%obsol%%' THEN 999
                 WHEN lower(coalesce(name,'')) LIKE '%%allowance%%' THEN 999
                 WHEN lower(coalesce(name,'')) LIKE '%%accumulated%%' THEN 999
                 WHEN lower(coalesce(section,'')) LIKE '%%depreciation%%' THEN 999
 
-                -- ✅ best: explicit cf_bucket inventory (if present)
-                WHEN lower(coalesce(cf_bucket,''))='inventory' THEN 1
+                WHEN %s = true AND lower(coalesce(name,'')) LIKE '%%project work-in-progress%%' THEN 1
+                WHEN %s = true AND lower(coalesce(name,'')) LIKE '%%work-in-progress%%' THEN 2
+                WHEN %s = true AND lower(coalesce(name,'')) LIKE '%%wip%%' THEN 3
 
-                -- ✅ best: inventory / stock wording in NAME
-                WHEN lower(coalesce(name,'')) LIKE 'inventory%%raw%%' THEN 2
-                WHEN lower(coalesce(name,'')) LIKE 'inventory%%finished%%' THEN 3
-                WHEN lower(coalesce(name,'')) LIKE '%%vehicle inventory%%' THEN 4
-                WHEN lower(coalesce(name,'')) LIKE '%%work-in-progress%%' THEN 5
-                WHEN lower(coalesce(name,'')) LIKE '%%wip%%' THEN 6
-                WHEN lower(coalesce(name,'')) LIKE '%%inventory%%' THEN 7
-                WHEN lower(coalesce(name,'')) LIKE '%%stock%%' THEN 8
+                WHEN lower(coalesce(cf_bucket,''))='inventory' THEN 10
+                WHEN lower(coalesce(name,'')) LIKE 'inventory%%raw%%' THEN 11
+                WHEN lower(coalesce(name,'')) LIKE 'inventory%%finished%%' THEN 12
+                WHEN lower(coalesce(name,'')) LIKE '%%vehicle inventory%%' THEN 13
+                WHEN lower(coalesce(name,'')) LIKE '%%medicine inventory%%' THEN 14
+                WHEN lower(coalesce(name,'')) LIKE '%%medical supplies%%' THEN 15
+                WHEN lower(coalesce(name,'')) LIKE '%%fuel inventory%%' THEN 16
+                WHEN lower(coalesce(name,'')) LIKE '%%spare parts%%' THEN 17
+                WHEN lower(coalesce(name,'')) LIKE '%%spares%%' THEN 18
+                WHEN lower(coalesce(name,'')) LIKE '%%consumables%%' THEN 19
+                WHEN lower(coalesce(name,'')) LIKE '%%uniform%%' THEN 20
+                WHEN lower(coalesce(name,'')) LIKE '%%textbook%%' THEN 21
+                WHEN lower(coalesce(name,'')) LIKE '%%stationery%%' THEN 22
+                WHEN lower(coalesce(name,'')) LIKE '%%crop inventory%%' THEN 23
+                WHEN lower(coalesce(name,'')) LIKE '%%produce inventory%%' THEN 24
+                WHEN lower(coalesce(name,'')) LIKE '%%ore stockpile%%' THEN 25
+                WHEN lower(coalesce(name,'')) LIKE '%%inventory%%' THEN 30
+                WHEN lower(coalesce(name,'')) LIKE '%%stock%%' THEN 31
 
-                -- ✅ next: inventory wording in SECTION/CATEGORY
-                WHEN lower(coalesce(section,'')) LIKE '%%inventor%%' THEN 20
-                WHEN lower(coalesce(category,'')) LIKE '%%inventor%%' THEN 21
+                WHEN lower(coalesce(section,'')) LIKE '%%inventor%%' THEN 40
+                WHEN lower(coalesce(category,'')) LIKE '%%inventor%%' THEN 41
 
-                -- ✅ weak but useful: code patterns (your templates use BS_CA_150x a lot)
-                WHEN code ILIKE 'BS\\_CA\\_15%%' ESCAPE '\\' THEN 30
-                WHEN code ILIKE 'BS\\_CA\\_10%%' ESCAPE '\\' THEN 40
+                WHEN code ILIKE 'BS\\_CA\\_15%%' ESCAPE '\\' THEN 50
+                WHEN code ILIKE 'BS\\_CA\\_10%%' ESCAPE '\\' THEN 60
 
                 ELSE 500
             END,
             id ASC
-            """
-            ,
-            (int(company_id),),
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                bool(prefer_project_wip),
+                bool(prefer_project_wip),
+                bool(prefer_project_wip),
+            ),
         )
-        rows = cur.fetchall() or []
-        if not rows:
+
+        row = cur.fetchone()
+        if not row:
             return None
 
-        # rows might be dicts or tuples depending on cursor factory
-        def _get(r, k, idx):
-            if isinstance(r, dict):
-                return (r.get(k) or "").strip()
-            return (r[idx] or "").strip() if len(r) > idx else ""
+        code = (row.get("code") if isinstance(row, dict) else row[0]) or None
+        name = ((row.get("name") if isinstance(row, dict) else row[1]) or "").lower()
 
-        for r in rows:
-            code = _get(r, "code", 0)
-            name = _get(r, "name", 1).lower()
+        if any(x in name for x in ["write-down", "obsol", "allowance", "accumulated"]):
+            return None
 
-            # final safety: skip contra inventory candidates
-            if any(x in name for x in ["write-down", "obsol", "allowance"]):
-                continue
-
-            if code:
-                return code
-
-        return None
+        return code
 
 
     def find_default_cogs_account_code(self, company_id: int, *, cur) -> str | None:
@@ -30865,7 +31196,368 @@ class DatabaseService:
             _run(_cur)
             conn.commit()
 
+    def list_purchase_orders(
+        self,
+        company_id: int,
+        *,
+        q: str = "",
+        status: str = "",
+        vendor_id: int | None = None,
+        project_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
 
+        where = ["po.company_id = %s"]
+        params = [company_id]
+
+        if q:
+            where.append("""
+                (
+                    po.po_no ILIKE %s
+                    OR po.notes ILIKE %s
+                    OR v.name ILIKE %s
+                )
+            """)
+            like = f"%{q}%"
+            params.extend([like, like, like])
+
+        if status:
+            where.append("lower(po.status) = lower(%s)")
+            params.append(status)
+
+        if vendor_id:
+            where.append("po.vendor_id = %s")
+            params.append(vendor_id)
+
+        if project_id:
+            where.append("po.project_id = %s")
+            params.append(project_id)
+
+        params.extend([limit, offset])
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                po.*,
+                v.name AS vendor_name,
+                COALESCE(SUM(pol.ordered_qty * pol.unit_cost), 0) AS subtotal,
+                COALESCE(SUM(pol.received_qty * pol.unit_cost), 0) AS received_value,
+                COUNT(pol.id) AS line_count
+            FROM {schema}.purchase_orders po
+            LEFT JOIN {schema}.vendors v
+                ON v.id = po.vendor_id
+            LEFT JOIN {schema}.purchase_order_lines pol
+                ON pol.po_id = po.id
+            AND pol.company_id = po.company_id
+            WHERE {" AND ".join(where)}
+            GROUP BY po.id, v.name
+            ORDER BY po.po_date DESC, po.id DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        )
+
+    def get_purchase_order(
+        self,
+        company_id: int,
+        po_id: int,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        po = self.fetch_one(
+            f"""
+            SELECT
+                po.*,
+                v.name AS vendor_name,
+                v.email AS vendor_email,
+                v.phone AS vendor_phone
+            FROM {schema}.purchase_orders po
+            LEFT JOIN {schema}.vendors v
+                ON v.id = po.vendor_id
+            WHERE po.company_id = %s
+            AND po.id = %s
+            """,
+            (company_id, po_id),
+        )
+
+        if not po:
+            return None
+
+        lines = self.fetch_all(
+            f"""
+            SELECT
+                pol.*,
+                ii.sku,
+                ii.name AS item_name,
+                ii.unit,
+                GREATEST(
+                    COALESCE(pol.ordered_qty, 0) - COALESCE(pol.received_qty, 0),
+                    0
+                ) AS remaining_qty,
+                COALESCE(pol.ordered_qty, 0) * COALESCE(pol.unit_cost, 0) AS line_total
+            FROM {schema}.purchase_order_lines pol
+            LEFT JOIN {schema}.inventory_items ii
+                ON ii.id = pol.item_id
+            WHERE pol.company_id = %s
+            AND pol.po_id = %s
+            ORDER BY pol.line_no ASC, pol.id ASC
+            """,
+            (company_id, po_id),
+        )
+
+        po["lines"] = lines
+
+        po["totals"] = {
+            "ordered_qty": sum(float(x.get("ordered_qty") or 0) for x in lines),
+            "received_qty": sum(float(x.get("received_qty") or 0) for x in lines),
+            "remaining_qty": sum(float(x.get("remaining_qty") or 0) for x in lines),
+            "subtotal": sum(float(x.get("line_total") or 0) for x in lines),
+        }
+
+        return po    
+    
+    def receive_purchase_order(
+        self,
+        company_id: int,
+        po_id: int,
+        *,
+        receipt_date,
+        received_by: int | None = None,
+        supplier_invoice_no: str | None = None,
+        notes: str | None = None,
+        lines: list[dict] | None = None,
+        post_now: bool = True,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            po = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.purchase_orders
+                WHERE company_id=%s AND id=%s
+                FOR UPDATE
+                """,
+                (company_id, po_id),
+                cur=cur,
+            )
+            if not po:
+                raise ValueError("PURCHASE_ORDER_NOT_FOUND")
+
+            if str(po.get("status") or "").lower() in ("cancelled", "closed"):
+                raise ValueError("PURCHASE_ORDER_CLOSED_OR_CANCELLED")
+
+            po_lines = self.fetch_all(
+                f"""
+                SELECT *
+                FROM {schema}.purchase_order_lines
+                WHERE company_id=%s AND po_id=%s
+                ORDER BY line_no
+                FOR UPDATE
+                """,
+                (company_id, po_id),
+                cur=cur,
+            )
+            if not po_lines:
+                raise ValueError("PURCHASE_ORDER_HAS_NO_LINES")
+
+            by_id = {int(x["id"]): x for x in po_lines}
+
+            receipt_lines = []
+            if lines:
+                for ln in lines:
+                    pol_id = int(ln.get("po_line_id") or 0)
+                    qty = float(ln.get("qty") or ln.get("received_qty") or 0)
+                    if pol_id <= 0 or qty <= 0:
+                        continue
+
+                    pol = by_id.get(pol_id)
+                    if not pol:
+                        raise ValueError(f"PO_LINE_NOT_FOUND|{pol_id}")
+
+                    ordered = float(pol.get("ordered_qty") or 0)
+                    already_received = float(pol.get("received_qty") or 0)
+                    remaining = max(0.0, ordered - already_received)
+
+                    if qty > remaining:
+                        raise ValueError(
+                            f"RECEIPT_QTY_EXCEEDS_REMAINING|po_line_id={pol_id}|remaining={remaining}"
+                        )
+
+                    receipt_lines.append({
+                        "po_line_id": pol_id,
+                        "item_id": int(pol["item_id"]),
+                        "qty": qty,
+                        "unit_cost": float(ln.get("unit_cost") or pol.get("unit_cost") or 0),
+                        "vat_code": ln.get("vat_code") or pol.get("vat_code"),
+                        "memo": ln.get("memo") or pol.get("memo"),
+                        "batch_no": ln.get("batch_no"),
+                        "expiry_date": ln.get("expiry_date"),
+                    })
+            else:
+                for pol in po_lines:
+                    ordered = float(pol.get("ordered_qty") or 0)
+                    already_received = float(pol.get("received_qty") or 0)
+                    remaining = max(0.0, ordered - already_received)
+                    if remaining > 0:
+                        receipt_lines.append({
+                            "po_line_id": int(pol["id"]),
+                            "item_id": int(pol["item_id"]),
+                            "qty": remaining,
+                            "unit_cost": float(pol.get("unit_cost") or 0),
+                            "vat_code": pol.get("vat_code"),
+                            "memo": pol.get("memo"),
+                            "batch_no": None,
+                            "expiry_date": None,
+                        })
+
+            if not receipt_lines:
+                raise ValueError("NO_RECEIVABLE_LINES")
+
+            ref = f"GRN-PO-{int(po_id)}"
+
+            tx_id = self.execute_sql(
+                f"""
+                INSERT INTO {schema}.inventory_tx
+                (
+                    company_id, tx_date, tx_type, status, ref, notes,
+                    source, source_id, vendor_id, po_id, supplier_invoice_no,
+                    grni_status, created_by
+                )
+                VALUES
+                (%s,%s,'receipt','draft',%s,%s,'purchase_order',%s,%s,%s,%s,'unbilled',%s)
+                RETURNING id
+                """,
+                (
+                    company_id,
+                    receipt_date,
+                    ref,
+                    notes,
+                    po_id,
+                    po.get("vendor_id"),
+                    po_id,
+                    supplier_invoice_no,
+                    received_by,
+                ),
+                cur=cur,
+                conn=conn,
+                commit=False,
+            )
+
+            for idx, ln in enumerate(receipt_lines, start=1):
+                self.execute_sql(
+                    f"""
+                    INSERT INTO {schema}.inventory_tx_lines
+                    (
+                        company_id, tx_id, line_no, item_id, qty,
+                        unit_cost, vat_code, memo, expiry_date, batch_no, po_line_id
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        company_id,
+                        tx_id,
+                        idx,
+                        ln["item_id"],
+                        ln["qty"],
+                        ln["unit_cost"],
+                        ln.get("vat_code"),
+                        ln.get("memo"),
+                        ln.get("expiry_date"),
+                        ln.get("batch_no"),
+                        ln["po_line_id"],
+                    ),
+                    cur=cur,
+                    conn=conn,
+                    commit=False,
+                )
+
+                self.execute_sql(
+                    f"""
+                    UPDATE {schema}.purchase_order_lines
+                    SET received_qty = COALESCE(received_qty,0) + %s,
+                        line_status =
+                            CASE
+                                WHEN COALESCE(received_qty,0) + %s >= COALESCE(ordered_qty,0)
+                                THEN 'received'
+                                ELSE 'partially_received'
+                            END
+                    WHERE company_id=%s AND id=%s
+                    """,
+                    (
+                        ln["qty"],
+                        ln["qty"],
+                        company_id,
+                        ln["po_line_id"],
+                    ),
+                    cur=cur,
+                    conn=conn,
+                    commit=False,
+                )
+
+            totals = self.fetch_one(
+                f"""
+                SELECT
+                    SUM(ordered_qty) AS ordered_qty,
+                    SUM(received_qty) AS received_qty
+                FROM {schema}.purchase_order_lines
+                WHERE company_id=%s AND po_id=%s
+                """,
+                (company_id, po_id),
+                cur=cur,
+            )
+
+            ordered_total = float(totals.get("ordered_qty") or 0)
+            received_total = float(totals.get("received_qty") or 0)
+
+            new_status = "received" if received_total >= ordered_total else "partially_received"
+
+            self.execute_sql(
+                f"""
+                UPDATE {schema}.purchase_orders
+                SET status=%s, updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                """,
+                (new_status, company_id, po_id),
+                cur=cur,
+                conn=conn,
+                commit=False,
+            )
+
+            journal_id = None
+            if post_now:
+                journal_id = self.post_inventory_receipt(
+                    company_id,
+                    tx_id,
+                    cur=cur,
+                )
+
+                self.execute_sql(
+                    f"""
+                    UPDATE {schema}.inventory_tx
+                    SET status='posted',
+                        posted_journal_id=%s,
+                        posted_at=NOW(),
+                        posted_by=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s AND id=%s
+                    """,
+                    (journal_id, received_by, company_id, tx_id),
+                    cur=cur,
+                    conn=conn,
+                    commit=False,
+                )
+
+            return {
+                "ok": True,
+                "po_id": po_id,
+                "inventory_tx_id": tx_id,
+                "journal_id": journal_id,
+                "status": new_status,
+            }
+    
     def list_open_grni_receipts(
         self,
         company_id: int,
@@ -58854,28 +59546,72 @@ class DatabaseService:
 
     def get_revenue_contract(self, company_id: int, contract_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)
-        sql = f"SELECT * FROM {schema}.revenue_contracts WHERE id=%s LIMIT 1;"
-        return self.fetch_one(sql, (int(contract_id),), cur=cur)
 
-    def list_revenue_contracts(self, company_id: int, limit: int = 100, q: str | None = None, status: str | None = None):
+        sql = f"""
+            SELECT
+                rc.*,
+                c.name AS customer_name,
+                p.project_code,
+                p.project_name
+            FROM {schema}.revenue_contracts rc
+            LEFT JOIN {schema}.customers c
+                ON c.id = rc.customer_id
+            LEFT JOIN {schema}.projects p
+                ON p.company_id = rc.company_id
+            AND p.id = rc.project_id
+            WHERE rc.company_id = %s
+            AND rc.id = %s
+            LIMIT 1;
+        """
+
+        return self.fetch_one(sql, (int(company_id), int(contract_id)), cur=cur)
+
+
+    def list_revenue_contracts(
+        self,
+        company_id: int,
+        limit: int = 100,
+        q: str | None = None,
+        status: str | None = None,
+        project_id: int | None = None,
+        customer_id: int | None = None,
+    ):
         schema = self.company_schema(company_id)
 
         where = ["rc.company_id = %s"]
         params = [int(company_id)]
 
         if q:
-            where.append("(rc.contract_number ILIKE %s OR rc.contract_title ILIKE %s OR c.name ILIKE %s)")
             like = f"%{q.strip()}%"
-            params += [like, like, like]
+            where.append("""
+                (
+                    rc.contract_number ILIKE %s
+                    OR rc.contract_title ILIKE %s
+                    OR c.name ILIKE %s
+                    OR p.project_code ILIKE %s
+                    OR p.project_name ILIKE %s
+                )
+            """)
+            params += [like, like, like, like, like]
 
         if status:
             where.append("rc.status = %s")
             params.append(status)
 
+        if project_id:
+            where.append("rc.project_id = %s")
+            params.append(int(project_id))
+
+        if customer_id:
+            where.append("rc.customer_id = %s")
+            params.append(int(customer_id))
+
         sql = f"""
             SELECT
                 rc.*,
                 c.name AS customer_name,
+                p.project_code,
+                p.project_name,
 
                 COALESCE(rc.payload_json->>'settlement_pattern', '') AS settlement_pattern,
 
@@ -58885,15 +59621,22 @@ class DatabaseService:
                     ELSE 'neutral'
                 END AS contract_position_type,
 
-                ABS(COALESCE(rc.billed_to_date, 0) - COALESCE(rc.recognized_revenue_to_date, 0)) AS contract_position_amount
+                ABS(
+                    COALESCE(rc.billed_to_date, 0)
+                    - COALESCE(rc.recognized_revenue_to_date, 0)
+                ) AS contract_position_amount
 
             FROM {schema}.revenue_contracts rc
             LEFT JOIN {schema}.customers c
-            ON c.id = rc.customer_id
+                ON c.id = rc.customer_id
+            LEFT JOIN {schema}.projects p
+                ON p.company_id = rc.company_id
+            AND p.id = rc.project_id
             WHERE {" AND ".join(where)}
             ORDER BY rc.created_at DESC, rc.id DESC
             LIMIT %s
         """
+
         params.append(int(limit))
 
         return self.fetch_all(sql, tuple(params)) or []
@@ -58923,20 +59666,49 @@ class DatabaseService:
 
         schema = self.company_schema(company_id)
 
-        customer_id = data.get("customer_id")
+        customer_id = data.get("customer_id") or data.get("customerId")
         customer_id = int(customer_id) if customer_id not in (None, "", 0, "0") else None
 
         if customer_id is None:
             raise ValueError("Customer is required for revenue contracts")
 
+        project_id = data.get("project_id") or data.get("projectId")
+        project_id = int(project_id) if project_id not in (None, "", 0, "0") else None
+
         with self._conn_cursor() as (conn, cur):
             customer = self.fetch_one(
-                f"SELECT id, name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                f"""
+                SELECT id, name
+                FROM {schema}.customers
+                WHERE id=%s
+                LIMIT 1
+                """,
                 (customer_id,),
                 cur=cur,
             )
+
             if not customer:
                 raise ValueError("Selected customer not found")
+
+            project = None
+            if project_id:
+                project = self.fetch_one(
+                    f"""
+                    SELECT id, project_code, project_name, customer_id
+                    FROM {schema}.projects
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), int(project_id)),
+                    cur=cur,
+                )
+
+                if not project:
+                    raise ValueError("Selected project not found")
+
+                if project.get("customer_id") and int(project["customer_id"]) != int(customer_id):
+                    raise ValueError("Selected project belongs to a different customer")
 
             data, financing_component_amount = self._normalize_and_validate_sfc(data)
             self._validate_contract_billing_method(data)
@@ -58944,18 +59716,32 @@ class DatabaseService:
 
             sql = f"""
             INSERT INTO {schema}.revenue_contracts (
-                company_id, customer_id, contract_number, contract_title, status,
-                contract_currency, contract_date, start_date, end_date, billing_method,
-                transaction_price, variable_consideration_est, variable_consideration_constrained,
-                financing_component_amount, has_significant_financing_component, is_over_time,
-                notes, payload_json, created_by_user_id
+                company_id,
+                customer_id,
+                project_id,
+                contract_number,
+                contract_title,
+                status,
+                contract_currency,
+                contract_date,
+                start_date,
+                end_date,
+                billing_method,
+                transaction_price,
+                variable_consideration_est,
+                variable_consideration_constrained,
+                financing_component_amount,
+                has_significant_financing_component,
+                is_over_time,
+                notes,
+                payload_json,
+                created_by_user_id
             )
             VALUES (
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
-                %s,%s,%s,
-                %s,%s,%s,
-                %s,%s::jsonb,%s
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s::jsonb,%s
             )
             RETURNING *;
             """
@@ -58963,6 +59749,7 @@ class DatabaseService:
             params = (
                 int(company_id),
                 customer_id,
+                project_id,
                 (data.get("contract_number") or "").strip(),
                 (data.get("contract_title") or "").strip(),
                 (data.get("status") or "draft").strip().lower(),
@@ -58984,7 +59771,12 @@ class DatabaseService:
 
             cur.execute(sql, params)
             row = dict(cur.fetchone())
+
             row["customer_name"] = customer.get("name")
+
+            if project:
+                row["project_code"] = project.get("project_code")
+                row["project_name"] = project.get("project_name")
 
             contract_ref = (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
 
@@ -59027,6 +59819,8 @@ class DatabaseService:
         return row
 
     def update_revenue_contract(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+        import json
+
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
@@ -59038,24 +59832,64 @@ class DatabaseService:
             self._validate_contract_billing_method(data)
             data = self._validate_contract_milestones(data)
 
-            customer_id = data.get("customer_id")
+            customer_id = data.get("customer_id") or data.get("customerId")
+
             if customer_id in ("", 0, "0"):
                 customer_id = None
             elif customer_id is not None:
                 customer_id = int(customer_id)
 
                 customer = self.fetch_one(
-                    f"SELECT id, name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                    f"""
+                    SELECT id, name
+                    FROM {schema}.customers
+                    WHERE id=%s
+                    LIMIT 1
+                    """,
                     (customer_id,),
                     cur=cur,
                 )
+
                 if not customer:
                     raise ValueError("Selected customer not found")
+
+            project_id = data.get("project_id") or data.get("projectId")
+
+            if project_id in ("", 0, "0"):
+                project_id = None
+            elif project_id is not None:
+                project_id = int(project_id)
+
+                effective_customer_id = customer_id or before.get("customer_id")
+
+                project = self.fetch_one(
+                    f"""
+                    SELECT id, project_code, project_name, customer_id
+                    FROM {schema}.projects
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), int(project_id)),
+                    cur=cur,
+                )
+
+                if not project:
+                    raise ValueError("Selected project not found")
+
+                if project.get("customer_id") and effective_customer_id:
+                    if int(project["customer_id"]) != int(effective_customer_id):
+                        raise ValueError("Selected project belongs to a different customer")
+
+            payload_json_param = None
+            if "payload_json" in data:
+                payload_json_param = json.dumps(data.get("payload_json") or {}, default=str)
 
             sql = f"""
             UPDATE {schema}.revenue_contracts
             SET
                 customer_id = COALESCE(%s, customer_id),
+                project_id = COALESCE(%s, project_id),
                 contract_number = COALESCE(NULLIF(%s,''), contract_number),
                 contract_title = COALESCE(NULLIF(%s,''), contract_title),
                 status = COALESCE(NULLIF(%s,''), status),
@@ -59073,42 +59907,78 @@ class DatabaseService:
                 notes = COALESCE(%s, notes),
                 payload_json = COALESCE(%s::jsonb, payload_json),
                 updated_at = NOW()
-            WHERE id = %s
+            WHERE company_id = %s
+            AND id = %s
             RETURNING *;
             """
-            cur.execute(sql, (
-                customer_id,
-                (data.get("contract_number") or "").strip(),
-                (data.get("contract_title") or "").strip(),
-                (data.get("status") or "").strip().lower(),
-                (data.get("contract_currency") or "").strip().upper(),
-                data.get("contract_date"),
-                data.get("start_date"),
-                data.get("end_date"),
-                (data.get("billing_method") or "").strip().lower(),
-                float(data["transaction_price"]) if data.get("transaction_price") is not None else None,
-                float(data["variable_consideration_est"]) if data.get("variable_consideration_est") is not None else None,
-                float(data["variable_consideration_constrained"]) if data.get("variable_consideration_constrained") is not None else None,
-                float(financing_component_amount) if data.get("has_significant_financing_component") is not None or data.get("payload_json") is not None else None,
-                data.get("has_significant_financing_component"),
-                data.get("is_over_time"),
-                data.get("notes"),
-                _json_dumps(data.get("payload_json")) if "payload_json" in data else None,
-                int(contract_id),
-            ))
+
+            cur.execute(
+                sql,
+                (
+                    customer_id,
+                    project_id,
+                    (data.get("contract_number") or "").strip(),
+                    (data.get("contract_title") or "").strip(),
+                    (data.get("status") or "").strip().lower(),
+                    (data.get("contract_currency") or "").strip().upper(),
+                    data.get("contract_date"),
+                    data.get("start_date"),
+                    data.get("end_date"),
+                    (data.get("billing_method") or "").strip().lower(),
+                    float(data["transaction_price"]) if data.get("transaction_price") is not None else None,
+                    float(data["variable_consideration_est"]) if data.get("variable_consideration_est") is not None else None,
+                    float(data["variable_consideration_constrained"]) if data.get("variable_consideration_constrained") is not None else None,
+                    (
+                        float(financing_component_amount)
+                        if data.get("has_significant_financing_component") is not None
+                        or data.get("payload_json") is not None
+                        else None
+                    ),
+                    data.get("has_significant_financing_component"),
+                    data.get("is_over_time"),
+                    data.get("notes"),
+                    payload_json_param,
+                    int(company_id),
+                    int(contract_id),
+                ),
+            )
+
             after = dict(cur.fetchone())
 
             if after and after.get("customer_id"):
                 cust = self.fetch_one(
-                    f"SELECT name FROM {schema}.customers WHERE id=%s LIMIT 1;",
+                    f"""
+                    SELECT name
+                    FROM {schema}.customers
+                    WHERE id=%s
+                    LIMIT 1
+                    """,
                     (int(after["customer_id"]),),
                     cur=cur,
                 )
                 after["customer_name"] = (cust or {}).get("name")
 
+            if after and after.get("project_id"):
+                project = self.fetch_one(
+                    f"""
+                    SELECT project_code, project_name
+                    FROM {schema}.projects
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), int(after["project_id"])),
+                    cur=cur,
+                )
+                after["project_code"] = (project or {}).get("project_code")
+                after["project_name"] = (project or {}).get("project_name")
+
             conn.commit()
 
-        return {"before": before, "after": after}
+        return {
+            "before": before,
+            "after": after,
+        }
 
     def _validate_obligation_progress_payload(self, data: dict) -> dict:
         payload_json = data.get("payload_json") or {}
@@ -63986,6 +64856,843 @@ class DatabaseService:
             cur=cur,
         )
 
+    def create_project(self, company_id: int, data: Dict[str, Any]) -> int:
+        schema = self.company_schema(company_id)
+
+        def pick(*keys, default=None):
+            for k in keys:
+                v = data.get(k)
+                if v not in (None, ""):
+                    return v
+            return default
+
+        sql = f"""
+        INSERT INTO {schema}.projects (
+            company_id,
+            project_code,
+            project_name,
+            customer_id,
+            project_type,
+            status,
+            start_date,
+            expected_end_date,
+            contract_value,
+            budget_value,
+            billing_method,
+            wip_account_code,
+            revenue_account_code,
+            cost_account_code,
+            location,
+            description,
+            notes,
+            meta,
+            created_by
+        )
+        VALUES (
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            %s,%s,%s,%s,%s,%s,%s,%s,%s
+        )
+        RETURNING id;
+        """
+
+        params = (
+            int(company_id),
+            (pick("project_code", "projectCode", "code") or "").strip(),
+            (pick("project_name", "projectName", "name") or "").strip(),
+            pick("customer_id", "customerId"),
+            pick("project_type", "projectType", default="service"),
+            pick("status", default="draft"),
+            pick("start_date", "startDate"),
+            pick("expected_end_date", "expectedEndDate"),
+            float(pick("contract_value", "contractValue", default=0) or 0),
+            float(pick("budget_value", "budgetValue", default=0) or 0),
+            pick("billing_method", "billingMethod", default="milestone"),
+            pick("wip_account_code", "wipAccountCode"),
+            pick("revenue_account_code", "revenueAccountCode"),
+            pick("cost_account_code", "costAccountCode"),
+            pick("location"),
+            pick("description"),
+            pick("notes"),
+            psycopg2.extras.Json(data.get("meta") or {}),
+            pick("created_by", "createdBy"),
+        )
+
+        row = self.fetch_one(sql, params) or {}
+        return int(row.get("id") or 0)
+
+    def list_projects(
+        self,
+        company_id: int,
+        *,
+        q: str = "",
+        status: str = "",
+        customer_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["p.company_id = %s"]
+        params: list[Any] = [company_id]
+
+        if q:
+            like = f"%{q}%"
+            where.append("""
+                (
+                    p.project_code ILIKE %s
+                    OR p.project_name ILIKE %s
+                    OR p.location ILIKE %s
+                )
+            """)
+            params.extend([like, like, like])
+
+        if status:
+            where.append("lower(p.status) = lower(%s)")
+            params.append(status)
+
+        if customer_id:
+            where.append("p.customer_id = %s")
+            params.append(customer_id)
+
+        params.extend([limit, offset])
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                p.*,
+                c.name AS customer_name,
+
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM {schema}.project_tasks t
+                    WHERE t.company_id = p.company_id
+                    AND t.project_id = p.id
+                ), 0) AS task_count,
+
+                COALESCE((
+                    SELECT SUM(b.budget_amount)
+                    FROM {schema}.project_budget_lines b
+                    WHERE b.company_id = p.company_id
+                    AND b.project_id = p.id
+                ), 0) AS budget_lines_total
+
+            FROM {schema}.projects p
+            LEFT JOIN {schema}.customers c
+                ON c.company_id = p.company_id
+            AND c.id = p.customer_id
+            WHERE {" AND ".join(where)}
+            ORDER BY p.created_at DESC, p.id DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        )
+
+    def get_project(self, company_id: int, project_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        project = self.fetch_one(
+            f"""
+            SELECT
+                p.*,
+                c.name AS customer_name,
+                c.email AS customer_email,
+                c.phone AS customer_phone
+            FROM {schema}.projects p
+            LEFT JOIN {schema}.customers c
+                ON c.company_id = p.company_id
+            AND c.id = p.customer_id
+            WHERE p.company_id = %s
+            AND p.id = %s
+            """,
+            (company_id, project_id),
+        )
+
+        if not project:
+            return None
+
+        tasks = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_tasks
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY id ASC
+            """,
+            (company_id, project_id),
+        )
+
+        budget_lines = self.fetch_all(
+            f"""
+            SELECT
+                b.*,
+                t.task_name,
+                cc.code AS cost_code,
+                cc.name AS cost_code_name,
+                cc.cost_type
+            FROM {schema}.project_budget_lines b
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = b.company_id
+            AND t.id = b.task_id
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = b.company_id
+            AND cc.id = b.cost_code_id
+            WHERE b.company_id = %s
+            AND b.project_id = %s
+            ORDER BY b.line_no ASC, b.id ASC
+            """,
+            (company_id, project_id),
+        )
+
+        project["tasks"] = tasks
+        project["budget_lines"] = budget_lines
+
+        project["totals"] = {
+            "task_count": len(tasks),
+            "budget_total": sum(float(x.get("budget_amount") or 0) for x in budget_lines),
+        }
+
+        return project
+
+    def update_project(self, company_id: int, project_id: int, data: Dict[str, Any]) -> bool:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "project_name": ("project_name", "projectName", "name"),
+            "customer_id": ("customer_id", "customerId"),
+            "project_type": ("project_type", "projectType"),
+            "status": ("status",),
+            "start_date": ("start_date", "startDate"),
+            "expected_end_date": ("expected_end_date", "expectedEndDate"),
+            "actual_end_date": ("actual_end_date", "actualEndDate"),
+            "contract_value": ("contract_value", "contractValue"),
+            "budget_value": ("budget_value", "budgetValue"),
+            "billing_method": ("billing_method", "billingMethod"),
+            "wip_account_code": ("wip_account_code", "wipAccountCode"),
+            "revenue_account_code": ("revenue_account_code", "revenueAccountCode"),
+            "cost_account_code": ("cost_account_code", "costAccountCode"),
+            "location": ("location",),
+            "description": ("description",),
+            "notes": ("notes",),
+            "meta": ("meta",),
+        }
+
+        sets = []
+        params = []
+
+        for col, keys in allowed.items():
+            found = False
+            value = None
+
+            for k in keys:
+                if k in data:
+                    value = data.get(k)
+                    found = True
+                    break
+
+            if not found:
+                continue
+
+            if col == "meta":
+                value = psycopg2.extras.Json(value or {})
+
+            sets.append(f"{col} = %s")
+            params.append(value)
+
+        if not sets:
+            return False
+
+        sets.append("updated_at = NOW()")
+
+        params.extend([company_id, project_id])
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.projects
+            SET {", ".join(sets)}
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            tuple(params),
+        )
+
+        return bool(row)
+
+    def create_project_task(self, company_id: int, data: Dict[str, Any]) -> int:
+        schema = self.company_schema(company_id)
+
+        def pick(*keys, default=None):
+            for k in keys:
+                v = data.get(k)
+                if v not in (None, ""):
+                    return v
+            return default
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_tasks (
+                company_id, project_id, task_code, task_name, parent_task_id,
+                status, start_date, expected_end_date, actual_end_date,
+                budget_value, progress_percent, notes, meta
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (
+                company_id,
+                int(pick("project_id", "projectId")),
+                pick("task_code", "taskCode", "code"),
+                (pick("task_name", "taskName", "name") or "").strip(),
+                pick("parent_task_id", "parentTaskId"),
+                pick("status", default="open"),
+                pick("start_date", "startDate"),
+                pick("expected_end_date", "expectedEndDate"),
+                pick("actual_end_date", "actualEndDate"),
+                float(pick("budget_value", "budgetValue", default=0) or 0),
+                float(pick("progress_percent", "progressPercent", default=0) or 0),
+                pick("notes"),
+                psycopg2.extras.Json(data.get("meta") or {}),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def create_project_cost_code(self, company_id: int, data: Dict[str, Any]) -> int:
+        schema = self.company_schema(company_id)
+
+        def pick(*keys, default=None):
+            for k in keys:
+                v = data.get(k)
+                if v not in (None, ""):
+                    return v
+            return default
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_cost_codes (
+                company_id, code, name, cost_type, default_account_code, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (
+                company_id,
+                (pick("code", "cost_code", "costCode") or "").strip(),
+                (pick("name", "cost_code_name", "costCodeName") or "").strip(),
+                pick("cost_type", "costType", default="materials"),
+                pick("default_account_code", "defaultAccountCode"),
+                bool(pick("is_active", "isActive", default=True)),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def create_project_budget_line(self, company_id: int, data: Dict[str, Any]) -> int:
+        schema = self.company_schema(company_id)
+
+        def pick(*keys, default=None):
+            for k in keys:
+                v = data.get(k)
+                if v not in (None, ""):
+                    return v
+            return default
+
+        qty = float(pick("budget_qty", "budgetQty", "qty", default=0) or 0)
+        unit_cost = float(pick("unit_cost", "unitCost", default=0) or 0)
+        amount = pick("budget_amount", "budgetAmount")
+
+        if amount in (None, ""):
+            amount = qty * unit_cost
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.project_budget_lines (
+                company_id, project_id, task_id, cost_code_id,
+                line_no, description, budget_qty, unit_cost,
+                budget_amount, source, source_id
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (
+                company_id,
+                int(pick("project_id", "projectId")),
+                pick("task_id", "taskId"),
+                pick("cost_code_id", "costCodeId"),
+                int(pick("line_no", "lineNo", default=1)),
+                pick("description"),
+                qty,
+                unit_cost,
+                float(amount or 0),
+                pick("source"),
+                pick("source_id", "sourceId"),
+            ),
+        ) or {}
+
+        return int(row.get("id") or 0)
+
+    def list_project_cost_codes(self, company_id: int, active: bool | None = True) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params = [company_id]
+
+        if active is not None:
+            where.append("is_active = %s")
+            params.append(bool(active))
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_cost_codes
+            WHERE {" AND ".join(where)}
+            ORDER BY cost_type ASC, code ASC
+            """,
+            tuple(params),
+        )
+
+    def list_project_tasks(self, company_id: int, project_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.project_tasks
+            WHERE company_id = %s
+            AND project_id = %s
+            ORDER BY id ASC
+            """,
+            (company_id, project_id),
+        )
+
+    def list_project_budget_lines(self, company_id: int, project_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                b.*,
+                t.task_name,
+                cc.code AS cost_code,
+                cc.name AS cost_code_name,
+                cc.cost_type
+            FROM {schema}.project_budget_lines b
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = b.company_id
+            AND t.id = b.task_id
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = b.company_id
+            AND cc.id = b.cost_code_id
+            WHERE b.company_id = %s
+            AND b.project_id = %s
+            ORDER BY b.line_no ASC, b.id ASC
+            """,
+            (company_id, project_id),
+        )
+
+    def find_project_wip_account_code(self, company_id: int, *, cur) -> str | None:
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            SELECT code
+            FROM {schema}.coa
+            WHERE company_id=%s
+            AND posting=true
+            AND role='project_wip'
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (int(company_id),),
+        )
+
+        row = cur.fetchone()
+        if row:
+            return (row.get("code") if isinstance(row, dict) else row[0]) or None
+
+        return self.find_default_inventory_account_code(
+            company_id,
+            cur=cur,
+            prefer_project_wip=True,
+        )
+
+    def issue_inventory_to_project(
+        self,
+        company_id: int,
+        *,
+        project_id: int,
+        tx_date,
+        lines: list[dict],
+        task_id: int | None = None,
+        cost_code_id: int | None = None,
+        usage_type: str = "consumed",
+        ref: str | None = None,
+        notes: str | None = None,
+        created_by: int | None = None,
+        post_now: bool = True,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        if not lines or not isinstance(lines, list):
+            raise ValueError("lines required")
+
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date or "")[:10]
+
+        if not tx_date:
+            raise ValueError("tx_date is required")
+
+        ref = (ref or f"PMI-{int(project_id)}-{tx_date}").strip()
+        usage_type = (usage_type or "consumed").strip().lower()
+
+        def money(x) -> float:
+            from decimal import Decimal, ROUND_HALF_UP
+            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+        def _to_int(v, default=None):
+            try:
+                if v in (None, ""):
+                    return default
+                return int(v)
+            except Exception:
+                return default
+
+        def _to_float(v, default=0.0):
+            try:
+                if v in (None, ""):
+                    return default
+                return float(str(v).replace(",", "").strip())
+            except Exception:
+                return default
+
+        with self._conn_cursor() as (conn, cur):
+            # 1) Validate project
+            project = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.projects
+                WHERE company_id=%s AND id=%s
+                FOR UPDATE
+                """,
+                (int(company_id), int(project_id)),
+                cur=cur,
+            )
+
+            if not project:
+                raise ValueError("PROJECT_NOT_FOUND")
+
+            if str(project.get("status") or "").lower() in ("cancelled", "closed"):
+                raise ValueError("PROJECT_CLOSED_OR_CANCELLED")
+
+            # 2) Resolve WIP account
+            wip_raw = (
+                project.get("wip_account_code")
+                or self.find_project_wip_account_code(company_id, cur=cur)
+                or ""
+            ).strip()
+
+            if not wip_raw:
+                raise ValueError("PROJECT_WIP_ACCOUNT_NOT_CONFIGURED")
+
+            wip_row = self.get_account_row_for_posting(company_id, wip_raw)
+            if not wip_row:
+                raise ValueError(f"PROJECT_WIP_ACCOUNT_NOT_FOUND|{wip_raw}")
+
+            project_wip_account = (wip_row[1] or wip_raw).strip()
+
+            # 3) Create inventory_tx header
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.inventory_tx (
+                    company_id, tx_date, tx_type, status, ref, notes,
+                    source, source_id, created_by,
+                    project_id, task_id, cost_code_id, usage_type,
+                    created_at, updated_at
+                )
+                VALUES (
+                    %s,%s,'issue_to_project','draft',%s,%s,
+                    'project',%s,%s,
+                    %s,%s,%s,%s,
+                    NOW(),NOW()
+                )
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    tx_date,
+                    ref,
+                    notes,
+                    int(project_id),
+                    created_by,
+                    int(project_id),
+                    _to_int(task_id),
+                    _to_int(cost_code_id),
+                    usage_type,
+                ),
+            )
+
+            row = cur.fetchone() or {}
+            tx_id = int(row.get("id") or 0)
+            if tx_id <= 0:
+                raise ValueError("FAILED_TO_CREATE_PROJECT_ISSUE_TX")
+
+            inv_credit_totals: dict[str, float] = {}
+            total_issue_cost = 0.0
+
+            # 4) Lines + costing
+            for idx, ln in enumerate(lines, start=1):
+                item_id = _to_int(ln.get("item_id") or ln.get("itemId"), 0)
+                qty = _to_float(ln.get("qty") or ln.get("quantity"), 0.0)
+
+                if item_id <= 0:
+                    raise ValueError(f"line {idx}: item_id required")
+
+                if qty <= 0:
+                    raise ValueError(f"line {idx}: qty must be > 0")
+
+                line_task_id = _to_int(ln.get("task_id") or ln.get("taskId"), task_id)
+                line_cost_code_id = _to_int(ln.get("cost_code_id") or ln.get("costCodeId"), cost_code_id)
+                line_usage_type = (ln.get("usage_type") or ln.get("usageType") or usage_type or "consumed").strip().lower()
+
+                # Load item
+                item = self.fetch_one(
+                    f"""
+                    SELECT *
+                    FROM {schema}.inventory_items
+                    WHERE company_id=%s AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), int(item_id)),
+                    cur=cur,
+                )
+
+                if not item:
+                    raise ValueError(f"INVENTORY_ITEM_NOT_FOUND|item_id={item_id}")
+
+                if item.get("is_active") is False:
+                    raise ValueError(f"INVENTORY_ITEM_INACTIVE|item_id={item_id}")
+
+                track_stock = bool(item.get("track_stock", True))
+
+                inv_raw = (item.get("inventory_account") or "").strip()
+
+                if not inv_raw:
+                    inv_raw = (self.find_default_inventory_account_code(company_id, cur=cur) or "").strip()
+
+                if not inv_raw:
+                    raise ValueError(f"ITEM_INVENTORY_ACCOUNT_MISSING|item_id={item_id}")
+
+                inv_row = self.get_account_row_for_posting(company_id, inv_raw)
+                if not inv_row:
+                    raise ValueError(f"INVENTORY_ACCOUNT_NOT_FOUND|item_id={item_id}|{inv_raw}")
+
+                inventory_account = (inv_row[1] or inv_raw).strip()
+
+                valuation_method = (item.get("valuation_method") or "AVG").strip().upper()
+                if valuation_method not in ("AVG", "FIFO"):
+                    valuation_method = "AVG"
+
+                if track_stock:
+                    onhand = self._inventory_onhand_cur(company_id, item_id, cur)
+                    if qty > onhand:
+                        raise ValueError(
+                            f"INSUFFICIENT_STOCK|item_id={item_id}|onhand={onhand}|requested={qty}"
+                        )
+
+                # Cost + consume stock
+                if valuation_method == "FIFO":
+                    line_cost = money(
+                        self.fifo_consume(
+                            company_id,
+                            item_id=item_id,
+                            qty_out=qty,
+                            tx_date=tx_date,
+                            source="project_material_issue",
+                            source_id=int(tx_id),
+                            posted_journal_id=None,
+                            cur=cur,
+                        )
+                    )
+                else:
+                    unit_cost = money(self._inventory_avg_cost_cur(company_id, item_id, cur))
+                    if unit_cost <= 0:
+                        unit_cost = money(item.get("purchase_cost") or 0)
+
+                    if unit_cost <= 0:
+                        raise ValueError(f"MISSING_COST|item_id={item_id}")
+
+                    line_cost = money(qty * unit_cost)
+
+                    if track_stock:
+                        cur.execute(
+                            f"""
+                            INSERT INTO {schema}.inventory_layers (
+                                company_id, item_id, tx_date,
+                                qty_in, qty_out, unit_cost,
+                                ref, source, source_id, tx_id,
+                                created_at
+                            )
+                            VALUES (
+                                %s,%s,%s,
+                                0,%s,%s,
+                                %s,'project_material_issue',%s,%s,
+                                NOW()
+                            )
+                            """,
+                            (
+                                int(company_id),
+                                int(item_id),
+                                tx_date,
+                                float(qty),
+                                float(unit_cost),
+                                ref,
+                                int(tx_id),
+                                int(tx_id),
+                            ),
+                        )
+
+                if line_cost <= 0:
+                    raise ValueError(f"ZERO_ISSUE_COST|item_id={item_id}")
+
+                unit_cost_for_line = money(line_cost / qty)
+
+                # Insert tx line
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.inventory_tx_lines (
+                        company_id, tx_id, line_no, item_id,
+                        qty, unit_cost, unit_price,
+                        vat_code, memo,
+                        project_id, task_id, cost_code_id, usage_type,
+                        created_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,
+                        %s,%s,0,
+                        %s,%s,
+                        %s,%s,%s,%s,
+                        NOW()
+                    )
+                    """,
+                    (
+                        int(company_id),
+                        int(tx_id),
+                        int(idx),
+                        int(item_id),
+                        float(qty),
+                        float(unit_cost_for_line),
+                        ln.get("vat_code") or ln.get("vatCode"),
+                        ln.get("memo"),
+                        int(project_id),
+                        line_task_id,
+                        line_cost_code_id,
+                        line_usage_type,
+                    ),
+                )
+
+                inv_credit_totals[inventory_account] = money(
+                    inv_credit_totals.get(inventory_account, 0.0) + line_cost
+                )
+                total_issue_cost = money(total_issue_cost + line_cost)
+
+            if total_issue_cost <= 0:
+                raise ValueError("PROJECT_ISSUE_TOTAL_IS_ZERO")
+
+            journal_id = None
+
+            # 5) Post journal using your post_journal()
+            if post_now:
+                journal_lines = [
+                    {
+                        "account_code": project_wip_account,
+                        "debit": total_issue_cost,
+                        "credit": 0.0,
+                        "memo": f"Materials issued to project {project.get('project_code') or project_id}",
+                    }
+                ]
+
+                for acct, amt in inv_credit_totals.items():
+                    if amt <= 0:
+                        continue
+                    journal_lines.append({
+                        "account_code": acct,
+                        "debit": 0.0,
+                        "credit": amt,
+                        "memo": "Inventory issued to project",
+                    })
+
+                journal_id = self.post_journal(
+                    company_id,
+                    {
+                        "date": tx_date,
+                        "ref": ref,
+                        "description": f"Project material issue #{tx_id}",
+                        "source": "project_material_issue",
+                        "source_id": int(tx_id),
+                        "lines": journal_lines,
+                    },
+                    cur=cur,
+                    conn=conn,
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_tx
+                    SET status='posted',
+                        posted_journal_id=%s,
+                        posted_at=NOW(),
+                        posted_by=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s AND id=%s
+                    """,
+                    (
+                        int(journal_id),
+                        created_by,
+                        int(company_id),
+                        int(tx_id),
+                    ),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_layers
+                    SET posted_journal_id=%s
+                    WHERE company_id=%s
+                    AND source='project_material_issue'
+                    AND source_id=%s
+                    """,
+                    (
+                        int(journal_id),
+                        int(company_id),
+                        int(tx_id),
+                    ),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_fifo_allocations
+                    SET posted_journal_id=%s
+                    WHERE company_id=%s
+                    AND source='project_material_issue'
+                    AND source_id=%s
+                    """,
+                    (
+                        int(journal_id),
+                        int(company_id),
+                        int(tx_id),
+                    ),
+                )
+
+            return {
+                "ok": True,
+                "project_id": int(project_id),
+                "inventory_tx_id": int(tx_id),
+                "journal_id": int(journal_id) if journal_id else None,
+                "total_cost": total_issue_cost,
+            }
+        
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

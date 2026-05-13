@@ -309,3 +309,9 @@ def require_auth(_f=None, *, require_company: bool = True):
     if _f is None:
         return decorator
     return decorator(_f)
+
+def _company_auth_or_403(company_id: int):
+    user = getattr(g, "current_user", {}) or {}
+    if user.get("company_id") != int(company_id):
+        return None, (jsonify({"error": "Not authorised for this company"}), 403)
+    return user, None

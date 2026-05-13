@@ -182,6 +182,8 @@ from BackEnd.Services.practitioner.practitioner_override_log import override_log
 from BackEnd.Services.routes.loans_routes import loans_bp
 from BackEnd.Services.routes.revenue_routes import revenue_bp
 from BackEnd.Routes.report_run import report_bp
+from BackEnd.Services.routes.project_routes import projects_bp
+
 
 
 # ────────────────────────────────────────────────────────────────
@@ -318,6 +320,7 @@ app.register_blueprint(override_log_bp)
 app.register_blueprint(loans_bp)
 app.register_blueprint(revenue_bp)
 app.register_blueprint(report_bp)
+app.register_blueprint(projects_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
@@ -9209,6 +9212,105 @@ def list_open_grni(cid: int):
 
     rows = db_service.list_open_grni_receipts(company_id, vendor_id=vendor_id, q=q, limit=limit, offset=offset)
     return jsonify({"items": rows, "limit": limit, "offset": offset}), 200
+
+@app.route("/api/companies/<int:cid>/purchase-orders/<int:po_id>/receive", methods=["POST"])
+@require_auth
+def receive_purchase_order_route(cid: int, po_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        out = db_service.receive_purchase_order(
+            company_id=company_id,
+            po_id=int(po_id),
+            receipt_date=payload.get("receipt_date"),
+            received_by=int(user["id"]),
+            supplier_invoice_no=payload.get("supplier_invoice_no"),
+            notes=payload.get("notes"),
+            lines=payload.get("lines") or [],
+            post_now=bool(payload.get("post_now", True)),
+        )
+
+        return jsonify(out), 200
+
+    except ValueError as e:
+        return jsonify({
+            "error": str(e)
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[PO RECEIVE] FAILED | company_id=%s | po_id=%s",
+            company_id,
+            po_id,
+        )
+
+        return jsonify({
+            "error": "failed_to_receive_purchase_order",
+            "details": str(e),
+        }), 500
+
+@app.route("/api/companies/<int:cid>/purchase-orders", methods=["GET"])
+@require_auth
+def list_purchase_orders_route(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "").strip()
+
+    vendor_id = request.args.get("vendor_id", type=int)
+    project_id = request.args.get("project_id", type=int)
+
+    limit = int(request.args.get("limit") or 50)
+    offset = int(request.args.get("offset") or 0)
+
+    rows = db_service.list_purchase_orders(
+        company_id,
+        q=q,
+        status=status,
+        vendor_id=vendor_id,
+        project_id=project_id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return jsonify({
+        "items": rows,
+        "limit": limit,
+        "offset": offset,
+    }), 200
+
+
+@app.route("/api/companies/<int:cid>/purchase-orders/<int:po_id>", methods=["GET"])
+@require_auth
+def get_purchase_order_route(cid: int, po_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    row = db_service.get_purchase_order(
+        company_id,
+        int(po_id),
+    )
+
+    if not row:
+        return jsonify({
+            "error": "purchase_order_not_found"
+        }), 404
+
+    return jsonify(row), 200
+
 
 # =====================================================
 # 2) MOVEMENTS: get one tx with lines

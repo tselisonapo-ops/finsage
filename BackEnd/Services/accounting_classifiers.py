@@ -840,6 +840,113 @@ def _coa_role_from_text(
         return "vat_input"
 
     # ----------------------------
+    # Inventory / WIP / Job costing roles
+    # ----------------------------
+
+    inventory_negative_terms = (
+        "write-down", "writedown", "write down",
+        "obsolescence", "obsolete", "allowance",
+        "shrinkage", "loss", "adjustment",
+        "depreciation", "amortization", "amortisation",
+    )
+
+    is_inventory_asset = (
+        is_asset
+        and not any(x in text for x in inventory_negative_terms)
+        and has_any(
+            "inventory",
+            "inventories",
+            "stock",
+            "stockpile",
+            "stockpiles",
+            "spare parts",
+            "spares",
+            "consumables",
+            "raw materials",
+            "finished goods",
+            "vehicle inventory",
+            "parts inventory",
+            "medicine inventory",
+            "medical supplies",
+            "fuel inventory",
+            "uniforms",
+            "protective gear",
+            "textbook inventory",
+            "stationery",
+            "crop inventory",
+            "produce inventory",
+            "ore stockpiles",
+            "refined metal inventory",
+        )
+    )
+
+    if is_inventory_asset:
+        if has_any(
+            "project work-in-progress",
+            "project work in progress",
+            "work-in-progress",
+            "work in progress",
+            "wip",
+            "contract work in progress",
+            "engineering projects",
+            "unbilled time and costs",
+        ):
+            return "project_wip"
+
+        if has_any("raw materials", "material inventory"):
+            return "inventory_raw_materials"
+
+        if has_any("finished goods"):
+            return "inventory_finished_goods"
+
+        if has_any("vehicle inventory"):
+            return "inventory_vehicle"
+
+        if has_any("parts inventory", "spare parts", "spares", "consumables"):
+            return "inventory_spares_consumables"
+
+        if has_any("medicine inventory", "medical supplies", "pharmaceuticals"):
+            return "inventory_medical"
+
+        if has_any("fuel inventory"):
+            return "inventory_fuel"
+
+        if has_any("uniforms", "protective gear"):
+            return "inventory_uniforms"
+
+        if has_any("textbook", "stationery", "books"):
+            return "inventory_books_stationery"
+
+        if has_any("crop inventory", "produce inventory", "harvested produce"):
+            return "inventory_agriculture"
+
+        if has_any("ore stockpiles", "concentrate", "refined metal"):
+            return "inventory_mining"
+
+        return "inventory"
+
+    # ----------------------------
+    # Direct cost / COGS roles
+    # ----------------------------
+    if is_expense:
+        if has_any(
+            "direct materials",
+            "material purchases",
+            "materials consumed",
+            "paint & panel materials",
+            "essential medication expense",
+            "learning materials expense",
+            "uniforms & protective gear expense",
+        ):
+            return "direct_materials_cost"
+
+        if has_any("cost of sales", "cost of goods sold", "cogs", "stock purchases"):
+            return "cogs"
+
+        if has_any("subcontractor", "subcontractor payments", "direct subcontractor"):
+            return "direct_subcontractor_cost"
+        
+    # ----------------------------
     # helpers
     # ----------------------------
     is_expense = ("expense" in sec) or ("depreciation" in text) or ("amort" in text)

@@ -1871,6 +1871,15 @@ const ENDPOINTS = {
 
     stocktakePost: (cid, sessionId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/post`,
+  
+    purchaseOrders: (cid, q="") =>
+      `/api/companies/${cid}/purchase-orders${q ? `?${q}` : ""}`,
+
+    purchaseOrder: (cid, poId) =>
+      `/api/companies/${cid}/purchase-orders/${poId}`,
+
+    purchaseOrderReceive: (cid, poId) =>
+      `/api/companies/${cid}/purchase-orders/${poId}/receive`,
   },
 
   stocktake: {
@@ -1882,6 +1891,41 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/compare`,
     post: (cid, sessionId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/stocktake/${encodeURIComponent(sessionId)}/post`,
+  },
+
+  projects: {
+    list: (cid, q = "") =>
+      `/api/companies/${cid}/projects${q ? `?${q}` : ""}`,
+
+    create: (cid) =>
+      `/api/companies/${cid}/projects`,
+
+    one: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}`,
+
+    update: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}`,
+
+    tasksList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks`,
+
+    tasksCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks`,
+
+    costCodesList: (cid, q = "") =>
+      `/api/companies/${cid}/projects/cost-codes${q ? `?${q}` : ""}`,
+
+    costCodesCreate: (cid) =>
+      `/api/companies/${cid}/projects/cost-codes`,
+
+    budgetLinesList: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/budget-lines`,
+
+    budgetLinesCreate: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/budget-lines`,
+
+    issueMaterials: (cid, projectId) =>
+      `/api/companies/${cid}/projects/${projectId}/issue-materials`,
   },
 
   // ✅ ADD THIS as a sibling object
@@ -4802,6 +4846,36 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
             //{ name: "Payments", screen: "ap", icon: "💸" }, // later: ap-payments if you split
           ],
         },
+        {
+          name: "Project Desk",
+          icon: "🏗️",
+          isParent: true,
+          minRole: "clerk",
+          permission: "can_manage_ap",
+          children: [
+            {
+              name: "Projects",
+              screen: "projects",
+              icon: "📁",
+              minRole: "clerk",
+              permission: "can_manage_ap",
+            },
+            {
+              name: "Budgets / BOQ",
+              screen: "projects",
+              icon: "📐",
+              minRole: "clerk",
+              permission: "can_manage_ap",
+            },
+            {
+              name: "Material Issues",
+              screen: "projects",
+              icon: "📦",
+              minRole: "clerk",
+              permission: "can_manage_ap",
+            },
+          ],
+        },
       ],
     },
 
@@ -6414,11 +6488,15 @@ const SCREEN_POLICY = {
   "stocktake":            { auth: "private", minRole: "assistant", feature: "inventory-module" },
   "reorder":              { auth: "private", minRole: "clerk",     feature: "inventory-module" },
   "inventory-valuation":  { auth: "private", minRole: "assistant", feature: "inventory-module" },
+  "purchase-orders": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
 
-  "service-items":        { auth: "private", minRole: "clerk",     feature: "service-billing" },
+  "goods-receipts": { auth: "private", minRole: "assistant", permission: "can_manage_ap"},
+  "service-items": { auth: "private", minRole: "clerk",     feature: "service-billing" },
 
+  projects: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
+  "project-detail": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   // POS
-  "pos":                  { auth: "private", minRole: "assistant", feature: "pos" },
+  "pos": { auth: "private", minRole: "assistant", feature: "pos" },
 
   // Master Data
   customers: { auth: "private", minRole: "clerk" },
@@ -7726,6 +7804,10 @@ async function switchScreen(name) {
     name === "revenue-setup-contract" ||
     name === "revenue-setup-allocation";
 
+  const isProjectWorkflow =
+    name === "projects" ||
+    name === "project-detail";
+
   const isCatalogSubscreen = [
     "inventory-items",
     "inventory-movements",
@@ -7733,6 +7815,10 @@ async function switchScreen(name) {
     "reorder",
     "inventory-valuation",
     "service-items",
+
+    // ADD
+    "purchase-orders",
+    "goods-receipts",
   ].includes(name);
 
   // 🔐 Auth guard
@@ -7778,6 +7864,7 @@ async function switchScreen(name) {
   else if (isCatalogSubscreen) base = "inventory";
   else if (isRevenueWorkflow) base = "revenue";
   else if (isRevenueSetup) base = "revenue-setup";
+  else if (isProjectWorkflow) base = "projects";
 
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
@@ -8082,6 +8169,11 @@ async function switchScreen(name) {
     renderCatalogScreen?.(sub);
   }
 
+  if (base === "projects") {
+    await window.bindProjectsScreen?.(name);
+    return;
+  }
+
   // Banking hooks
   if (name === "banking") bindBankScreen?.();
   if (name === "bank-setup") bindBankSetupScreen?.();
@@ -8207,6 +8299,8 @@ async function switchScreen(name) {
     "lease-mods":    "IFRS 16 - Modifications",
     "lease-terms":   "IFRS 16 - Terminations",
     "lease-register": "IFRS 16 - Lease Register",
+    projects: "Project Desk",
+    "project-detail": "Project Desk",
     help: "Help & Support",
   };
 
@@ -8232,9 +8326,11 @@ function isInventoryRoute(name) {
   return [
     "inventory-items",
     "inventory-movements",
-    "reorder",
     "stocktake",
+    "reorder",
     "inventory-valuation",
+    "purchase-orders",
+    "goods-receipts",
   ].includes(String(name || ""));
 }
 
@@ -8309,7 +8405,18 @@ function renderCatalogScreen(name) {
       },
     },
 
-    // ✅ always allowed (service-only companies)
+    // ✅ ADD THESE
+    "purchase-orders": {
+      tpl: "tpl-purchase-orders",
+      enter: () => { bindPurchaseOrdersUI?.(); loadPurchaseOrders?.(); },
+    },
+
+    "goods-receipts": {
+      tpl: "tpl-goods-receipts",
+      enter: () => { bindGoodsReceiptsUI?.(); loadGoodsReceipts?.(); },
+    },
+
+    // ✅ always allowed
     "service-items": {
       tpl: "tpl-service-items",
       enter: () => { bindServiceItemsUI?.(); loadServiceItems?.(); },
@@ -39281,6 +39388,47 @@ function toggleRevenueProgressDriverFields() {
     });
   }
 
+  async function populateRevenueProjectDropdown(customerId = null) {
+    const sel = document.getElementById("revProjectId");
+    if (!sel) return;
+
+    const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    if (!cid) return;
+
+    sel.innerHTML = `<option value="">Loading...</option>`;
+
+    try {
+      const params = new URLSearchParams();
+
+      if (customerId) {
+        params.set("customer_id", String(customerId));
+      }
+
+      params.set("limit", "500");
+
+      const data = await apiFetch(
+        ENDPOINTS.projects.list(cid, params.toString())
+      );
+
+      const items = data?.items || [];
+
+      sel.innerHTML = `
+        <option value="">None</option>
+        ${items.map(p => `
+          <option value="${esc(String(p.id))}">
+            ${esc(p.project_code || "")}
+            ${p.project_name ? ` — ${esc(p.project_name)}` : ""}
+          </option>
+        `).join("")}
+      `;
+    } catch (err) {
+      console.error(err);
+      sel.innerHTML = `<option value="">Failed to load</option>`;
+    }
+  }
+
+  window.populateRevenueProjectDropdown = populateRevenueProjectDropdown;
+
   function bindBackToPreview() {
     const btn = document.getElementById("revBackToPreviewBtn");
     if (!btn) return;
@@ -39305,7 +39453,9 @@ function toggleRevenueProgressDriverFields() {
     if ($("revCustomerId")) {
       $("revCustomerId").value = c.customer_id || "";
     }
-
+    if ($("revProjectId")) {
+      $("revProjectId").value = c.project_id || "";
+    }
     $("revContractId").value = c.id || "";
     $("revContractNumber").value = c.contract_number || "";
     $("revContractTitle").value = c.contract_title || "";
@@ -39762,6 +39912,7 @@ function toggleRevenueProgressDriverFields() {
 
     return {
       customer_id: Number($("revCustomerId")?.value || 0) || null,
+      project_id: Number($("revProjectId")?.value || 0) || null,
       contract_number: $("revContractNumber")?.value?.trim() || "",
       contract_title: $("revContractTitle")?.value?.trim() || "",
       contract_currency: resolveCurrency($("revContractCurrency")?.value),
@@ -42037,6 +42188,11 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     $("revSearch")?.addEventListener("input", renderContractList);
     $("revStatusFilter")?.addEventListener("change", renderContractList);
 
+    $("revCustomerId")?.addEventListener("change", async () => {
+      const customerId = Number($("revCustomerId")?.value || 0) || null;
+      await populateRevenueProjectDropdown?.(customerId);
+    });
+
     $("revBtnNewContract")?.addEventListener("click", async () => {
       try {
         await loadRevenueCustomers();
@@ -42483,6 +42639,8 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     bindBackToPreview();
     await loadRevenueCustomers();
     bindRevenueCustomerDropdownRefresh();
+    applyProjectNamingLabels?.();
+    await populateRevenueProjectDropdown?.();
     await loadRevenueObligationCatalog?.();   // <-- add this
     bindRevenueObligationCatalogPicker?.();   // <-- add this
     await loadRuns();
@@ -43212,6 +43370,193 @@ async function postDeferredTaxJournal(dt) {
   await postJournalEntry(payload);
   alert("Deferred tax journal posted.");
 }
+
+function showInvItemModalMsg(text = "", kind = "info") {
+  const el = document.getElementById("invItemModalMsg");
+  if (!el) return;
+  const cls =
+    kind === "error" ? "text-red-600" :
+    kind === "ok" ? "text-emerald-600" :
+    "text-slate-600";
+  el.className = `text-xs mb-3 ${cls}`;
+  el.textContent = text || "";
+}
+
+function openInvItemModal(prefill = {}) {
+  const m = document.getElementById("invItemModal");
+  if (!m) return;
+
+  const title = m.querySelector(".font-semibold.text-slate-800"); // or add an id for title
+  const isEdit = !!prefill.id;
+
+  window._INV_EDITING_ITEM_ID = isEdit ? Number(prefill.id) : null;
+
+  if (title) title.textContent = isEdit ? "Edit Inventory Item" : "New Inventory Item";
+  // reset
+  showInvItemModalMsg("");
+  document.getElementById("invItemSku").value = prefill.sku || "";
+  document.getElementById("invItemName").value = prefill.name || "";
+  document.getElementById("invItemBarcode").value = prefill.barcode || "";
+  document.getElementById("invItemCategory").value = prefill.category || "";
+  document.getElementById("invItemUnit").value = prefill.unit || "";
+  document.getElementById("invItemVatCode").value = prefill.vat_code || "";
+  document.getElementById("invItemSalesPrice").value =
+    (prefill.sales_price ?? prefill.sell_price ?? "0.00");
+
+  document.getElementById("invItemReorder").value =
+    (prefill.reorder_level ?? "0");
+  document.getElementById("invItemTrackStock").checked = prefill.track_stock ?? true;
+  document.getElementById("invItemTaxable").checked = prefill.is_taxable ?? true;
+  document.getElementById("invItemActive").checked = prefill.is_active ?? true;
+
+  // ✅ add this:
+  renderInvItemIndustryFields(prefill);
+
+  // show
+  m.classList.remove("hidden");
+
+  // focus sku
+  setTimeout(() => document.getElementById("invItemSku")?.focus?.(), 0);
+}
+window.openInvItemModal = openInvItemModal;
+
+function closeInvItemModal() {
+  const m = document.getElementById("invItemModal");
+  if (!m) return;
+  m.classList.add("hidden");
+  window._INV_EDITING_ITEM_ID = null;
+}
+
+function bindInvItemModalOnce() {
+  const m = document.getElementById("invItemModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("invItemModalOverlay")?.addEventListener("click", closeInvItemModal);
+  document.getElementById("invItemCloseBtn")?.addEventListener("click", closeInvItemModal);
+  document.getElementById("invItemCancelBtn")?.addEventListener("click", closeInvItemModal);
+
+  document.getElementById("invItemSaveBtn")?.addEventListener("click", saveInvItemFromModal);
+
+  // ESC closes
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const isOpen = !document.getElementById("invItemModal")?.classList.contains("hidden");
+      if (isOpen) closeInvItemModal();
+    }
+  });
+}
+
+function moneyToNumStr(v) {
+  if (v === null || v === undefined) return "0";
+
+  const s = String(v)
+    .replace(/[^0-9.-]/g, "")  // remove currency + commas
+    .trim();
+
+  if (!s) return "0";
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return "0";
+
+  return String(n);
+}
+
+// expose globally (important)
+window.moneyToNumStr = moneyToNumStr;
+
+async function saveInvItemFromModal() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const sku = (document.getElementById("invItemSku")?.value || "").trim();
+  const name = (document.getElementById("invItemName")?.value || "").trim();
+
+  if (!sku) return showInvItemModalMsg("SKU is required.", "error");
+  if (!name) return showInvItemModalMsg("Name is required.", "error");
+
+  const meta = (typeof collectInvItemMetaFromUI === "function")
+    ? (collectInvItemMetaFromUI() || {})
+    : {};
+
+  const salesPriceRaw = document.getElementById("invItemSalesPrice")?.value || "";
+  const reorderRaw    = document.getElementById("invItemReorder")?.value || "";
+
+  const payload = {
+    sku,
+    name,
+    barcode: (document.getElementById("invItemBarcode")?.value || "").trim() || null,
+    category: (document.getElementById("invItemCategory")?.value || "").trim() || null,
+    unit: (document.getElementById("invItemUnit")?.value || "").trim() || null,
+    vat_code: (document.getElementById("invItemVatCode")?.value || "").trim() || null,
+
+    // ensure numbers store correctly
+    sales_price: moneyToNumStr(salesPriceRaw),
+    reorder_level: moneyToNumStr(reorderRaw),
+
+    track_stock: !!document.getElementById("invItemTrackStock")?.checked,
+    is_active: !!document.getElementById("invItemActive")?.checked,
+    is_taxable: !!document.getElementById("invItemTaxable")?.checked,
+
+    meta,
+  };
+
+  const btn = document.getElementById("invItemSaveBtn");
+  const oldText = btn?.textContent || "Save Item";
+
+  // Detect edit mode
+  const editingId = Number(window._INV_EDITING_ITEM_ID || 0) || null;
+
+  // 🔎 DEBUG LOGS
+  console.log("=== INVENTORY SAVE DEBUG ===");
+  console.log("Sales price input:", salesPriceRaw);
+  console.log("Reorder input:", reorderRaw);
+  console.log("Payload being sent:", payload);
+
+  try {
+    showInvItemModalMsg(editingId ? "Updating…" : "Saving…");
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = editingId ? "Updating…" : "Saving…";
+    }
+
+    if (editingId) {
+      // ✅ UPDATE
+      await apiFetch(
+        ENDPOINTS.inventory.item(cid, editingId),
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        }
+      );
+    } else {
+      // ✅ CREATE
+      await apiFetch(
+        ENDPOINTS.inventory.createItem(cid),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+    }
+
+    showInvItemModalMsg("Saved ✔", "ok");
+    closeInvItemModal();
+
+    window._INV_EDITING_ITEM_ID = null; // reset edit mode
+    await loadInventoryItems?.();
+
+  } catch (err) {
+    showInvItemModalMsg(err?.message || "Save failed.", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
+window.saveInvItemFromModal = saveInvItemFromModal;
 
   /* ---------- SERVICES / ITEMS DATALISTS ---------- */
   function renderServicesDatalists() {
@@ -57187,192 +57532,7 @@ window.bindInventory = bindInventory;
 // =====================================================
 // Inventory Items (already started by you, improved)
 // =====================================================
-function showInvItemModalMsg(text = "", kind = "info") {
-  const el = document.getElementById("invItemModalMsg");
-  if (!el) return;
-  const cls =
-    kind === "error" ? "text-red-600" :
-    kind === "ok" ? "text-emerald-600" :
-    "text-slate-600";
-  el.className = `text-xs mb-3 ${cls}`;
-  el.textContent = text || "";
-}
 
-function openInvItemModal(prefill = {}) {
-  const m = document.getElementById("invItemModal");
-  if (!m) return;
-
-  const title = m.querySelector(".font-semibold.text-slate-800"); // or add an id for title
-  const isEdit = !!prefill.id;
-
-  window._INV_EDITING_ITEM_ID = isEdit ? Number(prefill.id) : null;
-
-  if (title) title.textContent = isEdit ? "Edit Inventory Item" : "New Inventory Item";
-  // reset
-  showInvItemModalMsg("");
-  document.getElementById("invItemSku").value = prefill.sku || "";
-  document.getElementById("invItemName").value = prefill.name || "";
-  document.getElementById("invItemBarcode").value = prefill.barcode || "";
-  document.getElementById("invItemCategory").value = prefill.category || "";
-  document.getElementById("invItemUnit").value = prefill.unit || "";
-  document.getElementById("invItemVatCode").value = prefill.vat_code || "";
-  document.getElementById("invItemSalesPrice").value =
-    (prefill.sales_price ?? prefill.sell_price ?? "0.00");
-
-  document.getElementById("invItemReorder").value =
-    (prefill.reorder_level ?? "0");
-  document.getElementById("invItemTrackStock").checked = prefill.track_stock ?? true;
-  document.getElementById("invItemTaxable").checked = prefill.is_taxable ?? true;
-  document.getElementById("invItemActive").checked = prefill.is_active ?? true;
-
-  // ✅ add this:
-  renderInvItemIndustryFields(prefill);
-
-  // show
-  m.classList.remove("hidden");
-
-  // focus sku
-  setTimeout(() => document.getElementById("invItemSku")?.focus?.(), 0);
-}
-window.openInvItemModal = openInvItemModal;
-
-function closeInvItemModal() {
-  const m = document.getElementById("invItemModal");
-  if (!m) return;
-  m.classList.add("hidden");
-  window._INV_EDITING_ITEM_ID = null;
-}
-
-function bindInvItemModalOnce() {
-  const m = document.getElementById("invItemModal");
-  if (!m || m.dataset.bound === "1") return;
-  m.dataset.bound = "1";
-
-  document.getElementById("invItemModalOverlay")?.addEventListener("click", closeInvItemModal);
-  document.getElementById("invItemCloseBtn")?.addEventListener("click", closeInvItemModal);
-  document.getElementById("invItemCancelBtn")?.addEventListener("click", closeInvItemModal);
-
-  document.getElementById("invItemSaveBtn")?.addEventListener("click", saveInvItemFromModal);
-
-  // ESC closes
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      const isOpen = !document.getElementById("invItemModal")?.classList.contains("hidden");
-      if (isOpen) closeInvItemModal();
-    }
-  });
-}
-
-function moneyToNumStr(v) {
-  if (v === null || v === undefined) return "0";
-
-  const s = String(v)
-    .replace(/[^0-9.-]/g, "")  // remove currency + commas
-    .trim();
-
-  if (!s) return "0";
-
-  const n = Number(s);
-  if (!Number.isFinite(n)) return "0";
-
-  return String(n);
-}
-
-// expose globally (important)
-window.moneyToNumStr = moneyToNumStr;
-
-async function saveInvItemFromModal() {
-  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid) return;
-
-  const sku = (document.getElementById("invItemSku")?.value || "").trim();
-  const name = (document.getElementById("invItemName")?.value || "").trim();
-
-  if (!sku) return showInvItemModalMsg("SKU is required.", "error");
-  if (!name) return showInvItemModalMsg("Name is required.", "error");
-
-  const meta = (typeof collectInvItemMetaFromUI === "function")
-    ? (collectInvItemMetaFromUI() || {})
-    : {};
-
-  const salesPriceRaw = document.getElementById("invItemSalesPrice")?.value || "";
-  const reorderRaw    = document.getElementById("invItemReorder")?.value || "";
-
-  const payload = {
-    sku,
-    name,
-    barcode: (document.getElementById("invItemBarcode")?.value || "").trim() || null,
-    category: (document.getElementById("invItemCategory")?.value || "").trim() || null,
-    unit: (document.getElementById("invItemUnit")?.value || "").trim() || null,
-    vat_code: (document.getElementById("invItemVatCode")?.value || "").trim() || null,
-
-    // ensure numbers store correctly
-    sales_price: moneyToNumStr(salesPriceRaw),
-    reorder_level: moneyToNumStr(reorderRaw),
-
-    track_stock: !!document.getElementById("invItemTrackStock")?.checked,
-    is_active: !!document.getElementById("invItemActive")?.checked,
-    is_taxable: !!document.getElementById("invItemTaxable")?.checked,
-
-    meta,
-  };
-
-  const btn = document.getElementById("invItemSaveBtn");
-  const oldText = btn?.textContent || "Save Item";
-
-  // Detect edit mode
-  const editingId = Number(window._INV_EDITING_ITEM_ID || 0) || null;
-
-  // 🔎 DEBUG LOGS
-  console.log("=== INVENTORY SAVE DEBUG ===");
-  console.log("Sales price input:", salesPriceRaw);
-  console.log("Reorder input:", reorderRaw);
-  console.log("Payload being sent:", payload);
-
-  try {
-    showInvItemModalMsg(editingId ? "Updating…" : "Saving…");
-
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = editingId ? "Updating…" : "Saving…";
-    }
-
-    if (editingId) {
-      // ✅ UPDATE
-      await apiFetch(
-        ENDPOINTS.inventory.item(cid, editingId),
-        {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        }
-      );
-    } else {
-      // ✅ CREATE
-      await apiFetch(
-        ENDPOINTS.inventory.createItem(cid),
-        {
-          method: "POST",
-          body: JSON.stringify(payload),
-        }
-      );
-    }
-
-    showInvItemModalMsg("Saved ✔", "ok");
-    closeInvItemModal();
-
-    window._INV_EDITING_ITEM_ID = null; // reset edit mode
-    await loadInventoryItems?.();
-
-  } catch (err) {
-    showInvItemModalMsg(err?.message || "Save failed.", "error");
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = oldText;
-    }
-  }
-}
-window.saveInvItemFromModal = saveInvItemFromModal;
 
 // Call this when inventory screen binds
 // Put this line inside bindInventoryItemsUI() at the top:
@@ -58648,6 +58808,33 @@ function renderValuationTable(items, totalValue, asOf) {
       </table>
     </div>
   `;
+}
+
+async function loadPurchaseOrders() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const q = (document.getElementById("poSearch")?.value || "").trim();
+  const status = (document.getElementById("poStatus")?.value || "").trim();
+
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+
+  const mount = document.getElementById("purchaseOrdersTable");
+  if (mount) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">Loading purchase orders…</div>`;
+  }
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.inventory.purchaseOrders(cid, params.toString())
+    );
+
+    renderPurchaseOrdersTable(data?.items || []);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
 }
 
 // =====================================================
@@ -66679,7 +66866,722 @@ function renderVendors() {
       // Ensure initial total is computed
       recomputeServiceBillingTotal();
     }
-    
+
+function getCompanyIndustryLabel() {
+  const c = window.CURRENT_COMPANY || CURRENT_COMPANY || {};
+  return String(
+    c.industry ||
+    c.company_industry ||
+    c.industry_name ||
+    ""
+  ).trim();
+}
+
+function getCompanySubIndustryLabel() {
+  const c = window.CURRENT_COMPANY || CURRENT_COMPANY || {};
+  return String(
+    c.sub_industry ||
+    c.subIndustry ||
+    c.sub_industry_name ||
+    ""
+  ).trim();
+}
+
+function getWorkUnitLabel() {
+  const industry = getCompanyIndustryLabel().toLowerCase();
+  const sub = getCompanySubIndustryLabel().toLowerCase();
+  const text = `${industry} ${sub}`;
+
+  if (text.includes("accounting") || text.includes("audit") || text.includes("auditor")) {
+    return "Engagement";
+  }
+
+  if (text.includes("law") || text.includes("legal")) {
+    return "Matter / Case";
+  }
+
+  if (text.includes("construction")) {
+    return "Project";
+  }
+
+  if (text.includes("repair") || text.includes("automotive services") || text.includes("workshop")) {
+    return "Job Card / Work Order";
+  }
+
+  if (text.includes("it") || text.includes("technology") || text.includes("software")) {
+    return "Project / Ticket / Engagement";
+  }
+
+  if (text.includes("marketing")) {
+    return "Campaign / Project";
+  }
+
+  if (text.includes("engineering")) {
+    return "Project";
+  }
+
+  if (text.includes("healthcare") || text.includes("npo healthcare") || text.includes("npo education")) {
+    return "Programme / Case";
+  }
+
+  return "Project / Job";
+}
+
+window.getWorkUnitLabel = getWorkUnitLabel;
+
+function applyProjectNamingLabels() {
+  const label = getWorkUnitLabel();
+
+  document.querySelectorAll("[data-project-label]").forEach(el => {
+    el.textContent = label;
+  });
+
+  document.querySelectorAll("[data-project-label-lower]").forEach(el => {
+    el.textContent = label.toLowerCase();
+  });
+
+  const title = document.getElementById("projectScreenTitle");
+  if (title) title.textContent = `${label}s`;
+
+  const newBtn = document.getElementById("projectNewBtn");
+  if (newBtn) newBtn.textContent = `+ New ${label}`;
+}
+
+window.applyProjectNamingLabels = applyProjectNamingLabels;
+
+async function populateProjectCustomerDropdown() {
+  const sel = document.getElementById("projectCustomerId");
+  if (!sel) return;
+
+  const customers = await fetchCustomersFromBackend?.(false) || [];
+
+  sel.innerHTML = `
+    <option value="">Select customer...</option>
+    ${customers.map(c => `
+      <option value="${esc(String(c.id))}">
+        ${esc(c.name || "")}
+      </option>
+    `).join("")}
+  `;
+}
+
+async function bindProjectsScreen(name = "projects") {
+  applyProjectNamingLabels?.();
+  bindProjectOperationalModalsOnce?.();
+  const btnNew = document.getElementById("projectNewBtn");
+  const btnRefresh = document.getElementById("projectRefreshBtn");
+  const q = document.getElementById("projectSearch");
+  const status = document.getElementById("projectStatus");
+
+  if (btnRefresh && btnRefresh.dataset.bound !== "1") {
+    btnRefresh.dataset.bound = "1";
+    btnRefresh.addEventListener("click", () => loadProjects());
+  }
+
+  if (btnNew && btnNew.dataset.bound !== "1") {
+    btnNew.dataset.bound = "1";
+    btnNew.addEventListener("click", () => openProjectCreateModal?.());
+  }
+
+  if (q && q.dataset.bound !== "1") {
+    q.dataset.bound = "1";
+    let t = null;
+    q.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => loadProjects(), 250);
+    });
+  }
+
+  if (status && status.dataset.bound !== "1") {
+    status.dataset.bound = "1";
+    status.addEventListener("change", () => loadProjects());
+  }
+
+  await loadProjects();
+}
+
+window.bindProjectsScreen = bindProjectsScreen;
+
+async function loadProjects({ limit = 50, offset = 0 } = {}) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const q = (document.getElementById("projectSearch")?.value || "").trim();
+  const status = (document.getElementById("projectStatus")?.value || "").trim();
+
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+
+  const mount = document.getElementById("projectsTable");
+  if (mount) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">Loading projects…</div>`;
+  }
+
+  try {
+    const data = await apiFetch(ENDPOINTS.projects.list(cid, params.toString()));
+    renderProjectsTable(data?.items || []);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+window.loadProjects = loadProjects;
+
+function renderProjectsTable(items) {
+  const mount = document.getElementById("projectsTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">No projects found.</div>`;
+    return;
+  }
+
+  const row = (p) => `
+    <tr class="border-b hover:bg-slate-50 cursor-pointer"
+        data-project-id="${esc(String(p.id))}">
+      <td class="px-2 py-2">${esc(p.project_code || "")}</td>
+      <td class="px-2 py-2">${esc(p.project_name || "")}</td>
+      <td class="px-2 py-2">${esc(p.customer_name || "")}</td>
+      <td class="px-2 py-2">${esc(p.status || "")}</td>
+      <td class="px-2 py-2 text-right">${fmtMoney(p.contract_value || 0)}</td>
+      <td class="px-2 py-2 text-right">${fmtMoney(p.budget_lines_total || 0)}</td>
+      <td class="px-2 py-2 text-right">${esc(String(p.task_count || 0))}</td>
+    </tr>
+  `;
+
+  mount.innerHTML = `
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr class="text-slate-600">
+            <th class="text-left px-2 py-2">Code</th>
+            <th class="text-left px-2 py-2">Project</th>
+            <th class="text-left px-2 py-2">Customer</th>
+            <th class="text-left px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Contract</th>
+            <th class="text-right px-2 py-2">Budget</th>
+            <th class="text-right px-2 py-2">Tasks</th>
+          </tr>
+        </thead>
+        <tbody>${items.map(row).join("")}</tbody>
+      </table>
+    </div>
+  `;
+
+  mount.querySelectorAll("[data-project-id]").forEach(tr => {
+    tr.addEventListener("click", () => loadProjectDetail(Number(tr.dataset.projectId)));
+  });
+}
+
+window.renderProjectsTable = renderProjectsTable;
+
+async function loadProjectDetail(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return;
+
+  const mount = document.getElementById("projectDetailMount");
+  if (mount) {
+    mount.innerHTML = `<div class="mt-3 text-xs text-slate-500">Loading project...</div>`;
+  }
+
+  try {
+    const p = await apiFetch(ENDPOINTS.projects.one(cid, projectId));
+    renderProjectDetail(p);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+window.loadProjectDetail = loadProjectDetail;
+
+function renderProjectDetail(p) {
+  const mount = document.getElementById("projectDetailMount");
+  if (!mount) return;
+
+  const tasks = p.tasks || [];
+  const budget = p.budget_lines || [];
+
+  mount.innerHTML = `
+    <div class="mt-4 border rounded p-3 text-xs">
+
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="font-bold text-sm">
+            ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
+          </div>
+          <div class="text-slate-500">
+            ${esc(p.customer_name || "No customer")} • ${esc(p.status || "")}
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1 text-xs border rounded"
+                  data-project-task-new="${esc(String(p.id))}">
+            + Task
+          </button>
+
+          <button class="px-3 py-1 text-xs border rounded"
+                  data-project-budget-new="${esc(String(p.id))}">
+            + Budget Line
+          </button>
+
+          <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
+                  data-project-issue="${esc(String(p.id))}">
+            Issue Materials
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Contract Value</div>
+          <div class="font-semibold">${fmtMoney(p.contract_value || 0)}</div>
+        </div>
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Budget</div>
+          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || 0)}</div>
+        </div>
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Tasks</div>
+          <div class="font-semibold">${esc(String(tasks.length))}</div>
+        </div>
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Billing</div>
+          <div class="font-semibold">${esc(p.billing_method || "")}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div class="border rounded p-2">
+          <div class="font-semibold mb-2">Tasks</div>
+          ${renderProjectTasksMini(tasks)}
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="font-semibold mb-2">Budget Lines</div>
+          ${renderProjectBudgetMini(budget)}
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  mount.querySelector("[data-project-task-new]")?.addEventListener("click", () => {
+    openProjectTaskModal?.(p.id);
+  });
+
+  mount.querySelector("[data-project-budget-new]")?.addEventListener("click", () => {
+    openProjectBudgetModal?.(p.id);
+  });
+
+  mount.querySelector("[data-project-issue]")?.addEventListener("click", () => {
+    openProjectIssueModal?.(p.id);
+  });
+}
+
+window.renderProjectDetail = renderProjectDetail;
+
+function renderProjectTasksMini(tasks) {
+  if (!tasks.length) {
+    return `<div class="text-slate-500">No tasks yet.</div>`;
+  }
+
+  return `
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50 border-b">
+        <tr>
+          <th class="text-left px-2 py-1">Code</th>
+          <th class="text-left px-2 py-1">Task</th>
+          <th class="text-left px-2 py-1">Status</th>
+          <th class="text-right px-2 py-1">Progress</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tasks.map(t => `
+          <tr class="border-b">
+            <td class="px-2 py-1">${esc(t.task_code || "")}</td>
+            <td class="px-2 py-1">${esc(t.task_name || "")}</td>
+            <td class="px-2 py-1">${esc(t.status || "")}</td>
+            <td class="px-2 py-1 text-right">${esc(String(t.progress_percent || 0))}%</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderProjectBudgetMini(lines) {
+  if (!lines.length) {
+    return `<div class="text-slate-500">No budget lines yet.</div>`;
+  }
+
+  return `
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50 border-b">
+        <tr>
+          <th class="text-left px-2 py-1">Line</th>
+          <th class="text-left px-2 py-1">Description</th>
+          <th class="text-left px-2 py-1">Cost Code</th>
+          <th class="text-right px-2 py-1">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lines.map(l => `
+          <tr class="border-b">
+            <td class="px-2 py-1">${esc(String(l.line_no || ""))}</td>
+            <td class="px-2 py-1">${esc(l.description || "")}</td>
+            <td class="px-2 py-1">${esc(l.cost_code || "")}</td>
+            <td class="px-2 py-1 text-right">${fmtMoney(l.budget_amount || 0)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function bindProjectCreateModalOnce() {
+  const m = document.getElementById("projectCreateModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectCreateOverlay")?.addEventListener("click", closeProjectCreateModal);
+  document.getElementById("projectCreateCloseBtn")?.addEventListener("click", closeProjectCreateModal);
+  document.getElementById("projectCreateCancelBtn")?.addEventListener("click", closeProjectCreateModal);
+  document.getElementById("projectCreateSaveBtn")?.addEventListener("click", submitProjectCreate);
+}
+
+function openProjectCreateModal() {
+  bindProjectCreateModalOnce();
+  populateProjectCustomerDropdown?.();
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  [
+    "projectCode",
+    "projectName",
+    "projectCustomerId",
+    "projectExpectedEndDate",
+    "projectContractValue",
+    "projectLocation",
+    "projectNotes",
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  const start = document.getElementById("projectStartDate");
+  if (start) start.value = today;
+
+  const status = document.getElementById("projectCreateStatus");
+  if (status) status.value = "draft";
+
+  const billing = document.getElementById("projectBillingMethod");
+  if (billing) billing.value = "milestone";
+
+  setElText("projectCreateMsg", "");
+
+  document.getElementById("projectCreateModal")?.classList.remove("hidden");
+}
+
+function closeProjectCreateModal() {
+  document.getElementById("projectCreateModal")?.classList.add("hidden");
+}
+
+async function submitProjectCreate() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const payload = {
+    project_code: document.getElementById("projectCode")?.value?.trim(),
+    project_name: document.getElementById("projectName")?.value?.trim(),
+    customer_id: Number(document.getElementById("projectCustomerId")?.value || 0) || null,
+    status: document.getElementById("projectCreateStatus")?.value || "draft",
+    start_date: document.getElementById("projectStartDate")?.value || null,
+    expected_end_date: document.getElementById("projectExpectedEndDate")?.value || null,
+    contract_value: Number(document.getElementById("projectContractValue")?.value || 0),
+    billing_method: document.getElementById("projectBillingMethod")?.value || "milestone",
+    location: document.getElementById("projectLocation")?.value?.trim(),
+    notes: document.getElementById("projectNotes")?.value?.trim(),
+  };
+
+  if (!payload.project_code || !payload.project_name) {
+    setElText("projectCreateMsg", "Project code and project name are required.");
+    return;
+  }
+
+  setElText("projectCreateMsg", "Saving project...");
+
+  try {
+    await apiFetch(ENDPOINTS.projects.create(cid), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectCreateModal();
+    await loadProjects?.();
+  } catch (err) {
+    const msg = err?.message || "Failed to create project.";
+    setElText("projectCreateMsg", msg);
+  }
+}
+window.openProjectCreateModal = openProjectCreateModal;
+window.closeProjectCreateModal = closeProjectCreateModal;
+window.submitProjectCreate = submitProjectCreate;
+
+let ACTIVE_PROJECT_ID = null;
+
+function bindProjectOperationalModalsOnce() {
+  bindProjectTaskModalOnce();
+  bindProjectBudgetModalOnce();
+  bindProjectIssueModalOnce();
+}
+
+function bindProjectTaskModalOnce() {
+  const m = document.getElementById("projectTaskModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectTaskOverlay")?.addEventListener("click", closeProjectTaskModal);
+  document.getElementById("projectTaskCloseBtn")?.addEventListener("click", closeProjectTaskModal);
+  document.getElementById("projectTaskCancelBtn")?.addEventListener("click", closeProjectTaskModal);
+  document.getElementById("projectTaskSaveBtn")?.addEventListener("click", submitProjectTask);
+}
+
+function openProjectTaskModal(projectId) {
+  bindProjectTaskModalOnce();
+  ACTIVE_PROJECT_ID = Number(projectId);
+
+  ["projectTaskCode", "projectTaskName", "projectTaskBudgetValue", "projectTaskStartDate", "projectTaskExpectedEndDate", "projectTaskNotes"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  document.getElementById("projectTaskProjectId").value = String(projectId);
+  document.getElementById("projectTaskStatus").value = "open";
+  setElText("projectTaskMsg", "");
+  document.getElementById("projectTaskModal")?.classList.remove("hidden");
+}
+
+function closeProjectTaskModal() {
+  document.getElementById("projectTaskModal")?.classList.add("hidden");
+}
+
+async function submitProjectTask() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectTaskProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  if (!cid || !projectId) return;
+
+  const payload = {
+    task_code: document.getElementById("projectTaskCode")?.value?.trim(),
+    task_name: document.getElementById("projectTaskName")?.value?.trim(),
+    status: document.getElementById("projectTaskStatus")?.value || "open",
+    budget_value: Number(document.getElementById("projectTaskBudgetValue")?.value || 0),
+    start_date: document.getElementById("projectTaskStartDate")?.value || null,
+    expected_end_date: document.getElementById("projectTaskExpectedEndDate")?.value || null,
+    notes: document.getElementById("projectTaskNotes")?.value?.trim(),
+  };
+
+  if (!payload.task_name) {
+    setElText("projectTaskMsg", "Task name is required.");
+    return;
+  }
+
+  setElText("projectTaskMsg", "Saving task...");
+
+  try {
+    await apiFetch(ENDPOINTS.projects.tasksCreate(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectTaskModal();
+    await loadProjectDetail(projectId);
+  } catch (err) {
+    setElText("projectTaskMsg", err?.message || "Failed to create task.");
+  }
+}
+
+function bindProjectBudgetModalOnce() {
+  const m = document.getElementById("projectBudgetModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectBudgetOverlay")?.addEventListener("click", closeProjectBudgetModal);
+  document.getElementById("projectBudgetCloseBtn")?.addEventListener("click", closeProjectBudgetModal);
+  document.getElementById("projectBudgetCancelBtn")?.addEventListener("click", closeProjectBudgetModal);
+  document.getElementById("projectBudgetSaveBtn")?.addEventListener("click", submitProjectBudgetLine);
+
+  ["projectBudgetQty", "projectBudgetUnitCost"].forEach(id => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      const qty = Number(document.getElementById("projectBudgetQty")?.value || 0);
+      const cost = Number(document.getElementById("projectBudgetUnitCost")?.value || 0);
+      const amt = document.getElementById("projectBudgetAmount");
+      if (amt) amt.value = (qty * cost).toFixed(2);
+    });
+  });
+}
+
+function openProjectBudgetModal(projectId) {
+  bindProjectBudgetModalOnce();
+  ACTIVE_PROJECT_ID = Number(projectId);
+
+  ["projectBudgetCostCodeId", "projectBudgetDescription", "projectBudgetTaskId", "projectBudgetQty", "projectBudgetUnitCost", "projectBudgetAmount"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  document.getElementById("projectBudgetProjectId").value = String(projectId);
+  document.getElementById("projectBudgetLineNo").value = "1";
+  setElText("projectBudgetMsg", "");
+  document.getElementById("projectBudgetModal")?.classList.remove("hidden");
+}
+
+function closeProjectBudgetModal() {
+  document.getElementById("projectBudgetModal")?.classList.add("hidden");
+}
+
+async function submitProjectBudgetLine() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectBudgetProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  if (!cid || !projectId) return;
+
+  const payload = {
+    line_no: Number(document.getElementById("projectBudgetLineNo")?.value || 1),
+    description: document.getElementById("projectBudgetDescription")?.value?.trim(),
+    task_id: Number(document.getElementById("projectBudgetTaskId")?.value || 0) || null,
+    cost_code_id: Number(document.getElementById("projectBudgetCostCodeId")?.value || 0) || null,
+    budget_qty: Number(document.getElementById("projectBudgetQty")?.value || 0),
+    unit_cost: Number(document.getElementById("projectBudgetUnitCost")?.value || 0),
+    budget_amount: Number(document.getElementById("projectBudgetAmount")?.value || 0),
+  };
+
+  if (!payload.description) {
+    setElText("projectBudgetMsg", "Description is required.");
+    return;
+  }
+
+  setElText("projectBudgetMsg", "Saving budget line...");
+
+  try {
+    await apiFetch(ENDPOINTS.projects.budgetLinesCreate(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectBudgetModal();
+    await loadProjectDetail(projectId);
+  } catch (err) {
+    setElText("projectBudgetMsg", err?.message || "Failed to create budget line.");
+  }
+}
+
+function bindProjectIssueModalOnce() {
+  const m = document.getElementById("projectIssueModal");
+  if (!m || m.dataset.bound === "1") return;
+  m.dataset.bound = "1";
+
+  document.getElementById("projectIssueOverlay")?.addEventListener("click", closeProjectIssueModal);
+  document.getElementById("projectIssueCloseBtn")?.addEventListener("click", closeProjectIssueModal);
+  document.getElementById("projectIssueCancelBtn")?.addEventListener("click", closeProjectIssueModal);
+  document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
+  document.getElementById("projectIssueAddLineBtn")?.addEventListener("click", addProjectIssueLine);
+}
+
+function openProjectIssueModal(projectId) {
+  bindProjectIssueModalOnce();
+  ACTIVE_PROJECT_ID = Number(projectId);
+
+  document.getElementById("projectIssueProjectId").value = String(projectId);
+  document.getElementById("projectIssueDate").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("projectIssueTaskId").value = "";
+  document.getElementById("projectIssueCostCodeId").value = "";
+  document.getElementById("projectIssueUsageType").value = "consumed";
+  document.getElementById("projectIssueLines").innerHTML = "";
+
+  addProjectIssueLine();
+  setElText("projectIssueMsg", "");
+  document.getElementById("projectIssueModal")?.classList.remove("hidden");
+}
+
+function closeProjectIssueModal() {
+  document.getElementById("projectIssueModal")?.classList.add("hidden");
+}
+
+function addProjectIssueLine() {
+  const tbody = document.getElementById("projectIssueLines");
+  if (!tbody) return;
+
+  const tr = document.createElement("tr");
+  tr.className = "border-b";
+  tr.innerHTML = `
+    <td class="px-2 py-2">
+      <input class="w-full border rounded px-2 py-1 text-xs" data-pi-item-id type="number" placeholder="Item ID">
+    </td>
+    <td class="px-2 py-2">
+      <input class="w-full border rounded px-2 py-1 text-xs text-right" data-pi-qty type="number" step="0.0001" placeholder="Qty">
+    </td>
+    <td class="px-2 py-2">
+      <input class="w-full border rounded px-2 py-1 text-xs" data-pi-memo placeholder="Memo">
+    </td>
+    <td class="px-2 py-2 text-right">
+      <button class="text-xs underline text-red-600" data-pi-remove>Remove</button>
+    </td>
+  `;
+
+  tr.querySelector("[data-pi-remove]")?.addEventListener("click", () => tr.remove());
+  tbody.appendChild(tr);
+}
+
+async function submitProjectIssue() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  const projectId = Number(document.getElementById("projectIssueProjectId")?.value || ACTIVE_PROJECT_ID || 0);
+  if (!cid || !projectId) return;
+
+  const lines = Array.from(document.querySelectorAll("#projectIssueLines tr"))
+    .map(tr => ({
+      item_id: Number(tr.querySelector("[data-pi-item-id]")?.value || 0),
+      qty: Number(tr.querySelector("[data-pi-qty]")?.value || 0),
+      memo: tr.querySelector("[data-pi-memo]")?.value?.trim() || "",
+    }))
+    .filter(x => x.item_id > 0 && x.qty > 0);
+
+  if (!lines.length) {
+    setElText("projectIssueMsg", "Add at least one valid material line.");
+    return;
+  }
+
+  const payload = {
+    tx_date: document.getElementById("projectIssueDate")?.value,
+    task_id: Number(document.getElementById("projectIssueTaskId")?.value || 0) || null,
+    cost_code_id: Number(document.getElementById("projectIssueCostCodeId")?.value || 0) || null,
+    usage_type: document.getElementById("projectIssueUsageType")?.value || "consumed",
+    lines,
+    post_now: true,
+  };
+
+  setElText("projectIssueMsg", "Posting material issue...");
+
+  try {
+    const out = await apiFetch(ENDPOINTS.projects.issueMaterials(cid, projectId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    closeProjectIssueModal();
+    await loadProjectDetail(projectId);
+    alert(`Material issue posted. Journal: ${out?.journal_id || "—"}`);
+  } catch (err) {
+    setElText("projectIssueMsg", err?.message || "Failed to post material issue.");
+  }
+}
+
+window.openProjectTaskModal = openProjectTaskModal;
+window.openProjectBudgetModal = openProjectBudgetModal;
+window.openProjectIssueModal = openProjectIssueModal;
+window.bindProjectOperationalModalsOnce = bindProjectOperationalModalsOnce;
   // ==============================
   // Company profile flags (from /api/auth/me)
   // ==============================
