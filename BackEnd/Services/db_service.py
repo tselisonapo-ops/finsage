@@ -65859,7 +65859,7 @@ class DatabaseService:
                     OR tx.notes ILIKE %s
                     OR p.project_code ILIKE %s
                     OR p.project_name ILIKE %s
-                    OR i.item_name ILIKE %s
+                    OR i.name ILIKE %s
                     OR i.sku ILIKE %s
                 )
             """)
@@ -65888,7 +65888,7 @@ class DatabaseService:
                 ln.id AS line_id,
                 ln.item_id,
                 i.sku,
-                i.item_name,
+                i.name AS item_name,
                 ln.qty,
                 ln.unit_cost,
                 (COALESCE(ln.qty, 0) * COALESCE(ln.unit_cost, 0)) AS extended_cost,
