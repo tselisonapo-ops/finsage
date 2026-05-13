@@ -348,3 +348,86 @@ def issue_materials_to_project_route(cid: int, project_id: int):
             "error": "failed_to_issue_materials_to_project",
             "details": str(e),
         }), 500
+    
+@projects_bp.route("/api/companies/<int:cid>/projects/budget-lines", methods=["GET"])
+@require_auth
+def list_all_project_budget_lines_route(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    project_id = request.args.get("project_id", type=int)
+    q = (request.args.get("q") or "").strip()
+    limit = int(request.args.get("limit") or 100)
+    offset = int(request.args.get("offset") or 0)
+
+    rows = db_service.list_project_budget_lines_all(
+        company_id,
+        project_id=project_id,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+
+    return jsonify({
+        "items": rows,
+        "limit": limit,
+        "offset": offset,
+    }), 200
+
+@projects_bp.route("/api/companies/<int:cid>/projects/material-issues", methods=["GET"])
+@require_auth
+def list_project_material_issues_route(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    project_id = request.args.get("project_id", type=int)
+    q = (request.args.get("q") or "").strip()
+    date_from = request.args.get("from") or request.args.get("date_from")
+    date_to = request.args.get("to") or request.args.get("date_to")
+
+    limit = int(request.args.get("limit") or 100)
+    offset = int(request.args.get("offset") or 0)
+
+    rows = db_service.list_project_material_issues(
+        company_id,
+        project_id=project_id,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
+
+    return jsonify({
+        "items": rows,
+        "limit": limit,
+        "offset": offset,
+    }), 200
+
+@projects_bp.route("/api/companies/<int:cid>/projects/profitability", methods=["GET"])
+@require_auth
+def project_profitability_route(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    project_id = request.args.get("project_id", type=int)
+    limit = int(request.args.get("limit") or 100)
+
+    rows = db_service.get_project_profitability(
+        company_id,
+        project_id=project_id,
+        limit=limit,
+    )
+
+    return jsonify({
+        "items": rows,
+    }), 200

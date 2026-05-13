@@ -7252,6 +7252,133 @@ html, body {
           </div>
         </section>
 
+        <section id="screen-project-budgets" class="screen hidden">
+          <div class="card p-4 flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="font-bold text-base">Budgets / BOQ</h3>
+                <div class="text-xs text-slate-500">
+                  Budget lines, BOQ control, cost codes, and project estimates
+                </div>
+              </div>
+
+              <button id="projectBudgetDeskRefreshBtn" class="px-3 py-1 text-xs border rounded">
+                Refresh
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
+              <div class="border rounded p-3 text-xs">
+                <div class="font-semibold mb-2">Filters</div>
+
+                <label class="block text-[11px] text-slate-500 mb-1">Search</label>
+                <input id="projectBudgetDeskSearch"
+                      class="w-full border rounded px-2 py-1 text-xs"
+                      placeholder="Project, BOQ line, cost code">
+
+                <label class="block text-[11px] text-slate-500 mt-2 mb-1">Project</label>
+                <select id="projectBudgetDeskProjectId"
+                        class="w-full border rounded px-2 py-1 text-xs">
+                  <option value="">All projects</option>
+                </select>
+              </div>
+
+              <div id="projectBudgetDeskTable"
+                  class="lg:col-span-3 border rounded p-2 text-xs text-slate-500">
+                Loading budget lines...
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-project-material-issues" class="screen hidden">
+          <div class="card p-4 flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="font-bold text-base">Material Issues</h3>
+                <div class="text-xs text-slate-500">
+                  Inventory consumed, installed, wasted, or issued to projects
+                </div>
+              </div>
+
+              <button id="projectIssueDeskRefreshBtn" class="px-3 py-1 text-xs border rounded">
+                Refresh
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-3">
+              <div class="border rounded p-3 text-xs">
+                <div class="font-semibold mb-2">Filters</div>
+
+                <label class="block text-[11px] text-slate-500 mb-1">Search</label>
+                <input id="projectIssueDeskSearch"
+                      class="w-full border rounded px-2 py-1 text-xs"
+                      placeholder="Project, ref, item">
+
+                <label class="block text-[11px] text-slate-500 mt-2 mb-1">Project</label>
+                <select id="projectIssueDeskProjectId"
+                        class="w-full border rounded px-2 py-1 text-xs">
+                  <option value="">All projects</option>
+                </select>
+
+                <label class="block text-[11px] text-slate-500 mt-2 mb-1">From</label>
+                <input id="projectIssueDeskFrom" type="date"
+                      class="w-full border rounded px-2 py-1 text-xs">
+
+                <label class="block text-[11px] text-slate-500 mt-2 mb-1">To</label>
+                <input id="projectIssueDeskTo" type="date"
+                      class="w-full border rounded px-2 py-1 text-xs">
+              </div>
+
+              <div id="projectIssueDeskTable"
+                  class="lg:col-span-4 border rounded p-2 text-xs text-slate-500">
+                Loading material issues...
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-project-profitability" class="screen hidden">
+          <div class="card p-4 flex flex-col gap-4">
+
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="font-bold text-base">Project Profitability</h3>
+
+                <div class="text-xs text-slate-500">
+                  Revenue, cost, margin, billing, and project performance
+                </div>
+              </div>
+
+              <button id="projectProfitabilityRefreshBtn"
+                      class="px-3 py-1 text-xs border rounded">
+                Refresh
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
+
+              <div class="border rounded p-3 text-xs">
+                <div class="font-semibold mb-2">Filters</div>
+
+                <label class="block text-[11px] text-slate-500 mb-1">
+                  Project
+                </label>
+
+                <select id="projectProfitabilityProjectId"
+                        class="w-full border rounded px-2 py-1 text-xs">
+                  <option value="">All projects</option>
+                </select>
+              </div>
+
+              <div id="projectProfitabilityTable"
+                  class="lg:col-span-3 border rounded p-2 text-xs text-slate-500">
+                Loading profitability...
+              </div>
+
+            </div>
+          </div>
+        </section>
         <!-- ==================================================
             POS SUMMARIES
             Base screen: pos

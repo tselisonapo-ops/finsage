@@ -65755,7 +65755,267 @@ class DatabaseService:
                 "journal_id": int(journal_id) if journal_id else None,
                 "total_cost": total_issue_cost,
             }
-        
+    def list_project_budget_lines_all(
+        self,
+        company_id: int,
+        *,
+        project_id: int | None = None,
+        q: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["b.company_id = %s"]
+        params: list[Any] = [int(company_id)]
+
+        if project_id:
+            where.append("b.project_id = %s")
+            params.append(int(project_id))
+
+        if q:
+            like = f"%{q.strip()}%"
+            where.append("""
+                (
+                    p.project_code ILIKE %s
+                    OR p.project_name ILIKE %s
+                    OR b.description ILIKE %s
+                    OR cc.code ILIKE %s
+                    OR cc.name ILIKE %s
+                )
+            """)
+            params.extend([like, like, like, like, like])
+
+        params.extend([int(limit), int(offset)])
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                b.*,
+                p.project_code,
+                p.project_name,
+                c.name AS customer_name,
+                t.task_code,
+                t.task_name,
+                cc.code AS cost_code,
+                cc.name AS cost_code_name,
+                cc.cost_type
+            FROM {schema}.project_budget_lines b
+            JOIN {schema}.projects p
+                ON p.company_id = b.company_id
+            AND p.id = b.project_id
+            LEFT JOIN {schema}.customers c
+                ON c.company_id = p.company_id
+            AND c.id = p.customer_id
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = b.company_id
+            AND t.id = b.task_id
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = b.company_id
+            AND cc.id = b.cost_code_id
+            WHERE {" AND ".join(where)}
+            ORDER BY p.project_code ASC, b.line_no ASC, b.id ASC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        ) or []
+
+    def list_project_material_issues(
+        self,
+        company_id: int,
+        *,
+        project_id: int | None = None,
+        q: str = "",
+        date_from=None,
+        date_to=None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = [
+            "tx.company_id = %s",
+            "tx.tx_type = 'issue_to_project'",
+        ]
+        params: list[Any] = [int(company_id)]
+
+        if project_id:
+            where.append("tx.project_id = %s")
+            params.append(int(project_id))
+
+        if date_from:
+            where.append("tx.tx_date >= %s")
+            params.append(date_from)
+
+        if date_to:
+            where.append("tx.tx_date <= %s")
+            params.append(date_to)
+
+        if q:
+            like = f"%{q.strip()}%"
+            where.append("""
+                (
+                    tx.ref ILIKE %s
+                    OR tx.notes ILIKE %s
+                    OR p.project_code ILIKE %s
+                    OR p.project_name ILIKE %s
+                    OR i.item_name ILIKE %s
+                    OR i.sku ILIKE %s
+                )
+            """)
+            params.extend([like, like, like, like, like, like])
+
+        params.extend([int(limit), int(offset)])
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                tx.id AS tx_id,
+                tx.tx_date,
+                tx.ref,
+                tx.status,
+                tx.notes,
+                tx.project_id,
+                tx.task_id,
+                tx.cost_code_id,
+                tx.usage_type,
+                tx.journal_id,
+
+                p.project_code,
+                p.project_name,
+                c.name AS customer_name,
+
+                ln.id AS line_id,
+                ln.item_id,
+                i.sku,
+                i.item_name,
+                ln.qty,
+                ln.unit_cost,
+                ln.extended_cost,
+                ln.memo,
+
+                t.task_code,
+                t.task_name,
+                cc.code AS cost_code,
+                cc.name AS cost_code_name
+
+            FROM {schema}.inventory_tx tx
+            LEFT JOIN {schema}.inventory_tx_lines ln
+                ON ln.company_id = tx.company_id
+            AND ln.tx_id = tx.id
+            LEFT JOIN {schema}.inventory_items i
+                ON i.company_id = ln.company_id
+            AND i.id = ln.item_id
+            LEFT JOIN {schema}.projects p
+                ON p.company_id = tx.company_id
+            AND p.id = tx.project_id
+            LEFT JOIN {schema}.customers c
+                ON c.company_id = p.company_id
+            AND c.id = p.customer_id
+            LEFT JOIN {schema}.project_tasks t
+                ON t.company_id = tx.company_id
+            AND t.id = COALESCE(ln.task_id, tx.task_id)
+            LEFT JOIN {schema}.project_cost_codes cc
+                ON cc.company_id = tx.company_id
+            AND cc.id = COALESCE(ln.cost_code_id, tx.cost_code_id)
+            WHERE {" AND ".join(where)}
+            ORDER BY tx.tx_date DESC, tx.id DESC, ln.id ASC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params),
+        ) or []
+
+    def get_project_profitability(
+        self,
+        company_id: int,
+        *,
+        project_id: int | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["p.company_id = %s"]
+        params: list[Any] = [int(company_id)]
+
+        if project_id:
+            where.append("p.id = %s")
+            params.append(int(project_id))
+
+        params.append(int(limit))
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                p.id AS project_id,
+                p.project_code,
+                p.project_name,
+                p.status,
+                c.name AS customer_name,
+
+                COALESCE(p.contract_value, 0) AS contract_value,
+
+                COALESCE((
+                    SELECT SUM(b.budget_amount)
+                    FROM {schema}.project_budget_lines b
+                    WHERE b.company_id = p.company_id
+                    AND b.project_id = p.id
+                ), 0) AS budget_total,
+
+                COALESCE((
+                    SELECT SUM(ln.extended_cost)
+                    FROM {schema}.inventory_tx tx
+                    JOIN {schema}.inventory_tx_lines ln
+                        ON ln.company_id = tx.company_id
+                    AND ln.tx_id = tx.id
+                    WHERE tx.company_id = p.company_id
+                    AND tx.project_id = p.id
+                    AND tx.tx_type = 'issue_to_project'
+                ), 0) AS material_cost_total,
+
+                COALESCE((
+                    SELECT SUM(rc.recognized_revenue_to_date)
+                    FROM {schema}.revenue_contracts rc
+                    WHERE rc.company_id = p.company_id
+                    AND rc.project_id = p.id
+                ), 0) AS recognized_revenue,
+
+                COALESCE((
+                    SELECT SUM(rc.billed_to_date)
+                    FROM {schema}.revenue_contracts rc
+                    WHERE rc.company_id = p.company_id
+                    AND rc.project_id = p.id
+                ), 0) AS billed_to_date,
+
+                (
+                    COALESCE((
+                        SELECT SUM(rc.recognized_revenue_to_date)
+                        FROM {schema}.revenue_contracts rc
+                        WHERE rc.company_id = p.company_id
+                        AND rc.project_id = p.id
+                    ), 0)
+                    -
+                    COALESCE((
+                        SELECT SUM(ln.extended_cost)
+                        FROM {schema}.inventory_tx tx
+                        JOIN {schema}.inventory_tx_lines ln
+                            ON ln.company_id = tx.company_id
+                        AND ln.tx_id = tx.id
+                        WHERE tx.company_id = p.company_id
+                        AND tx.project_id = p.id
+                        AND tx.tx_type = 'issue_to_project'
+                    ), 0)
+                ) AS gross_margin
+
+            FROM {schema}.projects p
+            LEFT JOIN {schema}.customers c
+                ON c.company_id = p.company_id
+            AND c.id = p.customer_id
+            WHERE {" AND ".join(where)}
+            ORDER BY p.created_at DESC, p.id DESC
+            LIMIT %s
+            """,
+            tuple(params),
+        ) or []        
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

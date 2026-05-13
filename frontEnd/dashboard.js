@@ -1924,6 +1924,15 @@ const ENDPOINTS = {
     budgetLinesCreate: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/budget-lines`,
 
+    budgetLinesAll: (cid, q = "") =>
+      `/api/companies/${cid}/projects/budget-lines${q ? `?${q}` : ""}`,
+
+    materialIssuesList: (cid, q = "") =>
+      `/api/companies/${cid}/projects/material-issues${q ? `?${q}` : ""}`,
+
+    profitabilityList: (cid, q = "") =>
+      `/api/companies/${cid}/projects/profitability${q ? `?${q}` : ""}`,
+
     issueMaterials: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/issue-materials`,
   },
@@ -4860,17 +4869,27 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
               minRole: "clerk",
               permission: "can_manage_ap",
             },
+
             {
               name: "Budgets / BOQ",
-              screen: "projects",
+              screen: "project-budgets",
               icon: "📐",
               minRole: "clerk",
               permission: "can_manage_ap",
             },
+
             {
               name: "Material Issues",
-              screen: "projects",
+              screen: "project-material-issues",
               icon: "📦",
+              minRole: "clerk",
+              permission: "can_manage_ap",
+            },
+
+            {
+              name: "Profitability",
+              screen: "project-profitability",
+              icon: "📊",
               minRole: "clerk",
               permission: "can_manage_ap",
             },
@@ -6495,6 +6514,9 @@ const SCREEN_POLICY = {
 
   projects: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   "project-detail": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
+  "project-budgets": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
+  "project-material-issues": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
+  "project-profitability": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
   // POS
   "pos": { auth: "private", minRole: "assistant", feature: "pos" },
 
@@ -7806,7 +7828,10 @@ async function switchScreen(name) {
 
   const isProjectWorkflow =
     name === "projects" ||
-    name === "project-detail";
+    name === "project-detail" ||
+    name === "project-budgets" ||
+    name === "project-material-issues" ||
+    name === "project-profitability";
 
   const isCatalogSubscreen = [
     "inventory-items",
@@ -8170,6 +8195,22 @@ async function switchScreen(name) {
   }
 
   if (base === "projects") {
+
+    if (name === "project-budgets") {
+      await window.bindProjectBudgetsScreen?.();
+      return;
+    }
+
+    if (name === "project-material-issues") {
+      await window.bindProjectMaterialIssuesScreen?.();
+      return;
+    }
+
+    if (name === "project-profitability") {
+      await window.bindProjectProfitabilityScreen?.();
+      return;
+    }
+
     await window.bindProjectsScreen?.(name);
     return;
   }
@@ -8301,6 +8342,10 @@ async function switchScreen(name) {
     "lease-register": "IFRS 16 - Lease Register",
     projects: "Project Desk",
     "project-detail": "Project Desk",
+
+    "project-budgets": "Project Desk - Budgets / BOQ",
+    "project-material-issues": "Project Desk - Material Issues",
+    "project-profitability": "Project Desk - Profitability",
     help: "Help & Support",
   };
 
@@ -67582,6 +67627,375 @@ window.openProjectTaskModal = openProjectTaskModal;
 window.openProjectBudgetModal = openProjectBudgetModal;
 window.openProjectIssueModal = openProjectIssueModal;
 window.bindProjectOperationalModalsOnce = bindProjectOperationalModalsOnce;
+
+async function populateProjectDeskDropdown(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  try {
+    const data = await apiFetch(ENDPOINTS.projects.list(cid, "limit=500"));
+    const items = data?.items || [];
+
+    sel.innerHTML = `
+      <option value="">All projects</option>
+      ${items.map(p => `
+        <option value="${esc(String(p.id))}">
+          ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
+        </option>
+      `).join("")}
+    `;
+  } catch (e) {
+    sel.innerHTML = `<option value="">Failed to load projects</option>`;
+  }
+}
+
+async function bindProjectBudgetsScreen() {
+  await populateProjectDeskDropdown("projectBudgetDeskProjectId");
+
+  const btn = document.getElementById("projectBudgetDeskRefreshBtn");
+  const q = document.getElementById("projectBudgetDeskSearch");
+  const project = document.getElementById("projectBudgetDeskProjectId");
+
+  if (btn && btn.dataset.bound !== "1") {
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => loadProjectBudgetDesk());
+  }
+
+  if (project && project.dataset.bound !== "1") {
+    project.dataset.bound = "1";
+    project.addEventListener("change", () => loadProjectBudgetDesk());
+  }
+
+  if (q && q.dataset.bound !== "1") {
+    q.dataset.bound = "1";
+    let t = null;
+    q.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => loadProjectBudgetDesk(), 250);
+    });
+  }
+
+  await loadProjectBudgetDesk();
+}
+
+window.bindProjectBudgetsScreen = bindProjectBudgetsScreen;
+
+async function loadProjectBudgetDesk() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const q = document.getElementById("projectBudgetDeskSearch")?.value?.trim() || "";
+  const projectId = Number(document.getElementById("projectBudgetDeskProjectId")?.value || 0) || null;
+
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (projectId) params.set("project_id", String(projectId));
+  params.set("limit", "200");
+
+  const mount = document.getElementById("projectBudgetDeskTable");
+  if (mount) mount.innerHTML = `<div class="text-xs text-slate-500">Loading BOQ lines...</div>`;
+
+  try {
+    const data = await apiFetch(ENDPOINTS.projects.budgetLinesAll(cid, params.toString()));
+    renderProjectBudgetDesk(data?.items || []);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+window.loadProjectBudgetDesk = loadProjectBudgetDesk;
+
+function renderProjectBudgetDesk(items) {
+  const mount = document.getElementById("projectBudgetDeskTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">No budget / BOQ lines found.</div>`;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-2">Project</th>
+            <th class="text-left px-2 py-2">Customer</th>
+            <th class="text-left px-2 py-2">Line</th>
+            <th class="text-left px-2 py-2">Description</th>
+            <th class="text-left px-2 py-2">Task</th>
+            <th class="text-left px-2 py-2">Cost Code</th>
+            <th class="text-right px-2 py-2">Qty</th>
+            <th class="text-right px-2 py-2">Unit Cost</th>
+            <th class="text-right px-2 py-2">Budget</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b hover:bg-slate-50">
+              <td class="px-2 py-2">${esc(x.project_code || "")} — ${esc(x.project_name || "")}</td>
+              <td class="px-2 py-2">${esc(x.customer_name || "")}</td>
+              <td class="px-2 py-2">${esc(String(x.line_no || ""))}</td>
+              <td class="px-2 py-2">${esc(x.description || "")}</td>
+              <td class="px-2 py-2">${esc(x.task_name || "")}</td>
+              <td class="px-2 py-2">${esc(x.cost_code || "")}</td>
+              <td class="px-2 py-2 text-right">${fmtQty?.(x.budget_qty || 0) || esc(String(x.budget_qty || 0))}</td>
+              <td class="px-2 py-2 text-right">${fmtMoney(x.unit_cost || 0)}</td>
+              <td class="px-2 py-2 text-right font-semibold">${fmtMoney(x.budget_amount || 0)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+window.renderProjectBudgetDesk = renderProjectBudgetDesk;
+
+async function bindProjectMaterialIssuesScreen() {
+  await populateProjectDeskDropdown("projectIssueDeskProjectId");
+
+  const btn = document.getElementById("projectIssueDeskRefreshBtn");
+  const q = document.getElementById("projectIssueDeskSearch");
+  const project = document.getElementById("projectIssueDeskProjectId");
+  const from = document.getElementById("projectIssueDeskFrom");
+  const to = document.getElementById("projectIssueDeskTo");
+
+  [btn, project, from, to].forEach(el => {
+    if (el && el.dataset.bound !== "1") {
+      el.dataset.bound = "1";
+      el.addEventListener("change", () => loadProjectMaterialIssuesDesk());
+      el.addEventListener("click", () => {
+        if (el === btn) loadProjectMaterialIssuesDesk();
+      });
+    }
+  });
+
+  if (q && q.dataset.bound !== "1") {
+    q.dataset.bound = "1";
+    let t = null;
+    q.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => loadProjectMaterialIssuesDesk(), 250);
+    });
+  }
+
+  await loadProjectMaterialIssuesDesk();
+}
+
+window.bindProjectMaterialIssuesScreen = bindProjectMaterialIssuesScreen;
+
+async function loadProjectMaterialIssuesDesk() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const q = document.getElementById("projectIssueDeskSearch")?.value?.trim() || "";
+  const projectId = Number(document.getElementById("projectIssueDeskProjectId")?.value || 0) || null;
+  const from = document.getElementById("projectIssueDeskFrom")?.value || "";
+  const to = document.getElementById("projectIssueDeskTo")?.value || "";
+
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (projectId) params.set("project_id", String(projectId));
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  params.set("limit", "200");
+
+  const mount = document.getElementById("projectIssueDeskTable");
+  if (mount) mount.innerHTML = `<div class="text-xs text-slate-500">Loading material issues...</div>`;
+
+  try {
+    const data = await apiFetch(ENDPOINTS.projects.materialIssuesList(cid, params.toString()));
+    renderProjectMaterialIssuesDesk(data?.items || []);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+window.loadProjectMaterialIssuesDesk = loadProjectMaterialIssuesDesk;
+
+function renderProjectMaterialIssuesDesk(items) {
+  const mount = document.getElementById("projectIssueDeskTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">No material issues found.</div>`;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-2">Date</th>
+            <th class="text-left px-2 py-2">Ref</th>
+            <th class="text-left px-2 py-2">Project</th>
+            <th class="text-left px-2 py-2">Task</th>
+            <th class="text-left px-2 py-2">Cost Code</th>
+            <th class="text-left px-2 py-2">Item</th>
+            <th class="text-right px-2 py-2">Qty</th>
+            <th class="text-right px-2 py-2">Cost</th>
+            <th class="text-left px-2 py-2">Usage</th>
+            <th class="text-right px-2 py-2">Journal</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b hover:bg-slate-50">
+              <td class="px-2 py-2">${esc(toDateInputValue?.(x.tx_date) || x.tx_date || "")}</td>
+              <td class="px-2 py-2">${esc(x.ref || "")}</td>
+              <td class="px-2 py-2">${esc(x.project_code || "")} — ${esc(x.project_name || "")}</td>
+              <td class="px-2 py-2">${esc(x.task_name || "")}</td>
+              <td class="px-2 py-2">${esc(x.cost_code || "")}</td>
+              <td class="px-2 py-2">${esc(x.sku || "")} ${esc(x.item_name || "")}</td>
+              <td class="px-2 py-2 text-right">${fmtQty?.(x.qty || 0) || esc(String(x.qty || 0))}</td>
+              <td class="px-2 py-2 text-right">${fmtMoney(x.extended_cost || 0)}</td>
+              <td class="px-2 py-2">${esc(x.usage_type || "")}</td>
+              <td class="px-2 py-2 text-right">${esc(String(x.journal_id || ""))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+window.renderProjectMaterialIssuesDesk = renderProjectMaterialIssuesDesk;
+
+function renderProjectProfitabilityDesk(items) {
+  const mount = document.getElementById("projectProfitabilityTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML =
+      `<div class="text-xs text-slate-500">No profitability data found.</div>`;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="overflow-auto border rounded">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr>
+            <th class="text-left px-2 py-2">Project</th>
+            <th class="text-left px-2 py-2">Customer</th>
+            <th class="text-right px-2 py-2">Contract</th>
+            <th class="text-right px-2 py-2">Budget</th>
+            <th class="text-right px-2 py-2">Material Cost</th>
+            <th class="text-right px-2 py-2">Revenue</th>
+            <th class="text-right px-2 py-2">Billed</th>
+            <th class="text-right px-2 py-2">Gross Margin</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(x => `
+            <tr class="border-b hover:bg-slate-50">
+              <td class="px-2 py-2">
+                ${esc(x.project_code || "")}
+                —
+                ${esc(x.project_name || "")}
+              </td>
+
+              <td class="px-2 py-2">
+                ${esc(x.customer_name || "")}
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                ${fmtMoney(x.contract_value || 0)}
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                ${fmtMoney(x.budget_total || 0)}
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                ${fmtMoney(x.material_cost_total || 0)}
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                ${fmtMoney(x.recognized_revenue || 0)}
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                ${fmtMoney(x.billed_to_date || 0)}
+              </td>
+
+              <td class="px-2 py-2 text-right font-semibold">
+                ${fmtMoney(x.gross_margin || 0)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+window.renderProjectProfitabilityDesk =
+  renderProjectProfitabilityDesk;
+
+async function loadProjectProfitabilityDesk() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const projectId =
+    Number(document.getElementById("projectProfitabilityProjectId")?.value || 0) || null;
+
+  const params = new URLSearchParams();
+
+  if (projectId) {
+    params.set("project_id", String(projectId));
+  }
+
+  params.set("limit", "200");
+
+  const mount = document.getElementById("projectProfitabilityTable");
+
+  if (mount) {
+    mount.innerHTML =
+      `<div class="text-xs text-slate-500">Loading profitability...</div>`;
+  }
+
+  try {
+    const data = await apiFetch(
+      ENDPOINTS.projects.profitabilityList(cid, params.toString())
+    );
+
+    renderProjectProfitabilityDesk(data?.items || []);
+  } catch (err) {
+    if (mount) mount.innerHTML = renderApiError(err);
+  }
+}
+
+window.loadProjectProfitabilityDesk = loadProjectProfitabilityDesk;
+
+async function bindProjectProfitabilityScreen() {
+  await populateProjectDeskDropdown("projectProfitabilityProjectId");
+
+  const btn = document.getElementById("projectProfitabilityRefreshBtn");
+  const project = document.getElementById("projectProfitabilityProjectId");
+
+  if (btn && btn.dataset.bound !== "1") {
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => loadProjectProfitabilityDesk());
+  }
+
+  if (project && project.dataset.bound !== "1") {
+    project.dataset.bound = "1";
+    project.addEventListener("change", () => loadProjectProfitabilityDesk());
+  }
+
+  await loadProjectProfitabilityDesk();
+}
+
+window.bindProjectProfitabilityScreen = bindProjectProfitabilityScreen;
+
+
   // ==============================
   // Company profile flags (from /api/auth/me)
   // ==============================
