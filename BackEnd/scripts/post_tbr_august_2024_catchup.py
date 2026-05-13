@@ -140,23 +140,17 @@ def main():
 
         {
             "account_code": "BS_CL_2100",
-            "account": "Related Party Loan",
+            "account": "Loan Payable",
             "debit": float(estimated_principal),
             "credit": 0,
-            "memo": (
-                "Estimated principal portion "
-                "of related-party motorbike financing"
-            )
+            "memo": "Principal portion of motorbike financing"
         },
         {
             "account_code": "PL_FIN_7210",
             "account": "Interest Expense",
             "debit": float(estimated_interest),
             "credit": 0,
-            "memo": (
-                "Estimated finance cost on "
-                "related-party motorbike financing"
-            )
+            "memo": "Interest portion of motorbike financing"
         },
 
         # --------------------------------------------------------------
