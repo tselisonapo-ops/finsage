@@ -259,7 +259,7 @@ def main():
             "August 2024 bank catch-up journal "
             "excluding August receivable invoice revenue"
         ),
-        "source": "bank_statement_catchup",
+        "source": "bank",
         "currency": "LSL",
         "lines": lines,
     }
