@@ -65879,7 +65879,7 @@ class DatabaseService:
                 tx.task_id,
                 tx.cost_code_id,
                 tx.usage_type,
-                tx.journal_id,
+                tx.posted_journal_id,
 
                 p.project_code,
                 p.project_name,
@@ -65891,7 +65891,7 @@ class DatabaseService:
                 i.item_name,
                 ln.qty,
                 ln.unit_cost,
-                ln.extended_cost,
+                (COALESCE(ln.qty, 0) * COALESCE(ln.unit_cost, 0)) AS extended_cost,
                 ln.memo,
 
                 t.task_code,
@@ -65943,6 +65943,19 @@ class DatabaseService:
 
         params.append(int(limit))
 
+        material_cost_sql = """
+            SELECT SUM(
+                COALESCE(ln.qty, 0) * COALESCE(ln.unit_cost, 0)
+            )
+            FROM {schema}.inventory_tx tx
+            JOIN {schema}.inventory_tx_lines ln
+                ON ln.company_id = tx.company_id
+            AND ln.tx_id = tx.id
+            WHERE tx.company_id = p.company_id
+            AND tx.project_id = p.id
+            AND tx.tx_type = 'issue_to_project'
+        """.format(schema=schema)
+
         return self.fetch_all(
             f"""
             SELECT
@@ -65962,14 +65975,7 @@ class DatabaseService:
                 ), 0) AS budget_total,
 
                 COALESCE((
-                    SELECT SUM(ln.extended_cost)
-                    FROM {schema}.inventory_tx tx
-                    JOIN {schema}.inventory_tx_lines ln
-                        ON ln.company_id = tx.company_id
-                    AND ln.tx_id = tx.id
-                    WHERE tx.company_id = p.company_id
-                    AND tx.project_id = p.id
-                    AND tx.tx_type = 'issue_to_project'
+                    {material_cost_sql}
                 ), 0) AS material_cost_total,
 
                 COALESCE((
@@ -65995,14 +66001,7 @@ class DatabaseService:
                     ), 0)
                     -
                     COALESCE((
-                        SELECT SUM(ln.extended_cost)
-                        FROM {schema}.inventory_tx tx
-                        JOIN {schema}.inventory_tx_lines ln
-                            ON ln.company_id = tx.company_id
-                        AND ln.tx_id = tx.id
-                        WHERE tx.company_id = p.company_id
-                        AND tx.project_id = p.id
-                        AND tx.tx_type = 'issue_to_project'
+                        {material_cost_sql}
                     ), 0)
                 ) AS gross_margin
 
@@ -66015,7 +66014,8 @@ class DatabaseService:
             LIMIT %s
             """,
             tuple(params),
-        ) or []        
+        ) or []    
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)
