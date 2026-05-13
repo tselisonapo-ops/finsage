@@ -1432,7 +1432,7 @@ class DatabaseService:
         return bool(cleaned_lines)
 
     def _rewrite_lines_guarding_ar(self, company_id: int, lines: list) -> list:
-        DEPOSIT_CODE = "BS_CL_2205"  # choose your real "Customer deposits / Unearned revenue"
+        DEPOSIT_CODE = "BS_CL_2350" # choose your real "Customer deposits / Unearned revenue"
 
         coa_map = self.get_coa_map(company_id)  # {code: {..., role:"ar"}}
 
