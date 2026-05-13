@@ -67658,9 +67658,27 @@ async function populateProjectDeskDropdown(selectId) {
 async function bindProjectBudgetsScreen() {
   await populateProjectDeskDropdown("projectBudgetDeskProjectId");
 
+  bindProjectOperationalModalsOnce?.();
+
+  const btnNew = document.getElementById("projectBudgetDeskNewBtn");
   const btn = document.getElementById("projectBudgetDeskRefreshBtn");
   const q = document.getElementById("projectBudgetDeskSearch");
   const project = document.getElementById("projectBudgetDeskProjectId");
+
+  if (btnNew && btnNew.dataset.bound !== "1") {
+    btnNew.dataset.bound = "1";
+    btnNew.addEventListener("click", () => {
+      const projectId =
+        Number(document.getElementById("projectBudgetDeskProjectId")?.value || 0) || null;
+
+      if (!projectId) {
+        alert("Select a project first.");
+        return;
+      }
+
+      openProjectBudgetModal?.(projectId);
+    });
+  }
 
   if (btn && btn.dataset.bound !== "1") {
     btn.dataset.bound = "1";
@@ -67683,7 +67701,6 @@ async function bindProjectBudgetsScreen() {
 
   await loadProjectBudgetDesk();
 }
-
 window.bindProjectBudgetsScreen = bindProjectBudgetsScreen;
 
 async function loadProjectBudgetDesk() {
@@ -67761,16 +67778,38 @@ window.renderProjectBudgetDesk = renderProjectBudgetDesk;
 async function bindProjectMaterialIssuesScreen() {
   await populateProjectDeskDropdown("projectIssueDeskProjectId");
 
+  bindProjectOperationalModalsOnce?.();
+
+  const btnNew = document.getElementById("projectIssueDeskNewBtn");
   const btn = document.getElementById("projectIssueDeskRefreshBtn");
   const q = document.getElementById("projectIssueDeskSearch");
   const project = document.getElementById("projectIssueDeskProjectId");
   const from = document.getElementById("projectIssueDeskFrom");
   const to = document.getElementById("projectIssueDeskTo");
 
+  if (btnNew && btnNew.dataset.bound !== "1") {
+    btnNew.dataset.bound = "1";
+    btnNew.addEventListener("click", () => {
+      const projectId =
+        Number(document.getElementById("projectIssueDeskProjectId")?.value || 0) || null;
+
+      if (!projectId) {
+        alert("Select a project first.");
+        return;
+      }
+
+      openProjectIssueModal?.(projectId);
+    });
+  }
+
   [btn, project, from, to].forEach(el => {
     if (el && el.dataset.bound !== "1") {
       el.dataset.bound = "1";
-      el.addEventListener("change", () => loadProjectMaterialIssuesDesk());
+
+      el.addEventListener("change", () => {
+        loadProjectMaterialIssuesDesk();
+      });
+
       el.addEventListener("click", () => {
         if (el === btn) loadProjectMaterialIssuesDesk();
       });
@@ -67788,7 +67827,6 @@ async function bindProjectMaterialIssuesScreen() {
 
   await loadProjectMaterialIssuesDesk();
 }
-
 window.bindProjectMaterialIssuesScreen = bindProjectMaterialIssuesScreen;
 
 async function loadProjectMaterialIssuesDesk() {
