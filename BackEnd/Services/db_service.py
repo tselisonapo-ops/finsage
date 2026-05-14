@@ -43471,6 +43471,13 @@ class DatabaseService:
         if not inv:
             raise ValueError("Invoice not found")
 
+        posted_journal_id = inv.get("posted_journal_id")
+
+        if not posted_journal_id:
+            raise ValueError(
+                "Cannot allocate payment to invoice that has not been posted to GL"
+            )
+
         amount = Decimal(str(amount or "0")).quantize(Decimal("0.01"))
         if amount <= Decimal("0.00"):
             raise ValueError("Amount must be > 0")
@@ -43503,6 +43510,38 @@ class DatabaseService:
 
         if not ar_code:
             raise ValueError("AR control posting account could not be resolved")
+
+        posted_journal_id = inv.get("posted_journal_id")
+
+        if not posted_journal_id:
+            raise ValueError(
+                "Cannot allocate payment to invoice that has not been posted to GL"
+            )
+
+        schema = self.company_schema(company_id)
+
+        ar_exists = self.fetch_one(
+            f"""
+            SELECT COALESCE(SUM(
+                COALESCE(jl.debit,0) - COALESCE(jl.credit,0)
+            ),0) AS ar_balance
+            FROM {schema}.journal_lines jl
+            JOIN {schema}.journal j
+              ON j.id = jl.journal_id
+            WHERE j.id = %s
+              AND jl.account_code = %s
+            """,
+            (int(posted_journal_id), ar_code),
+        ) or {}
+
+        ar_balance = Decimal(
+            str(ar_exists.get("ar_balance") or "0")
+        ).quantize(Decimal("0.01"))
+
+        if ar_balance <= Decimal("0.00"):
+            raise ValueError(
+                "Invoice has no valid AR debit posted in GL"
+            )
 
         # ✅ Unallocated receipts liability
         unalloc_code = (self._resolve_unallocated_receipts_liability(company_id) or "").strip()

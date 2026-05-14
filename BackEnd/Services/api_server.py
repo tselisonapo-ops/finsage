@@ -7164,6 +7164,25 @@ def post_invoice_backlog(company_id: int):
                 require_approved=False,
             )
 
+            # ✅ ADD THIS HERE
+            try:
+                inv_after = db_service.get_invoice_with_lines(company_id, inv_id) or inv
+
+                record_invoice_revenue_billing_and_allocation(
+                    company_id=company_id,
+                    invoice_id=int(inv_id),
+                    inv=inv_after,
+                    journal_id=int(jid),
+                    user_id=int((payload.get("sub") or 0)),
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "post_invoice_backlog: invoice revenue billing/allocation failed | invoice_id=%s",
+                    inv_id,
+                )
+
+            posted_count += 1
+
             posted_count += 1
             results.append({
                 "invoice_id": inv_id,
