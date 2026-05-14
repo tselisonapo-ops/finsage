@@ -38050,7 +38050,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       <option value="">Select milestone...</option>
       ${milestones.map((m) => `
         <option value="${esc(m.code || "")}">
-          ${esc(m.code || "")} — ${esc(m.description || "")} — ${money(m.billing_amount || 0)}
+          ${esc(m.description || "")}
         </option>
       `).join("")}
     `;
@@ -40335,29 +40335,57 @@ function toggleRevenueProgressDriverFields() {
     }
   }
 
-async function loadLatestRevenueProgressForSelectedObligation() {
-  const cid = state.cid;
-  const obligationId =
-    Number(
-      state.selectedObligation?.id ||
-      $("revObligationId")?.value ||
-      0
-    ) || null;
-  if (!cid || !obligationId) return null;
+  async function loadLatestRevenueProgressForSelectedObligation() {
+    const cid = state.cid;
+    const obligationId =
+      Number(
+        state.selectedObligation?.id ||
+        $("revObligationId")?.value ||
+        0
+      ) || null;
+    if (!cid || !obligationId) return null;
 
-  try {
-    const raw = await apiFetch(
-      `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/progress`,
-      { method: "GET" }
-    );
+    try {
+      const raw = await apiFetch(
+        `${API_BASE}/api/companies/${cid}/revenue/obligations/${obligationId}/progress`,
+        { method: "GET" }
+      );
 
-    const items = raw?.items || raw?.data?.items || [];
-    return items.length ? items[0] : null;
-  } catch (e) {
-    console.warn("[Revenue] loadLatestRevenueProgressForSelectedObligation failed", e);
-    return null;
+      const items = raw?.items || raw?.data?.items || [];
+      return items.length ? items[0] : null;
+    } catch (e) {
+      console.warn("[Revenue] loadLatestRevenueProgressForSelectedObligation failed", e);
+      return null;
+    }
   }
-}
+
+  function applySelectedMilestoneToObligationFields() {
+    const code = $("revMilestoneCode")?.value || "";
+    const milestones = getSelectedContractMilestones();
+
+    const m = milestones.find(x => String(x.code || "") === String(code || ""));
+    if (!m) return;
+
+    const amount = Number(m.billing_amount || 0);
+
+    if ($("revAllocatedPrice")) {
+      $("revAllocatedPrice").value = amount.toFixed(2);
+    }
+
+    if ($("revSSP") && Number($("revSSP").value || 0) === 0) {
+      $("revSSP").value = amount.toFixed(2);
+    }
+
+    if ($("revObligationName") && !$("revObligationName").value.trim()) {
+      $("revObligationName").value = m.description || "";
+    }
+
+    if ($("revObligationCode") && !$("revObligationCode").value.trim()) {
+      $("revObligationCode").value = m.code || "";
+    }
+
+    populateObligationMilestoneDropdown(code);
+  }
 
   async function markSelectedObligationSatisfiedFromPreview() {
     const cid = state.cid;
@@ -42515,6 +42543,10 @@ async function loadLatestRevenueProgressForSelectedObligation() {
     $("revObligationName")?.addEventListener("blur", () => {
       const meta = findRevenueObligationCatalogMeta?.($("revObligationName")?.value || "");
       if (meta) applyCatalogMetaToObligationForm?.(meta);
+    });
+
+    $("revMilestoneCode")?.addEventListener("change", () => {
+      applySelectedMilestoneToObligationFields();
     });
 
     $("revRecognitionTiming")?.addEventListener("change", toggleObligationFields);
