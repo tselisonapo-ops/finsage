@@ -61510,10 +61510,38 @@ class DatabaseService:
                 if int(obligation_row.get("contract_id") or 0) != int(contract_id):
                     raise ValueError("Selected obligation does not belong to this contract")
 
+            settlement_pattern = (
+                contract_payload.get("settlement_pattern")
+                or contract_payload.get("ifrs15_settlement_pattern")
+                or ""
+            ).strip().lower()
+
+            milestone_basis = (
+                billing_cfg.get("milestone_basis")
+                or ""
+            ).strip().lower()
+
             if method == "milestone":
+
+                allow_contract_level = (
+                    settlement_pattern in {
+                        "billing_before_revenue",
+                        "cash_before_service",
+                        "cash_before_revenue",
+                    }
+                )
+
                 if obligation_id is None:
-                    raise ValueError("Milestone billing requires an obligation-linked billing event.")
-                payload_json["billing_level"] = "obligation"
+
+                    if milestone_basis == "obligation" and not allow_contract_level:
+                        raise ValueError(
+                            "Milestone billing requires an obligation-linked billing event."
+                        )
+
+                    payload_json["billing_level"] = "contract"
+
+                else:
+                    payload_json["billing_level"] = "obligation"
 
             elif method == "periodic":
                 if obligation_id is not None and not allow_obligation_override:
