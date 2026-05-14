@@ -46483,6 +46483,7 @@ async function saveInvoiceDraft(statusOverride = "draft") {
 
     alert("Draft saved to backend ✅");
     await renderDraftInvoiceList();
+    await window.resetInvoiceForm?.();
     return saved;
   } catch (err) {
     console.error(err);
