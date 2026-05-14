@@ -3168,6 +3168,19 @@ def api_get_company(company_id: int):
 
     company["credit_policy"] = cp
 
+    try:
+        profile = get_industry_profile(
+            company.get("industry"),
+            company.get("sub_industry"),
+        )
+    except Exception:
+        profile = {}
+
+    company["industry_profile"] = profile
+    company["uses_material_costing"] = bool(profile.get("uses_material_costing"))
+    company["uses_boq_budgeting"] = bool(profile.get("uses_boq_budgeting"))
+    company["work_unit_label"] = profile.get("work_unit_label") or "Project / Job"
+
     return jsonify(company), 200
 
 @app.route("/api/companies/<int:company_id>/users/<int:user_id>/role", methods=["PATCH", "OPTIONS"])

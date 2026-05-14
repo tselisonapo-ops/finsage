@@ -1,7 +1,11 @@
 from typing import Tuple
 from typing import Dict, Any, Optional
-from BackEnd.Services.utils.industry_utils import normalize_industry_pair
-
+from BackEnd.Services.utils.industry_utils import (
+    normalize_industry_pair,
+    project_uses_material_costing,
+    project_uses_boq_budgeting,
+    project_work_unit_label,
+)
 # ✅ Ensure EVERY industry that uses_inventory=True has default_inventory_mode + default_valuation
 # ✅ Ensure EVERY industry has explicit default_inventory_mode (even service-only ones)
 # ✅ Prevent your "Car Dealership → inventory_mode='none'" dilemma permanently
@@ -83,54 +87,58 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
     "IT & Technology": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
-        "uses_inventory": False,
+        "uses_inventory": True,
         "uses_cogs": True,
-        "default_inventory_mode": "none",
-        "default_valuation": None,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of service"},
     },
     "Engineering & Technical": {
         "pnl_layout": "project_wip",
         "is_service_only": False,
-        "uses_inventory": False,
+        "uses_inventory": True,
         "uses_cogs": True,
-        "default_inventory_mode": "none",
-        "default_valuation": None,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Direct project costs"},
     },
+
     "Construction": {
         "pnl_layout": "project_wip",
         "is_service_only": False,
-        "uses_inventory": False,
+        "uses_inventory": True,
         "uses_cogs": True,
-        "default_inventory_mode": "none",
-        "default_valuation": None,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Direct project costs"},
     },
+
     "Mining": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
-        "uses_inventory": False,
+        "uses_inventory": True,
         "uses_cogs": True,
-        "default_inventory_mode": "none",
-        "default_valuation": None,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
     },
+
     "Transport": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
-        "uses_inventory": False,
+        "uses_inventory": True,
         "uses_cogs": True,
-        "default_inventory_mode": "none",
-        "default_valuation": None,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of revenue"},
     },
+
     "NPO Transport": {
         "pnl_layout": "npo_performance",
         "is_service_only": False,
-        "uses_inventory": False,
+        "uses_inventory": True,
         "uses_cogs": False,
-        "default_inventory_mode": "none",
-        "default_valuation": None,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
     },
 
     # -----------------------------
@@ -316,6 +324,11 @@ def get_industry_profile(industry: Optional[str], sub_industry: Optional[str]) -
         "default_valuation": profile.get("default_valuation"),
         "pnl_layout": profile.get("pnl_layout"),
         "pnl_labels": profile.get("pnl_labels") or {},
+
+        # ✅ Project Desk capability flags
+        "uses_material_costing": project_uses_material_costing(industry, sub_industry),
+        "uses_boq_budgeting": project_uses_boq_budgeting(industry, sub_industry),
+        "work_unit_label": project_work_unit_label(industry, sub_industry),
     }
 
 

@@ -4876,14 +4876,15 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
               icon: "📐",
               minRole: "clerk",
               permission: "can_manage_ap",
+              projectCapability: "boq_budgeting",
             },
-
             {
               name: "Material Issues",
               screen: "project-material-issues",
               icon: "📦",
               minRole: "clerk",
               permission: "can_manage_ap",
+              projectCapability: "material_costing",
             },
 
             {
@@ -5624,18 +5625,42 @@ function companyAllowsFeature(feature) {
   if (!feature) return true;
 
   const c = window.CURRENT_COMPANY || {};
-  const p = window.COMPANY_PROFILE || {};
+  const p = window.COMPANY_PROFILE || c?.industry_profile || {};
 
   const companyKnown =
     (c && Object.keys(c).length) || (p && Object.keys(p).length);
+
   if (!companyKnown) return true;
 
-  const inventoryMode = (c.inventory_mode ?? p.inventory_mode ?? "none");
-  const usesInventory = String(inventoryMode).toLowerCase() !== "none";
+  const inventoryMode = String(
+    c.inventory_mode ??
+    p.inventory_mode ??
+    p.default_inventory_mode ??
+    "none"
+  ).toLowerCase();
+
+  const usesInventory =
+    c.uses_inventory === true ||
+    p.uses_inventory === true ||
+    inventoryMode !== "none";
+
+  const usesMaterialCosting =
+    c.uses_material_costing === true ||
+    p.uses_material_costing === true;
+
+  const usesBoqBudgeting =
+    c.uses_boq_budgeting === true ||
+    p.uses_boq_budgeting === true;
 
   if (feature === "inventory-module") return usesInventory;
-  if (feature === "pos") return usesInventory;          // ✅ POS depends on inventory
-  if (feature === "service-billing") return true;       // ✅ allow in hybrid too
+
+  if (feature === "pos") return usesInventory;
+
+  if (feature === "service-billing") return true;
+
+  if (feature === "project-material-costing") return usesMaterialCosting;
+
+  if (feature === "project-boq-budgeting") return usesBoqBudgeting;
 
   return true;
 }
@@ -6305,6 +6330,14 @@ function shouldShowNavItem(item) {
         : true;
 
     if (!ok) return false;
+  }
+
+  if (item.projectCapability === "material_costing") {
+    if (!companyAllowsFeature("project-material-costing")) return false;
+  }
+
+  if (item.projectCapability === "boq_budgeting") {
+    if (!companyAllowsFeature("project-boq-budgeting")) return false;
   }
 
   const screen = item.screen
@@ -67896,7 +67929,7 @@ function renderProjectMaterialIssuesDesk(items) {
               <td class="px-2 py-2 text-right">${fmtQty?.(x.qty || 0) || esc(String(x.qty || 0))}</td>
               <td class="px-2 py-2 text-right">${fmtMoney(x.extended_cost || 0)}</td>
               <td class="px-2 py-2">${esc(x.usage_type || "")}</td>
-              <td class="px-2 py-2 text-right">${esc(String(x.journal_id || ""))}</td>
+              <td class="px-2 py-2 text-right">${esc(String(x.posted_journal_id || ""))}</td>
             </tr>
           `).join("")}
         </tbody>
