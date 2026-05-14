@@ -6001,6 +6001,12 @@ def create_invoice(cid: int):
             "other": to_float(payload.get("other"), 0.0),
         }
 
+        print("🧾 [CREATE_INVOICE HEADER] revenue_contract_id =", header.get("revenue_contract_id"), flush=True)
+        current_app.logger.warning(
+            "🧾 [CREATE_INVOICE HEADER] revenue_contract_id=%r header=%r",
+            header.get("revenue_contract_id"),
+            header,
+        )
         if not header["invoice_date"]:
             return jsonify({"error": "invoice_date is required"}), 400
 
@@ -6133,6 +6139,7 @@ def create_invoice(cid: int):
         current_app.logger.info("create_invoice: before insert")
         invoice_id = db_service.insert_invoice_with_lines(company_id, header, mapped_lines)
         current_app.logger.info("create_invoice: inserted invoice_id=%s", invoice_id)
+        print("✅ [AFTER INSERT] invoice_id =", invoice_id, "revenue_contract_id =", header.get("revenue_contract_id"), flush=True)
 
         if not should_post:
             current_app.logger.info("create_invoice: review enabled, skipping auto-post")
@@ -6168,6 +6175,14 @@ def create_invoice(cid: int):
         current_app.logger.info("create_invoice: before get_invoice_with_lines for posting")
         inv = db_service.get_invoice_with_lines(company_id, invoice_id)
         current_app.logger.info("create_invoice: get_invoice_with_lines done inv_is_none=%s", inv is None)
+
+        print("🔁 [GET_INVOICE_WITH_LINES] revenue_contract_id =", inv.get("revenue_contract_id") if inv else None, flush=True)
+        current_app.logger.warning(
+            "🔁 [GET_INVOICE_WITH_LINES] invoice_id=%s revenue_contract_id=%r inv_keys=%s",
+            invoice_id,
+            inv.get("revenue_contract_id") if inv else None,
+            list(inv.keys()) if isinstance(inv, dict) else None,
+        )
 
         if not inv:
             raise RuntimeError(f"Invoice {invoice_id} inserted but could not be reloaded")

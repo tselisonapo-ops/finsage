@@ -38453,6 +38453,9 @@ function bindAssetRecordsPickerModal({ cid }) {
 
 
           const prefill = buildInvoicePrefillFromContractPreview(contract);
+          console.warn("🧾 [CREATE INVOICE CLICK] selected contract =", contract);
+          console.warn("🧾 [CREATE INVOICE CLICK] prefill payload =", prefill);
+          console.warn("🧾 [CREATE INVOICE CLICK] revenue_contract_id =", prefill.revenue_contract_id);
           prefill.billing_policy = activePolicy?.billing_method || null;
           prefill.billing_level = "contract";
           prefill.milestone_basis = milestoneBasis;
@@ -46150,6 +46153,10 @@ async function saveInvoiceToBackend() {
   }
 
   const payload = readInvoiceForm();
+
+  console.warn("📤 [POST INVOICE PAYLOAD] full payload =", payload);
+  console.warn("📤 [POST INVOICE PAYLOAD] revenue_contract_id =", payload.revenue_contract_id);
+  console.warn("📤 [POST INVOICE PAYLOAD] hidden input =", document.getElementById("invRevenueContractId")?.value);
 
   if (!payload.customer_id) {
     alert("Please select a valid customer from the list.");
