@@ -60083,12 +60083,18 @@ class DatabaseService:
         }
 
     def _validate_obligation_progress_payload(self, data: dict) -> dict:
+        
         payload_json = data.get("payload_json") or {}
         if not isinstance(payload_json, dict):
             payload_json = {}
         else:
             payload_json = dict(payload_json)
 
+        def clear_milestone_link():
+            payload_json.pop("linked_billing_milestone_code", None)
+            payload_json.pop("linked_billing_milestone", None)
+            payload_json.pop("milestone_code", None)
+            
         timing = str(data.get("recognition_timing") or "point_in_time").strip().lower()
         method = str(data.get("progress_method") or "").strip().lower()
 
@@ -60103,7 +60109,7 @@ class DatabaseService:
 
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
-            payload_json.pop("milestone_code", None)
+            clear_milestone_link()
 
         elif method in {"units", "units_delivered"}:
             units_total = float(payload_json.get("units_total") or 0.0)
@@ -60117,7 +60123,7 @@ class DatabaseService:
             data["expected_total_cost"] = None
             data["actual_cost_to_date"] = None
             data["progress_percent"] = None
-            payload_json.pop("milestone_code", None)
+            clear_milestone_link()
 
         elif method == "milestone":
             milestone_code = str(payload_json.get("milestone_code") or "").strip()
@@ -60143,10 +60149,22 @@ class DatabaseService:
             data["actual_cost_to_date"] = None
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
-            payload_json.pop("milestone_code", None)
+            clear_milestone_link()
 
         data["payload_json"] = payload_json
         return data
+
+    def _contract_milestones(self, contract: dict) -> list[dict]:
+        payload = contract.get("payload_json") or {}
+        if not isinstance(payload, dict):
+            return []
+
+        billing_cfg = payload.get("billing_config") or {}
+        if not isinstance(billing_cfg, dict):
+            return []
+
+        milestones = billing_cfg.get("milestones") or []
+        return [m for m in milestones if isinstance(m, dict)]
 
     def add_revenue_obligation(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
@@ -60296,18 +60314,38 @@ class DatabaseService:
                     payload_json["billing_source"] = "obligation"
 
             # final milestone check after full normalization
-            if progress_method == "milestone":
-                milestone_basis = payload_json.get("milestone_basis") or "obligation"
-                milestone_code = str(payload_json.get("milestone_code") or "").strip()
+            # ----------------------------------------------------------
+            # Linked billing milestone validation
+            # ----------------------------------------------------------
 
-                if milestone_basis == "custom":
-                    if not milestone_code:
-                        raise ValueError("Custom milestone obligations require milestone_code.")
+            linked_milestone_code = str(
+                payload_json.get("linked_billing_milestone_code")
+                or payload_json.get("milestone_code")
+                or ""
+            ).strip()
 
-                    known_codes = self._contract_milestone_codes(contract)
-                    if known_codes and milestone_code.lower() not in known_codes:
-                        raise ValueError(f"Milestone code '{milestone_code}' is not defined on the contract.")
-                    
+            if linked_milestone_code:
+
+                milestones = self._contract_milestones(contract)
+
+                linked_milestone = next(
+                    (
+                        m for m in milestones
+                        if str(m.get("code") or "").strip().lower()
+                        == linked_milestone_code.lower()
+                    ),
+                    None
+                )
+
+                if not linked_milestone:
+                    raise ValueError(
+                        f"Milestone code '{linked_milestone_code}' is not defined on the contract."
+                    )
+
+                payload_json["linked_billing_milestone_code"] = linked_milestone_code
+                payload_json["milestone_code"] = linked_milestone_code
+                payload_json["linked_billing_milestone"] = linked_milestone
+
             payload_json["catalog_item_type"] = data.get("catalog_item_type")
             payload_json["catalog_item_id"] = data.get("catalog_item_id")
             payload_json["catalog_item_code"] = data.get("catalog_item_code")
@@ -60527,12 +60565,16 @@ class DatabaseService:
                     data["progress_percent"] = None
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
-                    payload_json.pop("milestone_code", None)
+                    payload_json.pop("linked_billing_milestone_code", None)
+                    payload_json.pop("linked_billing_milestone", None)
+                    payload_json.pop("milestone_code", None)           
 
                 elif progress_method in {"units", "units_delivered"}:
                     data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
                     data["progress_percent"] = None
+                    payload_json.pop("linked_billing_milestone_code", None)
+                    payload_json.pop("linked_billing_milestone", None)
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method == "manual":
@@ -60540,6 +60582,8 @@ class DatabaseService:
                     data["actual_cost_to_date"] = None
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
+                    payload_json.pop("linked_billing_milestone_code", None)
+                    payload_json.pop("linked_billing_milestone", None)
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method == "milestone":
@@ -60564,10 +60608,40 @@ class DatabaseService:
                     data["actual_cost_to_date"] = None
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
+                    payload_json.pop("linked_billing_milestone_code", None)
+                    payload_json.pop("linked_billing_milestone", None)
                     payload_json.pop("milestone_code", None)
 
             if "payload_json" in data and isinstance(data.get("payload_json"), dict):
                 payload_json.update(data.get("payload_json") or {})
+
+            linked_milestone_code = str(
+                payload_json.get("linked_billing_milestone_code")
+                or payload_json.get("milestone_code")
+                or ""
+            ).strip()
+
+            if linked_milestone_code:
+
+                milestones = self._contract_milestones(contract)
+
+                linked_milestone = next(
+                    (
+                        m for m in milestones
+                        if str(m.get("code") or "").strip().lower()
+                        == linked_milestone_code.lower()
+                    ),
+                    None
+                )
+
+                if not linked_milestone:
+                    raise ValueError(
+                        f"Milestone code '{linked_milestone_code}' is not defined on the contract."
+                    )
+
+                payload_json["linked_billing_milestone_code"] = linked_milestone_code
+                payload_json["milestone_code"] = linked_milestone_code
+                payload_json["linked_billing_milestone"] = linked_milestone
 
             # preserve contract context again after update merge
             payload_json["milestone_basis"] = (
@@ -61180,7 +61254,6 @@ class DatabaseService:
 
         obligation_name = str(data.get("obligation_name") or "").strip()
         milestone_code = str(payload_json.get("milestone_code") or "").strip()
-        billing_source = str(payload_json.get("billing_source") or "").strip().lower()
 
         if contract_method == "milestone":
             payload_json["milestone_basis"] = milestone_basis
@@ -61192,10 +61265,14 @@ class DatabaseService:
                         "Obligation-based milestone contracts require each obligation to have an obligation_name."
                     )
 
-                payload_json["billing_source"] = payload_json.get("billing_source") or "obligation"
+                payload_json["billing_source"] = (
+                    payload_json.get("billing_source") or "obligation"
+                )
 
                 # optional cleanup: custom milestone reference is not primary here
                 if not milestone_code:
+                    payload_json.pop("linked_billing_milestone_code", None)
+                    payload_json.pop("linked_billing_milestone", None)
                     payload_json.pop("milestone_code", None)
 
             elif milestone_basis == "custom":
@@ -61205,16 +61282,24 @@ class DatabaseService:
                         "Custom milestone-billed contracts require either payload_json.milestone_code or obligation_name."
                     )
 
-                payload_json["billing_source"] = payload_json.get("billing_source") or "custom_milestone"
+                payload_json["billing_source"] = (
+                    payload_json.get("billing_source") or "custom_milestone"
+                )
 
         elif contract_method == "periodic":
-            payload_json["billing_source"] = payload_json.get("billing_source") or "contract"
+            payload_json["billing_source"] = (
+                payload_json.get("billing_source") or "contract"
+            )
 
         elif contract_method == "progress":
-            payload_json["billing_source"] = payload_json.get("billing_source") or "contract"
+            payload_json["billing_source"] = (
+                payload_json.get("billing_source") or "contract"
+            )
 
         elif contract_method == "manual":
-            payload_json["billing_source"] = payload_json.get("billing_source") or "manual"
+            payload_json["billing_source"] = (
+                payload_json.get("billing_source") or "manual"
+            )
 
         data["payload_json"] = payload_json
         return data
