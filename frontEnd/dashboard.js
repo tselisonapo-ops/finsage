@@ -6563,13 +6563,13 @@ const SCREEN_POLICY = {
   services:  { auth: "private", minRole: "clerk", feature: "service-billing" },
   // Inventory (Catalog Studio)
   "inventory-items":      { auth: "private", minRole: "clerk",     feature: "inventory-module" },
-  "inventory-movements":  { auth: "private", minRole: "assistant", feature: "inventory-module" },
-  "stocktake":            { auth: "private", minRole: "assistant", feature: "inventory-module" },
+  "inventory-movements":  { auth: "private", minRole: "clerk", feature: "inventory-module" },
+  "stocktake":            { auth: "private", minRole: "clerk", feature: "inventory-module" },
+  "inventory-valuation":  { auth: "private", minRole: "clerk", feature: "inventory-module" },
   "reorder":              { auth: "private", minRole: "clerk",     feature: "inventory-module" },
-  "inventory-valuation":  { auth: "private", minRole: "assistant", feature: "inventory-module" },
   "purchase-orders": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
 
-  "goods-receipts": { auth: "private", minRole: "assistant", permission: "can_manage_ap"},
+  "goods-receipts": { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
   "service-items": { auth: "private", minRole: "clerk",     feature: "service-billing" },
 
   projects: { auth: "private", minRole: "clerk", permission: "can_manage_ap" },
