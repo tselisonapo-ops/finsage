@@ -5625,7 +5625,7 @@ function companyAllowsFeature(feature) {
   if (!feature) return true;
 
   const c = window.CURRENT_COMPANY || {};
-  const p = window.COMPANY_PROFILE || c?.industry_profile || {};
+  const p = window.COMPANY_PROFILE || {};
 
   const companyKnown =
     (c && Object.keys(c).length) || (p && Object.keys(p).length);
@@ -5644,6 +5644,10 @@ function companyAllowsFeature(feature) {
     p.uses_inventory === true ||
     inventoryMode !== "none";
 
+  const usesCogs =
+    c.uses_cogs === true ||
+    p.uses_cogs === true;
+
   const usesMaterialCosting =
     c.uses_material_costing === true ||
     p.uses_material_costing === true;
@@ -5652,15 +5656,38 @@ function companyAllowsFeature(feature) {
     c.uses_boq_budgeting === true ||
     p.uses_boq_budgeting === true;
 
-  if (feature === "inventory-module") return usesInventory;
+  // -----------------------------
+  // INVENTORY
+  // -----------------------------
+  if (feature === "inventory-module") {
+    return usesInventory;
+  }
 
-  if (feature === "pos") return usesInventory;
+  // -----------------------------
+  // POS
+  // only for resale / retail-style
+  // -----------------------------
+  if (feature === "pos") {
+    return usesInventory && usesCogs;
+  }
 
-  if (feature === "service-billing") return true;
+  // -----------------------------
+  // SERVICE BILLING
+  // -----------------------------
+  if (feature === "service-billing") {
+    return true;
+  }
 
-  if (feature === "project-material-costing") return usesMaterialCosting;
+  // -----------------------------
+  // PROJECTS
+  // -----------------------------
+  if (feature === "project-material-costing") {
+    return usesMaterialCosting;
+  }
 
-  if (feature === "project-boq-budgeting") return usesBoqBudgeting;
+  if (feature === "project-boq-budgeting") {
+    return usesBoqBudgeting;
+  }
 
   return true;
 }
