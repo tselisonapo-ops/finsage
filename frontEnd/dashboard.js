@@ -7619,7 +7619,17 @@ function canUseDelegatedProvisionedScreen(screenName, rule) {
     "ar",
     "ap",
     "fixedAssets",
+
     "inventory",
+    "inventory-items",
+    "inventory-movements",
+    "stocktake",
+    "reorder",
+    "inventory-valuation",
+    "purchase-orders",
+    "goods-receipts",
+    "service-items",
+
     "reports",
     "trialBalance",
     "pnl",
