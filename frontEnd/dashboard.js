@@ -4870,22 +4870,22 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
               permission: "can_manage_ap",
             },
 
-            {
-              name: "Budgets / BOQ",
-              screen: "project-budgets",
-              icon: "📐",
-              minRole: "clerk",
-              permission: "can_manage_ap",
-              projectCapability: "boq_budgeting",
-            },
-            {
-              name: "Material Issues",
-              screen: "project-material-issues",
-              icon: "📦",
-              minRole: "clerk",
-              permission: "can_manage_ap",
-              projectCapability: "material_costing",
-            },
+            //{
+              //name: "Budgets / BOQ",
+             // screen: "project-budgets",
+             // icon: "📐",
+             // minRole: "clerk",
+             // permission: "can_manage_ap",
+              //projectCapability: "boq_budgeting",
+            //},
+            //{
+            //  name: "Material Issues",
+            //  screen: "project-material-issues",
+             // icon: "📦",
+             // minRole: "clerk",
+             // permission: "can_manage_ap",
+             // projectCapability: "material_costing",
+            //},
 
             {
               name: "Profitability",
@@ -8267,8 +8267,12 @@ async function switchScreen(name) {
     renderCatalogScreen?.(sub);
   }
 
-  if (base === "projects") {
-
+  if (
+    base === "projects" ||
+    base === "project-budgets" ||
+    base === "project-material-issues" ||
+    base === "project-profitability"
+  ) {
     if (name === "project-budgets") {
       await window.bindProjectBudgetsScreen?.();
       return;
@@ -68079,7 +68083,13 @@ async function loadProjectProfitabilityDesk() {
 
     renderProjectProfitabilityDesk(data?.items || []);
   } catch (err) {
-    if (mount) mount.innerHTML = renderApiError(err);
+    console.error("[Project Profitability] load failed:", err);
+
+    if (mount) {
+      mount.innerHTML = typeof renderApiError === "function"
+        ? renderApiError(err)
+        : `<div class="text-xs text-red-600">${esc(err?.message || "Failed to load profitability")}</div>`;
+    }
   }
 }
 
