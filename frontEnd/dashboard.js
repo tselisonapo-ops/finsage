@@ -38034,6 +38034,37 @@ function bindAssetRecordsPickerModal({ cid }) {
     }
   }
 
+  function getSelectedContractMilestones() {
+    const cfg = state.selectedContract?.payload_json?.billing_config || {};
+    return Array.isArray(cfg.milestones) ? cfg.milestones : [];
+  }
+
+  function populateObligationMilestoneDropdown(selectedCode = "") {
+    const select = $("revMilestoneCode");
+    const hint = $("revMilestoneHint");
+    if (!select) return;
+
+    const milestones = getSelectedContractMilestones();
+
+    select.innerHTML = `
+      <option value="">Select milestone...</option>
+      ${milestones.map((m) => `
+        <option value="${esc(m.code || "")}">
+          ${esc(m.code || "")} — ${esc(m.description || "")} — ${money(m.billing_amount || 0)}
+        </option>
+      `).join("")}
+    `;
+
+    select.value = selectedCode || "";
+
+    const picked = milestones.find(m => String(m.code || "") === String(select.value || ""));
+    if (hint) {
+      hint.textContent = picked
+        ? `Amount: ${money(picked.billing_amount || 0)} • ${picked.billing_percent || 0}% • Expected: ${toDateInputValue(picked.expected_completion_date) || "—"}`
+        : "";
+    }
+  }
+
   function hydrateObligationForm(o = {}) {
     const pj = o?.payload_json || {};
 
@@ -38122,9 +38153,9 @@ function bindAssetRecordsPickerModal({ cid }) {
           : "";
     }
 
-    if ($("revMilestoneCode")) {
-      $("revMilestoneCode").value = pj.milestone_code || "";
-    }
+    populateObligationMilestoneDropdown(
+      pj.linked_billing_milestone_code || pj.milestone_code || ""
+    );
 
     state.selectedObligation = o?.id ? o : null;
 
@@ -38534,6 +38565,18 @@ function bindAssetRecordsPickerModal({ cid }) {
       "";
     const trigger = o.recognition_trigger || "—";
 
+    const pj = o.payload_json || {};
+    const linkedMilestone =
+      pj.linked_billing_milestone ||
+      getSelectedContractMilestones().find(
+        m => String(m.code || "") === String(pj.linked_billing_milestone_code || pj.milestone_code || "")
+      ) ||
+      null;
+
+    const linkedMilestoneLabel = linkedMilestone
+      ? `${linkedMilestone.code || ""} — ${linkedMilestone.description || ""} (${money(linkedMilestone.billing_amount || 0)})`
+      : (pj.linked_billing_milestone_code || pj.milestone_code || "—");
+
     const canMarkSatisfied =
       timing === "point_in_time" &&
       satisfactionStatus !== "satisfied";
@@ -38542,6 +38585,7 @@ function bindAssetRecordsPickerModal({ cid }) {
       <div class="space-y-3">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
           <div><span class="text-slate-500">Code:</span> <strong>${esc(o.obligation_code || "")}</strong></div>
+          <div><span class="text-slate-500">Linked Milestone:</span> <strong>${esc(linkedMilestoneLabel)}</strong></div>
           <div><span class="text-slate-500">Timing:</span> <strong>${esc(o.recognition_timing || "")}</strong></div>
           <div><span class="text-slate-500">Name:</span> <strong>${esc(o.obligation_name || "")}</strong></div>
           <div><span class="text-slate-500">Trigger:</span> <strong>${esc(trigger)}</strong></div>
@@ -38573,6 +38617,10 @@ function bindAssetRecordsPickerModal({ cid }) {
       } catch (e) {
         setMsg(e?.message || "Mark satisfied failed", "error");
       }
+    });
+
+    $("revMilestoneCode")?.addEventListener("change", () => {
+      populateObligationMilestoneDropdown($("revMilestoneCode")?.value || "");
     });
 
     $("revOblPreviewCreateInvoiceBtn")?.addEventListener("click", async () => {
@@ -40370,6 +40418,18 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       satisfaction_evidence_type: evidenceType,
     };
 
+    const linkedMilestoneCode = $("revMilestoneCode")?.value?.trim() || "";
+    const milestones = getSelectedContractMilestones();
+    const linkedMilestone = milestones.find(
+      m => String(m.code || "") === linkedMilestoneCode
+    );
+
+    if (linkedMilestoneCode) {
+      payload_json.linked_billing_milestone_code = linkedMilestoneCode;
+      payload_json.milestone_code = linkedMilestoneCode;
+      payload_json.linked_billing_milestone = linkedMilestone || null;
+    }
+
     if (timing === "point_in_time") {
       payload_json.recognition_trigger = $("revPitTrigger")?.value || null;
     }
@@ -40381,7 +40441,7 @@ async function loadLatestRevenueProgressForSelectedObligation() {
       }
 
       if (method === "milestone") {
-        payload_json.milestone_code = $("revMilestoneCode")?.value?.trim() || "";
+        payload_json.milestone_code = linkedMilestoneCode;
       }
     }
 
