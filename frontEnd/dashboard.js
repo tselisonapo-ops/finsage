@@ -61010,6 +61010,68 @@ function getSelectedVendorObjectFromBillForm() {
 }
 window.getSelectedVendorObjectFromBillForm = getSelectedVendorObjectFromBillForm;
 
+function isAllowedBillAssetAccount(a = {}) {
+  const code = String(a.code || "").trim().toUpperCase();
+  const section = String(a.section || "").trim().toLowerCase();
+  const role = String(a.role || "").trim().toLowerCase();
+  const bucket = String(a.cf_bucket || "").trim().toLowerCase();
+  const category = String(a.category || "").trim().toLowerCase();
+
+  if (!a.posting) return false;
+  if (a.is_contra) return false;
+  if (section !== "asset" && section !== "assets") return false;
+
+  const excludedRoles = new Set([
+    "ar",
+    "vat_input",
+    "cash",
+    "cash_bank",
+    "bank",
+  ]);
+
+  const excludedBuckets = new Set([
+    "cash",
+    "receivables",
+    "vat_input",
+    "prepaids",
+    "deposits_paid",
+    "lease_receivable",
+    "unallocated_payments",
+    "deferred_revenue",
+  ]);
+
+  if (excludedRoles.has(role)) return false;
+  if (excludedBuckets.has(bucket)) return false;
+
+  const allowedRoles = new Set([
+    "inventory",
+    "project_wip",
+  ]);
+
+  const allowedBuckets = new Set([
+    "inventory",
+    "ppe",
+    "rou_asset",
+    "intangible",
+  ]);
+
+  if (allowedRoles.has(role)) return true;
+  if (allowedBuckets.has(bucket)) return true;
+  if (code.startsWith("BS_NCA_")) return true;
+
+  // fallback for broad but still safe categories
+  if (
+    category.includes("property, plant") ||
+    category.includes("non-current assets") ||
+    category.includes("intangible assets") ||
+    category.includes("inventories")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function bindAP() {
   const linesBody = document.getElementById("billLines");
   const addBtn    = document.getElementById("billAddLine");
@@ -63872,6 +63934,13 @@ async function loadBillAccountsForLines() {
     const nameOf = (a) => String(a.name || a.account_name || "").trim();
     const postingOf = (a) => (a.posting === undefined ? true : !!a.posting);
 
+    const mode = document.getElementById("billPostingMode")?.value || "expense";
+
+    if (mode === "asset") {
+      window.BILL_ACCOUNTS_CACHE = rows.filter(isAllowedBillAssetAccount);
+    } else {
+      window.BILL_ACCOUNTS_CACHE = rows.filter(isAllowedBillExpenseAccount);
+    }
     // ---------- DENY LISTS ----------
     const denyCategoryContains = [
       "cash", "equivalent", "bank", "petty",
