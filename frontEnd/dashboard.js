@@ -63953,11 +63953,25 @@ async function loadBillAccountsForLines() {
     const nameOf = (a) =>
       String(a.name || a.account_name || "").trim();
 
-    const mode = document.getElementById("billPostingMode")?.value || "expense";
+    const rawMode = String(document.getElementById("billPostingMode")?.value || "expense")
+      .trim()
+      .toLowerCase();
+
+    const isAssetMode = [
+      "asset",
+      "assets",
+      "capex",
+      "fixed_asset",
+      "fixed-asset",
+      "asset_acquisition",
+      "asset-acquisition",
+      "ppe",
+      "inventory",
+    ].includes(rawMode);
 
     let allowed = [];
 
-    if (mode === "asset") {
+    if (isAssetMode) {
       allowed = rows.filter(isAllowedBillAssetAccount);
     } else {
       allowed = rows.filter(isAllowedBillExpenseAccount);
@@ -63976,7 +63990,10 @@ async function loadBillAccountsForLines() {
 
     window.refreshBillAccountDropdowns?.();
 
-    console.log("[AP] bill account mode:", mode);
+    console.log("[AP] bill account mode:", {
+      rawMode,
+      isAssetMode,
+    });
     console.log("[AP] bill accounts loaded:", window.BILL_ACCOUNTS_CACHE);
 
   } catch (e) {
