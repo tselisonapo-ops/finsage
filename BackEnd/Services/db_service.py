@@ -61812,6 +61812,9 @@ class DatabaseService:
             if not obl:
                 raise ValueError("Revenue obligation not found")
 
+            contract = self.get_revenue_contract(company_id, int(obl["contract_id"]), cur=cur)
+            obl = self._enrich_obligation_milestone_fields(contract, dict(obl))
+
             timing = str(obl.get("recognition_timing") or "").strip().lower()
             if timing != "over_time":
                 raise ValueError("Progress updates are only allowed for over-time obligations")
@@ -61934,9 +61937,13 @@ class DatabaseService:
 
                 milestone_code = (
                     data.get("milestone_code")
+                    or data.get("linked_billing_milestone_code")
+                    or (data.get("payload_json") or {}).get("linked_billing_milestone_code")
                     or milestone_payload.get("code")
+                    or obl.get("linked_milestone_code")
                     or ""
                 )
+
                 milestone_code = str(milestone_code).strip() or None
 
                 if not milestone_code:
@@ -62656,7 +62663,73 @@ class DatabaseService:
                     "total_contract_liability_delta": float(total_cl.quantize(Decimal("0.01"))),
                 },
             }
-    
+
+    def _enrich_obligation_milestone_fields(self, contract: dict | None, obligation: dict | None) -> dict | None:
+        import json
+
+        if not obligation:
+            return obligation
+
+        obligation = dict(obligation)
+
+        payload_json = obligation.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            try:
+                payload_json = json.loads(payload_json)
+            except Exception:
+                payload_json = {}
+        elif not isinstance(payload_json, dict):
+            payload_json = {}
+
+        contract_payload = (contract or {}).get("payload_json") or {}
+        if isinstance(contract_payload, str):
+            try:
+                contract_payload = json.loads(contract_payload)
+            except Exception:
+                contract_payload = {}
+        elif not isinstance(contract_payload, dict):
+            contract_payload = {}
+
+        billing_cfg = contract_payload.get("billing_config") or {}
+        if not isinstance(billing_cfg, dict):
+            billing_cfg = {}
+
+        milestones = billing_cfg.get("milestones") or []
+        if not isinstance(milestones, list):
+            milestones = []
+
+        linked_code = (
+            payload_json.get("linked_billing_milestone_code")
+            or payload_json.get("milestone_code")
+            or ""
+        )
+        linked_code = str(linked_code).strip()
+
+        linked = None
+        if linked_code:
+            linked = next(
+                (
+                    m for m in milestones
+                    if isinstance(m, dict)
+                    and str(m.get("code") or "").strip().lower() == linked_code.lower()
+                ),
+                None,
+            )
+
+        if linked:
+            payload_json["linked_billing_milestone_code"] = linked_code
+            payload_json["milestone_code"] = linked_code
+            payload_json["linked_billing_milestone"] = linked
+
+        obligation["payload_json"] = payload_json
+        obligation["linked_milestone_code"] = linked_code or None
+        obligation["linked_milestone_description"] = linked.get("description") if linked else None
+        obligation["linked_milestone_amount"] = float(linked.get("billing_amount") or 0) if linked else None
+        obligation["linked_milestone_percent"] = float(linked.get("billing_percent") or 0) if linked else None
+        obligation["linked_milestone_expected_date"] = linked.get("expected_completion_date") if linked else None
+
+        return obligation
+
     def _validate_revenue_recognition_chain(
         self,
         company_id: int,
@@ -62959,6 +63032,8 @@ class DatabaseService:
         if not contract:
             return None
 
+        obligation = self._enrich_obligation_milestone_fields(contract, dict(obligation))
+
         billed_to_date = self._allocated_obligation_billed_to_date(
             company_id=company_id,
             contract=contract,
@@ -62975,6 +63050,9 @@ class DatabaseService:
             "contract_id": int(obligation["contract_id"]),
             "obligation_code": obligation.get("obligation_code"),
             "obligation_name": obligation.get("obligation_name"),
+            "linked_milestone_code": obligation.get("linked_milestone_code"),
+            "linked_milestone_description": obligation.get("linked_milestone_description"),
+            "linked_milestone_amount": obligation.get("linked_milestone_amount"),
             "allocated_transaction_price": float(allocated_tp),
             "billed_to_date": float(billed_to_date),
             "remaining_to_bill": float(remaining_to_bill),
@@ -63011,6 +63089,12 @@ class DatabaseService:
             .lower()
         )
 
+        contract = self.get_revenue_contract(
+            company_id,
+            int(row["contract_id"]),
+            cur=cur,
+        )
+        row = self._enrich_obligation_milestone_fields(contract, row)
         return row
 
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
@@ -63999,6 +64083,11 @@ class DatabaseService:
             if cur is None:
                 conn.commit()
 
+            refreshed_obligations = [
+                self._enrich_obligation_milestone_fields(contract, dict(o))
+                for o in refreshed_obligations
+            ]
+
             return {
                 "contract": contract,
                 "obligations": refreshed_obligations,
@@ -64151,7 +64240,18 @@ class DatabaseService:
             WHERE contract_id = %s
             ORDER BY id ASC
         """
-        return self.fetch_all(sql, (int(contract_id),)) or []
+
+        rows = self.fetch_all(sql, (int(contract_id),)) or []
+
+        contract = self.get_revenue_contract(
+            company_id=int(company_id),
+            contract_id=int(contract_id),
+        )
+
+        return [
+            self._enrich_obligation_milestone_fields(contract, dict(row))
+            for row in rows
+        ]
 
     def _as_date(self, value):
         from datetime import date, datetime
@@ -64321,6 +64421,9 @@ class DatabaseService:
             "obligation_id": int(obligation.get("id")),
             "obligation_code": obligation.get("obligation_code"),
             "obligation_name": obligation.get("obligation_name"),
+            "linked_milestone_code": obligation.get("linked_milestone_code"),
+            "linked_milestone_description": obligation.get("linked_milestone_description"),
+            "linked_milestone_amount": obligation.get("linked_milestone_amount"),
             "recognition_timing": timing,
             "progress_method": progress_method,
             "allocated_transaction_price": float(obligation.get("allocated_transaction_price") or 0.0),

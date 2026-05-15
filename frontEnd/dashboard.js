@@ -38765,7 +38765,8 @@ function toggleRevenueProgressDriverFields() {
     const unitsBlock = $("revUnitsBlock");
     const manualBlock = $("revManualPercentBlock");
     const milestoneBlock = $("revMilestoneCodeBlock");
-
+    const hasMilestones = getSelectedContractMilestones().length > 0;
+    milestoneBlock?.classList.toggle("hidden", !hasMilestones);
     const pitTrigger = $("revPitTrigger");
     const pitDate = $("revPitDate");
     const satisfactionStatus = $("revSatisfactionStatus");
@@ -38776,8 +38777,7 @@ function toggleRevenueProgressDriverFields() {
     expectedCostWrap?.classList.add("hidden");
     unitsBlock?.classList.add("hidden");
     manualBlock?.classList.add("hidden");
-    milestoneBlock?.classList.add("hidden");
-
+    
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
       pitBlock?.classList.remove("hidden");
@@ -38804,9 +38804,7 @@ function toggleRevenueProgressDriverFields() {
         unitsBlock?.classList.remove("hidden");
       } else if (method === "manual" || method === "time_elapsed") {
         manualBlock?.classList.remove("hidden");
-      } else if (method === "milestone") {
-        milestoneBlock?.classList.remove("hidden");
-      }
+      } 
 
       if (pitTrigger) pitTrigger.value = "";
       if (pitDate) pitDate.value = "";

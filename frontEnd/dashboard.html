@@ -4554,6 +4554,14 @@ html, body {
                           <datalist id="revObligationCatalogList"></datalist>
                           <div id="revObligationCatalogHint" class="text-[11px] text-slate-500 mt-1 hidden"></div>
                         </div>
+
+                        <div class="md:col-span-2" id="revMilestoneCodeBlock">
+                          <label class="block text-xs text-slate-500 mb-1">Linked Billing Milestone</label>
+                          <select id="revMilestoneCode" class="w-full border rounded px-3 py-2 text-sm">
+                            <option value="">Select milestone...</option>
+                          </select>
+                          <div id="revMilestoneHint" class="mt-1 text-[11px] text-slate-500"></div>
+                        </div>
                       </div>
 
                       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -4578,14 +4586,6 @@ html, body {
                             Used only for obligations recognized over time.
                           </div>
                         </div>
-                      </div>
-
-                      <div id="revMilestoneCodeBlock" class="hidden">
-                        <label class="block text-xs text-slate-500 mb-1">Linked Billing Milestone</label>
-                        <select id="revMilestoneCode" class="w-full border rounded px-3 py-2 text-sm">
-                          <option value="">Select milestone...</option>
-                        </select>
-                        <div id="revMilestoneHint" class="mt-1 text-[11px] text-slate-500"></div>
                       </div>
 
                       <div id="revPointInTimeBlock" class="space-y-4">
