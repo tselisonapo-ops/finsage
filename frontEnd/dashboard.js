@@ -63953,29 +63953,9 @@ async function loadBillAccountsForLines() {
     const nameOf = (a) =>
       String(a.name || a.account_name || "").trim();
 
-    const rawMode = String(document.getElementById("billPostingMode")?.value || "expense")
-      .trim()
-      .toLowerCase();
-
-    const isAssetMode = [
-      "asset",
-      "assets",
-      "capex",
-      "fixed_asset",
-      "fixed-asset",
-      "asset_acquisition",
-      "asset-acquisition",
-      "ppe",
-      "inventory",
-    ].includes(rawMode);
-
-    let allowed = [];
-
-    if (isAssetMode) {
-      allowed = rows.filter(isAllowedBillAssetAccount);
-    } else {
-      allowed = rows.filter(isAllowedBillExpenseAccount);
-    }
+    const allowed = rows.filter(a =>
+      isAllowedBillExpenseAccount(a) || isAllowedBillAssetAccount(a)
+    );
 
     allowed.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 
