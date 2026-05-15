@@ -8492,6 +8492,10 @@ function renderCatalogScreen(name) {
     el.textContent = ctx.reorderLabel;
   });
 
+  document.querySelectorAll('[data-nav="inventory-valuation"]').forEach(el => {
+    el.textContent = ctx.valuationLabel;
+  });
+
   const invEnabled = !!isInventoryEnabledForCompany?.();
   const routeName = String(name || "");
 
@@ -57709,33 +57713,50 @@ function getInventoryContextMode() {
   const c = window.CURRENT_COMPANY || {};
   const p = c.industry_profile || {};
 
+  const layout = String(
+    c.default_pnl_layout || p.pnl_layout || ""
+  ).toLowerCase();
+
+  const industrySlug = String(c.industry_slug || "").toLowerCase();
+  const usesBoq = !!(c.uses_boq_budgeting ?? p.uses_boq_budgeting);
+
+  // ✅ Only project/service-material industries should use Material wording
+  // ✅ Retail/car dealership must remain normal stock wording
   const isProjectMaterial =
-    !!p.uses_material_costing ||
-    !!p.uses_boq_budgeting ||
-    p.pnl_layout === "project_wip";
+    usesBoq ||
+    layout === "project_wip" ||
+    ["construction", "engineering_technical", "mining"].includes(industrySlug);
 
   return {
     isProjectMaterial,
 
     itemLabel: isProjectMaterial
-      ? "Material Items"
-      : "Inventory Items",
+      ? "📦 Material Items"
+      : "📦 Inventory Items",
 
     movementLabel: isProjectMaterial
-      ? "Material Receipts & Issues"
-      : "Stock Movements",
+      ? "🔁 Material Receipts & Issues"
+      : "🔁 Stock Movements",
 
     receiveLabel: isProjectMaterial
       ? "Receive Materials"
       : "Receive Stock",
 
     countLabel: isProjectMaterial
-      ? "Material Count"
-      : "Stocktake",
+      ? "🧾 Material Count"
+      : "🧾 Stocktake",
 
     reorderLabel: isProjectMaterial
-      ? "Material Reorder Alerts"
-      : "Reorder Alerts",
+      ? "🚨 Material Reorder Alerts"
+      : "🚨 Reorder Alerts",
+
+    valuationLabel: isProjectMaterial
+      ? "💰 Material Inventory Valuation"
+      : "💰 Inventory Valuation",
+
+    newItemLabel: isProjectMaterial
+      ? "+ New Material"
+      : "+ New Item",
   };
 }
 
