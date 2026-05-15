@@ -8471,7 +8471,26 @@ function renderCatalogScreen(name) {
 
   try { store?.set?.("fs_catalog_subscreen", name); } catch {}
   setCatalogContextHeader?.();
+  applyInventoryContextLabels?.();
   bindCatalogQuickTabs?.();
+
+  const ctx = getInventoryContextMode();
+
+  document.querySelectorAll('[data-nav="inventory-items"]').forEach(el => {
+    el.textContent = ctx.itemLabel;
+  });
+
+  document.querySelectorAll('[data-nav="inventory-movements"]').forEach(el => {
+    el.textContent = ctx.movementLabel;
+  });
+
+  document.querySelectorAll('[data-nav="stocktake"]').forEach(el => {
+    el.textContent = ctx.countLabel;
+  });
+
+  document.querySelectorAll('[data-nav="reorder"]').forEach(el => {
+    el.textContent = ctx.reorderLabel;
+  });
 
   const invEnabled = !!isInventoryEnabledForCompany?.();
   const routeName = String(name || "");
@@ -8507,7 +8526,11 @@ function renderCatalogScreen(name) {
 
     "inventory-movements": {
       tpl: "tpl-inventory-movements",
-      enter: () => { bindInventoryMovementsUI?.(); loadInventoryMovements?.(); },
+      enter: () => {
+        bindInventoryMovementsUI?.();
+        applyInventoryMovementContextLabels?.();
+        loadInventoryMovements?.();
+      },
     },
 
     "reorder": {
@@ -57682,6 +57705,62 @@ function renderApiError(err) {
   return `<div class="text-xs text-red-600">${esc(status)} — ${esc(msg)}</div>`;
 }
 
+function getInventoryContextMode() {
+  const c = window.CURRENT_COMPANY || {};
+  const p = c.industry_profile || {};
+
+  const isProjectMaterial =
+    !!p.uses_material_costing ||
+    !!p.uses_boq_budgeting ||
+    p.pnl_layout === "project_wip";
+
+  return {
+    isProjectMaterial,
+
+    itemLabel: isProjectMaterial
+      ? "Material Items"
+      : "Inventory Items",
+
+    movementLabel: isProjectMaterial
+      ? "Material Receipts & Issues"
+      : "Stock Movements",
+
+    receiveLabel: isProjectMaterial
+      ? "Receive Materials"
+      : "Receive Stock",
+
+    countLabel: isProjectMaterial
+      ? "Material Count"
+      : "Stocktake",
+
+    reorderLabel: isProjectMaterial
+      ? "Material Reorder Alerts"
+      : "Reorder Alerts",
+  };
+}
+
+function applyInventoryContextLabels() {
+  const ctx = getInventoryContextMode();
+
+  const title = document.querySelector("#screen-inventory h3");
+  if (title) title.textContent = ctx.isProjectMaterial ? "Materials & Inventory" : "Catalog Studio";
+
+  document.querySelectorAll('[data-nav="inventory-items"]').forEach(btn => {
+    btn.textContent = ctx.itemLabel;
+  });
+
+  document.querySelectorAll('[data-nav="inventory-movements"]').forEach(btn => {
+    btn.textContent = ctx.movementLabel;
+  });
+
+  const modeText = document.getElementById("catalogCompanyModeText");
+  if (modeText) {
+    modeText.textContent = ctx.isProjectMaterial
+      ? `Mode: Materials for ${ctx.workUnit}`
+      : modeText.textContent;
+  }
+}
+window.applyInventoryContextLabels = applyInventoryContextLabels;
 
 function setCatalogContextHeader() {
   const c = window.CURRENT_COMPANY || {};
@@ -57752,6 +57831,24 @@ async function bindInventory() {
 }
 window.bindInventory = bindInventory;
 
+function applyInventoryMovementContextLabels() {
+  const ctx = getInventoryContextMode();
+
+  const heading = document.querySelector("#catalogMount .font-semibold");
+  if (heading && heading.textContent.includes("Stock Movements")) {
+    heading.textContent = ctx.movementLabel;
+  }
+
+  const help = document.querySelector("#catalogMount .text-xs.text-slate-500");
+  if (help && help.textContent.includes("Receipts")) {
+    help.textContent = ctx.movementHelp;
+  }
+
+  const newBtn = document.getElementById("movNewTxBtn");
+  if (newBtn) {
+    newBtn.textContent = ctx.isProjectMaterial ? "+ New Material Movement" : "+ New Movement";
+  }
+}
 // =====================================================
 // Inventory Items (already started by you, improved)
 // =====================================================
@@ -57774,6 +57871,16 @@ function bindInventoryItemsUI() {
   if (add && add.dataset.bound !== "1") {
     add.dataset.bound = "1";
     add.addEventListener("click", () => openInvItemModal());
+  }
+
+  const ctx = getInventoryContextMode();
+
+  const newBtn = document.getElementById("invNewBtn");
+  if (newBtn) newBtn.textContent = ctx.newItemLabel;
+
+  const countTitle = document.querySelector("#catalogMount h4");
+  if (countTitle && countTitle.textContent.includes("Inventory Items")) {
+    countTitle.textContent = ctx.itemLabel;
   }
 
   const clear = document.getElementById("invClearFilters");
@@ -58096,7 +58203,17 @@ function collectInvItemMetaFromUI() {
 function bindReceiveModalOnce() {
   const m = document.getElementById("invReceiveModal");
   if (!m || m.dataset.bound === "1") return;
+
   m.dataset.bound = "1";
+
+  // ✅ ADD THIS
+  const ctx = getInventoryContextMode();
+
+  const title = document.getElementById("receiveInventoryTitle");
+
+  if (title) {
+    title.textContent = ctx.receiveLabel;
+  }
 
   // Overlay + close buttons
   document.getElementById("invReceiveOverlay")
