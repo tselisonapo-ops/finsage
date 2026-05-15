@@ -43616,6 +43616,31 @@ async function postDeferredTaxJournal(dt) {
   alert("Deferred tax journal posted.");
 }
 
+function applyInvItemModalContextLabels(isEdit = false) {
+  const ctx = getInventoryContextMode();
+
+  const title = document.getElementById("invItemModalTitle");
+  if (title) {
+    title.textContent = ctx.isProjectMaterial
+      ? (isEdit ? "Edit Material Item" : "New Material Item")
+      : (isEdit ? "Edit Inventory Item" : "New Inventory Item");
+  }
+
+  const salesLabel = document.getElementById("invItemSalesPriceLabel");
+  if (salesLabel) {
+    salesLabel.textContent = ctx.isProjectMaterial
+      ? "Estimated issue rate / cost rate"
+      : "Sell price";
+  }
+
+  const saveBtn = document.getElementById("invItemSaveBtn");
+  if (saveBtn) {
+    saveBtn.textContent = ctx.isProjectMaterial
+      ? "Save Material"
+      : "Save Item";
+  }
+}
+
 function showInvItemModalMsg(text = "", kind = "info") {
   const el = document.getElementById("invItemModalMsg");
   if (!el) return;
@@ -43631,12 +43656,11 @@ function openInvItemModal(prefill = {}) {
   const m = document.getElementById("invItemModal");
   if (!m) return;
 
-  const title = m.querySelector(".font-semibold.text-slate-800"); // or add an id for title
   const isEdit = !!prefill.id;
 
   window._INV_EDITING_ITEM_ID = isEdit ? Number(prefill.id) : null;
 
-  if (title) title.textContent = isEdit ? "Edit Inventory Item" : "New Inventory Item";
+  applyInvItemModalContextLabels(isEdit);
   // reset
   showInvItemModalMsg("");
   document.getElementById("invItemSku").value = prefill.sku || "";
