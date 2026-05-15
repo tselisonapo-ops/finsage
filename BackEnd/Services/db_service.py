@@ -31928,47 +31928,44 @@ class DatabaseService:
         if total <= 0:
             raise ValueError("RECEIPT_TOTAL_IS_ZERO")
 
-        # 5) create journal header (same transaction)
-        journal_id = int(self.create_journal_header(
-            company_id=company_id,
-            je_date=tx_date,
-            ref=ref,
-            memo=f"Inventory Receipt #{tx_id}",
-            source="inventory_receipt",
-            source_id=int(tx_id),
-            cur=cur,
-        ) or 0)
-        if journal_id <= 0:
-            raise ValueError("FAILED_TO_CREATE_RECEIPT_JOURNAL")
+        # 5) Build and post journal using central post_journal()
+        journal_lines = []
 
-        # 6) Dr Inventory lines
+        # Dr Inventory lines
         for acct, amt in inv_totals.items():
             if amt <= 0:
                 continue
-            self.insert_ledger(
-                company_id=company_id,
-                journal_id=journal_id,
-                je_date=tx_date,
-                line={"account_code": acct, "debit": amt, "credit": 0.0, "memo": "Inventory received"},
-                ref=ref,
-                source="inventory_receipt",
-                source_id=int(tx_id),
-                cur=cur,
-            )
-            self.update_trial_balance(company_id, {"account_code": acct, "debit": amt, "credit": 0.0}, cur=cur)
 
-        # 7) Cr GRNI
-        self.insert_ledger(
-            company_id=company_id,
-            journal_id=journal_id,
-            je_date=tx_date,
-            line={"account_code": GRNI, "debit": 0.0, "credit": total, "memo": "GRNI (receipt accrual)"},
-            ref=ref,
-            source="inventory_receipt",
-            source_id=int(tx_id),
+            journal_lines.append({
+                "account_code": acct,
+                "debit": amt,
+                "credit": 0.0,
+                "memo": "Inventory received",
+            })
+
+        # Cr GRNI
+        journal_lines.append({
+            "account_code": GRNI,
+            "debit": 0.0,
+            "credit": total,
+            "memo": "GRNI (receipt accrual)",
+        })
+
+        journal_id = self.post_journal(
+            company_id,
+            {
+                "date": tx_date,
+                "ref": ref,
+                "description": f"Inventory Receipt #{tx_id}",
+                "source": "inventory",
+                "source_id": int(tx_id),
+                "lines": journal_lines,
+            },
             cur=cur,
         )
-        self.update_trial_balance(company_id, {"account_code": GRNI, "debit": 0.0, "credit": total}, cur=cur)
+
+        if not journal_id:
+            raise ValueError("FAILED_TO_CREATE_RECEIPT_JOURNAL")
 
         # 8) stamp tx + layers
         cur.execute(
