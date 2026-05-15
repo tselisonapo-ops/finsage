@@ -61137,21 +61137,15 @@ function bindAP() {
       if (keep) sel.value = keep;
     });
   }
+  window.refreshBillAccountDropdowns = refreshBillAccountDropdowns;
 
-  // ✅ Load accounts for bill lines once (new version kept)
-  window._BILL_ACCTS_READY =
-    window._BILL_ACCTS_READY || window.loadBillAccountsForLines?.();
+  // ✅ Always reload accounts when AP binds, then refresh dropdowns
+  window.loadBillAccountsForLines?.().then(() => {
+    window.refreshBillAccountDropdowns?.();
 
-  window._BILL_ACCTS_READY?.then(() => {
-    refreshBillAccountDropdowns();
-    if (!document.querySelector("#billLines tr"))
+    if (!document.querySelector("#billLines tr")) {
       addBillLine();
-  });
-
-  window._BILL_ACCTS_READY?.then(() => {
-    refreshBillAccountDropdowns();
-    if (!document.querySelector("#billLines tr"))
-      addBillLine();
+    }
   });
 
   // Lock flags
@@ -61198,7 +61192,7 @@ function bindAP() {
       el.classList.toggle("opacity-50", !enable);
     });
   }
-
+  
   function applyVatVisibility() {
     const enable = !!vatEnabledEl?.checked;
     setVatUIVisible(enable);
@@ -63980,7 +63974,7 @@ async function loadBillAccountsForLines() {
       }))
       .filter(x => x.code && !seen.has(x.code) && (seen.add(x.code), true));
 
-    refreshBillAccountDropdowns?.();
+    window.refreshBillAccountDropdowns?.();
 
     console.log("[AP] bill account mode:", mode);
     console.log("[AP] bill accounts loaded:", window.BILL_ACCOUNTS_CACHE);
