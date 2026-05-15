@@ -61011,7 +61011,7 @@ function getSelectedVendorObjectFromBillForm() {
 window.getSelectedVendorObjectFromBillForm = getSelectedVendorObjectFromBillForm;
 
 function isAllowedBillAssetAccount(a = {}) {
-  const code = String(a.code || "").trim().toUpperCase();
+  const code = String(a.code || a.account_code || a.template_code || "").trim().toUpperCase();
   const section = String(a.section || "").trim().toLowerCase();
   const role = String(a.role || "").trim().toLowerCase();
   const bucket = String(a.cf_bucket || "").trim().toLowerCase();
@@ -61021,14 +61021,7 @@ function isAllowedBillAssetAccount(a = {}) {
   if (a.is_contra) return false;
   if (section !== "asset" && section !== "assets") return false;
 
-  const excludedRoles = new Set([
-    "ar",
-    "vat_input",
-    "cash",
-    "cash_bank",
-    "bank",
-  ]);
-
+  const excludedRoles = new Set(["ar", "vat_input", "cash", "cash_bank", "bank"]);
   const excludedBuckets = new Set([
     "cash",
     "receivables",
@@ -61043,23 +61036,13 @@ function isAllowedBillAssetAccount(a = {}) {
   if (excludedRoles.has(role)) return false;
   if (excludedBuckets.has(bucket)) return false;
 
-  const allowedRoles = new Set([
-    "inventory",
-    "project_wip",
-  ]);
-
-  const allowedBuckets = new Set([
-    "inventory",
-    "ppe",
-    "rou_asset",
-    "intangible",
-  ]);
+  const allowedRoles = new Set(["inventory", "project_wip"]);
+  const allowedBuckets = new Set(["inventory", "ppe", "rou_asset", "intangible"]);
 
   if (allowedRoles.has(role)) return true;
   if (allowedBuckets.has(bucket)) return true;
   if (code.startsWith("BS_NCA_")) return true;
 
-  // fallback for broad but still safe categories
   if (
     category.includes("property, plant") ||
     category.includes("non-current assets") ||
@@ -62203,6 +62186,25 @@ function bindAP() {
       if (!document.querySelector("#billLines tr")) addBillLine();
       window.recalcBill?.({ force: true });
       window.saveBillDraftToLocal?.();
+    });
+  }
+
+  const postingModeEl = document.getElementById("billPostingMode");
+
+  if (postingModeEl && postingModeEl.dataset.bound !== "1") {
+    postingModeEl.dataset.bound = "1";
+
+    postingModeEl.addEventListener("change", async () => {
+
+      await loadBillAccountsForLines();
+
+      refreshBillAccountDropdowns?.();
+
+      console.log(
+        "[AP] posting mode changed:",
+        postingModeEl.value,
+        window.BILL_ACCOUNTS_CACHE
+      );
     });
   }
 
@@ -63921,6 +63923,22 @@ async function openBillViewer(billId, opts = {}) {
 }
 window.openBillViewer = openBillViewer;
 
+function isAllowedBillExpenseAccount(a = {}) {
+  const code = String(a.code || a.account_code || a.template_code || "").trim().toUpperCase();
+  const section = String(a.section || "").trim().toLowerCase();
+  const category = String(a.category || "").trim().toLowerCase();
+
+  if (!a.posting) return false;
+
+  return (
+    section === "expense" ||
+    category.includes("cost of sales") ||
+    category.includes("cost of revenue") ||
+    code.startsWith("PL_OPEX_") ||
+    code.startsWith("PL_COS_")
+  );
+}
+
 async function loadBillAccountsForLines() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) return;
@@ -63929,111 +63947,37 @@ async function loadBillAccountsForLines() {
     const raw = await apiFetch(ENDPOINTS.coa(cid));
     const rows = Array.isArray(raw) ? raw : (raw?.rows || raw?.accounts || []);
 
-    const lower = (s) => String(s || "").toLowerCase().trim();
-    const codeOf = (a) => String(a.code || a.account_code || a.template_code || "").trim();
-    const nameOf = (a) => String(a.name || a.account_name || "").trim();
-    const postingOf = (a) => (a.posting === undefined ? true : !!a.posting);
+    const codeOf = (a) =>
+      String(a.code || a.account_code || a.template_code || "").trim();
+
+    const nameOf = (a) =>
+      String(a.name || a.account_name || "").trim();
 
     const mode = document.getElementById("billPostingMode")?.value || "expense";
 
+    let allowed = [];
+
     if (mode === "asset") {
-      window.BILL_ACCOUNTS_CACHE = rows.filter(isAllowedBillAssetAccount);
+      allowed = rows.filter(isAllowedBillAssetAccount);
     } else {
-      window.BILL_ACCOUNTS_CACHE = rows.filter(isAllowedBillExpenseAccount);
+      allowed = rows.filter(isAllowedBillExpenseAccount);
     }
-    // ---------- DENY LISTS ----------
-    const denyCategoryContains = [
-      "cash", "equivalent", "bank", "petty",
-      "accumulated depreciation", "accumulated amort",
-      "depreciation & amortization",
-      "finance costs",
-      "tax expense",
-      "other adjustments",
-      "non-operating adjustments",
-      "revenue adjustments",
-      "retained earnings",
-      "capital",
-      "equity",
-      "payables",          // optional: keeps control accounts out
-      "receivables",       // optional: keeps control accounts out
-      "vat",               // keeps VAT Input/Output out
-    ];
 
-    // keywords in NAME to exclude (you asked “things like salaries”)
-    const denyNameContains = [
-      "salary", "salaries", "wages", "payroll",
-      "paye", "withholding",
-      "depreciation", "amortization", "amortisation",
-      "interest", "finance cost",
-      "income tax",
-      "adjustment", "reclassification",
-      "bank charges", // optional (keep if you want)
-    ];
-
-    // codes to exclude by prefix (strongest guard)
-    const denyCodeStarts = [
-      "BS_CA_", "BS_CL_", "BS_NCA_", "BS_NCL_", "BS_EQ_", // optional: removes ALL balance sheet accounts
-      "PL_OI_",        // other income (not an expense)
-      "PL_REV_",       // revenue
-      "PL_REV_ADJ_",   // contra revenue
-      "PL_OPEX_ADJ_",  // if you ever have this family
-    ];
-
-    // ✅ If you DO want assets for capex on bills, remove BS_* from denyCodeStarts
-    // and rely on category/name exclusions instead.
-
-    // ---------- ALLOW RULES ----------
-    const isAllowedFamily = (code) =>
-      code.startsWith("PL_OPEX_") || code.startsWith("PL_COS_") || code.startsWith("BS_NCA_") || code.startsWith("BS_CA_");
-
-    const isDenied = (a) => {
-      const code = codeOf(a);
-      const nm = lower(nameOf(a));
-      const cat = lower(a.category || "");
-      const sec = lower(a.section || "");
-
-      if (!code) return true;
-      if (!postingOf(a)) return true;
-
-      // If you want “only known families”, enforce this:
-      // if (!isAllowedFamily(code)) return true;
-
-      if (denyCodeStarts.some(p => code.startsWith(p))) return true;
-
-      if (denyCategoryContains.some(x => cat.includes(x))) return true;
-      if (denyNameContains.some(x => nm.includes(x))) return true;
-
-      // Extra: exclude adjustment section always
-      if (sec.includes("adjust")) return true;
-
-      return false;
-    };
-
-    // Base allow: Expenses + COGS + (optional) Assets
-    const baseAllow = (a) => {
-      const code = codeOf(a);
-      const sec = lower(a.section || "");
-      const cat = lower(a.category || "");
-
-      const isExpense = sec === "expense" || cat.includes("operating expenses") || code.startsWith("PL_OPEX_");
-      const isCogs    = cat.includes("cost of sales") || cat.includes("cost of revenue") || code.startsWith("PL_COS_");
-      const isAsset   = sec === "asset" || code.startsWith("BS_NCA_") || code.startsWith("BS_CA_");
-
-      // ✅ choose what you want:
-      return isExpense || isCogs || isAsset; // keep assets (capex)
-      // return isExpense || isCogs;          // hide assets completely
-    };
-
-    const allowed = rows.filter(a => baseAllow(a) && !isDenied(a));
-
-    // Sort A→Z by name
     allowed.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 
-    // Build cache for line dropdowns
     const seen = new Set();
+
     window.BILL_ACCOUNTS_CACHE = allowed
-      .map(a => ({ code: codeOf(a), name: nameOf(a) || codeOf(a) }))
+      .map(a => ({
+        code: codeOf(a),
+        name: nameOf(a) || codeOf(a),
+      }))
       .filter(x => x.code && !seen.has(x.code) && (seen.add(x.code), true));
+
+    refreshBillAccountDropdowns?.();
+
+    console.log("[AP] bill account mode:", mode);
+    console.log("[AP] bill accounts loaded:", window.BILL_ACCOUNTS_CACHE);
 
   } catch (e) {
     console.warn("[AP] loadBillAccountsForLines error:", e);
