@@ -1935,6 +1935,9 @@ const ENDPOINTS = {
 
     issueMaterials: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/issue-materials`,
+
+    inventoryItemsLite: (cid) =>
+      `/api/companies/${cid}/inventory/items-lite`,
   },
 
   // ✅ ADD THIS as a sibling object
@@ -67149,6 +67152,16 @@ function getWorkUnitLabel() {
 
 window.getWorkUnitLabel = getWorkUnitLabel;
 
+async function loadProjectInventoryItems() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+
+  const res = await apiFetch(
+    ENDPOINTS.projects.inventoryItemsLite(cid)
+  );
+
+  return res?.items || [];
+}
+
 function applyProjectNamingLabels() {
   const label = getWorkUnitLabel();
 
@@ -67166,8 +67179,82 @@ function applyProjectNamingLabels() {
   const newBtn = document.getElementById("projectNewBtn");
   if (newBtn) newBtn.textContent = `+ New ${label}`;
 }
-
 window.applyProjectNamingLabels = applyProjectNamingLabels;
+
+async function getProjectTasks(projectId) {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid || !projectId) return [];
+  const out = await apiFetch(ENDPOINTS.projects.tasksList(cid, projectId));
+  return out?.items || out?.data || [];
+}
+
+async function getProjectCostCodes() {
+  const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+  if (!cid) return [];
+  const out = await apiFetch(ENDPOINTS.projects.costCodesList(cid, "limit=500"));
+  return out?.items || out?.data || [];
+}
+
+async function getProjectInventoryItems() {
+  try {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    if (!cid) return [];
+
+    const res = await apiFetch(
+      ENDPOINTS.projects.inventoryItemsLite(cid)
+    );
+
+    return res?.items || [];
+  } catch (e) {
+    console.warn("[Projects] inventory load failed", e);
+    return [];
+  }
+}
+
+async function populateProjectTaskSelect(selectId, projectId, blank = "None") {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+
+  const tasks = await getProjectTasks(projectId);
+
+  sel.innerHTML = `
+    <option value="">${blank}</option>
+    ${tasks.map(t => `
+      <option value="${esc(String(t.id))}">
+        ${esc(t.task_code || "")} — ${esc(t.task_name || "")}
+      </option>
+    `).join("")}
+  `;
+}
+
+async function populateProjectCostCodeSelect(selectId, blank = "None") {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+
+  const codes = await getProjectCostCodes();
+
+  sel.innerHTML = `
+    <option value="">${blank}</option>
+    ${codes.map(c => `
+      <option value="${esc(String(c.id))}">
+        ${esc(c.cost_code || c.code || "")} — ${esc(c.cost_name || c.name || c.description || "")}
+      </option>
+    `).join("")}
+  `;
+}
+
+async function buildInventoryItemOptions(selectedId = "") {
+  const items = await getProjectInventoryItems();
+
+  return `
+    <option value="">Select material...</option>
+    ${items.map(i => {
+      const id = i.id ?? i.item_id;
+      const label = `${i.sku || i.code || ""} — ${i.name || i.item_name || "Item"}`;
+      return `<option value="${esc(String(id))}" ${String(id) === String(selectedId) ? "selected" : ""}>${esc(label)}</option>`;
+    }).join("")}
+  `;
+}
 
 async function populateProjectCustomerDropdown() {
   const sel = document.getElementById("projectCustomerId");
@@ -67644,17 +67731,28 @@ function bindProjectBudgetModalOnce() {
   });
 }
 
-function openProjectBudgetModal(projectId) {
+async function openProjectBudgetModal(projectId) {
   bindProjectBudgetModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
-  ["projectBudgetCostCodeId", "projectBudgetDescription", "projectBudgetTaskId", "projectBudgetQty", "projectBudgetUnitCost", "projectBudgetAmount"].forEach(id => {
+  [
+    "projectBudgetCostCodeId",
+    "projectBudgetDescription",
+    "projectBudgetTaskId",
+    "projectBudgetQty",
+    "projectBudgetUnitCost",
+    "projectBudgetAmount",
+  ].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = "";
   });
 
   document.getElementById("projectBudgetProjectId").value = String(projectId);
   document.getElementById("projectBudgetLineNo").value = "1";
+
+  await populateProjectTaskSelect("projectBudgetTaskId", projectId, "Select task...");
+  await populateProjectCostCodeSelect("projectBudgetCostCodeId", "Select cost code...");
+
   setElText("projectBudgetMsg", "");
   document.getElementById("projectBudgetModal")?.classList.remove("hidden");
 }
@@ -67707,21 +67805,27 @@ function bindProjectIssueModalOnce() {
   document.getElementById("projectIssueCloseBtn")?.addEventListener("click", closeProjectIssueModal);
   document.getElementById("projectIssueCancelBtn")?.addEventListener("click", closeProjectIssueModal);
   document.getElementById("projectIssueSaveBtn")?.addEventListener("click", submitProjectIssue);
-  document.getElementById("projectIssueAddLineBtn")?.addEventListener("click", addProjectIssueLine);
+  document.getElementById("projectIssueAddLineBtn")?.addEventListener("click", async () => {
+    await addProjectIssueLine();
+  });
 }
 
-function openProjectIssueModal(projectId) {
+async function openProjectIssueModal(projectId) {
   bindProjectIssueModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
   document.getElementById("projectIssueProjectId").value = String(projectId);
   document.getElementById("projectIssueDate").value = new Date().toISOString().slice(0, 10);
-  document.getElementById("projectIssueTaskId").value = "";
-  document.getElementById("projectIssueCostCodeId").value = "";
   document.getElementById("projectIssueUsageType").value = "consumed";
-  document.getElementById("projectIssueLines").innerHTML = "";
 
-  addProjectIssueLine();
+  await populateProjectTaskSelect("projectIssueTaskId", projectId, "Select task...");
+  await populateProjectCostCodeSelect("projectIssueCostCodeId", "Select cost code...");
+
+  const tbody = document.getElementById("projectIssueLines");
+  if (tbody) tbody.innerHTML = "";
+
+  await addProjectIssueLine();
+
   setElText("projectIssueMsg", "");
   document.getElementById("projectIssueModal")?.classList.remove("hidden");
 }
@@ -67730,24 +67834,27 @@ function closeProjectIssueModal() {
   document.getElementById("projectIssueModal")?.classList.add("hidden");
 }
 
-function addProjectIssueLine() {
+async function addProjectIssueLine(line = {}) {
   const tbody = document.getElementById("projectIssueLines");
   if (!tbody) return;
 
   const tr = document.createElement("tr");
   tr.className = "border-b";
+
   tr.innerHTML = `
     <td class="px-2 py-2">
-      <input class="w-full border rounded px-2 py-1 text-xs" data-pi-item-id type="number" placeholder="Item ID">
+      <select data-pi-item-id class="w-full border rounded px-2 py-1">
+        ${await buildInventoryItemOptions(line.item_id || "")}
+      </select>
     </td>
     <td class="px-2 py-2">
-      <input class="w-full border rounded px-2 py-1 text-xs text-right" data-pi-qty type="number" step="0.0001" placeholder="Qty">
+      <input data-pi-qty type="number" step="0.0001" class="w-full border rounded px-2 py-1 text-right" value="${esc(line.qty || "")}">
     </td>
     <td class="px-2 py-2">
-      <input class="w-full border rounded px-2 py-1 text-xs" data-pi-memo placeholder="Memo">
+      <input data-pi-memo class="w-full border rounded px-2 py-1" value="${esc(line.memo || "")}" placeholder="Memo">
     </td>
     <td class="px-2 py-2 text-right">
-      <button class="text-xs underline text-red-600" data-pi-remove>Remove</button>
+      <button type="button" class="text-rose-600 underline" data-pi-remove>Remove</button>
     </td>
   `;
 

@@ -59668,6 +59668,75 @@ class DatabaseService:
 
         return self.fetch_one(sql, (int(company_id), int(contract_id)), cur=cur)
 
+    def validate_project_task(
+        self,
+        company_id: int,
+        *,
+        project_id: int,
+        task_id: int | None,
+        cur=None,
+    ):
+        if not task_id:
+            return None
+
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_tasks
+            WHERE company_id = %s
+            AND id = %s
+            AND project_id = %s
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(task_id),
+                int(project_id),
+            ),
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError(
+                f"INVALID_PROJECT_TASK_LINK|project_id={project_id}|task_id={task_id}"
+            )
+
+        return row
+
+    def validate_project_cost_code(
+        self,
+        company_id: int,
+        cost_code_id: int | None,
+        cur=None,
+    ):
+        if not cost_code_id:
+            return None
+
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.project_cost_codes
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(cost_code_id),
+            ),
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError(
+                f"INVALID_PROJECT_COST_CODE|cost_code_id={cost_code_id}"
+            )
+
+        return row
 
     def list_revenue_contracts(
         self,
@@ -65522,6 +65591,21 @@ class DatabaseService:
         if amount in (None, ""):
             amount = qty * unit_cost
 
+        project_id = int(pick("project_id", "projectId"))
+        task_id = pick("task_id", "taskId")
+        cost_code_id = pick("cost_code_id", "costCodeId")
+
+        self.validate_project_task(
+            company_id,
+            project_id=project_id,
+            task_id=task_id,
+        )
+
+        self.validate_project_cost_code(
+            company_id,
+            cost_code_id,
+        )
+
         row = self.fetch_one(
             f"""
             INSERT INTO {schema}.project_budget_lines (
@@ -65704,6 +65788,23 @@ class DatabaseService:
             if str(project.get("status") or "").lower() in ("cancelled", "closed"):
                 raise ValueError("PROJECT_CLOSED_OR_CANCELLED")
 
+            # Validate header task/cost code links
+            header_task_id = _to_int(task_id)
+            header_cost_code_id = _to_int(cost_code_id)
+
+            self.validate_project_task(
+                company_id,
+                project_id=int(project_id),
+                task_id=header_task_id,
+                cur=cur,
+            )
+
+            self.validate_project_cost_code(
+                company_id,
+                header_cost_code_id,
+                cur=cur,
+            )
+
             # 2) Resolve WIP account
             wip_raw = (
                 project.get("wip_account_code")
@@ -65745,8 +65846,8 @@ class DatabaseService:
                     int(project_id),
                     created_by,
                     int(project_id),
-                    _to_int(task_id),
-                    _to_int(cost_code_id),
+                    header_task_id,
+                    header_cost_code_id,
                     usage_type,
                 ),
             )
@@ -65773,6 +65874,19 @@ class DatabaseService:
                 line_task_id = _to_int(ln.get("task_id") or ln.get("taskId"), task_id)
                 line_cost_code_id = _to_int(ln.get("cost_code_id") or ln.get("costCodeId"), cost_code_id)
                 line_usage_type = (ln.get("usage_type") or ln.get("usageType") or usage_type or "consumed").strip().lower()
+
+                self.validate_project_task(
+                    company_id,
+                    project_id=int(project_id),
+                    task_id=line_task_id,
+                    cur=cur,
+                )
+
+                self.validate_project_cost_code(
+                    company_id,
+                    line_cost_code_id,
+                    cur=cur,
+                )
 
                 # Load item
                 item = self.fetch_one(
@@ -66010,6 +66124,7 @@ class DatabaseService:
                 "journal_id": int(journal_id) if journal_id else None,
                 "total_cost": total_issue_cost,
             }
+        
     def list_project_budget_lines_all(
         self,
         company_id: int,

@@ -431,3 +431,33 @@ def project_profitability_route(cid: int):
     return jsonify({
         "items": rows,
     }), 200
+
+@projects_bp.route("/api/companies/<int:cid>/inventory/items-lite", methods=["GET"])
+@require_auth
+def inventory_items_lite_route(cid: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    rows = db_service.fetch_all(
+        f"""
+        SELECT
+            id,
+            sku,
+            name,
+            inventory_account,
+            valuation_method,
+            on_hand_qty
+        FROM {db_service.company_schema(company_id)}.inventory_items
+        WHERE company_id = %s
+        AND is_active = TRUE
+        ORDER BY name ASC
+        """,
+        (company_id,),
+    ) or []
+
+    return jsonify({
+        "items": rows,
+    }), 200
