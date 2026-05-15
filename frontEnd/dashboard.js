@@ -61148,6 +61148,12 @@ function bindAP() {
       addBillLine();
   });
 
+  window._BILL_ACCTS_READY?.then(() => {
+    refreshBillAccountDropdowns();
+    if (!document.querySelector("#billLines tr"))
+      addBillLine();
+  });
+
   // Lock flags
   window._BILL_LOADING       = window._BILL_LOADING ?? false;
   window._BILL_TOTALS_LOCKED = window._BILL_TOTALS_LOCKED ?? false;
