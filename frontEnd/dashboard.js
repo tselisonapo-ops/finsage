@@ -59408,6 +59408,44 @@ function bindGoodsReceiptsUI() {
 }
 window.bindGoodsReceiptsUI = bindGoodsReceiptsUI;
 
+function renderGoodsReceiptsTable(items = []) {
+  const mount = document.getElementById("goodsReceiptsTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `<div class="text-xs text-slate-500">No goods receipts found.</div>`;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr class="text-slate-600">
+            <th class="px-2 py-2 text-left">GRN / Ref</th>
+            <th class="px-2 py-2 text-left">Date</th>
+            <th class="px-2 py-2 text-left">Vendor</th>
+            <th class="px-2 py-2 text-left">Status</th>
+            <th class="px-2 py-2 text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(r => `
+            <tr class="border-b">
+              <td class="px-2 py-2">${esc(r.ref || r.grn_no || `GRN-${r.id || ""}`)}</td>
+              <td class="px-2 py-2">${esc(String(r.tx_date || r.date || "").slice(0, 10))}</td>
+              <td class="px-2 py-2">${esc(r.vendor_name || r.supplier_name || r.vendor_id || "—")}</td>
+              <td class="px-2 py-2">${esc(r.grni_status || r.status || "—")}</td>
+              <td class="px-2 py-2 text-right">${fmtMoney?.(r.total_amount || r.amount || 0) || Number(r.total_amount || r.amount || 0).toFixed(2)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+window.renderGoodsReceiptsTable = renderGoodsReceiptsTable;
+
 async function loadGoodsReceipts() {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   const mount = document.getElementById("goodsReceiptsTable");
