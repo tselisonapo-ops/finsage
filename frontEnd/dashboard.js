@@ -1912,6 +1912,9 @@ const ENDPOINTS = {
     tasksCreate: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/tasks`,
 
+    tasksUpdate: (cid, projectId, taskId) =>
+      `/api/companies/${cid}/projects/${projectId}/tasks/${taskId}`,
+
     costCodesList: (cid, q = "") =>
       `/api/companies/${cid}/projects/cost-codes${q ? `?${q}` : ""}`,
 
@@ -1923,6 +1926,9 @@ const ENDPOINTS = {
 
     budgetLinesCreate: (cid, projectId) =>
       `/api/companies/${cid}/projects/${projectId}/budget-lines`,
+
+    budgetLineUpdate: (cid, projectId, lineId) =>
+      `/api/companies/${cid}/projects/${projectId}/budget-lines/${lineId}`,
 
     budgetLinesAll: (cid, q = "") =>
       `/api/companies/${cid}/projects/budget-lines${q ? `?${q}` : ""}`,
@@ -68093,6 +68099,32 @@ function renderProjectDetail(p) {
   mount.querySelector("[data-project-issue]")?.addEventListener("click", () => {
     openProjectIssueModal?.(p.id);
   });
+
+  mount.querySelectorAll("[data-task-edit]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+
+      const id = Number(btn.dataset.taskEdit);
+      const task = (p.tasks || []).find(x => Number(x.id) === id);
+
+      if (task) {
+        openProjectTaskModal(p.id, task);
+      }
+    });
+  });
+
+  mount.querySelectorAll("[data-budget-edit]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+
+      const id = Number(btn.dataset.budgetEdit);
+      const line = (p.budget_lines || []).find(x => Number(x.id) === id);
+
+      if (line) {
+        openProjectBudgetModal(p.id, line);
+      }
+    });
+  });
 }
 
 window.renderProjectDetail = renderProjectDetail;
@@ -68110,15 +68142,24 @@ function renderProjectTasksMini(tasks) {
           <th class="text-left px-2 py-1">Task</th>
           <th class="text-left px-2 py-1">Status</th>
           <th class="text-right px-2 py-1">Progress</th>
+          <th class="text-right px-2 py-1">Action</th>
         </tr>
       </thead>
       <tbody>
         ${tasks.map(t => `
-          <tr class="border-b">
+          <tr class="border-b hover:bg-slate-50">
             <td class="px-2 py-1">${esc(t.task_code || "")}</td>
             <td class="px-2 py-1">${esc(t.task_name || "")}</td>
             <td class="px-2 py-1">${esc(t.status || "")}</td>
             <td class="px-2 py-1 text-right">${esc(String(t.progress_percent || 0))}%</td>
+            <td class="px-2 py-1 text-right">
+              <button
+                class="px-2 py-1 border rounded text-[11px]"
+                data-task-edit="${esc(String(t.id))}"
+              >
+                Edit
+              </button>
+            </td>
           </tr>
         `).join("")}
       </tbody>
@@ -68137,22 +68178,60 @@ function renderProjectBudgetMini(lines) {
         <tr>
           <th class="text-left px-2 py-1">Line</th>
           <th class="text-left px-2 py-1">Description</th>
+          <th class="text-left px-2 py-1">Task</th>
           <th class="text-left px-2 py-1">Cost Code</th>
           <th class="text-right px-2 py-1">Amount</th>
+          <th class="text-right px-2 py-1">Action</th>
         </tr>
       </thead>
       <tbody>
         ${lines.map(l => `
-          <tr class="border-b">
-            <td class="px-2 py-1">${esc(String(l.line_no || ""))}</td>
+          <tr class="border-b hover:bg-slate-50">
+            <td class="px-2 py-1">${esc(l.line_code || String(l.line_no || ""))}</td>
             <td class="px-2 py-1">${esc(l.description || "")}</td>
+            <td class="px-2 py-1">${esc(l.task_name || "")}</td>
             <td class="px-2 py-1">${esc(l.cost_code || "")}</td>
             <td class="px-2 py-1 text-right">${fmtMoney(l.budget_amount || 0)}</td>
+            <td class="px-2 py-1 text-right">
+              <button
+                class="px-2 py-1 border rounded text-[11px]"
+                data-budget-edit="${esc(String(l.id))}"
+              >
+                Edit
+              </button>
+            </td>
           </tr>
         `).join("")}
       </tbody>
     </table>
   `;
+}
+
+function openProjectTaskModal(projectId, task = null) {
+  bindProjectTaskModalOnce();
+  ACTIVE_PROJECT_ID = Number(projectId);
+
+  const isEdit = !!task?.id;
+
+  document.getElementById("projectTaskProjectId").value = String(projectId);
+  document.getElementById("projectTaskId").value = isEdit ? String(task.id) : "";
+
+  document.getElementById("projectTaskCode").value = task?.task_code || "";
+  document.getElementById("projectTaskName").value = task?.task_name || "";
+  document.getElementById("projectTaskStatus").value = task?.status || "open";
+  document.getElementById("projectTaskBudgetValue").value = task?.budget_value || "";
+  document.getElementById("projectTaskStartDate").value = task?.start_date || "";
+  document.getElementById("projectTaskExpectedEndDate").value = task?.expected_end_date || "";
+  document.getElementById("projectTaskNotes").value = task?.notes || "";
+
+  const saveBtn = document.getElementById("projectTaskSaveBtn");
+  if (saveBtn) saveBtn.textContent = isEdit ? "Update Task" : "Save Task";
+
+  const archiveBtn = document.getElementById("projectTaskArchiveBtn");
+  if (archiveBtn) archiveBtn.classList.toggle("hidden", !isEdit);
+
+  setElText("projectTaskMsg", "");
+  document.getElementById("projectTaskModal")?.classList.remove("hidden");
 }
 
 function bindProjectCreateModalOnce() {
@@ -68263,17 +68342,24 @@ function bindProjectTaskModalOnce() {
   document.getElementById("projectTaskSaveBtn")?.addEventListener("click", submitProjectTask);
 }
 
-function openProjectTaskModal(projectId) {
+function openProjectTaskModal(projectId, task = null) {
   bindProjectTaskModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
-  ["projectTaskCode", "projectTaskName", "projectTaskBudgetValue", "projectTaskStartDate", "projectTaskExpectedEndDate", "projectTaskNotes"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = "";
-  });
-
   document.getElementById("projectTaskProjectId").value = String(projectId);
-  document.getElementById("projectTaskStatus").value = "open";
+  document.getElementById("projectTaskId").value = task?.id || "";
+
+  document.getElementById("projectTaskCode").value = task?.task_code || "";
+  document.getElementById("projectTaskName").value = task?.task_name || "";
+  document.getElementById("projectTaskStatus").value = task?.status || "open";
+  document.getElementById("projectTaskBudgetValue").value = task?.budget_value || "";
+  document.getElementById("projectTaskStartDate").value = task?.start_date || "";
+  document.getElementById("projectTaskExpectedEndDate").value = task?.expected_end_date || "";
+  document.getElementById("projectTaskNotes").value = task?.notes || "";
+
+  document.getElementById("projectTaskSaveBtn").textContent = task?.id ? "Update Task" : "Save Task";
+  document.getElementById("projectTaskArchiveBtn")?.classList.toggle("hidden", !task?.id);
+
   setElText("projectTaskMsg", "");
   document.getElementById("projectTaskModal")?.classList.remove("hidden");
 }
@@ -68398,11 +68484,14 @@ function bindProjectBudgetModalOnce() {
   });
 }
 
-async function openProjectBudgetModal(projectId) {
+async function openProjectBudgetModal(projectId, line = null) {
   bindProjectBudgetModalOnce();
   ACTIVE_PROJECT_ID = Number(projectId);
 
+  const isEdit = !!line?.id;
+
   [
+    "projectBudgetLineId",
     "projectBudgetLineCode",
     "projectBudgetCostCode",
     "projectBudgetDescription",
@@ -68420,24 +68509,42 @@ async function openProjectBudgetModal(projectId) {
 
   document.getElementById("projectBudgetProjectId").value = String(projectId);
 
-  const selectedProject =
-    PROJECTS_CACHE?.find?.(p => Number(p.id) === Number(projectId)) ||
-    ACTIVE_PROJECT ||
-    null;
-
-  const budgetLines = selectedProject?.budget_lines || selectedProject?.budgetLines || [];
-
-  const nextLineNo = budgetLines.length
-    ? Math.max(...budgetLines.map(l => Number(l.line_no || 0))) + 1
-    : 1;
-
-  document.getElementById("projectBudgetLineNo").value = String(nextLineNo);
-  document.getElementById("projectBudgetPrefix").value = "";
-
-  document.getElementById("projectBudgetTaskId").value = "";
   populateProjectBudgetTaskDropdown(projectId);
 
-  buildProjectBudgetCodes(projectId);
+  if (isEdit) {
+    document.getElementById("projectBudgetLineId").value = String(line.id);
+    document.getElementById("projectBudgetLineNo").value = String(line.line_no || 1);
+    document.getElementById("projectBudgetLineCode").value = line.line_code || "";
+    document.getElementById("projectBudgetPrefix").value = line.cost_prefix || "";
+    document.getElementById("projectBudgetCostCode").value = line.cost_code || "";
+    document.getElementById("projectBudgetDescription").value = line.description || "";
+    document.getElementById("projectBudgetTaskId").value = line.task_id || "";
+    document.getElementById("projectBudgetTaskSelect").value = line.task_id || "";
+    document.getElementById("projectBudgetQty").value = line.budget_qty || "";
+    document.getElementById("projectBudgetUnitCost").value = line.unit_cost || "";
+    document.getElementById("projectBudgetAmount").value = line.budget_amount || "";
+  } else {
+    const selectedProject =
+      PROJECTS_CACHE?.find?.(p => Number(p.id) === Number(projectId)) ||
+      ACTIVE_PROJECT ||
+      null;
+
+    const budgetLines = selectedProject?.budget_lines || selectedProject?.budgetLines || [];
+
+    const nextLineNo = budgetLines.length
+      ? Math.max(...budgetLines.map(l => Number(l.line_no || 0))) + 1
+      : 1;
+
+    document.getElementById("projectBudgetLineNo").value = String(nextLineNo);
+    document.getElementById("projectBudgetPrefix").value = "";
+    document.getElementById("projectBudgetTaskId").value = "";
+    document.getElementById("projectBudgetTaskSelect").value = "";
+
+    buildProjectBudgetCodes(projectId);
+  }
+
+  const saveBtn = document.getElementById("projectBudgetSaveBtn");
+  if (saveBtn) saveBtn.textContent = isEdit ? "Update Budget Line" : "Save Budget Line";
 
   setElText("projectBudgetMsg", "");
   document.getElementById("projectBudgetModal")?.classList.remove("hidden");

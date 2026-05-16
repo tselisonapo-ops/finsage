@@ -9676,6 +9676,7 @@ html, body {
         <button id="projectTaskCloseBtn" class="text-sm px-2 py-1 border rounded">✕</button>
       </div>
 
+      <input id="projectTaskId" type="hidden">
       <input id="projectTaskProjectId" type="hidden">
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -9725,6 +9726,9 @@ html, body {
       <div class="flex justify-end gap-2 mt-4">
         <button id="projectTaskCancelBtn" class="px-3 py-2 text-xs border rounded">Cancel</button>
         <button id="projectTaskSaveBtn" class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">Save Task</button>
+      <button id="projectTaskArchiveBtn" class="px-3 py-2 text-xs border rounded text-red-600 hidden">
+        Archive
+      </button>
       </div>
     </div>
   </div>
@@ -9743,6 +9747,7 @@ html, body {
         <button id="projectBudgetCloseBtn" class="text-sm px-2 py-1 border rounded hover:bg-slate-100">✕</button>
       </div>
 
+      <input id="projectBudgetLineId" type="hidden">
       <input id="projectBudgetProjectId" type="hidden">
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -9817,6 +9822,9 @@ html, body {
       <div class="flex justify-end gap-2 mt-5">
         <button id="projectBudgetCancelBtn" class="px-3 py-2 text-xs border rounded hover:bg-slate-100">Cancel</button>
         <button id="projectBudgetSaveBtn" class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded hover:opacity-90">Save Budget Line</button>
+        <button id="projectBudgetArchiveBtn" class="px-3 py-2 text-xs border rounded text-red-600 hidden">
+          Archive
+        </button>
       </div>
     </div>
   </div>

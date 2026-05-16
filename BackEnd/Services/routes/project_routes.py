@@ -192,7 +192,43 @@ def create_project_task_route(cid: int, project_id: int):
             "details": str(e),
         }), 500
 
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/tasks/<int:task_id>", methods=["PATCH"])
+@require_auth
+def update_project_task_route(cid: int, project_id: int, task_id: int):
+    company_id = int(cid)
 
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    data = _payload()
+    data["project_id"] = int(project_id)
+
+    try:
+        ok = db_service.update_project_task(company_id, int(project_id), int(task_id), data)
+
+        if not ok:
+            return jsonify({"error": "project_task_not_found_or_no_changes"}), 404
+
+        return jsonify({
+            "ok": True,
+            "id": int(task_id),
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "[PROJECT TASK UPDATE] FAILED | company_id=%s | project_id=%s | task_id=%s",
+            company_id,
+            project_id,
+            task_id,
+        )
+        return jsonify({
+            "error": "failed_to_update_project_task",
+        }), 500
+    
 # ============================================================
 # PROJECT COST CODES
 # ============================================================
@@ -302,6 +338,74 @@ def create_project_budget_line_route(cid: int, project_id: int):
             "details": str(e),
         }), 500
 
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/budget-lines/<int:line_id>", methods=["PATCH"])
+@require_auth
+def update_project_budget_line_route(cid: int, project_id: int, line_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    data = _payload()
+    data["project_id"] = int(project_id)
+
+    try:
+        ok = db_service.update_project_budget_line(company_id, int(project_id), int(line_id), data)
+
+        if not ok:
+            return jsonify({"error": "project_budget_line_not_found_or_no_changes"}), 404
+
+        return jsonify({
+            "ok": True,
+            "id": int(line_id),
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception:
+        current_app.logger.exception(
+            "[PROJECT BUDGET LINE UPDATE] FAILED | company_id=%s | project_id=%s | line_id=%s",
+            company_id,
+            project_id,
+            line_id,
+        )
+        return jsonify({
+            "error": "failed_to_update_project_budget_line",
+        }), 500
+
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/tasks/<int:task_id>/archive", methods=["PATCH"])
+@require_auth
+def archive_project_task_route(cid: int, project_id: int, task_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    ok = db_service.archive_project_task(company_id, int(project_id), int(task_id))
+
+    if not ok:
+        return jsonify({"error": "project_task_not_found"}), 404
+
+    return jsonify({"ok": True, "id": int(task_id)}), 200
+
+@projects_bp.route("/api/companies/<int:cid>/projects/<int:project_id>/budget-lines/<int:line_id>/archive", methods=["PATCH"])
+@require_auth
+def archive_project_budget_line_route(cid: int, project_id: int, line_id: int):
+    company_id = int(cid)
+
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    ok = db_service.archive_project_budget_line(company_id, int(project_id), int(line_id))
+
+    if not ok:
+        return jsonify({"error": "project_budget_line_not_found"}), 404
+
+    return jsonify({"ok": True, "id": int(line_id)}), 200
 
 # ============================================================
 # PROJECT MATERIAL ISSUE

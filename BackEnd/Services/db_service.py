@@ -17767,6 +17767,10 @@ class DatabaseService:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.project_tasks
+        ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
+
         CREATE INDEX IF NOT EXISTS {schema}_project_tasks_project_idx
         ON {schema}.project_tasks(company_id, project_id);
 
@@ -17850,6 +17854,10 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.project_budget_lines
+        ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_budget_lines_uniq
         ON {schema}.project_budget_lines(project_id, line_no);
@@ -66111,6 +66119,200 @@ class DatabaseService:
             (company_id, project_id),
         )
 
+    def update_project_task(self, company_id: int, project_id: int, task_id: int, data: Dict[str, Any]) -> bool:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "task_code": ("task_code", "taskCode", "code"),
+            "task_name": ("task_name", "taskName", "name"),
+            "parent_task_id": ("parent_task_id", "parentTaskId"),
+            "status": ("status",),
+            "start_date": ("start_date", "startDate"),
+            "expected_end_date": ("expected_end_date", "expectedEndDate"),
+            "actual_end_date": ("actual_end_date", "actualEndDate"),
+            "budget_value": ("budget_value", "budgetValue"),
+            "progress_percent": ("progress_percent", "progressPercent"),
+            "notes": ("notes",),
+            "meta": ("meta",),
+        }
+
+        sets = []
+        params = []
+
+        for col, keys in allowed.items():
+            found = False
+            value = None
+
+            for k in keys:
+                if k in data:
+                    value = data.get(k)
+                    found = True
+                    break
+
+            if not found:
+                continue
+
+            if col == "task_name":
+                value = (value or "").strip()
+                if not value:
+                    raise ValueError("task_name is required")
+
+            if col in {"budget_value", "progress_percent"}:
+                value = float(value or 0)
+
+            if col == "meta":
+                value = psycopg2.extras.Json(value or {})
+
+            sets.append(f"{col} = %s")
+            params.append(value)
+
+        if not sets:
+            return False
+
+        sets.append("updated_at = NOW()")
+        params.extend([int(company_id), int(project_id), int(task_id)])
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_tasks
+            SET {", ".join(sets)}
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            tuple(params),
+        )
+
+        return bool(row)
+
+    def update_project_budget_line(self, company_id: int, project_id: int, line_id: int, data: Dict[str, Any]) -> bool:
+        schema = self.company_schema(company_id)
+
+        def pick(*keys, default=None):
+            for k in keys:
+                if k in data:
+                    v = data.get(k)
+                    if v not in (None, ""):
+                        return v
+            return default
+
+        task_id = pick("task_id", "taskId")
+        cost_code_id = pick("cost_code_id", "costCodeId")
+
+        self.validate_project_task(
+            company_id,
+            project_id=int(project_id),
+            task_id=task_id,
+        )
+
+        self.validate_project_cost_code(
+            company_id,
+            cost_code_id,
+        )
+
+        allowed = {
+            "task_id": ("task_id", "taskId"),
+            "cost_code_id": ("cost_code_id", "costCodeId"),
+            "line_no": ("line_no", "lineNo"),
+            "description": ("description",),
+            "budget_qty": ("budget_qty", "budgetQty", "qty"),
+            "unit_cost": ("unit_cost", "unitCost"),
+            "budget_amount": ("budget_amount", "budgetAmount"),
+            "source": ("source",),
+            "source_id": ("source_id", "sourceId"),
+        }
+
+        sets = []
+        params = []
+
+        for col, keys in allowed.items():
+            found = False
+            value = None
+
+            for k in keys:
+                if k in data:
+                    value = data.get(k)
+                    found = True
+                    break
+
+            if not found:
+                continue
+
+            if col == "line_no":
+                value = int(value or 1)
+
+            if col in {"budget_qty", "unit_cost", "budget_amount"}:
+                value = float(value or 0)
+
+            sets.append(f"{col} = %s")
+            params.append(value)
+
+        if "budget_amount" not in data and ("budget_qty" in data or "unit_cost" in data):
+            qty = float(pick("budget_qty", "budgetQty", "qty", default=0) or 0)
+            unit_cost = float(pick("unit_cost", "unitCost", default=0) or 0)
+            sets.append("budget_amount = %s")
+            params.append(qty * unit_cost)
+
+        if not sets:
+            return False
+
+        sets.append("updated_at = NOW()")
+        params.extend([int(company_id), int(project_id), int(line_id)])
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_budget_lines
+            SET {", ".join(sets)}
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            tuple(params),
+        )
+
+        return bool(row)
+        
+    def archive_project_task(self, company_id: int, project_id: int, task_id: int) -> bool:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_tasks
+            SET is_archived = TRUE,
+                archived_at = NOW(),
+                status = 'cancelled',
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (company_id, project_id, task_id),
+        )
+
+        return bool(row)
+
+    def archive_project_budget_line(self, company_id: int, project_id: int, line_id: int) -> bool:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.project_budget_lines
+            SET is_archived = TRUE,
+                archived_at = NOW(),
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND project_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (company_id, project_id, line_id),
+        )
+
+        return bool(row)
+    
     def find_project_wip_account_code(self, company_id: int, *, cur) -> str | None:
         schema = self.company_schema(company_id)
 
