@@ -65871,6 +65871,7 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         allowed = {
+            "project_code": ("project_code", "projectCode", "code"),
             "project_name": ("project_name", "projectName", "name"),
             "customer_id": ("customer_id", "customerId"),
             "project_type": ("project_type", "projectType"),
@@ -65906,6 +65907,14 @@ class DatabaseService:
             if not found:
                 continue
 
+            if col in {"project_code", "project_name"}:
+                value = (value or "").strip()
+                if not value:
+                    raise ValueError(f"{col} is required")
+
+            if col in {"contract_value", "budget_value"}:
+                value = float(value or 0)
+
             if col == "meta":
                 value = psycopg2.extras.Json(value or {})
 
@@ -65916,7 +65925,6 @@ class DatabaseService:
             return False
 
         sets.append("updated_at = NOW()")
-
         params.extend([company_id, project_id])
 
         row = self.fetch_one(

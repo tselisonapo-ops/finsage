@@ -68038,6 +68038,10 @@ function renderProjectDetail(p) {
 
         <div class="flex items-center gap-2">
           <button class="px-3 py-1 text-xs border rounded"
+                  data-project-edit="${esc(String(p.id))}">
+            Edit Project
+          </button>
+          <button class="px-3 py-1 text-xs border rounded"
                   data-project-task-new="${esc(String(p.id))}">
             + Task
           </button>
@@ -68098,6 +68102,10 @@ function renderProjectDetail(p) {
 
   mount.querySelector("[data-project-issue]")?.addEventListener("click", () => {
     openProjectIssueModal?.(p.id);
+  });
+
+  mount.querySelector("[data-project-edit]")?.addEventListener("click", () => {
+    openProjectCreateModal?.(p);
   });
 
   mount.querySelectorAll("[data-task-edit]").forEach(btn => {
@@ -68245,10 +68253,11 @@ function bindProjectCreateModalOnce() {
   document.getElementById("projectCreateSaveBtn")?.addEventListener("click", submitProjectCreate);
 }
 
-function openProjectCreateModal() {
+async function openProjectCreateModal(project = null) {
   bindProjectCreateModalOnce();
-  populateProjectCustomerDropdown?.();
+  await populateProjectCustomerDropdown?.();
 
+  const isEdit = !!project?.id;
   const today = new Date().toISOString().slice(0, 10);
 
   [
@@ -68264,17 +68273,31 @@ function openProjectCreateModal() {
     if (el) el.value = "";
   });
 
-  const start = document.getElementById("projectStartDate");
-  if (start) start.value = today;
+  let hidden = document.getElementById("projectId");
+  if (!hidden) {
+    hidden = document.createElement("input");
+    hidden.type = "hidden";
+    hidden.id = "projectId";
+    document.getElementById("projectCreateModal")?.appendChild(hidden);
+  }
 
-  const status = document.getElementById("projectCreateStatus");
-  if (status) status.value = "draft";
+  hidden.value = isEdit ? String(project.id) : "";
 
-  const billing = document.getElementById("projectBillingMethod");
-  if (billing) billing.value = "milestone";
+  document.getElementById("projectCode").value = project?.project_code || "";
+  document.getElementById("projectName").value = project?.project_name || "";
+  document.getElementById("projectCustomerId").value = project?.customer_id || "";
+  document.getElementById("projectStartDate").value = project?.start_date || today;
+  document.getElementById("projectExpectedEndDate").value = project?.expected_end_date || "";
+  document.getElementById("projectContractValue").value = project?.contract_value || "";
+  document.getElementById("projectLocation").value = project?.location || "";
+  document.getElementById("projectNotes").value = project?.notes || "";
+  document.getElementById("projectCreateStatus").value = project?.status || "draft";
+  document.getElementById("projectBillingMethod").value = project?.billing_method || "milestone";
+
+  const saveBtn = document.getElementById("projectCreateSaveBtn");
+  if (saveBtn) saveBtn.textContent = isEdit ? "Update Project" : "Save Project";
 
   setElText("projectCreateMsg", "");
-
   document.getElementById("projectCreateModal")?.classList.remove("hidden");
 }
 
@@ -68285,6 +68308,9 @@ function closeProjectCreateModal() {
 async function submitProjectCreate() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) return;
+
+  const projectId = Number(document.getElementById("projectId")?.value || 0);
+  const isEdit = !!projectId;
 
   const payload = {
     project_code: document.getElementById("projectCode")?.value?.trim(),
@@ -68304,18 +68330,28 @@ async function submitProjectCreate() {
     return;
   }
 
-  setElText("projectCreateMsg", "Saving project...");
+  setElText("projectCreateMsg", isEdit ? "Updating project..." : "Saving project...");
 
   try {
-    await apiFetch(ENDPOINTS.projects.create(cid), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    await apiFetch(
+      isEdit
+        ? ENDPOINTS.projects.update(cid, projectId)
+        : ENDPOINTS.projects.create(cid),
+      {
+        method: isEdit ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
 
     closeProjectCreateModal();
+
     await loadProjects?.();
+
+    if (isEdit) {
+      await loadProjectDetail(projectId);
+    }
   } catch (err) {
-    const msg = err?.message || "Failed to create project.";
+    const msg = err?.message || (isEdit ? "Failed to update project." : "Failed to create project.");
     setElText("projectCreateMsg", msg);
   }
 }
@@ -68373,6 +68409,9 @@ async function submitProjectTask() {
   const projectId = Number(document.getElementById("projectTaskProjectId")?.value || ACTIVE_PROJECT_ID || 0);
   if (!cid || !projectId) return;
 
+  const taskId = Number(document.getElementById("projectTaskId")?.value || 0);
+  const isEdit = !!taskId;
+
   const payload = {
     task_code: document.getElementById("projectTaskCode")?.value?.trim(),
     task_name: document.getElementById("projectTaskName")?.value?.trim(),
@@ -68388,18 +68427,26 @@ async function submitProjectTask() {
     return;
   }
 
-  setElText("projectTaskMsg", "Saving task...");
+  setElText("projectTaskMsg", isEdit ? "Updating task..." : "Saving task...");
 
   try {
-    await apiFetch(ENDPOINTS.projects.tasksCreate(cid, projectId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    await apiFetch(
+      isEdit
+        ? ENDPOINTS.projects.tasksUpdate(cid, projectId, taskId)
+        : ENDPOINTS.projects.tasksCreate(cid, projectId),
+      {
+        method: isEdit ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
 
     closeProjectTaskModal();
     await loadProjectDetail(projectId);
   } catch (err) {
-    setElText("projectTaskMsg", err?.message || "Failed to create task.");
+    setElText(
+      "projectTaskMsg",
+      err?.message || (isEdit ? "Failed to update task." : "Failed to create task.")
+    );
   }
 }
 
@@ -68419,31 +68466,40 @@ function buildProjectBudgetCodes(projectId) {
   }
 }
 
-function populateProjectBudgetTaskDropdown(projectId) {
-  const selectedProject =
-    PROJECTS_CACHE?.find?.(p => Number(p.id) === Number(projectId)) ||
-    ACTIVE_PROJECT ||
-    null;
-
-  const tasks = selectedProject?.tasks || selectedProject?.project_tasks || [];
-
+async function populateProjectBudgetTaskDropdown(projectId, selectedTaskId = "") {
   const sel = document.getElementById("projectBudgetTaskSelect");
   const hidden = document.getElementById("projectBudgetTaskId");
 
   if (!sel) return;
 
-  sel.innerHTML = `<option value="">Select task...</option>`;
+  sel.innerHTML = `<option value="">Loading tasks...</option>`;
 
-  tasks.forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = String(t.id);
-    opt.textContent = t.task_name || t.name || t.task_code || `Task #${t.id}`;
-    sel.appendChild(opt);
-  });
+  try {
+    const tasks = await getProjectTasks(projectId);
 
-  sel.onchange = () => {
-    if (hidden) hidden.value = sel.value || "";
-  };
+    sel.innerHTML = `<option value="">Select task...</option>`;
+
+    tasks.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = String(t.id);
+      opt.textContent = t.task_name || t.name || t.task_code || `Task #${t.id}`;
+
+      if (String(t.id) === String(selectedTaskId || "")) {
+        opt.selected = true;
+      }
+
+      sel.appendChild(opt);
+    });
+
+    if (hidden) hidden.value = selectedTaskId || "";
+
+    sel.onchange = () => {
+      if (hidden) hidden.value = sel.value || "";
+    };
+  } catch (err) {
+    sel.innerHTML = `<option value="">Failed to load tasks</option>`;
+    console.warn("[Projects] failed to load project tasks", err);
+  }
 }
 
 function bindProjectBudgetModalOnce() {
@@ -68509,7 +68565,7 @@ async function openProjectBudgetModal(projectId, line = null) {
 
   document.getElementById("projectBudgetProjectId").value = String(projectId);
 
-  populateProjectBudgetTaskDropdown(projectId);
+  await populateProjectBudgetTaskDropdown(projectId, line?.task_id || "");
 
   if (isEdit) {
     document.getElementById("projectBudgetLineId").value = String(line.id);
@@ -68524,12 +68580,18 @@ async function openProjectBudgetModal(projectId, line = null) {
     document.getElementById("projectBudgetUnitCost").value = line.unit_cost || "";
     document.getElementById("projectBudgetAmount").value = line.budget_amount || "";
   } else {
-    const selectedProject =
-      PROJECTS_CACHE?.find?.(p => Number(p.id) === Number(projectId)) ||
-      ACTIVE_PROJECT ||
-      null;
+    let budgetLines = [];
 
-    const budgetLines = selectedProject?.budget_lines || selectedProject?.budgetLines || [];
+    try {
+      const out = await apiFetch(ENDPOINTS.projects.budgetLinesList(
+        getActiveCompanyId?.() || CURRENT_COMPANY_ID,
+        projectId
+      ));
+
+      budgetLines = out?.items || out?.data || [];
+    } catch (err) {
+      console.warn("[Projects] could not load budget lines for next line number", err);
+    }
 
     const nextLineNo = budgetLines.length
       ? Math.max(...budgetLines.map(l => Number(l.line_no || 0))) + 1
@@ -68559,6 +68621,9 @@ async function submitProjectBudgetLine() {
   const projectId = Number(document.getElementById("projectBudgetProjectId")?.value || ACTIVE_PROJECT_ID || 0);
   if (!cid || !projectId) return;
 
+  const lineId = Number(document.getElementById("projectBudgetLineId")?.value || 0);
+  const isEdit = !!lineId;
+
   const payload = {
     line_no: Number(document.getElementById("projectBudgetLineNo")?.value || 1),
     line_code: document.getElementById("projectBudgetLineCode")?.value?.trim() || null,
@@ -68576,18 +68641,26 @@ async function submitProjectBudgetLine() {
     return;
   }
 
-  setElText("projectBudgetMsg", "Saving budget line...");
+  setElText("projectBudgetMsg", isEdit ? "Updating budget line..." : "Saving budget line...");
 
   try {
-    await apiFetch(ENDPOINTS.projects.budgetLinesCreate(cid, projectId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    await apiFetch(
+      isEdit
+        ? ENDPOINTS.projects.budgetLineUpdate(cid, projectId, lineId)
+        : ENDPOINTS.projects.budgetLinesCreate(cid, projectId),
+      {
+        method: isEdit ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
 
     closeProjectBudgetModal();
     await loadProjectDetail(projectId);
   } catch (err) {
-    setElText("projectBudgetMsg", err?.message || "Failed to create budget line.");
+    setElText(
+      "projectBudgetMsg",
+      err?.message || (isEdit ? "Failed to update budget line." : "Failed to create budget line.")
+    );
   }
 }
 
