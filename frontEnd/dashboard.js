@@ -58576,7 +58576,7 @@ async function openMovementDetail(txId) {
   if (detail) detail.textContent = "Loading movement…";
 
   try {
-    const tx = await apiFetch(ENDPOINTS.inventoryTxGet(cid, txId));
+    const tx = await apiFetch(ENDPOINTS.inventory.txOne(cid, txId));
     const lines = tx?.lines || [];
 
     if (!detail) return;
@@ -59332,6 +59332,95 @@ function renderValuationTable(items, totalValue, asOf) {
     </div>
   `;
 }
+
+function renderPurchaseOrdersTable(items = []) {
+  const mount = document.getElementById("purchaseOrdersTable");
+  if (!mount) return;
+
+  if (!items.length) {
+    mount.innerHTML = `
+      <div class="text-xs text-slate-500">
+        No purchase orders found.
+      </div>
+    `;
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 border-b">
+          <tr class="text-slate-600">
+            <th class="px-2 py-2 text-left">PO No</th>
+            <th class="px-2 py-2 text-left">Date</th>
+            <th class="px-2 py-2 text-left">Vendor</th>
+            <th class="px-2 py-2 text-left">Project</th>
+            <th class="px-2 py-2 text-left">Status</th>
+            <th class="px-2 py-2 text-right">Amount</th>
+            <th class="px-2 py-2 text-right"></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${items.map(po => `
+            <tr class="border-b hover:bg-slate-50">
+              <td class="px-2 py-2 font-medium">
+                ${esc(po.po_no || po.number || `PO-${po.id}`)}
+              </td>
+
+              <td class="px-2 py-2">
+                ${esc(String(po.po_date || po.created_at || "").slice(0,10))}
+              </td>
+
+              <td class="px-2 py-2">
+                ${esc(po.vendor_name || "—")}
+              </td>
+
+              <td class="px-2 py-2">
+                ${esc(po.project_name || po.job_name || "—")}
+              </td>
+
+              <td class="px-2 py-2">
+                <span class="
+                  inline-flex items-center px-2 py-1 rounded-full text-[10px]
+                  ${
+                    po.status === "received"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : po.status === "partially_received"
+                      ? "bg-amber-100 text-amber-700"
+                      : po.status === "approved"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-slate-100 text-slate-700"
+                  }
+                ">
+                  ${esc(po.status || "draft")}
+                </span>
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                ${
+                  typeof money === "function"
+                    ? money(po.total_amount || po.amount || 0)
+                    : Number(po.total_amount || po.amount || 0).toFixed(2)
+                }
+              </td>
+
+              <td class="px-2 py-2 text-right">
+                <button
+                  class="px-2 py-1 border rounded text-[11px]"
+                  onclick="openPurchaseOrder?.(${Number(po.id || 0)})"
+                >
+                  Open
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+window.renderPurchaseOrdersTable = renderPurchaseOrdersTable;
 
 async function loadPurchaseOrders() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
