@@ -59360,6 +59360,78 @@ async function loadPurchaseOrders() {
   }
 }
 
+function bindPurchaseOrdersUI() {
+  const search = document.getElementById("poSearch");
+  const status = document.getElementById("poStatus");
+  const refresh = document.getElementById("poRefreshBtn");
+  const newBtn = document.getElementById("poNewBtn");
+
+  if (search && search.dataset.bound !== "1") {
+    search.dataset.bound = "1";
+    search.addEventListener("input", debounce(() => {
+      loadPurchaseOrders?.();
+    }, 250));
+  }
+
+  if (status && status.dataset.bound !== "1") {
+    status.dataset.bound = "1";
+    status.addEventListener("change", () => {
+      loadPurchaseOrders?.();
+    });
+  }
+
+  if (refresh && refresh.dataset.bound !== "1") {
+    refresh.dataset.bound = "1";
+    refresh.addEventListener("click", () => {
+      loadPurchaseOrders?.();
+    });
+  }
+
+  if (newBtn && newBtn.dataset.bound !== "1") {
+    newBtn.dataset.bound = "1";
+    newBtn.addEventListener("click", () => {
+      window.openPurchaseOrderModal?.();
+    });
+  }
+}
+window.bindPurchaseOrdersUI = bindPurchaseOrdersUI;
+
+function bindGoodsReceiptsUI() {
+  const refresh = document.getElementById("grnRefreshBtn");
+
+  if (refresh && refresh.dataset.bound !== "1") {
+    refresh.dataset.bound = "1";
+    refresh.addEventListener("click", () => {
+      loadGoodsReceipts?.();
+    });
+  }
+}
+window.bindGoodsReceiptsUI = bindGoodsReceiptsUI;
+
+async function loadGoodsReceipts() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  const mount = document.getElementById("goodsReceiptsTable");
+  if (!cid || !mount) return;
+
+  mount.innerHTML = `<div class="text-xs text-slate-500">Loading goods receipts…</div>`;
+
+  try {
+    const params = new URLSearchParams();
+    params.set("tx_type", "receipt");
+    params.set("limit", "100");
+
+    const data = await apiFetch(
+      ENDPOINTS.inventory.txList(cid, params.toString())
+    );
+
+    const items = data?.items || data?.data || data || [];
+    renderGoodsReceiptsTable(items);
+  } catch (err) {
+    mount.innerHTML = renderApiError(err);
+  }
+}
+window.loadGoodsReceipts = loadGoodsReceipts;
+
 // =====================================================
 // Stocktake (Minimal workable flow)
 // =====================================================
