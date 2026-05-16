@@ -31559,6 +31559,72 @@ class DatabaseService:
                     commit=False,
                 )
 
+                line_row = self.fetch_one(
+                    f"""
+                    SELECT id
+                    FROM {schema}.inventory_tx_lines
+                    WHERE company_id=%s
+                    AND tx_id=%s
+                    AND line_no=%s
+                    """,
+                    (company_id, tx_id, idx),
+                    cur=cur,
+                )
+
+                tx_line_id = int(line_row["id"])
+
+                self.execute_sql(
+                    f"""
+                    INSERT INTO {schema}.inventory_layers
+                    (
+                        company_id,
+                        item_id,
+                        tx_id,
+                        tx_line_id,
+                        tx_date,
+                        qty_in,
+                        qty_out,
+                        unit_cost,
+                        ref,
+                        source,
+                        source_id,
+                        batch_no,
+                        expiry_date,
+                        created_at
+                    )
+                    VALUES
+                    (
+                        %s,%s,%s,%s,%s,
+                        %s,0,%s,
+                        %s,
+                        'purchase_order',
+                        %s,
+                        %s,
+                        %s,
+                        NOW()
+                    )
+                    """,
+                    (
+                        company_id,
+                        ln["item_id"],
+                        tx_id,
+                        tx_line_id,
+                        receipt_date,
+
+                        ln["qty"],
+                        ln["unit_cost"],
+
+                        ref,
+                        po_id,
+
+                        ln.get("batch_no"),
+                        ln.get("expiry_date"),
+                    ),
+                    cur=cur,
+                    conn=conn,
+                    commit=False,
+                )
+
                 self.execute_sql(
                     f"""
                     UPDATE {schema}.purchase_order_lines
