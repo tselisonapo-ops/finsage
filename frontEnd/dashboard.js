@@ -6141,7 +6141,7 @@ document.addEventListener("click", async (e) => {
   window.FS_WORKQUEUE_TARGET = target;
 
   if (action === "capture_grni_bill") {
-    showScreen?.("accounts-payable");
+    await fsGoToScreen("ap-bills", 180);
 
     setTimeout(() => {
       window.openGrniPendingBillingFromWorkQueue?.(target);
@@ -6151,7 +6151,7 @@ document.addEventListener("click", async (e) => {
   }
 
   if (action === "link_asset_grni") {
-    showScreen?.("assets");
+    await fsGoToScreen("ap-bills", 180);
 
     setTimeout(() => {
       window.openAssetGrniLinkingFromWorkQueue?.(target);

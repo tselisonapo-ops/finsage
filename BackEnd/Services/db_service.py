@@ -17270,6 +17270,28 @@ class DatabaseService:
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS grni_status TEXT NOT NULL DEFAULT 'unbilled';
 
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS grni_type TEXT NOT NULL DEFAULT 'inventory';
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_inventory_tx_grni_type_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.inventory_tx
+                    ADD CONSTRAINT %I
+                    CHECK (grni_type IN (''inventory'', ''asset''))',
+                    '{schema}',
+                    '{schema}_inventory_tx_grni_type_ck'
+                );
+            END IF;
+        END $$;
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_inventory_tx_receive_ref_uniq
         ON {schema}.inventory_tx(company_id, lower(trim(ref)))
         WHERE lower(tx_type) = 'receipt' AND ref IS NOT NULL AND trim(ref) <> '';
@@ -30932,12 +30954,12 @@ class DatabaseService:
                 INSERT INTO {schema}.inventory_tx
                 (company_id, tx_date, tx_type, status, ref, notes,
                 source, source_id, created_by,
-                vendor_id, po_id, supplier_invoice_no, grni_status,
+                vendor_id, po_id, supplier_invoice_no, grni_status, grni_type,
                 created_at, updated_at)
                 VALUES
                 (%s,%s,'receipt','posted',%s,%s,
                 'manual',NULL,%s,
-                %s,%s,%s,'unbilled',
+                %s,%s,%s,'unbilled','inventory',
                 NOW(),NOW())
                 RETURNING id;
                 """,
@@ -64947,7 +64969,8 @@ class DatabaseService:
 
                     WHERE tx.company_id = %s
                     AND lower(COALESCE(tx.tx_type, '')) = 'receipt'
-                    AND COALESCE(tx.grni_status, 'unbilled')
+                    AND COALESCE(tx.grni_status, 'unbilled') IN ('unbilled', 'partial')
+                    AND COALESCE(tx.grni_type, 'inventory') = 'inventory'
                         IN ('unbilled', 'partial')
 
                     AND NOT EXISTS (
@@ -65005,66 +65028,72 @@ class DatabaseService:
                         "action": "capture_grni_bill",
                     },
                 })
-            # 6) Asset GRNI receipts pending asset capitalization/linking
+
+            # 6) Asset acquisitions pending vendor bill capture
             cur.execute(f"""
                 WITH due AS (
                     SELECT
-                        tx.id AS receipt_tx_id,
-                        tx.tx_date,
-                        tx.ref,
-                        tx.vendor_id,
-                        COALESCE(
-                            SUM(
-                                COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0)
-                            ),
-                            0
-                        ) AS amount
-                    FROM {schema}.inventory_tx tx
-                    LEFT JOIN {schema}.inventory_tx_lines l
-                        ON l.company_id = tx.company_id
-                    AND l.tx_id = tx.id
-
-                    WHERE tx.company_id = %s
-                    AND lower(COALESCE(tx.tx_type, '')) IN ('receipt', 'receive')
-                    AND COALESCE(tx.grni_status, 'unbilled')
-                        IN ('unbilled', 'partial')
+                        aa.id AS acquisition_id,
+                        aa.asset_id,
+                        aa.supplier_id AS vendor_id,
+                        aa.grn_no,
+                        aa.vendor_invoice_no,
+                        aa.reference,
+                        aa.funding_source,
+                        aa.posting_date,
+                        aa.amount,
+                        a.asset_name
+                    FROM {schema}.asset_acquisitions aa
+                    JOIN {schema}.assets a
+                        ON a.company_id = aa.company_id
+                    AND a.id = aa.asset_id
+                    WHERE aa.company_id = %s
+                    AND lower(COALESCE(aa.funding_source, '')) IN ('grni', 'vendor_credit', 'other')
+                    AND aa.supplier_id IS NOT NULL
 
                     AND NOT EXISTS (
                         SELECT 1
-                        FROM {schema}.asset_grni_links agl
-                        WHERE agl.company_id = tx.company_id
-                        AND agl.receipt_tx_id = tx.id
+                        FROM {schema}.bills b
+                        WHERE b.company_id = aa.company_id
+                        AND b.vendor_id = aa.supplier_id
+                        AND (
+                            lower(COALESCE(b.reference, '')) = lower(COALESCE(aa.grn_no, ''))
+                            OR lower(COALESCE(b.reference, '')) = lower(COALESCE(aa.vendor_invoice_no, ''))
+                            OR lower(COALESCE(b.reference, '')) = lower(COALESCE(aa.reference, ''))
+                            OR lower(COALESCE(b.vendor_invoice_no, '')) = lower(COALESCE(aa.grn_no, ''))
+                            OR lower(COALESCE(b.vendor_invoice_no, '')) = lower(COALESCE(aa.vendor_invoice_no, ''))
+                            OR lower(COALESCE(b.vendor_invoice_no, '')) = lower(COALESCE(aa.reference, ''))
+                        )
                     )
 
-                    GROUP BY
-                        tx.id,
-                        tx.tx_date,
-                        tx.ref,
-                        tx.vendor_id
-
-                    ORDER BY
-                        tx.tx_date ASC,
-                        tx.id ASC
+                    ORDER BY aa.posting_date ASC, aa.id ASC
                 )
 
                 SELECT
                     COUNT(*) AS count,
                     COALESCE(SUM(amount), 0) AS amount,
-                    MIN(tx_date) AS oldest_receipt,
+                    MIN(posting_date) AS oldest_receipt,
 
                     (
                         ARRAY_AGG(
-                            receipt_tx_id
-                            ORDER BY tx_date ASC, receipt_tx_id ASC
+                            acquisition_id
+                            ORDER BY posting_date ASC, acquisition_id ASC
                         )
-                    )[1] AS receipt_tx_id,
+                    )[1] AS acquisition_id,
 
                     (
                         ARRAY_AGG(
                             vendor_id
-                            ORDER BY tx_date ASC, receipt_tx_id ASC
+                            ORDER BY posting_date ASC, acquisition_id ASC
                         )
-                    )[1] AS vendor_id
+                    )[1] AS vendor_id,
+
+                    (
+                        ARRAY_AGG(
+                            funding_source
+                            ORDER BY posting_date ASC, acquisition_id ASC
+                        )
+                    )[1] AS funding_source
 
                 FROM due
             """, (company_id,))
@@ -65073,21 +65102,27 @@ class DatabaseService:
 
             if int(row.get("count") or 0) > 0:
                 items.append({
-                    "type": "asset_grni_pending_linking",
-                    "title": "Asset GRNI pending linking",
+                    "type": "asset_acquisition_pending_billing",
+                    "title": "Asset acquisitions pending billing",
                     "count": int(row.get("count") or 0),
                     "amount": float(row.get("amount") or 0),
-                    "hint": f"Oldest asset receipt: {row.get('oldest_receipt')}",
-                    "screen": "assets",
+
+                    "hint": (
+                        f"Oldest acquisition: {row.get('oldest_receipt')}"
+                    ),
+
+                    "screen": "ap-bills",
                     "severity": "warning",
+
                     "target": {
-                        "screen": "assets",
-                        "tab": "acquisitions",
-                        "receipt_tx_id": row.get("receipt_tx_id"),
+                        "screen": "ap-bills",
+                        "tab": "bills",
                         "vendor_id": row.get("vendor_id"),
+                        "acquisition_id": row.get("acquisition_id"),
+                        "funding_source": row.get("funding_source"),
                         "action": "link_asset_grni",
                     },
-                })                
+                })
         return {
             "items": items[:limit],
             "count": len(items),
