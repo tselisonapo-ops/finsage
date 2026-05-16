@@ -66116,7 +66116,7 @@ class DatabaseService:
     def list_project_budget_lines(self, company_id: int, project_id: int) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        return self.fetch_all(
+        rows = self.fetch_all(
             f"""
             SELECT
                 b.*,
@@ -66139,7 +66139,11 @@ class DatabaseService:
             ORDER BY b.line_no ASC, b.id ASC
             """,
             (company_id, project_id),
-        )
+        ) or []
+
+        print("[PROJECT BUDGET LINES RESULT]", rows)
+
+        return rows
 
     def update_project_task(self, company_id: int, project_id: int, task_id: int, data: Dict[str, Any]) -> bool:
         schema = self.company_schema(company_id)
@@ -66816,7 +66820,6 @@ class DatabaseService:
 
         params.extend([int(limit), int(offset)])
 
-        print("[PROJECT BUDGET LINES RESULT]", rows)
         return self.fetch_all(
             f"""
             SELECT
