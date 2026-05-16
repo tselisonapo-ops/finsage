@@ -9455,74 +9455,90 @@ def inventory_on_hand(cid: int):
 def inventory_reorder(cid: int):
     company_id = int(cid)
     user, err = _company_auth_or_403(company_id)
-    if err: return err
+    if err:
+        return err
 
     schema = _schema(company_id)
 
     as_of = _to_iso(request.args.get("as_of"))
-    only = (request.args.get("only") or "1").strip().lower() in {"1","true","yes"}
+    only = (request.args.get("only") or "1").strip().lower() in {"1", "true", "yes"}
     q = (request.args.get("q") or "").strip()
 
-    where_items = ["i.company_id=%s", "i.is_active=TRUE", "i.track_stock=TRUE"]
-
-    # params for the FIRST where_items usage (CTE)
-    params_cte = [company_id]
+    where = ["i.company_id=%s", "i.is_active=TRUE", "i.track_stock=TRUE"]
+    params = [company_id]
 
     if q:
-        where_items.append(
-            "(LOWER(i.sku) LIKE LOWER(%s) OR LOWER(i.name) LIKE LOWER(%s) OR LOWER(coalesce(i.barcode,'')) LIKE LOWER(%s))"
-        )
-        params_cte += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        where.append("""
+            (
+                LOWER(i.sku) LIKE LOWER(%s)
+                OR LOWER(i.name) LIKE LOWER(%s)
+                OR LOWER(COALESCE(i.barcode,'')) LIKE LOWER(%s)
+            )
+        """)
+        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
 
     layer_date_filter = ""
-    params_date = []
+    layer_params = []
     if as_of:
         layer_date_filter = "AND l.tx_date <= %s"
-        params_date.append(as_of)
-
-    # params for the SECOND where_items usage (outer query)
-    params_outer = [company_id]
-    if q:
-        params_outer += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        layer_params.append(as_of)
 
     sql = f"""
-    WITH onhand AS (
-      SELECT
-        i.id as item_id,
-        COALESCE(SUM(l.qty_in),0) - COALESCE(SUM(l.qty_out),0) AS on_hand
-      FROM {schema}.inventory_items i
-      LEFT JOIN {schema}.inventory_layers l
-        ON l.company_id=i.company_id
-       AND l.item_id=i.id
-       {layer_date_filter}
-      WHERE {" AND ".join(where_items)}
-      GROUP BY i.id
-    )
-    SELECT
-      i.id as item_id,
-      i.sku, i.name, i.barcode, i.unit,
-      i.reorder_level,
-      COALESCE(o.on_hand,0) as on_hand,
-      (COALESCE(o.on_hand,0) <= COALESCE(i.reorder_level,0)) as needs_reorder
-    FROM {schema}.inventory_items i
-    LEFT JOIN onhand o ON o.item_id=i.id
-    WHERE {" AND ".join(where_items)}
-    {"AND (COALESCE(o.on_hand,0) <= COALESCE(i.reorder_level,0))" if only else ""}
-    ORDER BY needs_reorder DESC, i.name ASC, i.id ASC
+        SELECT
+            i.id AS item_id,
+            i.sku,
+            i.name,
+            i.barcode,
+            i.unit,
+            i.reorder_level,
+
+            COALESCE(
+                SUM(
+                    COALESCE(l.qty_in, 0)
+                    - COALESCE(l.qty_out, 0)
+                ),
+                0
+            ) AS on_hand,
+
+            (
+                COALESCE(
+                    SUM(
+                        COALESCE(l.qty_in, 0)
+                        - COALESCE(l.qty_out, 0)
+                    ),
+                    0
+                ) <= COALESCE(i.reorder_level, 0)
+            ) AS needs_reorder
+
+        FROM {schema}.inventory_items i
+
+        LEFT JOIN {schema}.inventory_layers l
+            ON l.company_id = i.company_id
+        AND l.item_id = i.id
+        {layer_date_filter}
+
+        WHERE {" AND ".join(where)}
+
+        GROUP BY
+            i.id,
+            i.sku,
+            i.name,
+            i.barcode,
+            i.unit,
+            i.reorder_level
+
+        {"HAVING COALESCE(SUM(COALESCE(l.qty_in,0) - COALESCE(l.qty_out,0)),0) <= COALESCE(i.reorder_level,0)" if only else ""}
+
+        ORDER BY needs_reorder DESC, i.name ASC, i.id ASC
     """
 
-    # ✅ FINAL param order must match placeholder order in SQL:
-    # 1) as_of (if present) used in JOIN filter
-    # 2) params for CTE WHERE (...)
-    # 3) params for OUTER WHERE (...)
-    params = []
-    params += params_date
-    params += params_cte
-    params += params_outer
+    rows = db_service.fetch_all(sql, tuple(layer_params + params)) or []
 
-    rows = db_service.fetch_all(sql, tuple(params)) or []
-    return jsonify({"items": rows, "as_of": as_of, "only": only}), 200
-
+    return jsonify({
+        "items": rows,
+        "as_of": as_of,
+        "only": only,
+    }), 200
 
 # =====================================================
 # 5) VALUATION (layers-based remaining qty * unit_cost)
