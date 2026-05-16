@@ -64970,7 +64970,6 @@ class DatabaseService:
                     WHERE tx.company_id = %s
                     AND lower(COALESCE(tx.tx_type, '')) = 'receipt'
                     AND COALESCE(tx.grni_status, 'unbilled') IN ('unbilled', 'partial')
-                    AND COALESCE(tx.grni_type, 'inventory') = 'inventory'
                         IN ('unbilled', 'partial')
 
                     AND NOT EXISTS (
