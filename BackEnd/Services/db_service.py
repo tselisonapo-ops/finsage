@@ -65836,7 +65836,8 @@ class DatabaseService:
             SELECT *
             FROM {schema}.project_tasks
             WHERE company_id = %s
-            AND project_id = %s
+              AND project_id = %s
+              AND COALESCE(is_archived, FALSE) = FALSE
             ORDER BY id ASC
             """,
             (company_id, project_id),
@@ -65847,18 +65848,21 @@ class DatabaseService:
             SELECT
                 b.*,
                 t.task_name,
-                cc.code AS cost_code,
+                COALESCE(NULLIF(b.cost_code, ''), cc.code) AS cost_code,
+                b.cost_code AS budget_cost_code,
+                cc.code AS linked_cost_code,
                 cc.name AS cost_code_name,
                 cc.cost_type
             FROM {schema}.project_budget_lines b
             LEFT JOIN {schema}.project_tasks t
                 ON t.company_id = b.company_id
-            AND t.id = b.task_id
+               AND t.id = b.task_id
             LEFT JOIN {schema}.project_cost_codes cc
                 ON cc.company_id = b.company_id
-            AND cc.id = b.cost_code_id
+               AND cc.id = b.cost_code_id
             WHERE b.company_id = %s
-            AND b.project_id = %s
+              AND b.project_id = %s
+              AND COALESCE(b.is_archived, FALSE) = FALSE
             ORDER BY b.line_no ASC, b.id ASC
             """,
             (company_id, project_id),
