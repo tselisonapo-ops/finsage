@@ -66112,10 +66112,12 @@ class DatabaseService:
             f"""
             SELECT
                 b.*,
-                t.task_name,
-                cc.code AS cost_code,
+                COALESCE(NULLIF(b.cost_code, ''), cc.code) AS cost_code,
+                b.cost_code AS budget_cost_code,
+                cc.code AS linked_cost_code,
                 cc.name AS cost_code_name,
-                cc.cost_type
+                cc.cost_type,
+                t.task_name
             FROM {schema}.project_budget_lines b
             LEFT JOIN {schema}.project_tasks t
                 ON t.company_id = b.company_id
@@ -66125,6 +66127,7 @@ class DatabaseService:
             AND cc.id = b.cost_code_id
             WHERE b.company_id = %s
             AND b.project_id = %s
+            AND COALESCE(b.is_archived, FALSE) = FALSE
             ORDER BY b.line_no ASC, b.id ASC
             """,
             (company_id, project_id),
@@ -66771,7 +66774,10 @@ class DatabaseService:
     ) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        where = ["b.company_id = %s"]
+        where = [
+            "b.company_id = %s",
+            "COALESCE(b.is_archived, FALSE) = FALSE",
+        ]
         params: list[Any] = [int(company_id)]
 
         if project_id:
@@ -66785,11 +66791,12 @@ class DatabaseService:
                     p.project_code ILIKE %s
                     OR p.project_name ILIKE %s
                     OR b.description ILIKE %s
+                    OR b.cost_code ILIKE %s
                     OR cc.code ILIKE %s
                     OR cc.name ILIKE %s
                 )
             """)
-            params.extend([like, like, like, like, like])
+            params.extend([like, like, like, like, like, like])
 
         params.extend([int(limit), int(offset)])
 
@@ -66797,14 +66804,16 @@ class DatabaseService:
             f"""
             SELECT
                 b.*,
+                COALESCE(NULLIF(b.cost_code, ''), cc.code) AS cost_code,
+                b.cost_code AS budget_cost_code,
+                cc.code AS linked_cost_code,
+                cc.name AS cost_code_name,
+                cc.cost_type,
                 p.project_code,
                 p.project_name,
                 c.name AS customer_name,
                 t.task_code,
-                t.task_name,
-                cc.code AS cost_code,
-                cc.name AS cost_code_name,
-                cc.cost_type
+                t.task_name
             FROM {schema}.project_budget_lines b
             JOIN {schema}.projects p
                 ON p.company_id = b.company_id
