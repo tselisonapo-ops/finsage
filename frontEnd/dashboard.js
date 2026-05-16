@@ -5890,6 +5890,8 @@ function workQueueIcon(type) {
   if (t.includes("invoice")) return "📄";
   if (t.includes("obligation")) return "📌";
   if (t.includes("recogn")) return "📊";
+  if (t.includes("grni")) return "📦";
+  if (t.includes("asset")) return "🏗️";
 
   return "•";
 }
@@ -6006,6 +6008,121 @@ async function renderAccountingWorkQueue(periodKey = "this_month") {
 
 window.renderAccountingWorkQueue = renderAccountingWorkQueue;
 
+async function fsGoToScreen(name, delay = 120) {
+  if (typeof window.switchScreen === "function") {
+    await window.switchScreen(name);
+  } else if (typeof window.showScreen === "function") {
+    window.showScreen(name);
+  }
+
+  await new Promise(r => setTimeout(r, delay));
+}
+
+async function getVendorByPendingReceiptTxId(receiptTxId) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !receiptTxId) return null;
+
+  let vendors = Array.isArray(window.VENDORS_CACHE) && window.VENDORS_CACHE.length
+    ? window.VENDORS_CACHE
+    : Array.isArray(window.VENDORS) && window.VENDORS.length
+      ? window.VENDORS
+      : [];
+
+  if (!vendors.length) {
+    const res = await apiFetch(ENDPOINTS.vendors(cid), { method: "GET" });
+    vendors = Array.isArray(res) ? res : (res?.data || res?.items || []);
+    window.VENDORS_CACHE = vendors;
+    window.VENDORS = vendors;
+  }
+
+  return vendors.find(v =>
+    (v.linked_inventory_grni || []).some(r =>
+      String(r.receipt_tx_id || r.tx_id || r.id) === String(receiptTxId)
+    )
+  ) || null;
+}
+
+window.openGrniPendingBillingFromWorkQueue = async function (target = {}) {
+  const receiptTxId = Number(target.receipt_tx_id || target.tx_id || target.id || 0) || null;
+
+  await fsGoToScreen("ap-bills", 180);
+
+  const vendorObj = await getVendorByPendingReceiptTxId(receiptTxId);
+
+  if (!vendorObj) {
+    window.showToast?.("Could not find the vendor linked to this GRNI receipt.", "warning");
+    console.warn("[WorkQueue] vendor not found for GRNI", target);
+    return;
+  }
+
+  const vendIdEl = document.getElementById("billVendorId");
+  if (vendIdEl) vendIdEl.value = String(vendorObj.id);
+
+  const vendInput = document.getElementById("billVendor");
+  if (vendInput) vendInput.value = vendorObj.name || "";
+
+  const rows = (vendorObj.linked_inventory_grni || []).filter(r => {
+    const txId = Number(r.receipt_tx_id || r.tx_id || r.id || 0);
+    const billId = r.bill_id || null;
+    const status = String(r.grni_status || "unbilled").toLowerCase();
+
+    if (receiptTxId && txId !== receiptTxId) return false;
+
+    return !billId && ["unbilled", "partial", ""].includes(status);
+  });
+
+  if (!rows.length) {
+    window.showToast?.("No open GRNI receipts found for this vendor.", "info");
+    return;
+  }
+
+  await window.showVendorInventoryGrniModal?.(vendorObj, rows);
+};
+
+window.openAssetGrniLinkingFromWorkQueue = async function (target = {}) {
+  console.log("[WorkQueue] open asset GRNI/AP billing", target);
+
+  await fsGoToScreen("ap-bills", 180);
+
+  const vendorId = Number(target.vendor_id || 0);
+  if (!vendorId) {
+    window.showToast?.("No vendor found for this asset GRNI item.", "warning");
+    return;
+  }
+
+  let vendors = Array.isArray(window.VENDORS_CACHE) && window.VENDORS_CACHE.length
+    ? window.VENDORS_CACHE
+    : Array.isArray(window.VENDORS) && window.VENDORS.length
+      ? window.VENDORS
+      : [];
+
+  if (!vendors.length) {
+    const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+    const res = await apiFetch(ENDPOINTS.vendors(cid), { method: "GET" });
+    vendors = Array.isArray(res) ? res : (res?.items || res?.data || []);
+    window.VENDORS_CACHE = vendors;
+    window.VENDORS = vendors;
+  }
+
+  const vendorObj = vendors.find(v => Number(v.id) === vendorId);
+
+  if (!vendorObj) {
+    window.showToast?.("Vendor not found for this asset GRNI item.", "warning");
+    return;
+  }
+
+  const vendIdEl = document.getElementById("billVendorId");
+  if (vendIdEl) vendIdEl.value = String(vendorObj.id);
+
+  const vendInput = document.getElementById("billVendor");
+  if (vendInput) vendInput.value = vendorObj.name || "";
+
+  const opened = await window.maybePromptForVendorLinkedAssetBill?.(vendorObj);
+
+  if (!opened) {
+    window.showToast?.("No pending asset bill found for this vendor.", "info");
+  }
+};
 
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-workqueue-type]");
@@ -6018,28 +6135,49 @@ document.addEventListener("click", async (e) => {
     target = {};
   }
 
+  const action = String(target.action || "").trim();
   const screen = target.screen || btn.dataset.workqueueScreen || "ledger";
+
+  window.FS_WORKQUEUE_TARGET = target;
+
+  if (action === "capture_grni_bill") {
+    showScreen?.("accounts-payable");
+
+    setTimeout(() => {
+      window.openGrniPendingBillingFromWorkQueue?.(target);
+    }, 300);
+
+    return;
+  }
+
+  if (action === "link_asset_grni") {
+    showScreen?.("assets");
+
+    setTimeout(() => {
+      window.openAssetGrniLinkingFromWorkQueue?.(target);
+    }, 300);
+
+    return;
+  }
 
   if (screen === "loans") {
     showScreen?.("loans");
-    window.FS_WORKQUEUE_TARGET = target;
     return;
   }
 
   if (screen === "revenue") {
     showScreen?.("revenue");
-    window.FS_WORKQUEUE_TARGET = target;
     return;
   }
 
   if (screen === "leases") {
     showScreen?.("leases");
-    window.FS_WORKQUEUE_TARGET = target;
     return;
   }
 
   showScreen?.(screen);
 });
+
   /* ==============================
    * Sidebar Renderer (recursive)
    * ============================== */
@@ -60553,6 +60691,99 @@ function bindVendorDraftAutosave({ cid, getCurrentId, readForm, writeForm }) {
   return { restoreDraft, clearDraft };
 }
 
+window.showVendorInventoryGrniModal = async function (vendorObj, rows = []) {
+  const old = document.getElementById("vendorInventoryGrniModal");
+  if (old) old.remove();
+
+  const msg = document.createElement("div");
+  msg.id = "vendorInventoryGrniModal";
+  msg.className = "fixed inset-0 z-[90] flex items-center justify-center bg-black/40";
+
+  msg.innerHTML = `
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden">
+      <div class="px-4 py-3 border-b flex justify-between items-center">
+        <div>
+          <div class="font-semibold text-slate-800">Pending GRNI for ${esc(vendorObj.name || "vendor")}</div>
+          <div class="text-xs text-slate-500">Select a receipt to auto-capture the AP bill.</div>
+        </div>
+        <button class="text-slate-500 text-xl" data-close>×</button>
+      </div>
+
+      <div class="p-4 overflow-auto max-h-[65vh]">
+        <table class="w-full text-sm border">
+          <thead class="bg-slate-50 text-slate-500">
+            <tr>
+              <th class="p-2 text-left">GRN</th>
+              <th class="p-2 text-left">Date</th>
+              <th class="p-2 text-left">Lines</th>
+              <th class="p-2 text-right">Amount</th>
+              <th class="p-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => {
+              const lines = Array.isArray(r.lines) ? r.lines : [];
+              const lineText = lines.length
+                ? lines.slice(0, 3).map(l => `${l.item_name || l.sku || "Item"} × ${Number(l.qty || 0)}`).join(", ")
+                : "—";
+
+              return `
+                <tr class="border-t">
+                  <td class="p-2">${esc(r.grn_no || r.ref || `GRN-${r.tx_id || r.receipt_tx_id}`)}</td>
+                  <td class="p-2">${esc(String(r.tx_date || "").slice(0, 10))}</td>
+                  <td class="p-2">${esc(lineText)}</td>
+                  <td class="p-2 text-right">${Number(r.open_amount || r.total_amount || 0).toFixed(2)}</td>
+                  <td class="p-2 text-right">
+                    <button class="btn text-xs" data-capture="${i}">Capture Bill</button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(msg);
+
+  msg.querySelector("[data-close]")?.addEventListener("click", () => msg.remove());
+
+  msg.querySelectorAll("[data-capture]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const row = rows[Number(btn.dataset.capture)];
+
+      await window.applyGrniToBillForm?.({
+        ...row,
+        receipt_tx_id: row.receipt_tx_id || row.tx_id || row.id,
+        open_amount: row.open_amount || row.total_amount,
+        vendor_id: vendorObj.id,
+      });
+
+      msg.remove();
+    });
+  });
+
+  return true;
+};
+
+async function maybePromptForVendorInventoryGrniBill(vendorObj) {
+  if (!vendorObj?.id) return false;
+
+  const rows = (vendorObj.linked_inventory_grni || []).filter(r => {
+    const billId = r.bill_id || null;
+    const status = String(r.grni_status || "unbilled").toLowerCase();
+
+    return !billId && ["unbilled", "partial", ""].includes(status);
+  });
+
+  if (!rows.length) return false;
+
+  return await window.showVendorInventoryGrniModal?.(vendorObj, rows);
+}
+
+window.maybePromptForVendorInventoryGrniBill = maybePromptForVendorInventoryGrniBill;
+
 function bindBillVendorGuards() {
   const vendEl = document.getElementById("billVendor");
   if (!vendEl || vendEl.dataset.grniBound === "1") return;
@@ -60590,7 +60821,11 @@ function bindBillVendorGuards() {
     // normal vendor change: check for linked asset acquisitions
     const vendorObj = window.getSelectedVendorObjectFromBillForm?.();
     if (vendorObj) {
-      await window.maybePromptForVendorLinkedAssetBill?.(vendorObj);
+      const didGrni = await window.maybePromptForVendorInventoryGrniBill?.(vendorObj);
+
+      if (!didGrni) {
+        await window.maybePromptForVendorLinkedAssetBill?.(vendorObj);
+      }
     }
   });
 }
@@ -62396,7 +62631,7 @@ async function applyGrniToBillForm(grnRow) {
       Number(grnRow?.vendor_id || grnRow?.receipt_vendor_id || 0) ||
       null;
 
-    const txId = Number(grnRow?.receipt_tx_id || 0);
+    const txId = Number(grnRow?.receipt_tx_id || grnRow?.tx_id || grnRow?.id || 0);
 
     console.log("[GRNI] ids", { cid, vendorId, txId, rowReceiptTxId: grnRow?.receipt_tx_id });
 

@@ -35850,7 +35850,89 @@ class DatabaseService:
                     ) lb ON TRUE
                     WHERE ac.company_id = v.company_id
                     AND ac.supplier_id = v.id
-                ), '[]'::json) AS linked_asset_acquisitions
+                ), '[]'::json) AS linked_asset_acquisitions,
+
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'tx_id', tx.id,
+                            'grn_no', tx.ref,
+                            'tx_date', tx.tx_date,
+                            'status', tx.status,
+                            'grni_status', tx.grni_status,
+                            'supplier_invoice_no', tx.supplier_invoice_no,
+                            'po_id', tx.po_id,
+                            'posted_journal_id', tx.posted_journal_id,
+
+                            'bill_id', lb.bill_id,
+                            'bill_number', lb.bill_number,
+                            'bill_status', lb.bill_status,
+                            'bill_posted_journal_id', lb.bill_posted_journal_id,
+                            'bill_total_amount', lb.bill_total_amount,
+                            'bill_created_at', lb.bill_created_at,
+
+                            'total_amount', COALESCE(tot.total_amount, 0),
+
+                            'lines', COALESCE(lines.lines_json, '[]'::json)
+                        )
+                        ORDER BY tx.tx_date DESC, tx.id DESC
+                    )
+                    FROM {schema}.inventory_tx tx
+
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            SUM(COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0)) AS total_amount
+                        FROM {schema}.inventory_tx_lines l
+                        WHERE l.company_id = tx.company_id
+                        AND l.tx_id = tx.id
+                    ) tot ON TRUE
+
+                    LEFT JOIN LATERAL (
+                        SELECT json_agg(
+                            json_build_object(
+                                'line_id', l.id,
+                                'line_no', l.line_no,
+                                'item_id', l.item_id,
+                                'sku', i.sku,
+                                'item_name', i.name,
+                                'qty', l.qty,
+                                'unit_cost', l.unit_cost,
+                                'line_amount', COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0),
+                                'memo', l.memo,
+                                'po_line_id', l.po_line_id
+                            )
+                            ORDER BY l.line_no ASC
+                        ) AS lines_json
+                        FROM {schema}.inventory_tx_lines l
+                        LEFT JOIN {schema}.inventory_items i
+                            ON i.company_id = l.company_id
+                        AND i.id = l.item_id
+                        WHERE l.company_id = tx.company_id
+                        AND l.tx_id = tx.id
+                    ) lines ON TRUE
+
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            b.id AS bill_id,
+                            b.number AS bill_number,
+                            b.status AS bill_status,
+                            b.posted_journal_id AS bill_posted_journal_id,
+                            b.total_amount AS bill_total_amount,
+                            b.created_at AS bill_created_at
+                        FROM {schema}.bill_grni_links gl
+                        JOIN {schema}.bills b
+                            ON b.company_id = gl.company_id
+                        AND b.id = gl.bill_id
+                        WHERE gl.company_id = tx.company_id
+                        AND gl.receipt_tx_id = tx.id
+                        ORDER BY b.created_at DESC, b.id DESC
+                        LIMIT 1
+                    ) lb ON TRUE
+
+                    WHERE tx.company_id = v.company_id
+                    AND tx.vendor_id = v.id
+                    AND lower(tx.tx_type) = 'receipt'
+                ), '[]'::json) AS linked_inventory_grni
 
             FROM {schema}.vendors v
             {where_sql}
@@ -35925,7 +36007,89 @@ class DatabaseService:
                     ) lb ON TRUE
                     WHERE ac.company_id = v.company_id
                     AND ac.supplier_id = v.id
-                ), '[]'::json) AS linked_asset_acquisitions
+                ), '[]'::json) AS linked_asset_acquisitions,
+
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'tx_id', tx.id,
+                            'grn_no', tx.ref,
+                            'tx_date', tx.tx_date,
+                            'status', tx.status,
+                            'grni_status', tx.grni_status,
+                            'supplier_invoice_no', tx.supplier_invoice_no,
+                            'po_id', tx.po_id,
+                            'posted_journal_id', tx.posted_journal_id,
+
+                            'bill_id', lb.bill_id,
+                            'bill_number', lb.bill_number,
+                            'bill_status', lb.bill_status,
+                            'bill_posted_journal_id', lb.bill_posted_journal_id,
+                            'bill_total_amount', lb.bill_total_amount,
+                            'bill_created_at', lb.bill_created_at,
+
+                            'total_amount', COALESCE(tot.total_amount, 0),
+
+                            'lines', COALESCE(lines.lines_json, '[]'::json)
+                        )
+                        ORDER BY tx.tx_date DESC, tx.id DESC
+                    )
+                    FROM {schema}.inventory_tx tx
+
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            SUM(COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0)) AS total_amount
+                        FROM {schema}.inventory_tx_lines l
+                        WHERE l.company_id = tx.company_id
+                        AND l.tx_id = tx.id
+                    ) tot ON TRUE
+
+                    LEFT JOIN LATERAL (
+                        SELECT json_agg(
+                            json_build_object(
+                                'line_id', l.id,
+                                'line_no', l.line_no,
+                                'item_id', l.item_id,
+                                'sku', i.sku,
+                                'item_name', i.name,
+                                'qty', l.qty,
+                                'unit_cost', l.unit_cost,
+                                'line_amount', COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0),
+                                'memo', l.memo,
+                                'po_line_id', l.po_line_id
+                            )
+                            ORDER BY l.line_no ASC
+                        ) AS lines_json
+                        FROM {schema}.inventory_tx_lines l
+                        LEFT JOIN {schema}.inventory_items i
+                            ON i.company_id = l.company_id
+                        AND i.id = l.item_id
+                        WHERE l.company_id = tx.company_id
+                        AND l.tx_id = tx.id
+                    ) lines ON TRUE
+
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            b.id AS bill_id,
+                            b.number AS bill_number,
+                            b.status AS bill_status,
+                            b.posted_journal_id AS bill_posted_journal_id,
+                            b.total_amount AS bill_total_amount,
+                            b.created_at AS bill_created_at
+                        FROM {schema}.bill_grni_links gl
+                        JOIN {schema}.bills b
+                            ON b.company_id = gl.company_id
+                        AND b.id = gl.bill_id
+                        WHERE gl.company_id = tx.company_id
+                        AND gl.receipt_tx_id = tx.id
+                        ORDER BY b.created_at DESC, b.id DESC
+                        LIMIT 1
+                    ) lb ON TRUE
+
+                    WHERE tx.company_id = v.company_id
+                    AND tx.vendor_id = v.id
+                    AND lower(tx.tx_type) = 'receipt'
+                ), '[]'::json) AS linked_inventory_grni
 
             FROM {schema}.vendors v
             WHERE v.company_id = %s
@@ -64763,6 +64927,167 @@ class DatabaseService:
                     },
                 })
 
+            # 5) GRNI receipts pending supplier billing
+            cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        tx.id AS receipt_tx_id,
+                        tx.tx_date,
+                        tx.ref,
+                        COALESCE(
+                            SUM(
+                                COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0)
+                            ),
+                            0
+                        ) AS amount
+                    FROM {schema}.inventory_tx tx
+                    LEFT JOIN {schema}.inventory_tx_lines l
+                        ON l.company_id = tx.company_id
+                    AND l.tx_id = tx.id
+
+                    WHERE tx.company_id = %s
+                    AND lower(COALESCE(tx.tx_type, '')) = 'receipt'
+                    AND COALESCE(tx.grni_status, 'unbilled')
+                        IN ('unbilled', 'partial')
+
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM {schema}.bill_grni_links gl
+                        WHERE gl.company_id = tx.company_id
+                        AND gl.receipt_tx_id = tx.id
+                    )
+
+                    GROUP BY
+                        tx.id,
+                        tx.tx_date,
+                        tx.ref
+
+                    ORDER BY
+                        tx.tx_date ASC,
+                        tx.id ASC
+                )
+
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(amount), 0) AS amount,
+                    MIN(tx_date) AS oldest_receipt,
+
+                    (
+                        ARRAY_AGG(
+                            receipt_tx_id
+                            ORDER BY tx_date ASC, receipt_tx_id ASC
+                        )
+                    )[1] AS receipt_tx_id
+
+                FROM due
+            """, (company_id,))
+
+            row = cur.fetchone() or {}
+
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "grni_pending_billing",
+                    "title": "GRNI pending billing",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+
+                    "hint": (
+                        f"Oldest receipt: {row.get('oldest_receipt')}"
+                    ),
+
+                    "screen": "accounts-payable",
+                    "severity": "warning",
+
+                    "target": {
+                        "screen": "accounts-payable",
+                        "tab": "bills",
+                        "receipt_tx_id": row.get("receipt_tx_id"),
+                        "action": "capture_grni_bill",
+                    },
+                })
+            # 6) Asset GRNI receipts pending asset capitalization/linking
+            cur.execute(f"""
+                WITH due AS (
+                    SELECT
+                        tx.id AS receipt_tx_id,
+                        tx.tx_date,
+                        tx.ref,
+                        tx.vendor_id,
+                        COALESCE(
+                            SUM(
+                                COALESCE(l.qty, 0) * COALESCE(l.unit_cost, 0)
+                            ),
+                            0
+                        ) AS amount
+                    FROM {schema}.inventory_tx tx
+                    LEFT JOIN {schema}.inventory_tx_lines l
+                        ON l.company_id = tx.company_id
+                    AND l.tx_id = tx.id
+
+                    WHERE tx.company_id = %s
+                    AND lower(COALESCE(tx.tx_type, '')) IN ('receipt', 'receive')
+                    AND COALESCE(tx.grni_status, 'unbilled')
+                        IN ('unbilled', 'partial')
+
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM {schema}.asset_grni_links agl
+                        WHERE agl.company_id = tx.company_id
+                        AND agl.receipt_tx_id = tx.id
+                    )
+
+                    GROUP BY
+                        tx.id,
+                        tx.tx_date,
+                        tx.ref,
+                        tx.vendor_id
+
+                    ORDER BY
+                        tx.tx_date ASC,
+                        tx.id ASC
+                )
+
+                SELECT
+                    COUNT(*) AS count,
+                    COALESCE(SUM(amount), 0) AS amount,
+                    MIN(tx_date) AS oldest_receipt,
+
+                    (
+                        ARRAY_AGG(
+                            receipt_tx_id
+                            ORDER BY tx_date ASC, receipt_tx_id ASC
+                        )
+                    )[1] AS receipt_tx_id,
+
+                    (
+                        ARRAY_AGG(
+                            vendor_id
+                            ORDER BY tx_date ASC, receipt_tx_id ASC
+                        )
+                    )[1] AS vendor_id
+
+                FROM due
+            """, (company_id,))
+
+            row = cur.fetchone() or {}
+
+            if int(row.get("count") or 0) > 0:
+                items.append({
+                    "type": "asset_grni_pending_linking",
+                    "title": "Asset GRNI pending linking",
+                    "count": int(row.get("count") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "hint": f"Oldest asset receipt: {row.get('oldest_receipt')}",
+                    "screen": "assets",
+                    "severity": "warning",
+                    "target": {
+                        "screen": "assets",
+                        "tab": "acquisitions",
+                        "receipt_tx_id": row.get("receipt_tx_id"),
+                        "vendor_id": row.get("vendor_id"),
+                        "action": "link_asset_grni",
+                    },
+                })                
         return {
             "items": items[:limit],
             "count": len(items),
