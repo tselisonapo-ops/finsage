@@ -64969,7 +64969,7 @@ class DatabaseService:
 
                     WHERE tx.company_id = %s
                     AND lower(COALESCE(tx.tx_type, '')) = 'receipt'
-                    AND COALESCE(tx.grni_status, 'unbilled') IN ('unbilled', 'partial')
+                    AND COALESCE(tx.grni_status, 'unbilled')
                         IN ('unbilled', 'partial')
 
                     AND NOT EXISTS (
@@ -65017,11 +65017,11 @@ class DatabaseService:
                         f"Oldest receipt: {row.get('oldest_receipt')}"
                     ),
 
-                    "screen": "accounts-payable",
+                    "screen": "ap-bills",
                     "severity": "warning",
 
                     "target": {
-                        "screen": "accounts-payable",
+                        "screen": "ap-bills",
                         "tab": "bills",
                         "receipt_tx_id": row.get("receipt_tx_id"),
                         "action": "capture_grni_bill",
@@ -65055,13 +65055,10 @@ class DatabaseService:
                         FROM {schema}.bills b
                         WHERE b.company_id = aa.company_id
                         AND b.vendor_id = aa.supplier_id
-                        AND (
-                            lower(COALESCE(b.reference, '')) = lower(COALESCE(aa.grn_no, ''))
-                            OR lower(COALESCE(b.reference, '')) = lower(COALESCE(aa.vendor_invoice_no, ''))
-                            OR lower(COALESCE(b.reference, '')) = lower(COALESCE(aa.reference, ''))
-                            OR lower(COALESCE(b.vendor_invoice_no, '')) = lower(COALESCE(aa.grn_no, ''))
-                            OR lower(COALESCE(b.vendor_invoice_no, '')) = lower(COALESCE(aa.vendor_invoice_no, ''))
-                            OR lower(COALESCE(b.vendor_invoice_no, '')) = lower(COALESCE(aa.reference, ''))
+                        AND lower(COALESCE(b.number, '')) IN (
+                            lower(COALESCE(aa.grn_no, '')),
+                            lower(COALESCE(aa.vendor_invoice_no, '')),
+                            lower(COALESCE(aa.reference, ''))
                         )
                     )
 
