@@ -66040,6 +66040,14 @@ class DatabaseService:
         self.validate_project_task(company_id, project_id=project_id, task_id=task_id)
         self.validate_project_cost_code(company_id, cost_code_id)
 
+        print(
+            "[PROJECT BUDGET CREATE]",
+            {
+                "line_code": pick("line_code", "lineCode"),
+                "cost_prefix": pick("cost_prefix", "costPrefix"),
+                "cost_code": pick("cost_code", "costCode"),
+            }
+        )
         row = self.fetch_one(
             f"""
             INSERT INTO {schema}.project_budget_lines (
@@ -66277,6 +66285,14 @@ class DatabaseService:
         sets.append("updated_at = NOW()")
         params.extend([int(company_id), int(project_id), int(line_id)])
 
+        print(
+            "[PROJECT BUDGET UPDATE]",
+            {
+                "line_code": pick("line_code", "lineCode"),
+                "cost_prefix": pick("cost_prefix", "costPrefix"),
+                "cost_code": pick("cost_code", "costCode"),
+            }
+        )
         row = self.fetch_one(
             f"""
             UPDATE {schema}.project_budget_lines
@@ -66800,6 +66816,7 @@ class DatabaseService:
 
         params.extend([int(limit), int(offset)])
 
+        print("[PROJECT BUDGET LINES RESULT]", rows)
         return self.fetch_all(
             f"""
             SELECT

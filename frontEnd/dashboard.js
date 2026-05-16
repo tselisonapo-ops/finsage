@@ -68642,7 +68642,7 @@ async function submitProjectBudgetLine() {
   }
 
   setElText("projectBudgetMsg", isEdit ? "Updating budget line..." : "Saving budget line...");
-
+  console.log("[PROJECT BUDGET PAYLOAD]", payload);
   try {
     await apiFetch(
       isEdit
