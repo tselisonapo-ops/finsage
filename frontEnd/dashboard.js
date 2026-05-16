@@ -68441,6 +68441,7 @@ async function submitProjectTask() {
     );
 
     closeProjectTaskModal();
+    await loadProjects?.();
     await loadProjectDetail(projectId);
   } catch (err) {
     setElText(
@@ -68655,6 +68656,7 @@ async function submitProjectBudgetLine() {
     );
 
     closeProjectBudgetModal();
+    await loadProjects?.();
     await loadProjectDetail(projectId);
   } catch (err) {
     setElText(
