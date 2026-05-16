@@ -68317,6 +68317,49 @@ async function submitProjectTask() {
   }
 }
 
+function buildProjectBudgetCodes(projectId) {
+  const lineNo = Number(document.getElementById("projectBudgetLineNo")?.value || 1);
+  const prefix = document.getElementById("projectBudgetPrefix")?.value || "";
+
+  const lineCodeEl = document.getElementById("projectBudgetLineCode");
+  const costCodeEl = document.getElementById("projectBudgetCostCode");
+
+  if (lineCodeEl) {
+    lineCodeEl.value = `PBL-${String(projectId).padStart(3, "0")}-${String(lineNo).padStart(2, "0")}`;
+  }
+
+  if (prefix && costCodeEl && !costCodeEl.dataset.manual) {
+    costCodeEl.value = `${prefix}-${String(lineNo).padStart(3, "0")}`;
+  }
+}
+
+function populateProjectBudgetTaskDropdown(projectId) {
+  const selectedProject =
+    PROJECTS_CACHE?.find?.(p => Number(p.id) === Number(projectId)) ||
+    ACTIVE_PROJECT ||
+    null;
+
+  const tasks = selectedProject?.tasks || selectedProject?.project_tasks || [];
+
+  const sel = document.getElementById("projectBudgetTaskSelect");
+  const hidden = document.getElementById("projectBudgetTaskId");
+
+  if (!sel) return;
+
+  sel.innerHTML = `<option value="">Select task...</option>`;
+
+  tasks.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = String(t.id);
+    opt.textContent = t.task_name || t.name || t.task_code || `Task #${t.id}`;
+    sel.appendChild(opt);
+  });
+
+  sel.onchange = () => {
+    if (hidden) hidden.value = sel.value || "";
+  };
+}
+
 function bindProjectBudgetModalOnce() {
   const m = document.getElementById("projectBudgetModal");
   if (!m || m.dataset.bound === "1") return;
@@ -68326,7 +68369,10 @@ function bindProjectBudgetModalOnce() {
   document.getElementById("projectBudgetCloseBtn")?.addEventListener("click", closeProjectBudgetModal);
   document.getElementById("projectBudgetCancelBtn")?.addEventListener("click", closeProjectBudgetModal);
   document.getElementById("projectBudgetSaveBtn")?.addEventListener("click", submitProjectBudgetLine);
-
+  document.getElementById("projectBudgetTaskSelect")?.addEventListener("change", e => {
+    const hidden = document.getElementById("projectBudgetTaskId");
+    if (hidden) hidden.value = e.target.value || "";
+  });
   ["projectBudgetQty", "projectBudgetUnitCost"].forEach(id => {
     document.getElementById(id)?.addEventListener("input", () => {
       const qty = Number(document.getElementById("projectBudgetQty")?.value || 0);
@@ -68335,6 +68381,21 @@ function bindProjectBudgetModalOnce() {
       if (amt) amt.value = (qty * cost).toFixed(2);
     });
   });
+
+  document.getElementById("projectBudgetLineNo")?.addEventListener("input", () => {
+    buildProjectBudgetCodes(ACTIVE_PROJECT_ID);
+  });
+
+  document.getElementById("projectBudgetPrefix")?.addEventListener("change", () => {
+    const costCodeEl = document.getElementById("projectBudgetCostCode");
+    if (costCodeEl) costCodeEl.dataset.manual = "";
+    buildProjectBudgetCodes(ACTIVE_PROJECT_ID);
+  });
+
+  document.getElementById("projectBudgetCostCode")?.addEventListener("input", e => {
+    e.target.dataset.manual = "1";
+    e.target.value = e.target.value.toUpperCase();
+  });
 }
 
 async function openProjectBudgetModal(projectId) {
@@ -68342,7 +68403,8 @@ async function openProjectBudgetModal(projectId) {
   ACTIVE_PROJECT_ID = Number(projectId);
 
   [
-    "projectBudgetCostCodeId",
+    "projectBudgetLineCode",
+    "projectBudgetCostCode",
     "projectBudgetDescription",
     "projectBudgetTaskId",
     "projectBudgetQty",
@@ -68353,11 +68415,29 @@ async function openProjectBudgetModal(projectId) {
     if (el) el.value = "";
   });
 
-  document.getElementById("projectBudgetProjectId").value = String(projectId);
-  document.getElementById("projectBudgetLineNo").value = "1";
+  const costCodeEl = document.getElementById("projectBudgetCostCode");
+  if (costCodeEl) costCodeEl.dataset.manual = "";
 
-  await populateProjectTaskSelect("projectBudgetTaskId", projectId, "Select task...");
-  await populateProjectCostCodeSelect("projectBudgetCostCodeId", "Select cost code...");
+  document.getElementById("projectBudgetProjectId").value = String(projectId);
+
+  const selectedProject =
+    PROJECTS_CACHE?.find?.(p => Number(p.id) === Number(projectId)) ||
+    ACTIVE_PROJECT ||
+    null;
+
+  const budgetLines = selectedProject?.budget_lines || selectedProject?.budgetLines || [];
+
+  const nextLineNo = budgetLines.length
+    ? Math.max(...budgetLines.map(l => Number(l.line_no || 0))) + 1
+    : 1;
+
+  document.getElementById("projectBudgetLineNo").value = String(nextLineNo);
+  document.getElementById("projectBudgetPrefix").value = "";
+
+  document.getElementById("projectBudgetTaskId").value = "";
+  populateProjectBudgetTaskDropdown(projectId);
+
+  buildProjectBudgetCodes(projectId);
 
   setElText("projectBudgetMsg", "");
   document.getElementById("projectBudgetModal")?.classList.remove("hidden");
@@ -68374,9 +68454,11 @@ async function submitProjectBudgetLine() {
 
   const payload = {
     line_no: Number(document.getElementById("projectBudgetLineNo")?.value || 1),
+    line_code: document.getElementById("projectBudgetLineCode")?.value?.trim() || null,
+    cost_prefix: document.getElementById("projectBudgetPrefix")?.value?.trim() || null,
+    cost_code: document.getElementById("projectBudgetCostCode")?.value?.trim() || null,
     description: document.getElementById("projectBudgetDescription")?.value?.trim(),
     task_id: Number(document.getElementById("projectBudgetTaskId")?.value || 0) || null,
-    cost_code_id: Number(document.getElementById("projectBudgetCostCodeId")?.value || 0) || null,
     budget_qty: Number(document.getElementById("projectBudgetQty")?.value || 0),
     unit_cost: Number(document.getElementById("projectBudgetUnitCost")?.value || 0),
     budget_amount: Number(document.getElementById("projectBudgetAmount")?.value || 0),
