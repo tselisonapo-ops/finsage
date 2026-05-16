@@ -17859,6 +17859,13 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
 
+        ALTER TABLE {schema}.project_budget_lines
+        ADD COLUMN IF NOT EXISTS line_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS cost_prefix TEXT NULL,
+        ADD COLUMN IF NOT EXISTS cost_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_project_budget_lines_uniq
         ON {schema}.project_budget_lines(project_id, line_no);
 
@@ -66030,33 +66037,29 @@ class DatabaseService:
         task_id = pick("task_id", "taskId")
         cost_code_id = pick("cost_code_id", "costCodeId")
 
-        self.validate_project_task(
-            company_id,
-            project_id=project_id,
-            task_id=task_id,
-        )
-
-        self.validate_project_cost_code(
-            company_id,
-            cost_code_id,
-        )
+        self.validate_project_task(company_id, project_id=project_id, task_id=task_id)
+        self.validate_project_cost_code(company_id, cost_code_id)
 
         row = self.fetch_one(
             f"""
             INSERT INTO {schema}.project_budget_lines (
                 company_id, project_id, task_id, cost_code_id,
-                line_no, description, budget_qty, unit_cost,
+                line_no, line_code, cost_prefix, cost_code,
+                description, budget_qty, unit_cost,
                 budget_amount, source, source_id
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
             (
                 company_id,
-                int(pick("project_id", "projectId")),
-                pick("task_id", "taskId"),
-                pick("cost_code_id", "costCodeId"),
+                project_id,
+                task_id,
+                cost_code_id,
                 int(pick("line_no", "lineNo", default=1)),
+                pick("line_code", "lineCode"),
+                pick("cost_prefix", "costPrefix"),
+                pick("cost_code", "costCode"),
                 pick("description"),
                 qty,
                 unit_cost,
@@ -66222,6 +66225,9 @@ class DatabaseService:
         allowed = {
             "task_id": ("task_id", "taskId"),
             "cost_code_id": ("cost_code_id", "costCodeId"),
+            "line_code": ("line_code", "lineCode"),
+            "cost_prefix": ("cost_prefix", "costPrefix"),
+            "cost_code": ("cost_code", "costCode"),
             "line_no": ("line_no", "lineNo"),
             "description": ("description",),
             "budget_qty": ("budget_qty", "budgetQty", "qty"),
