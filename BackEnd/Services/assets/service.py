@@ -839,7 +839,11 @@ def create_asset(cur, company_id, payload):
       INSERT INTO {schema}.assets(
         company_id,
         asset_code, asset_name, asset_class, asset_class_group, category, location, serial_no, notes,
-
+        source_company_id,
+        engagement_company_id,
+        engagement_id,
+        created_by_user_id,
+        updated_by_user_id,
         acquisition_date, available_for_use_date, cost, residual_value,
         depreciation_method, useful_life_months,
         rb_rate_percent,
@@ -862,7 +866,7 @@ def create_asset(cur, company_id, payload):
         VALUES (
             %s,
             %s,%s,%s,%s,%s,%s,%s,%s,
-
+            %s, %s, %s, %s, %s
             %s,%s,%s,%s,
             %s,%s,
             %s,
@@ -885,7 +889,11 @@ def create_asset(cur, company_id, payload):
       company_id,
       payload["asset_code"], asset_name, asset_class, asset_class_group,
       category, payload.get("location"), payload.get("serial_no"), payload.get("notes"),
-
+        payload.get("source_company_id"),
+        payload.get("engagement_company_id"),
+        payload.get("engagement_id"),
+        payload.get("created_by_user_id"),
+        payload.get("updated_by_user_id"),
       payload["acquisition_date"], payload.get("available_for_use_date"),
       cost, residual_value,
       payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
@@ -1177,6 +1185,11 @@ def create_acquisition(cur, company_id, asset_id, payload):
     cur.execute(_q(schema, """
       INSERT INTO {schema}.asset_acquisitions(
         company_id, asset_id,
+        source_company_id,
+        engagement_company_id,
+        engagement_id,
+        created_by_user_id,
+        updated_by_user_id,
         posting_date,
         acquisition_date, amount,
 
@@ -1190,9 +1203,21 @@ def create_acquisition(cur, company_id, asset_id, payload):
         grn_no,
 
         reference, notes,
-        status
+        status,
+
+        source_company_id,
+        engagement_company_id,
+        engagement_id,
+        created_by_user_id,
+        updated_by_user_id
       )
-      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,'draft'))
+      VALUES (
+        %s,%s,%s,%s,%s,
+        %s,%s,%s,%s,
+        %s,%s,%s,
+        %s,%s,COALESCE(%s,'draft'),
+        %s,%s,%s,%s,%s
+      )
       RETURNING id
     """), (
       company_id, asset_id,
@@ -1207,7 +1232,11 @@ def create_acquisition(cur, company_id, asset_id, payload):
       supplier_id,
       vendor_invoice_no,
       grn_no,
-
+        payload.get("source_company_id"),
+        payload.get("engagement_company_id"),
+        payload.get("engagement_id"),
+        payload.get("created_by_user_id"),
+        payload.get("updated_by_user_id"),
       payload.get("reference"),
       payload.get("notes"),
       payload.get("status", "draft"),

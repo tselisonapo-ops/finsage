@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
-from flask import current_app
+from flask import current_app, g
 import hashlib
 
 from dateutil.relativedelta import relativedelta
@@ -8180,11 +8180,35 @@ class DatabaseService:
                 WHERE c.conname = '{schema}_eng_posting_activity_module_chk' AND n.nspname = '{schema}'
             ) THEN
                 EXECUTE format(
-                    'ALTER TABLE %I.engagement_posting_activity
-                    ADD CONSTRAINT %I
-                    CHECK (module_name IN (''journal_entries'', ''accounts_receivable'', ''accounts_payable'', ''leases'', ''ppe''))',
-                    '{schema}', '{schema}_eng_posting_activity_module_chk'
-                );
+            EXECUTE format(
+                'ALTER TABLE %I.engagement_posting_activity
+                DROP CONSTRAINT IF EXISTS %I',
+                '{schema}', '{schema}_eng_posting_activity_module_chk'
+            );
+
+            EXECUTE format(
+                'ALTER TABLE %I.engagement_posting_activity
+                ADD CONSTRAINT %I
+                CHECK (
+                    module_name IN (
+                        ''journal_entries'',
+                        ''accounts_receivable'',
+                        ''accounts_payable'',
+                        ''revenue'',
+                        ''inventory'',
+                        ''loans'',
+                        ''leases'',
+                        ''ppe'',
+                        ''fixed_assets'',
+                        ''vat'',
+                        ''cashbook'',
+                        ''banking'',
+                        ''payments'',
+                        ''receipts''
+                    )
+                )',
+                '{schema}', '{schema}_eng_posting_activity_module_chk'
+            );
             END IF;
 
             IF NOT EXISTS (
@@ -10546,6 +10570,13 @@ class DatabaseService:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.leases
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         -- ==================================================
         -- Safe additive evolution (leases)
         -- ==================================================
@@ -12634,6 +12665,13 @@ class DatabaseService:
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS opening_posted_journal_id INT NULL;
 
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         -- ==================================================
         -- ASSETS: Opening balances (migration / bring-forward)
         -- ==================================================
@@ -12935,6 +12973,13 @@ class DatabaseService:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.asset_acquisitions
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         DO $$
         BEGIN
         IF NOT EXISTS (
@@ -13105,6 +13150,13 @@ class DatabaseService:
             created_by INT NULL,
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.asset_depreciation
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         -- ==================================================
         -- ASSET DEPRECIATION: Basis snapshot fields (safe-add)
@@ -13466,6 +13518,13 @@ class DatabaseService:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.asset_revaluations
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         DO $tr_asset_depreciation_company_consistency$
         BEGIN
         IF NOT EXISTS (
@@ -13635,6 +13694,13 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.asset_disposals
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.asset_disposals
         ADD COLUMN IF NOT EXISTS bank_account_code TEXT NULL;
 
         ALTER TABLE {schema}.assets
@@ -13753,6 +13819,12 @@ class DatabaseService:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.asset_impairments
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         -- ==================================================
         -- IAS 36: Constraints / Indexes / FK
@@ -14763,6 +14835,13 @@ class DatabaseService:
             created_by bigint NULL,
             updated_at timestamptz NULL
         );
+
+        ALTER TABLE {schema}.asset_subsequent_measurements
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         DO $$
         BEGIN
@@ -16340,6 +16419,12 @@ class DatabaseService:
         ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS created_by INT;
         ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
         ALTER TABLE {schema}.loans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+        ALTER TABLE {schema}.loans
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         UPDATE {schema}.loans
         SET company_id = {company_id}
@@ -16674,6 +16759,12 @@ class DatabaseService:
         ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS meta_json JSONB;
         ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS payment_type TEXT;
         ALTER TABLE {schema}.loan_payments ADD COLUMN IF NOT EXISTS target_schedule_id INT;
+        ALTER TABLE {schema}.loan_payments
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         UPDATE {schema}.loan_payments
         SET company_id = {company_id}
@@ -17145,6 +17236,13 @@ class DatabaseService:
         ALTER TABLE {schema}.inventory_items ALTER COLUMN company_id SET DEFAULT {company_id};
         ALTER TABLE {schema}.inventory_items ALTER COLUMN company_id SET NOT NULL;
 
+        ALTER TABLE {schema}.inventory_items
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         -- Helpful indexes
         CREATE INDEX IF NOT EXISTS {schema}_inventory_items_company_active_idx
         ON {schema}.inventory_items(company_id, is_active);
@@ -17245,6 +17343,12 @@ class DatabaseService:
 
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS created_by INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_date_idx
         ON {schema}.inventory_tx(company_id, tx_date);
@@ -19561,6 +19665,13 @@ class DatabaseService:
         ALTER TABLE {schema}.revenue_contracts
         ADD COLUMN IF NOT EXISTS project_id INT NULL;
 
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -19724,6 +19835,13 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_contract_versions_uq
         ON {schema}.revenue_contract_versions(contract_id, version_no);
 
@@ -19849,7 +19967,12 @@ class DatabaseService:
 
         ALTER TABLE {schema}.revenue_obligations
         ADD COLUMN IF NOT EXISTS satisfaction_confirmed_by_user_id BIGINT NULL;
-
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_obligations_code_uq
         ON {schema}.revenue_obligations(contract_id, obligation_code);
 
@@ -19896,7 +20019,12 @@ class DatabaseService:
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
         CREATE INDEX IF NOT EXISTS {schema}_revenue_billing_events_contract_date_idx
         ON {schema}.revenue_billing_events(contract_id, event_date DESC);
 
@@ -19915,6 +20043,13 @@ class DatabaseService:
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_revenue_cash_events_contract_date_idx
         ON {schema}.revenue_cash_events(contract_id, event_date DESC);
@@ -19939,6 +20074,13 @@ class DatabaseService:
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_revenue_progress_updates_uq
         ON {schema}.revenue_progress_updates(obligation_id, period_end, update_type);
@@ -19972,6 +20114,13 @@ class DatabaseService:
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.revenue_contracts
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_revenue_recognition_runs_period_idx
         ON {schema}.revenue_recognition_runs(company_id, period_end DESC, status);
@@ -23203,7 +23352,7 @@ class DatabaseService:
                     company_id=int(engagement_company_id),
                     engagement_id=int(engagement_id),
                     posting_date=je_date,
-                    module_name="journal_entries",
+                    module_name=entry.get("module_name") or "journal_entries",
                     event_type="posted",
                     reference_no=ref,
                     description=desc or f"Journal {ref or journal_id}",
@@ -24491,6 +24640,13 @@ class DatabaseService:
         ALTER TABLE {schema}.vat_filings
         ALTER COLUMN updated_at SET DEFAULT NOW();
 
+        ALTER TABLE {schema}.vat_filings
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
         DO $$
         BEGIN
         IF NOT EXISTS (
@@ -24707,6 +24863,11 @@ class DatabaseService:
             submitted_by_user_id,
             source,
             source_id,
+            source_company_id,
+            engagement_company_id,
+            engagement_id,
+            created_by_user_id,
+            updated_by_user_id,
             created_at,
             updated_at
         FROM {schema}.vat_filings
@@ -24734,6 +24895,11 @@ class DatabaseService:
         prepared_by_user_id=None,
         source="api",
         source_id=None,
+        source_company_id=None,
+        engagement_company_id=None,
+        engagement_id=None,
+        created_by_user_id=None,
+        updated_by_user_id=None,
     ):
         schema = self.company_schema(company_id)
 
@@ -24753,12 +24919,17 @@ class DatabaseService:
             prepared_by_user_id,
             source,
             source_id,
+            source_company_id,
+            engagement_company_id,
+            engagement_id,
+            created_by_user_id,
+            updated_by_user_id,
             created_at,
             updated_at
         )
         VALUES (
             %s, %s, %s, %s, %s,
-            %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s,
             'prepared',
             %s,
             NOW(),
@@ -24781,6 +24952,10 @@ class DatabaseService:
             prepared_by_user_id = EXCLUDED.prepared_by_user_id,
             source = EXCLUDED.source,
             source_id = EXCLUDED.source_id,
+            source_company_id = COALESCE(EXCLUDED.source_company_id, {schema}.vat_filings.source_company_id),
+            engagement_company_id = COALESCE(EXCLUDED.engagement_company_id, {schema}.vat_filings.engagement_company_id),
+            engagement_id = COALESCE(EXCLUDED.engagement_id, {schema}.vat_filings.engagement_id),
+            updated_by_user_id = EXCLUDED.updated_by_user_id,
             updated_at = NOW()
         RETURNING id
         """
@@ -24798,6 +24973,11 @@ class DatabaseService:
             int(prepared_by_user_id) if prepared_by_user_id else None,
             source,
             source_id,
+            int(source_company_id) if source_company_id else None,
+            int(engagement_company_id) if engagement_company_id else None,
+            int(engagement_id) if engagement_id else None,
+            int(created_by_user_id) if created_by_user_id else None,
+            int(updated_by_user_id) if updated_by_user_id else None,
         )
 
         with self._conn_cursor() as (conn, cur):
@@ -26790,6 +26970,11 @@ class DatabaseService:
         SELECT
             l.id,
             l.company_id,
+            l.source_company_id,
+            l.engagement_company_id,
+            l.engagement_id,
+            l.created_by_user_id,
+            l.updated_by_user_id,
             l.lessor_id,
             le.name AS lessor_name,
             le.reg_no AS lessor_reg_no,
@@ -27190,6 +27375,11 @@ class DatabaseService:
                 "vat_amount": float(alloc_vat),
                 "source": "lease_payment",
                 "source_id": int(pay_id),
+                "engagement_company_id": (
+                    lease.get("engagement_company_id")
+                    or lease.get("source_company_id")
+                ),
+                "engagement_id": lease.get("engagement_id"),
                 "lines": lines,
             }
 
@@ -30897,6 +31087,10 @@ class DatabaseService:
         vendor_id: int | None = None,
         po_id: int | None = None,
         supplier_invoice_no: str | None = None,
+        source_company_id: int | None = None,
+        engagement_company_id: int | None = None,
+        engagement_id: int | None = None,
+        updated_by_user_id: int | None = None,
         cur=None,
     ) -> int:
         """
@@ -30967,15 +31161,24 @@ class DatabaseService:
             _cur.execute(
                 f"""
                 INSERT INTO {schema}.inventory_tx
-                (company_id, tx_date, tx_type, status, ref, notes,
-                source, source_id, created_by,
-                vendor_id, po_id, supplier_invoice_no, grni_status, grni_type,
-                created_at, updated_at)
+                (
+                    company_id, tx_date, tx_type, status, ref, notes,
+                    source, source_id, created_by,
+                    source_company_id,
+                    engagement_company_id,
+                    engagement_id,
+                    updated_by_user_id,
+                    vendor_id, po_id, supplier_invoice_no, grni_status, grni_type,
+                    created_at, updated_at
+                )
                 VALUES
-                (%s,%s,'receipt','posted',%s,%s,
-                'manual',NULL,%s,
-                %s,%s,%s,'unbilled','inventory',
-                NOW(),NOW())
+                (
+                    %s,%s,'receipt','posted',%s,%s,
+                    'manual',NULL,%s,
+                    %s,%s,%s,%s,
+                    %s,%s,%s,'unbilled','inventory',
+                    NOW(),NOW()
+                )
                 RETURNING id;
                 """,
                 (
@@ -30984,8 +31187,14 @@ class DatabaseService:
                     ref,
                     (notes or None),
                     (created_by or None),
-                    (int(vendor_id) if vendor_id else None),
-                    (int(po_id) if po_id else None),
+
+                    int(source_company_id) if source_company_id else None,
+                    int(engagement_company_id) if engagement_company_id else None,
+                    int(engagement_id) if engagement_id else None,
+                    int(updated_by_user_id) if updated_by_user_id else None,
+
+                    int(vendor_id) if vendor_id else None,
+                    int(po_id) if po_id else None,
                     supplier_invoice_no,
                 ),
             )
@@ -32054,14 +32263,29 @@ class DatabaseService:
             "memo": "GRNI (receipt accrual)",
         })
 
+        engagement_company_id = (
+            tx.get("engagement_company_id")
+            or tx.get("source_company_id")
+        )
+
+        engagement_id = tx.get("engagement_id")
         journal_id = self.post_journal(
             company_id,
             {
                 "date": tx_date,
                 "ref": ref,
                 "description": f"Inventory Receipt #{tx_id}",
+
                 "source": "inventory",
                 "source_id": int(tx_id),
+
+                "module_name": "inventory",
+                "event_type": "inventory_receipt_posted",
+                "source_table": "inventory_tx",
+
+                "engagement_company_id": engagement_company_id,
+                "engagement_id": engagement_id,
+
                 "lines": journal_lines,
             },
             cur=cur,
@@ -33268,6 +33492,11 @@ class DatabaseService:
                     outstanding_interest,
                     status,
                     notes,
+                    source_company_id,
+                    engagement_company_id,
+                    engagement_id,
+                    created_by_user_id,
+                    updated_by_user_id
                     agreement_reference,
                     meta_json,
                     created_by
@@ -33276,7 +33505,7 @@ class DatabaseService:
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s
+                    %s,%s,%s,%s,%s,%s,%s,%s
                 )
                 RETURNING id
             """, (
@@ -33308,6 +33537,11 @@ class DatabaseService:
                 (data.get("fees_asset_account_code") or "").strip() or None,
                 (data.get("fees_expense_account_code") or "").strip() or None,
                 (data.get("currency") or "ZAR").strip(),
+                data.get("source_company_id"),
+                data.get("engagement_company_id"),
+                data.get("engagement_id"),
+                data.get("created_by_user_id"),
+                data.get("updated_by_user_id"),
                 principal_amount,
                 _money(data.get("accrued_interest_opening")),
                 "active" if bool(data.get("activate_on_create", True)) else "draft",
@@ -33383,6 +33617,12 @@ class DatabaseService:
         entry["source_id"] = int(loan_id)
         entry["created_by_user_id"] = user_id
         entry["prepared_by_user_id"] = user_id
+
+        entry = self._apply_engagement_bridge_to_entry(
+            entry,
+            data=data,
+            row=loan_row,
+        )
 
         journal_id = self.post_journal(company_id, entry)
 
@@ -34050,12 +34290,17 @@ class DatabaseService:
                     allocation_method,
                     payment_type,
                     target_schedule_id,
+                    source_company_id,
+                    engagement_company_id,
+                    engagement_id,
+                    created_by_user_id,
+                    updated_by_user_id
                     status,
                     created_by,
                     notes,
                     meta_json
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             """, (
                 company_id,
@@ -34072,6 +34317,11 @@ class DatabaseService:
                 "draft",
                 user_id,
                 (data.get("notes") or "").strip() or None,
+                data.get("source_company_id"),
+                data.get("engagement_company_id"),
+                data.get("engagement_id"),
+                data.get("created_by_user_id"),
+                data.get("updated_by_user_id"),
                 Json(data.get("meta_json") or {}),
             ))
 
@@ -34716,6 +34966,13 @@ class DatabaseService:
         preview_entry["ref"] = payment.get("reference") or f"LOAN-PAY-{payment_id}"
 
         with conn.cursor() as cur:
+            loan_row = self.get_loan_by_id(conn, company_id, int(payment["loan_id"]))
+
+            preview_entry = self._apply_engagement_bridge_to_entry(
+                preview_entry,
+                row=loan_row,
+            )
+            preview_entry["module_name"] = "loans"
             journal_id = self.post_journal(company_id, preview_entry, cur=cur)
 
             cur.execute(f"""
@@ -35166,8 +35423,25 @@ class DatabaseService:
             },
         ]
 
+        header["lines"] = lines
+
+        # carry engagement context if loan is engagement-linked
+        engagement_company_id = (
+            loan.get("engagement_company_id")
+            or loan.get("source_company_id")
+        )
+        engagement_id = loan.get("engagement_id")
+
+        if engagement_company_id and engagement_id:
+            header["engagement_company_id"] = int(engagement_company_id)
+            header["engagement_id"] = int(engagement_id)
+            header["created_by_user_id"] = user_id
+            header["updated_by_user_id"] = user_id
+
         with conn.cursor() as cur:
-            jid = self._insert_journal_and_lines(cur, company_id, header=header, lines=lines)
+            header["module_name"] = "loans"
+            jid = self.post_journal(company_id, header, cur=cur)
+
             cur.execute(f"""
                 UPDATE {schema}.loans
                 SET last_reclass_journal_id=%s, updated_at=NOW()
@@ -54525,7 +54799,105 @@ class DatabaseService:
         }
         return mapping.get(qt)
 
-        
+    def _record_posting_activity_from_entry(
+        self,
+        cur,
+        company_id: int,
+        entry: dict,
+        *,
+        default_module_name: str = "journal_entries",
+        default_event_type: str = "posted",
+        default_source_table: str | None = None,
+        default_source_id: int | None = None,
+        user_id: int | None = None,
+    ):
+        entry = entry or {}
+
+        engagement_company_id = (
+            entry.get("engagement_company_id")
+            or entry.get("source_company_id")
+        )
+        engagement_id = entry.get("engagement_id")
+
+        if not engagement_company_id or not engagement_id:
+            return
+
+        module_name = (
+            entry.get("module_name")
+            or default_module_name
+            or "journal_entries"
+        )
+
+        event_type = (
+            entry.get("event_type")
+            or default_event_type
+            or "posted"
+        )
+
+        source_table = (
+            entry.get("source_table")
+            or default_source_table
+            or entry.get("source")
+        )
+
+        source_id = (
+            entry.get("source_id")
+            or default_source_id
+        )
+
+        self.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=entry.get("date") or entry.get("posting_date"),
+            module_name=module_name,
+            event_type=event_type,
+            reference_no=entry.get("ref") or entry.get("reference"),
+            description=entry.get("description") or entry.get("memo") or f"{module_name} posting",
+            prepared_by_user_id=entry.get("created_by_user_id") or user_id,
+            reviewer_user_id=entry.get("reviewer_user_id"),
+            status=entry.get("status") or "posted",
+            amount=entry.get("gross_amount") or entry.get("amount") or entry.get("net_amount"),
+            currency_code=entry.get("currency") or entry.get("currency_code") or "ZAR",
+            source_table=source_table,
+            source_id=source_id,
+            notes=entry.get("notes"),
+            created_by_user_id=entry.get("created_by_user_id") or user_id,
+            updated_by_user_id=entry.get("updated_by_user_id") or user_id,
+        )
+
+    def _apply_engagement_bridge_to_entry(self, entry: dict, data: dict | None = None, row: dict | None = None):
+        data = data or {}
+        row = row or {}
+
+        meta = row.get("meta_json") or data.get("meta_json") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+
+        engagement_company_id = (
+            data.get("engagement_company_id")
+            or data.get("source_company_id")
+            or row.get("engagement_company_id")
+            or row.get("source_company_id")
+            or meta.get("engagement_company_id")
+            or meta.get("source_company_id")
+        )
+
+        engagement_id = (
+            data.get("engagement_id")
+            or row.get("engagement_id")
+            or meta.get("engagement_id")
+        )
+
+        if engagement_company_id and engagement_id:
+            entry["engagement_company_id"] = int(engagement_company_id)
+            entry["engagement_id"] = int(engagement_id)
+
+        return entry
+
     def upsert_engagement_posting_activity(
         self,
         cur,
@@ -58719,7 +59091,120 @@ class DatabaseService:
         row = cur.fetchone()
         return row["id"] if row else None
 
+    def create_engagement_acceptance(
+        self,
+        company_id: int,
+        data: dict,
+        *,
+        user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+        data = data or {}
 
+        engagement_id = int(data.get("engagement_id") or 0)
+        if engagement_id <= 0:
+            raise ValueError("engagement_id is required")
+
+        with self._conn_cursor() as (conn, cur):
+            item_id = self.create_engagement_acceptance_item(
+                cur,
+                company_id,
+                engagement_id=engagement_id,
+                acceptance_type=data.get("acceptance_type") or "acceptance",
+                status=data.get("status") or "draft",
+                requested_by_user_id=data.get("requested_by_user_id") or user_id,
+                assigned_partner_user_id=data.get("assigned_partner_user_id"),
+                decision_notes=data.get("decision_notes"),
+                valid_from=data.get("valid_from"),
+                valid_to=data.get("valid_to"),
+                created_by_user_id=data.get("created_by_user_id") or user_id,
+                updated_by_user_id=data.get("updated_by_user_id") or user_id,
+            )
+
+            row = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.engagement_acceptance
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+                """,
+                (int(company_id), int(item_id)),
+                cur=cur,
+            )
+
+            conn.commit()
+            return row
+
+    def update_engagement_acceptance(
+        self,
+        company_id: int,
+        acceptance_id: int,
+        data: dict,
+        *,
+        user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+        data = data or {}
+
+        allowed = {
+            "acceptance_type",
+            "status",
+            "requested_by_user_id",
+            "assigned_partner_user_id",
+            "decision_notes",
+            "valid_from",
+            "valid_to",
+        }
+
+        sets = []
+        params = []
+
+        for key in allowed:
+            if key in data:
+                sets.append(f"{key}=%s")
+                value = data.get(key)
+
+                if key in {"acceptance_type", "status"} and value is not None:
+                    value = str(value).strip().lower()
+
+                params.append(value)
+
+        sets.append("updated_by_user_id=%s")
+        params.append(data.get("updated_by_user_id") or user_id)
+
+        sets.append("updated_at=NOW()")
+
+        if not sets:
+            return self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.engagement_acceptance
+                WHERE company_id=%s AND id=%s
+                LIMIT 1
+                """,
+                (int(company_id), int(acceptance_id)),
+            )
+
+        params.extend([int(company_id), int(acceptance_id)])
+
+        with self._conn_cursor() as (conn, cur):
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.engagement_acceptance
+                SET {", ".join(sets)}
+                WHERE company_id=%s AND id=%s
+                RETURNING *
+                """,
+                tuple(params),
+                cur=cur,
+            )
+
+            if not row:
+                raise ValueError("engagement_acceptance not found")
+
+            conn.commit()
+            return row
+    
     def update_engagement_acceptance_item(
         self,
         cur,
@@ -59910,6 +60395,21 @@ class DatabaseService:
         row = cur.fetchone()
         return row["id"] if row else None
 
+    def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
+        body = dict(body or {})
+        auth_ctx = getattr(g, "auth_context", {}) or {}
+
+        if auth_ctx.get("is_delegated_company_access"):
+            body["source_company_id"] = auth_ctx.get("source_company_id")
+            body["engagement_company_id"] = auth_ctx.get("source_company_id")
+            body["engagement_id"] = auth_ctx.get("engagement_id")
+
+        if user_id:
+            body.setdefault("created_by_user_id", user_id)
+            body.setdefault("updated_by_user_id", user_id)
+
+        return body
+
     def get_revenue_contract(self, company_id: int, contract_id: int, cur=None) -> dict | None:
         schema = self.company_schema(company_id)
 
@@ -60170,13 +60670,18 @@ class DatabaseService:
                 is_over_time,
                 notes,
                 payload_json,
-                created_by_user_id
+                created_by_user_id,
+                updated_by_user_id,
+                source_company_id,
+                engagement_company_id,
+                engagement_id
             )
             VALUES (
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
-                %s,%s,%s,%s::jsonb,%s
+                %s,%s,%s,%s::jsonb,
+                %s,%s,%s,%s,%s,%s
             )
             RETURNING *;
             """
@@ -60201,7 +60706,12 @@ class DatabaseService:
                 bool(data.get("is_over_time", True)),
                 data.get("notes"),
                 json.dumps(data.get("payload_json") or {}, default=str),
+
                 int(user_id) if user_id else None,
+                data.get("updated_by_user_id") or user_id,
+                data.get("source_company_id"),
+                data.get("engagement_company_id"),
+                data.get("engagement_id"),
             )
 
             cur.execute(sql, params)
@@ -60222,13 +60732,20 @@ class DatabaseService:
                 except Exception:
                     payload_json = {}
 
-            engagement_id = payload_json.get("engagement_id") or data.get("engagement_id")
-
+            engagement_company_id = (
+                data.get("engagement_company_id")
+                or data.get("source_company_id")
+                or company_id
+            )
+            engagement_id = (
+                data.get("engagement_id")
+                or payload_json.get("engagement_id")
+            )
             if engagement_id:
                 try:
                     self.upsert_engagement_posting_activity(
                         cur,
-                        company_id=int(company_id),
+                        company_id=int(engagement_company_id),
                         engagement_id=int(engagement_id),
                         posting_date=row.get("contract_date") or row.get("start_date"),
                         module_name="revenue",
@@ -64175,6 +64692,7 @@ class DatabaseService:
                 "currency": (run.get("currency") or "ZAR"),
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
+                "module_name": "revenue",
             }
 
             journal_id = self.post_journal(

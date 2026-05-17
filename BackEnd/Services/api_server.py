@@ -5891,6 +5891,12 @@ def create_invoice(cid: int):
             return max(0.0, min(1.0, r))
 
         payload = request.get_json(silent=True) or {}
+        auth_ctx = getattr(g, "auth_context", {}) or {}
+
+        if auth_ctx.get("is_delegated_company_access"):
+            payload["source_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_id"] = auth_ctx.get("engagement_id")
         current_app.logger.info("create_invoice payload = %r", payload)
 
         # --------------------------
@@ -5993,6 +5999,13 @@ def create_invoice(cid: int):
             "bank_account_id": payload.get("bank_account_id"),
             "notes": payload.get("notes"),
             "status": status_to_save,
+
+            "source_company_id": payload.get("source_company_id"),
+            "engagement_company_id": payload.get("engagement_company_id"),
+            "engagement_id": payload.get("engagement_id"),
+
+            "created_by_user_id": user.get("id"),
+            "updated_by_user_id": user.get("id"),
 
             "discount_rate": to_disc_rate(
                 payload.get("discount_rate") if "discount_rate" in payload else payload.get("discount")
@@ -8685,14 +8698,21 @@ def update_bank_account(company_id: int, bank_account_id: int):
 @require_auth
 def create_inventory_item(cid: int):
     company_id = int(cid)
-    user = getattr(g, "current_user", {}) or {}
 
-    if user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
     try:
         raw = request.get_json(silent=True) or {}
+        auth_ctx = getattr(g, "auth_context", {}) or {}
 
+        if auth_ctx.get("is_delegated_company_access"):
+            raw["source_company_id"] = auth_ctx.get("source_company_id")
+            raw["engagement_company_id"] = auth_ctx.get("source_company_id")
+            raw["engagement_id"] = auth_ctx.get("engagement_id")
+
+        raw["created_by_user_id"] = user.get("id")
+        raw["updated_by_user_id"] = user.get("id")
         # =========================
         # DEBUG: what frontend sent
         # =========================
@@ -8826,13 +8846,20 @@ def create_inventory_item(cid: int):
 @require_auth
 def receive_inventory(cid: int):
     company_id = int(cid)
-    user = getattr(g, "current_user", {}) or {}
-    if user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
     try:
         payload = request.get_json(silent=True) or {}
+        auth_ctx = getattr(g, "auth_context", {}) or {}
 
+        if auth_ctx.get("is_delegated_company_access"):
+            payload["source_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_company_id"] = auth_ctx.get("source_company_id")
+            payload["engagement_id"] = auth_ctx.get("engagement_id")
+
+        payload["created_by_user_id"] = user.get("id")
+        payload["updated_by_user_id"] = user.get("id")
         tx_date = payload.get("tx_date") or payload.get("date")
         ref = (payload.get("ref") or "").strip()
         notes = payload.get("notes")

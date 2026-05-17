@@ -53,8 +53,17 @@ def _parse_module_name():
         "journal_entries",
         "accounts_receivable",
         "accounts_payable",
+        "revenue",
+        "inventory",
+        "loans",
         "leases",
         "ppe",
+        "fixed_assets",
+        "vat",
+        "cashbook",
+        "banking",
+        "payments",
+        "receipts",
     }
 
     if not val:

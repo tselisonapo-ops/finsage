@@ -919,6 +919,12 @@ def vat_prepare_filing(company_id: int):
         return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
 
     payload = request.get_json(force=True) or {}
+    auth_ctx = getattr(g, "auth_context", {}) or {}
+
+    if auth_ctx.get("is_delegated_company_access"):
+        payload["source_company_id"] = auth_ctx.get("source_company_id")
+        payload["engagement_company_id"] = auth_ctx.get("source_company_id")
+        payload["engagement_id"] = auth_ctx.get("engagement_id")
     from_str = (payload.get("from") or "").strip()
     to_str = (payload.get("to") or "").strip()
     notes = (payload.get("notes") or "").strip() or None
@@ -1034,6 +1040,12 @@ def vat_prepare_filing(company_id: int):
         notes=notes,
         prepared_by_user_id=int(current_user.get("id") or 0) or None,
         source="api",
+
+        source_company_id=payload.get("source_company_id"),
+        engagement_company_id=payload.get("engagement_company_id"),
+        engagement_id=payload.get("engagement_id"),
+        created_by_user_id=int(current_user.get("id") or 0) or None,
+        updated_by_user_id=int(current_user.get("id") or 0) or None,
     )
 
     journal_id = None
@@ -1069,9 +1081,17 @@ def vat_prepare_filing(company_id: int):
             "description": f"VAT settlement for {period_label}",
             "source": "vat_filing",
             "source_id": filing_id,
+            "module_name": "vat",
+            "event_type": "vat_settlement_posted",
+            "source_table": "vat_filings",
+
+            "engagement_company_id": payload.get("engagement_company_id") or payload.get("source_company_id"),
+            "engagement_id": payload.get("engagement_id"),
+
             "lines": resolved_lines,
             "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
             "created_by_user_id": int(current_user.get("id") or 0),
+            "updated_by_user_id": int(current_user.get("id") or 0),
             "prepared_by_user_id": int(current_user.get("id") or 0),
         }
 
@@ -1556,7 +1576,12 @@ def vat_filing_pay(company_id: int):
         return jsonify({"ok": False, "error": "Not authorised"}), 403
 
     payload = request.get_json(force=True) or {}
+    auth_ctx = getattr(g, "auth_context", {}) or {}
 
+    if auth_ctx.get("is_delegated_company_access"):
+        payload["source_company_id"] = auth_ctx.get("source_company_id")
+        payload["engagement_company_id"] = auth_ctx.get("source_company_id")
+        payload["engagement_id"] = auth_ctx.get("engagement_id")
     start_date = _parse_date((payload.get("from") or "").strip(), None)
     end_date = _parse_date((payload.get("to") or "").strip(), None)
     payment_date = _parse_date((payload.get("payment_date") or "").strip(), date.today())
@@ -1695,9 +1720,22 @@ def vat_filing_pay(company_id: int):
         "description": desc,
         "source": "vat_filing_payment",
         "source_id": filing.get("id"),
+        "module_name": "vat",
+        "event_type": f"vat_{payment_type}_posted",
+        "source_table": "vat_filings",
+
+        "engagement_company_id": (
+            filing.get("engagement_company_id")
+            or filing.get("source_company_id")
+            or payload.get("engagement_company_id")
+            or payload.get("source_company_id")
+        ),
+        "engagement_id": filing.get("engagement_id") or payload.get("engagement_id"),
+
         "lines": lines,
         "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
         "created_by_user_id": int(user.get("id") or 0),
+        "updated_by_user_id": int(user.get("id") or 0),
         "prepared_by_user_id": int(user.get("id") or 0),
     }
 

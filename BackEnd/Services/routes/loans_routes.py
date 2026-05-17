@@ -87,7 +87,15 @@ def api_create_loan(company_id: int):
     g.user_id = user_id
 
     raw = request.get_json(silent=True) or {}
+    auth_ctx = getattr(g, "auth_context", {}) or {}
 
+    if auth_ctx.get("is_delegated_company_access"):
+        raw["source_company_id"] = auth_ctx.get("source_company_id")
+        raw["engagement_company_id"] = auth_ctx.get("source_company_id")
+        raw["engagement_id"] = auth_ctx.get("engagement_id")
+
+    raw["created_by_user_id"] = user_id
+    raw["updated_by_user_id"] = user_id
     current_app.logger.warning(
         "LOAN CREATE RAW >>> ias23_link=%s full=%s",
         raw.get("ias23_link"),
@@ -374,6 +382,15 @@ def api_create_loan_payment(company_id: int, loan_id: int):
     g.user_id = user_id
 
     raw = request.get_json(silent=True) or {}
+    auth_ctx = getattr(g, "auth_context", {}) or {}
+
+    if auth_ctx.get("is_delegated_company_access"):
+        raw["source_company_id"] = auth_ctx.get("source_company_id")
+        raw["engagement_company_id"] = auth_ctx.get("source_company_id")
+        raw["engagement_id"] = auth_ctx.get("engagement_id")
+
+    raw["created_by_user_id"] = user_id
+    raw["updated_by_user_id"] = user_id
     if not isinstance(raw, dict):
         return jsonify({"ok": False, "error": "JSON body must be an object"}), 400
 

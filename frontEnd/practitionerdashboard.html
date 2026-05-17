@@ -7528,6 +7528,699 @@ window.safeRedirect = function (url, mode = "href") {
         </div>
       </section>
 
+      <!-- REVENUE -->
+      <section id="screen-revenue" class="screen hidden">
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">Revenue</div>
+                <div class="panel-subtitle mt-1">
+                  View engagement-linked revenue posting activity including contracts, performance obligations, invoices, allocations, and revenue recognition journals.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement: <strong class="ml-1" id="rev-active-engagement-name">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Code: <strong class="ml-1" id="rev-active-engagement-code">--</strong>
+                  </span>
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity: <strong class="ml-1" id="rev-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="rev-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+                  Open Posting Workspace
+                </button>
+                <button id="rev-refresh-btn" class="btn btn-primary" type="button">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="rev-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="rev-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="rev-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="rev-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="rev-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody id="rev-table-body">
+                  <tr>
+                    <td colspan="10" class="py-10 text-center text-slate-500">
+                      No revenue activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- INVENTORY -->
+      <section id="screen-inventory" class="screen hidden">
+        <div class="space-y-4">
+
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+              <div>
+                <div class="panel-title">Inventory</div>
+
+                <div class="panel-subtitle mt-1">
+                  View inventory posting activity including receipts, issues, transfers, adjustments, variances, and valuation movements.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement:
+                    <strong class="ml-1" id="inv-active-engagement-name">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Code:
+                    <strong class="ml-1" id="inv-active-engagement-code">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity:
+                    <strong class="ml-1" id="inv-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="inv-open-posting-workspace-btn"
+                        class="btn btn-secondary"
+                        type="button">
+                  Open Posting Workspace
+                </button>
+
+                <button id="inv-refresh-btn"
+                        class="btn btn-primary"
+                        type="button">
+                  Refresh
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="inv-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="inv-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="inv-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="inv-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="inv-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+
+          </div>
+
+          <div class="card p-4">
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody id="inv-table-body">
+                  <tr>
+                    <td colspan="10"
+                        class="py-10 text-center text-slate-500">
+                      No inventory activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+
+              </table>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      <!-- LOANS -->
+      <section id="screen-loans" class="screen hidden">
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">Loans</div>
+                <div class="panel-subtitle mt-1">
+                  View loan posting activity including drawdowns, payments, interest, amortisation, reclassifications, and settlements.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">Engagement: <strong class="ml-1" id="loan-active-engagement-name">--</strong></span>
+                  <span class="badge-soft bg-slate-100">Code: <strong class="ml-1" id="loan-active-engagement-code">--</strong></span>
+                  <span class="badge-soft bg-slate-100">Last Activity: <strong class="ml-1" id="loan-last-activity-date">--</strong></span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="loan-open-posting-workspace-btn" class="btn btn-secondary" type="button">Open Posting Workspace</button>
+                <button id="loan-refresh-btn" class="btn btn-primary" type="button">Refresh</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile"><div class="kpi-label">Total Items</div><div id="loan-kpi-total-items" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Draft</div><div id="loan-kpi-draft-count" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Under Review</div><div id="loan-kpi-review-count" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Posted</div><div id="loan-kpi-posted-count" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Amount Total</div><div id="loan-kpi-total-amount" class="kpi-value mt-2">--</div></div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div><label for="loan-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label><select id="loan-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Statuses</option></select></div>
+              <div><label for="loan-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label><select id="loan-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Events</option></select></div>
+              <div><label for="loan-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label><select id="loan-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Preparers</option></select></div>
+              <div><label for="loan-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label><select id="loan-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Reviewers</option></select></div>
+              <div><label for="loan-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label><input id="loan-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+              <div><label for="loan-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label><input id="loan-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div><label for="loan-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label><input id="loan-filter-q" type="text" placeholder="Reference, description, source table, source id..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+              <div class="flex items-end"><label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input id="loan-filter-mine-only" type="checkbox" /><span>Mine only</span></label></div>
+              <div class="flex items-end justify-end gap-2"><button id="loan-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button><button id="loan-filter-apply-btn" class="btn btn-primary" type="button">Apply</button></div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div><div class="text-sm font-semibold text-slate-900">Loan Activity</div><div id="loan-table-caption" class="text-xs text-slate-500">Read-only activity linked to the selected engagement.</div></div>
+              <div class="text-xs text-slate-500">Total Rows: <span id="loan-total-rows">0</span></div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead><tr class="border-b border-slate-200 text-left text-slate-500"><th class="py-3 pr-4">Date</th><th class="py-3 pr-4">Reference</th><th class="py-3 pr-4">Description</th><th class="py-3 pr-4">Event</th><th class="py-3 pr-4">Status</th><th class="py-3 pr-4">Amount</th><th class="py-3 pr-4">Prepared By</th><th class="py-3 pr-4">Reviewer</th><th class="py-3 pr-4">Source</th><th class="py-3">Action</th></tr></thead>
+                <tbody id="loan-table-body"><tr><td colspan="10" class="py-10 text-center text-slate-500">No loan activity available for the selected engagement.</td></tr></tbody>
+              </table>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">Showing <span id="loan-page-from">0</span> - <span id="loan-page-to">0</span></div>
+              <div class="flex items-center gap-2"><button id="loan-prev-page-btn" class="btn btn-secondary" type="button">Previous</button><div class="text-sm text-slate-600">Page <span id="loan-current-page">1</span></div><button id="loan-next-page-btn" class="btn btn-secondary" type="button">Next</button></div>
+            </div>
+          </div>
+
+          <div id="loan-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No Loan Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">There are no engagement-linked loan activity records for the current filters.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VAT -->
+      <section id="screen-vat" class="screen hidden">
+        <div class="space-y-4">
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div class="panel-title">VAT</div>
+                <div class="panel-subtitle mt-1">
+                  View VAT posting activity including VAT settlements, payments, refunds, adjustments, and filing journals.
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">Engagement: <strong class="ml-1" id="vat-active-engagement-name">--</strong></span>
+                  <span class="badge-soft bg-slate-100">Code: <strong class="ml-1" id="vat-active-engagement-code">--</strong></span>
+                  <span class="badge-soft bg-slate-100">Last Activity: <strong class="ml-1" id="vat-last-activity-date">--</strong></span>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button id="vat-open-posting-workspace-btn" class="btn btn-secondary" type="button">Open Posting Workspace</button>
+                <button id="vat-refresh-btn" class="btn btn-primary" type="button">Refresh</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div class="kpi-tile"><div class="kpi-label">Total Items</div><div id="vat-kpi-total-items" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Draft</div><div id="vat-kpi-draft-count" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Under Review</div><div id="vat-kpi-review-count" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Posted</div><div id="vat-kpi-posted-count" class="kpi-value mt-2">--</div></div>
+            <div class="kpi-tile"><div class="kpi-label">Amount Total</div><div id="vat-kpi-total-amount" class="kpi-value mt-2">--</div></div>
+          </div>
+
+          <div class="card p-4 filter-panel">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div><label for="vat-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label><select id="vat-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Statuses</option></select></div>
+              <div><label for="vat-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label><select id="vat-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Events</option></select></div>
+              <div><label for="vat-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label><select id="vat-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Preparers</option></select></div>
+              <div><label for="vat-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label><select id="vat-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All Reviewers</option></select></div>
+              <div><label for="vat-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label><input id="vat-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+              <div><label for="vat-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label><input id="vat-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+            </div>
+            <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <div><label for="vat-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label><input id="vat-filter-q" type="text" placeholder="Reference, description, source table, source id..." class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" /></div>
+              <div class="flex items-end"><label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input id="vat-filter-mine-only" type="checkbox" /><span>Mine only</span></label></div>
+              <div class="flex items-end justify-end gap-2"><button id="vat-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button><button id="vat-filter-apply-btn" class="btn btn-primary" type="button">Apply</button></div>
+            </div>
+          </div>
+
+          <div class="card p-4">
+            <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div><div class="text-sm font-semibold text-slate-900">VAT Activity</div><div id="vat-table-caption" class="text-xs text-slate-500">Read-only activity linked to the selected engagement.</div></div>
+              <div class="text-xs text-slate-500">Total Rows: <span id="vat-total-rows">0</span></div>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+                <thead><tr class="border-b border-slate-200 text-left text-slate-500"><th class="py-3 pr-4">Date</th><th class="py-3 pr-4">Reference</th><th class="py-3 pr-4">Description</th><th class="py-3 pr-4">Event</th><th class="py-3 pr-4">Status</th><th class="py-3 pr-4">Amount</th><th class="py-3 pr-4">Prepared By</th><th class="py-3 pr-4">Reviewer</th><th class="py-3 pr-4">Source</th><th class="py-3">Action</th></tr></thead>
+                <tbody id="vat-table-body"><tr><td colspan="10" class="py-10 text-center text-slate-500">No VAT activity available for the selected engagement.</td></tr></tbody>
+              </table>
+            </div>
+            <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+              <div class="text-xs text-slate-500">Showing <span id="vat-page-from">0</span> - <span id="vat-page-to">0</span></div>
+              <div class="flex items-center gap-2"><button id="vat-prev-page-btn" class="btn btn-secondary" type="button">Previous</button><div class="text-sm text-slate-600">Page <span id="vat-current-page">1</span></div><button id="vat-next-page-btn" class="btn btn-secondary" type="button">Next</button></div>
+            </div>
+          </div>
+
+          <div id="vat-empty-state" class="card hidden p-10 text-center">
+            <div class="text-lg font-semibold text-slate-900">No VAT Activity Found</div>
+            <div class="mt-2 text-sm text-slate-500">There are no engagement-linked VAT activity records for the current filters.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CASHBOOK -->
+      <section id="screen-cashbook" class="screen hidden">
+        <div class="space-y-4">
+
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+              <div>
+                <div class="panel-title">Cashbook</div>
+
+                <div class="panel-subtitle mt-1">
+                  View cashbook posting activity including bank journals, reconciliations,
+                  transfers, deposits, reversals, and bank adjustments.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement:
+                    <strong class="ml-1" id="cb-active-engagement-name">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Code:
+                    <strong class="ml-1" id="cb-active-engagement-code">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity:
+                    <strong class="ml-1" id="cb-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="cb-open-posting-workspace-btn"
+                        class="btn btn-secondary"
+                        type="button">
+                  Open Posting Workspace
+                </button>
+
+                <button id="cb-refresh-btn"
+                        class="btn btn-primary"
+                        type="button">
+                  Refresh
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="cb-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="cb-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="cb-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="cb-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="cb-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+
+          </div>
+
+          <div class="card p-4">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody id="cb-table-body">
+                  <tr>
+                    <td colspan="10"
+                        class="py-10 text-center text-slate-500">
+                      No cashbook activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- PAYMENTS -->
+      <section id="screen-payments" class="screen hidden">
+        <div class="space-y-4">
+
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+              <div>
+                <div class="panel-title">Payments</div>
+
+                <div class="panel-subtitle mt-1">
+                  View payment posting activity including supplier payments,
+                  settlements, allocations, reversals, and payment journals.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement:
+                    <strong class="ml-1" id="pay-active-engagement-name">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Code:
+                    <strong class="ml-1" id="pay-active-engagement-code">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity:
+                    <strong class="ml-1" id="pay-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="pay-open-posting-workspace-btn"
+                        class="btn btn-secondary"
+                        type="button">
+                  Open Posting Workspace
+                </button>
+
+                <button id="pay-refresh-btn"
+                        class="btn btn-primary"
+                        type="button">
+                  Refresh
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="pay-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="pay-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="pay-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="pay-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="pay-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+
+          </div>
+
+          <div class="card p-4">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody id="pay-table-body">
+                  <tr>
+                    <td colspan="10"
+                        class="py-10 text-center text-slate-500">
+                      No payment activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- RECEIPTS -->
+      <section id="screen-receipts" class="screen hidden">
+        <div class="space-y-4">
+
+          <div class="card p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+              <div>
+                <div class="panel-title">Receipts</div>
+
+                <div class="panel-subtitle mt-1">
+                  View receipt posting activity including customer receipts,
+                  allocations, reversals, deposits, and receipt journals.
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span class="badge-soft bg-slate-100">
+                    Engagement:
+                    <strong class="ml-1" id="rcp-active-engagement-name">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Code:
+                    <strong class="ml-1" id="rcp-active-engagement-code">--</strong>
+                  </span>
+
+                  <span class="badge-soft bg-slate-100">
+                    Last Activity:
+                    <strong class="ml-1" id="rcp-last-activity-date">--</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button id="rcp-open-posting-workspace-btn"
+                        class="btn btn-secondary"
+                        type="button">
+                  Open Posting Workspace
+                </button>
+
+                <button id="rcp-refresh-btn"
+                        class="btn btn-primary"
+                        type="button">
+                  Refresh
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Total Items</div>
+              <div id="rcp-kpi-total-items" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Draft</div>
+              <div id="rcp-kpi-draft-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Under Review</div>
+              <div id="rcp-kpi-review-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Posted</div>
+              <div id="rcp-kpi-posted-count" class="kpi-value mt-2">--</div>
+            </div>
+
+            <div class="kpi-tile">
+              <div class="kpi-label">Amount Total</div>
+              <div id="rcp-kpi-total-amount" class="kpi-value mt-2">--</div>
+            </div>
+
+          </div>
+
+          <div class="card p-4">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm table-modern">
+
+                <thead>
+                  <tr class="border-b border-slate-200 text-left text-slate-500">
+                    <th class="py-3 pr-4">Date</th>
+                    <th class="py-3 pr-4">Reference</th>
+                    <th class="py-3 pr-4">Description</th>
+                    <th class="py-3 pr-4">Event</th>
+                    <th class="py-3 pr-4">Status</th>
+                    <th class="py-3 pr-4">Amount</th>
+                    <th class="py-3 pr-4">Prepared By</th>
+                    <th class="py-3 pr-4">Reviewer</th>
+                    <th class="py-3 pr-4">Source</th>
+                    <th class="py-3">Action</th>
+                  </tr>
+                </thead>
+
+                <tbody id="rcp-table-body">
+                  <tr>
+                    <td colspan="10"
+                        class="py-10 text-center text-slate-500">
+                      No receipt activity available for the selected engagement.
+                    </td>
+                  </tr>
+                </tbody>
+
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
       <!-- REVIEW QUEUE -->
       <section id="screen-review-queue" class="screen hidden">
         <div class="rq-shell">

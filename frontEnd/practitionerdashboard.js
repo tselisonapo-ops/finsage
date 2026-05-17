@@ -1329,6 +1329,15 @@ window.endpoints = ENDPOINTS;
     journal_entries: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
     accounts_receivable: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
     accounts_payable: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+
+    revenue: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    inventory: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    loans: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    vat: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    cashbook: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    payments: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+    receipts: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
+
     leases: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 },
     ppe: { summary: null, rows: [], filters: null, total: 0, limit: 25, offset: 0 }
   };
@@ -1591,6 +1600,13 @@ const PR_NAV = {
   accountsPayable: "accounts-payable",
   leases: "leases",
   ppe: "ppe",
+  revenue: "revenue",
+  inventory: "inventory",
+  loans: "loans",
+  vat: "vat",
+  cashbook: "cashbook",
+  payments: "payments",
+  receipts: "receipts",
   dayToDayPostings: "day-to-day-postings",
   monthlyCloseRoutines: "monthly-close-routines",
   yearEndReporting: "year-end-reporting",
@@ -1613,6 +1629,92 @@ const PR_NAV = {
   analyticsDetail: "analytics-detail",
 };
 
+const PRACTITIONER_POSTING_MODULES = {
+  journal_entries: {
+    screen: "journal-entries",
+    prefix: "je",
+    moduleName: "journal_entries",
+    title: "Journal Entries",
+    emptyText: "No journal activity available for the selected engagement."
+  },
+  accounts_receivable: {
+    screen: "accounts-receivable",
+    prefix: "ar",
+    moduleName: "accounts_receivable",
+    title: "Accounts Receivable",
+    emptyText: "No receivable activity available for the selected engagement."
+  },
+  accounts_payable: {
+    screen: "accounts-payable",
+    prefix: "ap",
+    moduleName: "accounts_payable",
+    title: "Accounts Payable",
+    emptyText: "No payable activity available for the selected engagement."
+  },
+  revenue: {
+    screen: "revenue",
+    prefix: "rev",
+    moduleName: "revenue",
+    title: "Revenue",
+    emptyText: "No revenue posting activity available for the selected engagement."
+  },
+  inventory: {
+    screen: "inventory",
+    prefix: "inv",
+    moduleName: "inventory",
+    title: "Inventory",
+    emptyText: "No inventory posting activity available for the selected engagement."
+  },
+  loans: {
+    screen: "loans",
+    prefix: "loan",
+    moduleName: "loans",
+    title: "Loans",
+    emptyText: "No loan posting activity available for the selected engagement."
+  },
+  vat: {
+    screen: "vat",
+    prefix: "vat",
+    moduleName: "vat",
+    title: "VAT",
+    emptyText: "No VAT posting activity available for the selected engagement."
+  },
+  cashbook: {
+    screen: "cashbook",
+    prefix: "cb",
+    moduleName: "cashbook",
+    title: "Cashbook",
+    emptyText: "No cashbook posting activity available for the selected engagement."
+  },
+  payments: {
+    screen: "payments",
+    prefix: "pay",
+    moduleName: "payments",
+    title: "Payments",
+    emptyText: "No payment posting activity available for the selected engagement."
+  },
+  receipts: {
+    screen: "receipts",
+    prefix: "rec",
+    moduleName: "receipts",
+    title: "Receipts",
+    emptyText: "No receipt posting activity available for the selected engagement."
+  },
+  leases: {
+    screen: "leases",
+    prefix: "lease",
+    moduleName: "leases",
+    title: "Leases",
+    emptyText: "No lease posting activity available for the selected engagement."
+  },
+  ppe: {
+    screen: "ppe",
+    prefix: "ppe",
+    moduleName: "ppe",
+    title: "PPE",
+    emptyText: "No PPE posting activity available for the selected engagement."
+  }
+};
 /* ======================================================
   * Helpers
   * ==================================================== */
@@ -8811,52 +8913,13 @@ function getPractitionerPostingModuleName(screen) {
 }
 
 function getPractitionerPostingScreenConfig(screen) {
-  const moduleName = getPractitionerPostingModuleName(screen);
+  const key = String(screen || "").trim();
 
-  switch (screen) {
-    case PR_NAV.journalEntries:
-      return {
-        prefix: "je",
-        moduleName,
-        title: "Journal Activity",
-        emptyText: "No journal activity available for the selected engagement."
-      };
-
-    case PR_NAV.accountsReceivable:
-      return {
-        prefix: "ar",
-        moduleName,
-        title: "Accounts Receivable Activity",
-        emptyText: "No receivable activity available for the selected engagement."
-      };
-
-    case PR_NAV.accountsPayable:
-      return {
-        prefix: "ap",
-        moduleName,
-        title: "Accounts Payable Activity",
-        emptyText: "No payable activity available for the selected engagement."
-      };
-
-    case PR_NAV.leases:
-      return {
-        prefix: "le",
-        moduleName,
-        title: "Lease Activity",
-        emptyText: "No lease activity available for the selected engagement."
-      };
-
-    case PR_NAV.ppe:
-      return {
-        prefix: "ppe",
-        moduleName,
-        title: "PPE Activity",
-        emptyText: "No PPE activity available for the selected engagement."
-      };
-
-    default:
-      return null;
-  }
+  return (
+    Object.values(PRACTITIONER_POSTING_MODULES).find((m) => m.screen === key) ||
+    PRACTITIONER_POSTING_MODULES[key] ||
+    null
+  );
 }
 
 function prEl(id) {
@@ -9250,13 +9313,20 @@ function bindPractitionerPostingModuleEvents(me) {
   if (PR_PRACTITIONER_POSTING_EVENTS_BOUND) return;
   PR_PRACTITIONER_POSTING_EVENTS_BOUND = true;
 
-  [
-    PR_NAV.journalEntries,
-    PR_NAV.accountsReceivable,
-    PR_NAV.accountsPayable,
-    PR_NAV.leases,
-    PR_NAV.ppe
-  ].forEach((screen) => {
+    [
+      PR_NAV.journalEntries,
+      PR_NAV.accountsReceivable,
+      PR_NAV.accountsPayable,
+      PR_NAV.revenue,
+      PR_NAV.inventory,
+      PR_NAV.loans,
+      PR_NAV.vat,
+      PR_NAV.cashbook,
+      PR_NAV.payments,
+      PR_NAV.receipts,
+      PR_NAV.leases,
+      PR_NAV.ppe
+    ].forEach((screen) => {
     const config = getPractitionerPostingScreenConfig(screen);
     if (!config) return;
 

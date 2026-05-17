@@ -98,11 +98,18 @@ def lease_service_post_modification(company_id: int, modification_id: int, actor
             "date": j_date,
             "ref": f"LEASE-{lease_id}-MOD-{modification_id}",
             "description": desc,
-            "gross_amount": abs(adj),   # purely reporting; lines control debits/credits
+            "gross_amount": abs(adj),
             "net_amount": abs(adj),
             "vat_amount": 0.0,
             "source": "lease_modification",
             "source_id": int(modification_id),
+
+            "engagement_company_id": (
+                lease.get("engagement_company_id")
+                or lease.get("source_company_id")
+            ),
+            "engagement_id": lease.get("engagement_id"),
+
             "lines": lines,
         }
 
@@ -213,6 +220,11 @@ def lease_service_post_termination(company_id: int, termination_id: int, actor: 
             "vat_amount": 0.0,
             "source": "lease_termination",
             "source_id": int(termination_id),
+            "engagement_company_id": (
+                lease.get("engagement_company_id")
+                or lease.get("source_company_id")
+            ),
+            "engagement_id": lease.get("engagement_id"),
             "lines": lines,
         }
 
@@ -528,6 +540,12 @@ def create_lease(company_id: int):
     step = "start"
     try:
         raw_data = request.get_json(silent=True) or {}
+        auth_ctx = getattr(g, "auth_context", {}) or {}
+
+        if auth_ctx.get("is_delegated_company_access"):
+            raw_data["source_company_id"] = auth_ctx.get("source_company_id")
+            raw_data["engagement_company_id"] = auth_ctx.get("source_company_id")
+            raw_data["engagement_id"] = auth_ctx.get("engagement_id")
         step = "parsed_json"
 
         if not isinstance(raw_data, dict):
@@ -571,8 +589,14 @@ def create_lease(company_id: int):
             }), 400
 
         step = "before_insert_lease"
-        lease_id = db_service.insert_lease(int(company_id), result, lessor_id=lessor_id)
-
+        lease_id = db_service.insert_lease(
+            int(company_id),
+            result,
+            lessor_id=lessor_id,
+            source_company_id=raw_data.get("source_company_id"),
+            engagement_company_id=raw_data.get("engagement_company_id"),
+            engagement_id=raw_data.get("engagement_id"),
+        )
 
         step = "after_insert_lease"
         if mode == "existing" and go_live is not None:
@@ -1371,6 +1395,11 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
                 "vat_amount": float(sched.get("vat_portion") or 0.0),
                 "source": "lease_monthly",
                 "source_id": schedule_id,
+                "engagement_company_id": (
+                    lease.get("engagement_company_id")
+                    or lease.get("source_company_id")
+                ),
+                "engagement_id": lease.get("engagement_id"),
                 "lines": lines,
             }
 

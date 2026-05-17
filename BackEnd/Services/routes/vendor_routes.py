@@ -720,7 +720,12 @@ def api_bills(company_id: int):
         return jsonify({"ok": False, "error": f"Method {request.method} not allowed"}), 405
 
     data = request.get_json(silent=True) or {}
+    auth_ctx = getattr(g, "auth_context", {}) or {}
 
+    if auth_ctx.get("is_delegated_company_access"):
+        data["source_company_id"] = auth_ctx.get("source_company_id")
+        data["engagement_company_id"] = auth_ctx.get("source_company_id")
+        data["engagement_id"] = auth_ctx.get("engagement_id")
     raw_header = data.get("header")
     if isinstance(raw_header, dict) and raw_header:
         header = dict(raw_header)
@@ -739,6 +744,10 @@ def api_bills(company_id: int):
             "asset_id": data.get("asset_id"),
             "asset_acquisition_id": data.get("asset_acquisition_id"),
             "posting_mode": data.get("posting_mode"),
+
+            "source_company_id": data.get("source_company_id"),
+            "engagement_company_id": data.get("engagement_company_id"),
+            "engagement_id": data.get("engagement_id"),
         }
 
     lines = data.get("lines") or []

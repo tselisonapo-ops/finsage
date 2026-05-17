@@ -231,158 +231,6 @@ def coa_first_by_name_ilike(
     row = cur.fetchone()
     return (row.get("code") or "").strip() if row and row.get("code") else None
 
-def post_subsequent_measurement(
-    cur,
-    company_id: int,
-    measurement_id: int,
-    *,
-    posted_by=None,
-    engagement_company_id: int | None = None,
-    engagement_id: int | None = None,
-):
-    schema = company_schema(company_id)
-
-    cur.execute(_q(schema, """
-        SELECT *
-        FROM {schema}.asset_subsequent_measurements
-        WHERE company_id=%s
-          AND id=%s
-        FOR UPDATE
-    """), (company_id, measurement_id))
-
-    row = cur.fetchone()
-    if not row:
-        raise ValueError("Subsequent measurement not found")
-
-    if row["status"] == "posted":
-        return row
-
-    event_type = (row["event_type"] or "").lower()
-
-    posted_journal_id = None
-
-    # ------------------------------------------------
-    # ADD COST → create journal
-    # ------------------------------------------------
-    if event_type == "add_cost":
-
-        amount = Decimal(row["amount"] or 0)
-        if amount <= 0:
-            raise ValueError("Invalid add_cost amount")
-
-        debit_account = row["debit_account_code"]
-        credit_account = row["credit_account_code"]
-
-        if not debit_account or not credit_account:
-            raise ValueError("Missing accounts")
-
-        journal_id = create_journal(
-            cur,
-            company_id,
-            journal_date=row["event_date"],
-            reference=f"ASM-{measurement_id}",
-            memo="Asset subsequent cost",
-        )
-
-        db_service.insert_journal_line(
-            cur,
-            company_id,
-            journal_id,
-            debit_account,
-            debit=amount,
-            credit=Decimal("0"),
-        )
-
-        db_service.insert_journal_line(
-            cur,
-            company_id,
-            journal_id,
-            credit_account,
-            debit=Decimal("0"),
-            credit=amount,
-        )
-
-        db_service.post_journal(cur, company_id, journal_id)
-
-        posted_journal_id = journal_id
-
-    # ------------------------------------------------
-    # CHANGE ESTIMATE → no journal
-    # ------------------------------------------------
-    elif event_type == "change_estimate":
-        posted_journal_id = None
-
-    else:
-        raise ValueError("Unsupported event_type")
-
-    # ------------------------------------------------
-    # Mark posted
-    # ------------------------------------------------
-    cur.execute(_q(schema, """
-        UPDATE {schema}.asset_subsequent_measurements
-        SET
-            status='posted',
-            posted_journal_id=%s,
-            posted_at=NOW(),
-            approved_by=%s,
-            approved_at=NOW()
-        WHERE company_id=%s
-          AND id=%s
-    """), (
-        posted_journal_id,
-        posted_by,
-        company_id,
-        measurement_id
-    ))
-
-    upsert_carrying_snapshot(
-        cur,
-        company_id,
-        row["asset_id"],
-        as_at=row["event_date"],
-        source_event="subseq",
-        created_by=posted_by
-    )
-
-    cur.execute(_q(schema, """
-        SELECT *
-        FROM {schema}.asset_subsequent_measurements
-        WHERE id=%s
-    """), (measurement_id,))
-
-    if engagement_company_id and engagement_id:
-        currency_code = (
-            (row.get("currency_code") or "").strip()
-            or (row.get("currency") or "").strip()
-            or "ZAR"
-        )
-
-        amount_val = Decimal(str(row.get("amount") or 0))
-        event_type_norm = (row.get("event_type") or "posted").strip().lower()
-
-        db_service.upsert_engagement_posting_activity(
-            cur,
-            company_id=int(engagement_company_id),
-            engagement_id=int(engagement_id),
-            posting_date=row["event_date"],
-            module_name="ppe",
-            event_type=event_type_norm,
-            reference_no=f"ASM-{measurement_id}",
-            description=f"PPE subsequent measurement posted ({event_type_norm})",
-            prepared_by_user_id=posted_by,
-            reviewer_user_id=None,
-            status="posted",
-            amount=float(amount_val),
-            currency_code=currency_code,
-            source_table="asset_subsequent_measurements",
-            source_id=int(measurement_id),
-            notes=f"PPE event posted to journal {posted_journal_id}" if posted_journal_id else "PPE event posted without journal",
-            created_by_user_id=posted_by,
-            updated_by_user_id=posted_by,
-        )
-
-    return cur.fetchone()
-
 def create_journal(cur, schema, company_id, date, ref, description, currency, source, source_id):
     # idempotent check
     cur.execute(_q(schema, """
@@ -1052,7 +900,16 @@ def create_estimate_change_from_sm(cur, company_id: int, sm: dict, asset: dict) 
     ))
     return int(cur.fetchone()["id"])
 
-def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, approved_via=None, engagement_company_id: int | None = None, engagement_id: int | None = None) -> int:
+def post_subsequent_measurement(
+    cur,
+    company_id: int,
+    sm_id: int,
+    *,
+    user=None,
+    approved_via=None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
+) -> int:
     schema = company_schema(company_id)
 
     cur.execute(_q(schema, """
@@ -1064,6 +921,13 @@ def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, 
     if not sm:
         raise Exception("subsequent measurement not found")
 
+    engagement_company_id = (
+        engagement_company_id
+        or sm.get("engagement_company_id")
+        or sm.get("source_company_id")
+    )
+    engagement_id = engagement_id or sm.get("engagement_id")
+
     if (sm.get("status") or "").lower() == "posted" and sm.get("posted_journal_id"):
         return int(sm["posted_journal_id"])
 
@@ -1073,9 +937,7 @@ def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, 
 
     et = (sm.get("event_type") or "").strip().lower()
 
-    # 1) route
     if et == "add_cost":
-        # your existing SM add_cost posting logic (journal with debit/credit)
         jid = post_sm_add_cost(
             cur,
             company_id,
@@ -1113,14 +975,17 @@ def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, 
 
     elif et == "held_for_sale_classify":
         hfs_id = create_hfs_from_sm(cur, company_id, sm, asset)
-        jid = post_hfs(cur, company_id, hfs_id, user=user, approved_via=approved_via)
+        jid = post_hfs(
+            cur,
+            company_id,
+            hfs_id,
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
 
     elif et == "held_for_sale_unclassify":
-        # you don’t currently have a table/logic for “unclassify”
-        # recommended: implement post_hfs_unclassify() that:
-        # - finds active HFS row
-        # - journals reverse (Dr PPE / Cr HFS)
-        # - marks HFS status='reversed' and asset status back to 'active'
         jid = post_hfs_unclassify(
             cur,
             company_id,
@@ -1134,14 +999,11 @@ def post_subsequent_measurement(cur, company_id: int, sm_id: int, *, user=None, 
 
     elif et == "change_estimate":
         chg_id = create_estimate_change_from_sm(cur, company_id, sm, asset)
-        # no journal typically
         jid = None
-        # you can mark estimate change posted here or run a dedicated "apply estimates" function
 
     else:
         raise Exception(f"Unsupported subsequent measurement event_type '{et}'")
 
-    # 2) mark SM posted
     cur.execute(_q(schema, """
       UPDATE {schema}.asset_subsequent_measurements
       SET status='posted',

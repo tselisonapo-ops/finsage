@@ -83,7 +83,19 @@ def _parse_date(value, field_name: str = "date", required: bool = True) -> date 
 
     raise ValueError(f"Unsupported {field_name} value type: {type(value).__name__}")
 
+def _apply_engagement_bridge(payload_in: dict, *, actor_user_id=None) -> dict:
+    auth_ctx = getattr(g, "auth_context", {}) or {}
 
+    if auth_ctx.get("is_delegated_company_access"):
+        payload_in["source_company_id"] = auth_ctx.get("source_company_id")
+        payload_in["engagement_company_id"] = auth_ctx.get("source_company_id")
+        payload_in["engagement_id"] = auth_ctx.get("engagement_id")
+
+    if actor_user_id:
+        payload_in.setdefault("created_by_user_id", actor_user_id)
+        payload_in.setdefault("updated_by_user_id", actor_user_id)
+
+    return payload_in
 
 def _parse_optional_date(payload: dict, key: str) -> _date | None:
     v = payload.get(key)
@@ -395,6 +407,9 @@ def assets_list_or_create(company_id: int):
         return _opt()
 
     payload = request.jwt_payload or {}
+    actor_user_id = _actor_user_id(payload)
+    payload_in = _apply_engagement_bridge(payload_in, actor_user_id=actor_user_id)
+
     deny = _deny_if_wrong_company(
         payload,
         int(company_id),
@@ -628,6 +643,8 @@ def acquisitions_list_or_create(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
+    actor_user_id = _actor_user_id(payload)
+    payload_in = _apply_engagement_bridge(payload_in, actor_user_id=actor_user_id)
     deny = _deny_if_wrong_company(
         payload,
         int(company_id),
@@ -748,8 +765,19 @@ def acquisitions_post(company_id, acq_id):
     try:
         with get_conn(company_id) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                jid = posting.post_acquisition(cur, company_id, acq_id)
+                acq = service.get_acquisition(cur, company_id, acq_id)
 
+                jid = posting.post_acquisition(
+                    cur,
+                    company_id,
+                    acq_id,
+                    engagement_company_id=(
+                        (acq or {}).get("engagement_company_id")
+                        or (acq or {}).get("source_company_id")
+                    ),
+                    engagement_id=(acq or {}).get("engagement_id"),
+                    posted_by=_actor_user_id(payload),
+                )
                 # ✅ AUDIT
                 _audit_safe(
                     company_id=company_id,

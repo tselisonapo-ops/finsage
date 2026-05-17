@@ -14,6 +14,21 @@ def _jwt_user_id():
     uid = payload.get("user_id") or payload.get("sub")
     return int(uid) if uid is not None else None
 
+def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
+    body = dict(body or {})
+
+    auth_ctx = getattr(g, "auth_context", {}) or {}
+
+    if auth_ctx.get("is_delegated_company_access"):
+        body["source_company_id"] = auth_ctx.get("source_company_id")
+        body["engagement_company_id"] = auth_ctx.get("source_company_id")
+        body["engagement_id"] = auth_ctx.get("engagement_id")
+
+    if user_id:
+        body.setdefault("created_by_user_id", user_id)
+        body.setdefault("updated_by_user_id", user_id)
+
+    return body
 
 def _approval_payload_for_run(run: dict) -> dict:
     return {
@@ -122,6 +137,7 @@ def api_create_revenue_contract(company_id: int):
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
     body = _normalize_revenue_contract_body(request.get_json(silent=True) or {})
+    body = _apply_engagement_bridge(body, user_id=user_id)
 
     try:
         out = db_service.create_revenue_contract(company_id, body, user_id=user_id)
@@ -408,6 +424,7 @@ def api_create_revenue_contract_version(company_id: int, contract_id: int):
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
     body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
 
     try:
         out = db_service.create_revenue_contract_version(
@@ -468,6 +485,7 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
     body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
 
     timing = str(body.get("recognition_timing") or "point_in_time").strip().lower()
     body["recognition_timing"] = timing
@@ -645,6 +663,7 @@ def api_revenue_contracts(company_id: int):
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
     body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
     try:
         out = db_service.create_revenue_contract(company_id, body, user_id=user_id)
         try:
@@ -697,6 +716,7 @@ def api_revenue_runs(company_id: int):
 
     user_id = _jwt_user_id()
     body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
     try:
         out = db_service.create_revenue_recognition_run(company_id, body, user_id=user_id)
         try:
@@ -817,6 +837,7 @@ def api_record_revenue_billing_event(company_id: int, contract_id: int):
 
     user_id = _jwt_user_id()
     body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
 
     try:
         out = db_service.record_revenue_billing_event(
@@ -876,6 +897,7 @@ def api_record_revenue_cash_event(company_id: int, contract_id: int):
 
     user_id = _jwt_user_id()
     body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
 
     try:
         # --------------------------
@@ -1012,8 +1034,7 @@ def api_record_revenue_progress_update(company_id: int, obligation_id: int):
     user_id = _jwt_user_id()
     body = request.get_json(silent=True) or {}
 
-    user_id = _jwt_user_id()
-    body = request.get_json(silent=True) or {}
+    body = _apply_engagement_bridge(body, user_id=user_id)
 
     # 🔥 ADD HERE (before calling db_service)
     obl = db_service.get_revenue_obligation(company_id, obligation_id)
@@ -1170,12 +1191,21 @@ def api_post_revenue_recognition_run(company_id: int, run_id: int):
                 "error": "APPROVAL_REQUIRED",
                 "approval_request": req,
             }), 409
+        auth_ctx = getattr(g, "auth_context", {}) or {}
 
+        engagement_company_id = None
+        engagement_id = None
+
+        if auth_ctx.get("is_delegated_company_access"):
+            engagement_company_id = auth_ctx.get("source_company_id")
+            engagement_id = auth_ctx.get("engagement_id")
         # direct post path
         out = db_service.post_revenue_recognition_run(
             company_id=int(company_id),
             run_id=int(run_id),
             user_id=int(user_id),
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
         )
 
         try:
