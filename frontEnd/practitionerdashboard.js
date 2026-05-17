@@ -2439,12 +2439,63 @@ const PR_NAV_MENU = [
         desc: "Bills, vendor workflows, review stages",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.accountsPayable)
       },
+
+      {
+        name: "Revenue",
+        screen: PR_NAV.revenue,
+        desc: "Revenue posting, recognition and workflow controls",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.revenue)
+      },
+
+      {
+        name: "Inventory",
+        screen: PR_NAV.inventory,
+        desc: "Inventory receipts, valuation and stock workflows",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.inventory)
+      },
+
+      {
+        name: "Loans",
+        screen: PR_NAV.loans,
+        desc: "Loan schedules, postings and financing workflows",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.loans)
+      },
+
+      {
+        name: "VAT",
+        screen: PR_NAV.vat,
+        desc: "VAT preparation, review and submission workflows",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.vat)
+      },
+
+      {
+        name: "Cashbook",
+        screen: PR_NAV.cashbook,
+        desc: "Cashbook postings, reconciliations and controls",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.cashbook)
+      },
+
+      {
+        name: "Payments",
+        screen: PR_NAV.payments,
+        desc: "Payment processing and review workflows",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.payments)
+      },
+
+      {
+        name: "Receipts",
+        screen: PR_NAV.receipts,
+        desc: "Receipt allocations and customer receipt workflows",
+        visible: (me) => canAccessPractitionerScreen(me, PR_NAV.receipts)
+      },
+
       {
         name: "Leases",
         screen: PR_NAV.leases,
         desc: "Lease accounting workflow and review controls",
         visible: (me) => canAccessPractitionerScreen(me, PR_NAV.leases)
       },
+
       {
         name: "PPE",
         screen: PR_NAV.ppe,
@@ -2597,6 +2648,41 @@ const PR_SCREEN_POLICY = {
   "accounts-payable": { auth: "private", roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
   leases: { auth: "private", roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
   ppe: { auth: "private", roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
+
+  revenue: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
+
+  inventory: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
+
+  loans: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
+
+  vat: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
+
+  cashbook: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
+
+  payments: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
+
+  receipts: {
+    auth: "private",
+    roles: ["owner", "admin", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"]
+  },
 
   "day-to-day-postings": { auth: "private", roles: ["owner", "admin", "audit_staff", "senior_associate", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "client_service_manager"] },
   "monthly-close-routines": { auth: "private", roles: ["owner", "admin", "senior_associate", "bookkeeper", "fs_compiler", "reviewer", "audit_manager", "audit_partner", "client_service_manager"] },
@@ -2877,6 +2963,13 @@ function renderPractitionerScreenTitle(screen, me) {
     "accounts-payable": "Accounts Payable",
     leases: "Leases",
     ppe: "PPE",
+    revenue: "Revenue",
+    inventory: "Inventory",
+    loans: "Loans",
+    vat: "VAT",
+    cashbook: "Cashbook",
+    payments: "Payments",
+    receipts: "Receipts",
     "day-to-day-postings": "Day-to-Day Postings",
     "monthly-close-routines": "Monthly Close Routines",
     "year-end-reporting": "Year-End Reporting",
@@ -2919,6 +3012,13 @@ function renderPractitionerScreenTitle(screen, me) {
     "accounts-payable": "Manage payables posting and vendor workflow.",
     leases: "Review lease accounting workflow and engagement controls.",
     ppe: "Review fixed asset workflow and reporting events.",
+    revenue: "Revenue posting workflow, recognition controls and engagement review.",
+    inventory: "Inventory posting workflow, stock movements and valuation controls.",
+    loans: "Loan posting workflow, financing schedules and review controls.",
+    vat: "VAT preparation, filing workflow and review controls.",
+    cashbook: "Cashbook posting workflow, reconciliations and cash controls.",
+    payments: "Payment workflow, approvals and disbursement controls.",
+    receipts: "Receipt workflow, allocations and customer settlement controls.",
     "day-to-day-postings": "Monitor recurring posting activity for the engagement.",
     "monthly-close-routines": "Review monthly close routines and completion status.",
     "year-end-reporting": "Manage annual reporting and finalization workflow.",
