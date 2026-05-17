@@ -1715,6 +1715,261 @@ const PRACTITIONER_POSTING_MODULES = {
     emptyText: "No PPE posting activity available for the selected engagement."
   }
 };
+
+const POSTING_SCREEN_COPY = {
+  revenue: {
+    title: "Revenue",
+    subtitle: "View engagement-linked revenue posting activity including contracts, performance obligations, invoices, allocations, and revenue recognition journals.",
+    tableTitle: "Revenue Activity",
+    emptyTitle: "No Revenue Activity Found",
+    emptyText: "There are no engagement-linked revenue activity records for the current filters."
+  },
+  inventory: {
+    title: "Inventory",
+    subtitle: "View inventory posting activity including receipts, issues, transfers, adjustments, variances, and valuation movements.",
+    tableTitle: "Inventory Activity",
+    emptyTitle: "No Inventory Activity Found",
+    emptyText: "There are no engagement-linked inventory activity records for the current filters."
+  },
+  loans: {
+    title: "Loans",
+    subtitle: "View loan posting activity including drawdowns, payments, interest, amortisation, reclassifications, and settlements.",
+    tableTitle: "Loan Activity",
+    emptyTitle: "No Loan Activity Found",
+    emptyText: "There are no engagement-linked loan activity records for the current filters."
+  },
+  vat: {
+    title: "VAT",
+    subtitle: "View VAT posting activity including VAT settlements, payments, refunds, adjustments, and filing journals.",
+    tableTitle: "VAT Activity",
+    emptyTitle: "No VAT Activity Found",
+    emptyText: "There are no engagement-linked VAT activity records for the current filters."
+  },
+  cashbook: {
+    title: "Cashbook",
+    subtitle: "View cashbook posting activity including bank journals, reconciliations, transfers, deposits, reversals, and bank adjustments.",
+    tableTitle: "Cashbook Activity",
+    emptyTitle: "No Cashbook Activity Found",
+    emptyText: "There are no engagement-linked cashbook activity records for the current filters."
+  },
+  payments: {
+    title: "Payments",
+    subtitle: "View payment posting activity including supplier payments, settlements, allocations, reversals, and payment journals.",
+    tableTitle: "Payment Activity",
+    emptyTitle: "No Payment Activity Found",
+    emptyText: "There are no engagement-linked payment activity records for the current filters."
+  },
+  receipts: {
+    title: "Receipts",
+    subtitle: "View receipt posting activity including customer receipts, allocations, reversals, deposits, and receipt journals.",
+    tableTitle: "Receipt Activity",
+    emptyTitle: "No Receipt Activity Found",
+    emptyText: "There are no engagement-linked receipt activity records for the current filters."
+  }
+};
+
+function buildPostingModuleScreenHTML(prefix, copy) {
+  return `
+    <div class="space-y-4">
+      <div class="card p-6">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div class="panel-title">${copy.title}</div>
+            <div class="panel-subtitle mt-1">${copy.subtitle}</div>
+
+            <div class="mt-3 flex flex-wrap gap-2 text-xs">
+              <span class="badge-soft bg-slate-100">
+                Engagement: <strong class="ml-1" id="${prefix}-active-engagement-name">--</strong>
+              </span>
+              <span class="badge-soft bg-slate-100">
+                Code: <strong class="ml-1" id="${prefix}-active-engagement-code">--</strong>
+              </span>
+              <span class="badge-soft bg-slate-100">
+                Last Activity: <strong class="ml-1" id="${prefix}-last-activity-date">--</strong>
+              </span>
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <button id="${prefix}-open-posting-workspace-btn" class="btn btn-secondary" type="button">
+              Open Posting Workspace
+            </button>
+            <button id="${prefix}-refresh-btn" class="btn btn-primary" type="button">
+              Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div class="kpi-tile">
+          <div class="kpi-label">Total Items</div>
+          <div id="${prefix}-kpi-total-items" class="kpi-value mt-2">--</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Draft</div>
+          <div id="${prefix}-kpi-draft-count" class="kpi-value mt-2">--</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Under Review</div>
+          <div id="${prefix}-kpi-review-count" class="kpi-value mt-2">--</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Posted</div>
+          <div id="${prefix}-kpi-posted-count" class="kpi-value mt-2">--</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Amount Total</div>
+          <div id="${prefix}-kpi-total-amount" class="kpi-value mt-2">--</div>
+        </div>
+      </div>
+
+      <div class="card p-4 filter-panel">
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div>
+            <label for="${prefix}-filter-status" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Status</label>
+            <select id="${prefix}-filter-status" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+              <option value="">All Statuses</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="${prefix}-filter-event-type" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Event Type</label>
+            <select id="${prefix}-filter-event-type" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+              <option value="">All Events</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="${prefix}-filter-prepared-by" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Prepared By</label>
+            <select id="${prefix}-filter-prepared-by" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+              <option value="">All Preparers</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="${prefix}-filter-reviewer" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Reviewer</label>
+            <select id="${prefix}-filter-reviewer" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+              <option value="">All Reviewers</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="${prefix}-filter-date-from" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">From</label>
+            <input id="${prefix}-filter-date-from" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label for="${prefix}-filter-date-to" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">To</label>
+            <input id="${prefix}-filter-date-to" type="date" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div class="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+          <div>
+            <label for="${prefix}-filter-q" class="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Search</label>
+            <input
+              id="${prefix}-filter-q"
+              type="text"
+              placeholder="Reference, description, source table, source id..."
+              class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div class="flex items-end">
+            <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+              <input id="${prefix}-filter-mine-only" type="checkbox" />
+              <span>Mine only</span>
+            </label>
+          </div>
+
+          <div class="flex items-end justify-end gap-2">
+            <button id="${prefix}-filter-reset-btn" class="btn btn-secondary" type="button">Reset</button>
+            <button id="${prefix}-filter-apply-btn" class="btn btn-primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div class="text-sm font-semibold text-slate-900">${copy.tableTitle}</div>
+            <div id="${prefix}-table-caption" class="text-xs text-slate-500">
+              Read-only activity linked to the selected engagement.
+            </div>
+          </div>
+          <div class="text-xs text-slate-500">
+            Total Rows: <span id="${prefix}-total-rows">0</span>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm table-modern">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-slate-500">
+                <th class="py-3 pr-4">Date</th>
+                <th class="py-3 pr-4">Reference</th>
+                <th class="py-3 pr-4">Description</th>
+                <th class="py-3 pr-4">Event</th>
+                <th class="py-3 pr-4">Status</th>
+                <th class="py-3 pr-4">Amount</th>
+                <th class="py-3 pr-4">Prepared By</th>
+                <th class="py-3 pr-4">Reviewer</th>
+                <th class="py-3 pr-4">Source</th>
+                <th class="py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody id="${prefix}-table-body">
+              <tr>
+                <td colspan="10" class="py-10 text-center text-slate-500">
+                  ${copy.emptyText}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 md:flex-row md:items-center md:justify-between">
+          <div class="text-xs text-slate-500">
+            Showing <span id="${prefix}-page-from">0</span> - <span id="${prefix}-page-to">0</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="${prefix}-prev-page-btn" class="btn btn-secondary" type="button">Previous</button>
+            <div class="text-sm text-slate-600">Page <span id="${prefix}-current-page">1</span></div>
+            <button id="${prefix}-next-page-btn" class="btn btn-secondary" type="button">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="${prefix}-empty-state" class="card hidden p-10 text-center">
+        <div class="text-lg font-semibold text-slate-900">${copy.emptyTitle}</div>
+        <div class="mt-2 text-sm text-slate-500">
+          ${copy.emptyText}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function hydrateNewPostingModuleScreens() {
+  [
+    "revenue",
+    "inventory",
+    "loans",
+    "vat",
+    "cashbook",
+    "payments",
+    "receipts"
+  ].forEach((moduleKey) => {
+    const cfg = PRACTITIONER_POSTING_MODULES[moduleKey];
+    const copy = POSTING_SCREEN_COPY[moduleKey];
+    const section = document.getElementById(`screen-${cfg.screen}`);
+
+    if (!cfg || !copy || !section) return;
+
+    section.innerHTML = buildPostingModuleScreenHTML(cfg.prefix, copy);
+  });
+}
 /* ======================================================
   * Helpers
   * ==================================================== */
@@ -9550,6 +9805,7 @@ async function renderPractitionerPostingModuleScreen(me, screen) {
       last_activity_date: null
     }, me);
 
+  hydrateNewPostingModuleScreens();
   bindPractitionerPostingModuleEvents(me);
 
   if (!engagementId) {
