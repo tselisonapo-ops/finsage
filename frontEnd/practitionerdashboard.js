@@ -1970,6 +1970,14 @@ function hydrateNewPostingModuleScreens() {
     section.innerHTML = buildPostingModuleScreenHTML(cfg.prefix, copy);
   });
 }
+
+let PR_POSTING_SCREENS_HYDRATED = false;
+
+function ensurePostingScreensHydrated() {
+  if (PR_POSTING_SCREENS_HYDRATED) return;
+  hydrateNewPostingModuleScreens();
+  PR_POSTING_SCREENS_HYDRATED = true;
+}
 /* ======================================================
   * Helpers
   * ==================================================== */
@@ -9386,6 +9394,12 @@ function getSelectedPractitionerEngagementName() {
   return (
     PR_SELECTED_ENGAGEMENT?.engagement_name ||
     PR_SELECTED_ENGAGEMENT?.engagementName ||
+    PR_SELECTED_ENGAGEMENT?.name ||
+    window.__PR_CONTEXT__?.engagement?.engagement_name ||
+    window.__PR_CONTEXT__?.engagement?.engagementName ||
+    window.__PR_CONTEXT__?.engagement?.name ||
+    window.__PR_POSTING_CONTEXT__?.engagement_name ||
+    window.__PR_POSTING_CONTEXT__?.engagementName ||
     "--"
   );
 }
@@ -9394,6 +9408,12 @@ function getSelectedPractitionerEngagementCode() {
   return (
     PR_SELECTED_ENGAGEMENT?.engagement_code ||
     PR_SELECTED_ENGAGEMENT?.engagementCode ||
+    PR_SELECTED_ENGAGEMENT?.code ||
+    window.__PR_CONTEXT__?.engagement?.engagement_code ||
+    window.__PR_CONTEXT__?.engagement?.engagementCode ||
+    window.__PR_CONTEXT__?.engagement?.code ||
+    window.__PR_POSTING_CONTEXT__?.engagement_code ||
+    window.__PR_POSTING_CONTEXT__?.engagementCode ||
     "--"
   );
 }
@@ -9805,7 +9825,6 @@ async function renderPractitionerPostingModuleScreen(me, screen) {
       last_activity_date: null
     }, me);
 
-  hydrateNewPostingModuleScreens();
   bindPractitionerPostingModuleEvents(me);
 
   if (!engagementId) {
@@ -21531,7 +21550,7 @@ async function bootstrapPractitionerApp(me) {
   bindCompanyIdentity(me);
   renderContextBar(me);
   renderStaticPlaceholders();
-
+  ensurePostingScreensHydrated();
   console.log("NAV ROLE RAW:", me);
   console.log("NAV ROLE NORMALIZED:", getUserNormalizedRole(me));
 
