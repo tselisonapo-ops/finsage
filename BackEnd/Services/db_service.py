@@ -29656,11 +29656,8 @@ class DatabaseService:
                 "source_id": int(summary_id),
             }
 
-            journal_id = int(self.insert_journal(company_id, journal_entry, cur=cur) or 0)
-            if journal_id <= 0:
-                raise ValueError("Failed to create journal header")
+            journal_lines = []
 
-            # 3) Ledger + TB
             for jl in jlines:
                 raw_code = (jl.get("account_code") or "").strip()
                 dc = (jl.get("dc") or "").upper()
@@ -29674,33 +29671,31 @@ class DatabaseService:
                     raise ValueError(f"Account '{raw_code}' not found in company COA.")
 
                 code = (row[1] or "").strip()
-                if not code:
-                    raise ValueError(f"Resolved posting code blank for '{raw_code}'")
 
-                line = {
+                journal_lines.append({
                     "account_code": code,
-                    "debit":  amt if dc == "D" else 0.0,
+                    "debit": amt if dc == "D" else 0.0,
                     "credit": amt if dc == "C" else 0.0,
                     "description": desc,
-                }
+                    "memo": desc,
+                })
 
-                self.insert_ledger(
-                    company_id=company_id,
-                    journal_id=journal_id,
-                    je_date=pos_date,
-                    line=line,
-                    ref=ref,
-                    customer_id=None,
-                    source="pos",
-                    source_id=int(summary_id),
-                    cur=cur,
-                )
+            journal_entry = {
+                "date": pos_date,
+                "ref": ref,
+                "description": desc,
+                "gross_amount": money(pos.get("gross_amount") or 0.0),
+                "net_amount": money(pos.get("net_amount") or 0.0),
+                "vat_amount": money(pos.get("vat_amount") or 0.0),
+                "source": "pos",
+                "source_id": int(summary_id),
+                "module_name": "cashbook",
+                "event_type": "posted",
+                "source_table": "pos_summaries",
+                "lines": journal_lines,
+            }
 
-                self.update_trial_balance(company_id, line, cur=cur)
-
-                if self.requires_notes(code):
-                    self.insert_note(company_id, journal_id, code, desc, cur=cur)
-
+            journal_id = int(self.post_journal(company_id, journal_entry, cur=cur) or 0)
             # ✅ 3b) Inventory depletion hook (COGS/Inventory)
             self.post_pos_inventory_if_needed(
                 company_id=company_id,
@@ -33618,6 +33613,10 @@ class DatabaseService:
 
         entry["source"] = "loan_origination"
         entry["source_id"] = int(loan_id)
+        entry["module_name"] = "loans"
+        entry["event_type"] = "posted"
+        entry["source_table"] = "loans"
+        entry["updated_by_user_id"] = user_id
         entry["created_by_user_id"] = user_id
         entry["prepared_by_user_id"] = user_id
 
@@ -34975,7 +34974,14 @@ class DatabaseService:
                 preview_entry,
                 row=loan_row,
             )
+
             preview_entry["module_name"] = "loans"
+            preview_entry["event_type"] = "posted"
+            preview_entry["source_table"] = "loan_payments"
+            preview_entry["created_by_user_id"] = user_id
+            preview_entry["updated_by_user_id"] = user_id
+            preview_entry["prepared_by_user_id"] = user_id
+            
             journal_id = self.post_journal(company_id, preview_entry, cur=cur)
 
             cur.execute(f"""
@@ -35443,6 +35449,13 @@ class DatabaseService:
 
         with conn.cursor() as cur:
             header["module_name"] = "loans"
+            header["module_name"] = "loans"
+            header["event_type"] = "posted"
+            header["source_table"] = "loans"
+            header["created_by_user_id"] = user_id
+            header["updated_by_user_id"] = user_id
+            header["prepared_by_user_id"] = user_id
+
             jid = self.post_journal(company_id, header, cur=cur)
 
             cur.execute(f"""
@@ -38233,6 +38246,21 @@ class DatabaseService:
                         ],
                     }
 
+                    entry = self._apply_engagement_bridge_to_entry(
+                        entry,
+                        row=pay,
+                    )
+
+                    if not entry.get("engagement_id"):
+                        entry = self._apply_engagement_bridge_to_entry(
+                            entry,
+                            row=bill,
+                        )
+
+                    entry["module_name"] = "accounts_payable"
+                    entry["event_type"] = "posted"
+                    entry["source_table"] = "vendor_payment_allocations"
+
                     jid = int(self.post_journal(company_id, entry, cur=cur) or 0)
                     if jid <= 0:
                         raise ValueError("Failed to post allocation apply journal")
@@ -38488,6 +38516,17 @@ class DatabaseService:
                     "lines": lines,
                 }
 
+                entry = self._apply_engagement_bridge_to_entry(
+                    entry,
+                    row=pay,
+                )
+
+                entry["module_name"] = "payments"
+                entry["event_type"] = "posted"
+                entry["source_table"] = "vendor_payments"
+                entry["created_by_user_id"] = user_id
+                entry["updated_by_user_id"] = user_id
+                entry["prepared_by_user_id"] = user_id
                 # IMPORTANT: post_journal likely uses its own connection.
                 # Because we hold a FOR UPDATE lock in THIS transaction, we must not commit until after we stamp released.
                 journal_id = int(self.post_journal(company_id, entry, cur=cur) or 0)
@@ -39237,74 +39276,69 @@ class DatabaseService:
                     "source_id": int(bill_id),
                 }
 
-                writeoff_journal_id = int(self.insert_journal(company_id, wo_entry, cur=cur) or 0)
-                if writeoff_journal_id <= 0:
-                    raise ValueError("Failed to create write-off journal")
-
-                # 6) Ledger lines
-                # DR AP (reduce liability) — keep vendor_id so AP subledger closes
-                dr_ap = {
-                    "account_code": ap_control,
-                    "debit": float(gross),
-                    "credit": 0.0,
-                    "description": wo_desc,
-                    "memo": wo_reason,
-                }
-                self.insert_ledger(company_id, writeoff_journal_id, je_date, dr_ap, ref=wo_ref, vendor_id=vendor_id, cur=cur)
-                self.update_trial_balance(company_id, dr_ap, cur=cur)
+                lines = [
+                    {
+                        "account_code": ap_control,
+                        "debit": float(gross),
+                        "credit": 0.0,
+                        "description": wo_desc,
+                        "memo": wo_reason,
+                        "vendor_id": vendor_id,
+                    }
+                ]
 
                 if vat_adjust and vat > money("0.00"):
-                    # ✅ VAT-aware: CR writeoff net + CR input VAT (reversing claim)
                     if not vat_input_account:
                         raise ValueError("vat_input_account required when vat_adjust=true")
 
-                    cr_net = {
+                    lines.append({
                         "account_code": writeoff_account_code,
                         "debit": 0.0,
                         "credit": float(net),
                         "description": wo_desc,
                         "memo": wo_reason,
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, cr_net, ref=wo_ref, vendor_id=None, cur=cur)
-                    self.update_trial_balance(company_id, cr_net, cur=cur)
+                    })
 
-                    cr_vat = {
+                    lines.append({
                         "account_code": vat_input_account,
                         "debit": 0.0,
                         "credit": float(vat),
                         "description": wo_desc,
                         "memo": "Reverse input VAT on bill write-off",
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, cr_vat, ref=wo_ref, vendor_id=None, cur=cur)
-                    self.update_trial_balance(company_id, cr_vat, cur=cur)
-
+                    })
                 else:
-                    # ✅ Simple: CR one account for full gross
-                    cr = {
+                    lines.append({
                         "account_code": writeoff_account_code,
                         "debit": 0.0,
                         "credit": float(gross),
                         "description": wo_desc,
                         "memo": wo_reason,
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, cr, ref=wo_ref, vendor_id=None, cur=cur)
-                    self.update_trial_balance(company_id, cr, cur=cur)
+                    })
 
-                # 7) Stamp bill
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.bills
-                    SET status='written_off',
-                        writeoff_journal_id=%s,
-                        written_off_at=NOW(),
-                        written_off_by=%s,
-                        writeoff_reason=%s,
-                        updated_at=NOW()
-                    WHERE id=%s
-                    RETURNING id;
-                    """,
-                    (writeoff_journal_id, written_off_by, wo_reason, bill_id),
+                wo_entry = {
+                    "date": je_date,
+                    "ref": wo_ref,
+                    "description": wo_desc,
+                    "gross_amount": float(gross),
+                    "net_amount": float(net),
+                    "vat_amount": float(vat),
+                    "source": "bill_writeoff",
+                    "source_id": int(bill_id),
+                    "module_name": "accounts_payable",
+                    "event_type": "posted",
+                    "source_table": "bills",
+                    "created_by_user_id": written_off_by,
+                    "updated_by_user_id": written_off_by,
+                    "prepared_by_user_id": written_off_by,
+                    "lines": lines,
+                }
+
+                wo_entry = self._apply_engagement_bridge_to_entry(
+                    wo_entry,
+                    row=b,
                 )
+
+                writeoff_journal_id = int(self.post_journal(company_id, wo_entry, cur=cur) or 0)
                 if not cur.fetchone():
                     raise ValueError("Failed to stamp bill written off")
 
@@ -43085,6 +43119,7 @@ class DatabaseService:
                 cur.execute(
                     f"""
                     SELECT id, number, status, posted_journal_id, reversed_journal_id, customer_id
+                    source_company_id, engagement_company_id, engagement_id
                     FROM {schema}.invoices
                     WHERE id=%s
                     FOR UPDATE;
@@ -43188,6 +43223,15 @@ class DatabaseService:
                     "created_by_user_id": reversed_by,
                     "updated_by_user_id": reversed_by,
                 }
+
+                rev_entry = self._apply_engagement_bridge_to_entry(
+                    rev_entry,
+                    row=inv,
+                )
+
+                rev_entry["module_name"] = "accounts_receivable"
+                rev_entry["event_type"] = "reversed"
+                rev_entry["source_table"] = "invoices"
 
                 reversal_journal_id = int(self.post_journal(company_id, rev_entry, cur=cur) or 0)
 
@@ -44157,6 +44201,18 @@ class DatabaseService:
             "source_id": int(receipt_id),
             "lines": lines,
         }
+
+        entry = self._apply_engagement_bridge_to_entry(
+            entry,
+            row=inv,
+        )
+
+        entry["module_name"] = "receipts"
+        entry["event_type"] = "posted"
+        entry["source_table"] = "receipts"
+        entry["created_by_user_id"] = user_id
+        entry["updated_by_user_id"] = user_id
+        entry["prepared_by_user_id"] = user_id
 
         journal_id = (
             self.post_journal_with_overdraft(company_id, entry)
@@ -45880,18 +45936,30 @@ class DatabaseService:
                     "source": "lease_monthly",
                     "source_id": int(schedule_id),
                 }
-                journal_id = int(self.insert_journal(company_id, entry, cur=cur) or 0)
-                print("[post_invoice_to_gl] journal_id", journal_id, flush=True)
-                if journal_id <= 0:
-                    raise ValueError("Failed to create journal header")
+                entry = {
+                    "date": j_date,
+                    "ref": f"LEASE-{row['lease_id']}-P{row['period_no']}",
+                    "description": desc,
+                    "gross_amount": float(row.get("payment") or 0.0),
+                    "net_amount": float(row.get("payment") or 0.0),
+                    "vat_amount": 0.0,
+                    "source": "lease_monthly",
+                    "source_id": int(schedule_id),
+                    "module_name": "leases",
+                    "event_type": "posted",
+                    "source_table": "lease_schedule",
+                    "created_by_user_id": user_id,
+                    "updated_by_user_id": user_id,
+                    "prepared_by_user_id": user_id,
+                    "lines": lines,
+                }
 
-                for line in lines:
-                    self.insert_ledger(company_id=company_id, journal_id=journal_id, je_date=j_date, line=line, ref=entry["ref"], source="lease_monthly", source_id=int(schedule_id), cur=cur)
-                    self.update_trial_balance(company_id, line, cur=cur)
-                    if hasattr(self, "requires_notes") and self.requires_notes(line["account_code"]):
-                        if hasattr(self, "insert_note"):
-                            self.insert_note(company_id, journal_id, line["account_code"], desc, cur=cur)
+                entry = self._apply_engagement_bridge_to_entry(
+                    entry,
+                    row=lease,
+                )
 
+                journal_id = int(self.post_journal(company_id, entry, cur=cur) or 0)
                 # stamp schedule
                 try:
                     cur.execute(
@@ -64914,8 +64982,15 @@ class DatabaseService:
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
                 "module_name": "revenue",
+                "event_type": "posted",
+                "source_table": "revenue_recognition_runs",
+                "prepared_by_user_id": int(user_id or 0) or None,
             }
 
+            entry = self._apply_engagement_bridge_to_entry(
+                entry,
+                row=run,
+            )
             journal_id = self.post_journal(
                 company_id=int(company_id),
                 entry=entry,
@@ -65073,10 +65148,19 @@ class DatabaseService:
                 "lines": reversed_lines,
                 "source": "adjustment",
                 "source_id": -int(run_id),
+                "source_table": "revenue_recognition_runs",
                 "currency": (run.get("currency") or "ZAR"),
+                "module_name": "revenue",
+                "event_type": "reversed",
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
+                "prepared_by_user_id": int(user_id or 0) or None,
             }
+
+            entry = self._apply_engagement_bridge_to_entry(
+                entry,
+                row=run,
+            )
 
             journal_id = self.post_journal(
                 company_id=int(company_id),
@@ -67547,6 +67631,14 @@ class DatabaseService:
                         "description": f"Project material issue #{tx_id}",
                         "source": "project_material_issue",
                         "source_id": int(tx_id),
+                        "source_table": "inventory_tx",
+                        "module_name": "inventory",
+                        "event_type": "posted",
+                        "engagement_company_id": project.get("engagement_company_id") or project.get("source_company_id"),
+                        "engagement_id": project.get("engagement_id"),
+                        "created_by_user_id": created_by,
+                        "updated_by_user_id": created_by,
+                        "prepared_by_user_id": created_by,
                         "lines": journal_lines,
                     },
                     cur=cur,
