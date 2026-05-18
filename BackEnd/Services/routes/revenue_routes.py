@@ -479,7 +479,8 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
     body = _normalize_revenue_contract_body(request.get_json(silent=True) or {})
-
+    body = _apply_engagement_bridge(body, user_id=user_id)
+    
     try:
         existing = db_service.get_revenue_contract(int(company_id), int(contract_id))
         if not existing:
