@@ -37833,7 +37833,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-  async function loadRevenueProjectTaskOptions(selectedTaskId = "") {
+  async function loadRevenueProjectTaskOptions(selectedTaskId = "", projectIdOverride = null) {
     const sel = $("revProjectTaskId");
     const hint = $("revProjectTaskHint");
 
@@ -37842,12 +37842,15 @@ function bindAssetRecordsPickerModal({ cid }) {
     sel.innerHTML = `<option value="">No linked task</option>`;
 
     const cid = state.cid || activeCid();
-    const projectId = state.selectedContract?.project_id;
+
+    const projectId =
+      projectIdOverride ||
+      state.selectedObligation?.payload_json?.project_id ||
+      state.selectedContract?.project_id ||
+      null;
 
     if (!cid || !projectId) {
-      if (hint) {
-        hint.textContent = "No project linked to this contract.";
-      }
+      if (hint) hint.textContent = "No project linked to this contract/obligation.";
       return;
     }
 
@@ -37871,18 +37874,18 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (hint) {
       hint.textContent = rows.length
-        ? `${rows.length} project task(s) loaded`
+        ? `${rows.length} task(s) loaded from linked project.`
         : "No tasks found for linked project.";
     }
   }
 
   async function openRevenueObligationForEdit(o = {}) {
-    const selectedTaskId =
-      o?.project_task_id ||
-      o?.payload_json?.project_task_id ||
-      "";
+    const pj = o.payload_json || {};
 
-    await loadRevenueProjectTaskOptions(selectedTaskId);
+    await loadRevenueProjectTaskOptions(
+      o.project_task_id || pj.project_task_id || "",
+      o.project_id || pj.project_id || state.selectedContract?.project_id || null
+    );
 
     hydrateObligationForm(o);
     renderObligationPreview(o);

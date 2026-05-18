@@ -64071,7 +64071,26 @@ class DatabaseService:
             int(row["contract_id"]),
             cur=cur,
         )
+
         row = self._enrich_obligation_milestone_fields(contract, row)
+
+        payload_json = row.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            try:
+                payload_json = json.loads(payload_json or "{}")
+            except Exception:
+                payload_json = {}
+
+        if contract:
+            project_id = contract.get("project_id")
+
+            if project_id:
+                payload_json["project_id"] = int(project_id)
+                payload_json["project_code"] = contract.get("project_code")
+                payload_json["project_name"] = contract.get("project_name")
+
+        row["payload_json"] = payload_json
+
         return row
 
     def create_revenue_recognition_run(self, company_id: int, data: dict, user_id: int | None = None) -> dict:
