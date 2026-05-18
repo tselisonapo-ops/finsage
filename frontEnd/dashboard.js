@@ -37844,7 +37844,9 @@ function bindAssetRecordsPickerModal({ cid }) {
 
     if (!cid || !projectId) return;
 
-    const project = await apiFetch(`/api/companies/${cid}/projects/${projectId}`);
+    const project = await apiFetch(
+      ENDPOINTS.projects.get(cid, projectId)
+    );
 
     const tasks = project?.tasks || [];
 
@@ -40176,7 +40178,9 @@ function toggleRevenueProgressDriverFields() {
       return;
     }
 
-    const project = await apiFetch(`/api/companies/${cid}/projects/${projectId}`);
+    const project = await apiFetch(
+      ENDPOINTS.projects.get(cid, projectId)
+    );
     const tasks = project?.tasks || [];
 
     sel.innerHTML =
