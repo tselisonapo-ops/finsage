@@ -12702,7 +12702,22 @@ class DatabaseService:
             SELECT 1 FROM information_schema.columns
             WHERE table_schema='{schema}' AND table_name='assets' AND column_name='opening_impairment'
         ) THEN
-            EXECUTE format('ALTER TABLE %I.assets ADD COLUMN opening_impairment NUMERIC(18,2) NULL', '{schema}');
+            EXECUTE format(
+            'ALTER TABLE %I.assets
+            ADD COLUMN opening_impairment NUMERIC(18,2) NULL',
+            '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}'
+            AND table_name='assets'
+            AND column_name='opening_revaluation_surplus'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.assets
+            ADD COLUMN opening_revaluation_surplus NUMERIC(18,2) NULL',
+            '{schema}');
         END IF;
         END
         $add_assets_opening_fields$;
@@ -12720,7 +12735,7 @@ class DatabaseService:
             CHECK (
                 opening_cost IS NULL OR opening_cost >= 0
                 AND opening_accum_dep IS NULL OR opening_accum_dep >= 0
-                AND opening_impairment IS NULL OR opening_impairment >= 0
+                AND opening_revaluation_surplus IS NULL OR opening_revaluation_surplus >= 0+
             )',
             '{schema}'
             );

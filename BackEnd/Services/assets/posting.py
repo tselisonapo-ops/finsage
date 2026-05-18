@@ -270,6 +270,119 @@ def asset_class_key(asset_row: dict, policy: dict) -> str:
 
     return direct or "unknown"
 
+def resolve_opening_equity_account(cur, schema: str, company_id: int) -> str:
+    cur.execute(_q(schema, """
+        SELECT code
+        FROM {schema}.coa
+        WHERE company_id=%s
+          AND role IN ('equity_opening_balance', 'opening_balance_equity')
+        ORDER BY code
+        LIMIT 1
+    """), (company_id,))
+    row = fetchone(cur)
+
+    if row and row.get("code"):
+        return (row.get("code") or "").strip()
+
+    raise Exception("Opening Balance Equity account not found in company COA")
+
+def resolve_revaluation_surplus_account(cur, schema: str, company_id: int) -> str:
+    cur.execute(_q(schema, """
+        SELECT code
+        FROM {schema}.coa
+        WHERE company_id=%s
+          AND role IN ('equity_revaluation_reserve', 'revaluation_surplus')
+        ORDER BY code
+        LIMIT 1
+    """), (company_id,))
+    row = fetchone(cur)
+
+    if row and row.get("code"):
+        return (row.get("code") or "").strip()
+
+    raise Exception("Revaluation reserve / surplus account not found in company COA")
+
+def build_opening_balance_preview(cur, company_id: int, asset_id: int, *, posting_date=None) -> dict:
+    schema = company_schema(company_id)
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id=%s AND id=%s
+    """), (company_id, asset_id))
+    asset = fetchone(cur)
+    if not asset:
+        raise Exception("asset not found")
+
+    asset_account_code = (asset.get("asset_account_code") or "").strip()
+    _, resolved_accum_dep_code = resolve_depreciation_accounts(cur, schema, company_id, asset)
+    _, resolved_accum_impairment_code = resolve_impairment_accounts(cur, schema, company_id, asset)
+
+    cost = Decimal(str(asset.get("cost") or 0))
+    opening_accum_dep = Decimal(str(asset.get("opening_accum_dep") or 0))
+    opening_impairment = Decimal(str(asset.get("opening_impairment") or 0))
+    opening_revaluation_surplus = Decimal(str(asset.get("opening_revaluation_surplus") or 0))
+
+    carrying = cost - opening_accum_dep - opening_impairment
+    opening_equity_amount = carrying - opening_revaluation_surplus
+
+    lines = [
+        {
+            "account_code": asset_account_code,
+            "account_name": "Asset cost account",
+            "debit": float(_q2(cost)),
+            "credit": 0,
+            "memo": "Opening asset cost",
+        }
+    ]
+
+    if opening_accum_dep > 0:
+        lines.append({
+            "account_code": resolved_accum_dep_code,
+            "account_name": "Accumulated depreciation / amortisation",
+            "debit": 0,
+            "credit": float(_q2(opening_accum_dep)),
+            "memo": "Opening accumulated depreciation / amortisation",
+        })
+
+    if opening_impairment > 0:
+        lines.append({
+            "account_code": resolved_accum_impairment_code,
+            "account_name": "Accumulated impairment",
+            "debit": 0,
+            "credit": float(_q2(opening_impairment)),
+            "memo": "Opening accumulated impairment",
+        })
+
+    if opening_revaluation_surplus > 0:
+        reval_surplus_code = resolve_revaluation_surplus_account(cur, schema, company_id)
+        lines.append({
+            "account_code": reval_surplus_code,
+            "account_name": "Revaluation surplus / OCI reserve",
+            "debit": 0,
+            "credit": float(_q2(opening_revaluation_surplus)),
+            "memo": "Opening revaluation surplus",
+        })
+
+    if opening_equity_amount > 0:
+        opening_equity_code = resolve_opening_equity_account(cur, schema, company_id)
+        lines.append({
+            "account_code": opening_equity_code,
+            "account_name": "Opening balance equity",
+            "debit": 0,
+            "credit": float(_q2(opening_equity_amount)),
+            "memo": "Opening balance equity",
+        })
+
+    return {
+        "ok": True,
+        "ref": f"OB-ASSET-{asset_id}",
+        "posting_date": str(posting_date) if posting_date else None,
+        "description": f"Asset opening balance: {asset.get('asset_code')} - {asset.get('asset_name')}",
+        "lines": lines,
+        "total_debit": sum(float(x["debit"] or 0) for x in lines),
+        "total_credit": sum(float(x["credit"] or 0) for x in lines),
+    }
 
 def asset_standard_and_model(asset_row: dict, policy: dict) -> tuple[str, str]:
     # standard (ias16 / ias40 / ias38)
@@ -296,7 +409,7 @@ def asset_standard_and_model(asset_row: dict, policy: dict) -> tuple[str, str]:
         std = "ias40"
 
     # model (cost / revaluation / fair_value)
-    model = (asset_row.get("measurement_model") or "").strip().lower()
+    model = (asset_row.get("measurement_basis") or "").strip().lower()
     if model in ("fv", "fairvalue", "fair value"):
         model = "fair_value"
 
@@ -2101,6 +2214,8 @@ def post_opening_balance(
     cost = Decimal(str(asset.get("cost") or 0))
     opening_accum_dep = Decimal(str(asset.get("opening_accum_dep") or 0))
     opening_impairment = Decimal(str(asset.get("opening_impairment") or 0))
+    measurement_basis = (asset.get("measurement_basis") or "cost").strip().lower()
+    opening_revaluation_surplus = Decimal(str(asset.get("opening_revaluation_surplus") or 0))
     opening_as_at = (
         asset.get("opening_as_at")
         or asset.get("available_for_use_date")
@@ -2116,29 +2231,30 @@ def post_opening_balance(
         raise Exception("opening_accum_dep cannot be negative")
     if opening_impairment < 0:
         raise Exception("opening_impairment cannot be negative")
+    if opening_revaluation_surplus < 0:
+        raise Exception("opening_revaluation_surplus cannot be negative")
+
+    if measurement_basis != "revaluation" and opening_revaluation_surplus > 0:
+        raise Exception("opening_revaluation_surplus is only allowed when measurement_basis='revaluation'")
+
     if opening_accum_dep > cost:
         raise Exception("opening_accum_dep cannot exceed cost")
 
     carrying = cost - opening_accum_dep - opening_impairment
+    opening_equity_amount = carrying - opening_revaluation_surplus
+
     if carrying < 0:
         raise Exception("invalid opening values: carrying amount cannot be negative")
 
+    if opening_revaluation_surplus > carrying:
+        raise Exception("opening_revaluation_surplus cannot exceed carrying amount")
+
+    if opening_equity_amount < 0:
+        raise Exception("invalid opening values: opening equity amount cannot be negative")
+
     ccy = get_company_currency(cur, company_id)
 
-    cur.execute(_q(schema, """
-        SELECT code
-        FROM {schema}.coa
-        WHERE company_id=%s
-          AND template_code_scoped IN ('G::3105', 'G::BS_EQ_3105')
-        ORDER BY code
-        LIMIT 1
-    """), (company_id,))
-    row = cur.fetchone()
-
-    if not row or not row.get("code"):
-        raise Exception("Opening Balance Equity account (G::3105 / G::BS_EQ_3105) not found in company COA")
-
-    opening_equity_code = (row.get("code") or "").strip()
+    opening_equity_code = resolve_opening_equity_account(cur, schema, company_id)
 
     ref = f"OB-ASSET-{asset['id']}"
 
@@ -2185,12 +2301,22 @@ def post_opening_balance(
             "opening_balance", asset["id"]
         )
 
-    if carrying > 0:
+    if opening_revaluation_surplus > 0:
+        reval_surplus_code = resolve_revaluation_surplus_account(cur, schema, company_id)
+
+        add_line(
+            cur, schema, company_id, jid,
+            reval_surplus_code,
+            "Opening revaluation surplus",
+            0, float(_q2(opening_revaluation_surplus)),
+            "opening_balance", asset["id"]
+        )
+    if opening_equity_amount > 0:
         add_line(
             cur, schema, company_id, jid,
             opening_equity_code,
             "Opening balance equity",
-            0, float(_q2(carrying)),
+            0, float(_q2(opening_equity_amount)),
             "opening_balance", asset["id"]
         )
 

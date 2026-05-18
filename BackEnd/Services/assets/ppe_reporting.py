@@ -472,7 +472,7 @@ def assets_list_or_create(company_id: int):
 
     payload_in = _apply_engagement_bridge(
         payload_in,
-        actor_user_id=actor_user_id,
+        user_id=actor_user_id,
     )
     try:
         entry_mode = (payload_in.get("entry_mode") or "acquisition").strip().lower()
@@ -596,7 +596,7 @@ def assets_get_or_update(company_id, asset_id):
 
     payload_in = _apply_engagement_bridge(
         payload_in,
-        actor_user_id=actor_user_id,
+        user_id=actor_user_id,
     )
 
     try:
@@ -672,7 +672,6 @@ def acquisitions_list_or_create(company_id, asset_id):
 
     payload = request.jwt_payload or {}
     actor_user_id = _actor_user_id(payload)
-    payload_in = _apply_engagement_bridge(payload_in, actor_user_id=actor_user_id)
     deny = _deny_if_wrong_company(
         payload,
         int(company_id),
@@ -689,6 +688,7 @@ def acquisitions_list_or_create(company_id, asset_id):
 
     # POST: create acquisition
     payload_in = request.get_json(force=True) or {}
+    payload_in = _apply_engagement_bridge(payload_in, actor_user_id=actor_user_id)
 
     funding = (payload_in.get("funding_source") or payload_in.get("funding") or "cash")
     funding = str(funding).strip().lower()
