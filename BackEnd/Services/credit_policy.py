@@ -973,6 +973,14 @@ def loan_policy_flags(pol: dict) -> dict:
 
 
 def can_manage_loans(user: dict, company_profile: dict, mode: str) -> bool:
+    perms = set(user.get("permissions") or [])
+
+    if (
+        user.get("can_manage_loans")
+        or "can_manage_loans" in perms
+    ):
+        return True
+
     if is_assignment_execution_context(user):
         role = normalize_role(
             user.get("user_role")
