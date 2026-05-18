@@ -866,7 +866,7 @@ def create_asset(cur, company_id, payload):
         VALUES (
             %s,
             %s,%s,%s,%s,%s,%s,%s,%s,
-            %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s,
             %s,%s,%s,%s,
             %s,%s,
             %s,
