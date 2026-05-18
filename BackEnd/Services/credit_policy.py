@@ -974,11 +974,27 @@ def loan_policy_flags(pol: dict) -> dict:
 
 def can_manage_loans(user: dict, company_profile: dict, mode: str) -> bool:
     if is_assignment_execution_context(user):
-        role = normalize_role(user.get("user_role") or user.get("role") or user.get("system_role") or "")
+        role = normalize_role(
+            user.get("user_role")
+            or user.get("role")
+            or user.get("system_role")
+            or ""
+        )
+
         return role in {
-            "owner", "admin", "reviewer", "audit_manager",
-            "client_service_manager", "engagement_partner",
-            "quality_control_reviewer"
+            "owner",
+            "admin",
+            "bookkeeper",
+            "accountant",
+            "accounting_trainee",
+            "fs_compiler",
+            "tax_preparer",
+            "senior_associate",
+            "reviewer",
+            "audit_manager",
+            "client_service_manager",
+            "engagement_partner",
+            "quality_control_reviewer",
         }
 
     mode = normalize_policy_mode(mode)
