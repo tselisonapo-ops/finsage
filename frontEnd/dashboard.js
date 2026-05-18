@@ -41020,7 +41020,20 @@ function toggleRevenueProgressDriverFields() {
         const row = state.contracts.find((x) => Number(x.id) === id);
         if (!row) return;
 
-        state.selectedContract = row;
+        let fullContract = row;
+
+        try {
+          const out = await apiFetch(
+            ENDPOINTS.revenue.contract(state.cid || activeCid(), id),
+            { method: "GET" }
+          );
+
+          fullContract = out?.data || out || row;
+        } catch (e) {
+          console.warn("[Revenue] full contract fetch failed, using list row", e);
+        }
+
+        state.selectedContract = fullContract;
         state.selectedObligation = null;
 
         // ✅ NEW: load billing policy when user selects contract

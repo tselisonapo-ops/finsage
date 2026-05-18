@@ -60430,7 +60430,26 @@ class DatabaseService:
             LIMIT 1;
         """
 
-        return self.fetch_one(sql, (int(company_id), int(contract_id)), cur=cur)
+        row = self.fetch_one(sql, (int(company_id), int(contract_id)), cur=cur)
+
+        if not row:
+            return None
+
+        payload_json = row.get("payload_json") or {}
+        if isinstance(payload_json, str):
+            try:
+                payload_json = json.loads(payload_json or "{}")
+            except Exception:
+                payload_json = {}
+
+        if row.get("project_id"):
+            payload_json["project_id"] = int(row.get("project_id"))
+            payload_json["project_code"] = row.get("project_code")
+            payload_json["project_name"] = row.get("project_name")
+
+        row["payload_json"] = payload_json
+
+        return row
 
     def validate_project_task(
         self,
