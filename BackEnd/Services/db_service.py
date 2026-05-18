@@ -54995,6 +54995,39 @@ class DatabaseService:
         if created_by_user_id:
             entry["created_by_user_id"] = int(created_by_user_id)
 
+        # fallback to delegated auth context
+        try:
+            auth_ctx = getattr(g, "auth_context", {}) or {}
+            jwt_payload = getattr(request, "jwt_payload", {}) or {}
+
+            is_delegated = (
+                auth_ctx.get("is_delegated_company_access")
+                or jwt_payload.get("is_delegated_company_access")
+                or str(jwt_payload.get("access_scope") or "").lower() == "delegated_workspace"
+            )
+
+            if is_delegated:
+                if not entry.get("source_company_id"):
+                    entry["source_company_id"] = (
+                        auth_ctx.get("source_company_id")
+                        or jwt_payload.get("source_company_id")
+                    )
+
+                if not entry.get("engagement_company_id"):
+                    entry["engagement_company_id"] = (
+                        auth_ctx.get("source_company_id")
+                        or jwt_payload.get("source_company_id")
+                    )
+
+                if not entry.get("engagement_id"):
+                    entry["engagement_id"] = (
+                        auth_ctx.get("engagement_id")
+                        or jwt_payload.get("engagement_id")
+                    )
+
+        except Exception:
+            pass
+
         return entry
 
     def upsert_engagement_posting_activity(
