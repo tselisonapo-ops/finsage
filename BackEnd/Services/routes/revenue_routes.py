@@ -18,11 +18,27 @@ def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
     body = dict(body or {})
 
     auth_ctx = getattr(g, "auth_context", {}) or {}
+    jwt_payload = getattr(request, "jwt_payload", {}) or {}
 
-    if auth_ctx.get("is_delegated_company_access"):
-        body["source_company_id"] = auth_ctx.get("source_company_id")
-        body["engagement_company_id"] = auth_ctx.get("source_company_id")
-        body["engagement_id"] = auth_ctx.get("engagement_id")
+    is_delegated = (
+        auth_ctx.get("is_delegated_company_access")
+        or jwt_payload.get("is_delegated_company_access")
+        or str(jwt_payload.get("access_scope") or "").lower() == "delegated_workspace"
+    )
+
+    if is_delegated:
+        body["source_company_id"] = (
+            auth_ctx.get("source_company_id")
+            or jwt_payload.get("source_company_id")
+        )
+        body["engagement_company_id"] = (
+            auth_ctx.get("source_company_id")
+            or jwt_payload.get("source_company_id")
+        )
+        body["engagement_id"] = (
+            auth_ctx.get("engagement_id")
+            or jwt_payload.get("engagement_id")
+        )
 
     if user_id:
         body.setdefault("created_by_user_id", user_id)
