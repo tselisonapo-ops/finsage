@@ -435,7 +435,10 @@ def api_submit_revenue_contract(company_id: int, contract_id: int):
         current_app.logger.exception("submit_revenue_contract failed")
         return jsonify({"ok": False, "error": str(e)}), 400
     
-@revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>", methods=["PUT", "PATCH", "OPTIONS"])
+@revenue_bp.route(
+    "/api/companies/<int:company_id>/revenue/contracts/<int:contract_id>",
+    methods=["GET", "PUT", "PATCH", "OPTIONS"]
+)
 @require_auth
 def api_update_revenue_contract(company_id: int, contract_id: int):
     if request.method == "OPTIONS":
@@ -446,6 +449,31 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
     if deny:
         return deny
 
+    if request.method == "GET":
+        try:
+            out = db_service.get_revenue_contract(
+                int(company_id),
+                int(contract_id),
+            )
+
+            if not out:
+                return jsonify({
+                    "ok": False,
+                    "error": "Revenue contract not found"
+                }), 404
+
+            return jsonify({
+                "ok": True,
+                "data": out
+            }), 200
+
+        except Exception as e:
+            current_app.logger.exception("get_revenue_contract failed")
+            return jsonify({
+                "ok": False,
+                "error": str(e)
+            }), 400
+    
     user_id = _jwt_user_id()
     if not user_id:
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
