@@ -33496,7 +33496,7 @@ class DatabaseService:
                     engagement_company_id,
                     engagement_id,
                     created_by_user_id,
-                    updated_by_user_id
+                    updated_by_user_id,
                     agreement_reference,
                     meta_json,
                     created_by
@@ -33537,15 +33537,18 @@ class DatabaseService:
                 (data.get("fees_asset_account_code") or "").strip() or None,
                 (data.get("fees_expense_account_code") or "").strip() or None,
                 (data.get("currency") or "ZAR").strip(),
+
+                principal_amount,
+                _money(data.get("accrued_interest_opening")),
+                "active" if bool(data.get("activate_on_create", True)) else "draft",
+                (data.get("notes") or "").strip() or None,
+
                 data.get("source_company_id"),
                 data.get("engagement_company_id"),
                 data.get("engagement_id"),
                 data.get("created_by_user_id"),
                 data.get("updated_by_user_id"),
-                principal_amount,
-                _money(data.get("accrued_interest_opening")),
-                "active" if bool(data.get("activate_on_create", True)) else "draft",
-                (data.get("notes") or "").strip() or None,
+
                 (data.get("agreement_reference") or "").strip() or None,
                 Json(data.get("meta_json") or {}),
                 user_id,
