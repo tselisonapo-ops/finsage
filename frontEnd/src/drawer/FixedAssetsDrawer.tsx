@@ -122,7 +122,7 @@ type CoaRow = {
   statement?: string;
 };
 
-type DepreciationMethod = "SL" | "RB" | "UOP";
+type DepreciationMethod = "" | "SL" | "RB" | "UOP";
 
 const ASSET_CLASS_GROUPS = [
   "Land and buildings",
@@ -164,7 +164,8 @@ type CreateAssetPayload = {
 
   cost: number;
   residual_value: number;
-
+  measurement_model?: "cost" | "revaluation" | null;
+  opening_revaluation_surplus?: number | null;
   opening_as_at?: string | null;
   opening_cost?: number | null;
   opening_accum_dep?: number | null;
@@ -396,8 +397,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     opening_accum_dep: null,
     opening_impairment: null,
 
-    depreciation_method: "SL",
-    useful_life_months: 60,
+    depreciation_method: "",
+    useful_life_months: 0,
+    measurement_model: "cost",
+    opening_revaluation_surplus: null,
 
     rb_rate_percent: null,
     uop_usage_mode: "DELTA",
@@ -420,6 +423,17 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     const impairment = Number(form.opening_impairment || 0);
     return Math.max(0, cost - accum - impairment);
   }, [form.cost, form.opening_accum_dep, form.opening_impairment]);
+
+  const selectedClassGroup = String(form.asset_class_group || "").toLowerCase();
+  const selectedClassLabel = String(form.asset_class || "").toLowerCase();
+
+  const isLandAndBuildings = selectedClassGroup === "land and buildings";
+  const isIntangibleAsset =
+    selectedClassGroup.includes("intangible") ||
+    selectedClassLabel.includes("intangible") ||
+    String(form.asset_account_code || "").toLowerCase().includes("intangible");
+
+  const supportsRevaluationModel = isLandAndBuildings || isIntangibleAsset;
 
   /** -----------------------------
    *  Build acquisition payload
@@ -549,6 +563,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       serial_no: String(defaults.serialNo || ""),
       notes: String(defaults.notes || ""),
       acquisition_date: String(defaults.acquisitionDate || postingDate || todayIso()),
+
       available_for_use_date: String(defaults.availableForUseDate || ""),
       is_qualifying_asset: Boolean(defaults.is_qualifying_asset || defaults.isQualifyingAsset || false),
       cost: Number(defaults.cost || 0),
@@ -559,8 +574,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       opening_accum_dep: defaults.openingAccumDep == null ? null : Number(defaults.openingAccumDep),
       opening_impairment: defaults.openingImpairment == null ? null : Number(defaults.openingImpairment),
 
-      depreciation_method: (String(defaults.depreciationMethod || "SL") as DepreciationMethod),
-      useful_life_months: Number(defaults.usefulLifeMonths || 60),
+      depreciation_method: (String(defaults.depreciationMethod || "") as DepreciationMethod),
+      useful_life_months: defaults.usefulLifeMonths == null ? 0 : Number(defaults.usefulLifeMonths),
+
       rb_rate_percent: defaults.rbRatePercent == null ? null : Number(defaults.rbRatePercent),
       uop_usage_mode: ((defaults.uopUsageMode as UopUsageMode) || "DELTA"),
       uop_opening_reading: defaults.uopOpeningReading == null ? null : Number(defaults.uopOpeningReading),
@@ -689,6 +705,31 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       return setErr(isOpeningBalance ? "Historical cost must be greater than 0." : "Cost must be greater than 0.");
     }
 
+    if (!form.depreciation_method) {
+      return setErr("Select depreciation method.");
+    }
+
+    if (form.depreciation_method === "SL" && Number(form.useful_life_months || 0) <= 0) {
+      return setErr("Useful life is required for straight-line depreciation.");
+    }
+
+    if (form.depreciation_method === "RB" && Number(form.rb_rate_percent || 0) <= 0) {
+      return setErr("Depreciation rate is required for reducing balance.");
+    }
+
+    if (form.depreciation_method === "UOP" && Number(form.uop_total_units || 0) <= 0) {
+      return setErr("Total units are required for units of production.");
+    }
+
+    if (
+      isOpeningBalance &&
+      supportsRevaluationModel &&
+      form.measurement_model === "revaluation" &&
+      Number(form.opening_revaluation_surplus || 0) <= 0
+    ) {
+      return setErr("Opening revaluation surplus is required for revaluation model.");
+    }
+
     if (isOpeningBalance) {
       if (!String(form.opening_as_at || "").trim()) return setErr("Opening as at is required.");
       if (Number(form.opening_accum_dep || 0) < 0) return setErr("Accumulated depreciation cannot be negative.");
@@ -720,6 +761,37 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       const companyId = args.companyId;
       const journalRef = readJournalRefFromArgs(args);
 
+      const depreciationFields =
+        form.depreciation_method === "SL"
+          ? {
+              depreciation_method: "SL" as DepreciationMethod,
+              useful_life_months: Number(form.useful_life_months || 0),
+              rb_rate_percent: null,
+              uop_total_units: null,
+              uop_usage_mode: null,
+              uop_opening_reading: null,
+              uop_unit_name: null,
+            }
+          : form.depreciation_method === "RB"
+            ? {
+                depreciation_method: "RB" as DepreciationMethod,
+                useful_life_months: 0,
+                rb_rate_percent: Number(form.rb_rate_percent || 0),
+                uop_total_units: null,
+                uop_usage_mode: null,
+                uop_opening_reading: null,
+                uop_unit_name: null,
+              }
+            : {
+                depreciation_method: "UOP" as DepreciationMethod,
+                useful_life_months: 0,
+                rb_rate_percent: null,
+                uop_total_units: Number(form.uop_total_units || 0),
+                uop_usage_mode: form.uop_usage_mode || "DELTA",
+                uop_opening_reading: form.uop_usage_mode === "READING" ? form.uop_opening_reading : null,
+                uop_unit_name: form.uop_unit_name?.trim() || null,
+              };
+
       const payload: CreateAssetPayload = {
         ...form,
         entry_mode: entryMode,
@@ -732,6 +804,14 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
         available_for_use_date: form.available_for_use_date?.trim() ? form.available_for_use_date.trim() : null,
         is_qualifying_asset: !!form.is_qualifying_asset,
         ready_for_use_date: form.available_for_use_date?.trim() ? form.available_for_use_date.trim() : null,
+
+        ...depreciationFields,
+
+        measurement_model: supportsRevaluationModel ? form.measurement_model || "cost" : "cost",
+        opening_revaluation_surplus:
+          isOpeningBalance && supportsRevaluationModel && form.measurement_model === "revaluation"
+            ? Number(form.opening_revaluation_surplus || 0)
+            : null,
 
         opening_as_at: isOpeningBalance ? (form.opening_as_at?.trim() || null) : null,
         opening_cost: isOpeningBalance ? Number(form.opening_cost ?? form.cost ?? 0) : null,
@@ -1206,6 +1286,36 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               </div>
             </>
           ) : null}
+          {form.measurement_model === "revaluation" ? (
+            <div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>
+                Opening revaluation surplus
+              </div>
+
+              <input
+                value={String(form.opening_revaluation_surplus ?? "")}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    opening_revaluation_surplus: e.target.value.trim()
+                      ? toNum(e.target.value)
+                      : null,
+                  }))
+                }
+                placeholder="0.00"
+                style={{
+                  width: "100%",
+                  border: "1px solid rgba(0,0,0,0.15)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                }}
+              />
+
+              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
+                Credit goes to Balance Sheet equity / OCI revaluation surplus.
+              </div>
+            </div>
+          ) : null}
           {/* Depreciation inputs */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
@@ -1228,6 +1338,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   }}
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               >
+                <option value="">Select depreciation method...</option>
                 <option value="SL">Straight-line (SL)</option>
                 <option value="RB">Reducing balance (RB)</option>
                 <option value="UOP">Units of Production (UOP)</option>
@@ -1254,7 +1365,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
                 />
               </div>
-            ) : (
+            ) : form.depreciation_method === "UOP" ? (
               <div style={{ display: "grid", gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>Total units (lifetime) *</div>
@@ -1324,7 +1435,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   />
                 </div>
               </div>
-            )}
+              ) : null}
           </div>
 
           {/* Accounts */}
