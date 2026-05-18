@@ -37833,30 +37833,60 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
-  async function loadRevenueProjectTaskOptions() {
-    const sel = document.getElementById("revProjectTaskId");
+  async function loadRevenueProjectTaskOptions(selectedTaskId = "") {
+    const sel = $("revProjectTaskId");
+    const hint = $("revProjectTaskHint");
+
     if (!sel) return;
 
     sel.innerHTML = `<option value="">No linked task</option>`;
 
-    const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    const cid = state.cid || activeCid();
     const projectId = state.selectedContract?.project_id;
 
-    if (!cid || !projectId) return;
+    if (!cid || !projectId) {
+      if (hint) {
+        hint.textContent = "No project linked to this contract.";
+      }
+      return;
+    }
 
-    const project = await apiFetch(
-      ENDPOINTS.projects.get(cid, projectId)
+    const tasks = await apiFetch(
+      ENDPOINTS.projects.tasksList(cid, projectId)
     );
 
-    const tasks = project?.tasks || [];
+    const rows = Array.isArray(tasks)
+      ? tasks
+      : (tasks?.data || tasks?.rows || []);
 
     sel.innerHTML =
       `<option value="">No linked task</option>` +
-      tasks.map(t => `
+      rows.map(t => `
         <option value="${t.id}">
-          ${t.task_code || ""} — ${t.task_name || ""}
+          ${esc(t.task_code || t.code || "")} — ${esc(t.task_name || t.name || "")}
         </option>
       `).join("");
+
+    sel.value = selectedTaskId ? String(selectedTaskId) : "";
+
+    if (hint) {
+      hint.textContent = rows.length
+        ? `${rows.length} project task(s) loaded`
+        : "No tasks found for linked project.";
+    }
+  }
+
+  async function openRevenueObligationForEdit(o = {}) {
+    const selectedTaskId =
+      o?.project_task_id ||
+      o?.payload_json?.project_task_id ||
+      "";
+
+    await loadRevenueProjectTaskOptions(selectedTaskId);
+
+    hydrateObligationForm(o);
+    renderObligationPreview(o);
+    setObligationViewMode("form");
   }
 
   function syncRevenueMainWidthState() {
@@ -38312,10 +38342,12 @@ function bindAssetRecordsPickerModal({ cid }) {
       $("revPerformanceEndDate").value = toDateInputValue(pj.performance_end_date);
     }
 
-    $("revProjectTaskId").value =
-      o?.project_task_id ||
-      pj?.project_task_id ||
-      "";
+    if ($("revProjectTaskId")) {
+      $("revProjectTaskId").value =
+        o?.project_task_id ||
+        pj?.project_task_id ||
+        "";
+    }
 
     const displayName =
       catalogItemLabel ||
@@ -38933,6 +38965,7 @@ function toggleRevenueProgressDriverFields() {
   show(milestoneWrap, false);
   showGrid(milestoneExtraWrap, false);
   showGrid(unitsWrap, false);
+  show(timeElapsedWrap, false);
 
   setEnabled(expected, false);
   setEnabled(actual, false);
@@ -40161,44 +40194,6 @@ function toggleRevenueProgressDriverFields() {
     return items;
   }
   window.loadRevenueObligationCatalog = loadRevenueObligationCatalog;
-
-  async function loadRevenueProjectTaskOptions(selectedTaskId = "") {
-    const sel = $("revProjectTaskId");
-    const hint = $("revProjectTaskHint");
-    if (!sel) return;
-
-    sel.innerHTML = `<option value="">No linked task</option>`;
-    if (hint) hint.textContent = "";
-
-    const cid = state.cid || activeCid();
-    const projectId = state.selectedContract?.project_id;
-
-    if (!cid || !projectId) {
-      if (hint) hint.textContent = "No project linked to this revenue contract.";
-      return;
-    }
-
-    const project = await apiFetch(
-      ENDPOINTS.projects.get(cid, projectId)
-    );
-    const tasks = project?.tasks || [];
-
-    sel.innerHTML =
-      `<option value="">No linked task</option>` +
-      tasks.map(t => `
-        <option value="${t.id}">
-          ${esc(t.task_code || t.code || "")} — ${esc(t.task_name || t.name || "")}
-        </option>
-      `).join("");
-
-    sel.value = selectedTaskId ? String(selectedTaskId) : "";
-
-    if (hint) {
-      hint.textContent = tasks.length
-        ? `Tasks loaded from linked project: ${project.project_code || project.project_name || projectId}`
-        : "No tasks found for the linked project.";
-    }
-  }
 
   function findRevenueObligationCatalogMeta(rawValue) {
     const v = String(rawValue || "").trim();
@@ -42336,6 +42331,7 @@ function toggleRevenueProgressDriverFields() {
     await loadObligations(contractId);
 
     // keep selected obligation/form in sync
+    await loadRevenueProjectTaskOptions(selectedTaskId);
     hydrateObligationForm(saved);
     setMsg("Obligation updated.");
 
