@@ -61211,6 +61211,14 @@ class DatabaseService:
             payload_json["catalog_item_label"] = data.get("catalog_item_label")
             payload_json["recognition_trigger"] = recognition_trigger
 
+            payload_json = self._enrich_revenue_obligation_project_link(
+                company_id=int(company_id),
+                contract=contract,
+                data=data,
+                payload_json=payload_json,
+                cur=cur,
+            )
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.revenue_obligations (
@@ -61531,6 +61539,14 @@ class DatabaseService:
                 payload_json["catalog_item_label"] = data.get("catalog_item_label")
             if "recognition_trigger" in data:
                 payload_json["recognition_trigger"] = data.get("recognition_trigger")
+
+            payload_json = self._enrich_revenue_obligation_project_link(
+                company_id=int(company_id),
+                contract=contract,
+                data=data,
+                payload_json=payload_json,
+                cur=cur,
+            )
 
             cur.execute(
                 f"""
@@ -61948,6 +61964,35 @@ class DatabaseService:
         data["financing_component_amount"] = financing_component_amount
 
         return data, financing_component_amount
+
+    def _enrich_revenue_obligation_project_link(self, company_id: int, contract: dict, data: dict, payload_json: dict, cur=None) -> dict:
+        project_id = contract.get("project_id")
+
+        if project_id:
+            payload_json["project_id"] = int(project_id)
+            payload_json["project_code"] = contract.get("project_code")
+            payload_json["project_name"] = contract.get("project_name")
+
+        task_id = (
+            data.get("project_task_id")
+            or payload_json.get("project_task_id")
+            or payload_json.get("task_id")
+        )
+
+        if project_id and task_id:
+            task = self.validate_project_task(
+                company_id,
+                project_id=int(project_id),
+                task_id=int(task_id),
+                cur=cur,
+            )
+
+            payload_json["project_task_id"] = int(task_id)
+            payload_json["task_id"] = int(task_id)
+            payload_json["project_task_code"] = task.get("task_code")
+            payload_json["project_task_name"] = task.get("task_name")
+
+        return payload_json
 
     def mark_revenue_obligation_satisfied(
         self,
