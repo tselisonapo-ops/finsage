@@ -426,7 +426,6 @@ def assets_list_or_create(company_id: int):
 
     payload = request.jwt_payload or {}
     actor_user_id = _actor_user_id(payload)
-    payload_in = _apply_engagement_bridge(payload_in, actor_user_id=actor_user_id)
 
     deny = _deny_if_wrong_company(
         payload,
@@ -471,6 +470,10 @@ def assets_list_or_create(company_id: int):
     # -------------------------
     payload_in = request.get_json(force=True) or {}
 
+    payload_in = _apply_engagement_bridge(
+        payload_in,
+        actor_user_id=actor_user_id,
+    )
     try:
         entry_mode = (payload_in.get("entry_mode") or "acquisition").strip().lower()
         if entry_mode not in ("acquisition", "opening_balance"):
@@ -568,6 +571,8 @@ def assets_get_or_update(company_id, asset_id):
         return _opt()
 
     payload = request.jwt_payload or {}
+    actor_user_id = _actor_user_id(payload)
+
     deny = _deny_if_wrong_company(
         payload,
         int(company_id),
@@ -588,6 +593,11 @@ def assets_get_or_update(company_id, asset_id):
     payload_in = request.get_json(force=True) or {}
     if not isinstance(payload_in, dict):
         return _json_error("Invalid payload", 400)
+
+    payload_in = _apply_engagement_bridge(
+        payload_in,
+        actor_user_id=actor_user_id,
+    )
 
     try:
         with get_conn(company_id) as conn:
