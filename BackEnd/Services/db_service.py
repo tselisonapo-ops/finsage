@@ -60962,16 +60962,13 @@ class DatabaseService:
             clear_milestone_link()
 
         elif method in {"units", "units_delivered"}:
-            units_total = float(payload_json.get("units_total") or 0.0)
+            units_total = float(payload_json.get("units_total") or payload_json.get("total_units") or 0.0)
             if units_total <= 0:
                 raise ValueError("Units-based progress requires payload_json.units_total > 0.")
 
-            units_done = float(payload_json.get("units_done") or 0.0)
-            if units_done < 0:
-                raise ValueError("payload_json.units_done cannot be negative.")
+            if float(data.get("expected_total_cost") or 0.0) < 0:
+                raise ValueError("Expected total cost cannot be negative.")
 
-            data["expected_total_cost"] = None
-            data["actual_cost_to_date"] = None
             data["progress_percent"] = None
             clear_milestone_link()
 
@@ -60980,23 +60977,35 @@ class DatabaseService:
             if not milestone_code:
                 raise ValueError("Milestone progress requires payload_json.milestone_code.")
 
-            data["expected_total_cost"] = None
-            data["actual_cost_to_date"] = None
+            if float(data.get("expected_total_cost") or 0.0) < 0:
+                raise ValueError("Expected milestone cost cannot be negative.")
+
             data["progress_percent"] = 0.0
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
 
-        elif method in {"manual", "time_elapsed"}:
+        elif method == "manual":
             progress_percent = data.get("progress_percent")
-            if progress_percent is None:
-                raise ValueError(f"{method} progress requires progress_percent.")
+            if progress_percent is not None:
+                pct = float(progress_percent or 0.0)
+                if pct < 0 or pct > 100:
+                    raise ValueError("progress_percent must be between 0 and 100.")
 
-            pct = float(progress_percent or 0.0)
-            if pct < 0 or pct > 100:
-                raise ValueError("progress_percent must be between 0 and 100.")
+            payload_json.pop("units_done", None)
+            payload_json.pop("units_total", None)
+            clear_milestone_link()
 
-            data["expected_total_cost"] = None
-            data["actual_cost_to_date"] = None
+        elif method == "time_elapsed":
+            start_date = payload_json.get("performance_start_date")
+            end_date = payload_json.get("performance_end_date")
+
+            if not start_date or not end_date:
+                raise ValueError("Time elapsed requires performance_start_date and performance_end_date.")
+
+            if str(start_date) >= str(end_date):
+                raise ValueError("performance_end_date must be after performance_start_date.")
+
+            data["progress_percent"] = None
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
             clear_milestone_link()
@@ -61420,16 +61429,16 @@ class DatabaseService:
                     payload_json.pop("milestone_code", None)           
 
                 elif progress_method in {"units", "units_delivered"}:
-                    data["expected_total_cost"] = None
-                    data["actual_cost_to_date"] = None
+                    data["actual_cost_to_date"] = 0.0
                     data["progress_percent"] = None
+
                     payload_json.pop("linked_billing_milestone_code", None)
                     payload_json.pop("linked_billing_milestone", None)
                     payload_json.pop("milestone_code", None)
 
                 elif progress_method == "manual":
-                    data["expected_total_cost"] = None
-                    data["actual_cost_to_date"] = None
+                    data["actual_cost_to_date"] = 0.0
+
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
                     payload_json.pop("linked_billing_milestone_code", None)
@@ -61439,7 +61448,6 @@ class DatabaseService:
                 elif progress_method == "milestone":
                     milestone_basis = payload_json.get("milestone_basis") or "obligation"
 
-                    data["expected_total_cost"] = None
                     data["actual_cost_to_date"] = None
                     data["progress_percent"] = 0.0
                     payload_json.pop("units_done", None)
@@ -61454,8 +61462,9 @@ class DatabaseService:
                             raise ValueError("Custom milestone progress requires payload_json.milestone_code.")
 
                 elif progress_method == "time_elapsed":
-                    data["expected_total_cost"] = None
-                    data["actual_cost_to_date"] = None
+                    data["actual_cost_to_date"] = 0.0
+                    data["progress_percent"] = None
+
                     payload_json.pop("units_done", None)
                     payload_json.pop("units_total", None)
                     payload_json.pop("linked_billing_milestone_code", None)
@@ -62827,17 +62836,65 @@ class DatabaseService:
                 }
 
             elif update_type == "time_elapsed":
-                progress_percent = float(data.get("progress_percent") or obl.get("progress_percent") or 0.0)
-                if progress_percent < 0 or progress_percent > 100:
-                    raise ValueError("Progress percent must be between 0 and 100.")
-                expected_total_cost = None
-                actual_cost_to_date = None
+                obl_payload = obl.get("payload_json") or {}
+                if isinstance(obl_payload, str):
+                    try:
+                        obl_payload = json.loads(obl_payload)
+                    except Exception:
+                        obl_payload = {}
+
+                start_date = self._as_date(
+                    data.get("performance_start_date")
+                    or payload_json.get("performance_start_date")
+                    or obl_payload.get("performance_start_date")
+                )
+
+                end_date = self._as_date(
+                    data.get("performance_end_date")
+                    or payload_json.get("performance_end_date")
+                    or obl_payload.get("performance_end_date")
+                )
+
+                if not start_date or not end_date:
+                    raise ValueError("Time elapsed requires performance start and end dates.")
+
+                if end_date <= start_date:
+                    raise ValueError("Performance end date must be after start date.")
+
+                if period_end <= start_date:
+                    progress_percent = 0.0
+                elif period_end >= end_date:
+                    progress_percent = 100.0
+                else:
+                    elapsed_days = (period_end - start_date).days
+                    total_days = (end_date - start_date).days
+                    progress_percent = float(
+                        (Decimal(str(elapsed_days)) / Decimal(str(total_days))) * Decimal("100")
+                    )
+
+                expected_total_cost = (
+                    float(data["expected_total_cost"])
+                    if data.get("expected_total_cost") is not None
+                    else float(obl.get("expected_total_cost") or 0.0)
+                )
+
+                actual_cost_to_date = (
+                    float(data["actual_cost_to_date"])
+                    if data.get("actual_cost_to_date") is not None
+                    else None
+                )
+
                 units_done = None
                 units_total = None
                 milestone_code = None
 
                 payload_json["time_elapsed"] = {
-                    "progress_percent": progress_percent,
+                    "performance_start_date": str(start_date),
+                    "performance_end_date": str(end_date),
+                    "period_end": str(period_end),
+                    "elapsed_days": max(0, min((period_end - start_date).days, (end_date - start_date).days)),
+                    "total_days": (end_date - start_date).days,
+                    "actual_cost_to_date": actual_cost_to_date,
                 }
 
             else:
@@ -62903,6 +62960,7 @@ class DatabaseService:
                 )
             )
             obligation = dict(cur.fetchone())
+            self.sync_obligation_progress_to_project_task(company_id, int(obligation_id), cur=cur)
             conn.commit()
 
         return {"progress_update": row, "obligation": obligation}
@@ -62973,6 +63031,30 @@ class DatabaseService:
                 return _pct(obligation.get("progress_percent") or 0)
             return _pct((units_done / units_total) * Decimal("100"))
 
+        if method == "time_elapsed":
+            payload = obligation.get("payload_json") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+
+            start_date = self._as_date(payload.get("performance_start_date"))
+            end_date = self._as_date(payload.get("performance_end_date"))
+            pe = self._as_date(period_end)
+
+            if not start_date or not end_date or not pe or end_date <= start_date:
+                return _pct(obligation.get("progress_percent") or 0)
+
+            if pe <= start_date:
+                return Decimal("0")
+            if pe >= end_date:
+                return Decimal("100")
+
+            elapsed_days = Decimal(str((pe - start_date).days))
+            total_days = Decimal(str((end_date - start_date).days))
+
+            return _pct((elapsed_days / total_days) * Decimal("100"))
         # milestone / manual / time_elapsed / fallback
         return _pct(obligation.get("progress_percent") or 0)
 
@@ -65104,6 +65186,89 @@ class DatabaseService:
             for row in rows
         ]
 
+    def sync_obligation_progress_to_project_task(self, company_id: int, obligation_id: int, cur=None):
+        schema = self.company_schema(company_id)
+
+        def _run(_cur):
+            obligation = self.fetch_one(
+                f"""
+                SELECT
+                    o.*,
+                    c.project_id
+                FROM {schema}.revenue_obligations o
+                JOIN {schema}.revenue_contracts c
+                ON c.id = o.contract_id
+                AND c.company_id = o.company_id
+                WHERE o.company_id = %s
+                AND o.id = %s
+                LIMIT 1
+                """,
+                (int(company_id), int(obligation_id)),
+                cur=_cur,
+            )
+
+            if not obligation:
+                return None
+
+            payload = obligation.get("payload_json") or {}
+            if isinstance(payload, str):
+                payload = json.loads(payload or "{}")
+
+            task_id = (
+                obligation.get("project_task_id")
+                or payload.get("project_task_id")
+                or payload.get("task_id")
+            )
+
+            if not task_id:
+                return None
+
+            progress = float(obligation.get("progress_percent") or 0)
+
+            if (
+                str(obligation.get("recognition_timing") or "").lower() == "point_in_time"
+                and str(obligation.get("satisfaction_status") or "").lower() == "satisfied"
+            ):
+                progress = 100.0
+
+            progress = max(0.0, min(progress, 100.0))
+
+            _cur.execute(
+                f"""
+                UPDATE {schema}.project_tasks
+                SET progress_percent = %s,
+                    status = CASE
+                        WHEN %s >= 100 THEN 'completed'
+                        WHEN %s > 0 THEN 'in_progress'
+                        ELSE status
+                    END,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND project_id = %s
+                AND id = %s
+                RETURNING *;
+                """,
+                (
+                    progress,
+                    progress,
+                    progress,
+                    int(company_id),
+                    int(obligation["project_id"]),
+                    int(task_id),
+                ),
+            )
+
+            row = _cur.fetchone()
+            return dict(row) if row else None
+
+        if cur:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            row = _run(_cur)
+            conn.commit()
+            return row
+    
     def _as_date(self, value):
         from datetime import date, datetime
 

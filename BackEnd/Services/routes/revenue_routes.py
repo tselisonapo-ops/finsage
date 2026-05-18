@@ -121,6 +121,157 @@ def _normalize_revenue_contract_body(body: dict) -> dict:
     body["payload_json"] = payload_json
     return body
 
+def _normalize_obligation_payload(body: dict) -> dict:
+    body = dict(body or {})
+
+    payload_json = body.get("payload_json") or {}
+    if not isinstance(payload_json, dict):
+        payload_json = {}
+    else:
+        payload_json = dict(payload_json)
+
+    timing = str(body.get("recognition_timing") or "point_in_time").strip().lower()
+    body["recognition_timing"] = timing
+
+    if timing == "point_in_time":
+        body["progress_method"] = None
+        body["actual_cost_to_date"] = 0.0
+        body["progress_percent"] = 0.0
+
+        # keep expected_total_cost only if you want PIT costing analytics
+        if body.get("expected_total_cost") in ("", None):
+            body["expected_total_cost"] = 0.0
+
+        if body.get("recognition_trigger") is not None:
+            body["recognition_trigger"] = (
+                str(body.get("recognition_trigger") or "").strip().lower() or None
+            )
+
+        if body.get("satisfaction_status") is not None:
+            body["satisfaction_status"] = (
+                str(body.get("satisfaction_status") or "").strip().lower() or "pending"
+            )
+        else:
+            body["satisfaction_status"] = "pending"
+
+        if body.get("satisfaction_evidence_ref") is not None:
+            body["satisfaction_evidence_ref"] = (
+                str(body.get("satisfaction_evidence_ref") or "").strip() or None
+            )
+
+    else:
+        method = str(body.get("progress_method") or "cost_to_cost").strip().lower()
+        body["progress_method"] = method
+
+        body["recognized_at_point_in_time_date"] = None
+        body["recognition_trigger"] = None
+        body["satisfaction_status"] = "pending"
+        body["satisfied_at"] = None
+        body["satisfaction_evidence_ref"] = None
+
+        # 1) COST TO COST
+        if method == "cost_to_cost":
+            # expected_total_cost stays as top-level DB field
+            # actual_cost_to_date is captured during progress update, not setup
+            body["actual_cost_to_date"] = 0.0
+            body["progress_percent"] = None
+
+            payload_json.pop("units_total", None)
+            payload_json.pop("units_done", None)
+            payload_json.pop("unit_of_measure", None)
+            payload_json.pop("performance_start_date", None)
+            payload_json.pop("performance_end_date", None)
+
+        # 2) UNITS
+        elif method in {"units", "units_delivered"}:
+            if body.get("units_total") is not None:
+                payload_json["units_total"] = float(body.get("units_total") or 0)
+
+            if body.get("unit_of_measure") is not None:
+                payload_json["unit_of_measure"] = (
+                    str(body.get("unit_of_measure") or "").strip() or None
+                )
+
+            # expected_total_cost may remain top-level for cost analytics
+            body["actual_cost_to_date"] = 0.0
+            body["progress_percent"] = None
+
+            payload_json.pop("performance_start_date", None)
+            payload_json.pop("performance_end_date", None)
+            payload_json.pop("milestone_certified_percent", None)
+
+        # 3) MILESTONE
+        elif method == "milestone":
+            if body.get("milestone_code") is not None:
+                payload_json["milestone_code"] = (
+                    str(body.get("milestone_code") or "").strip() or None
+                )
+                payload_json["linked_billing_milestone_code"] = payload_json["milestone_code"]
+
+            if body.get("milestone_weight_percent") is not None:
+                payload_json["milestone_weight_percent"] = float(
+                    body.get("milestone_weight_percent") or 0
+                )
+
+            if body.get("milestone_allocated_amount") is not None:
+                payload_json["milestone_allocated_amount"] = float(
+                    body.get("milestone_allocated_amount") or 0
+                )
+
+            # expected_total_cost may remain top-level as expected milestone cost
+            body["actual_cost_to_date"] = 0.0
+            body["progress_percent"] = 0.0
+
+            payload_json.pop("units_total", None)
+            payload_json.pop("units_done", None)
+            payload_json.pop("unit_of_measure", None)
+            payload_json.pop("performance_start_date", None)
+            payload_json.pop("performance_end_date", None)
+
+        # 4) TIME ELAPSED
+        elif method == "time_elapsed":
+            if body.get("performance_start_date") is not None:
+                payload_json["performance_start_date"] = body.get("performance_start_date") or None
+
+            if body.get("performance_end_date") is not None:
+                payload_json["performance_end_date"] = body.get("performance_end_date") or None
+
+            # expected_total_cost may remain top-level for cost analytics
+            body["actual_cost_to_date"] = 0.0
+            body["progress_percent"] = None
+
+            payload_json.pop("units_total", None)
+            payload_json.pop("units_done", None)
+            payload_json.pop("unit_of_measure", None)
+
+        # 5) MANUAL
+        elif method == "manual":
+            # setup can keep optional planned/default progress_percent,
+            # but actual manual progress is usually captured during progress update
+            if body.get("progress_percent") not in (None, ""):
+                body["progress_percent"] = float(body.get("progress_percent") or 0)
+            else:
+                body["progress_percent"] = None
+
+            body["actual_cost_to_date"] = 0.0
+
+            payload_json.pop("units_total", None)
+            payload_json.pop("units_done", None)
+            payload_json.pop("unit_of_measure", None)
+            payload_json.pop("performance_start_date", None)
+            payload_json.pop("performance_end_date", None)
+            payload_json.pop("milestone_code", None)
+            payload_json.pop("linked_billing_milestone_code", None)
+            payload_json.pop("linked_billing_milestone", None)
+
+        else:
+            raise ValueError(
+                "Invalid progress_method. Use cost_to_cost, units, milestone, time_elapsed, or manual."
+            )
+
+    body["payload_json"] = payload_json
+    return body
+
 @revenue_bp.route("/api/companies/<int:company_id>/revenue/contracts", methods=["POST", "OPTIONS"])
 @require_auth
 def api_create_revenue_contract(company_id: int):
@@ -487,35 +638,7 @@ def api_add_revenue_obligation(company_id: int, contract_id: int):
     body = request.get_json(silent=True) or {}
     body = _apply_engagement_bridge(body, user_id=user_id)
 
-    timing = str(body.get("recognition_timing") or "point_in_time").strip().lower()
-    body["recognition_timing"] = timing
-
-    if body.get("recognition_trigger") is not None:
-        body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower() or None
-
-    if body.get("satisfaction_status") is not None:
-        body["satisfaction_status"] = str(body.get("satisfaction_status") or "").strip().lower() or "pending"
-    else:
-        body["satisfaction_status"] = "pending"
-
-    if body.get("satisfaction_evidence_ref") is not None:
-        body["satisfaction_evidence_ref"] = str(body.get("satisfaction_evidence_ref") or "").strip() or None
-
-    if timing == "point_in_time":
-        body["progress_method"] = None
-        body["expected_total_cost"] = 0.0
-        body["actual_cost_to_date"] = 0.0
-        body["progress_percent"] = 0.0
-    else:
-        body["recognized_at_point_in_time_date"] = None
-        body["recognition_trigger"] = None
-        body["progress_method"] = str(body.get("progress_method") or "cost_to_cost").strip().lower()
-
-        # clear PIT satisfaction fields for over-time
-        body["satisfaction_status"] = "pending"
-        body["satisfied_at"] = None
-        body["satisfaction_evidence_ref"] = None
-
+    body = _normalize_obligation_payload(body)
     try:
         out = db_service.add_revenue_obligation(
             company_id, contract_id, body, user_id=user_id
@@ -572,39 +695,7 @@ def api_update_revenue_obligation(company_id: int, obligation_id: int):
 
     body = request.get_json(silent=True) or {}
 
-    if "recognition_timing" in body and body.get("recognition_timing") is not None:
-        body["recognition_timing"] = str(body.get("recognition_timing") or "").strip().lower()
-
-    if "progress_method" in body and body.get("progress_method") is not None:
-        body["progress_method"] = str(body.get("progress_method") or "").strip().lower()
-
-    if "recognition_trigger" in body and body.get("recognition_trigger") is not None:
-        body["recognition_trigger"] = str(body.get("recognition_trigger") or "").strip().lower() or None
-
-    if "satisfaction_status" in body and body.get("satisfaction_status") is not None:
-        body["satisfaction_status"] = str(body.get("satisfaction_status") or "").strip().lower()
-
-    if "satisfaction_evidence_ref" in body and body.get("satisfaction_evidence_ref") is not None:
-        body["satisfaction_evidence_ref"] = str(body.get("satisfaction_evidence_ref") or "").strip() or None
-
-    timing = body.get("recognition_timing")
-
-    if timing == "point_in_time":
-        body["progress_method"] = None
-        body["expected_total_cost"] = 0.0
-        body["actual_cost_to_date"] = 0.0
-        body["progress_percent"] = 0.0
-
-    elif timing == "over_time":
-        body["recognized_at_point_in_time_date"] = None
-        body["recognition_trigger"] = None
-        if not body.get("progress_method"):
-            body["progress_method"] = "cost_to_cost"
-
-        body["satisfaction_status"] = "pending"
-        body["satisfied_at"] = None
-        body["satisfaction_evidence_ref"] = None
-
+    body = _normalize_obligation_payload(body)
     try:
         out = db_service.update_revenue_obligation(company_id, obligation_id, body, user_id=user_id)
 

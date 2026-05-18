@@ -37833,6 +37833,30 @@ function bindAssetRecordsPickerModal({ cid }) {
     return FS?.control?.resolveCid?.(getActiveCompanyId?.() || CURRENT_COMPANY_ID) || null;
   }
 
+  async function loadRevenueProjectTaskOptions() {
+    const sel = document.getElementById("revProjectTaskId");
+    if (!sel) return;
+
+    sel.innerHTML = `<option value="">No linked task</option>`;
+
+    const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    const projectId = state.selectedContract?.project_id;
+
+    if (!cid || !projectId) return;
+
+    const project = await apiFetch(`/api/companies/${cid}/projects/${projectId}`);
+
+    const tasks = project?.tasks || [];
+
+    sel.innerHTML =
+      `<option value="">No linked task</option>` +
+      tasks.map(t => `
+        <option value="${t.id}">
+          ${t.task_code || ""} — ${t.task_name || ""}
+        </option>
+      `).join("");
+  }
+
   function syncRevenueMainWidthState() {
     const content = $("revContentShift");
     if (!content) return;
@@ -38270,6 +38294,11 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revObligationId").value = o.id || "";
     $("revObligationCode").value = o.obligation_code || catalogItemCode || "";
 
+    $("revProjectTaskId").value =
+      o?.project_task_id ||
+      pj?.project_task_id ||
+      "";
+
     const displayName =
       catalogItemLabel ||
       o.obligation_name ||
@@ -38306,18 +38335,15 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revDistinctFlag").checked = o.distinct_flag !== false;
     $("revObligationNotes").value = o.notes || "";
 
-    if ($("revUnitsDone")) {
-      $("revUnitsDone").value =
-        pj.units_done != null && pj.units_done !== ""
-          ? Number(pj.units_done)
-          : "";
-    }
-
     if ($("revUnitsTotal")) {
       $("revUnitsTotal").value =
         pj.units_total != null && pj.units_total !== ""
           ? Number(pj.units_total)
           : "";
+    }
+
+    if ($("revUnitOfMeasure")) {
+      $("revUnitOfMeasure").value = pj.unit_of_measure || "";
     }
 
     if ($("revManualPercent")) {
@@ -38419,7 +38445,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     return (contract?.payload_json?.settlement_pattern || "").toLowerCase();
   }
 
-  function renderContractPreview(c = {}) {
+ function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
 
@@ -38679,6 +38705,7 @@ function bindAssetRecordsPickerModal({ cid }) {
           const activePolicy = getSelectedBillingPolicy();
 
           state.selectedContract = contract;
+          loadRevenueProjectTaskOptions();
 
           if ($("revContractId")) $("revContractId").value = String(contract.id || "");
           if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
@@ -38958,7 +38985,7 @@ function toggleRevenueProgressDriverFields() {
 
       if ($("revProgressMethod")) $("revProgressMethod").value = "";
       if ($("revExpectedCost")) $("revExpectedCost").value = "0.00";
-      if ($("revUnitsDone")) $("revUnitsDone").value = "";
+      if ($("revUnitOfMeasure")) $("revUnitOfMeasure").value = "";
       if ($("revUnitsTotal")) $("revUnitsTotal").value = "";
       if ($("revManualPercent")) $("revManualPercent").value = "";
       if ($("revMilestoneCode")) $("revMilestoneCode").value = "";
@@ -38976,7 +39003,8 @@ function toggleRevenueProgressDriverFields() {
         expectedCostWrap?.classList.remove("hidden");
       } else if (method === "units" || method === "units_delivered") {
         unitsBlock?.classList.remove("hidden");
-      } else if (method === "manual" || method === "time_elapsed") {
+        expectedCostWrap?.classList.remove("hidden");
+      }else if (method === "manual" || method === "time_elapsed") {
         manualBlock?.classList.remove("hidden");
       } 
 
@@ -40630,14 +40658,20 @@ function toggleRevenueProgressDriverFields() {
       payload_json.linked_billing_milestone = linkedMilestone || null;
     }
 
+    const projectTaskId = $("revProjectTaskId")?.value || "";
+
+    if (projectTaskId) {
+      payload_json.project_task_id = Number(projectTaskId);
+    }
+
     if (timing === "point_in_time") {
       payload_json.recognition_trigger = $("revPitTrigger")?.value || null;
     }
 
     if (timing === "over_time") {
       if (method === "units" || method === "units_delivered") {
-        payload_json.units_done = Number($("revUnitsDone")?.value || 0) || 0;
-        payload_json.units_total = Number($("revUnitsTotal")?.value || 0) || 0;
+payload_json.units_total = Number($("revUnitsTotal")?.value || 0) || 0;
+payload_json.unit_of_measure = $("revUnitOfMeasure")?.value?.trim() || null;
       }
 
       if (method === "milestone") {
@@ -40648,6 +40682,7 @@ function toggleRevenueProgressDriverFields() {
     return {
       obligation_code: $("revObligationCode")?.value?.trim() || picked?.code || "",
       obligation_name: picked?.name || rawName,
+      project_task_id: projectTaskId ? Number(projectTaskId) : null,
       recognition_timing: timing,
       progress_method: method,
       standalone_selling_price: num($("revSSP")?.value),
