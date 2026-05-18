@@ -4393,6 +4393,13 @@ async function runPractitionerScreenBinder(screen, me) {
     case PR_NAV.journalEntries:
     case PR_NAV.accountsReceivable:
     case PR_NAV.accountsPayable:
+    case PR_NAV.revenue:
+    case PR_NAV.inventory:
+    case PR_NAV.loans:
+    case PR_NAV.vat:
+    case PR_NAV.cashbook:
+    case PR_NAV.payments:
+    case PR_NAV.receipts:
     case PR_NAV.leases:
     case PR_NAV.ppe:
       await renderPractitionerPostingModuleScreen?.(me, screen);
