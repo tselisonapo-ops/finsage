@@ -60952,39 +60952,6 @@ class DatabaseService:
                 after["project_code"] = (project or {}).get("project_code")
                 after["project_name"] = (project or {}).get("project_name")
 
-            engagement_company_id = (
-                data.get("engagement_company_id")
-                or data.get("source_company_id")
-                or company_id
-            )
-            engagement_id = (
-                data.get("engagement_id")
-                or payload_json.get("engagement_id")
-            )
-            if engagement_id:
-                try:
-                    self.upsert_engagement_posting_activity(
-                        cur,
-                        company_id=int(engagement_company_id),
-                        engagement_id=int(engagement_id),
-                        posting_date=row.get("contract_date") or row.get("start_date"),
-                        module_name="revenue",
-                        event_type="created",
-                        reference_no=contract_ref,
-                        description=f"Created revenue contract {contract_ref}",
-                        prepared_by_user_id=int(user_id) if user_id else None,
-                        reviewer_user_id=None,
-                        status=str(row.get("status") or "draft"),
-                        amount=float(row.get("transaction_price") or 0.0),
-                        currency_code=(row.get("contract_currency") or "ZAR"),
-                        source_table="revenue_contracts",
-                        source_id=int(row["id"]),
-                        notes="Revenue contract created",
-                        created_by_user_id=int(user_id) if user_id else None,
-                        updated_by_user_id=int(user_id) if user_id else None,
-                    )
-                except Exception:
-                    pass
             conn.commit()
 
         return {
