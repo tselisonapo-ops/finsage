@@ -9266,6 +9266,20 @@ function getPractitionerPostingModuleName(screen) {
       return "accounts_receivable";
     case PR_NAV.accountsPayable:
       return "accounts_payable";
+    case PR_NAV.revenue:
+      return "revenue";
+    case PR_NAV.inventory:
+      return "inventory";
+    case PR_NAV.loans:
+      return "loans";
+    case PR_NAV.vat:
+      return "vat";
+    case PR_NAV.cashbook:
+      return "cashbook";
+    case PR_NAV.payments:
+      return "payments";
+    case PR_NAV.receipts:
+      return "receipts";
     case PR_NAV.leases:
       return "leases";
     case PR_NAV.ppe:
