@@ -83,19 +83,37 @@ def _parse_date(value, field_name: str = "date", required: bool = True) -> date 
 
     raise ValueError(f"Unsupported {field_name} value type: {type(value).__name__}")
 
-def _apply_engagement_bridge(payload_in: dict, *, actor_user_id=None) -> dict:
+def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
+    body = dict(body or {})
+
     auth_ctx = getattr(g, "auth_context", {}) or {}
+    jwt_payload = getattr(request, "jwt_payload", {}) or {}
 
-    if auth_ctx.get("is_delegated_company_access"):
-        payload_in["source_company_id"] = auth_ctx.get("source_company_id")
-        payload_in["engagement_company_id"] = auth_ctx.get("source_company_id")
-        payload_in["engagement_id"] = auth_ctx.get("engagement_id")
+    is_delegated = (
+        auth_ctx.get("is_delegated_company_access")
+        or jwt_payload.get("is_delegated_company_access")
+        or str(jwt_payload.get("access_scope") or "").lower() == "delegated_workspace"
+    )
 
-    if actor_user_id:
-        payload_in.setdefault("created_by_user_id", actor_user_id)
-        payload_in.setdefault("updated_by_user_id", actor_user_id)
+    if is_delegated:
+        body["source_company_id"] = (
+            auth_ctx.get("source_company_id")
+            or jwt_payload.get("source_company_id")
+        )
+        body["engagement_company_id"] = (
+            auth_ctx.get("source_company_id")
+            or jwt_payload.get("source_company_id")
+        )
+        body["engagement_id"] = (
+            auth_ctx.get("engagement_id")
+            or jwt_payload.get("engagement_id")
+        )
 
-    return payload_in
+    if user_id:
+        body.setdefault("created_by_user_id", user_id)
+        body.setdefault("updated_by_user_id", user_id)
+
+    return body
 
 def _parse_optional_date(payload: dict, key: str) -> _date | None:
     v = payload.get(key)

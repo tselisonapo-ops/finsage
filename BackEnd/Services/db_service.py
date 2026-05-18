@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
-from flask import current_app, g
+from flask import current_app, g, request
 import hashlib
 
 from dateutil.relativedelta import relativedelta
@@ -54892,9 +54892,37 @@ class DatabaseService:
             or meta.get("engagement_id")
         )
 
-        if engagement_company_id and engagement_id:
+        source_company_id = (
+            data.get("source_company_id")
+            or row.get("source_company_id")
+            or meta.get("source_company_id")
+            or engagement_company_id
+        )
+
+        updated_by_user_id = (
+            data.get("updated_by_user_id")
+            or row.get("updated_by_user_id")
+        )
+
+        created_by_user_id = (
+            data.get("created_by_user_id")
+            or row.get("created_by_user_id")
+        )
+
+        if source_company_id:
+            entry["source_company_id"] = int(source_company_id)
+
+        if engagement_company_id:
             entry["engagement_company_id"] = int(engagement_company_id)
+
+        if engagement_id:
             entry["engagement_id"] = int(engagement_id)
+
+        if updated_by_user_id:
+            entry["updated_by_user_id"] = int(updated_by_user_id)
+
+        if created_by_user_id:
+            entry["created_by_user_id"] = int(created_by_user_id)
 
         return entry
 
@@ -60397,12 +60425,29 @@ class DatabaseService:
 
     def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
         body = dict(body or {})
-        auth_ctx = getattr(g, "auth_context", {}) or {}
 
-        if auth_ctx.get("is_delegated_company_access"):
-            body["source_company_id"] = auth_ctx.get("source_company_id")
-            body["engagement_company_id"] = auth_ctx.get("source_company_id")
-            body["engagement_id"] = auth_ctx.get("engagement_id")
+        auth_ctx = getattr(g, "auth_context", {}) or {}
+        jwt_payload = getattr(request, "jwt_payload", {}) or {}
+
+        is_delegated = (
+            auth_ctx.get("is_delegated_company_access")
+            or jwt_payload.get("is_delegated_company_access")
+            or str(jwt_payload.get("access_scope") or "").lower() == "delegated_workspace"
+        )
+
+        if is_delegated:
+            body["source_company_id"] = (
+                auth_ctx.get("source_company_id")
+                or jwt_payload.get("source_company_id")
+            )
+            body["engagement_company_id"] = (
+                auth_ctx.get("source_company_id")
+                or jwt_payload.get("source_company_id")
+            )
+            body["engagement_id"] = (
+                auth_ctx.get("engagement_id")
+                or jwt_payload.get("engagement_id")
+            )
 
         if user_id:
             body.setdefault("created_by_user_id", user_id)
