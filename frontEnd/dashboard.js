@@ -38294,6 +38294,22 @@ function bindAssetRecordsPickerModal({ cid }) {
     $("revObligationId").value = o.id || "";
     $("revObligationCode").value = o.obligation_code || catalogItemCode || "";
 
+    if ($("revMilestoneWeightPercent")) {
+      $("revMilestoneWeightPercent").value = pj.milestone_weight_percent ?? "";
+    }
+
+    if ($("revMilestoneAllocatedAmount")) {
+      $("revMilestoneAllocatedAmount").value = pj.milestone_allocated_amount ?? "";
+    }
+
+    if ($("revPerformanceStartDate")) {
+      $("revPerformanceStartDate").value = toDateInputValue(pj.performance_start_date);
+    }
+
+    if ($("revPerformanceEndDate")) {
+      $("revPerformanceEndDate").value = toDateInputValue(pj.performance_end_date);
+    }
+
     $("revProjectTaskId").value =
       o?.project_task_id ||
       pj?.project_task_id ||
@@ -38375,7 +38391,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     syncProgressTypeFromSelectedObligation();
   }
 
-  function openObligationsForSelectedContract() {
+  async function openObligationsForSelectedContract() {
     const c = state.selectedContract || null;
     if (!c?.id) {
       setMsg("Select a contract first.", "error");
@@ -38387,6 +38403,9 @@ function bindAssetRecordsPickerModal({ cid }) {
     if ($("revCustomerId")) $("revCustomerId").value = String(c.customer_id || "");
 
     state.selectedObligation = null;
+
+    await loadRevenueProjectTaskOptions();
+
     hydrateObligationForm({});
     renderObligationPreview({});
     renderObligationContractBanner(c);
@@ -38445,7 +38464,7 @@ function bindAssetRecordsPickerModal({ cid }) {
     return (contract?.payload_json?.settlement_pattern || "").toLowerCase();
   }
 
- function renderContractPreview(c = {}) {
+async function renderContractPreview(c = {}) {
     const el = $("revContractPreviewBody");
     if (!el) return;
 
@@ -38725,10 +38744,10 @@ function bindAssetRecordsPickerModal({ cid }) {
         }
       });
 
-      $("revPreviewDefineObligationsBtn")?.addEventListener("click", () => {
+      $("revPreviewDefineObligationsBtn")?.addEventListener("click", async () => {
         try {
           state.selectedContract = state.selectedContract || c;
-          openObligationsForSelectedContract();
+          await openObligationsForSelectedContract();
         } catch (e) {
           setMsg(e?.message || "Could not open obligations", "error");
         }
@@ -38886,6 +38905,7 @@ function toggleRevenueProgressDriverFields() {
 
   const milestoneExtraWrap = $("revProgressMilestoneExtraWrap");
   const unitsWrap = $("revProgressUnitsWrap");
+  const timeElapsedWrap = $("revProgressTimeElapsedWrap");
 
   const show = (el, yes) => {
     if (!el) return;
@@ -38946,10 +38966,34 @@ function toggleRevenueProgressDriverFields() {
     if (milestone) milestone.value = "";
   }
 
-  else if (type === "manual" || type === "time_elapsed") {
+  else if (type === "manual") {
     show(percentWrap, true);
     setEnabled(percent, true);
 
+    if (expected) expected.value = "0.00";
+    if (actual) actual.value = "0.00";
+    if (milestone) milestone.value = "";
+  }
+
+  else if (type === "time_elapsed") {
+    show(timeElapsedWrap, true);
+
+    const pj = state.selectedObligation?.payload_json || {};
+
+    if ($("revProgressPerformanceStartDate")) {
+      $("revProgressPerformanceStartDate").value = toDateInputValue(pj.performance_start_date);
+    }
+
+    if ($("revProgressPerformanceEndDate")) {
+      $("revProgressPerformanceEndDate").value = toDateInputValue(pj.performance_end_date);
+    }
+
+    if ($("revProgressTimeElapsedHint")) {
+      $("revProgressTimeElapsedHint").textContent =
+        "Progress will be calculated from Period End against the performance start/end dates.";
+    }
+
+    if (percent) percent.value = "";
     if (expected) expected.value = "0.00";
     if (actual) actual.value = "0.00";
     if (milestone) milestone.value = "";
@@ -38966,6 +39010,8 @@ function toggleRevenueProgressDriverFields() {
     const unitsBlock = $("revUnitsBlock");
     const manualBlock = $("revManualPercentBlock");
     const milestoneBlock = $("revMilestoneCodeBlock");
+    const milestoneSetupBlock = $("revMilestoneSetupBlock");
+    const timeElapsedBlock = $("revTimeElapsedBlock");
     const hasMilestones = getSelectedContractMilestones().length > 0;
     milestoneBlock?.classList.toggle("hidden", !hasMilestones);
     const pitTrigger = $("revPitTrigger");
@@ -38978,7 +39024,8 @@ function toggleRevenueProgressDriverFields() {
     expectedCostWrap?.classList.add("hidden");
     unitsBlock?.classList.add("hidden");
     manualBlock?.classList.add("hidden");
-    
+    milestoneSetupBlock?.classList.add("hidden");
+    timeElapsedBlock?.classList.add("hidden");
     if (timing === "point_in_time") {
       overTimeBlock?.classList.add("hidden");
       pitBlock?.classList.remove("hidden");
@@ -39004,9 +39051,16 @@ function toggleRevenueProgressDriverFields() {
       } else if (method === "units" || method === "units_delivered") {
         unitsBlock?.classList.remove("hidden");
         expectedCostWrap?.classList.remove("hidden");
-      }else if (method === "manual" || method === "time_elapsed") {
+      } else if (method === "milestone") {
+        milestoneSetupBlock?.classList.remove("hidden");
+        expectedCostWrap?.classList.remove("hidden");
+      } else if (method === "time_elapsed") {
+        timeElapsedBlock?.classList.remove("hidden");
+        expectedCostWrap?.classList.remove("hidden");
+      } else if (method === "manual") {
         manualBlock?.classList.remove("hidden");
-      } 
+        expectedCostWrap?.classList.remove("hidden");
+      }
 
       if (pitTrigger) pitTrigger.value = "";
       if (pitDate) pitDate.value = "";
@@ -40106,6 +40160,41 @@ function toggleRevenueProgressDriverFields() {
   }
   window.loadRevenueObligationCatalog = loadRevenueObligationCatalog;
 
+  async function loadRevenueProjectTaskOptions(selectedTaskId = "") {
+    const sel = $("revProjectTaskId");
+    const hint = $("revProjectTaskHint");
+    if (!sel) return;
+
+    sel.innerHTML = `<option value="">No linked task</option>`;
+    if (hint) hint.textContent = "";
+
+    const cid = state.cid || activeCid();
+    const projectId = state.selectedContract?.project_id;
+
+    if (!cid || !projectId) {
+      if (hint) hint.textContent = "No project linked to this revenue contract.";
+      return;
+    }
+
+    const project = await apiFetch(`/api/companies/${cid}/projects/${projectId}`);
+    const tasks = project?.tasks || [];
+
+    sel.innerHTML =
+      `<option value="">No linked task</option>` +
+      tasks.map(t => `
+        <option value="${t.id}">
+          ${esc(t.task_code || t.code || "")} — ${esc(t.task_name || t.name || "")}
+        </option>
+      `).join("");
+
+    sel.value = selectedTaskId ? String(selectedTaskId) : "";
+
+    if (hint) {
+      hint.textContent = tasks.length
+        ? `Tasks loaded from linked project: ${project.project_code || project.project_name || projectId}`
+        : "No tasks found for the linked project.";
+    }
+  }
 
   function findRevenueObligationCatalogMeta(rawValue) {
     const v = String(rawValue || "").trim();
@@ -40659,6 +40748,11 @@ function toggleRevenueProgressDriverFields() {
     }
 
     const projectTaskId = $("revProjectTaskId")?.value || "";
+    const projectId = state.selectedContract?.project_id || null;
+
+    if (projectId) {
+      payload_json.project_id = Number(projectId);
+    }
 
     if (projectTaskId) {
       payload_json.project_task_id = Number(projectTaskId);
@@ -40670,12 +40764,19 @@ function toggleRevenueProgressDriverFields() {
 
     if (timing === "over_time") {
       if (method === "units" || method === "units_delivered") {
-payload_json.units_total = Number($("revUnitsTotal")?.value || 0) || 0;
-payload_json.unit_of_measure = $("revUnitOfMeasure")?.value?.trim() || null;
+      payload_json.units_total = Number($("revUnitsTotal")?.value || 0) || 0;
+      payload_json.unit_of_measure = $("revUnitOfMeasure")?.value?.trim() || null;
       }
 
       if (method === "milestone") {
         payload_json.milestone_code = linkedMilestoneCode;
+        payload_json.milestone_weight_percent = num($("revMilestoneWeightPercent")?.value);
+        payload_json.milestone_allocated_amount = num($("revMilestoneAllocatedAmount")?.value);
+      }
+
+      if (method === "time_elapsed") {
+        payload_json.performance_start_date = $("revPerformanceStartDate")?.value || null;
+        payload_json.performance_end_date = $("revPerformanceEndDate")?.value || null;
       }
     }
 
@@ -40689,12 +40790,12 @@ payload_json.unit_of_measure = $("revUnitOfMeasure")?.value?.trim() || null;
       allocated_transaction_price: num($("revAllocatedPrice")?.value),
 
       expected_total_cost:
-        timing === "over_time" && method === "cost_to_cost"
+        timing === "over_time"
           ? num($("revExpectedCost")?.value)
           : null,
 
       progress_percent:
-        timing === "over_time" && (method === "manual" || method === "time_elapsed")
+        timing === "over_time" && method === "manual"
           ? num($("revManualPercent")?.value)
           : null,
 
@@ -40749,36 +40850,74 @@ payload_json.unit_of_measure = $("revUnitOfMeasure")?.value?.trim() || null;
 
   function progressPayloadFromUI() {
     const updateType = $("revProgressType")?.value || "cost_to_cost";
+    const obligationPayload = state.selectedObligation?.payload_json || {};
 
-    return {
+    const payload = {
       period_end: $("revProgressPeriodEnd")?.value || null,
       update_type: updateType,
 
-      expected_total_cost: num($("revProgressExpectedCost")?.value),
-      actual_cost_to_date: num($("revProgressActualCost")?.value),
-      progress_percent: $("revProgressPercent")?.value === "" ? null : num($("revProgressPercent")?.value),
+      expected_total_cost: null,
+      actual_cost_to_date: null,
+      progress_percent: null,
 
-      milestone_code: $("revProgressMilestoneCode")?.value?.trim() || null,
+      milestone_code: null,
       notes: $("revProgressNotes")?.value || "",
 
       payload_json: {
         driver: updateType,
-
-        milestone: {
-          code: $("revProgressMilestoneCode")?.value?.trim() || null,
-          description: $("revProgressMilestoneDescription")?.value?.trim() || null,
-          status: $("revProgressMilestoneStatus")?.value || null,
-          certificate_ref: $("revProgressCertificateRef")?.value?.trim() || null,
-        },
-
-        units: {
-          unit_of_measure: $("revProgressUnitOfMeasure")?.value?.trim() || null,
-          units_done: $("revProgressUnitsDone")?.value === "" ? null : num($("revProgressUnitsDone")?.value),
-          units_total: $("revProgressUnitsTotal")?.value === "" ? null : num($("revProgressUnitsTotal")?.value),
-          certified_units: $("revProgressCertifiedUnits")?.value === "" ? null : num($("revProgressCertifiedUnits")?.value),
-        }
       }
     };
+
+    if (updateType === "cost_to_cost") {
+      payload.expected_total_cost = num($("revProgressExpectedCost")?.value);
+      payload.actual_cost_to_date = num($("revProgressActualCost")?.value);
+    }
+
+    if (updateType === "manual") {
+      payload.progress_percent =
+        $("revProgressPercent")?.value === ""
+          ? null
+          : num($("revProgressPercent")?.value);
+    }
+
+    if (updateType === "milestone") {
+      payload.milestone_code = $("revProgressMilestoneCode")?.value?.trim() || null;
+
+      payload.payload_json.milestone = {
+        code: $("revProgressMilestoneCode")?.value?.trim() || null,
+        description: $("revProgressMilestoneDescription")?.value?.trim() || null,
+        status: $("revProgressMilestoneStatus")?.value || null,
+        certificate_ref: $("revProgressCertificateRef")?.value?.trim() || null,
+      };
+    }
+
+    if (updateType === "units" || updateType === "units_delivered") {
+      payload.payload_json.units = {
+        unit_of_measure: $("revProgressUnitOfMeasure")?.value?.trim() || null,
+        units_done:
+          $("revProgressUnitsDone")?.value === ""
+            ? null
+            : num($("revProgressUnitsDone")?.value),
+        units_total:
+          $("revProgressUnitsTotal")?.value === ""
+            ? null
+            : num($("revProgressUnitsTotal")?.value),
+        certified_units:
+          $("revProgressCertifiedUnits")?.value === ""
+            ? null
+            : num($("revProgressCertifiedUnits")?.value),
+      };
+    }
+
+    if (updateType === "time_elapsed") {
+      payload.payload_json.time_elapsed = {
+        performance_start_date: obligationPayload.performance_start_date || null,
+        performance_end_date: obligationPayload.performance_end_date || null,
+        period_end: $("revProgressPeriodEnd")?.value || null,
+      };
+    }
+
+    return payload;
   }
 
   function runPayloadFromUI() {
