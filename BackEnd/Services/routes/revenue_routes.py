@@ -480,7 +480,18 @@ def api_update_revenue_contract(company_id: int, contract_id: int):
 
     body = _normalize_revenue_contract_body(request.get_json(silent=True) or {})
     body = _apply_engagement_bridge(body, user_id=user_id)
-    
+
+    current_app.logger.warning(
+        "REV CONTRACT PATCH BODY %s",
+        {
+            "contract_id": contract_id,
+            "engagement_id": body.get("engagement_id"),
+            "source_company_id": body.get("source_company_id"),
+            "engagement_company_id": body.get("engagement_company_id"),
+            "updated_by_user_id": body.get("updated_by_user_id"),
+        }
+    )
+
     try:
         existing = db_service.get_revenue_contract(int(company_id), int(contract_id))
         if not existing:
