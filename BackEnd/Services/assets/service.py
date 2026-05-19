@@ -426,8 +426,10 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
             SELECT b.id AS asset_id, TRUE AS any_posted
             FROM base b
-            WHERE b.entry_mode = 'opening_balance'
-              AND b.opening_posted_journal_id IS NOT NULL
+            WHERE
+                b.entry_mode = 'opening_balance'
+                OR b.opening_as_at IS NOT NULL
+                OR COALESCE(b.opening_accum_dep, 0) > 0
         ),
 
         gl_cost AS (

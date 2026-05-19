@@ -2350,6 +2350,18 @@ def post_opening_balance(
         asset_id,
     ))
 
+    cur.execute(_q(schema, """
+        UPDATE {schema}.assets
+        SET
+            opening_posted_journal_id = %s,
+            updated_at = NOW()
+        WHERE company_id = %s
+        AND id = %s
+    """), (
+        jid,
+        company_id,
+        asset_id,
+    ))
     return jid
 # ----------------------------
 # Posting: Revaluation
