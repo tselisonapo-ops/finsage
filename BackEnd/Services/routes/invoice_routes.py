@@ -283,7 +283,7 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
                 actor_user_id=actor_user_id or 0,
                 module="ar",
                 action="allocate_payment_failed",
-                severity="error",
+                severity="warning",
                 entity_type="invoice",
                 entity_id=str(invoice_id),
                 entity_ref=str(before_inv.get("number")) if before_inv.get("number") else None,

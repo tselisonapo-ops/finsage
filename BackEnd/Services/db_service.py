@@ -43909,8 +43909,17 @@ class DatabaseService:
         schema = self.company_schema(company_id)
         return self.fetch_one(
             f"""
-            SELECT id, customer_id, number, invoice_date, due_date,
-                total_amount, status, bank_account_id, currency
+            SELECT
+                id,
+                customer_id,
+                number,
+                invoice_date,
+                due_date,
+                total_amount,
+                status,
+                posted_journal_id,
+                bank_account_id,
+                currency
             FROM {schema}.invoices
             WHERE id=%s
             LIMIT 1;
@@ -44077,6 +44086,20 @@ class DatabaseService:
         from decimal import Decimal
 
         inv = self.get_invoice_by_id(company_id, invoice_id)
+
+        if inv and not inv.get("posted_journal_id"):
+            row = self.fetch_one(
+                f"""
+                SELECT posted_journal_id
+                FROM company_{company_id}.invoices
+                WHERE id=%s
+                LIMIT 1
+                """,
+                (int(invoice_id),),
+            ) or {}
+
+            inv["posted_journal_id"] = row.get("posted_journal_id")
+            
         if not inv:
             raise ValueError("Invoice not found")
 
@@ -44119,13 +44142,6 @@ class DatabaseService:
 
         if not ar_code:
             raise ValueError("AR control posting account could not be resolved")
-
-        posted_journal_id = inv.get("posted_journal_id")
-
-        if not posted_journal_id:
-            raise ValueError(
-                "Cannot allocate payment to invoice that has not been posted to GL"
-            )
 
         schema = self.company_schema(company_id)
 
