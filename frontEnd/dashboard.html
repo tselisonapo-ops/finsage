@@ -1298,6 +1298,22 @@ html, body {
     background: #cbd5e1;
     border-radius: 999px;
   }
+
+  @media (max-width: 900px) and (orientation: landscape) {
+    #revLayout{
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    #revTopStrip{
+      grid-template-columns: 1fr 1fr !important;
+      align-items: stretch;
+    }
+
+    #revContentShift{
+      min-height: 0;
+    }
+  }
   </style>
 
 </head>
@@ -4039,7 +4055,7 @@ html, body {
           <input type="hidden" id="revRunId" value="">
           <input type="hidden" id="revApprovalRequestId" value="">
 
-          <div id="revLayout" class="h-[calc(100vh-140px)] flex flex-col gap-2">
+          <div id="revLayout" class="min-h-0 flex flex-col gap-2">
             <!-- FIXED TOP ROW: workspace + KPIs -->
             <div id="revTopStrip" class="shrink-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[280px_repeat(4,minmax(0,1fr))] gap-4 items-start">
               
