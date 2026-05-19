@@ -22,7 +22,6 @@ def main():
     schema = db_service.company_schema(company_id)
 
     acquisition_date = "2024-10-16"  # Wednesday
-    disposal_date = "2024-10-16"
 
     def table_columns(cur, table_name):
         cur.execute("""
@@ -211,77 +210,6 @@ def main():
                 approved_via="migration_script",
             )
             print(f"Posted acquisition {asset_code} acq_id={acq_id} journal_id={jid}")
-
-        # ------------------------------------------------------------
-        # 3) Dispose opening scooter sold for 4,000 cash.
-        # ------------------------------------------------------------
-        cur.execute(
-            f"""
-            SELECT id
-            FROM {schema}.assets
-            WHERE company_id = %s
-              AND asset_code = %s
-            LIMIT 1
-            """,
-            (company_id, "TBR-SCOOTER-001"),
-        )
-        scooter = cur.fetchone()
-
-        if not scooter:
-            print("WARNING: opening scooter TBR-SCOOTER-001 not found; disposal skipped.")
-        else:
-            scooter_id = scooter["id"]
-
-            cur.execute(
-                f"""
-                UPDATE {schema}.assets
-                SET disposal_gain_account_code = COALESCE(NULLIF(disposal_gain_account_code, ''), 'PL_OI_4370'),
-                    disposal_loss_account_code = COALESCE(NULLIF(disposal_loss_account_code, ''), 'PL_ADJ_8250'),
-                    updated_at = NOW()
-                WHERE company_id = %s
-                  AND id = %s
-                """,
-                (company_id, scooter_id),
-            )
-
-            cur.execute(
-                f"""
-                SELECT id, status, posted_journal_id
-                FROM {schema}.asset_disposals
-                WHERE company_id = %s
-                  AND reference = %s
-                LIMIT 1
-                """,
-                (company_id, "DISP-TBR-SCOOTER-001-2024-10"),
-            )
-            existing_disp = cur.fetchone()
-
-            if existing_disp and existing_disp.get("posted_journal_id"):
-                print(f"Skipping posted scooter disposal journal_id={existing_disp['posted_journal_id']}")
-            else:
-                if existing_disp:
-                    disp_id = existing_disp["id"]
-                else:
-                    disp_id = insert_filtered(cur, "asset_disposals", {
-                        "company_id": company_id,
-                        "asset_id": scooter_id,
-                        "disposal_date": disposal_date,
-                        "proceeds": Decimal("4000.00"),
-                        "currency": "LSL",
-                        "reference": "DISP-TBR-SCOOTER-001-2024-10",
-                        "bank_account_code": "BS_CA_1010",
-                        "status": "draft",
-                        "notes": "Scooter sold for cash in October 2024.",
-                    })
-
-                jid = posting.post_disposal(
-                    cur,
-                    company_id,
-                    disp_id,
-                    user=None,
-                    approved_via="approve_post",
-                )
-                print(f"Posted scooter disposal disp_id={disp_id} journal_id={jid}")
 
         conn.commit()
 
