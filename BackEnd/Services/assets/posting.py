@@ -2779,7 +2779,7 @@ def post_disposal(
     last_end = get_last_posted_dep_end(
         cur, schema, company_id,
         asset_id=r["asset_id"],
-        up_to=r["disposal_date"]
+        as_at=r["disposal_date"]
     )
     if last_end and last_end < r["disposal_date"]:
         ps = last_end + timedelta(days=1)
