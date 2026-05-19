@@ -13,9 +13,11 @@ if not EMAIL or not PASSWORD:
 # Adjust this path if your login route differs
 login_res = requests.post(
     f"{API_BASE}/api/auth/signin",
-    json={"username": EMAIL, "password": PASSWORD},
+    json={"email": EMAIL, "password": PASSWORD},
     timeout=30,
 )
+print("LOGIN STATUS:", login_res.status_code)
+print("LOGIN BODY:", login_res.text)
 login_res.raise_for_status()
 
 token = (
