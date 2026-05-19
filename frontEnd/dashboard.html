@@ -1264,6 +1264,40 @@ html, body {
     min-height: 100vh;
     overflow-y: auto;
   }
+
+  #userMenu{
+    max-height: 220px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  #revSidebarBody{
+    max-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    opacity: 0;
+    pointer-events: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* expand on hover */
+  #revSidebar:hover #revSidebarBody,
+  #revSidebar:focus-within #revSidebarBody,
+  #revSidebarBody.rev-open{
+    max-height: calc(100vh - 190px);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* scrollbar only appears when needed */
+  #revSidebarBody::-webkit-scrollbar{
+    width: 8px;
+  }
+
+  #revSidebarBody::-webkit-scrollbar-thumb{
+    background: #cbd5e1;
+    border-radius: 999px;
+  }
   </style>
 
 </head>
@@ -4045,7 +4079,7 @@ html, body {
 
                 <div
                   id="revSidebarBody"
-                  class="absolute left-0 top-[calc(100%-1px)] w-[280px] max-h-0 overflow-y-auto opacity-0 pointer-events-none transition-all duration-300 ease-in-out origin-top z-30"
+                  class="absolute left-0 top-[calc(100%-1px)] w-[280px] transition-all duration-300 ease-in-out origin-top z-30"
                 >
                   <div class="p-3 bg-white rounded-lg border shadow-sage min-h-0">
                     <div class="space-y-2">
