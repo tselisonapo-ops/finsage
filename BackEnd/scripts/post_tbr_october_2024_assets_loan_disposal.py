@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import traceback
 from decimal import Decimal
 
@@ -150,10 +151,10 @@ def main():
                 "loan_payable_noncurrent_account_code": "BS_NCL_2600",
                 "notes": "Loan used to acquire two SYM 150cc delivery motorbikes. Created for reconstruction; agreement details to be updated later.",
                 "agreement_reference": "TBR-SYM-LOAN-2024-10",
-                "meta_json": {
+                "meta_json": json.dumps({
                     "migration_note": "Created from October 2024 reconstruction.",
                     "asset_codes": ["TBR-SYM-150-001", "TBR-SYM-150-002"],
-                },
+                }),
             })
             print(f"Created loan loan_id={loan_id}")
 

@@ -69,11 +69,11 @@ def main():
     existing_receipt = db_service.fetch_one(f"""
         SELECT
             id,
-            posted_journal_id,
+            created_journal_id,
             amount
         FROM {schema}.receipts
         WHERE company_id = %s
-          AND LOWER(TRIM(reference)) = LOWER(TRIM(%s))
+        AND LOWER(TRIM(reference)) = LOWER(TRIM(%s))
         LIMIT 1
     """, (company_id, reference))
 
@@ -81,7 +81,7 @@ def main():
         print(
             f"Skipping existing receipt "
             f"receipt_id={existing_receipt['id']} "
-            f"journal_id={existing_receipt.get('posted_journal_id')}"
+            f"journal_id={existing_receipt.get('created_journal_id')}"
         )
         return
 
