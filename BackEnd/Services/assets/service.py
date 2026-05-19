@@ -429,10 +429,6 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
                 b.entry_mode = 'opening_balance'
                 AND b.opening_posted_journal_id IS NOT NULL
         ),
-        WHERE lower(acq.status)='posted'
-            AND acq.acquisition_date <= %s
-        GROUP BY acq.asset_id
-        ),
       gl_cost AS (
         SELECT
           acq.asset_id,
@@ -635,7 +631,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
         as_at, as_at, as_at,
         as_at, as_at, as_at,
         as_at, as_at, as_at,
-        as_at,
+        as_at, as_at,
         limit, offset
     ))
 
