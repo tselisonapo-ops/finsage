@@ -682,105 +682,107 @@ html, body {
     }
   }
 
-/* App layout */
-.app{
-  display:flex;
-  height:100vh;
-  overflow:hidden;
-  position:relative;
-}
-
-/* Sidebar */
-.sidebar{
-  width:270px;
-  position:fixed;
-  top:0;
-  left:0;
-  bottom:0;
-  z-index:50;
-  background:#fff;
-  border-right:1px solid var(--fs-border);
-  overflow-y:auto;
-  overflow-x:hidden;
-  transition:transform .22s ease;
-  -webkit-overflow-scrolling:touch;
-}
-
-/* Main area */
-.main{
-  flex:1;
-  height:100vh;
-  overflow-y:auto;
-  overflow-x:hidden;
-  transition:margin-left .22s ease;
-  min-width:0;
-}
-
-/* Desktop default */
-@media (min-width:1024px){
-  .sidebar{
-    transform:translateX(0);
-  }
-
+  /* App layout */
   .main{
-    margin-left:270px;
+    flex:1;
+    min-height:100vh;
+    overflow-y:auto;
+    overflow-x:hidden;
+    transition:margin-left .22s ease;
+    min-width:0;
   }
 
-  .app.nav-collapsed .sidebar{
-    transform:translateX(-100%);
-  }
-
-  .app.nav-collapsed .main{
-    margin-left:0;
-  }
-}
-
-/* Small / tablet */
-@media (max-width:1023px){
+  /* Sidebar */
   .sidebar{
-    transform:translateX(-100%);
-    box-shadow:0 18px 40px rgba(0,0,0,.18);
+    width:270px;
+    position:fixed;
+    top:0;
+    left:0;
+    bottom:0;
+    z-index:50;
+    background:#fff;
+    border-right:1px solid var(--fs-border);
+    overflow-y:auto;
+    overflow-x:hidden;
+    transition:transform .22s ease;
+    -webkit-overflow-scrolling:touch;
   }
 
-  .app.nav-open .sidebar{
-    transform:translateX(0);
-  }
-
+  /* Main area */
   .main{
-    margin-left:0;
-    width:100%;
+    flex:1;
+    height:100vh;
+    overflow-y:auto;
+    overflow-x:hidden;
+    transition:margin-left .22s ease;
+    min-width:0;
   }
 
-  .app.nav-open .main{
-    margin-left:270px;
+  /* Desktop default */
+  @media (min-width:1024px){
+    .sidebar{
+      transform:translateX(0);
+    }
+
+    .main{
+      margin-left:270px;
+    }
+
+    .app.nav-collapsed .sidebar{
+      transform:translateX(-100%);
+    }
+
+    .app.nav-collapsed .main{
+      margin-left:0;
+    }
   }
-}
 
-.inv-item-col--wide {
-  width: 26%;
-}
+  /* Small / tablet */
+  @media (max-width:1023px){
+    .sidebar{
+      transform:translateX(-100%);
+      box-shadow:0 18px 40px rgba(0,0,0,.18);
+    }
 
-.inv-item-col--normal {
-  width: 18%;
-}
+    .app.nav-open .sidebar{
+      transform:translateX(0);
+    }
 
-.inv-desc-col--wide {
-  width: 34%;
-}
+    .main{
+      margin-left:0;
+      width:100%;
+    }
 
-.inv-desc-col--normal {
-  width: 24%;
-}
+    .app.nav-open .main{
+      margin-left:270px;
+    }
+  }
 
-.inv-obligation-col {
-  width: 12%;
-}
+  .inv-item-col--wide {
+    width: 26%;
+  }
 
-#invLines .inv-item-col input,
-#invLines .inv-desc-col input,
-#invLines .inv-obligation-col select {
-  width: 100%;
-}
+  .inv-item-col--normal {
+    width: 18%;
+  }
+
+  .inv-desc-col--wide {
+    width: 34%;
+  }
+
+  .inv-desc-col--normal {
+    width: 24%;
+  }
+
+  .inv-obligation-col {
+    width: 12%;
+  }
+
+  #invLines .inv-item-col input,
+  #invLines .inv-desc-col input,
+  #invLines .inv-obligation-col select {
+    width: 100%;
+  }
 
   /* Make form fields visibly "input-like" */
   .input{
@@ -1246,6 +1248,21 @@ html, body {
   #appHeader.header-collapsed.header-peek > div {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  html,
+  body {
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  .app {
+    min-height: 100vh;
+    overflow-y: auto;
   }
   </style>
 
