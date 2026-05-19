@@ -12,7 +12,7 @@ if not EMAIL or not PASSWORD:
 
 # Adjust this path if your login route differs
 login_res = requests.post(
-    f"{API_BASE}/api/login",
+    f"{API_BASE}/api/auth/signin",
     json={"email": EMAIL, "password": PASSWORD},
     timeout=30,
 )
