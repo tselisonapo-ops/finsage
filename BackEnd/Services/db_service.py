@@ -13721,6 +13721,11 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.asset_disposals
+        ADD COLUMN IF NOT EXISTS approved_by INT NULL,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS approval_note TEXT NULL;
+
+        ALTER TABLE {schema}.asset_disposals
         ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
         ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
         ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
