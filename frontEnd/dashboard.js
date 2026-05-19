@@ -4376,7 +4376,7 @@ function applyLoggedOutUI() {
   signupBtn?.classList.remove("hidden");
 
   // logout button lives inside dropdown, keep it visible when menu opens
-  logoutBtn?.classList.remove("hidden");
+  logoutBtn?.classList.add("hidden");
   dateRange?.classList.add("hidden");
   refreshBtn?.classList.add("hidden");
   roleBadge?.classList.add("hidden");
@@ -4412,7 +4412,7 @@ window.applyLoggedOutUI = applyLoggedOutUI;
     const headerProfileName = document.getElementById("headerProfileName");
     const headerProfileRole = document.getElementById("headerProfileRole");
     const headerScopeBadge = document.getElementById("headerScopeBadge");
-
+    const email = user.email || store.get("userEmail", "") || "";
     if (!user) {
       applyLoggedOutUI();
       return;
@@ -4464,7 +4464,6 @@ window.applyLoggedOutUI = applyLoggedOutUI;
       roleBadge.classList.remove("hidden");
     }
 
-    const email = user.email || store.get("userEmail", "") || "";
     const initials = email ? email[0].toUpperCase() : "U";
     if (userAvatar) userAvatar.textContent = initials;
 
@@ -4483,8 +4482,8 @@ window.applyLoggedOutUI = applyLoggedOutUI;
     signinBtn?.classList.add("hidden");
     signupBtn?.classList.add("hidden");
 
-    // logout button now lives inside dropdown, so don't show it as standalone
-    logoutBtn?.classList.add("hidden");
+    // logout button lives inside dropdown, keep it visible
+    logoutBtn?.classList.remove("hidden");
 
     userMenuWrap?.classList.remove("hidden");
     userMenu?.classList.add("hidden");
@@ -7357,12 +7356,41 @@ async function returnToPractitionerNative() {
 
   if (!btn || !menu || btn.dataset.bound === "1") return;
 
+  let logoutBtn = document.getElementById("logoutBtn");
+
+  if (!logoutBtn) {
+    logoutBtn = document.createElement("button");
+    logoutBtn.id = "logoutBtn";
+    logoutBtn.type = "button";
+    logoutBtn.className =
+      "w-full text-left px-3 py-2 rounded-lg text-red-600 hover:bg-red-50";
+    logoutBtn.textContent = "Sign Out";
+    menu.appendChild(logoutBtn);
+  }
+
+  logoutBtn.classList.remove("hidden");
+
+  logoutBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    window.clearToken?.();
+    localStorage.removeItem("fs_user_token");
+    sessionStorage.removeItem("fs_user_token");
+    localStorage.removeItem("company_id");
+    localStorage.removeItem("CURRENT_COMPANY_ID");
+
+    window.location.href = "signin.html";
+  });
+
   btn.dataset.bound = "1";
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     menu.classList.toggle("hidden");
   });
+
+  menu.addEventListener("click", (e) => e.stopPropagation());
 
   document.addEventListener("click", () => {
     menu.classList.add("hidden");
