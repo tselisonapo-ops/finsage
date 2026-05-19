@@ -64932,7 +64932,14 @@ class DatabaseService:
         }
 
 
-    def post_revenue_recognition_run(self, company_id: int, run_id: int, user_id: int | None = None) -> dict:
+    def post_revenue_recognition_run(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: int | None = None,
+        engagement_company_id: int | None = None,
+        engagement_id: int | None = None,
+    ) -> dict:
         from decimal import Decimal
         from datetime import date
         import json
@@ -65048,6 +65055,9 @@ class DatabaseService:
                 entry,
                 row=run,
             )
+            if engagement_company_id and engagement_id:
+                entry["engagement_company_id"] = int(engagement_company_id)
+                entry["engagement_id"] = int(engagement_id)
             journal_id = self.post_journal(
                 company_id=int(company_id),
                 entry=entry,
