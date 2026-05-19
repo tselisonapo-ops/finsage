@@ -5,7 +5,7 @@ import traceback
 
 
 def main():
-    print("=== Posting TBR October 2024 AR invoice ===")
+    print("=== Posting TBR November 2024 AR invoice ===")
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     if ROOT not in sys.path:
@@ -41,19 +41,19 @@ def main():
         "due_date": "2024-12-02",
         "currency": "LSL",
         "number": invoice_number,
-        "notes": "Delivery services rendered to GALITO'S STATION for October 2024",
+        "notes": "Delivery services rendered to GALITO'S STATION for November 2024",
         "status": "approved",
     }
 
     # TEMP amount placeholder because Oct payment amount will appear in next bank statement.
     # Replace OCT2024_GALITOS_INVOICE_AMOUNT when the next statement confirms the amount.
-    amount = 19,090.00
+    amount = 19090.00
 
     lines = [
         {
             "item_name": "Delivery Services",
             "item_type": "gl",
-            "description": "Last-mile delivery services for October 2024",
+            "description": "Last-mile delivery services for November 2024",
             "account_code": "4100",
             "quantity": 1,
             "unit_price": amount,
