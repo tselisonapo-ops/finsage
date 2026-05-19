@@ -1266,9 +1266,20 @@ html, body {
   }
 
   #userMenu{
-    max-height: 220px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    max-height: 95px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #userMenu::-webkit-scrollbar{
+    width: 8px;
+  }
+
+  #userMenu::-webkit-scrollbar-thumb{
+    background: #cbd5e1;
+    border-radius: 999px;
   }
 
   #revSidebarBody{
@@ -1280,16 +1291,22 @@ html, body {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* expand on hover */
+  /* hover expands temporarily */
   #revSidebar:hover #revSidebarBody,
-  #revSidebar:focus-within #revSidebarBody,
-  #revSidebarBody.rev-open{
-    max-height: calc(100vh - 190px);
+  #revSidebar:focus-within #revSidebarBody{
+    max-height: calc(100dvh - 260px);
     opacity: 1;
     pointer-events: auto;
   }
 
-  /* scrollbar only appears when needed */
+  /* pinned keeps it permanently open */
+  #revSidebarBody.rev-open{
+    max-height: calc(100dvh - 260px);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* scrollbar */
   #revSidebarBody::-webkit-scrollbar{
     width: 8px;
   }
@@ -4055,7 +4072,7 @@ html, body {
           <input type="hidden" id="revRunId" value="">
           <input type="hidden" id="revApprovalRequestId" value="">
 
-          <div id="revLayout" class="min-h-0 flex flex-col gap-2">
+          <div id="revLayout" class="h-[calc(100vh-140px)] flex flex-col gap-2">
             <!-- FIXED TOP ROW: workspace + KPIs -->
             <div id="revTopStrip" class="shrink-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[280px_repeat(4,minmax(0,1fr))] gap-4 items-start">
               
