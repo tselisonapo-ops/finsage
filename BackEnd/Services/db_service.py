@@ -41144,11 +41144,20 @@ class DatabaseService:
                 SET status='posted',
                     posted_journal_id=%s,
                     updated_at=NOW()
-                WHERE id=%s AND posted_journal_id IS NULL
-                RETURNING id;
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING id, status, posted_journal_id;
                 """,
-                (int(journal_id), int(invoice_id)),
+                (int(journal_id), int(company_id), int(invoice_id)),
             )
+
+            posted_row = _cur.fetchone()
+            if not posted_row:
+                raise ValueError(f"Failed to stamp invoice {invoice_id} as posted")
+
+            if not posted_row.get("posted_journal_id"):
+                raise ValueError(f"Invoice {invoice_id} posted but posted_journal_id was not saved")
+
             if not _cur.fetchone():
                 return int(journal_id)
 

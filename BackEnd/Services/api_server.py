@@ -6238,6 +6238,19 @@ def create_invoice(cid: int):
         )
         current_app.logger.info("create_invoice: post_invoice_to_gl done journal_id=%s", journal_id)
 
+        db_service.execute_sql(
+            f"""
+            UPDATE company_{company_id}.invoices
+            SET status='posted',
+                posted_journal_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            AND posted_journal_id IS NULL
+            """,
+            (int(journal_id), int(company_id), int(invoice_id)),
+        )
+
         try:
             revenue_contract_id = header.get("revenue_contract_id")
 
