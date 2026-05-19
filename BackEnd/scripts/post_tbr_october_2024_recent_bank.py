@@ -45,21 +45,6 @@ def main():
 
     lines = [
         {
-            "account_code": "BS_CA_1000",
-            "account": "Cash & Bank",
-            "debit": 19545.00,
-            "credit": 0,
-            "memo": "Galitos Maseru Sept2 receipt - clears September receivable"
-        },
-        {
-            "account_code": "BS_CA_9002",
-            "account": "Accounts Receivable Control",
-            "debit": 0,
-            "credit": 19545.00,
-            "memo": "Clear September Galitos invoice"
-        },
-
-        {
             "account_code": "PL_OPEX_6000",
             "account": "Driver & Ops Salaries",
             "debit": 7050.00,
@@ -115,13 +100,12 @@ def main():
             "credit": 0,
             "memo": "October bank fees: other fee, monthly fee and service fees"
         },
-
         {
             "account_code": "BS_CA_1000",
             "account": "Cash & Bank",
             "debit": 0,
             "credit": 16920.43,
-            "memo": "October recent bank statement payments and charges"
+            "memo": "October recent bank statement payments and charges excluding AR receipt"
         },
     ]
 
@@ -137,7 +121,7 @@ def main():
     entry = {
         "date": "2024-10-05",
         "ref": ref,
-        "description": "October 2024 recent bank statement catch-up items",
+        "description": "October 2024 recent bank statement catch-up items excluding AR receipt",
         "source": "bank",
         "currency": "LSL",
         "lines": lines,
