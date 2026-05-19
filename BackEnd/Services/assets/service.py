@@ -473,12 +473,18 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
             (hfs.hfs_id IS NOT NULL) AS is_held_for_sale,
 
             (
-                COALESCE(b.opening_cost, 0)::numeric
-                + COALESCE(gc.cost_gl, 0)::numeric
-                + CASE
-                    WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
-                    ELSE COALESCE(b.cost, 0)::numeric
-                  END
+                CASE
+                    WHEN b.entry_mode = 'opening_balance'
+                    OR b.opening_as_at IS NOT NULL
+                    THEN COALESCE(NULLIF(b.opening_cost, 0), b.cost, 0)::numeric
+                    ELSE (
+                        COALESCE(gc.cost_gl, 0)::numeric
+                        + CASE
+                            WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
+                            ELSE COALESCE(b.cost, 0)::numeric
+                        END
+                    )
+                END
             )::numeric(18,2) AS cost_total,
 
             COALESCE((
@@ -518,12 +524,18 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
                 (
                     (
                         (
-                            COALESCE(b.opening_cost, 0)::numeric
-                            + COALESCE(gc.cost_gl, 0)::numeric
-                            + CASE
-                                WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
-                                ELSE COALESCE(b.cost, 0)::numeric
-                              END
+                            CASE
+                                WHEN b.entry_mode = 'opening_balance'
+                                OR b.opening_as_at IS NOT NULL
+                                THEN COALESCE(NULLIF(b.opening_cost, 0), b.cost, 0)::numeric
+                                ELSE (
+                                    COALESCE(gc.cost_gl, 0)::numeric
+                                    + CASE
+                                        WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
+                                        ELSE COALESCE(b.cost, 0)::numeric
+                                    END
+                                )
+                            END
                         )
                         + COALESCE((
                             SELECT SUM(COALESCE(r.revaluation_change, 0)::numeric)
@@ -564,12 +576,18 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
                 (
                     (
                         (
-                            COALESCE(b.opening_cost, 0)::numeric
-                            + COALESCE(gc.cost_gl, 0)::numeric
-                            + CASE
-                                WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
-                                ELSE COALESCE(b.cost, 0)::numeric
-                              END
+                            CASE
+                                WHEN b.entry_mode = 'opening_balance'
+                                OR b.opening_as_at IS NOT NULL
+                                THEN COALESCE(NULLIF(b.opening_cost, 0), b.cost, 0)::numeric
+                                ELSE (
+                                    COALESCE(gc.cost_gl, 0)::numeric
+                                    + CASE
+                                        WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
+                                        ELSE COALESCE(b.cost, 0)::numeric
+                                    END
+                                )
+                            END
                         )
                         + COALESCE((
                             SELECT SUM(COALESCE(r.revaluation_change, 0)::numeric)
