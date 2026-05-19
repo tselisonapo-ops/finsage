@@ -47,12 +47,7 @@ def main():
 
     # TEMP amount placeholder because Oct payment amount will appear in next bank statement.
     # Replace OCT2024_GALITOS_INVOICE_AMOUNT when the next statement confirms the amount.
-    amount = float(os.getenv("OCT2024_GALITOS_INVOICE_AMOUNT", "0.00"))
-
-    if amount <= 0:
-        raise RuntimeError(
-            "Set OCT2024_GALITOS_INVOICE_AMOUNT before running this script"
-        )
+    amount = 19755.00
 
     lines = [
         {
