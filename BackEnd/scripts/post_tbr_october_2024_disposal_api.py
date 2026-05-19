@@ -94,7 +94,7 @@ else:
 
 # 3. Post disposal using authenticated user/session
 post_res = requests.post(
-    f"{API_BASE}/api/companies/{COMPANY_ID}/disposals/{disp_id}/post",
+    f"{API_BASE}/api/companies/{COMPANY_ID}/asset-disposals/{disp_id}/approve-post",
     headers=headers,
     timeout=30,
 )
