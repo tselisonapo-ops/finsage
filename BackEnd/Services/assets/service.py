@@ -398,241 +398,258 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
     if status:
         where.append("a.status=%s")
         params.append(status)
+
     if asset_class:
         where.append("a.asset_class=%s")
         params.append(asset_class)
+
     if q:
         where.append("(a.asset_code ILIKE %s OR a.asset_name ILIKE %s)")
         params += [f"%{q}%", f"%{q}%"]
 
-    sql = _q(schema, """
-      WITH base AS (
-        SELECT a.*
-        FROM {{schema}}.assets a
-        WHERE {" AND ".join(where)}
-      ),
+    sql = _q(schema, f"""
+        WITH base AS (
+            SELECT a.*
+            FROM {{schema}}.assets a
+            WHERE {" AND ".join(where)}
+        ),
+
         posted_flags AS (
             SELECT acq.asset_id, TRUE AS any_posted
             FROM {{schema}}.asset_acquisitions acq
             JOIN base b ON b.id = acq.asset_id
-            WHERE lower(acq.status)='posted'
-                AND acq.acquisition_date <= %s
+            WHERE LOWER(acq.status) = 'posted'
+              AND acq.acquisition_date <= %s
             GROUP BY acq.asset_id
 
             UNION
 
-            SELECT
-                b.id AS asset_id,
-                TRUE AS any_posted
+            SELECT b.id AS asset_id, TRUE AS any_posted
             FROM base b
-            WHERE
-                b.entry_mode = 'opening_balance'
-                AND b.opening_posted_journal_id IS NOT NULL
+            WHERE b.entry_mode = 'opening_balance'
+              AND b.opening_posted_journal_id IS NOT NULL
         ),
-      gl_cost AS (
-        SELECT
-          acq.asset_id,
-          SUM(jl.debit - jl.credit)::numeric(18,2) AS cost_gl
-        FROM {{schema}}.asset_acquisitions acq
-        JOIN {{schema}}.journal j
-          ON j.id = acq.posted_journal_id
-        JOIN {{schema}}.journal_lines jl
-          ON jl.journal_id = j.id
-        JOIN base a
-          ON a.id = acq.asset_id
-        WHERE lower(acq.status)='posted'
-          AND acq.acquisition_date <= %s
-          AND jl.account_code = a.asset_account_code
-        GROUP BY acq.asset_id
-      ),
+
+        gl_cost AS (
+            SELECT
+                acq.asset_id,
+                SUM(jl.debit - jl.credit)::numeric(18,2) AS cost_gl
+            FROM {{schema}}.asset_acquisitions acq
+            JOIN {{schema}}.journal j
+              ON j.id = acq.posted_journal_id
+            JOIN {{schema}}.journal_lines jl
+              ON jl.journal_id = j.id
+            JOIN base a
+              ON a.id = acq.asset_id
+            WHERE LOWER(acq.status) = 'posted'
+              AND acq.acquisition_date <= %s
+              AND jl.account_code = a.asset_account_code
+            GROUP BY acq.asset_id
+        ),
+
         hfs AS (
-        SELECT DISTINCT ON (h.asset_id)
-            h.asset_id,
-            h.id AS hfs_id,
-            h.classification_date AS hfs_classification_date,
-            h.status AS hfs_status,
-            h.posted_journal_id AS hfs_posted_journal_id
-        FROM {{schema}}.asset_held_for_sale h
-        JOIN base b ON b.id = h.asset_id
-        WHERE h.company_id = %s
-            AND h.status = 'posted'
-            AND h.classification_date <= %s
-        ORDER BY h.asset_id, h.classification_date DESC, h.id DESC
+            SELECT DISTINCT ON (h.asset_id)
+                h.asset_id,
+                h.id AS hfs_id,
+                h.classification_date AS hfs_classification_date,
+                h.status AS hfs_status,
+                h.posted_journal_id AS hfs_posted_journal_id
+            FROM {{schema}}.asset_held_for_sale h
+            JOIN base b ON b.id = h.asset_id
+            WHERE h.company_id = %s
+              AND h.status = 'posted'
+              AND h.classification_date <= %s
+            ORDER BY h.asset_id, h.classification_date DESC, h.id DESC
         )
 
-      SELECT
-        b.*,
+        SELECT
+            b.*,
             hfs.hfs_id,
             hfs.hfs_classification_date,
             hfs.hfs_status,
             hfs.hfs_posted_journal_id,
             (hfs.hfs_id IS NOT NULL) AS is_held_for_sale,
 
-        (
-          COALESCE(b.opening_cost,0)::numeric
-          + COALESCE(gc.cost_gl,0)::numeric
-          + CASE
-              WHEN COALESCE(gc.cost_gl,0) <> 0 THEN 0::numeric
-              ELSE COALESCE(b.cost,0)::numeric
-            END
-        )::numeric(18,2) AS cost_total,
-
-        COALESCE((
-          SELECT d.accumulated_depreciation::numeric(18,2)
-          FROM {{schema}}.asset_depreciation d
-          WHERE d.company_id=b.company_id
-            AND d.asset_id=b.id
-            AND d.status='posted'
-            AND d.period_end <= %s
-          ORDER BY d.period_end DESC, d.id DESC
-          LIMIT 1
-        ), COALESCE(b.opening_accum_dep,0))::numeric(18,2) AS accumulated_depreciation,
-
-        COALESCE((
-          SELECT SUM(COALESCE(r.revaluation_change,0)::numeric)
-          FROM {{schema}}.asset_revaluations r
-          WHERE r.company_id=b.company_id
-            AND r.asset_id=b.id
-            AND r.status='posted'
-            AND r.revaluation_date <= %s
-        ),0)::numeric(18,2) AS reval_net,
-
-        COALESCE((
-          SELECT SUM(
-            COALESCE(i.impairment_amount,0)::numeric - COALESCE(i.reversal_amount,0)::numeric
-          )
-          FROM {{schema}}.asset_impairments i
-          WHERE i.company_id=b.company_id
-            AND i.asset_id=b.id
-            AND i.status='posted'
-            AND i.impairment_date <= %s
-        ),0)::numeric(18,2) AS imp_net,
-
-        GREATEST(
-          0,
-          (
             (
-              (
-                COALESCE(b.opening_cost,0)::numeric
-                + COALESCE(gc.cost_gl,0)::numeric
-                  + CASE
-                      WHEN COALESCE(gc.cost_gl,0) <> 0 THEN 0::numeric
-                      ELSE COALESCE(b.cost,0)::numeric
-                    END
-               )
-              + COALESCE((
-                SELECT SUM(COALESCE(r.revaluation_change,0)::numeric)
+                COALESCE(b.opening_cost, 0)::numeric
+                + COALESCE(gc.cost_gl, 0)::numeric
+                + CASE
+                    WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
+                    ELSE COALESCE(b.cost, 0)::numeric
+                  END
+            )::numeric(18,2) AS cost_total,
+
+            COALESCE((
+                SELECT d.accumulated_depreciation::numeric(18,2)
+                FROM {{schema}}.asset_depreciation d
+                WHERE d.company_id = b.company_id
+                  AND d.asset_id = b.id
+                  AND d.status = 'posted'
+                  AND d.period_end <= %s
+                ORDER BY d.period_end DESC, d.id DESC
+                LIMIT 1
+            ), COALESCE(b.opening_accum_dep, 0))::numeric(18,2) AS accumulated_depreciation,
+
+            COALESCE((
+                SELECT SUM(COALESCE(r.revaluation_change, 0)::numeric)
                 FROM {{schema}}.asset_revaluations r
-                WHERE r.company_id=b.company_id
-                  AND r.asset_id=b.id
-                  AND r.status='posted'
+                WHERE r.company_id = b.company_id
+                  AND r.asset_id = b.id
+                  AND r.status = 'posted'
                   AND r.revaluation_date <= %s
-              ),0)
-            )
-            - COALESCE((
-              SELECT d.accumulated_depreciation::numeric
-              FROM {{schema}}.asset_depreciation d
-              WHERE d.company_id=b.company_id
-                AND d.asset_id=b.id
-                AND d.status='posted'
-                AND d.period_end <= %s
-              ORDER BY d.period_end DESC, d.id DESC
-              LIMIT 1
-            ), COALESCE(b.opening_accum_dep,0))
-            - COALESCE(b.opening_impairment,0)
-            - COALESCE((
-              SELECT SUM(
-                COALESCE(i.impairment_amount,0)::numeric - COALESCE(i.reversal_amount,0)::numeric
-              )
-              FROM {{schema}}.asset_impairments i
-              WHERE i.company_id=b.company_id
-                AND i.asset_id=b.id
-                AND i.status='posted'
-                AND i.impairment_date <= %s
-            ),0)
-          )
-        )::numeric(18,2) AS carrying_amount,
+            ), 0)::numeric(18,2) AS reval_net,
 
-        -- aliases
-        GREATEST(0, (
-          ((
-            COALESCE(b.opening_cost,0)::numeric
-            + COALESCE(gc.cost_gl,0)::numeric
-            + CASE
-                WHEN COALESCE(gc.cost_gl,0) <> 0 THEN 0::numeric
-                ELSE COALESCE(b.cost,0)::numeric
-              END
-            ) + COALESCE((
-            SELECT SUM(COALESCE(r.revaluation_change,0)::numeric)
-            FROM {{schema}}.asset_revaluations r
-            WHERE r.company_id=b.company_id
-              AND r.asset_id=b.id
-              AND r.status='posted'
-              AND r.revaluation_date <= %s
-          ),0))
-          - COALESCE((
-            SELECT d.accumulated_depreciation::numeric
-            FROM {{schema}}.asset_depreciation d
-            WHERE d.company_id=b.company_id
-              AND d.asset_id=b.id
-              AND d.status='posted'
-              AND d.period_end <= %s
-            ORDER BY d.period_end DESC, d.id DESC
-            LIMIT 1
-          ), COALESCE(b.opening_accum_dep,0))
-          - COALESCE(b.opening_impairment,0)
-          - COALESCE((
-            SELECT SUM(
-              COALESCE(i.impairment_amount,0)::numeric - COALESCE(i.reversal_amount,0)::numeric
-            )
-            FROM {{schema}}.asset_impairments i
-            WHERE i.company_id=b.company_id
-              AND i.asset_id=b.id
-              AND i.status='posted'
-              AND i.impairment_date <= %s
-          ),0)
-        ))::numeric(18,2) AS nbv,
+            COALESCE((
+                SELECT SUM(
+                    COALESCE(i.impairment_amount, 0)::numeric
+                    - COALESCE(i.reversal_amount, 0)::numeric
+                )
+                FROM {{schema}}.asset_impairments i
+                WHERE i.company_id = b.company_id
+                  AND i.asset_id = b.id
+                  AND i.status = 'posted'
+                  AND i.impairment_date <= %s
+            ), 0)::numeric(18,2) AS imp_net,
 
-        COALESCE((
-          SELECT d.accumulated_depreciation::numeric(18,2)
-          FROM {{schema}}.asset_depreciation d
-          WHERE d.company_id=b.company_id
-            AND d.asset_id=b.id
-            AND d.status='posted'
-            AND d.period_end <= %s
-          ORDER BY d.period_end DESC, d.id DESC
-          LIMIT 1
-        ), COALESCE(b.opening_accum_dep,0))::numeric(18,2) AS acc_dep
+            GREATEST(
+                0,
+                (
+                    (
+                        (
+                            COALESCE(b.opening_cost, 0)::numeric
+                            + COALESCE(gc.cost_gl, 0)::numeric
+                            + CASE
+                                WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
+                                ELSE COALESCE(b.cost, 0)::numeric
+                              END
+                        )
+                        + COALESCE((
+                            SELECT SUM(COALESCE(r.revaluation_change, 0)::numeric)
+                            FROM {{schema}}.asset_revaluations r
+                            WHERE r.company_id = b.company_id
+                              AND r.asset_id = b.id
+                              AND r.status = 'posted'
+                              AND r.revaluation_date <= %s
+                        ), 0)
+                    )
+                    - COALESCE((
+                        SELECT d.accumulated_depreciation::numeric
+                        FROM {{schema}}.asset_depreciation d
+                        WHERE d.company_id = b.company_id
+                          AND d.asset_id = b.id
+                          AND d.status = 'posted'
+                          AND d.period_end <= %s
+                        ORDER BY d.period_end DESC, d.id DESC
+                        LIMIT 1
+                    ), COALESCE(b.opening_accum_dep, 0))
+                    - COALESCE(b.opening_impairment, 0)
+                    - COALESCE((
+                        SELECT SUM(
+                            COALESCE(i.impairment_amount, 0)::numeric
+                            - COALESCE(i.reversal_amount, 0)::numeric
+                        )
+                        FROM {{schema}}.asset_impairments i
+                        WHERE i.company_id = b.company_id
+                          AND i.asset_id = b.id
+                          AND i.status = 'posted'
+                          AND i.impairment_date <= %s
+                    ), 0)
+                )
+            )::numeric(18,2) AS carrying_amount,
 
-      FROM base b
-      LEFT JOIN posted_flags pf ON pf.asset_id = b.id
-      LEFT JOIN gl_cost gc ON gc.asset_id = b.id
-      LEFT JOIN hfs ON hfs.asset_id = b.id
-      WHERE
-            COALESCE(pf.any_posted, FALSE) = TRUE
-            OR (
-                b.entry_mode = 'opening_balance'
-                AND b.opening_posted_journal_id IS NOT NULL
-            )
+            GREATEST(
+                0,
+                (
+                    (
+                        (
+                            COALESCE(b.opening_cost, 0)::numeric
+                            + COALESCE(gc.cost_gl, 0)::numeric
+                            + CASE
+                                WHEN COALESCE(gc.cost_gl, 0) <> 0 THEN 0::numeric
+                                ELSE COALESCE(b.cost, 0)::numeric
+                              END
+                        )
+                        + COALESCE((
+                            SELECT SUM(COALESCE(r.revaluation_change, 0)::numeric)
+                            FROM {{schema}}.asset_revaluations r
+                            WHERE r.company_id = b.company_id
+                              AND r.asset_id = b.id
+                              AND r.status = 'posted'
+                              AND r.revaluation_date <= %s
+                        ), 0)
+                    )
+                    - COALESCE((
+                        SELECT d.accumulated_depreciation::numeric
+                        FROM {{schema}}.asset_depreciation d
+                        WHERE d.company_id = b.company_id
+                          AND d.asset_id = b.id
+                          AND d.status = 'posted'
+                          AND d.period_end <= %s
+                        ORDER BY d.period_end DESC, d.id DESC
+                        LIMIT 1
+                    ), COALESCE(b.opening_accum_dep, 0))
+                    - COALESCE(b.opening_impairment, 0)
+                    - COALESCE((
+                        SELECT SUM(
+                            COALESCE(i.impairment_amount, 0)::numeric
+                            - COALESCE(i.reversal_amount, 0)::numeric
+                        )
+                        FROM {{schema}}.asset_impairments i
+                        WHERE i.company_id = b.company_id
+                          AND i.asset_id = b.id
+                          AND i.status = 'posted'
+                          AND i.impairment_date <= %s
+                    ), 0)
+                )
+            )::numeric(18,2) AS nbv,
 
-      ORDER BY b.id DESC
-      LIMIT %s OFFSET %s
+            COALESCE((
+                SELECT d.accumulated_depreciation::numeric(18,2)
+                FROM {{schema}}.asset_depreciation d
+                WHERE d.company_id = b.company_id
+                  AND d.asset_id = b.id
+                  AND d.status = 'posted'
+                  AND d.period_end <= %s
+                ORDER BY d.period_end DESC, d.id DESC
+                LIMIT 1
+            ), COALESCE(b.opening_accum_dep, 0))::numeric(18,2) AS acc_dep
+
+        FROM base b
+        LEFT JOIN posted_flags pf ON pf.asset_id = b.id
+        LEFT JOIN gl_cost gc ON gc.asset_id = b.id
+        LEFT JOIN hfs ON hfs.asset_id = b.id
+
+        WHERE COALESCE(pf.any_posted, FALSE) = TRUE
+
+        ORDER BY b.id DESC
+        LIMIT %s OFFSET %s
     """)
 
-    # ✅ base WHERE params first, then as_at params, then limit/offset
     cur.execute(sql, (
         *params,
-        as_at,            # posted_flags cutoff
-        as_at,            # gl_cost cutoff
 
-        company_id,       # hfs company_id
-        as_at,            # hfs classification cutoff
+        as_at,       # posted_flags acquisition cutoff
+        as_at,       # gl_cost acquisition cutoff
 
-        as_at, as_at, as_at,
-        as_at, as_at, as_at,
-        as_at, as_at, as_at,
-        as_at, as_at,
-        limit, offset
+        company_id,  # hfs company
+        as_at,       # hfs cutoff
+
+        as_at,       # accumulated_depreciation
+        as_at,       # reval_net
+        as_at,       # imp_net
+
+        as_at,       # carrying revaluation
+        as_at,       # carrying depreciation
+        as_at,       # carrying impairment
+
+        as_at,       # nbv revaluation
+        as_at,       # nbv depreciation
+        as_at,       # nbv impairment
+
+        as_at,       # acc_dep
+
+        limit,
+        offset,
     ))
 
     return fetchall(cur)
