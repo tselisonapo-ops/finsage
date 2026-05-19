@@ -277,9 +277,9 @@ def main():
                 jid = posting.post_disposal(
                     cur,
                     company_id,
-                    int(disp_id),
+                    disp_id,
                     user=None,
-                    approved_via="migration_script",
+                    approved_via="approve_post",
                 )
                 print(f"Posted scooter disposal disp_id={disp_id} journal_id={jid}")
 

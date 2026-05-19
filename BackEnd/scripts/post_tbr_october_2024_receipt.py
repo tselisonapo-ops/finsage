@@ -176,7 +176,7 @@ def main():
         user_id=None,
 
         # let system resolve AR control automatically
-        ar_ledger_code=None,
+        ar_ledger_code="BS_CA_9002",
     )
 
     print("Receipt posted successfully")
