@@ -405,7 +405,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
         where.append("(a.asset_code ILIKE %s OR a.asset_name ILIKE %s)")
         params += [f"%{q}%", f"%{q}%"]
 
-    sql = _q(schema, f"""
+    sql = _q(schema, """
       WITH base AS (
         SELECT a.*
         FROM {{schema}}.assets a
@@ -413,7 +413,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
       ),
         posted_flags AS (
             SELECT acq.asset_id, TRUE AS any_posted
-            FROM {schema}.asset_acquisitions acq
+            FROM {{schema}}.asset_acquisitions acq
             JOIN base b ON b.id = acq.asset_id
             WHERE lower(acq.status)='posted'
                 AND acq.acquisition_date <= %s
@@ -452,7 +452,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
             h.classification_date AS hfs_classification_date,
             h.status AS hfs_status,
             h.posted_journal_id AS hfs_posted_journal_id
-        FROM {schema}.asset_held_for_sale h
+        FROM {{schema}}.asset_held_for_sale h
         JOIN base b ON b.id = h.asset_id
         WHERE h.company_id = %s
             AND h.status = 'posted'
