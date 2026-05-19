@@ -1527,6 +1527,16 @@ class DatabaseService:
         ALTER TABLE public.users
             ADD COLUMN IF NOT EXISTS confirmation_token_expires_at TIMESTAMPTZ NULL;
 
+        ALTER TABLE public.users
+            ADD COLUMN IF NOT EXISTS password_updated_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE;
+
+        UPDATE public.users
+        SET password_updated_at = COALESCE(password_updated_at, created_at)
+        WHERE password_updated_at IS NULL;
+
         -- USERS INDEXES (fine anywhere after users exists)
         CREATE INDEX IF NOT EXISTS users_email_idx
             ON public.users (email);
@@ -3051,8 +3061,10 @@ class DatabaseService:
         with self._conn_cursor() as (_c, cur):
             cur.execute("""
                 UPDATE public.users
-                SET password_hash=%s
-                WHERE LOWER(email)=LOWER(%s)
+                SET password_hash = %s,
+                    password_updated_at = NOW(),
+                    force_password_change = FALSE
+                WHERE LOWER(email) = LOWER(%s)
             """, (new_hash, email))
 
     def clear_reset_token(self, email: str) -> None:

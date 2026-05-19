@@ -4412,12 +4412,12 @@ window.applyLoggedOutUI = applyLoggedOutUI;
     const headerProfileName = document.getElementById("headerProfileName");
     const headerProfileRole = document.getElementById("headerProfileRole");
     const headerScopeBadge = document.getElementById("headerScopeBadge");
-    const email = user.email || store.get("userEmail", "") || "";
+    
     if (!user) {
       applyLoggedOutUI();
       return;
     }
-
+    const email = user.email || store.get("userEmail", "") || "";
     const storedCompany =
       user.company_name ||
       (user.company && user.company.name) ||
@@ -4490,8 +4490,101 @@ window.applyLoggedOutUI = applyLoggedOutUI;
 
     dateRange?.classList.remove("hidden");
     refreshBtn?.classList.remove("hidden");
+
+    // ✅ Add this here
+    renderPasswordAge(user);
+
+    if (shouldNotifyPasswordChange(user)) {
+      showToast?.("Your password is due for an update. Please change it in Account settings.");
+    }
   }
 
+(function setupIdleLogout() {
+  const IDLE_LIMIT_MS = 10 * 60 * 1000; // 10 minutes
+  let idleTimer = null;
+
+  function logoutForIdle() {
+    window.clearToken?.();
+    localStorage.removeItem("fs_user_token");
+    sessionStorage.removeItem("fs_user_token");
+    window.location.href = "/signin.html?reason=idle";
+  }
+
+  function resetIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(logoutForIdle, IDLE_LIMIT_MS);
+  }
+
+  ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach((eventName) => {
+    window.addEventListener(eventName, resetIdleTimer, { passive: true });
+  });
+
+  resetIdleTimer();
+})();
+
+function bindChangePasswordForm() {
+  const form = document.getElementById("changePasswordForm");
+  if (!form || form.dataset.bound === "1") return;
+
+  form.dataset.bound = "1";
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const oldPassword = document.getElementById("oldPassword")?.value || "";
+    const newPassword = document.getElementById("newPassword")?.value || "";
+    const confirmPassword = document.getElementById("confirmPassword")?.value || "";
+    const msg = document.getElementById("changePasswordMsg");
+
+    if (msg) msg.textContent = "";
+
+    if (!oldPassword || !newPassword) {
+      if (msg) msg.textContent = "Old and new passwords are required.";
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      if (msg) msg.textContent = "New passwords do not match.";
+      return;
+    }
+
+    try {
+      const res = await apiFetch(ENDPOINTS.auth.changePassword, {
+        method: "POST",
+        body: JSON.stringify({
+          oldPassword,
+          newPassword,
+        }),
+      });
+
+      if (msg) {
+        msg.textContent = res?.message || "Password updated successfully.";
+        msg.className = "text-xs text-emerald-600";
+      }
+
+      form.reset();
+
+      // Refresh /api/auth/me so password_updated_at updates on screen
+      if (typeof loadCurrentUser === "function") {
+        const user = await loadCurrentUser();
+        renderPasswordAge(user);
+      }
+    } catch (err) {
+      if (msg) {
+        msg.textContent = err.message || "Password update failed.";
+        msg.className = "text-xs text-red-600";
+      }
+    }
+  });
+}
+
+function shouldNotifyPasswordChange(user) {
+  const lastDateRaw = user?.password_updated_at || user?.created_at;
+  if (!lastDateRaw) return false;
+
+  const days = Math.floor((Date.now() - new Date(lastDateRaw).getTime()) / 86400000);
+  return days >= 90 || user?.force_password_change === true;
+}
   // ==========================================================
   // 12) STORAGE KEYS + AUTH REQUIRED SCREENS
   // ==========================================================
@@ -5486,6 +5579,39 @@ document.addEventListener("submit", async (e) => {
     msg.className = "ml-3 text-xs text-red-600";
   }
 });
+
+function renderPasswordAge(user) {
+  const badge = document.getElementById("passwordAgeBadge");
+  const msg = document.getElementById("passwordAgeMsg");
+  if (!badge || !msg || !user) return;
+
+  const lastDateRaw =
+    user.password_updated_at ||
+    user.password_changed_at ||
+    user.created_at;
+
+  if (!lastDateRaw) {
+    badge.textContent = "Unknown";
+    msg.textContent = "Password update date is not available.";
+    return;
+  }
+
+  const lastDate = new Date(lastDateRaw);
+  const days = Math.floor((Date.now() - lastDate.getTime()) / 86400000);
+
+  badge.textContent = `${days} day(s)`;
+
+  if (days >= 90) {
+    badge.className = "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
+    msg.textContent = "Your password is older than 90 days. Please update it.";
+  } else if (days >= 75) {
+    badge.className = "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
+    msg.textContent = `Password update recommended soon. ${90 - days} day(s) remaining.`;
+  } else {
+    badge.className = "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
+    msg.textContent = `Password is current. ${90 - days} day(s) before reminder.`;
+  }
+}
 
 async function renderUsersTable() {
   const tbody = document.getElementById("usersTableBody");

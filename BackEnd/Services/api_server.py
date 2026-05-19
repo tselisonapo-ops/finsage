@@ -1784,7 +1784,13 @@ def api_auth_me():
     user_id = int(user_id)
 
     user = db_service.fetch_one("""
-        SELECT id, email, first_name, last_name, user_type
+    SELECT
+        id, email, first_name, last_name, user_type,
+        created_at,
+        password_updated_at,
+        last_login_at,
+        last_activity_at,
+        force_password_change
         FROM public.users
         WHERE id=%s
         LIMIT 1;
@@ -1899,6 +1905,11 @@ def api_auth_me():
             },
             "permissions": permissions,
             "default_dashboard": "enterprise",
+            "created_at": user.get("created_at"),
+            "password_updated_at": user.get("password_updated_at") or user.get("created_at"),
+            "last_login_at": user.get("last_login_at"),
+            "last_activity_at": user.get("last_activity_at"),
+            "force_password_change": bool(user.get("force_password_change")),
         }
 
         app.logger.warning("AUTH_ME delegated out=%s", out)
