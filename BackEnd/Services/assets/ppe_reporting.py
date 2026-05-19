@@ -3775,7 +3775,10 @@ def approve_post_asset_disposal(company_id: int, disposal_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+    payload = request.jwt_payload or {}
+
     deny = _deny_if_wrong_company(
+        payload,
         int(company_id),
         db_service=db_service,
     )
@@ -3888,10 +3891,12 @@ def approve_post_asset_disposal(company_id: int, disposal_id: int):
                 #   posted_at
                 #   status = 'posted'
                 # ---------------------------------------------------
-                jid = post_disposal(
+                jid = posting.post_disposal(
                     cur,
-                    company_id=company_id,
-                    disposal_id=disposal_id,
+                    company_id=int(company_id),
+                    disp_id=int(disposal_id),
+                    user=user,
+                    approved_via="approve_post" if review_required else None,
                 )
 
                 # ---------------------------------------------------
