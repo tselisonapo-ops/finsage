@@ -4375,7 +4375,8 @@ function applyLoggedOutUI() {
   signinBtn?.classList.remove("hidden");
   signupBtn?.classList.remove("hidden");
 
-  logoutBtn?.classList.add("hidden");
+  // logout button lives inside dropdown, keep it visible when menu opens
+  logoutBtn?.classList.remove("hidden");
   dateRange?.classList.add("hidden");
   refreshBtn?.classList.add("hidden");
   roleBadge?.classList.add("hidden");
