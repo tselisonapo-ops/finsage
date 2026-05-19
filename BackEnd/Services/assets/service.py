@@ -412,9 +412,23 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
         WHERE {" AND ".join(where)}
       ),
         posted_flags AS (
-        SELECT acq.asset_id, TRUE AS any_posted
-        FROM {schema}.asset_acquisitions acq
-        JOIN base b ON b.id = acq.asset_id
+            SELECT acq.asset_id, TRUE AS any_posted
+            FROM {schema}.asset_acquisitions acq
+            JOIN base b ON b.id = acq.asset_id
+            WHERE lower(acq.status)='posted'
+                AND acq.acquisition_date <= %s
+            GROUP BY acq.asset_id
+
+            UNION
+
+            SELECT
+                b.id AS asset_id,
+                TRUE AS any_posted
+            FROM base b
+            WHERE
+                b.entry_mode = 'opening_balance'
+                AND b.opening_posted_journal_id IS NOT NULL
+        ),
         WHERE lower(acq.status)='posted'
             AND acq.acquisition_date <= %s
         GROUP BY acq.asset_id
@@ -598,7 +612,12 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
       LEFT JOIN posted_flags pf ON pf.asset_id = b.id
       LEFT JOIN gl_cost gc ON gc.asset_id = b.id
       LEFT JOIN hfs ON hfs.asset_id = b.id
-      WHERE pf.any_posted = TRUE
+      WHERE
+            COALESCE(pf.any_posted, FALSE) = TRUE
+            OR (
+                b.entry_mode = 'opening_balance'
+                AND b.opening_posted_journal_id IS NOT NULL
+            )
 
       ORDER BY b.id DESC
       LIMIT %s OFFSET %s
