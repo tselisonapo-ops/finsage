@@ -4667,6 +4667,45 @@ function bindSessionUnlockForm() {
 
 window.bindSessionUnlockForm = bindSessionUnlockForm;
 
+// ===============================
+// Account dropdown navigation
+// ===============================
+function bindAccountMenuNavigation() {
+  const accountSettingsBtns = document.querySelectorAll(
+    '[data-nav="account-settings"]'
+  );
+
+  const changePasswordBtns = document.querySelectorAll(
+    '[data-nav="change-password"]'
+  );
+
+  accountSettingsBtns.forEach((btn) => {
+    if (btn.dataset.bound) return;
+
+    btn.dataset.bound = "1";
+
+    btn.addEventListener("click", () => {
+      window.switchScreen?.("account-settings");
+
+      // optional: close dropdown
+      document.getElementById("userMenu")?.classList.add("hidden");
+    });
+  });
+
+  changePasswordBtns.forEach((btn) => {
+    if (btn.dataset.bound) return;
+
+    btn.dataset.bound = "1";
+
+    btn.addEventListener("click", () => {
+      window.switchScreen?.("change-password");
+
+      // optional: close dropdown
+      document.getElementById("userMenu")?.classList.add("hidden");
+    });
+  });
+} 
+
 (function setupIdleLock() {
   const IDLE_LIMIT_MS = 10 * 60 * 1000;
   let idleTimer = null;
@@ -12993,6 +13032,9 @@ async function loadDashboard() {
   }
 
   await renderDashboardByRoleAndPeriod();
+
+  bindAccountMenuNavigation();
+  bindChangePasswordForm();
 
   async function refreshDashboardByPeriod() {
     await safeWidget("Main KPIs", window.renderDashboardKPIs, CURRENT_PERIOD_KEY);
