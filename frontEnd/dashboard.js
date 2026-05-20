@@ -242,6 +242,16 @@ window.addEventListener("unhandledrejection", (e) => {
   window.apiFetch = async function apiFetch(url, options = {}) {
     if (!url) throw new Error("apiFetch called with empty/undefined url");
 
+    const locked = localStorage.getItem("fs_session_locked") === "1";
+    const allowWhenLocked = options._allowWhenLocked === true;
+
+    if (locked && !allowWhenLocked) {
+      showSessionLockModal?.();
+      const err = new Error("SESSION_LOCKED");
+      err.status = 423;
+      throw err;
+    }
+
     const authObj = (typeof AUTH_HEADER === "function" ? AUTH_HEADER() : {}) || {};
     const isFormData = options.body instanceof FormData;
 
@@ -554,6 +564,7 @@ const ENDPOINTS = {
     resetPassword: `${API_BASE}/api/auth/reset-password`,
     changePassword: `${API_BASE}/api/auth/change-password`,
     restoreNative: `${API_BASE}/api/auth/restore-native-context`,
+    reauth: `${API_BASE}/api/auth/reauth`,
   },
 
   // --- Credit control / approvals ---
@@ -4355,6 +4366,86 @@ function escHtml(s) {
   }
   window.initCompanyMapFromAddress = initCompanyMapFromAddress;
 
+function renderPasswordAge(user) {
+  const badge = document.getElementById("passwordAgeBadge");
+  const msg = document.getElementById("passwordAgeMsg");
+  const lastLogin = document.getElementById("lastLoginAt");
+  const lastActivity = document.getElementById("lastActivityAt");
+
+  if (!user || !badge || !msg) return;
+
+  const pwdDate =
+    user.password_updated_at ||
+    user.created_at;
+
+  if (!pwdDate) return;
+
+  const days = Math.floor(
+    (Date.now() - new Date(pwdDate).getTime()) / 86400000
+  );
+
+  badge.textContent = `${days} days`;
+
+  if (days >= 90 || user.force_password_change) {
+    badge.className =
+      "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
+
+    msg.textContent =
+      "Your password should be updated immediately.";
+  } else if (days >= 75) {
+    badge.className =
+      "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
+
+    msg.textContent =
+      `Password expires soon. ${90 - days} day(s) remaining.`;
+  } else {
+    badge.className =
+      "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
+
+    msg.textContent =
+      `Password is healthy. ${90 - days} day(s) remaining.`;
+  }
+
+  if (lastLogin) {
+    lastLogin.textContent =
+      user.last_login_at
+        ? new Date(user.last_login_at).toLocaleString()
+        : "—";
+  }
+
+  if (lastActivity) {
+    lastActivity.textContent =
+      user.last_activity_at
+        ? new Date(user.last_activity_at).toLocaleString()
+        : "—";
+  }
+}
+
+function performFullLogout() {
+  window.clearToken?.();
+
+  [
+    "fs_user_token",
+    "authToken",
+    "userEmail",
+    "userRole",
+    "company_id",
+    "CURRENT_COMPANY_ID",
+    "companyName",
+    "fs_industry",
+    "fs_subindustry",
+    "fs_user",
+    "fs_session_locked"
+  ].forEach((k) => {
+    localStorage.removeItem(k);
+    sessionStorage.removeItem(k);
+  });
+
+  window.FS_USER_ROLE = null;
+  window.location.href = "signin.html";
+}
+
+window.performFullLogout = performFullLogout;
   // ==========================================================
   // 11) AUTH UI HELPERS (depends on store/roles)
   // ==========================================================
@@ -4499,27 +4590,108 @@ window.applyLoggedOutUI = applyLoggedOutUI;
     }
   }
 
-(function setupIdleLogout() {
-  const IDLE_LIMIT_MS = 10 * 60 * 1000; // 10 minutes
+function showSessionLockModal() {
+  const modal = document.getElementById("sessionLockModal");
+  const input = document.getElementById("sessionUnlockPassword");
+
+  modal?.classList.remove("hidden");
+  modal?.classList.add("flex");
+
+  setTimeout(() => input?.focus(), 50);
+}
+
+function hideSessionLockModal() {
+  const modal = document.getElementById("sessionLockModal");
+  modal?.classList.add("hidden");
+  modal?.classList.remove("flex");
+}
+
+function lockSession(reason = "idle") {
+  localStorage.setItem("fs_session_locked", "1");
+  localStorage.setItem("fs_session_lock_reason", reason);
+  showSessionLockModal();
+}
+
+function unlockSession() {
+  localStorage.removeItem("fs_session_locked");
+  localStorage.removeItem("fs_session_lock_reason");
+  hideSessionLockModal();
+  window.resetIdleTimer?.();
+}
+
+window.showSessionLockModal = showSessionLockModal;
+window.hideSessionLockModal = hideSessionLockModal;
+window.lockSession = lockSession;
+window.unlockSession = unlockSession;
+
+function bindSessionUnlockForm() {
+  const form = document.getElementById("sessionUnlockForm");
+  if (!form || form.dataset.bound === "1") return;
+
+  form.dataset.bound = "1";
+
+  const msg = document.getElementById("sessionUnlockMsg");
+  const input = document.getElementById("sessionUnlockPassword");
+  const signOutBtn = document.getElementById("sessionLockSignOutBtn");
+
+  signOutBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    performFullLogout();
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const password = input?.value || "";
+    if (msg) msg.textContent = "";
+
+    if (!password) {
+      if (msg) msg.textContent = "Enter your password.";
+      return;
+    }
+
+    try {
+      await apiFetch(ENDPOINTS.auth.reauth, {
+        method: "POST",
+        body: JSON.stringify({ password }),
+        _allowWhenLocked: true,
+      });
+
+      input.value = "";
+      unlockSession();
+    } catch (err) {
+      if (msg) msg.textContent = err.message || "Unlock failed.";
+    }
+  });
+}
+
+window.bindSessionUnlockForm = bindSessionUnlockForm;
+
+(function setupIdleLock() {
+  const IDLE_LIMIT_MS = 10 * 60 * 1000;
   let idleTimer = null;
 
-  function logoutForIdle() {
-    window.clearToken?.();
-    localStorage.removeItem("fs_user_token");
-    sessionStorage.removeItem("fs_user_token");
-    window.location.href = "/signin.html?reason=idle";
+  function triggerIdleLock() {
+    if (localStorage.getItem("fs_session_locked") === "1") return;
+    lockSession("idle");
   }
 
   function resetIdleTimer() {
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(logoutForIdle, IDLE_LIMIT_MS);
+    if (localStorage.getItem("fs_session_locked") === "1") return;
+    idleTimer = setTimeout(triggerIdleLock, IDLE_LIMIT_MS);
   }
 
   ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach((eventName) => {
     window.addEventListener(eventName, resetIdleTimer, { passive: true });
   });
 
+  window.resetIdleTimer = resetIdleTimer;
   resetIdleTimer();
+
+  if (localStorage.getItem("fs_session_locked") === "1") {
+    showSessionLockModal();
+  }
 })();
 
 function bindChangePasswordForm() {
@@ -4641,69 +4813,30 @@ function shouldNotifyPasswordChange(user) {
   // 13) AUTH GUARD + BUTTONS + LOGIN (your block)
   // ==========================================================
 
-  function bindGlobalAuthButtons() {
-    const signinBtn = document.getElementById("signinBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
+function bindGlobalAuthButtons() {
+  const signinBtn = document.getElementById("signinBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
 
-    if (signinBtn && !signinBtn.dataset.bound) {
-      signinBtn.dataset.bound = "1";
-      signinBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        console.log("[Auth] signinBtn clicked → go to signin.html");
-        window.location.href = "signin.html";
-      });
-    }
-
-    if (logoutBtn && !logoutBtn.dataset.bound) {
-      logoutBtn.dataset.bound = "1";
-      logoutBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        console.log("[Auth] logoutBtn clicked");
-
-        localStorage.removeItem("fs_user_token");
-        sessionStorage.removeItem("fs_user_token");
-        localStorage.removeItem("userEmail");
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("company_id");
-
-        window.location.href = "signin.html";
-      });
-    }
+  if (signinBtn && !signinBtn.dataset.bound) {
+    signinBtn.dataset.bound = "1";
+    signinBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.location.href = "signin.html";
+    });
   }
 
-  function bindHeaderAuthButtons() {
-    const signinBtn = document.getElementById("signinBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-
-    if (signinBtn && !signinBtn.dataset.bound) {
-      signinBtn.dataset.bound = "1";
-      signinBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        console.log("[Auth] signinBtn clicked → redirect to signin.html");
-        window.location.href = "signin.html";
-      });
-    }
-
-    if (logoutBtn && !logoutBtn.dataset.bound) {
-      logoutBtn.dataset.bound = "1";
-      logoutBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        console.log("[Auth] logoutBtn clicked → logging out");
-
-        localStorage.removeItem("fs_user_token");
-        sessionStorage.removeItem("fs_user_token");
-        localStorage.removeItem("userEmail");
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("company_id");
-        localStorage.removeItem("companyName");
-        localStorage.removeItem("fs_industry");
-        localStorage.removeItem("fs_subindustry");
-        localStorage.removeItem("fs_user");
-
-        window.location.href = "signin.html";
-      });
-    }
+  if (logoutBtn && !logoutBtn.dataset.bound) {
+    logoutBtn.dataset.bound = "1";
+    logoutBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      performFullLogout();
+    });
   }
+}
+
+function bindHeaderAuthButtons() {
+  bindGlobalAuthButtons();
+}
 
   // Optional: load current user helper
   window.loadCurrentUser = async function loadCurrentUser() {
@@ -5580,38 +5713,7 @@ document.addEventListener("submit", async (e) => {
   }
 });
 
-function renderPasswordAge(user) {
-  const badge = document.getElementById("passwordAgeBadge");
-  const msg = document.getElementById("passwordAgeMsg");
-  if (!badge || !msg || !user) return;
 
-  const lastDateRaw =
-    user.password_updated_at ||
-    user.password_changed_at ||
-    user.created_at;
-
-  if (!lastDateRaw) {
-    badge.textContent = "Unknown";
-    msg.textContent = "Password update date is not available.";
-    return;
-  }
-
-  const lastDate = new Date(lastDateRaw);
-  const days = Math.floor((Date.now() - lastDate.getTime()) / 86400000);
-
-  badge.textContent = `${days} day(s)`;
-
-  if (days >= 90) {
-    badge.className = "rounded-full px-2 py-[2px] bg-red-50 text-red-700 text-[11px]";
-    msg.textContent = "Your password is older than 90 days. Please update it.";
-  } else if (days >= 75) {
-    badge.className = "rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]";
-    msg.textContent = `Password update recommended soon. ${90 - days} day(s) remaining.`;
-  } else {
-    badge.className = "rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]";
-    msg.textContent = `Password is current. ${90 - days} day(s) before reminder.`;
-  }
-}
 
 async function renderUsersTable() {
   const tbody = document.getElementById("usersTableBody");
@@ -7245,6 +7347,14 @@ function renderInsightBanner(data) {
       .replaceAll("'", "&#39;");
   }
 
+function lockSession(reason = "idle") {
+  localStorage.setItem("fs_session_locked", "1");
+  localStorage.setItem("fs_session_lock_reason", reason);
+  window.showSessionLockModal?.();
+}
+
+window.lockSession = lockSession;
+
   function hideMembershipOnlyUi() {
     if (!isDelegatedPostingMode()) return;
 
@@ -7499,14 +7609,7 @@ async function returnToPractitionerNative() {
   logoutBtn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-
-    window.clearToken?.();
-    localStorage.removeItem("fs_user_token");
-    sessionStorage.removeItem("fs_user_token");
-    localStorage.removeItem("company_id");
-    localStorage.removeItem("CURRENT_COMPANY_ID");
-
-    window.location.href = "signin.html";
+    performFullLogout();
   });
 
   btn.dataset.bound = "1";
@@ -70228,7 +70331,12 @@ async function bootstrapApp(currentUser) {
 
   bindHeaderAuthButtons();
   bindGlobalAuthButtons();
+  bindSessionUnlockForm();
 
+  // ✅ Add this
+  if (typeof bindChangePasswordForm === "function") {
+    bindChangePasswordForm();
+  }
   // floating filter panel close/open
   document.getElementById("closeFilterPanel")?.addEventListener("click", () => {
     const panel = document.getElementById("coaFilterFloating");

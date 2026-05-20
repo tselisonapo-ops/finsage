@@ -1629,6 +1629,16 @@ def api_auth_signin():
     if not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid credentials"}), 401
 
+    db_service.execute_sql(
+        """
+        UPDATE public.users
+        SET last_login_at = NOW(),
+            last_activity_at = NOW()
+        WHERE id = %s
+        """,
+        (int(user["id"]),),
+    )
+
     if not user.get("is_confirmed"):
         return jsonify({"error": "Please confirm your email before signing in."}), 403
 
@@ -2001,6 +2011,29 @@ def api_auth_me():
 
     return jsonify(out), 200
 
+@app.route("/api/auth/reauth", methods=["POST", "OPTIONS"])
+@require_auth
+def api_auth_reauth():
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+
+    if not password:
+        return jsonify({"ok": False, "error": "Password required"}), 400
+
+    current_user = getattr(g, "current_user", None) or {}
+    email = current_user.get("email") or (getattr(request, "jwt_payload", {}) or {}).get("email")
+
+    if not email:
+        return jsonify({"ok": False, "error": "AUTH|missing_email"}), 401
+
+    user = db_service.get_user_by_email(email)
+    if not user or not check_password_hash(user["password_hash"], password):
+        return jsonify({"ok": False, "error": "Password incorrect"}), 403
+
+    return jsonify({"ok": True, "message": "Session unlocked"}), 200
 
 @app.route("/api/companies/<int:company_id>/invoices/<int:invoice_id>/pdf_token", methods=["POST"])
 @require_auth

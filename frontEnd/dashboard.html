@@ -7406,93 +7406,135 @@ html, body {
           </div>
         </section>
 
-      <!-- Account Settings -->
-      <section id="screen-account-settings" class="screen hidden">
-        <div class="max-w-4xl mx-auto p-6">
-          <h2 class="text-2xl font-semibold mb-4">Account settings</h2>
-          <p class="text-sm text-slate-500 mb-6">
-            Manage your FinSage profile, company and security preferences.
-          </p>
+        <!-- Account Settings -->
+        <section id="screen-account-settings" class="screen hidden">
+          <div class="max-w-4xl mx-auto p-6">
+            <h2 class="text-2xl font-semibold mb-4">Account settings</h2>
+            <p class="text-sm text-slate-500 mb-6">
+              Manage your FinSage profile, company and security preferences.
+            </p>
 
-          <!-- ✅ GRID WRAPPER (WAS MISSING) -->
-          <div class="grid gap-4 md:grid-cols-2">
+            <!-- ✅ GRID WRAPPER (WAS MISSING) -->
+            <div class="grid gap-4 md:grid-cols-2">
 
-            <!-- Profile card -->
-            <div class="card p-4">
-              <h3 class="font-semibold mb-3">Profile</h3>
+              <!-- Profile card -->
+              <div class="card p-4">
+                <h3 class="font-semibold mb-3">Profile</h3>
 
-              <form id="accountProfileForm" class="text-sm space-y-3">
-                <div>
-                  <label class="block text-[11px] text-slate-500 mb-1">First name</label>
-                  <input id="accFirstName" type="text"
-                    class="w-full border rounded-lg px-3 py-2 text-sm"
-                    placeholder="First name" />
-                </div>
+                <form id="accountProfileForm" class="text-sm space-y-3">
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">First name</label>
+                    <input id="accFirstName" type="text"
+                      class="w-full border rounded-lg px-3 py-2 text-sm"
+                      placeholder="First name" />
+                  </div>
 
-                <div>
-                  <label class="block text-[11px] text-slate-500 mb-1">Last name</label>
-                  <input id="accLastName" type="text"
-                    class="w-full border rounded-lg px-3 py-2 text-sm"
-                    placeholder="Last name" />
-                </div>
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">Last name</label>
+                    <input id="accLastName" type="text"
+                      class="w-full border rounded-lg px-3 py-2 text-sm"
+                      placeholder="Last name" />
+                  </div>
 
-                <div>
-                  <label class="block text-[11px] text-slate-500 mb-1">Email</label>
-                  <div id="accEmail" class="font-medium text-slate-800">—</div>
-                </div>
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">Email</label>
+                    <div id="accEmail" class="font-medium text-slate-800">—</div>
+                  </div>
 
-                <div>
-                  <label class="block text-[11px] text-slate-500 mb-1">Role</label>
-                  <div id="accRole" class="font-medium text-slate-800">—</div>
-                </div>
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">Role</label>
+                    <div id="accRole" class="font-medium text-slate-800">—</div>
+                  </div>
 
-                <div>
-                  <label class="block text-[11px] text-slate-500 mb-1">Company</label>
-                  <div id="accCompany" class="font-medium text-slate-800">—</div>
-                </div>
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">Company</label>
+                    <div id="accCompany" class="font-medium text-slate-800">—</div>
+                  </div>
 
-                <div class="pt-2">
-                  <button type="submit"
-                    class="inline-flex items-center px-4 py-2 rounded-lg
-                          bg-emerald-600 text-white text-sm font-semibold
-                          hover:bg-emerald-700">
-                    Save changes
-                  </button>
-                  <span id="accProfileMsg" class="ml-3 text-xs text-slate-500"></span>
-                </div>
-              </form>
-            </div>
-
-            <!-- Security card -->
-            <div class="card p-4">
-              <h3 class="font-semibold mb-3">Security</h3>
-              <p class="text-sm text-slate-600 mb-3">
-                Keep your account secure by using a strong password and updating it regularly.
-              </p>
-
-              <button type="button" data-nav="change-password"
-                class="mb-4 inline-flex items-center px-3 py-2 rounded-lg border text-sm font-medium
-                      text-[var(--fs-navy)] hover:bg-slate-50">
-                Change password
-              </button>
-
-              <div class="border-t pt-3 mt-3 text-xs text-slate-500 space-y-2">
-                <div class="flex items-center justify-between">
-                  <span>Login alerts</span>
-                  <span class="rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]">
-                    Coming soon
-                  </span>
-                </div>
-                <p>
-                  We'll add email alerts for new device logins and periodic password reminders
-                  (e.g. every 90 days) to improve security.
-                </p>
+                  <div class="pt-2">
+                    <button type="submit"
+                      class="inline-flex items-center px-4 py-2 rounded-lg
+                            bg-emerald-600 text-white text-sm font-semibold
+                            hover:bg-emerald-700">
+                      Save changes
+                    </button>
+                    <span id="accProfileMsg" class="ml-3 text-xs text-slate-500"></span>
+                  </div>
+                </form>
               </div>
-            </div>
 
+              <!-- Security card -->
+              <div class="card p-4">
+                <h3 class="font-semibold mb-3">Security</h3>
+
+                <p class="text-sm text-slate-600 mb-3">
+                  Keep your account secure by using a strong password and updating it regularly.
+                </p>
+
+                <!-- Password age -->
+                <div class="rounded-xl border border-slate-200 p-3 bg-slate-50 mb-4">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-medium text-slate-600">
+                      Password status
+                    </span>
+
+                    <span
+                      id="passwordAgeBadge"
+                      class="rounded-full px-2 py-[2px] bg-emerald-50 text-emerald-700 text-[11px]"
+                    >
+                      Checking...
+                    </span>
+                  </div>
+
+                  <p id="passwordAgeMsg" class="text-xs text-slate-500">
+                    Checking password age...
+                  </p>
+
+                  <div class="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                    <div class="rounded-lg bg-white border p-2">
+                      <div class="text-slate-400">Last login</div>
+                      <div id="lastLoginAt" class="font-medium text-slate-700">—</div>
+                    </div>
+
+                    <div class="rounded-lg bg-white border p-2">
+                      <div class="text-slate-400">Last activity</div>
+                      <div id="lastActivityAt" class="font-medium text-slate-700">—</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Change password -->
+                <button
+                  type="button"
+                  data-nav="change-password"
+                  class="mb-4 inline-flex items-center px-3 py-2 rounded-lg border text-sm font-medium
+                        text-[var(--fs-navy)] hover:bg-slate-50"
+                >
+                  Change password
+                </button>
+
+                <!-- Login alerts -->
+                <div class="border-t pt-3 mt-3 text-xs text-slate-500 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span>Login alerts</span>
+
+                    <span
+                      class="rounded-full px-2 py-[2px] bg-amber-50 text-amber-700 text-[11px]"
+                    >
+                      In progress
+                    </span>
+                  </div>
+
+                  <p>
+                    FinSage will notify you about new device logins,
+                    password expiry reminders and suspicious sessions.
+                  </p>
+                </div>
+              </div>
+
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
         <section id="screen-company" class="screen">
           <div class="card p-4">
@@ -10616,6 +10658,37 @@ html, body {
 </div>
 
 <div id="modalsMount"></div>
+
+<div id="sessionLockModal" class="fixed inset-0 z-[9999] hidden items-center justify-center bg-black/50">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+    <h2 class="text-xl font-bold text-slate-900">Session locked</h2>
+    <p class="text-sm text-slate-600 mt-2">
+      You were inactive for a while. Enter your FinSage password to continue.
+    </p>
+
+    <form id="sessionUnlockForm" class="mt-5 space-y-3">
+      <input
+        id="sessionUnlockPassword"
+        name="session_unlock_password"
+        type="password"
+        autocomplete="new-password"
+        class="input"
+        placeholder="Enter your password"
+      />
+
+      <p id="sessionUnlockMsg" class="text-xs text-red-600"></p>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" id="sessionLockSignOutBtn" class="btn">
+          Sign out
+        </button>
+        <button type="submit" class="btn btn-highlight">
+          Unlock
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- IFRS 16 Lease Wizard drawer -->
 <div id="leaseWizardDrawer" class="drawer">

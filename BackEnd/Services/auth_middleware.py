@@ -71,6 +71,18 @@ def require_auth(_f=None, *, require_company: bool = True):
             g.user_id = user_id
             request.jwt_payload = payload
 
+            try:
+                db_service.execute_sql(
+                    """
+                    UPDATE public.users
+                    SET last_activity_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (int(user_id),),
+                )
+            except Exception:
+                current_app.logger.exception("Failed to update last_activity_at")
+
             cid = kwargs.get("company_id") or kwargs.get("cid")
             if cid is None:
                 cid = payload.get("company_id")
