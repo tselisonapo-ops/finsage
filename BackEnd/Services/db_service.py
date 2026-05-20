@@ -22279,65 +22279,72 @@ class DatabaseService:
         return float(row["bal"] or 0.0)
 
 
-    def apply_auto_overdraft(self, company_id: int, trigger_journal_id: int, bank_code: str = "1000", overdraft_code: str = "2105") -> None:
+    def apply_auto_overdraft(
+        self,
+        company_id: int,
+        trigger_journal_id: int,
+        bank_code: str = "BS_CA_1000",
+        overdraft_code: str = "BS_CL_2105",
+    ) -> None:
         """
         If bank GL is negative after posting a journal, create a system reclass journal:
         Dr Bank, Cr Overdraft for the negative amount.
-        Also, if bank is no longer negative, do nothing (you can later add auto-reversal if desired).
         """
         schema = self.company_schema(company_id)
-        # self.ensure_company_schema(company_id)
 
-        # Ensure overdraft account exists (in case tenant created before this feature)
         self.ensure_mandatory_company_accounts(company_id)
 
-        # Check if reclass already created for this trigger journal
         exists = self.fetch_one(
             f"""
             SELECT 1
             FROM {schema}.ledger
-            WHERE source = 'SYS_OVERDRAFT' AND source_id = %s
+            WHERE source = 'SYS_OVERDRAFT'
+            AND source_id = %s
             LIMIT 1;
             """,
-            (trigger_journal_id,),
+            (int(trigger_journal_id),),
         )
         if exists:
             return
 
         bank_bal = self._get_gl_balance(company_id, bank_code)
 
-        # Bank < 0 means credit balance (overdraft)
         if bank_bal >= 0:
             return
 
-        amount = abs(bank_bal)
+        amount = abs(float(bank_bal))
+        today = date.today().isoformat()
+        ref = f"SYS-OD-{trigger_journal_id}"
+        desc = f"System overdraft reclass (trigger journal {trigger_journal_id})"
 
-        # Create system journal header
-        j_id = self.insert_journal(company_id, {
-            "date": date.today().isoformat(),
-            "ref": f"SYS-OD-{trigger_journal_id}",
-            "description": f"System overdraft reclass (trigger journal {trigger_journal_id})",
-            "gross_amount": 0,
-            "net_amount": 0,
-            "vat_amount": 0,
-        })
+        entry = {
+            "date": today,
+            "ref": ref,
+            "description": desc,
+            "gross_amount": amount,
+            "net_amount": amount,
+            "vat_amount": 0.0,
+            "source": "SYS_OVERDRAFT",
+            "source_id": int(trigger_journal_id),
+            "lines": [
+                {
+                    "account_code": bank_code,
+                    "debit": amount,
+                    "credit": 0.0,
+                    "description": desc,
+                    "memo": "Reclass bank negative to overdraft",
+                },
+                {
+                    "account_code": overdraft_code,
+                    "debit": 0.0,
+                    "credit": amount,
+                    "description": desc,
+                    "memo": "Reclass bank negative to overdraft",
+                },
+            ],
+        }
 
-        # Create reclass ledger lines: Dr Bank, Cr Overdraft
-        with self._conn_cursor() as (_c, cur):
-            cur.execute(
-                f"""
-                INSERT INTO {schema}.ledger (journal_id, date, ref, account, debit, credit, source, source_id, memo)
-                VALUES (%s, %s, %s, %s, %s, %s, 'SYS_OVERDRAFT', %s, %s);
-                """,
-                (j_id, date.today().isoformat(), f"SYS-OD-{trigger_journal_id}", bank_code, amount, 0.0, trigger_journal_id, "Reclass bank negative to overdraft"),
-            )
-            cur.execute(
-                f"""
-                INSERT INTO {schema}.ledger (journal_id, date, ref, account, debit, credit, source, source_id, memo)
-                VALUES (%s, %s, %s, %s, %s, %s, 'SYS_OVERDRAFT', %s, %s);
-                """,
-                (j_id, date.today().isoformat(), f"SYS-OD-{trigger_journal_id}", overdraft_code, 0.0, amount, trigger_journal_id, "Reclass bank negative to overdraft"),
-            )
+        self.post_journal(company_id, entry)
 
     def next_doc_number_cur(self, company_id: int, cur, key: str) -> str:
         schema = f"company_{company_id}"
@@ -37563,43 +37570,41 @@ class DatabaseService:
             "source_id": int(bill_id),
         }
 
-        journal_id = int(self.insert_journal(company_id, entry, cur=cur) or 0)
-        if journal_id <= 0:
-            raise ValueError("Failed to create journal header")
+        posting_lines = []
 
-        # ----------------------------
-        # Ledger + TB
-        # ----------------------------
         for jl in jlines:
             code = (jl.get("account_code") or "").strip()
             dc = (jl.get("dc") or "").upper()
             amt = money(jl.get("amount") or 0.0)
+
             if not code or dc not in ("D", "C") or amt <= 0:
                 raise ValueError(f"Bad bill journal line: {jl}")
 
-            line = {
+            posting_lines.append({
                 "account_code": code,
-                "debit":  amt if dc == "D" else 0.0,
+                "debit": amt if dc == "D" else 0.0,
                 "credit": amt if dc == "C" else 0.0,
                 "description": desc,
-                "memo": (jl.get("memo") or desc),
-            }
+                "memo": jl.get("memo") or desc,
+                "vendor_id": vend_id if vend_id is not None and code == AP_ACCOUNT else None,
+            })
 
-            vendor_for_line = vend_id if (vend_id is not None and code == AP_ACCOUNT) else None
+        entry.update({
+            "lines": posting_lines,
+            "currency": bill.get("currency") or "ZAR",
+            "module_name": "accounts_payable",
+            "engagement_company_id": bill.get("engagement_company_id") or bill.get("source_company_id"),
+            "engagement_id": bill.get("engagement_id"),
+            "prepared_by_user_id": bill.get("prepared_by_user_id"),
+            "reviewer_user_id": bill.get("reviewer_user_id"),
+            "created_by_user_id": bill.get("created_by_user_id"),
+            "updated_by_user_id": bill.get("updated_by_user_id"),
+        })
 
-            self.insert_ledger(
-                company_id=company_id,
-                journal_id=journal_id,
-                je_date=bdate,
-                line=line,
-                ref=ref,
-                vendor_id=vendor_for_line,
-                source="bill",
-                source_id=int(bill_id),
-                cur=cur,
-            )
+        journal_id = int(self.post_journal(company_id, entry, cur=cur) or 0)
 
-            self.update_trial_balance(company_id, line, cur=cur)
+        if journal_id <= 0:
+            raise ValueError("Failed to post bill journal")
 
             if hasattr(self, "requires_notes") and self.requires_notes(code):
                 if hasattr(self, "insert_note"):
@@ -39103,11 +39108,8 @@ class DatabaseService:
                     "source_id": int(bill_id),
                 }
 
-                reversal_journal_id = int(self.insert_journal(company_id, rev_entry, cur=cur) or 0)
-                if reversal_journal_id <= 0:
-                    raise ValueError("Failed to create reversal journal")
+                posting_lines = []
 
-                # 6) Insert reversing ledger lines + TB updates (swap Dr/Cr)
                 for ln in led_lines:
                     acct = (ln.get("account") or "").strip()
                     if not acct:
@@ -39116,25 +39118,31 @@ class DatabaseService:
                     d = money(ln.get("debit"))
                     c = money(ln.get("credit"))
 
-                    rev_line = {
+                    posting_lines.append({
                         "account_code": acct,
                         "debit": c,
                         "credit": d,
                         "description": rev_desc,
                         "memo": ln.get("memo") or rev_desc,
-                    }
+                        "vendor_id": ln.get("vendor_id") or vendor_id,
+                    })
 
-                    self.insert_ledger(
-                        company_id=company_id,
-                        journal_id=reversal_journal_id,
-                        je_date=rev_entry["date"],
-                        line=rev_line,
-                        ref=rev_ref,
-                        vendor_id=ln.get("vendor_id") or vendor_id,   # ✅ keep subledger trace
-                        cur=cur,
-                    )
-                    self.update_trial_balance(company_id, rev_line, cur=cur)
+                rev_entry.update({
+                    "lines": posting_lines,
+                    "currency": b.get("currency") or "ZAR",
+                    "module_name": "accounts_payable",
+                    "engagement_company_id": b.get("engagement_company_id") or b.get("source_company_id"),
+                    "engagement_id": b.get("engagement_id"),
+                    "prepared_by_user_id": b.get("prepared_by_user_id"),
+                    "reviewer_user_id": b.get("reviewer_user_id"),
+                    "created_by_user_id": b.get("created_by_user_id"),
+                    "updated_by_user_id": b.get("updated_by_user_id"),
+                })
 
+                reversal_journal_id = int(self.post_journal(company_id, rev_entry, cur=cur) or 0)
+
+                if reversal_journal_id <= 0:
+                    raise ValueError("Failed to create reversal journal")
                 # 7) Mark original journal + reversal journal (same as AR)
 
                 # Original → points to reversal
@@ -41083,65 +41091,54 @@ class DatabaseService:
                 "source_id": int(invoice_id),
             }
             print("[post_invoice_to_gl] journal_entry", journal_entry, flush=True)
-            journal_id = int(self.insert_journal(company_id, journal_entry, cur=_cur) or 0)
-            print("[post_invoice_to_gl] journal_id", journal_id, flush=True)
-            if not journal_id:
-                raise ValueError("Failed to create journal header")
+            posting_lines = []
 
-            # 7) ledger lines
             for jl in jlines:
-                print("[post_invoice_to_gl] processing line", jl, flush=True)
-
                 raw_code = (jl.get("account_code") or "").strip()
                 dc = (jl.get("dc") or "").upper()
                 amt = money(jl.get("amount") or 0.0)
+
                 if not raw_code or dc not in ("D", "C") or amt <= 0:
                     raise ValueError(f"Bad journal line: {jl}")
 
                 row = self.get_account_row_for_posting(company_id, raw_code)
-                print("[post_invoice_to_gl] resolved row", row, flush=True)
-
                 if not row:
                     raise ValueError(f"Account '{raw_code}' not found in company COA.")
+
                 code = (row[1] or "").strip()
                 if not code:
                     raise ValueError(f"Resolved posting code blank for '{raw_code}'")
 
-                line = {
+                posting_lines.append({
                     "account_code": code,
-                    "debit":  amt if dc == "D" else 0.0,
+                    "description": jl.get("description") or desc,
+                    "debit": amt if dc == "D" else 0.0,
                     "credit": amt if dc == "C" else 0.0,
-                    "description": desc,
-                }
+                })
 
-                cust_for_line = cust_id if (code == AR_ACCOUNT) else None
+            journal_entry.update({
+                "lines": posting_lines,
+                "currency": inv.get("currency") or "ZAR",
+                "module_name": "accounts_receivable",
+                "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
+                "engagement_id": inv.get("engagement_id"),
+                "prepared_by_user_id": inv.get("prepared_by_user_id"),
+                "reviewer_user_id": inv.get("reviewer_user_id"),
+                "created_by_user_id": inv.get("created_by_user_id"),
+                "updated_by_user_id": inv.get("updated_by_user_id"),
 
-                print("[post_invoice_to_gl] ledger line", {
-                    "account_code": code,
-                    "debit": line["debit"],
-                    "credit": line["credit"],
-                    "customer_id": cust_for_line,
-                }, flush=True)
+                # IFRS 15 fields now carried into post_journal/engagement/audit context
+                "revenue_contract_id": revenue_contract_id,
+                "ifrs15_settlement_pattern": settlement_pattern,
+                "ifrs15_accounts": ifrs15_accounts,
+            })
 
-                self.insert_ledger(
-                    company_id=company_id,
-                    journal_id=journal_id,
-                    je_date=inv_date,
-                    line=line,
-                    ref=inv_no,
-                    customer_id=cust_for_line,
-                    source="invoice",
-                    source_id=int(invoice_id),
-                    cur=_cur,
-                )
-                print("[post_invoice_to_gl] insert_ledger done", flush=True)
+            journal_id = int(self.post_journal(company_id, journal_entry, cur=_cur) or 0)
 
-                self.update_trial_balance(company_id, line, cur=_cur)
-                print("[post_invoice_to_gl] update_trial_balance done", flush=True)
+            if not journal_id:
+                raise ValueError("Failed to post invoice journal")
 
-                if self.requires_notes(code):
-                    self.insert_note(company_id, journal_id, code, desc, cur=_cur)
-                    print("[post_invoice_to_gl] insert_note done", flush=True)
+            print("[post_invoice_to_gl] insert_note done", flush=True)
 
             # 8) inventory hook (same transaction)
             self.post_invoice_inventory_if_needed(
@@ -41174,9 +41171,6 @@ class DatabaseService:
 
             if not posted_row.get("posted_journal_id"):
                 raise ValueError(f"Invoice {invoice_id} posted but posted_journal_id was not saved")
-
-            if not _cur.fetchone():
-                return int(journal_id)
 
             # 10) publish engagement posting activity only when invoice is engagement-linked
             try:
@@ -42701,11 +42695,8 @@ class DatabaseService:
                     "source_id": int(invoice_id),
                 }
 
-                rev_journal_id = int(self.insert_journal(company_id, journal_entry, cur=cur) or 0)
-                if rev_journal_id <= 0:
-                    raise ValueError("Failed to create reversal journal")
+                reversal_lines = []
 
-                # 5) reverse ledger lines (swap Dr/Cr), update TB
                 for ln in orig_lines:
                     acct = (ln.get("account") or "").strip()
                     dr = float(ln.get("debit") or 0.0)
@@ -42714,28 +42705,31 @@ class DatabaseService:
                     if not acct:
                         raise ValueError("Bad ledger line: missing account")
 
-                    # swap
-                    rev_line = {
+                    reversal_lines.append({
                         "account_code": acct,
                         "debit": cr,
                         "credit": dr,
                         "description": desc,
-                    }
+                        "memo": ln.get("memo") or desc,
+                        "customer_id": ln.get("customer_id"),
+                    })
 
-                    self.insert_ledger(
-                        company_id=company_id,
-                        journal_id=rev_journal_id,
-                        je_date=reversal_date,
-                        line=rev_line,
-                        ref=rev_ref,
-                        customer_id=ln.get("customer_id"),  # keep subledger trace
-                        cur=cur,
-                    )
-                    self.update_trial_balance(company_id, rev_line, cur=cur)
+                journal_entry.update({
+                    "lines": reversal_lines,
+                    "currency": inv.get("currency") or "ZAR",
+                    "module_name": "accounts_receivable",
+                    "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
+                    "engagement_id": inv.get("engagement_id"),
+                    "prepared_by_user_id": inv.get("prepared_by_user_id"),
+                    "reviewer_user_id": inv.get("reviewer_user_id"),
+                    "created_by_user_id": inv.get("created_by_user_id"),
+                    "updated_by_user_id": inv.get("updated_by_user_id"),
+                })
 
-                    if self.requires_notes(acct):
-                        self.insert_note(company_id, rev_journal_id, acct, desc, cur=cur)
+                rev_journal_id = int(self.post_journal(company_id, journal_entry, cur=cur) or 0)
 
+                if rev_journal_id <= 0:
+                    raise ValueError("Failed to create reversal journal")
                 # 6) mark invoice reversed (audit-safe)
                 cur.execute(
                     f"""
@@ -42878,73 +42872,73 @@ class DatabaseService:
                     "source_id": int(invoice_id),
                 }
 
-                writeoff_journal_id = int(self.insert_journal(company_id, wo_entry, cur=cur) or 0)
-                if writeoff_journal_id <= 0:
-                    raise ValueError("Failed to create write-off journal")
-
                 cust_id = inv.get("customer_id")
 
-                # 6) Ledger lines
+                posting_lines = []
+
                 if vat_relief and vat > money("0.00"):
-                    # DR expense net
-                    dr_exp = {
+                    if not vat_relief_account:
+                        raise ValueError("vat_relief_account required when vat_relief=true")
+
+                    posting_lines.append({
                         "account_code": writeoff_account_code,
                         "debit": float(net),
                         "credit": 0.0,
                         "description": wo_desc,
                         "memo": wo_reason,
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, dr_exp, ref=wo_ref, customer_id=None, cur=cur)
-                    self.update_trial_balance(company_id, dr_exp, cur=cur)
+                    })
 
-                    # DR VAT relief
-                    if not vat_relief_account:
-                        raise ValueError("vat_relief_account required when vat_relief=true")
-
-                    dr_vat = {
+                    posting_lines.append({
                         "account_code": vat_relief_account,
                         "debit": float(vat),
                         "credit": 0.0,
                         "description": wo_desc,
                         "memo": "VAT relief on bad debt",
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, dr_vat, ref=wo_ref, customer_id=None, cur=cur)
-                    self.update_trial_balance(company_id, dr_vat, cur=cur)
+                    })
 
-                    # CR AR gross
-                    cr_ar = {
+                    posting_lines.append({
                         "account_code": ar_control,
                         "debit": 0.0,
                         "credit": float(net + vat),
                         "description": wo_desc,
                         "memo": wo_reason,
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, cr_ar, ref=wo_ref, customer_id=cust_id, cur=cur)
-                    self.update_trial_balance(company_id, cr_ar, cur=cur)
+                        "customer_id": cust_id,
+                    })
 
                 else:
-                    # Simple: DR expense gross
-                    dr_line = {
+                    posting_lines.append({
                         "account_code": writeoff_account_code,
                         "debit": float(outstanding_gross),
                         "credit": 0.0,
                         "description": wo_desc,
                         "memo": wo_reason,
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, dr_line, ref=wo_ref, customer_id=None, cur=cur)
-                    self.update_trial_balance(company_id, dr_line, cur=cur)
+                    })
 
-                    # CR AR gross (with customer_id)
-                    cr_line = {
+                    posting_lines.append({
                         "account_code": ar_control,
                         "debit": 0.0,
                         "credit": float(outstanding_gross),
                         "description": wo_desc,
                         "memo": wo_reason,
-                    }
-                    self.insert_ledger(company_id, writeoff_journal_id, je_date, cr_line, ref=wo_ref, customer_id=cust_id, cur=cur)
-                    self.update_trial_balance(company_id, cr_line, cur=cur)
+                        "customer_id": cust_id,
+                    })
 
+                wo_entry.update({
+                    "lines": posting_lines,
+                    "currency": inv.get("currency") or "ZAR",
+                    "module_name": "accounts_receivable",
+                    "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
+                    "engagement_id": inv.get("engagement_id"),
+                    "prepared_by_user_id": inv.get("prepared_by_user_id"),
+                    "reviewer_user_id": inv.get("reviewer_user_id"),
+                    "created_by_user_id": inv.get("created_by_user_id"),
+                    "updated_by_user_id": inv.get("updated_by_user_id"),
+                })
+
+                writeoff_journal_id = int(self.post_journal(company_id, wo_entry, cur=cur) or 0)
+
+                if writeoff_journal_id <= 0:
+                    raise ValueError("Failed to create write-off journal")
                 # 7) Stamp invoice
                 cur.execute(
                     f"""
