@@ -59219,6 +59219,87 @@ class DatabaseService:
         )
         return cur.fetchone()
 
+    def apply_engagement_acceptance_decision(
+        self,
+        cur,
+        company_id: int,
+        *,
+        acceptance_id: int,
+        action: str,
+        actor_user_id: int,
+        decision_notes: str = "",
+    ):
+        schema = self.company_schema(company_id)
+        action = (action or "").strip().lower()
+
+        if action == "submit":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'submitted',
+                    decision = NULL,
+                    decision_date = NULL,
+                    decided_by_user_id = NULL,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        if action == "approve":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'approved',
+                    decision = 'approve',
+                    decision_date = NOW(),
+                    decided_by_user_id = %s,
+                    decision_notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        if action == "decline":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'declined',
+                    decision = 'decline',
+                    decision_date = NOW(),
+                    decided_by_user_id = %s,
+                    decision_notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        if action == "return":
+            sql = f"""
+                UPDATE {schema}.engagement_acceptance
+                SET
+                    status = 'returned',
+                    decision = 'return',
+                    decision_date = NOW(),
+                    decided_by_user_id = %s,
+                    decision_notes = %s,
+                    updated_by_user_id = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s AND id = %s AND is_active = TRUE
+                RETURNING id
+            """
+            cur.execute(sql, (actor_user_id, (decision_notes or "").strip(), actor_user_id, company_id, acceptance_id))
+            return cur.fetchone()
+
+        raise ValueError("Unsupported action.")
 
     def create_engagement_acceptance_item(
         self,
