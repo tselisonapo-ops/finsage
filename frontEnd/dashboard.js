@@ -96,7 +96,7 @@
 
   // ---- TEMP DEBUG WRAPPERS ----
   const _origSetToken = window.setToken;
-  window.setToken = function (token, persist = true) {
+  window.setToken = function (token, persist = false) {
     try {
       const payload = JSON.parse(atob(String(token).split(".")[1]));
       console.warn("[SET TOKEN]", {
@@ -146,7 +146,7 @@
       local: !!localStorage.getItem(TOKEN_KEY),
       session: !!sessionStorage.getItem(TOKEN_KEY),
     });
-    window.location.href = "/signin";
+    window.location.replace("signin.html");
     return;
   }
 })();
@@ -4446,6 +4446,8 @@ function performFullLogout() {
 }
 
 window.performFullLogout = performFullLogout;
+
+
   // ==========================================================
   // 11) AUTH UI HELPERS (depends on store/roles)
   // ==========================================================
@@ -4669,6 +4671,9 @@ function bindSessionUnlockForm() {
 
 window.bindSessionUnlockForm = bindSessionUnlockForm;
 
+document.addEventListener("DOMContentLoaded", () => {
+  bindSessionUnlockForm?.();
+});
 // ===============================
 // Account dropdown navigation
 // ===============================
