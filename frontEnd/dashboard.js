@@ -151,6 +151,75 @@
   }
 })();
 
+(function bindSessionLockModalEarly() {
+  document.addEventListener("click", (e) => {
+    const signOut = e.target.closest("#sessionLockSignOutBtn");
+    if (!signOut) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    window.clearToken?.();
+
+    sessionStorage.clear();
+
+    [
+      "fs_user_token",
+      "authToken",
+      "userEmail",
+      "userRole",
+      "company_id",
+      "CURRENT_COMPANY_ID",
+      "companyName",
+      "fs_industry",
+      "fs_subindustry",
+      "fs_user",
+      "fs_session_locked",
+      "fs_session_lock_reason"
+    ].forEach((k) => localStorage.removeItem(k));
+
+    window.location.replace("signin.html?reason=signed_out");
+  }, true);
+
+  document.addEventListener("submit", async (e) => {
+    const form = e.target.closest("#sessionUnlockForm");
+    if (!form) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const input = document.getElementById("sessionUnlockPassword");
+    const msg = document.getElementById("sessionUnlockMsg");
+    const password = input?.value || "";
+
+    if (msg) msg.textContent = "";
+
+    if (!password) {
+      if (msg) msg.textContent = "Enter your password.";
+      return;
+    }
+
+    try {
+      await window.apiFetch(window.ENDPOINTS.auth.reauth, {
+        method: "POST",
+        body: JSON.stringify({ password }),
+        _allowWhenLocked: true,
+      });
+
+      input.value = "";
+      sessionStorage.removeItem("fs_session_locked");
+      sessionStorage.removeItem("fs_session_lock_reason");
+
+      document.getElementById("sessionLockModal")?.classList.add("hidden");
+      document.getElementById("sessionLockModal")?.classList.remove("flex");
+
+      window.resetIdleTimer?.();
+    } catch (err) {
+      if (msg) msg.textContent = err.message || "Unlock failed.";
+    }
+  }, true);
+})();
+
 console.log("✅ dashboard.js booting");
 
 (function () {
@@ -4424,6 +4493,8 @@ function renderPasswordAge(user) {
 function performFullLogout() {
   window.clearToken?.();
 
+  sessionStorage.clear();
+
   [
     "fs_user_token",
     "authToken",
@@ -4435,16 +4506,16 @@ function performFullLogout() {
     "fs_industry",
     "fs_subindustry",
     "fs_user",
-    "fs_session_locked"
+    "fs_session_locked",
+    "fs_session_lock_reason"
   ].forEach((k) => {
     localStorage.removeItem(k);
-    sessionStorage.removeItem(k);
   });
 
   window.FS_USER_ROLE = null;
-  window.location.href = "signin.html";
-}
 
+  window.location.replace("signin.html?reason=signed_out");
+}
 window.performFullLogout = performFullLogout;
 
 
@@ -4671,9 +4742,7 @@ function bindSessionUnlockForm() {
 
 window.bindSessionUnlockForm = bindSessionUnlockForm;
 
-document.addEventListener("DOMContentLoaded", () => {
-  bindSessionUnlockForm?.();
-});
+bindSessionUnlockForm?.();
 // ===============================
 // Account dropdown navigation
 // ===============================
@@ -7394,7 +7463,7 @@ function renderInsightBanner(data) {
   }
 
 function lockSession(reason = "idle") {
-  localStorage.setItem("fs_session_locked", "1");
+  sessionStorage.setItem("fs_session_locked", "1");
   localStorage.setItem("fs_session_lock_reason", reason);
   window.showSessionLockModal?.();
 }
