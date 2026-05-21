@@ -1560,6 +1560,11 @@ let PR_ENGAGEMENT_ACCEPTANCE_CACHE = {
   }
 };
 
+let PR_EA_DECISION_MODAL = {
+  action: null,
+  acceptanceId: null
+};
+
 let PR_ENGAGEMENT_ACCEPTANCE_EVENTS_BOUND = false;
 
 let PR_DASHBOARD_CACHE = {
