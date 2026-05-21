@@ -17872,6 +17872,12 @@ async function applyEngagementAcceptanceDecision(
 
   if (!companyId || !acceptanceId) return;
 
+  console.log("EA decision action =", action);
+  console.log("EA decision payload =", {
+    decision: action,
+    decision_notes: decisionNotes
+  });
+
   await apiFetch(
     ENDPOINTS.engagementAcceptance.decision(
       companyId,
