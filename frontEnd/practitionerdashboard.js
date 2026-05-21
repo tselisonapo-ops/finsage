@@ -17630,18 +17630,82 @@ function markSelectedAcceptanceRow(id) {
   });
 }
 
-function openEaDecisionModal(action, acceptanceId) {
+function openEaDecisionModal(action, row) {
   PR_EA_DECISION_MODAL.action = action;
-  PR_EA_DECISION_MODAL.acceptanceId = acceptanceId;
+  PR_EA_DECISION_MODAL.acceptanceId = row?.id || null;
 
   const modal = document.getElementById("eaDecisionModal");
   const title = document.getElementById("eaDecisionTitle");
   const notes = document.getElementById("eaDecisionNotes");
   const msg = document.getElementById("eaDecisionMsg");
+  const confirmBtn =
+    document.getElementById("eaDecisionConfirm");
+
+  const labels = {
+    approve: "Approve Engagement",
+    return: "Return for Rework",
+    decline: "Decline Engagement"
+  };
 
   if (title) {
     title.textContent =
-      `${titleize(action)} engagement acceptance`;
+      labels[action] || "Engagement Decision";
+  }
+
+  if (confirmBtn) {
+    confirmBtn.textContent =
+      labels[action] || "Confirm";
+  }
+
+  const summaryHost =
+    document.getElementById("eaDecisionSummary");
+
+  if (summaryHost) {
+    summaryHost.innerHTML = `
+      <div class="decision-summary-grid">
+
+        <div class="decision-summary-item">
+          <div class="decision-summary-label">
+            Engagement
+          </div>
+
+          <div class="decision-summary-value">
+            ${escapeHtml(row.engagement_name || "-")}
+          </div>
+        </div>
+
+        <div class="decision-summary-item">
+          <div class="decision-summary-label">
+            Customer
+          </div>
+
+          <div class="decision-summary-value">
+            ${escapeHtml(row.customer_name || "-")}
+          </div>
+        </div>
+
+        <div class="decision-summary-item">
+          <div class="decision-summary-label">
+            Risk level
+          </div>
+
+          <div class="decision-summary-value">
+            ${escapeHtml(titleize(row.risk_level || "normal"))}
+          </div>
+        </div>
+
+        <div class="decision-summary-item">
+          <div class="decision-summary-label">
+            Status
+          </div>
+
+          <div class="decision-summary-value">
+            ${escapeHtml(titleize(row.status || "-"))}
+          </div>
+        </div>
+
+      </div>
+    `;
   }
 
   if (notes) notes.value = "";
@@ -17787,7 +17851,8 @@ function bindEngagementAcceptanceScreen(me) {
         return;
       }
 
-      openEaDecisionModal(action, id);
+      const row = PR_ENGAGEMENT_ACCEPTANCE_CACHE.detail;
+      openEaDecisionModal(action, row);
     };
   }
 }
@@ -17995,25 +18060,27 @@ function renderEngagementAcceptanceDetail(row) {
       </div>
     </div>
 
-    <div class="detail-section">
-      <h4>Acceptance readiness</h4>
+    <div class="modal-body">
 
-      ${
-        readiness.ready
-          ? `
-            <div class="success-box">
-              Ready for acceptance decision.
-            </div>
-          `
-          : `
-            <div class="warning-box">
-              <strong>Blocked / not ready</strong>
-              <ul class="simple-list">
-                ${readiness.issues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
-              </ul>
-            </div>
-          `
-      }
+      <div id="eaDecisionSummary"></div>
+
+      <div class="field">
+        <label for="eaDecisionNotes">
+          Decision notes
+        </label>
+
+        <textarea
+          id="eaDecisionNotes"
+          rows="6"
+          placeholder="Enter approval, return, or decline notes..."
+        ></textarea>
+      </div>
+
+      <div
+        id="eaDecisionMsg"
+        class="form-message"
+      ></div>
+
     </div>
 
     <div class="detail-section">
