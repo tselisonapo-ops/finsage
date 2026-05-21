@@ -1025,11 +1025,11 @@ const ENDPOINTS = {
     get: (companyId, acceptanceId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}`,
 
-  update: (companyId, acceptanceId) =>
-    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}`,
+    update: (companyId, acceptanceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}`,
     decision: (companyId, acceptanceId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/engagement-acceptance/${encodeURIComponent(acceptanceId)}/decision`
-  },
+    },
 
   overrideLogDashboard: (
     companyId,
@@ -17778,7 +17778,7 @@ function bindEngagementAcceptanceScreen(me) {
       if (!id || !action) return;
 
       if (action === "submit") {
-        await applyEngagementAcceptanceDecision(me, id, action, "");
+        await updateEngagementAcceptanceStatus(me, id, "submitted");
         return;
       }
 
@@ -17811,6 +17811,25 @@ async function applyEngagementAcceptanceDecision(
         decision: action,
         decision_notes: decisionNotes
       })
+    }
+  );
+
+  await loadEngagementAcceptanceRows(me);
+  await openEngagementAcceptanceDetail(me, acceptanceId);
+}
+
+async function updateEngagementAcceptanceStatus(me, acceptanceId, status) {
+  const companyId =
+    me?.company_id ||
+    window.currentUser?.company_id;
+
+  if (!companyId || !acceptanceId) return;
+
+  await apiFetch(
+    ENDPOINTS.engagementAcceptance.update(companyId, acceptanceId),
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status })
     }
   );
 
