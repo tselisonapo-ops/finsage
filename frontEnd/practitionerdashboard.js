@@ -17886,6 +17886,45 @@ async function openEngagementAcceptanceDetail(me, acceptanceId) {
   }
 }
 
+function getAcceptanceReadiness(row, assessment) {
+  const issues = [];
+
+  if (!assessment) {
+    issues.push("No Risk & Independence assessment found.");
+  } else {
+    const status = String(assessment.status || "").toLowerCase();
+
+    if (!["approved", "completed", "cleared"].includes(status)) {
+      issues.push("Risk & Independence assessment is not approved.");
+    }
+
+    if (!assessment.independence_cleared) {
+      issues.push("Independence has not been cleared.");
+    }
+
+    if (!assessment.conflicts_checked) {
+      issues.push("Conflicts have not been checked.");
+    }
+
+    if (!assessment.competence_confirmed) {
+      issues.push("Competence has not been confirmed.");
+    }
+
+    if (!assessment.capacity_confirmed) {
+      issues.push("Capacity has not been confirmed.");
+    }
+  }
+
+  if (!row.assigned_partner_user_name) {
+    issues.push("No assigned partner recorded.");
+  }
+
+  return {
+    ready: issues.length === 0,
+    issues
+  };
+}
+
 function renderEngagementAcceptanceDetail(row) {
   const host = document.getElementById("eaDetailHost");
   if (!host) return;
@@ -17897,7 +17936,8 @@ function renderEngagementAcceptanceDetail(row) {
   const assessment = row.latest_risk_assessment || null;
   const assessmentStatus = String(assessment?.status || "").toLowerCase();
   const assessmentReady = ["approved", "completed", "cleared"].includes(assessmentStatus);
-
+  const readiness = getAcceptanceReadiness(row, assessment);
+  
   host.innerHTML = `
     <div class="detail-grid">
       <div class="detail-card">
@@ -17929,6 +17969,27 @@ function renderEngagementAcceptanceDetail(row) {
         <div class="detail-label">Decision date</div>
         <div class="detail-value">${formatShortDate(row.decision_date) || "-"}</div>
       </div>
+    </div>
+
+    <div class="detail-section">
+      <h4>Acceptance readiness</h4>
+
+      ${
+        readiness.ready
+          ? `
+            <div class="success-box">
+              Ready for acceptance decision.
+            </div>
+          `
+          : `
+            <div class="warning-box">
+              <strong>Blocked / not ready</strong>
+              <ul class="simple-list">
+                ${readiness.issues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
+              </ul>
+            </div>
+          `
+      }
     </div>
 
     <div class="detail-section">
