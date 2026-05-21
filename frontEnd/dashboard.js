@@ -74,7 +74,7 @@
     );
   };
 
-  window.setToken = function (token, persist = true) {
+  window.setToken = function (token, persist = false) {
     if (!token) return;
 
     // 🔥 CLEAR EVERYTHING (THIS IS IMPORTANT)
@@ -242,7 +242,7 @@ window.addEventListener("unhandledrejection", (e) => {
   window.apiFetch = async function apiFetch(url, options = {}) {
     if (!url) throw new Error("apiFetch called with empty/undefined url");
 
-    const locked = localStorage.getItem("fs_session_locked") === "1";
+    const locked = sessionStorage.getItem("fs_session_locked") === "1";
     const allowWhenLocked = options._allowWhenLocked === true;
 
     if (locked && !allowWhenLocked) {
@@ -4607,15 +4607,17 @@ function hideSessionLockModal() {
 }
 
 function lockSession(reason = "idle") {
-  localStorage.setItem("fs_session_locked", "1");
-  localStorage.setItem("fs_session_lock_reason", reason);
+  sessionStorage.setItem("fs_session_locked", "1");
+  sessionStorage.setItem("fs_session_lock_reason", reason);
   showSessionLockModal();
 }
 
 function unlockSession() {
-  localStorage.removeItem("fs_session_locked");
-  localStorage.removeItem("fs_session_lock_reason");
+  sessionStorage.removeItem("fs_session_locked");
+  sessionStorage.removeItem("fs_session_lock_reason");
+
   hideSessionLockModal();
+
   window.resetIdleTimer?.();
 }
 
@@ -4711,13 +4713,13 @@ function bindAccountMenuNavigation() {
   let idleTimer = null;
 
   function triggerIdleLock() {
-    if (localStorage.getItem("fs_session_locked") === "1") return;
+    if (sessionStorage.getItem("fs_session_locked") === "1") return;
     lockSession("idle");
   }
 
   function resetIdleTimer() {
     clearTimeout(idleTimer);
-    if (localStorage.getItem("fs_session_locked") === "1") return;
+    if (sessionStorage.getItem("fs_session_locked") === "1") return;
     idleTimer = setTimeout(triggerIdleLock, IDLE_LIMIT_MS);
   }
 
@@ -4728,7 +4730,7 @@ function bindAccountMenuNavigation() {
   window.resetIdleTimer = resetIdleTimer;
   resetIdleTimer();
 
-  if (localStorage.getItem("fs_session_locked") === "1") {
+  if (sessionStorage.getItem("fs_session_locked") === "1") {
     showSessionLockModal();
   }
 })();
