@@ -17448,6 +17448,8 @@ async function renderEngagementAcceptanceScreen(me) {
           </div>
 
           <div class="modal-body">
+            <div id="eaDecisionSummary"></div>
+
             <div class="field">
               <label for="eaDecisionNotes">
                 Decision notes
@@ -18060,29 +18062,6 @@ function renderEngagementAcceptanceDetail(row) {
       </div>
     </div>
 
-    <div class="modal-body">
-
-      <div id="eaDecisionSummary"></div>
-
-      <div class="field">
-        <label for="eaDecisionNotes">
-          Decision notes
-        </label>
-
-        <textarea
-          id="eaDecisionNotes"
-          rows="6"
-          placeholder="Enter approval, return, or decline notes..."
-        ></textarea>
-      </div>
-
-      <div
-        id="eaDecisionMsg"
-        class="form-message"
-      ></div>
-
-    </div>
-
     <div class="detail-section">
       <h4>Risk & Independence summary</h4>
 
@@ -18117,7 +18096,7 @@ function renderEngagementAcceptanceDetail(row) {
 
     <div class="detail-actions">
       ${canSubmit ? `<button class="btn btn-secondary" data-ea-action="submit" data-ea-id="${row.id}">Submit</button>` : ""}
-      ${canDecide ? `<button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}" ${assessmentReady ? "" : "disabled title='Risk & Independence must be completed first'"}>Approve</button>` : ""}
+${canDecide ? `<button class="btn btn-success" data-ea-action="approve" data-ea-id="${row.id}" ${readiness.ready ? "" : "disabled title='Acceptance is blocked until all readiness checks pass'"}>Approve</button>` : ""}
       ${canDecide ? `<button class="btn btn-warning" data-ea-action="return" data-ea-id="${row.id}">Return</button>` : ""}
       ${canDecide ? `<button class="btn btn-danger" data-ea-action="decline" data-ea-id="${row.id}">Decline</button>` : ""}
     </div>
