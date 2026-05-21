@@ -61200,9 +61200,33 @@ class DatabaseService:
             clear_milestone_link()
 
         elif method == "milestone":
-            milestone_code = str(payload_json.get("milestone_code") or "").strip()
-            if not milestone_code:
-                raise ValueError("Milestone progress requires payload_json.milestone_code.")
+            milestone_code = str(
+                payload_json.get("milestone_code") or ""
+            ).strip()
+
+            obligation_milestones = (
+                payload_json.get("obligation_milestones") or []
+            )
+
+            has_table = (
+                isinstance(obligation_milestones, list)
+                and len(obligation_milestones) > 0
+            )
+
+            if not milestone_code and not has_table:
+                raise ValueError(
+                    "Milestone progress requires milestone_code or obligation_milestones."
+                )
+
+            if float(data.get("expected_total_cost") or 0.0) < 0:
+                raise ValueError(
+                    "Expected milestone cost cannot be negative."
+                )
+
+            data["progress_percent"] = 0.0
+
+            payload_json.pop("units_done", None)
+            payload_json.pop("units_total", None)
 
             if float(data.get("expected_total_cost") or 0.0) < 0:
                 raise ValueError("Expected milestone cost cannot be negative.")
@@ -61232,7 +61256,13 @@ class DatabaseService:
             if str(start_date) >= str(end_date):
                 raise ValueError("performance_end_date must be after performance_start_date.")
 
-            data["progress_percent"] = None
+            if data.get("progress_percent") is not None:
+                pct = float(data.get("progress_percent") or 0.0)
+
+                if pct < 0 or pct > 100:
+                    raise ValueError(
+                        "progress_percent must be between 0 and 100."
+                    )
             payload_json.pop("units_done", None)
             payload_json.pop("units_total", None)
             clear_milestone_link()
@@ -63093,8 +63123,22 @@ class DatabaseService:
 
                 # V1 rule:
                 # pending = 0%, achieved/certified/approved = 100%.
-                progress_percent = 0.0 if status == "pending" else 100.0
+                certified_percent = milestone_payload.get("certified_percent")
 
+                if certified_percent not in (None, ""):
+                    certified_percent = float(certified_percent)
+
+                    if certified_percent < 0 or certified_percent > 100:
+                        raise ValueError(
+                            "Certified percent must be between 0 and 100."
+                        )
+
+                    progress_percent = certified_percent
+
+                else:
+                    progress_percent = (
+                        0.0 if status == "pending" else 100.0
+                    )
                 expected_total_cost = None
                 actual_cost_to_date = None
                 units_done = None
@@ -63102,9 +63146,58 @@ class DatabaseService:
 
                 payload_json["milestone"] = {
                     "code": milestone_code,
-                    "description": str(milestone_payload.get("description") or "").strip() or None,
+
+                    "description":
+                        str(
+                            milestone_payload.get("description") or ""
+                        ).strip() or None,
+
                     "status": status,
-                    "certificate_ref": str(milestone_payload.get("certificate_ref") or "").strip() or None,
+
+                    "certificate_ref":
+                        str(
+                            milestone_payload.get("certificate_ref") or ""
+                        ).strip() or None,
+
+                    "approval_date":
+                        milestone_payload.get("approval_date"),
+
+                    "approved_by":
+                        str(
+                            milestone_payload.get("approved_by") or ""
+                        ).strip() or None,
+
+                    "certified_percent":
+                        certified_percent,
+
+                    "certified_amount":
+                        (
+                            float(milestone_payload.get("certified_amount"))
+                            if milestone_payload.get("certified_amount") not in (None, "")
+                            else None
+                        ),
+
+                    "retention_percent":
+                        (
+                            float(milestone_payload.get("retention_percent"))
+                            if milestone_payload.get("retention_percent") not in (None, "")
+                            else None
+                        ),
+
+                    "retention_amount":
+                        (
+                            float(milestone_payload.get("retention_amount"))
+                            if milestone_payload.get("retention_amount") not in (None, "")
+                            else None
+                        ),
+
+                    "billing_ready":
+                        bool(milestone_payload.get("billing_ready")),
+
+                    "blocked_reason":
+                        str(
+                            milestone_payload.get("blocked_reason") or ""
+                        ).strip() or None,
                 }
 
             elif update_type == "time_elapsed":
@@ -63160,13 +63253,61 @@ class DatabaseService:
                 units_total = None
                 milestone_code = None
 
+                time_elapsed_payload = payload_json.get("time_elapsed") or {}
+
                 payload_json["time_elapsed"] = {
                     "performance_start_date": str(start_date),
+
                     "performance_end_date": str(end_date),
+
                     "period_end": str(period_end),
-                    "elapsed_days": max(0, min((period_end - start_date).days, (end_date - start_date).days)),
-                    "total_days": (end_date - start_date).days,
-                    "actual_cost_to_date": actual_cost_to_date,
+
+                    "basis":
+                        str(
+                            time_elapsed_payload.get("basis")
+                            or "calendar_days"
+                        ).strip().lower(),
+
+                    "billing_cycle":
+                        str(
+                            time_elapsed_payload.get("billing_cycle")
+                            or ""
+                        ).strip() or None,
+
+                    "elapsed_days":
+                        (
+                            int(time_elapsed_payload.get("elapsed_days"))
+                            if time_elapsed_payload.get("elapsed_days") not in (None, "")
+                            else max(
+                                0,
+                                min(
+                                    (period_end - start_date).days,
+                                    (end_date - start_date).days
+                                )
+                            )
+                        ),
+
+                    "total_days":
+                        (
+                            int(time_elapsed_payload.get("total_days"))
+                            if time_elapsed_payload.get("total_days") not in (None, "")
+                            else (end_date - start_date).days
+                        ),
+
+                    "elapsed_percent":
+                        (
+                            float(time_elapsed_payload.get("elapsed_percent"))
+                            if time_elapsed_payload.get("elapsed_percent") not in (None, "")
+                            else float(progress_percent or 0.0)
+                        ),
+
+                    "actual_cost_to_date":
+                        actual_cost_to_date,
+
+                    "notes":
+                        str(
+                            time_elapsed_payload.get("notes") or ""
+                        ).strip() or None,
                 }
 
             else:

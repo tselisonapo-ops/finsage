@@ -218,6 +218,11 @@ def _normalize_obligation_payload(body: dict) -> dict:
 
         # 3) MILESTONE
         elif method == "milestone":
+            if isinstance(body.get("obligation_milestones"), list):
+                payload_json["obligation_milestones"] = (
+                    body.get("obligation_milestones") or []
+                )
+
             if body.get("milestone_code") is not None:
                 payload_json["milestone_code"] = (
                     str(body.get("milestone_code") or "").strip() or None

@@ -4830,17 +4830,113 @@ html, body {
                         </div>
                       </div>
 
-                      <div id="revTimeElapsedBlock" class="hidden">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div
+                        id="revTimeElapsedBlock"
+                        class="hidden col-span-2 border rounded-xl bg-slate-50 p-4 mt-3"
+                      >
+                        <div class="text-sm font-semibold text-slate-700 mb-3">
+                          Time Elapsed Progress
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+
                           <div>
-                            <label class="block text-xs text-slate-500 mb-1">Performance Start Date</label>
-                            <input id="revPerformanceStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Performance Start
+                            </label>
+
+                            <input
+                              id="revElapsedStartDate"
+                              type="date"
+                              class="w-full border rounded px-3 py-2 text-sm"
+                            >
                           </div>
 
                           <div>
-                            <label class="block text-xs text-slate-500 mb-1">Performance End Date</label>
-                            <input id="revPerformanceEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm">
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Performance End
+                            </label>
+
+                            <input
+                              id="revElapsedEndDate"
+                              type="date"
+                              class="w-full border rounded px-3 py-2 text-sm"
+                            >
                           </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Elapsed Days
+                            </label>
+
+                            <input
+                              id="revElapsedDays"
+                              type="number"
+                              readonly
+                              class="w-full border rounded px-3 py-2 text-sm bg-slate-100"
+                            >
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Completion %
+                            </label>
+
+                            <input
+                              id="revElapsedPercent"
+                              type="number"
+                              step="0.01"
+                              readonly
+                              class="w-full border rounded px-3 py-2 text-sm bg-slate-100"
+                            >
+                          </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Billing Cycle
+                            </label>
+
+                            <select
+                              id="revElapsedBillingCycle"
+                              class="w-full border rounded px-3 py-2 text-sm"
+                            >
+                              <option value="">Select cycle</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="monthly">Monthly</option>
+                              <option value="quarterly">Quarterly</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Time Basis
+                            </label>
+
+                            <select
+                              id="revElapsedBasis"
+                              class="w-full border rounded px-3 py-2 text-sm"
+                            >
+                              <option value="calendar_days">Calendar days</option>
+                              <option value="working_days">Working days</option>
+                              <option value="service_hours">Service hours</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div class="mt-3">
+                          <label class="block text-xs text-slate-500 mb-1">
+                            Progress Notes
+                          </label>
+
+                          <textarea
+                            id="revElapsedNotes"
+                            rows="3"
+                            class="w-full border rounded px-3 py-2 text-sm"
+                            placeholder="Describe progress achieved during the elapsed period"
+                          ></textarea>
                         </div>
                       </div>
         
@@ -4868,6 +4964,7 @@ html, body {
                   <!-- RIGHT: REGISTER -->
                   <div class="card p-3 border self-start min-w-0">
                     <div class="font-semibold text-sm mb-2">Obligations Register</div>
+
                     <div id="revObligationTableWrap" class="overflow-auto max-h-[420px]">
                       <table class="min-w-full text-sm">
                         <thead>
@@ -4882,6 +4979,54 @@ html, body {
                         </thead>
                         <tbody id="revObligationTableBody"></tbody>
                       </table>
+                    </div>
+
+                    <!-- Shows only when selected obligation uses progress_method = milestone -->
+                    <div
+                      id="revObligationMilestoneWrap"
+                      class="hidden mt-4 border rounded-xl bg-white p-4"
+                    >
+                      <div class="flex items-center justify-between mb-3">
+                        <div>
+                          <div class="text-sm font-semibold text-slate-700">
+                            Obligation Milestones
+                          </div>
+
+                          <div class="text-[11px] text-slate-500">
+                            Define weighted milestone completion tracking for the selected obligation.
+                          </div>
+                        </div>
+
+                        <button
+                          id="revAddObligationMilestoneRow"
+                          type="button"
+                          class="btn"
+                        >
+                          Add Milestone
+                        </button>
+                      </div>
+
+                      <div class="overflow-auto border rounded-lg">
+                        <table class="min-w-[1200px] w-full text-sm">
+                          <thead class="bg-slate-50 text-xs text-slate-500">
+                            <tr>
+                              <th class="px-3 py-2 text-left">Code</th>
+                              <th class="px-3 py-2 text-left">Description</th>
+                              <th class="px-3 py-2 text-right">Weight %</th>
+                              <th class="px-3 py-2 text-right">Allocated Revenue</th>
+                              <th class="px-3 py-2 text-left">Planned Date</th>
+                              <th class="px-3 py-2 text-left">Actual Date</th>
+                              <th class="px-3 py-2 text-left">Status</th>
+                              <th class="px-3 py-2 text-right">% Complete</th>
+                              <th class="px-3 py-2 text-left">Certificate Ref</th>
+                              <th class="px-3 py-2 text-left">Approved By</th>
+                              <th class="px-3 py-2 text-left">Action</th>
+                            </tr>
+                          </thead>
+
+                          <tbody id="revObligationMilestoneTableBody"></tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -5026,13 +5171,14 @@ html, body {
                             aria-label="More info about Recognition Progress Method"
                           >i</button>
                         </div>
-                        <select id="revProgressType" class="w-full border rounded px-3 py-2 text-sm">
-                          <option value="cost_to_cost">Cost to cost</option>
-                          <option value="milestone">Milestone</option>
-                          <option value="units">Units</option>
-                          <option value="time elapsed">time elapsed</option>
-                          <option value="manual">Manual</option>
-                        </select>
+                          <select id="revProgressType" class="w-full border rounded px-3 py-2 text-sm">
+                            <option value="" selected disabled hidden>Select progress...</option>
+                            <option value="cost_to_cost">Cost to cost</option>
+                            <option value="milestone">Milestone</option>
+                            <option value="units">Units</option>
+                            <option value="time_elapsed">Time elapsed</option>
+                            <option value="manual">Manual</option>
+                          </select>
                       </div>
                     </div>
 
@@ -5051,51 +5197,140 @@ html, body {
                     <div class="grid grid-cols-2 gap-3">
                       <div id="revProgressPercentWrap">
                         <label class="block text-xs text-slate-500 mb-1">Progress %</label>
-                        <input id="revProgressPercent" type="number" step="0.0001" class="w-full border rounded px-3 py-2 text-sm text-right" value="">
+                        <input
+                          id="revProgressPercent"
+                          type="number"
+                          step="0.0001"
+                          class="w-full border rounded px-3 py-2 text-sm text-right"
+                          value=""
+                        >
                       </div>
 
                       <div id="revProgressMilestoneCodeWrap">
                         <label class="block text-xs text-slate-500 mb-1">Milestone Code</label>
-                        <input id="revProgressMilestoneCode" class="w-full border rounded px-3 py-2 text-sm">
+                        <input
+                          id="revProgressMilestoneCode"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                          placeholder="Select or enter milestone code"
+                        >
                       </div>
                     </div>
 
-                    <div id="revProgressMilestoneExtraWrap" class="hidden grid-cols-1 md:grid-cols-3 gap-3">
+                    <div
+                      id="revProgressMilestoneExtraWrap"
+                      class="hidden grid-cols-1 md:grid-cols-3 gap-3 border rounded-xl bg-slate-50 p-3 mt-3"
+                    >
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Milestone Description</label>
-                        <input id="revProgressMilestoneDescription" class="w-full border rounded px-3 py-2 text-sm">
-                      </div>
-
-                      <div id="revProgressTimeElapsedWrap" class="hidden">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-1">Performance Start Date</label>
-                            <input id="revProgressPerformanceStartDate" type="date" class="w-full border rounded px-3 py-2 text-sm bg-slate-100" disabled>
-                          </div>
-
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-1">Performance End Date</label>
-                            <input id="revProgressPerformanceEndDate" type="date" class="w-full border rounded px-3 py-2 text-sm bg-slate-100" disabled>
-                          </div>
-                        </div>
-
-                        <div id="revProgressTimeElapsedHint" class="mt-1 text-[11px] text-slate-500"></div>
+                        <input
+                          id="revProgressMilestoneDescription"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                        >
                       </div>
 
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Milestone Status</label>
-                        <select id="revProgressMilestoneStatus" class="w-full border rounded px-3 py-2 text-sm">
+                        <select
+                          id="revProgressMilestoneStatus"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                        >
                           <option value="">Select status</option>
                           <option value="pending">Pending</option>
                           <option value="achieved">Achieved</option>
                           <option value="certified">Certified</option>
                           <option value="approved">Approved</option>
+                          <option value="rejected">Rejected</option>
+                          <option value="billed">Billed</option>
                         </select>
                       </div>
 
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Certificate Ref</label>
-                        <input id="revProgressCertificateRef" class="w-full border rounded px-3 py-2 text-sm">
+                        <input
+                          id="revProgressCertificateRef"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                        >
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Certified %</label>
+                        <input
+                          id="revProgressCertifiedPercent"
+                          type="number"
+                          step="0.0001"
+                          class="w-full border rounded px-3 py-2 text-sm text-right"
+                        >
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Certified Amount</label>
+                        <input
+                          id="revProgressCertifiedAmount"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-3 py-2 text-sm text-right"
+                        >
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Approval Date</label>
+                        <input
+                          id="revProgressApprovalDate"
+                          type="date"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                        >
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Approved By</label>
+                        <input
+                          id="revProgressApprovedBy"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                          placeholder="Engineer / PM / approver"
+                        >
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Retention %</label>
+                        <input
+                          id="revProgressRetentionPercent"
+                          type="number"
+                          step="0.0001"
+                          class="w-full border rounded px-3 py-2 text-sm text-right"
+                        >
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">Retention Amount</label>
+                        <input
+                          id="revProgressRetentionAmount"
+                          type="number"
+                          step="0.01"
+                          class="w-full border rounded px-3 py-2 text-sm text-right"
+                        >
+                      </div>
+
+                      <div class="flex items-center gap-2 pt-6">
+                        <input
+                          id="revProgressBillingReady"
+                          type="checkbox"
+                          class="rounded border-slate-300"
+                        >
+                        <label
+                          for="revProgressBillingReady"
+                          class="text-sm text-slate-600"
+                        >
+                          Billing ready
+                        </label>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label class="block text-xs text-slate-500 mb-1">Blocked / Rejected Reason</label>
+                        <input
+                          id="revProgressBlockedReason"
+                          class="w-full border rounded px-3 py-2 text-sm"
+                          placeholder="Reason if milestone is blocked or rejected"
+                        >
                       </div>
                     </div>
 
