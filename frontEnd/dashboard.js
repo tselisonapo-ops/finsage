@@ -26669,13 +26669,14 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
               <th class="text-left p-2 whitespace-nowrap">Lease</th>
               <th class="text-left p-2 whitespace-nowrap">Lessor</th>
               <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
-              <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
-              <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+              <th class="text-right p-2 w-[120px] whitespace-nowrap">Amount</th>
+              <th class="text-right p-2 w-[120px] whitespace-nowrap">Payment</th>
+              <th class="text-right p-2 w-[170px] whitespace-nowrap">Amortisation</th>
             </tr>
           </thead>
           <tbody id="lmTableBody">
             <tr>
-              <td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td>
+              <td colspan="6" class="p-3 text-xs text-slate-500">>Click Load</td>
             </tr>
           </tbody>
         </table>
@@ -26783,9 +26784,11 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
                 >
                   ${isPaid ? "Paid" : isPaymentReversed ? "Pay again" : "Pay"}
                 </button>
+              </td>
 
+              <td class="p-2 text-right">
                 <button
-                  class="px-2 py-1 rounded text-xs ml-2 ${
+                  class="px-2 py-1 rounded text-xs ${
                     canPost ? "bg-slate-900 text-white" : "bg-slate-300 text-white cursor-not-allowed"
                   }"
                   data-lm-post="1"
@@ -26793,7 +26796,7 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
                   data-period-no="${escapeHtml(String(periodNo))}"
                   ${canPost ? "" : "disabled"}
                 >
-                  ${isPosted ? "Posted" : "Post"}
+                  ${isPosted ? "Amortised" : "Post amortisation"}
                 </button>
               </td>
             </tr>
@@ -27817,8 +27820,8 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     }
 
     hostEl.innerHTML = `
-      <div class="border rounded overflow-auto max-w-full">
-        <table class="min-w-[760px] text-xs">
+      <div class="border rounded overflow-x-auto overflow-y-auto w-full max-w-full">
+        <table class="min-w-[1100px] w-full text-xs">
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
               <th class="px-2 py-2 text-left w-[110px]">Date</th>
@@ -28364,7 +28367,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
     });
 
     if (!filtered.length) {
-      body.innerHTML = `<tr><td colspan="5" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
       return;
     }
 
@@ -28378,8 +28381,16 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         r.payment_amount ??
         0;
 
-      const isPaid = !!r.is_paid;
-      const isPosted = !!r.is_posted || !!r.payment_journal_id;
+        const isPaid =
+          !!r.paid ||
+          !!r.is_paid ||
+          String(r.payment_status || "").toLowerCase() === "posted" ||
+          Number(r.payment_journal_id || 0) > 0;
+
+        const isAmortised =
+          !!r.posted ||
+          !!r.is_posted ||
+          Number(r.posted_journal_id || 0) > 0;
 
       return `
         <tr class="border-t">
@@ -28387,12 +28398,20 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
             <div class="font-medium">${esc(String(r.lease_name || r.name || `Lease ${leaseId}`))}</div>
             <div class="text-xs text-slate-500">ID: ${esc(String(leaseId))}</div>
           </td>
+
           <td class="p-2">${esc(String(r.lessor_name || ""))}</td>
+
           <td class="p-2">${esc(String(periodNo || ""))}</td>
-          <td class="p-2 text-right tabular-nums">${fmtMoney(due)}</td>
+
+          <td class="p-2 text-right tabular-nums">
+            ${fmtMoney(due)}
+          </td>
+
           <td class="p-2 text-right">
             <button
-              class="px-2 py-1 rounded border text-xs ${isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
+              class="px-2 py-1 rounded border text-xs ${
+                isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"
+              }"
               data-lm-pay="1"
               data-lease-id="${esc(String(leaseId))}"
               data-lease-name="${esc(String(r.lease_name || r.name || ""))}"
@@ -28403,15 +28422,19 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
             >
               ${isPaid ? "Paid" : "Pay"}
             </button>
+          </td>
 
+          <td class="p-2 text-right">
             <button
-              class="px-2 py-1 rounded text-xs ml-2 ${isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"}"
+              class="px-2 py-1 rounded text-xs ${
+                isAmortised ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"
+              }"
               data-lm-post="1"
               data-lease-id="${esc(String(leaseId))}"
               data-period-no="${esc(String(periodNo))}"
-              ${isPosted ? "disabled" : ""}
+              ${isAmortised ? "disabled" : ""}
             >
-              ${isPosted ? "Posted" : "Post"}
+              ${isAmortised ? "Amortised" : "Post amortisation"}
             </button>
           </td>
         </tr>
