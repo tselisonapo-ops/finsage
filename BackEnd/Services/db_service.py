@@ -29364,7 +29364,7 @@ class DatabaseService:
 
         rou_rows = self.fetch_all(
             f"""
-            posted_commencements AS (
+            WITH posted_commencements AS (
                 SELECT
                     jl.source_id AS lease_id,
                     SUM(jl.debit - jl.credit) AS rou_posted
@@ -29453,12 +29453,14 @@ class DatabaseService:
             ORDER BY l.start_date NULLS LAST, l.id
             """,
             (
-                int(company_id), from_date, to_date,
-                int(company_id), from_date, to_date,
-                int(company_id), from_date, to_date,
-                from_date,
-                from_date, to_date,
-                int(company_id), to_date,
+                int(company_id),                  # posted_commencements
+                int(company_id), from_date, to_date,   # dep_period
+                int(company_id), from_date, to_date,   # mods_period
+                int(company_id), from_date, to_date,   # disposals_period
+                from_date,                              # opening
+                from_date, to_date,                     # additions
+                int(company_id),                        # final WHERE
+                to_date,
             ),
             cur=cur,
         ) or []
