@@ -28990,7 +28990,7 @@ class DatabaseService:
             WITH posted_commencements AS (
                 SELECT
                     jl.source_id AS lease_id,
-                    SUM(jl.debit - jl.credit) AS rou_posted
+                    SUM(COALESCE(jl.debit,0)) AS rou_posted
                 FROM {schema}.journal_lines jl
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
@@ -29194,7 +29194,7 @@ class DatabaseService:
             WITH posted_commencements AS (
                 SELECT
                     jl.source_id AS lease_id,
-                    SUM(jl.debit - jl.credit) AS rou_posted
+                    SUM(COALESCE(jl.debit,0)) AS rou_posted
                 FROM {schema}.journal_lines jl
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
@@ -29391,7 +29391,7 @@ class DatabaseService:
             WITH posted_commencements AS (
                 SELECT
                     jl.source_id AS lease_id,
-                    SUM(jl.debit - jl.credit) AS rou_posted
+                    SUM(COALESCE(jl.debit,0)) AS rou_posted
                 FROM {schema}.journal_lines jl
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
