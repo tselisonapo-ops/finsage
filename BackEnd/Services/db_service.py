@@ -66745,7 +66745,7 @@ class DatabaseService:
 
         return note
 
-    def _period_label(date_from, date_to) -> str:
+    def _period_label(self, date_from, date_to) -> str:
         if date_from and date_to:
             return f"for the reporting period from {date_from} to {date_to}"
         if date_to:
