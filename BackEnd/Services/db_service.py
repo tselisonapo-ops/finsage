@@ -28994,10 +28994,9 @@ class DatabaseService:
                 FROM {schema}.journal_lines jl
                 JOIN {schema}.journal j
                     ON j.id = jl.journal_id
-                WHERE jl.company_id = %s
                 JOIN {schema}.coa c
                     ON c.code = jl.account_code
-
+                WHERE jl.company_id = %s
                 AND c.role = 'rou_asset'
                 AND jl.source IN ('leases', 'lease_inception')
                 AND (
