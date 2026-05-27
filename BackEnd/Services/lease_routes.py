@@ -611,16 +611,21 @@ def create_lease(company_id: int):
 
         journal_entry = {
             "date": journal_date,
+            "ref": f"LEASE-{lease_id}-COMM",
             "description": description,
             "gross_amount": base_amount,
             "net_amount": base_amount,
             "vat_amount": 0.0,
+            "source": "lease_inception",
+            "source_id": int(lease_id),
         }
 
         step = "before_insert_journal"
         journal_id = db_service.insert_journal(int(company_id), journal_entry)
 
         step = "after_insert_journal"
+        print("[LEASE DEBUG] OPENING JOURNAL =", opening_journal, flush=True)
+        print("[LEASE DEBUG] OPENING LINES =", opening_lines, flush=True)
         for idx, line in enumerate(opening_lines, start=1):
             step = f"before_insert_journal_line_{idx}"
             db_service.insert_journal_line(
@@ -633,7 +638,7 @@ def create_lease(company_id: int):
                     "memo": line.get("memo") or line.get("description") or journal_entry["description"],                    "debit": float(line.get("debit") or 0.0),
                     "credit": float(line.get("credit") or 0.0),
                 },
-                source="leases",
+                source="lease_inception",
                 source_id=int(lease_id),
             )
 

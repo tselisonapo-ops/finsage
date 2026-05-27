@@ -3836,14 +3836,26 @@ function setActiveNav(navKey) {
 
 function getActionCenterFilters() {
   return {
-    customer_id: (document.getElementById("actionCenterClientFilter")?.value || "").trim(),
-    engagement_id: (document.getElementById("actionCenterEngagementFilter")?.value || "").trim(),
-    queue_type: (document.getElementById("actionCenterTypeFilter")?.value || "").trim(),
-    status: (document.getElementById("actionCenterStatusFilter")?.value || "").trim(),
-    priority: (document.getElementById("actionCenterPriorityFilter")?.value || "").trim(),
-    q: (document.getElementById("actionCenterSearchInput")?.value || "").trim(),
-    mine: PR_ACTION_CENTER_MINE_ONLY ? "true" : ""
+    customer_id: document.getElementById("actionCenterClientFilter")?.value || "",
+    engagement_id: document.getElementById("actionCenterEngagementFilter")?.value || "",
+    queue_type: document.getElementById("actionCenterTypeFilter")?.value || "",
+    status: document.getElementById("actionCenterStatusFilter")?.value || "",
+    priority: document.getElementById("actionCenterPriorityFilter")?.value || "",
+    q: document.getElementById("actionCenterSearchInput")?.value?.trim() || "",
+    mine_only: PR_ACTION_CENTER_MINE_ONLY,
+    active_only: true,
+    limit: 200,
+    offset: 0
   };
+}
+
+function updateActionCenterMineButton() {
+  const btn = document.getElementById("actionCenterMineBtn");
+  if (!btn) return;
+
+  btn.classList.toggle("btn-primary", PR_ACTION_CENTER_MINE_ONLY);
+  btn.classList.toggle("btn-secondary", !PR_ACTION_CENTER_MINE_ONLY);
+  btn.textContent = PR_ACTION_CENTER_MINE_ONLY ? "My queue active" : "My queue";
 }
 
 function resetActionCenterCache() {
@@ -8998,6 +9010,8 @@ function bindActionCenterEvents(me) {
 
   document.getElementById("actionCenterMineBtn")?.addEventListener("click", async () => {
     PR_ACTION_CENTER_MINE_ONLY = !PR_ACTION_CENTER_MINE_ONLY;
+    
+    updateActionCenterMineButton();
     resetActionCenterCache();
     await loadActionCenterScreen(me, { force: true });
   });

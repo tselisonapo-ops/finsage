@@ -1153,6 +1153,15 @@ def _assign_vat_period_label(tx_date: date, cfg: dict) -> str:
 @app.route("/api/auth/signup", methods=["POST"])
 def api_auth_signup():
     data = request.get_json(silent=True) or {}
+
+    legal_consent = data.get("legalConsent") or {}
+    policy_version = str(legal_consent.get("policyVersion") or "1.0").strip()
+
+    if not legal_consent.get("accepted"):
+        return jsonify({
+            "error": "You must accept the Terms of Use and Privacy Policy before registration."
+        }), 400
+
     owner_invite_email = (data.get("ownerInvite") or "").strip().lower() or None
 
     first_name = (data.get("firstName") or "").strip()
@@ -1411,6 +1420,34 @@ def api_auth_signup():
                 )
             except Exception as e:
                 current_app.logger.warning(f"company_users insert failed: {e}")
+
+            # =========================================
+            # LEGAL POLICY ACCEPTANCE LOGGING
+            # =========================================
+            user_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+            user_agent = request.headers.get("User-Agent")
+
+            db_service.execute_sql(
+                """
+                UPDATE public.users
+                SET accepted_terms_at = NOW(),
+                    accepted_privacy_at = NOW(),
+                    accepted_popia_at = NOW(),
+                    accepted_policy_version = %s
+                WHERE id = %s;
+                """,
+                (policy_version, owner_id),
+            )
+
+            for policy_type in ("terms_of_use", "privacy_policy", "popia_notice"):
+                db_service.insert_policy_acceptance(
+                    owner_id,
+                    created_company_id,
+                    policy_type,
+                    policy_version,
+                    user_ip,
+                    user_agent
+                )
 
             # ✅ If the creator isn't Owner, invite the real Owner
             try:

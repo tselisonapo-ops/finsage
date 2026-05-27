@@ -1533,6 +1533,12 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ NULL,
             ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE;
 
+        ALTER TABLE public.users
+            ADD COLUMN IF NOT EXISTS accepted_terms_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS accepted_privacy_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS accepted_popia_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS accepted_policy_version TEXT NULL;
+
         UPDATE public.users
         SET password_updated_at = COALESCE(password_updated_at, created_at)
         WHERE password_updated_at IS NULL;
@@ -2032,7 +2038,37 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS company_invites_company_idx ON public.company_invites(company_id);
         CREATE INDEX IF NOT EXISTS company_invites_email_idx   ON public.company_invites(lower(email));
        
+        -- ==========================================
+        -- LEGAL POLICY ACCEPTANCE AUDIT
+        -- ==========================================
+        CREATE TABLE IF NOT EXISTS public.legal_policy_acceptances (
+            id BIGSERIAL PRIMARY KEY,
 
+            user_id INT NOT NULL
+                REFERENCES public.users(id)
+                ON DELETE CASCADE,
+
+            company_id INT NULL
+                REFERENCES public.companies(id)
+                ON DELETE CASCADE,
+
+            policy_type TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+
+            ip_address TEXT NULL,
+            user_agent TEXT NULL,
+
+            accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS legal_policy_acceptances_user_idx
+            ON public.legal_policy_acceptances(user_id);
+
+        CREATE INDEX IF NOT EXISTS legal_policy_acceptances_company_idx
+            ON public.legal_policy_acceptances(company_id);
+
+        CREATE INDEX IF NOT EXISTS legal_policy_acceptances_policy_idx
+            ON public.legal_policy_acceptances(policy_type, policy_version);
          """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
 
@@ -2791,6 +2827,25 @@ class DatabaseService:
             END IF;
         END $$;
         """)
+
+    def insert_policy_acceptance(
+        self,
+        user_id,
+        company_id,
+        policy_type,
+        policy_version,
+        ip_address=None,
+        user_agent=None
+    ):
+        return self.execute_sql(
+            """
+            INSERT INTO public.legal_policy_acceptances
+                (user_id, company_id, policy_type, policy_version, ip_address, user_agent)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (user_id, company_id, policy_type, policy_version, ip_address, user_agent),
+        )
 
     def create_company_relationship(
         self,
@@ -28929,18 +28984,45 @@ class DatabaseService:
         rou_nbv_total    = float(term_totals.get("rou_nbv_total") or 0.0)
         gain_loss_total  = float(term_totals.get("gain_loss_total") or 0.0)
 
+
         additions_row = self.fetch_one(
             f"""
+            WITH posted_commencements AS (
+                SELECT
+                    jl.source_id AS lease_id,
+                    SUM(jl.debit - jl.credit) AS rou_posted
+                FROM {schema}.journal_lines jl
+                JOIN {schema}.journal j
+                    ON j.id = jl.journal_id
+                WHERE jl.company_id = %s
+                JOIN {schema}.coa c
+                    ON c.code = jl.account_code
+
+                AND c.role = 'rou_asset'
+                AND jl.source IN ('leases', 'lease_inception')
+                AND (
+                        j.description ILIKE 'Initial recognition of lease%%'
+                    OR j.description ILIKE 'IFRS 16 transition%%'
+                )
+                GROUP BY jl.source_id
+            )
             SELECT
-            COALESCE(SUM(l.opening_rou_asset),0)       AS rou_additions,
-            COALESCE(SUM(l.opening_lease_liability),0) AS liab_additions
+                COALESCE(SUM(COALESCE(pc.rou_posted,0)),0) AS rou_additions,
+                COALESCE(SUM(l.opening_lease_liability),0) AS liab_additions
             FROM {schema}.leases l
+            LEFT JOIN posted_commencements pc
+                ON pc.lease_id = l.id
             WHERE l.company_id=%s
             AND l.start_date >= %s
             AND l.start_date <= %s
             {lease_status_sql}
             """,
-            (int(company_id), from_date, to_date),
+            (
+                int(company_id),
+                int(company_id),
+                from_date,
+                to_date,
+            ),
             cur=cur,
         ) or {}
 

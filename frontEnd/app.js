@@ -1027,6 +1027,23 @@ function handleRegistration(event) {
     };
   }
 
+  const acceptPoliciesEl = document.getElementById("acceptPolicies");
+  const acceptedPolicies = !!acceptPoliciesEl?.checked;
+
+  if (!acceptedPolicies) {
+    alert("Please accept the Terms of Use and Privacy Policy before completing registration.");
+    acceptPoliciesEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
+  const legalConsent = {
+    accepted: true,
+    policyVersion: "1.0",
+    acceptedTerms: true,
+    acceptedPrivacy: true,
+    acceptedPopia: true
+  };
+
   const payload = {
     // user
     email:       (step1.email || val("email") || "").toLowerCase(),
@@ -1036,6 +1053,9 @@ function handleRegistration(event) {
     userRole:    step1.userRole  || val("userRole")  || null,
     userType:    userType,
     phone:       step1.phone     || val("phone")     || null,
+
+    // legal consent
+    legalConsent: legalConsent,
 
     // ✅ new
     ownerInvite: ownerEmail || null,
