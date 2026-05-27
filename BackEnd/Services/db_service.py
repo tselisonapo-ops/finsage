@@ -29000,8 +29000,8 @@ class DatabaseService:
                 AND c.role = 'rou_asset'
                 AND jl.source IN ('leases', 'lease_inception')
                 AND (
-                    ILIKE 'Initial recognition of lease%'
-                    OR j.description ILIKE 'IFRS 16 transition%'
+                        j.description ILIKE 'Initial recognition of lease%%'
+                    OR j.description ILIKE 'IFRS 16 transition%%'
                 )
                 GROUP BY jl.source_id
             )
@@ -29204,8 +29204,8 @@ class DatabaseService:
                 AND c.role = 'rou_asset'
                 AND jl.source IN ('leases', 'lease_inception')
                 AND (
-                        j.description ILIKE 'Initial recognition of lease%'
-                    OR j.description ILIKE 'IFRS 16 transition%'
+                        j.description ILIKE 'Initial recognition of lease%%'
+                    OR j.description ILIKE 'IFRS 16 transition%%'
                 )
                 GROUP BY jl.source_id
             )
@@ -29401,8 +29401,8 @@ class DatabaseService:
                 AND c.role = 'rou_asset'
                 AND jl.source IN ('leases', 'lease_inception')
                 AND (
-                    ILIKE 'Initial recognition of lease%'
-                    OR j.description ILIKE 'IFRS 16 transition%'
+                        j.description ILIKE 'Initial recognition of lease%%'
+                    OR j.description ILIKE 'IFRS 16 transition%%'
                 )
                 GROUP BY jl.source_id
             ),
