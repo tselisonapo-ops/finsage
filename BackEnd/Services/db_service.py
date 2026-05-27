@@ -29361,8 +29361,27 @@ class DatabaseService:
         # ------------------------------------------------------------
         # J) ROU movement per lease (STRICT posted only)
         # ------------------------------------------------------------
+
         rou_rows = self.fetch_all(
             f"""
+            posted_commencements AS (
+                SELECT
+                    jl.source_id AS lease_id,
+                    SUM(jl.debit - jl.credit) AS rou_posted
+                FROM {schema}.journal_lines jl
+                JOIN {schema}.journal j
+                    ON j.id = jl.journal_id
+                JOIN {schema}.coa c
+                    ON c.code = jl.account_code
+                WHERE jl.company_id = %s
+                AND c.role = 'rou_asset'
+                AND jl.source IN ('leases', 'lease_inception')
+                AND (
+                        j.description ILIKE 'Initial recognition of lease%%'
+                    OR j.description ILIKE 'IFRS 16 transition%%'
+                )
+                GROUP BY jl.source_id
+            ),
             WITH dep_period AS (
                 SELECT
                     s.lease_id,
@@ -29409,13 +29428,13 @@ class DatabaseService:
 
                 CASE
                     WHEN l.start_date < %s
-                    THEN COALESCE(l.opening_rou_asset,0)
+                    THEN COALESCE(pc.rou_posted,0)
                     ELSE 0
                 END AS opening,
 
                 CASE
                     WHEN l.start_date >= %s AND l.start_date <= %s
-                    THEN COALESCE(l.opening_rou_asset,0)
+                    THEN COALESCE(pc.rou_posted,0)
                     ELSE 0
                 END AS additions,
 
@@ -29427,6 +29446,7 @@ class DatabaseService:
             LEFT JOIN dep_period dp ON dp.lease_id = l.id
             LEFT JOIN mods_period mp ON mp.lease_id = l.id
             LEFT JOIN disposals_period tp ON tp.lease_id = l.id
+            LEFT JOIN posted_commencements pc ON pc.lease_id = l.id
             WHERE l.company_id=%s
             AND l.start_date <= %s
             {lease_status_sql}
