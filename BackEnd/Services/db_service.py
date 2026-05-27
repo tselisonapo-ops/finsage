@@ -26392,28 +26392,20 @@ class DatabaseService:
         depr_exp = _resolve_posting_code(settings.get("lease_amortization_code"))
         acc_depr = _resolve_posting_code(settings.get("lease_accumulated_depreciation_code"))
 
-        bank = _resolve_posting_code(s.get("bank_account_code"))
-        post_payment = bool(s.get("post_payment", True))
-        post_payment = False
-
         interest     = float(s.get("interest") or 0.0)
-        principal    = float(s.get("principal") or 0.0)
-        payment      = float(s.get("payment") or 0.0)
         depreciation = float(s.get("depreciation") or 0.0)
         period_no    = int(s.get("period_no") or 0)
 
         missing = []
         if interest > 0:
-            if not int_exp:  missing.append("lease_interest_expense_code")
-            if not liab_cur: missing.append("lease_liability_current_code")
-
+            if not int_exp:
+                missing.append("lease_interest_expense_code")
+            if not (liab_non or liab_cur):
+                missing.append("lease_liability_non_current_code")
+                
         if depreciation > 0:
             if not depr_exp: missing.append("lease_amortization_code")
             if not acc_depr: missing.append("lease_accumulated_depreciation_code")
-
-        if post_payment and payment > 0:
-            if not bank:     missing.append("leases.bank_account_code")
-            if not liab_cur: missing.append("lease_liability_current_code")
 
         if missing:
             raise ValueError("LEASE_ACCOUNTS_MISSING|" + ",".join(sorted(set(missing))))
@@ -26461,28 +26453,6 @@ class DatabaseService:
                 "debit": 0.0,
                 "credit": amt,
                 "memo": f"Accum dep (ROU) – P{period_no}",
-                **line_meta,
-            })
-        # Payment (principal)
-        if post_payment and payment > 0:
-            amt = principal if principal > 0 else payment
-            amt = round(float(amt), 2)
-            if amt > 0:
-                # ✅ Use non-current for later periods (simple rule, adjust if you want)
-                liab_post = liab_non if (liab_non and period_no > 12) else liab_cur
-
-            lines.append({
-                "account_code": liab_post,
-                "debit": amt,
-                "credit": 0.0,
-                "memo": f"Lease payment principal – P{period_no}",
-                **line_meta,
-            })
-            lines.append({
-                "account_code": bank,
-                "debit": 0.0,
-                "credit": amt,
-                "memo": f"Lease payment – P{period_no}",
                 **line_meta,
             })
 
@@ -27466,6 +27436,11 @@ class DatabaseService:
             if not pay_id:
                 raise ValueError("Failed to create lease payment record")
 
+            line_meta = {
+                "source": "leases",
+                "source_id": int(lease_id),
+            }
+
             # 6) Build journal lines
             lines: list[dict] = [
                 {
@@ -27473,6 +27448,7 @@ class DatabaseService:
                     "debit": 0.0,
                     "credit": float(amt_in),
                     "memo": "Lease payment (cash)",
+                    **line_meta,
                 }
             ]
 
@@ -27484,6 +27460,7 @@ class DatabaseService:
                     "debit": float(alloc_net),
                     "credit": 0.0,
                     "memo": "Reduce lease liability",
+                    **line_meta,
                 })
 
             if alloc_vat > money("0"):
@@ -27492,6 +27469,7 @@ class DatabaseService:
                     "debit": float(alloc_vat),
                     "credit": 0.0,
                     "memo": "VAT input (lease payment)",
+                    **line_meta,
                 })
 
             entry = {

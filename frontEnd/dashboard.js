@@ -26727,6 +26727,8 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
         return t.includes(q);
       });
 
+      window._leaseMonthlyRows = filtered;
+    
       if (!filtered.length) {
         body.innerHTML = `<tr><td colspan="5" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
       } else {
