@@ -28414,10 +28414,41 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
                   <th class="text-left p-2 whitespace-nowrap">Lessor</th>
                   <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
                   <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
-                  <th class="text-right p-2 w-[160px] whitespace-nowrap">Actions</th>
+                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Payment</th>
                 </tr>
               </thead>
-              <tbody id="lmTableBody"></tbody>
+              <tbody id="lmTableBody">
+                <tr>
+                  <td colspan="5" class="p-3 text-xs text-slate-500">Click Load</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="mt-4 border rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-50 border-b text-sm font-semibold">
+            IFRS 16 Amortisation / Month-End
+          </div>
+
+          <div class="w-full max-w-full overflow-x-auto">
+            <table class="min-w-[980px] w-full text-sm">
+              <thead class="bg-slate-50 border-b">
+                <tr>
+                  <th class="text-left p-2 whitespace-nowrap">Lease</th>
+                  <th class="text-left p-2 w-[100px] whitespace-nowrap">Period</th>
+                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Interest</th>
+                  <th class="text-right p-2 w-[160px] whitespace-nowrap">ROU Depreciation</th>
+                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Total IFRS</th>
+                  <th class="text-left p-2 w-[120px] whitespace-nowrap">Status</th>
+                  <th class="text-right p-2 w-[180px] whitespace-nowrap">Action</th>
+                </tr>
+              </thead>
+              <tbody id="lmAmortTableBody">
+                <tr>
+                  <td colspan="7" class="p-3 text-xs text-slate-500">Click Load</td>
+                </tr>
+              </tbody>
             </table>
           </div>
         </div>
@@ -28427,6 +28458,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
 
   function renderMonthlyTable(rows, { q = "" } = {}) {
     const body = $("lmTableBody");
+    const amortBody = $("lmAmortTableBody");
     if (!body) return;
 
     const qq = String(q || "").trim().toLowerCase();
@@ -28437,8 +28469,15 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       return t.includes(qq);
     });
 
+    window._leaseMonthlyRows = filtered;
+
     if (!filtered.length) {
       body.innerHTML = `<tr><td colspan="5" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
+
+      if (amortBody) {
+        amortBody.innerHTML = `<tr><td colspan="7" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
+      }
+
       return;
     }
 
@@ -28449,11 +28488,16 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         (r?.amounts?.payment ?? null) ??
         r.amount_due ??
         r.due_amount ??
+        r.payment ??
         r.payment_amount ??
         0;
 
-      const isPaid = !!r.is_paid;
-      const isPosted = !!r.is_posted || !!r.payment_journal_id;
+      const paymentStatus = String(r.payment_status || "").toLowerCase();
+      const isPaymentReversed = ["reversed", "void", "cancelled", "canceled"].includes(paymentStatus);
+
+      const isPaid =
+        (!!r.paid || !!r.is_paid || paymentStatus === "posted" || Number(r.payment_journal_id || 0) > 0)
+        && !isPaymentReversed;
 
       return `
         <tr class="border-t">
@@ -28466,7 +28510,9 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           <td class="p-2 text-right tabular-nums">${fmtMoney(due)}</td>
           <td class="p-2 text-right">
             <button
-              class="px-2 py-1 rounded border text-xs ${isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}"
+              class="px-2 py-1 rounded border text-xs ${
+                isPaid ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"
+              }"
               data-lm-pay="1"
               data-lease-id="${esc(String(leaseId))}"
               data-lease-name="${esc(String(r.lease_name || r.name || ""))}"
@@ -28475,22 +28521,50 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
               data-due="${esc(String(due))}"
               ${isPaid ? "disabled" : ""}
             >
-              ${isPaid ? "Paid" : "Pay"}
-            </button>
-
-            <button
-              class="px-2 py-1 rounded text-xs ml-2 ${isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"}"
-              data-lm-post="1"
-              data-lease-id="${esc(String(leaseId))}"
-              data-period-no="${esc(String(periodNo))}"
-              ${isPosted ? "disabled" : ""}
-            >
-              ${isPosted ? "Posted" : "Post"}
+              ${isPaid ? "Paid" : isPaymentReversed ? "Pay again" : "Pay"}
             </button>
           </td>
         </tr>
       `;
     }).join("");
+
+    if (amortBody) {
+      amortBody.innerHTML = filtered.map((r) => {
+        const leaseId = r.lease_id ?? r.id ?? "";
+        const periodNo = r.period_no ?? r.period ?? r.period_number ?? "";
+
+        const interest = Number(r.amounts?.interest ?? r.interest ?? 0);
+        const depreciation = Number(r.amounts?.depreciation ?? r.depreciation ?? 0);
+        const totalIfrs = interest + depreciation;
+
+        const isPosted =
+          !!r.posted || !!r.is_posted || Number(r.posted_journal_id || 0) > 0;
+
+        return `
+          <tr class="border-t ${isPosted ? "bg-slate-100 text-slate-400" : ""}">
+            <td class="p-2">${esc(String(r.lease_name || `Lease ${leaseId}`))}</td>
+            <td class="p-2">${esc(String(periodNo || ""))}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(interest)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(depreciation)}</td>
+            <td class="p-2 text-right tabular-nums">${fmtMoney(totalIfrs)}</td>
+            <td class="p-2">${isPosted ? "Posted" : "Pending"}</td>
+            <td class="p-2 text-right">
+              <button
+                class="px-2 py-1 rounded text-xs ${
+                  isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"
+                }"
+                data-lm-post="1"
+                data-lease-id="${esc(String(leaseId))}"
+                data-period-no="${esc(String(periodNo))}"
+                ${isPosted ? "disabled" : ""}
+              >
+                ${isPosted ? "Posted" : "Preview IFRS 16"}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
 
     body.querySelectorAll("[data-lm-pay]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -28510,29 +28584,41 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       });
     });
 
-    body.querySelectorAll("[data-lm-post]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
+    amortBody?.querySelectorAll("[data-lm-post]").forEach((btn) => {
+      btn.addEventListener("click", () => {
         if (btn.disabled) return;
 
         const msgEl = $("leaseMonthlyMsg");
         showMsg(msgEl, "");
 
-        const cid = window.getActiveCompanyId?.();
-        const leaseId = btn.getAttribute("data-lease-id");
-        const periodNo = btn.getAttribute("data-period-no");
+        const leaseId = Number(btn.getAttribute("data-lease-id") || 0);
+        const periodNo = Number(btn.getAttribute("data-period-no") || 0);
 
-        if (!cid || !leaseId || !periodNo) return showMsg(msgEl, "Missing lease/period");
+        const r = filtered.find(x =>
+          Number(x.lease_id) === leaseId &&
+          Number(x.period_no) === periodNo
+        );
 
-        try {
-          await window.apiFetch(
-            window.endpoints.leases.postMonth(cid, leaseId, periodNo),
-            { method: "POST" }
-          );
-          showMsg(msgEl, "Posted.", "ok");
-          setTimeout(() => showMsg(msgEl, ""), 900);
-          await loadMonthlyDue();
-        } catch (e) {
-          showMsg(msgEl, e?.message || "Posting failed");
+        if (!r) return showMsg(msgEl, "Could not find IFRS 16 row.");
+        if (!Array.isArray(r.preview_journal_lines) || !r.preview_journal_lines.length) {
+          return showMsg(msgEl, "No IFRS 16 preview lines found.");
+        }
+
+        if (typeof loadJournalIntoLines === "function") {
+          loadJournalIntoLines({
+            id: `lease-month-${leaseId}-${periodNo}`,
+            date: String(r.period_end || "").slice(0, 10),
+            ref: `LEASE-${leaseId}-P${periodNo}`,
+            description: `IFRS 16 monthly posting – ${r.lease_name || `Lease ${leaseId}`} – P${periodNo}`,
+            lines: r.preview_journal_lines.map(ln => ({
+              account_code: ln.account_code,
+              debit: Number(ln.debit) || 0,
+              credit: Number(ln.credit) || 0,
+              memo: ln.memo || ""
+            }))
+          }, { mode: "append" });
+
+          window.switchScreen?.("journal");
         }
       });
     });
