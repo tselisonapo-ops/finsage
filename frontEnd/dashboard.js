@@ -26733,28 +26733,34 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
         body.innerHTML = filtered.map(r => {
           const leaseId = r.lease_id ?? r.id ?? "";
           const periodNo = r.period_no ?? r.period ?? r.period_number ?? "";
-          const due = (r?.amounts?.payment ?? null) ?? r.amount_due ?? r.due_amount ?? r.payment_amount ?? 0;
+
+          const due =
+            (r?.amounts?.payment ?? null) ??
+            r.amount_due ??
+            r.due_amount ??
+            r.payment ??
+            r.payment_amount ??
+            0;
+
           const paymentStatus = String(r.payment_status || "").toLowerCase();
           const isPaymentReversed = ["reversed", "void", "cancelled", "canceled"].includes(paymentStatus);
 
-          const isPaid = !!r.is_paid && !isPaymentReversed;
+          const isPaid =
+            (!!r.paid || !!r.is_paid || paymentStatus === "posted" || Number(r.payment_journal_id || 0) > 0)
+            && !isPaymentReversed;
 
-          // monthly IFRS 16 posting only, not payment journal
-          const isPosted = !!r.is_posted;
+          const isPosted =
+            !!r.posted || !!r.is_posted || Number(r.posted_journal_id || 0) > 0;
 
           const canPay = !isPaid;
           const canPost = !isPosted;
-          
-        console.log("[MONTHLY BUTTON FLAGS]", {
-          leaseId,
-          periodNo,
-          is_paid: r.is_paid,
-          payment_journal_id: r.payment_journal_id,
-          isPaid,
-          isPosted,
-        });          
+
+          const rowClass = (isPaid && isPosted)
+            ? "border-t bg-slate-100 text-slate-400"
+            : "border-t";
+
           return `
-            <tr class="border-t" data-lease-id="${escapeHtml(String(leaseId))}">
+            <tr class="${rowClass}" data-lease-id="${escapeHtml(String(leaseId))}">
               <td class="p-2">
                 <div class="font-medium">${escapeHtml(String(r.lease_name || r.name || `Lease ${leaseId}`))}</div>
                 <div class="text-xs text-slate-500">ID: ${escapeHtml(String(leaseId))}</div>

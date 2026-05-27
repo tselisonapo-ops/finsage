@@ -26313,6 +26313,7 @@ class DatabaseService:
         LEFT JOIN {schema}.lessors ls
             ON ls.id = l.lessor_id
         WHERE s.company_id = %s
+        AND COALESCE(s.is_active, TRUE) = TRUE
         AND s.period_end >= %s
         AND s.period_end < %s
         ORDER BY s.period_end ASC, l.id ASC
@@ -26427,21 +26428,22 @@ class DatabaseService:
         # Interest accrual
         if interest > 0:
             amt = round(interest, 2)
-        lines.append({
-            "account_code": int_exp,
-            "debit": amt,
-            "credit": 0.0,
-            "memo": f"IFRS16 interest – P{period_no}",
-            **line_meta,
-        })
-        
-        lines.append({
-            "account_code": liab_non or liab_cur,
-            "debit": 0.0,
-            "credit": amt,
-            "memo": f"IFRS16 interest accrual – P{period_no}",
-            **line_meta,
-        })
+
+            lines.append({
+                "account_code": int_exp,
+                "debit": amt,
+                "credit": 0.0,
+                "memo": f"IFRS16 interest – P{period_no}",
+                **line_meta,
+            })
+
+            lines.append({
+                "account_code": liab_non or liab_cur,
+                "debit": 0.0,
+                "credit": amt,
+                "memo": f"IFRS16 interest accrual – P{period_no}",
+                **line_meta,
+            })
 
         # Depreciation
         if depreciation > 0:
