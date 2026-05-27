@@ -29000,8 +29000,8 @@ class DatabaseService:
                 AND c.role = 'rou_asset'
                 AND jl.source IN ('leases', 'lease_inception')
                 AND (
-                        j.description ILIKE 'Initial recognition of lease%%'
-                    OR j.description ILIKE 'IFRS 16 transition%%'
+                    ILIKE 'Initial recognition of lease%'
+                    OR j.description ILIKE 'IFRS 16 transition%'
                 )
                 GROUP BY jl.source_id
             )
@@ -29175,7 +29175,6 @@ class DatabaseService:
 
         closing_liability_from_recon = (
             opening_liability
-            + liab_additions_period      # ✅ ADD THIS
             + interest_posted
             - principal_posted
             + liab_adj_posted
@@ -29192,13 +29191,38 @@ class DatabaseService:
         # ------------------------------------------------------------
         rou_opening_row = self.fetch_one(
             f"""
-            SELECT COALESCE(SUM(l.opening_rou_asset),0) AS rou_opening
+            WITH posted_commencements AS (
+                SELECT
+                    jl.source_id AS lease_id,
+                    SUM(jl.debit - jl.credit) AS rou_posted
+                FROM {schema}.journal_lines jl
+                JOIN {schema}.journal j
+                    ON j.id = jl.journal_id
+                JOIN {schema}.coa c
+                    ON c.code = jl.account_code
+                WHERE jl.company_id = %s
+                AND c.role = 'rou_asset'
+                AND jl.source IN ('leases', 'lease_inception')
+                AND (
+                        j.description ILIKE 'Initial recognition of lease%'
+                    OR j.description ILIKE 'IFRS 16 transition%'
+                )
+                GROUP BY jl.source_id
+            )
+            SELECT
+                COALESCE(SUM(COALESCE(pc.rou_posted,0)),0) AS rou_opening
             FROM {schema}.leases l
+            LEFT JOIN posted_commencements pc
+                ON pc.lease_id = l.id
             WHERE l.company_id=%s
             AND l.start_date < %s
             {lease_status_sql}
             """,
-            (int(company_id), from_date),
+            (
+                int(company_id),
+                int(company_id),
+                from_date,
+            ),
             cur=cur,
         ) or {}
         rou_opening_total = float(rou_opening_row.get("rou_opening") or 0.0)
@@ -29251,10 +29275,10 @@ class DatabaseService:
 
         rou_closing_nbv = round(
             rou_opening_total
-            + rou_additions_period      # ✅ ADD THIS
             + rou_adj_to_date
             - depreciation_to_date
-            - rou_nbv_terminated, 2
+            - rou_nbv_terminated,
+            2
         )
 
         leases_rows = self.fetch_all(
@@ -29377,8 +29401,8 @@ class DatabaseService:
                 AND c.role = 'rou_asset'
                 AND jl.source IN ('leases', 'lease_inception')
                 AND (
-                        j.description ILIKE 'Initial recognition of lease%%'
-                    OR j.description ILIKE 'IFRS 16 transition%%'
+                    ILIKE 'Initial recognition of lease%'
+                    OR j.description ILIKE 'IFRS 16 transition%'
                 )
                 GROUP BY jl.source_id
             ),
