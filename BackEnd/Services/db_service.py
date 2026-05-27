@@ -28854,7 +28854,31 @@ class DatabaseService:
 
         return [ln for ln in lines if (ln.get("debit") or 0) != 0 or (ln.get("credit") or 0) != 0]
 
+    def stamp_posted_lease_schedules_from_journals(self, company_id: int, *, cur=None) -> int:
+        schema = f"company_{int(company_id)}"
 
+        sql = f"""
+        UPDATE {schema}.lease_schedule s
+        SET
+            posted_journal_id = j.id,
+            posted_at = COALESCE(s.posted_at, j.created_at, NOW())
+        FROM {schema}.journal j
+        WHERE j.company_id = %s
+        AND j.source = 'lease_monthly'
+        AND j.source_id = s.id
+        AND COALESCE(s.posted_journal_id, 0) = 0
+        """
+
+        if cur is not None:
+            cur.execute(sql, (int(company_id),))
+            return int(cur.rowcount or 0)
+
+        with self._conn_cursor() as (conn, cur2):
+            cur2.execute(sql, (int(company_id),))
+            n = int(cur2.rowcount or 0)
+            conn.commit()
+            return n
+    
     def get_ifrs16_disclosure_strict(
         self,
         company_id: int,
@@ -28880,6 +28904,11 @@ class DatabaseService:
         """
         schema = f"company_{int(company_id)}"
         as_of = as_of or to_date
+
+        try:
+            self.stamp_posted_lease_schedules_from_journals(int(company_id), cur=cur)
+        except Exception:
+            pass
 
         if from_date > to_date:
             raise ValueError("from_date must be <= to_date")
@@ -66716,6 +66745,13 @@ class DatabaseService:
 
         return note
 
+    def _period_label(date_from, date_to) -> str:
+        if date_from and date_to:
+            return f"for the reporting period from {date_from} to {date_to}"
+        if date_to:
+            return f"for the reporting period ended {date_to}"
+        return "for the reporting period"
+
     def build_ppe_policy_note_text(
         self,
         company_id: int,
@@ -66735,7 +66771,7 @@ class DatabaseService:
                 )
 
         summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to) or {}
-
+        period_label = self._period_label(date_from, date_to)
         current_app.logger.warning(
             "PPE NOTE SUMMARY BEFORE FALLBACK company_id=%s from=%s to=%s summary=%s",
             company_id,
@@ -66833,7 +66869,7 @@ class DatabaseService:
 
     The determination of useful lives, residual values and depreciation methods requires the use of judgement and is based on expected usage of the assets, physical wear and tear, technical or commercial obsolescence, and asset replacement strategies.
 
-    During the reporting period, additions to property, plant and equipment amounted to R{additions}. Depreciation charged for the period amounted to R{depreciation}. The closing carrying amount of property, plant and equipment was R{closing_carrying}.
+    During {period_label}, additions to property, plant and equipment amounted to R{additions}. Depreciation charged for the period amounted to R{depreciation}. The closing carrying amount of property, plant and equipment was R{closing_carrying}.
     {extra_text}
     """.strip()
 
@@ -66847,6 +66883,8 @@ class DatabaseService:
             include_terminated=True,
             cur=cur,
         )
+
+        period_label = self._period_label(date_from, date_to)
 
         rou = d.get("rou") or {}
         liability = d.get("liability") or {}
@@ -66873,7 +66911,7 @@ class DatabaseService:
 
     Management applies judgement in determining the lease term, including whether extension or termination options are reasonably certain to be exercised. Estimation is also involved in determining the incremental borrowing rate where the rate implicit in the lease cannot be readily determined.
 
-    For the reporting period, depreciation on right-of-use assets amounted to R{_money(pnl.get("depreciation")):,.2f}, and interest expense on lease liabilities amounted to R{_money(pnl.get("interest")):,.2f}. The closing carrying amount of right-of-use assets was R{_money(rou.get("closing_rou_nbv_as_of")):,.2f}, and the closing lease liability was R{_money(liability.get("closing_liability_as_of")):,.2f}. Undiscounted future lease payments amounted to R{_money(maturity.get("undiscounted_net_total")):,.2f}.{exemption_text}
+    For {period_label}, depreciation on right-of-use assets amounted to R{_money(pnl.get("depreciation")):,.2f}, and interest expense on lease liabilities amounted to R{_money(pnl.get("interest")):,.2f}. The closing carrying amount of right-of-use assets was R{_money(rou.get("closing_rou_nbv_as_of")):,.2f}, and the closing lease liability was R{_money(liability.get("closing_liability_as_of")):,.2f}. Undiscounted future lease payments amounted to R{_money(maturity.get("undiscounted_net_total")):,.2f}.{exemption_text}
     """.strip()
 
     def build_revenue_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
@@ -66920,13 +66958,15 @@ class DatabaseService:
     def build_revenue_disclosure_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
         d = self.build_revenue_disclosure(company_id, date_from, date_to)
 
+        period_label = self._period_label(date_from, date_to)
+
         summary = d.get("summary") or {}
         timing = d.get("revenue_timing") or []
         categories = d.get("revenue_by_category") or []
         unsatisfied = d.get("unsatisfied_performance_obligations") or []
 
         lines = [
-            f"Revenue recognised during the reporting period amounted to R{_money(summary.get('total_revenue')):,.2f}.",
+            f"Revenue recognised during {period_label} amounted to R{_money(summary.get('total_revenue')):,.2f}.",
             "",
             f"Contract assets amounted to R{_money(summary.get('contract_assets')):,.2f}, while contract liabilities amounted to R{_money(summary.get('contract_liabilities')):,.2f}.",
             f"Gross receivables from contracts with customers amounted to R{_money(summary.get('gross_receivables_from_contracts')):,.2f}.",
