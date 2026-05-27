@@ -26419,18 +26419,48 @@ class DatabaseService:
 
         lines = []
 
+        line_meta = {
+            "source": "leases",
+            "source_id": int(lease_id),
+        }
+
         # Interest accrual
         if interest > 0:
             amt = round(interest, 2)
-            lines.append({"account_code": int_exp, "debit": amt, "credit": 0.0, "memo": f"IFRS16 interest – P{period_no}"})
-            lines.append({"account_code": liab_non or liab_cur, "debit": 0.0, "credit": amt, "memo": f"IFRS16 interest accrual – P{period_no}"})
+        lines.append({
+            "account_code": int_exp,
+            "debit": amt,
+            "credit": 0.0,
+            "memo": f"IFRS16 interest – P{period_no}",
+            **line_meta,
+        })
+        
+        lines.append({
+            "account_code": liab_non or liab_cur,
+            "debit": 0.0,
+            "credit": amt,
+            "memo": f"IFRS16 interest accrual – P{period_no}",
+            **line_meta,
+        })
 
         # Depreciation
         if depreciation > 0:
             amt = round(depreciation, 2)
-            lines.append({"account_code": depr_exp, "debit": amt, "credit": 0.0, "memo": f"ROU depreciation – P{period_no}"})
-            lines.append({"account_code": acc_depr, "debit": 0.0, "credit": amt, "memo": f"Accum dep (ROU) – P{period_no}"})
+            lines.append({
+                "account_code": depr_exp,
+                "debit": amt,
+                "credit": 0.0,
+                "memo": f"ROU depreciation – P{period_no}",
+                **line_meta,
+            })       
 
+            lines.append({
+                "account_code": acc_depr,
+                "debit": 0.0,
+                "credit": amt,
+                "memo": f"Accum dep (ROU) – P{period_no}",
+                **line_meta,
+            })
         # Payment (principal)
         if post_payment and payment > 0:
             amt = principal if principal > 0 else payment
@@ -26439,18 +26469,20 @@ class DatabaseService:
                 # ✅ Use non-current for later periods (simple rule, adjust if you want)
                 liab_post = liab_non if (liab_non and period_no > 12) else liab_cur
 
-                lines.append({
-                    "account_code": liab_post,
-                    "debit": amt,
-                    "credit": 0.0,
-                    "memo": f"Lease payment principal – P{period_no}"
-                })
-                lines.append({
-                    "account_code": bank,
-                    "debit": 0.0,
-                    "credit": amt,
-                    "memo": f"Lease payment – P{period_no}"
-                })
+            lines.append({
+                "account_code": liab_post,
+                "debit": amt,
+                "credit": 0.0,
+                "memo": f"Lease payment principal – P{period_no}",
+                **line_meta,
+            })
+            lines.append({
+                "account_code": bank,
+                "debit": 0.0,
+                "credit": amt,
+                "memo": f"Lease payment – P{period_no}",
+                **line_meta,
+            })
 
         return [ln for ln in lines if (ln.get("debit") or 0) != 0 or (ln.get("credit") or 0) != 0]
 
