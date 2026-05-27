@@ -24297,40 +24297,35 @@ function restoreNotesIfPresent() {
 }
 
 function renderIFRS16DisclosureHTML(d) {
-  const rou  = d?.rou || {};
+  const rou = d?.rou || {};
   const liab = d?.liability || {};
-  const pnl  = d?.pnl || {};
-  const rec  = d?.liability_reconciliation || {};
-  const mat  = d?.maturity_analysis || {};
+  const pnl = d?.pnl || {};
+  const rec = d?.liability_reconciliation || {};
+  const mat = d?.maturity_analysis || {};
 
-  // ✅ NEW: lease components table (expect either d.lease_components.rows or d.components.rows, etc.)
-  const comp =
-    d?.lease_components ||
-    d?.components ||
-    d?.component_analysis ||
-    {};
-  const compRows =
-    Array.isArray(comp.rows) ? comp.rows :
-    Array.isArray(d?.lease_components_rows) ? d.lease_components_rows :
-    [];
+  const comp = d?.lease_components || d?.components || d?.component_analysis || {};
+  const compRows = Array.isArray(comp.rows)
+    ? comp.rows
+    : Array.isArray(d?.lease_components_rows)
+      ? d.lease_components_rows
+      : [];
 
-  const rows = Array.isArray(mat.rows) ? mat.rows : [];
-  // ✅ NEW: leased assets / leases list
+  const maturityRows = Array.isArray(mat.rows) ? mat.rows : [];
   const leases = Array.isArray(d?.leases) ? d.leases : [];
-
-  // ✅ NEW: ROU movement per leased asset (from backend)
   const rouAssets = Array.isArray(d?.rou_asset_table) ? d.rou_asset_table : [];
 
-  const sumRou = (k) => rouAssets.reduce((t, r) => t + (Number(r?.[k]) || 0), 0);
+  const sumRou = (key) =>
+    rouAssets.reduce((total, row) => total + (Number(row?.[key]) || 0), 0);
 
-  // ✅ keys already used
   const paymentsGross = liab.payments_gross_period ?? liab.payments_gross ?? 0;
-  const paymentsVat   = liab.vat_on_payments_period ?? liab.vat_on_payments ?? 0;
+  const paymentsVat = liab.vat_on_payments_period ?? liab.vat_on_payments ?? 0;
 
-  const currentPortion    = liab.undiscounted_principal_current ?? liab.current_portion_as_of ?? 0;
-  const nonCurrentPortion = liab.undiscounted_principal_non_current ?? liab.non_current_portion_as_of ?? 0;
+  const currentPortion =
+    liab.undiscounted_principal_current ?? liab.current_portion_as_of ?? 0;
 
-  // ✅ NEW: additions on ROU (support multiple possible backend keys)
+  const nonCurrentPortion =
+    liab.undiscounted_principal_non_current ?? liab.non_current_portion_as_of ?? 0;
+
   const rouAdditions =
     rou.additions_period ??
     rou.additions ??
@@ -24338,11 +24333,21 @@ function renderIFRS16DisclosureHTML(d) {
     rou.capitalised_additions_period ??
     0;
 
+  const rouMovementRows = [
+    ["Carrying amount – beginning of year", "opening", false],
+    ["Additions", "additions", false],
+    ["Remeasurement (mods)", "remeasurements", false],
+    ["Depreciation", "depreciation", true],
+    ["Carrying amount – end of year", "closing", false, true],
+  ];
+
   return `
     <div class="text-sm space-y-4">
       <div class="flex items-start justify-between">
         <div>
-          <div class="font-semibold text-slate-800">IFRS 16 Disclosures (Strict / Posted-only)</div>
+          <div class="font-semibold text-slate-800">
+            IFRS 16 Disclosures (Strict / Posted-only)
+          </div>
           <div class="text-slate-500 text-xs mt-0.5">
             Period: ${escHtml(d?.from_date || "")} → ${escHtml(d?.to_date || "")}
             &nbsp;|&nbsp; As of: ${escHtml(d?.as_of || "")}
@@ -24350,102 +24355,89 @@ function renderIFRS16DisclosureHTML(d) {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div class="border rounded-lg p-3">
           <div class="font-semibold mb-2">Profit or Loss</div>
           <div class="text-xs space-y-1">
-            <div class="flex justify-between"><span>Depreciation (ROU)</span><b>${fmtMoney(pnl.depreciation ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Interest expense</span><b>${fmtMoney(pnl.interest ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Gain/Loss on termination</span><b>${fmtMoney(pnl.gain_loss_on_termination ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Depreciation (ROU)</span><b>${fmtMoney(pnl.depreciation ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Interest expense</span><b>${fmtMoney(pnl.interest ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Gain/Loss on termination</span><b>${fmtMoney(pnl.gain_loss_on_termination ?? 0)}</b></div>
           </div>
-        </div>
-
-        <div class="border rounded-lg p-3">
-          <div class="font-semibold mb-2">Right-of-use assets</div>
-
-          ${
-            rouAssets.length
-              ? `
-            <div class="overflow-auto">
-              <table class="w-full text-xs border">
-                <thead>
-                  <tr class="bg-slate-50">
-                    <th class="p-2 border text-left">Movement</th>
-                    ${rouAssets.map(a => `<th class="p-2 border text-right">${escHtml(a.lease_name || `Lease ${a.lease_id ?? ""}`)}</th>`).join("")}
-                    <th class="p-2 border text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td class="p-2 border">Carrying amount – beginning of year</td>
-                    ${rouAssets.map(a => `<td class="p-2 border text-right">${fmtMoney(a.opening ?? 0)}</td>`).join("")}
-                    <td class="p-2 border text-right"><b>${fmtMoney(sumRou("opening"))}</b></td>
-                  </tr>
-
-                  <tr>
-                    <td class="p-2 border">Additions</td>
-                    ${rouAssets.map(a => `<td class="p-2 border text-right">${fmtMoney(a.additions ?? 0)}</td>`).join("")}
-                    <td class="p-2 border text-right"><b>${fmtMoney(sumRou("additions"))}</b></td>
-                  </tr>
-
-                  <tr>
-                    <td class="p-2 border">Remeasurement (mods)</td>
-                    ${rouAssets.map(a => `<td class="p-2 border text-right">${fmtMoney(a.remeasurements ?? 0)}</td>`).join("")}
-                    <td class="p-2 border text-right"><b>${fmtMoney(sumRou("remeasurements"))}</b></td>
-                  </tr>
-
-                  <tr>
-                    <td class="p-2 border">Depreciation</td>
-                    ${rouAssets.map(a => `<td class="p-2 border text-right">(${fmtMoney(a.depreciation ?? 0)})</td>`).join("")}
-                    <td class="p-2 border text-right"><b>(${fmtMoney(sumRou("depreciation"))})</b></td>
-                  </tr>
-
-                  <tr class="font-semibold">
-                    <td class="p-2 border">Carrying amount – end of year</td>
-                    ${rouAssets.map(a => `<td class="p-2 border text-right">${fmtMoney(a.closing ?? 0)}</td>`).join("")}
-                    <td class="p-2 border text-right"><b>${fmtMoney(sumRou("closing"))}</b></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            `
-              : `
-            <div class="text-xs space-y-1">
-              <div class="flex justify-between"><span>Opening ROU</span><b>${fmtMoney(rou.opening_rou_asset_total ?? 0)}</b></div>
-              <div class="flex justify-between"><span>Additions (period)</span><b>${fmtMoney(rouAdditions)}</b></div>
-              <div class="flex justify-between"><span>Mods/remeasurements (period)</span><b>${fmtMoney(rou.remeasurements_modifications_period ?? 0)}</b></div>
-              <div class="flex justify-between"><span>Depreciation (period)</span><b>${fmtMoney(rou.depreciation_charge_period ?? 0)}</b></div>
-              <div class="flex justify-between"><span>Closing ROU NBV (as of)</span><b>${fmtMoney(rou.closing_rou_nbv_as_of ?? 0)}</b></div>
-            </div>
-            `
-          }
         </div>
 
         <div class="border rounded-lg p-3">
           <div class="font-semibold mb-2">Lease liabilities</div>
           <div class="text-xs space-y-1">
-            <div class="flex justify-between"><span>Closing liability (as of)</span><b>${fmtMoney(liab.closing_liability_as_of ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Current portion (undiscounted principal)</span><b>${fmtMoney(currentPortion)}</b></div>
-            <div class="flex justify-between"><span>Non-current portion (undiscounted principal)</span><b>${fmtMoney(nonCurrentPortion)}</b></div>
-            <div class="flex justify-between"><span>Payments (gross, period)</span><b>${fmtMoney(paymentsGross)}</b></div>
-            <div class="flex justify-between"><span>VAT on payments (period)</span><b>${fmtMoney(paymentsVat)}</b></div>
+            <div class="flex justify-between gap-3"><span>Closing liability</span><b>${fmtMoney(liab.closing_liability_as_of ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Current portion</span><b>${fmtMoney(currentPortion)}</b></div>
+            <div class="flex justify-between gap-3"><span>Non-current portion</span><b>${fmtMoney(nonCurrentPortion)}</b></div>
+            <div class="flex justify-between gap-3"><span>Payments gross</span><b>${fmtMoney(paymentsGross)}</b></div>
+            <div class="flex justify-between gap-3"><span>VAT on payments</span><b>${fmtMoney(paymentsVat)}</b></div>
           </div>
         </div>
 
         <div class="border rounded-lg p-3">
           <div class="font-semibold mb-2">Liability reconciliation</div>
           <div class="text-xs space-y-1">
-            <div class="flex justify-between"><span>Opening</span><b>${fmtMoney(rec.opening_liability ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Interest accretion</span><b>${fmtMoney(rec.interest_accretion ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Principal reduction</span><b>${fmtMoney(rec.principal_reduction ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Remeasurements</span><b>${fmtMoney(rec.remeasurements_modifications ?? 0)}</b></div>
-            <div class="flex justify-between"><span>Derecognitions</span><b>${fmtMoney(rec.derecognitions_terminations ?? 0)}</b></div>
-            <div class="flex justify-between border-t pt-2 mt-2"><span><b>Closing</b></span><b>${fmtMoney(rec.closing_liability ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Opening</span><b>${fmtMoney(rec.opening_liability ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Interest accretion</span><b>${fmtMoney(rec.interest_accretion ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Principal reduction</span><b>${fmtMoney(rec.principal_reduction ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Remeasurements</span><b>${fmtMoney(rec.remeasurements_modifications ?? 0)}</b></div>
+            <div class="flex justify-between gap-3"><span>Derecognitions</span><b>${fmtMoney(rec.derecognitions_terminations ?? 0)}</b></div>
+            <div class="flex justify-between gap-3 border-t pt-2 mt-2"><span><b>Closing</b></span><b>${fmtMoney(rec.closing_liability ?? 0)}</b></div>
           </div>
         </div>
       </div>
 
-      <!-- ✅ NEW: Leased assets -->
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">Right-of-use assets</div>
+        ${
+          rouAssets.length
+            ? `
+          <div class="overflow-auto">
+            <table class="min-w-[1400px] w-full text-xs border">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="sticky left-0 z-10 bg-slate-50 p-2 border text-left min-w-[260px]">Movement</th>
+                  ${rouAssets.map(a => `
+                    <th class="p-2 border text-right min-w-[190px]">
+                      ${escHtml(a.lease_name || `Lease ${a.lease_id ?? ""}`)}
+                    </th>
+                  `).join("")}
+                  <th class="p-2 border text-right min-w-[160px]">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rouMovementRows.map(([label, key, negative, strong]) => `
+                  <tr class="${strong ? "font-semibold bg-slate-50" : ""}">
+                    <td class="sticky left-0 z-10 ${strong ? "bg-slate-50" : "bg-white"} p-2 border min-w-[260px]">
+                      ${label}
+                    </td>
+                    ${rouAssets.map(a => {
+                      const value = fmtMoney(a?.[key] ?? 0);
+                      return `<td class="p-2 border text-right">${negative ? `(${value})` : value}</td>`;
+                    }).join("")}
+                    <td class="p-2 border text-right">
+                      <b>${negative ? `(${fmtMoney(sumRou(key))})` : fmtMoney(sumRou(key))}</b>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+          `
+            : `
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between"><span>Opening ROU</span><b>${fmtMoney(rou.opening_rou_asset_total ?? 0)}</b></div>
+            <div class="flex justify-between"><span>Additions</span><b>${fmtMoney(rouAdditions)}</b></div>
+            <div class="flex justify-between"><span>Mods/remeasurements</span><b>${fmtMoney(rou.remeasurements_modifications_period ?? 0)}</b></div>
+            <div class="flex justify-between"><span>Depreciation</span><b>${fmtMoney(rou.depreciation_charge_period ?? 0)}</b></div>
+            <div class="flex justify-between"><span>Closing ROU NBV</span><b>${fmtMoney(rou.closing_rou_nbv_as_of ?? 0)}</b></div>
+          </div>
+          `
+        }
+      </div>
+
       ${
         leases.length
           ? `
@@ -24484,7 +24476,6 @@ function renderIFRS16DisclosureHTML(d) {
           : ``
       }
 
-      <!-- ✅ NEW: Lease Components -->
       ${
         compRows.length
           ? `
@@ -24512,18 +24503,6 @@ function renderIFRS16DisclosureHTML(d) {
               </tbody>
             </table>
           </div>
-
-          ${
-            (comp?.net_total ?? comp?.vat_total ?? comp?.gross_total) != null
-              ? `
-            <div class="mt-2 text-xs text-slate-700 grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div>Net total: <b>${fmtMoney(comp.net_total ?? 0)}</b></div>
-              <div>VAT total: <b>${fmtMoney(comp.vat_total ?? 0)}</b></div>
-              <div>Gross total: <b>${fmtMoney(comp.gross_total ?? 0)}</b></div>
-            </div>
-            `
-              : ``
-          }
         </div>
         `
           : ``
@@ -24532,7 +24511,7 @@ function renderIFRS16DisclosureHTML(d) {
       <div class="border rounded-lg p-3">
         <div class="font-semibold mb-2">Maturity analysis (undiscounted future payments)</div>
         ${
-          rows.length
+          maturityRows.length
             ? `
           <div class="overflow-auto">
             <table class="w-full text-xs border">
@@ -24545,7 +24524,7 @@ function renderIFRS16DisclosureHTML(d) {
                 </tr>
               </thead>
               <tbody>
-                ${rows.map(r => `
+                ${maturityRows.map(r => `
                   <tr>
                     <td class="p-2 border">${escHtml(r.bucket ?? "")}</td>
                     <td class="p-2 border text-right">${fmtMoney(r.undiscounted_net ?? 0)}</td>
@@ -24561,7 +24540,7 @@ function renderIFRS16DisclosureHTML(d) {
             <div>Undiscounted net total: <b>${fmtMoney(mat.undiscounted_net_total ?? 0)}</b></div>
             <div>VAT total: <b>${fmtMoney(mat.vat_total ?? 0)}</b></div>
             <div>Gross total: <b>${fmtMoney(mat.gross_total ?? 0)}</b></div>
-            <div>Carrying amount (liability): <b>${fmtMoney(mat.carrying_amount_liability ?? 0)}</b></div>
+            <div>Carrying amount liability: <b>${fmtMoney(mat.carrying_amount_liability ?? 0)}</b></div>
             <div>Discount gap: <b>${fmtMoney(mat.discount_gap ?? 0)}</b></div>
           </div>
           `
