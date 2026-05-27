@@ -26676,7 +26676,7 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
           </thead>
           <tbody id="lmTableBody">
             <tr>
-              <td colspan="6" class="p-3 text-xs text-slate-500">>Click Load</td>
+              <td colspan="6" class="p-3 text-xs text-slate-500">Click Load</td>
             </tr>
           </tbody>
         </table>
@@ -26731,7 +26731,7 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
       window._leaseMonthlyRows = filtered;
     
       if (!filtered.length) {
-        body.innerHTML = `<tr><td colspan="5" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
+        body.innerHTML = `<tr><td colspan="6" class="p-3 text-xs text-slate-500">Nothing due</td></tr>`;
       } else {
         body.innerHTML = filtered.map(r => {
           const leaseId = r.lease_id ?? r.id ?? "";
