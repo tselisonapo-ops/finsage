@@ -29382,7 +29382,7 @@ class DatabaseService:
                 )
                 GROUP BY jl.source_id
             ),
-            WITH dep_period AS (
+            dep_period AS (
                 SELECT
                     s.lease_id,
                     SUM(COALESCE(s.depreciation,0)) AS dep_period
