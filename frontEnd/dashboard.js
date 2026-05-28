@@ -28425,16 +28425,30 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
       </div>
 
       <div class="min-w-0 w-full">
-        <div class="border rounded-xl overflow-hidden">
-          <div class="w-full max-w-full overflow-x-auto">
-            <table class="min-w-[820px] w-full text-sm">
+        <div class="border rounded-xl overflow-hidden bg-white">
+          <div class="w-full overflow-x-auto">
+            <table class="min-w-[920px] w-full text-sm">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left p-2 whitespace-nowrap">Lease</th>
-                  <th class="text-left p-2 whitespace-nowrap">Lessor</th>
-                  <th class="text-left p-2 w-[110px] whitespace-nowrap">Period</th>
-                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Due</th>
-                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Payment</th>
+                  <th class="text-left px-4 py-3 min-w-[320px] whitespace-nowrap">
+                    Lease
+                  </th>
+
+                  <th class="text-left px-4 py-3 min-w-[260px] whitespace-nowrap">
+                    Lessor
+                  </th>
+
+                  <th class="text-center px-3 py-3 w-[90px] whitespace-nowrap">
+                    Period
+                  </th>
+
+                  <th class="text-right px-4 py-3 w-[160px] whitespace-nowrap">
+                    Due
+                  </th>
+
+                  <th class="text-right px-4 py-3 w-[220px] whitespace-nowrap">
+                    Payment
+                  </th>
                 </tr>
               </thead>
               <tbody id="lmTableBody">
@@ -28446,22 +28460,44 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           </div>
         </div>
 
-        <div class="mt-4 border rounded-xl overflow-hidden">
+        <div class="mt-4 border rounded-xl overflow-hidden bg-white">
           <div class="px-3 py-2 bg-slate-50 border-b text-sm font-semibold">
             IFRS 16 Amortisation / Month-End
           </div>
 
-          <div class="w-full max-w-full overflow-x-auto">
-            <table class="min-w-[980px] w-full text-sm">
+          <div class="w-full overflow-x-auto">
+            <table class="min-w-[1180px] w-full text-sm">
               <thead class="bg-slate-50 border-b">
                 <tr>
-                  <th class="text-left p-2 whitespace-nowrap">Lease</th>
-                  <th class="text-left p-2 w-[100px] whitespace-nowrap">Period</th>
-                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Interest</th>
-                  <th class="text-right p-2 w-[160px] whitespace-nowrap">ROU Depreciation</th>
-                  <th class="text-right p-2 w-[140px] whitespace-nowrap">Total IFRS</th>
-                  <th class="text-left p-2 w-[120px] whitespace-nowrap">Status</th>
-                  <th class="text-right p-2 w-[180px] whitespace-nowrap">Action</th>
+
+                  <th class="text-left px-4 py-3 min-w-[320px] whitespace-nowrap">
+                    Lease
+                  </th>
+
+                  <th class="text-center px-3 py-3 w-[90px] whitespace-nowrap">
+                    Period
+                  </th>
+
+                  <th class="text-right px-4 py-3 w-[170px] whitespace-nowrap">
+                    Interest
+                  </th>
+
+                  <th class="text-right px-4 py-3 w-[190px] whitespace-nowrap">
+                    ROU Depreciation
+                  </th>
+
+                  <th class="text-right px-4 py-3 w-[170px] whitespace-nowrap">
+                    Total IFRS
+                  </th>
+
+                  <th class="text-center px-3 py-3 w-[120px] whitespace-nowrap">
+                    Status
+                  </th>
+
+                  <th class="text-right px-4 py-3 w-[260px] whitespace-nowrap">
+                    Action
+                  </th>
+
                 </tr>
               </thead>
               <tbody id="lmAmortTableBody">
