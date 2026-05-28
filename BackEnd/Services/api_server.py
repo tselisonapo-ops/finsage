@@ -3810,6 +3810,35 @@ def api_journal(company_id: int):
 
         journal_id = db_service.post_journal_with_overdraft(company_id, entry)
 
+        # ✅ Link manual journal back to lease_schedule when journal is IFRS16 monthly amortisation
+        try:
+            src = (entry.get("source") or "").strip()
+            source_id = entry.get("source_id")
+
+            if src == "lease_monthly" and source_id:
+                # source_id should be lease_schedule.id
+                sched = db_service.fetch_one(
+                    f"""
+                    SELECT id, lease_id, period_no
+                    FROM company_{company_id}.lease_schedule
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), int(source_id)),
+                )
+
+                if sched:
+                    db_service.mark_lease_schedule_month_posted(
+                        int(company_id),
+                        schedule_id=int(sched["id"]),
+                        lease_id=int(sched["lease_id"]),
+                        journal_id=int(journal_id),
+                    )
+
+        except Exception:
+            current_app.logger.exception("Failed to link manual IFRS16 journal to lease schedule")
+            
         # ✅ company base currency (no circular import risk if you already can call this here)
         try:
             ctx = get_company_context(db_service, company_id) or {}

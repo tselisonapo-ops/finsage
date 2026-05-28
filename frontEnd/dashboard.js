@@ -15757,6 +15757,8 @@ async function postJournalBatch() {
     gross_amount: totalDr,
     net_amount: +(totalDr - vatTotal).toFixed(2),
     vat_amount: +vatTotal.toFixed(2),
+    source: window.__JRNL_SOURCE || undefined,
+    source_id: window.__JRNL_SOURCE_ID || undefined,
     lines: manualLines.concat(vatLines),
   };
 
@@ -16628,7 +16630,8 @@ function loadJournalIntoLines(det, { mode = "replace" } = {}) {
   const d = String(det.date || "").slice(0, 10);
   const ref = String(det.ref || "");
   const desc = String(det.description || "");
-
+  window.__JRNL_SOURCE = det.source || "";
+  window.__JRNL_SOURCE_ID = det.source_id || null;
   const elDate = document.getElementById("jrnlDate");
   const elRef  = document.getElementById("jrnlRef");
   const elNarr = document.getElementById("jrnlNarr");
@@ -29230,6 +29233,8 @@ function loadMonthlyIFRSPreviewIntoJournal(r) {
     date: String(r.period_end || "").slice(0, 10),
     ref: `LEASE-${leaseId}-P${periodNo}`,
     description: `IFRS 16 monthly posting – ${(r.lease_name || `Lease ${leaseId}`)} – P${periodNo}`,
+    source: "lease_monthly",
+    source_id: Number(r.schedule_id || r.id || 0),
     lines: (r.preview_journal_lines || []).map(ln => ({
       account_code: ln.account_code,
       debit: ln.debit,
@@ -29271,6 +29276,10 @@ async function openLeaseMonthPreviewOnJournal(cid, leaseId, as_of) {
     date: String(row.period_end || "").slice(0, 10),
     ref: `LEASE-${leaseId}-P${Number(row.period_no || 0)}`,
     description: `IFRS 16 monthly posting – ${(row.lease_name || `Lease ${leaseId}`)} – P${Number(row.period_no || 0)}`,
+
+    source: "lease_monthly",
+    source_id: Number(row.schedule_id || row.id || 0),
+
     lines: (row.preview_journal_lines || []).map(ln => ({
       account_code: ln.account_code,
       debit: ln.debit,
