@@ -28521,7 +28521,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
               data-due="${esc(String(due))}"
               ${isPaid ? "disabled" : ""}
             >
-              ${isPaid ? "Paid" : isPaymentReversed ? "Pay again" : "Pay"}
+              ${isPaid ? "Paid" : isPaymentReversed ? "Pay again" : "Record Period Payment"}
             </button>
           </td>
         </tr>
@@ -28558,7 +28558,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
                 data-period-no="${esc(String(periodNo))}"
                 ${isPosted ? "disabled" : ""}
               >
-                ${isPosted ? "Posted" : "Preview IFRS 16"}
+                ${isPosted ? "Posted" : "Preview Period Amortization"}
               </button>
             </td>
           </tr>
