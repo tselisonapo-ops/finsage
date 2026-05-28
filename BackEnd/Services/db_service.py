@@ -24128,6 +24128,12 @@ class DatabaseService:
                 l.date,
                 l.ref,
                 l.account,
+                c.name AS account_name,
+                c.section AS account_section,
+                c.category AS account_category,
+                c.subcategory AS account_subcategory,
+                c.role AS account_role,
+                c.reporting_description AS account_reporting_description,
                 l.debit,
                 l.credit,
                 l.memo,
@@ -24135,7 +24141,10 @@ class DatabaseService:
                 j.description AS journal_description
             FROM {schema}.ledger l
             LEFT JOIN {schema}.journal j
-            ON j.id = l.journal_id
+                ON j.id = l.journal_id
+            LEFT JOIN {schema}.coa c
+                ON c.company_id = l.company_id
+            AND c.code = l.account
             WHERE l.account = %s
             {date_filter}
             ORDER BY l.date ASC, l.id ASC;
@@ -24165,6 +24174,12 @@ class DatabaseService:
                 l.date,
                 l.ref,
                 l.account,
+                c.name AS account_name,
+                c.section AS account_section,
+                c.category AS account_category,
+                c.subcategory AS account_subcategory,
+                c.role AS account_role,
+                c.reporting_description AS account_reporting_description,
                 l.debit,
                 l.credit,
                 l.memo,
@@ -24172,13 +24187,15 @@ class DatabaseService:
                 j.description AS journal_description
             FROM {schema}.ledger l
             LEFT JOIN {schema}.journal j
-            ON j.id = l.journal_id
+                ON j.id = l.journal_id
+            LEFT JOIN {schema}.coa c
+                ON c.company_id = l.company_id
+            AND c.code = l.account
             WHERE 1=1
             {date_filter}
             ORDER BY l.date ASC, l.account ASC, l.id ASC;
         """
         return self.fetch_all(sql, tuple(params))
-
 
     def update_trial_balance(self, company_id: int, line: dict, cur=None) -> None:
         schema = self.company_schema(company_id)
@@ -27167,12 +27184,23 @@ class DatabaseService:
 
     def list_lease_payments(self, company_id: int, lease_id: int, cur=None) -> list[dict]:
         schema = f"company_{int(company_id)}"
+
         return self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.lease_payments
-            WHERE lease_id=%s
-            ORDER BY payment_date DESC, id DESC;
-        """, (int(lease_id),), cur=cur) or []
+            SELECT
+                p.*,
+                COALESCE(NULLIF(p.notes, ''), NULLIF(j.description, ''), '') AS description,
+                j.ref AS journal_ref,
+                j.description AS journal_description
+
+            FROM {schema}.lease_payments p
+            LEFT JOIN {schema}.journal j
+                ON j.id = p.posted_journal_id
+
+            WHERE p.company_id = %s
+            AND p.lease_id = %s
+
+            ORDER BY p.payment_date DESC, p.id DESC;
+        """, (int(company_id), int(lease_id)), cur=cur) or []
 
     def post_lease_payment(
         self,
