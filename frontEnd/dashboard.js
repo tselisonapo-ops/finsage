@@ -27932,13 +27932,14 @@ window.fillBankAccountSelect = fillBankAccountSelect;
         <table class="w-full min-w-[980px] text-xs table-fixed">
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th class="px-3 py-2 text-left w-[120px]">Date</th>
-              <th class="px-3 py-2 text-left w-[140px]">Ref</th>
-              <th class="px-3 py-2 text-left">Description</th>
-              <th class="px-3 py-2 text-right w-[115px]">Amount</th>
+              <th class="px-3 py-2 text-left w-[115px]">Date</th>
+              <th class="px-3 py-2 text-left w-[120px]">Ref</th>
+              <th class="px-3 py-2 text-left w-[210px]">Description</th>
+              <th class="px-3 py-2 text-right w-[110px]">Amount</th>
+              <th class="px-3 py-2 text-right w-[100px]">VAT</th>
               <th class="px-3 py-2 text-right w-[110px]">Interest</th>
               <th class="px-3 py-2 text-right w-[110px]">Principal</th>
-              <th class="px-3 py-2 text-center w-[80px]">Journal</th>
+              <th class="px-3 py-2 text-center w-[75px]">Journal</th>
             </tr>
           </thead>
           <tbody>
@@ -27962,6 +27963,7 @@ window.fillBankAccountSelect = fillBankAccountSelect;
                   <td class="px-3 py-2 text-slate-700 truncate">${esc(String(r.reference || ""))}</td>
                   <td class="px-3 py-2 text-slate-600 truncate">${esc(String(desc || ""))}</td>
                   <td class="px-3 py-2 text-right tabular-nums">${Number(r.amount_gross || r.amount || 0).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right tabular-nums">${Number(r.vat_amount || 0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-right tabular-nums">${Number(r.interest_amount || 0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-right tabular-nums">${Number(r.principal_amount || 0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-center">
