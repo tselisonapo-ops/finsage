@@ -26690,13 +26690,33 @@ window.renderLeaseMonthlyDueView = function renderLeaseMonthlyDueView(mount) {
         <table class="min-w-[980px] w-full text-sm">
           <thead class="bg-slate-50 border-b">
             <tr>
-              <th class="text-left p-2 whitespace-nowrap">Lease</th>
-              <th class="text-left p-2 w-[100px] whitespace-nowrap">Period</th>
-              <th class="text-right p-2 w-[140px] whitespace-nowrap">Interest</th>
-              <th class="text-right p-2 w-[160px] whitespace-nowrap">ROU Depreciation</th>
-              <th class="text-right p-2 w-[140px] whitespace-nowrap">Total IFRS</th>
-              <th class="text-left p-2 w-[120px] whitespace-nowrap">Status</th>
-              <th class="text-right p-2 w-[180px] whitespace-nowrap">Action</th>
+              <th class="text-left px-4 py-3 whitespace-nowrap min-w-[260px]">
+                Lease
+              </th>
+
+              <th class="text-center px-3 py-3 whitespace-nowrap w-[90px]">
+                Period
+              </th>
+
+              <th class="text-right px-4 py-3 whitespace-nowrap w-[160px]">
+                Interest
+              </th>
+
+              <th class="text-right px-4 py-3 whitespace-nowrap w-[190px]">
+                ROU Depreciation
+              </th>
+
+              <th class="text-right px-4 py-3 whitespace-nowrap w-[170px]">
+                Total IFRS
+              </th>
+
+              <th class="text-center px-3 py-3 whitespace-nowrap w-[120px]">
+                Status
+              </th>
+
+              <th class="text-right px-4 py-3 whitespace-nowrap w-[220px]">
+                Action
+              </th>
             </tr>
           </thead>
           <tbody id="lmAmortTableBody">
@@ -28540,29 +28560,61 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
         const isPosted =
           !!r.posted || !!r.is_posted || Number(r.posted_journal_id || 0) > 0;
 
-        return `
-          <tr class="border-t ${isPosted ? "bg-slate-100 text-slate-400" : ""}">
-            <td class="p-2">${esc(String(r.lease_name || `Lease ${leaseId}`))}</td>
-            <td class="p-2">${esc(String(periodNo || ""))}</td>
-            <td class="p-2 text-right tabular-nums">${fmtMoney(interest)}</td>
-            <td class="p-2 text-right tabular-nums">${fmtMoney(depreciation)}</td>
-            <td class="p-2 text-right tabular-nums">${fmtMoney(totalIfrs)}</td>
-            <td class="p-2">${isPosted ? "Posted" : "Pending"}</td>
-            <td class="p-2 text-right">
-              <button
-                class="px-2 py-1 rounded text-xs ${
-                  isPosted ? "bg-slate-300 text-white cursor-not-allowed" : "bg-slate-900 text-white"
-                }"
-                data-lm-post="1"
-                data-lease-id="${esc(String(leaseId))}"
-                data-period-no="${esc(String(periodNo))}"
-                ${isPosted ? "disabled" : ""}
-              >
-                ${isPosted ? "Posted" : "Preview Period Amortization"}
-              </button>
-            </td>
-          </tr>
-        `;
+      return `
+        <tr class="border-t hover:bg-slate-50 transition-colors ${
+          isPosted ? "bg-slate-100 text-slate-400" : ""
+        }">
+
+          <td class="px-4 py-3">
+            <div class="font-medium">
+              ${esc(String(r.lease_name || `Lease ${leaseId}`))}
+            </div>
+          </td>
+
+          <td class="px-3 py-3 text-center">
+            ${esc(String(periodNo || ""))}
+          </td>
+
+          <td class="px-4 py-3 text-right tabular-nums font-medium">
+            ${fmtMoney(interest)}
+          </td>
+
+          <td class="px-4 py-3 text-right tabular-nums font-medium">
+            ${fmtMoney(depreciation)}
+          </td>
+
+          <td class="px-4 py-3 text-right tabular-nums font-semibold">
+            ${fmtMoney(totalIfrs)}
+          </td>
+
+          <td class="px-3 py-3 text-center">
+            <span class="inline-flex items-center rounded-full px-2 py-1 text-[11px] ${
+              isPosted
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-amber-100 text-amber-700"
+            }">
+              ${isPosted ? "Posted" : "Pending"}
+            </span>
+          </td>
+
+          <td class="px-4 py-3 text-right">
+            <button
+              class="px-3 py-1.5 rounded-lg text-xs font-medium shadow-sm ${
+                isPosted
+                  ? "bg-slate-300 text-white cursor-not-allowed"
+                  : "bg-[var(--fs-navy)] text-white hover:opacity-90"
+              }"
+              data-lm-post="1"
+              data-lease-id="${esc(String(leaseId))}"
+              data-period-no="${esc(String(periodNo))}"
+              ${isPosted ? "disabled" : ""}
+            >
+              ${isPosted ? "Posted" : "Preview Period Amortization"}
+            </button>
+          </td>
+
+        </tr>
+      `;
       }).join("");
     }
 
