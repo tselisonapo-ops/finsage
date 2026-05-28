@@ -1313,26 +1313,24 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
                 cur=cur,
             )
             if already:
-                # If markers exist, backfill them (optional, but helps your UI)
-                try:
-                    cur.execute(
-                        f"""
-                        UPDATE {schema}.lease_schedule
-                        SET posted_journal_id=%s,
-                            posted_at=COALESCE(posted_at, NOW())
-                        WHERE id=%s
-                        """,
-                        (int(already["id"]), schedule_id),
-                    )
-                except Exception:
-                    # ignore if columns don't exist yet
-                    pass
+                existing_journal_id = int(already["id"])
+
+                db_service.mark_lease_schedule_month_posted(
+                    int(company_id),
+                    schedule_id=int(schedule_id),
+                    lease_id=int(lease_id),
+                    journal_id=existing_journal_id,
+                    cur=cur,
+                    conn=conn,
+                )
 
                 conn.commit()
+
                 return jsonify({
                     "error": "Already posted for this period",
-                    "journal_id": int(already["id"]),
+                    "journal_id": existing_journal_id,
                     "schedule_id": schedule_id,
+                    "linked_existing": True,
                 }), 409
             
             # 3b) Fallback idempotency check by ref (for older journals without source/source_id)
@@ -1343,22 +1341,24 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
             )
 
             if already2:
-                cur.execute(
-                    f"""
-                    UPDATE {schema}.lease_schedule
-                    SET posted_journal_id=%s,
-                        posted_at=COALESCE(posted_at, NOW())
-                    WHERE id=%s
-                    """,
-                    (int(already2["id"]), schedule_id),
+                existing_journal_id = int(already2["id"])
+
+                db_service.mark_lease_schedule_month_posted(
+                    int(company_id),
+                    schedule_id=int(schedule_id),
+                    lease_id=int(lease_id),
+                    journal_id=existing_journal_id,
+                    cur=cur,
+                    conn=conn,
                 )
 
                 conn.commit()
 
                 return jsonify({
                     "error": "Already posted for this period",
-                    "journal_id": int(already2["id"]),
+                    "journal_id": existing_journal_id,
                     "schedule_id": schedule_id,
+                    "linked_existing": True,
                 }), 409
 
             # 4) build lines (must return list of {account_code, debit, credit, memo})
