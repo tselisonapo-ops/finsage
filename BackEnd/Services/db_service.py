@@ -28890,7 +28890,68 @@ class DatabaseService:
             n = int(cur2.rowcount or 0)
             conn.commit()
             return n
-    
+    def mark_lease_schedule_month_posted(
+        self,
+        company_id: int,
+        *,
+        schedule_id: int,
+        lease_id: int,
+        journal_id: int,
+        cur=None,
+        conn=None,
+    ) -> None:
+        schema = f"company_{int(company_id)}"
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.lease_schedule
+            SET posted_journal_id = %s,
+                posted_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND lease_id = %s
+            AND COALESCE(posted_journal_id, 0) = 0;
+            """,
+            (
+                int(journal_id),
+                int(company_id),
+                int(schedule_id),
+                int(lease_id),
+            ),
+            cur=cur,
+            conn=conn,
+            commit=False,
+        )
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.journal
+            SET source = 'lease_monthly',
+                source_id = %s
+            WHERE company_id = %s
+            AND id = %s;
+            """,
+            (int(schedule_id), int(company_id), int(journal_id)),
+            cur=cur,
+            conn=conn,
+            commit=False,
+        )
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.journal_lines
+            SET source = 'leases',
+                source_id = %s
+            WHERE company_id = %s
+            AND journal_id = %s
+            AND (source IS NULL OR source = '' OR source_id IS NULL);
+            """,
+            (int(lease_id), int(company_id), int(journal_id)),
+            cur=cur,
+            conn=conn,
+            commit=False,
+        )
+
     def get_ifrs16_disclosure_strict(
         self,
         company_id: int,

@@ -1412,15 +1412,13 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
             if journal_id <= 0:
                 raise ValueError("Failed to post monthly lease journal")
 
-            cur.execute(
-                f"""
-                UPDATE {schema}.lease_schedule
-                SET posted_journal_id=%s,
-                    posted_at=NOW()
-                WHERE id=%s
-                AND COALESCE(posted_journal_id,0)=0
-                """,
-                (journal_id, schedule_id),
+            db_service.mark_lease_schedule_month_posted(
+                int(company_id),
+                schedule_id=int(schedule_id),
+                lease_id=int(lease_id),
+                journal_id=int(journal_id),
+                cur=cur,
+                conn=conn,
             )
 
             db_service.sync_lease_payment_split_from_schedule(
@@ -1429,9 +1427,6 @@ def post_lease_month(company_id: int, lease_id: int, period_no: int):
                 lease_id=int(lease_id),
                 schedule_id=int(schedule_id),
             )
-
-            if cur.rowcount == 0:
-                raise ValueError("Failed to mark schedule as posted")
                 
             # 8) audit (best-effort)
             try:
