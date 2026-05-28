@@ -27915,28 +27915,38 @@ window.fillBankAccountSelect = fillBankAccountSelect;
 
     hostEl.innerHTML = `
       <div class="border rounded overflow-auto w-full">
-        <table class="w-full min-w-[980px] text-xs table-auto">
+        <table class="w-full min-w-[980px] text-xs table-fixed">
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th class="px-2 py-2 text-left w-[110px]">Date</th>
-              <th class="px-2 py-2 text-left">Ref</th>
-              <th class="px-2 py-2 text-right w-28">Amount</th>
-              <th class="px-2 py-2 text-right w-24">Interest</th>
-              <th class="px-2 py-2 text-right w-24">Principal</th>
-              <th class="px-2 py-2 text-left w-28">Journal</th>
+              <th class="px-3 py-2 text-left w-[170px]">Date</th>
+              <th class="px-3 py-2 text-left">Ref</th>
+              <th class="px-3 py-2 text-right w-[150px]">Amount</th>
+              <th class="px-3 py-2 text-right w-[150px]">Interest</th>
+              <th class="px-3 py-2 text-right w-[150px]">Principal</th>
+              <th class="px-3 py-2 text-center w-[110px]">Journal</th>
             </tr>
           </thead>
           <tbody>
             ${rows.map(r => {
               const jid = r.journal_id || r.posted_journal_id || "";
+
+              const rawDate = r.payment_date || r.date || "";
+              const niceDate = rawDate
+                ? new Date(rawDate).toLocaleDateString("en-GB", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "";
+
               return `
-                <tr class="border-b border-slate-100">
-                  <td class="px-2 py-2">${esc(String(r.payment_date || r.date || ""))}</td>
-                  <td class="px-2 py-2 text-slate-700">${esc(String(r.reference || ""))}</td>
-                  <td class="px-2 py-2 text-right tabular-nums">${Number(r.amount_gross || r.amount || 0).toFixed(2)}</td>
-                  <td class="px-2 py-2 text-right tabular-nums">${Number(r.interest_amount || 0).toFixed(2)}</td>
-                  <td class="px-2 py-2 text-right tabular-nums">${Number(r.principal_amount || 0).toFixed(2)}</td>
-                  <td class="px-2 py-2">
+                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                  <td class="px-3 py-2 whitespace-nowrap">${esc(niceDate)}</td>
+                  <td class="px-3 py-2 text-slate-700 truncate">${esc(String(r.reference || ""))}</td>
+                  <td class="px-3 py-2 text-right tabular-nums">${Number(r.amount_gross || r.amount || 0).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right tabular-nums">${Number(r.interest_amount || 0).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right tabular-nums">${Number(r.principal_amount || 0).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center">
                     ${jid ? `<button data-journal="${esc(String(jid))}" class="text-[11px] text-blue-600 hover:underline">${esc(String(jid))}</button>` : ""}
                   </td>
                 </tr>
