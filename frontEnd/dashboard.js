@@ -27739,7 +27739,6 @@ window.fillBankAccountSelect = fillBankAccountSelect;
     const rows = lines.map((ln) => {
       let memo = String(ln.memo || ln.description || "");
 
-      // ❌ REMOVE duplicated reference from memo
       if (ref) {
         const safeRef = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         memo = memo.replace(new RegExp(`\\s*\\[?${safeRef}\\]?`, "gi"), "").trim();
@@ -27754,6 +27753,12 @@ window.fillBankAccountSelect = fillBankAccountSelect;
       };
     });
 
+    rows.sort((a, b) => {
+      const aIsCredit = Number(a.credit || 0) > 0;
+      const bIsCredit = Number(b.credit || 0) > 0;
+      return Number(aIsCredit) - Number(bIsCredit);
+    });
+
     const totalDr = rows.reduce((a, r) => a + (r.debit || 0), 0);
     const totalCr = rows.reduce((a, r) => a + (r.credit || 0), 0);
     const balanced = Math.abs(totalDr - totalCr) < 0.005;
@@ -27763,24 +27768,32 @@ window.fillBankAccountSelect = fillBankAccountSelect;
         <table class="min-w-[980px] w-full text-xs">
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th class="px-2 py-2 text-left w-[220px]">Account</th>
+              <th class="px-2 py-2 text-left w-[240px]">Account</th>
               <th class="px-2 py-2 text-left w-[120px]">Ref</th>
               <th class="px-2 py-2 text-left">Memo</th>
               <th class="px-2 py-2 text-right w-32">Debit</th>
               <th class="px-2 py-2 text-right w-32">Credit</th>
             </tr>
           </thead>
+
           <tbody>
-            ${rows.map(r => `
-              <tr class="border-b border-slate-100">
-                <td class="px-2 py-2 whitespace-nowrap">${esc(r.account_label)}</td>
-                <td class="px-2 py-2 text-slate-500 whitespace-nowrap">${esc(r.ref)}</td>
-                <td class="px-2 py-2 text-slate-600">${esc(r.memo)}</td>
-                <td class="px-2 py-2 text-right tabular-nums">${r.debit ? r.debit.toFixed(2) : ""}</td>
-                <td class="px-2 py-2 text-right tabular-nums">${r.credit ? r.credit.toFixed(2) : ""}</td>
-              </tr>
-            `).join("")}
+            ${rows.map(r => {
+              const isCredit = Number(r.credit || 0) > 0;
+
+              return `
+                <tr class="border-b border-slate-100 ${isCredit ? "bg-slate-50/50" : ""}">
+                  <td class="px-2 py-2 whitespace-nowrap ${isCredit ? "pl-8 text-slate-600" : "font-medium"}">
+                    ${isCredit ? "↳ " : ""}${esc(r.account_label)}
+                  </td>
+                  <td class="px-2 py-2 text-slate-500 whitespace-nowrap">${esc(r.ref)}</td>
+                  <td class="px-2 py-2 text-slate-600">${esc(r.memo)}</td>
+                  <td class="px-2 py-2 text-right tabular-nums">${r.debit ? r.debit.toFixed(2) : ""}</td>
+                  <td class="px-2 py-2 text-right tabular-nums">${r.credit ? r.credit.toFixed(2) : ""}</td>
+                </tr>
+              `;
+            }).join("")}
           </tbody>
+
           <tfoot class="bg-slate-50 border-t border-slate-200">
             <tr>
               <td class="px-2 py-2 text-right font-semibold" colspan="3">
@@ -27908,6 +27921,7 @@ window.fillBankAccountSelect = fillBankAccountSelect;
 
   function renderHistory(hostEl, rows, { onOpenJournal } = {}) {
     if (!hostEl) return;
+
     if (!Array.isArray(rows) || !rows.length) {
       hostEl.innerHTML = `<div class="text-xs text-slate-500 px-3 py-2">No payments yet</div>`;
       return;
@@ -27918,12 +27932,13 @@ window.fillBankAccountSelect = fillBankAccountSelect;
         <table class="w-full min-w-[980px] text-xs table-fixed">
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th class="px-3 py-2 text-left w-[170px]">Date</th>
-              <th class="px-3 py-2 text-left">Ref</th>
-              <th class="px-3 py-2 text-right w-[150px]">Amount</th>
-              <th class="px-3 py-2 text-right w-[150px]">Interest</th>
-              <th class="px-3 py-2 text-right w-[150px]">Principal</th>
-              <th class="px-3 py-2 text-center w-[110px]">Journal</th>
+              <th class="px-3 py-2 text-left w-[120px]">Date</th>
+              <th class="px-3 py-2 text-left w-[140px]">Ref</th>
+              <th class="px-3 py-2 text-left">Description</th>
+              <th class="px-3 py-2 text-right w-[115px]">Amount</th>
+              <th class="px-3 py-2 text-right w-[110px]">Interest</th>
+              <th class="px-3 py-2 text-right w-[110px]">Principal</th>
+              <th class="px-3 py-2 text-center w-[80px]">Journal</th>
             </tr>
           </thead>
           <tbody>
@@ -27939,10 +27954,13 @@ window.fillBankAccountSelect = fillBankAccountSelect;
                   })
                 : "";
 
+              const desc = r.description || r.notes || r.memo || "";
+
               return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50">
                   <td class="px-3 py-2 whitespace-nowrap">${esc(niceDate)}</td>
                   <td class="px-3 py-2 text-slate-700 truncate">${esc(String(r.reference || ""))}</td>
+                  <td class="px-3 py-2 text-slate-600 truncate">${esc(String(desc || ""))}</td>
                   <td class="px-3 py-2 text-right tabular-nums">${Number(r.amount_gross || r.amount || 0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-right tabular-nums">${Number(r.interest_amount || 0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-right tabular-nums">${Number(r.principal_amount || 0).toFixed(2)}</td>
