@@ -977,9 +977,8 @@ def create_asset(cur, company_id, payload):
             payload["acquisition_date"], payload.get("available_for_use_date"),
             cost, residual_value,
             vat_input_claimable, vat_recovery_reason,
-            payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
-            payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
-
+            payload.get("depreciation_method", "SL"), 
+            payload.get("useful_life_months", 0),
             payload.get("rb_rate_percent"),
             payload.get("uop_total_units"), payload.get("uop_unit_name"),
             uop_usage_mode, uop_opening_reading,
