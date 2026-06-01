@@ -9,6 +9,29 @@ from flask import current_app
 def _q(schema: str, sql: str) -> str:
     return sql.replace("{schema}", schema)
 
+VAT_RATE = Decimal("0.15")
+
+def _q2(x):
+    return Decimal(str(x or 0)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
+def _vat_split(gross):
+    gross = Decimal(str(gross or 0))
+
+    if gross <= 0:
+        return Decimal("0.00"), Decimal("0.00"), gross
+
+    net = (
+        gross / (Decimal("1.00") + VAT_RATE)
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    vat = (
+        gross - net
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    return net, vat, gross
 
 def get_asset_with_balances(cur, company_id, asset_id, as_at=None):
     schema = company_schema(company_id)
@@ -861,6 +884,8 @@ def create_asset(cur, company_id, payload):
     asset_class = str(payload.get("asset_class") or "").strip()
     asset_name = str(payload.get("asset_name") or "").strip()
     category = str(payload.get("category") or "").strip() or None
+    vat_input_claimable = bool(payload.get("vat_input_claimable") or False)
+    vat_recovery_reason = (payload.get("vat_recovery_reason") or "").strip() or None
 
     # IAS 23 qualifying asset policy
     if payload.get("is_qualifying_asset") is True:
@@ -897,6 +922,8 @@ def create_asset(cur, company_id, payload):
         created_by_user_id,
         updated_by_user_id,
         acquisition_date, available_for_use_date, cost, residual_value,
+        vat_input_claimable,
+        vat_recovery_reason,
         depreciation_method, useful_life_months,
         rb_rate_percent,
         uop_total_units, uop_unit_name,
@@ -920,7 +947,7 @@ def create_asset(cur, company_id, payload):
             %s,%s,%s,%s,%s,%s,%s,%s,
             %s, %s, %s, %s, %s,
             %s,%s,%s,%s,
-            %s,%s,
+            %s,%s,%s,%s,
             %s,
             %s,%s,
             %s,%s,
@@ -937,36 +964,39 @@ def create_asset(cur, company_id, payload):
             %s,%s   -- 👈 ADD THESE TWO (new fields)
         )
       RETURNING id
-    """), (
-      company_id,
-      payload["asset_code"], asset_name, asset_class, asset_class_group,
-      category, payload.get("location"), payload.get("serial_no"), payload.get("notes"),
-        payload.get("source_company_id"),
-        payload.get("engagement_company_id"),
-        payload.get("engagement_id"),
-        payload.get("created_by_user_id"),
-        payload.get("updated_by_user_id"),
-      payload["acquisition_date"], payload.get("available_for_use_date"),
-      cost, residual_value,
-      payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
+    """), 
+        (
+            company_id,
+            payload["asset_code"], asset_name, asset_class, asset_class_group,
+            category, payload.get("location"), payload.get("serial_no"), payload.get("notes"),
+            payload.get("source_company_id"),
+            payload.get("engagement_company_id"),
+            payload.get("engagement_id"),
+            payload.get("created_by_user_id"),
+            payload.get("updated_by_user_id"),
+            payload["acquisition_date"], payload.get("available_for_use_date"),
+            cost, residual_value,
+            vat_input_claimable, vat_recovery_reason,
+            payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
+            payload.get("depreciation_method", "SL"), payload.get("useful_life_months", 0),
 
-      payload.get("rb_rate_percent"),
-      payload.get("uop_total_units"), payload.get("uop_unit_name"),
-      uop_usage_mode, uop_opening_reading,
+            payload.get("rb_rate_percent"),
+            payload.get("uop_total_units"), payload.get("uop_unit_name"),
+            uop_usage_mode, uop_opening_reading,
 
-      opening_as_at, opening_cost, opening_accum_dep, opening_impairment,
+            opening_as_at, opening_cost, opening_accum_dep, opening_impairment,
 
-      payload.get("status", "active"),
-      payload.get("supplier_id"), payload.get("acquisition_ref"),
-      payload.get("asset_account_code"), payload.get("accum_dep_account_code"), payload.get("dep_expense_account_code"),
-      payload.get("disposal_gain_account_code"), payload.get("disposal_loss_account_code"),
-      payload.get("measurement_basis", "cost"), payload.get("revaluation_reserve_account_code"),
-      payload.get("revaluation_surplus_to_pnl_account_code"), payload.get("revaluation_deficit_pnl_account_code"),
-      payload.get("impairment_loss_account_code"), payload.get("impairment_reversal_account_code"),
-      payload.get("held_for_sale_account_code"),
-      bool(payload.get("is_qualifying_asset") or False),
-      payload.get("ready_for_use_date") or None,
-    ))
+            payload.get("status", "active"),
+            payload.get("supplier_id"), payload.get("acquisition_ref"),
+            payload.get("asset_account_code"), payload.get("accum_dep_account_code"), payload.get("dep_expense_account_code"),
+            payload.get("disposal_gain_account_code"), payload.get("disposal_loss_account_code"),
+            payload.get("measurement_basis", "cost"), payload.get("revaluation_reserve_account_code"),
+            payload.get("revaluation_surplus_to_pnl_account_code"), payload.get("revaluation_deficit_pnl_account_code"),
+            payload.get("impairment_loss_account_code"), payload.get("impairment_reversal_account_code"),
+            payload.get("held_for_sale_account_code"),
+            bool(payload.get("is_qualifying_asset") or False),
+            payload.get("ready_for_use_date") or None,
+        ))
     return cur.fetchone()["id"]
 
 # ✅ whitelist for safe updates
@@ -974,7 +1004,8 @@ _ASSET_UPDATE_ALLOWED = {
     "asset_code", "asset_name", "asset_class", "asset_class_group", "category",
     "location", "serial_no", "notes",
     "acquisition_date", "available_for_use_date",
-    "cost", "residual_value",
+    "cost", "residual_value", "vat_input_claimable",
+    "vat_recovery_reason",
     "depreciation_method", "useful_life_months",
     "rb_rate_percent", "uop_total_units", "uop_unit_name",
     "status", "disposed_date",
@@ -1160,6 +1191,31 @@ def create_acquisition(cur, company_id, asset_id, payload):
 
     amount_is_gross = bool(amount_is_gross)
 
+    vat_input_claimable = bool(payload.get("vat_input_claimable") or False)
+    vat_recovery_reason = (payload.get("vat_recovery_reason") or "").strip() or None
+
+    if not vat_recovery_reason:
+        raise Exception("vat_recovery_reason is required")
+
+    net_amount = None
+    vat_amount = Decimal("0.00")
+    gross_amount = None
+
+    if funding == "grni":
+        net_amount = _q2(amt)
+        gross_amount = net_amount
+        vat_amount = Decimal("0.00")
+    else:
+        gross_amount = _q2(amt)
+        net_calc, vat_calc, _ = _vat_split(gross_amount)
+
+        if vat_input_claimable:
+            net_amount = net_calc
+            vat_amount = vat_calc
+        else:
+            net_amount = gross_amount
+            vat_amount = Decimal("0.00")
+
     if funding == "grni":
         # GRNI must be NET (invoice not received yet)
         if amount_is_gross:
@@ -1235,15 +1291,23 @@ def create_acquisition(cur, company_id, asset_id, payload):
         raise Exception("posting_date is required")
 
     cur.execute(_q(schema, """
-      INSERT INTO {schema}.asset_acquisitions(
+    INSERT INTO {schema}.asset_acquisitions(
         company_id, asset_id,
         source_company_id,
         engagement_company_id,
         engagement_id,
         created_by_user_id,
         updated_by_user_id,
+
         posting_date,
-        acquisition_date, amount,
+        acquisition_date,
+        amount,
+
+        net_amount,
+        vat_amount,
+        gross_amount,
+        vat_input_claimable,
+        vat_recovery_reason,
 
         funding_source,
         bank_account_id,
@@ -1254,44 +1318,55 @@ def create_acquisition(cur, company_id, asset_id, payload):
         vendor_invoice_no,
         grn_no,
 
-        reference, notes,
-        status,
-
-        source_company_id,
-        engagement_company_id,
-        engagement_id,
-        created_by_user_id,
-        updated_by_user_id
-      )
-      VALUES (
+        reference,
+        notes,
+        status
+    )
+    VALUES (
+        %s,%s,
         %s,%s,%s,%s,%s,
-        %s,%s,%s,%s,
+
         %s,%s,%s,
-        %s,%s,COALESCE(%s,'draft'),
-        %s,%s,%s,%s,%s
-      )
-      RETURNING id
+
+        %s,%s,%s,%s,%s,
+
+        %s,%s,%s,%s,
+
+        %s,%s,%s,
+
+        %s,%s,COALESCE(%s,'draft')
+    )
+    RETURNING id
     """), (
-      company_id, asset_id,
-      posting_date,
-      payload["acquisition_date"], payload["amount"],
+    company_id, asset_id,
+    payload.get("source_company_id"),
+    payload.get("engagement_company_id"),
+    payload.get("engagement_id"),
+    payload.get("created_by_user_id"),
+    payload.get("updated_by_user_id"),
 
-      funding,
-      bank_account_id,
-      bank_account_code,
-      credit_account_code,
+    posting_date,
+    payload["acquisition_date"],
+    payload["amount"],
 
-      supplier_id,
-      vendor_invoice_no,
-      grn_no,
-        payload.get("source_company_id"),
-        payload.get("engagement_company_id"),
-        payload.get("engagement_id"),
-        payload.get("created_by_user_id"),
-        payload.get("updated_by_user_id"),
-      payload.get("reference"),
-      payload.get("notes"),
-      payload.get("status", "draft"),
+    net_amount,
+    vat_amount,
+    gross_amount,
+    vat_input_claimable,
+    vat_recovery_reason,
+
+    funding,
+    bank_account_id,
+    bank_account_code,
+    credit_account_code,
+
+    supplier_id,
+    vendor_invoice_no,
+    grn_no,
+
+    payload.get("reference"),
+    payload.get("notes"),
+    payload.get("status", "draft"),
     ))
 
     row = cur.fetchone()

@@ -1801,6 +1801,11 @@ def build_asset_acquisition_journal_preview(cur, company_id: int, acq_id: int) -
 
     funding = (acq.get("funding_source") or "").strip().lower()
     amount = _D(acq.get("amount"))
+    vat_input_claimable = bool(acq.get("vat_input_claimable"))
+
+    stored_net = _D(acq.get("net_amount"))
+    stored_vat = _D(acq.get("vat_amount"))
+    stored_gross = _D(acq.get("gross_amount"))
     if amount <= 0:
         raise Exception("Amount must be > 0")
 
@@ -1858,6 +1863,14 @@ def build_asset_acquisition_journal_preview(cur, company_id: int, acq_id: int) -
 
         # amount is VAT-inclusive (paid invoice)
         net, vat, gross = _vat_split(amount)
+        if vat_input_claimable:
+            net = stored_net
+            vat = stored_vat
+            gross = stored_gross
+        else:
+            gross = amount
+            net = gross
+            vat = Decimal("0.00")
 
         lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset (net)"})
         if vat > 0:
@@ -1868,6 +1881,14 @@ def build_asset_acquisition_journal_preview(cur, company_id: int, acq_id: int) -
     elif funding == "vendor_credit":
         # amount is VAT-inclusive (invoice exists -> liability recognised)
         net, vat, gross = _vat_split(amount)
+        if vat_input_claimable:
+            net = stored_net
+            vat = stored_vat
+            gross = stored_gross
+        else:
+            gross = amount
+            net = gross
+            vat = Decimal("0.00")
 
         lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset (net)"})
         if vat > 0:
@@ -1893,6 +1914,14 @@ def build_asset_acquisition_journal_preview(cur, company_id: int, acq_id: int) -
 
         # assume VAT-inclusive by default
         net, vat, gross = _vat_split(amount)
+        if vat_input_claimable:
+            net = stored_net
+            vat = stored_vat
+            gross = stored_gross
+        else:
+            gross = amount
+            net = gross
+            vat = Decimal("0.00")
 
         lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset (net)"})
         if vat > 0:
@@ -2037,6 +2066,11 @@ def post_acquisition(
         raise Exception("posting_date is required before posting acquisition")
 
     amount = _D(acq.get("amount"))
+    vat_input_claimable = bool(acq.get("vat_input_claimable"))
+
+    stored_net = _D(acq.get("net_amount"))
+    stored_vat = _D(acq.get("vat_amount"))
+    stored_gross = _D(acq.get("gross_amount"))
     if amount <= 0:
         raise Exception("amount must be > 0")
 
@@ -2094,8 +2128,14 @@ def post_acquisition(
         add_line(cur, schema, company_id, jid, grni_control_code, "GRNI control (net)", 0, float(_q2(net)), "asset_acquisition", acq["id"])
 
     elif funding == "vendor_credit":
-        gross = amount
-        net, vat, gross = _vat_split(gross)
+        if vat_input_claimable:
+            net = stored_net
+            vat = stored_vat
+            gross = stored_gross
+        else:
+            gross = amount
+            net = gross
+            vat = Decimal("0.00")
 
         add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(net), 0, "asset_acquisition", acq["id"])
         if vat > 0:
@@ -2103,8 +2143,14 @@ def post_acquisition(
         add_line(cur, schema, company_id, jid, ap_control_code, "AP control (gross)", 0, float(_q2(gross)), "asset_acquisition", acq["id"])
 
     elif funding == "bank_cash":
-        gross = amount
-        net, vat, gross = _vat_split(gross)
+        if vat_input_claimable:
+            net = stored_net
+            vat = stored_vat
+            gross = stored_gross
+        else:
+            gross = amount
+            net = gross
+            vat = Decimal("0.00")
 
         bank_gl = _resolve_bank_gl_code()
         add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(net), 0, "asset_acquisition", acq["id"])
@@ -2114,8 +2160,14 @@ def post_acquisition(
 
     else:
         credit_acct = (acq.get("credit_account_code") or "").strip() or "BS_CL_2000"
-        gross = amount
-        net, vat, gross = _vat_split(gross)
+        if vat_input_claimable:
+            net = stored_net
+            vat = stored_vat
+            gross = stored_gross
+        else:
+            gross = amount
+            net = gross
+            vat = Decimal("0.00")
 
         add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(net), 0, "asset_acquisition", acq["id"])
         if vat > 0:

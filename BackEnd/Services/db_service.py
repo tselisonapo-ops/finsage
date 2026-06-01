@@ -12679,6 +12679,10 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS acquisition_ref TEXT NULL; -- invoice/PO/receipt ref
 
         ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS vat_input_claimable BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT;
+
+        ALTER TABLE {schema}.assets
             ADD COLUMN IF NOT EXISTS uop_usage_mode text NULL,
             ADD COLUMN IF NOT EXISTS uop_opening_reading numeric(18,4);
 
@@ -13054,6 +13058,13 @@ class DatabaseService:
 
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.asset_acquisitions
+        ADD COLUMN IF NOT EXISTS vat_input_claimable BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT,
+        ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(18,2);
 
         ALTER TABLE {schema}.asset_acquisitions
         ADD COLUMN IF NOT EXISTS source_company_id INT NULL,

@@ -124,6 +124,17 @@ type CoaRow = {
 
 type DepreciationMethod = "" | "SL" | "RB" | "UOP";
 
+type VatRecoveryReason =
+  | ""
+  | "commercial_vehicle"
+  | "passenger_vehicle_disallowed"
+  | "production_income_use"
+  | "mixed_use"
+  | "dealer_stock"
+  | "rental_fleet"
+  | "taxi_transport"
+  | "not_registered_or_exempt";
+
 const ASSET_CLASS_GROUPS = [
   "Land and buildings",
   "Plant and machinery",
@@ -168,6 +179,10 @@ type CreateAssetPayload = {
   opening_revaluation_surplus?: number | null;
   opening_as_at?: string | null;
   opening_cost?: number | null;
+
+  vat_input_claimable?: boolean;
+  vat_recovery_reason?: VatRecoveryReason | string | null;
+
   opening_accum_dep?: number | null;
   opening_impairment?: number | null;
 
@@ -394,6 +409,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     opening_as_at: "",
     opening_cost: null,
+
+    vat_input_claimable: false,
+    vat_recovery_reason: "",
+
     opening_accum_dep: null,
     opening_impairment: null,
 
@@ -567,6 +586,8 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       available_for_use_date: String(defaults.availableForUseDate || ""),
       is_qualifying_asset: Boolean(defaults.is_qualifying_asset || defaults.isQualifyingAsset || false),
       cost: Number(defaults.cost || 0),
+      vat_input_claimable: Boolean(defaults.vat_input_claimable || defaults.vatInputClaimable || false),
+      vat_recovery_reason: String(defaults.vat_recovery_reason || defaults.vatRecoveryReason || ""),
       residual_value: Number(defaults.residualValue || 0),
 
       opening_as_at: String(defaults.openingAsAt || postingDate || ""),
@@ -705,6 +726,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       return setErr(isOpeningBalance ? "Historical cost must be greater than 0." : "Cost must be greater than 0.");
     }
 
+    if (!String(form.vat_recovery_reason || "").trim()) {
+      return setErr("VAT recovery reason is required.");
+    }
+
     if (!form.depreciation_method) {
       return setErr("Select depreciation method.");
     }
@@ -815,6 +840,8 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
         opening_as_at: isOpeningBalance ? (form.opening_as_at?.trim() || null) : null,
         opening_cost: isOpeningBalance ? Number(form.opening_cost ?? form.cost ?? 0) : null,
+        vat_input_claimable: !!form.vat_input_claimable,
+        vat_recovery_reason: form.vat_recovery_reason?.trim() || null,
         opening_accum_dep: isOpeningBalance ? Number(form.opening_accum_dep ?? 0) : null,
         opening_impairment: isOpeningBalance ? Number(form.opening_impairment ?? 0) : null,
 
@@ -1223,6 +1250,59 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               />
             </div>
           </div>
+          <div style={{ marginTop: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!form.vat_input_claimable}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    vat_input_claimable: e.target.checked,
+                    vat_recovery_reason: e.target.checked
+                      ? p.vat_recovery_reason || "production_income_use"
+                      : "passenger_vehicle_disallowed",
+                  }))
+                }
+              />
+              <span style={{ fontSize: 13, fontWeight: 700 }}>
+                Input VAT claimable
+              </span>
+            </label>
+
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
+              Untick where VAT is not recoverable, for example passenger vehicles not qualifying under VAT rules.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>VAT recovery reason *</div>
+            <select
+              value={String(form.vat_recovery_reason || "")}
+              onChange={(e) =>
+                setForm((p) => ({
+                  ...p,
+                  vat_recovery_reason: e.target.value,
+                }))
+              }
+              style={{
+                width: "100%",
+                border: "1px solid rgba(0,0,0,0.15)",
+                borderRadius: 10,
+                padding: "10px 12px",
+              }}
+            >
+              <option value="">Select VAT reason...</option>
+              <option value="commercial_vehicle">Commercial vehicle / delivery vehicle</option>
+              <option value="production_income_use">Used directly to produce taxable income</option>
+              <option value="mixed_use">Mixed use - review required</option>
+              <option value="dealer_stock">Vehicle dealer stock</option>
+              <option value="rental_fleet">Rental fleet vehicle</option>
+              <option value="taxi_transport">Passenger transport / taxi business</option>
+              <option value="passenger_vehicle_disallowed">Passenger vehicle - input VAT disallowed</option>
+              <option value="not_registered_or_exempt">Not claimable / exempt activity</option>
+            </select>
+          </div>
           {isOpeningBalance ? (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1237,18 +1317,6 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening cost</div>
-                  <input
-                    value={String(form.opening_cost ?? form.cost ?? 0)}
-                    onChange={(e) => setForm((p) => ({ ...p, opening_cost: toNum(e.target.value) }))}
-                    placeholder="0.00"
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                <div>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>Accumulated depreciation *</div>
                   <input
                     value={String(form.opening_accum_dep ?? 0)}
@@ -1257,7 +1325,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                     style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
                   />
                 </div>
+              </div>
 
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>Opening impairment</div>
                   <input
