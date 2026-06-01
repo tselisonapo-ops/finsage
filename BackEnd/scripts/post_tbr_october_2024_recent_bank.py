@@ -139,7 +139,7 @@ def main():
             "account_code": "BS_CA_1000",
             "account": "Cash & Bank",
             "debit": 0,
-            "credit": 19574.43,
+            "credit": 18134.08,
             "memo": "October bank payments and charges"
         },
     ]
