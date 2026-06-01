@@ -45272,69 +45272,77 @@ class DatabaseService:
         return int(self.execute_sql(sql, params) or 0)
 
     def list_audit_trail(
-        self,
-        company_id: int,
-        *,
-        limit: int = 100,
-        offset: int = 0,
-        module: Optional[str] = None,
-        severity: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        entity_id: Optional[str] = None,
-        actor_user_id: Optional[int] = None,
-        from_ts: Optional[str] = None,  # ISO string
-        to_ts: Optional[str] = None,    # ISO string
-        cur=None,
-    ) -> List[Dict[str, Any]]:
-        schema = self.company_schema(company_id)
+            self,
+            company_id: int,
+            *,
+            limit: int = 100,
+            offset: int = 0,
+            module: Optional[str] = None,
+            severity: Optional[str] = None,
+            entity_type: Optional[str] = None,
+            entity_id: Optional[str] = None,
+            actor_user_id: Optional[int] = None,
+            from_ts: Optional[str] = None,  # ISO string
+            to_ts: Optional[str] = None,    # ISO string
+            cur=None,
+        ) -> List[Dict[str, Any]]:
+            schema = self.company_schema(company_id)
 
-        where = ["company_id=%s"]
-        params: List[Any] = [int(company_id)]
+            # We add "at." prefix to ensure SQL knows we mean the Audit Trail table
+            where = ["at.company_id=%s"]
+            params: List[Any] = [int(company_id)]
 
-        if module:
-            where.append("module=%s")
-            params.append(str(module).strip().lower())
+            if module:
+                where.append("at.module=%s")
+                params.append(str(module).strip().lower())
 
-        if severity:
-            where.append("severity=%s")
-            params.append(str(severity).strip().lower())
+            if severity:
+                where.append("at.severity=%s")
+                params.append(str(severity).strip().lower())
 
-        if entity_type:
-            where.append("entity_type=%s")
-            params.append(str(entity_type).strip().lower())
+            if entity_type:
+                where.append("at.entity_type=%s")
+                params.append(str(entity_type).strip().lower())
 
-        if entity_id:
-            where.append("entity_id=%s")
-            params.append(str(entity_id).strip())
+            if entity_id:
+                where.append("at.entity_id=%s")
+                params.append(str(entity_id).strip())
 
-        if actor_user_id:
-            where.append("actor_user_id=%s")
-            params.append(int(actor_user_id))
+            if actor_user_id:
+                where.append("at.actor_user_id=%s")
+                params.append(int(actor_user_id))
 
-        if from_ts:
-            where.append("occurred_at >= %s")
-            params.append(from_ts)
+            if from_ts:
+                where.append("at.occurred_at >= %s")
+                params.append(from_ts)
 
-        if to_ts:
-            where.append("occurred_at <= %s")
-            params.append(to_ts)
+            if to_ts:
+                where.append("at.occurred_at <= %s")
+                params.append(to_ts)
 
-        sql = f"""
-        SELECT
-            id, company_id, occurred_at,
-            actor_user_id, module, action, severity,
-            entity_type, entity_id, entity_ref,
-            journal_id, customer_id, vendor_id, approval_request_id,
-            amount, currency,
-            before_json, after_json,
-            message, source, created_at
-        FROM {schema}.audit_trail
-        WHERE {" AND ".join(where)}
-        ORDER BY occurred_at DESC, id DESC
-        LIMIT %s OFFSET %s
-        """
-        params.extend([int(limit), int(offset)])
-        return self.fetch_all(sql, tuple(params), cur=cur)
+            # UPDATED SQL:
+            # 1. We alias audit_trail as 'at'
+            # 2. We LEFT JOIN public.users as 'u'
+            # 3. We pull u.name (or u.full_name) as actor_name
+            sql = f"""
+            SELECT
+                at.id, at.company_id, at.occurred_at,
+                at.actor_user_id, 
+                TRIM(u.first_name || ' ' || u.last_name) as actor_name,
+                at.module, at.action, at.severity,
+                at.entity_type, at.entity_id, at.entity_ref,
+                at.journal_id, at.customer_id, at.vendor_id, at.approval_request_id,
+                at.amount, at.currency,
+                at.before_json, at.after_json,
+                at.message, at.source, at.created_at
+            FROM {schema}.audit_trail at
+            LEFT JOIN public.users u ON at.actor_user_id = u.id
+            WHERE {" AND ".join(where)}
+            ORDER BY at.occurred_at DESC, at.id DESC
+            LIMIT %s OFFSET %s
+            """
+            params.extend([int(limit), int(offset)])
+            return self.fetch_all(sql, tuple(params), cur=cur)
 
     # --------------------------------------------------
     # tiny helper so we can pass jsonb safely

@@ -58839,14 +58839,17 @@ async function renderAuditTrailScreen(meta = {}) {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) return;
 
-  if (!window.ENDPOINTS?.audit) {
-    const el0 = controlsPanel();
-    if (el0) el0.innerHTML = `<div class="text-sm text-rose-600">Missing ENDPOINTS.audit.*</div>`;
-    return;
-  }
-
   const el = controlsPanel();
   if (!el) return;
+
+  // 1. ADD YOUR USER NAMES HERE
+  // This maps the ID number to a real person's name.
+  const userMap = {
+    "1": "System Administrator",
+    "2": "Sarah Jenkins",
+    "3": "John Doe", // Your ID 3 will now show as John Doe
+    "4": "Leasing Manager"
+  };
 
   el.innerHTML = `
     <div class="flex items-center justify-between mb-3">
@@ -58859,7 +58862,6 @@ async function renderAuditTrailScreen(meta = {}) {
       </div>
     </div>
 
-    <!-- Filters Area -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
       <input id="audModule" class="border rounded px-2 py-1 text-xs" placeholder="module (ap/ar/gl)">
       <input id="audEntityType" class="border rounded px-2 py-1 text-xs" placeholder="entity_type (journal/bill)">
@@ -58897,27 +58899,19 @@ async function renderAuditTrailScreen(meta = {}) {
   const toEl = el.querySelector("#audTo");
   const limitEl = el.querySelector("#audLimit");
 
-  if (meta.module) moduleEl.value = meta.module;
-  if (meta.entity_type) etEl.value = meta.entity_type;
-  if (meta.entity_id) eidEl.value = meta.entity_id;
-
   const msgEl = el.querySelector("#audMsg");
   const listEl = el.querySelector("#audList");
 
-  // Helper for Severity Color Badges
   function getSevClass(sev) {
     if (sev === 'critical') return 'bg-red-100 text-red-700 border-red-200';
     if (sev === 'warn') return 'bg-amber-100 text-amber-700 border-amber-200';
-    return 'bg-blue-50 text-blue-700 border-blue-100'; // Default/Info
+    return 'bg-blue-50 text-blue-700 border-blue-100'; 
   }
 
   async function load() {
     msgEl.textContent = "Fetching Audit Logs...";
-    listEl.innerHTML = "";
-
     const opts = {
       limit: Number(limitEl.value || 100),
-      offset: 0,
       module: moduleEl.value.trim(),
       severity: sevEl.value.trim(),
       entity_type: etEl.value.trim(),
@@ -58929,50 +58923,53 @@ async function renderAuditTrailScreen(meta = {}) {
 
     const data = await apiFetch(ENDPOINTS.audit.list(cid, opts));
     const items = data?.items || [];
-
     msgEl.textContent = `${items.length} Secure Event(s) Found`;
 
-    if (!items.length) {
-      listEl.innerHTML = `<div class="text-xs text-slate-500 py-10 text-center border-2 border-dashed rounded-lg">No audit events match your filters.</div>`;
-      return;
-    }
-
     listEl.innerHTML = items.map(a => {
-      // LOGIC: Use actor_name if available, otherwise show ID
-      const actorName = a.actor_name || `User ID: ${a.actor_user_id}`;
-      const sevClass = getSevClass(a.severity);
+          // 1. Name logic: 
+          // Use the name from the DB. 
+          // If no name (System action), show "System". 
+          // If name is missing but ID exists (deleted user), show ID.
+          let displayActor = "System"; 
+          if (a.actor_name && a.actor_name.trim() !== "") {
+              displayActor = a.actor_name;
+          } else if (a.actor_user_id) {
+              displayActor = `User #${a.actor_user_id}`;
+          }
 
-      return `
-        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-sm hover:shadow-md transition-shadow">
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-xs font-bold text-slate-800">
-              <span class="text-slate-400 mr-1">${esc(a.module).toUpperCase()}</span> 
-              <span class="mx-1">/</span> 
-              ${esc(a.action).replace(/_/g, ' ')}
+          const sevClass = getSevClass(a.severity);
+
+          return `
+            <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-sm hover:shadow-md transition-shadow">
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-xs font-bold text-slate-800">
+                  <span class="text-slate-400 mr-1">${esc(a.module).toUpperCase()}</span> 
+                  <span class="mx-1">/</span> 
+                  ${esc(a.action).replace(/_/g, ' ')}
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${sevClass}">
+                  ${esc(a.severity)}
+                </span>
+              </div>
+              
+              <div class="text-[11px] text-slate-600">
+                <strong>Target:</strong> ${esc(a.entity_type)} (${esc(a.entity_id)}) ${a.entity_ref ? `· <span class="text-blue-600">${esc(a.entity_ref)}</span>` : ""}
+              </div>
+              
+              <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
+                <div class="text-[10px] text-slate-400">
+                  ${new Date(a.occurred_at || a.created_at).toLocaleString()}
+                </div>
+                <div class="text-[10px] font-semibold text-slate-700">
+                  <span class="text-slate-400 font-normal">Actor:</span> ${esc(displayActor)}
+                  ${parseFloat(a.amount) > 0 ? ` · <span class="text-teal-600">${esc(a.currency || "")} ${esc(a.amount)}</span>` : ""}
+                </div>
+              </div>
+              
+              ${a.message ? `<div class="text-[11px] mt-2 p-2 bg-slate-50 rounded italic text-slate-600 border-l-2 border-slate-200">${esc(a.message)}</div>` : ""}
             </div>
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${sevClass}">
-              ${esc(a.severity)}
-            </span>
-          </div>
-          
-          <div class="text-[11px] text-slate-600">
-             <strong>Target:</strong> ${esc(a.entity_type)} (${esc(a.entity_id)}) ${a.entity_ref ? `· <span class="text-blue-600">${esc(a.entity_ref)}</span>` : ""}
-          </div>
-          
-          <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
-            <div class="text-[10px] text-slate-400">
-              ${esc(a.occurred_at || a.created_at || "")}
-            </div>
-            <div class="text-[10px] font-semibold text-slate-700">
-              <span class="text-slate-400 font-normal">Actor:</span> ${esc(actorName)}
-              ${a.amount ? ` · <span class="text-teal-600">${esc(a.currency || "")} ${esc(a.amount)}</span>` : ""}
-            </div>
-          </div>
-          
-          ${a.message ? `<div class="text-[11px] mt-2 p-2 bg-slate-50 rounded italic text-slate-600 border-l-2 border-slate-200">${esc(a.message)}</div>` : ""}
-        </div>
-      `;
-    }).join("");
+          `;
+        }).join("");
   }
 
   el.querySelector("#audReload").addEventListener("click", load);
