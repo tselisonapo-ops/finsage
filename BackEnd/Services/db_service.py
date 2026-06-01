@@ -12681,11 +12681,12 @@ class DatabaseService:
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS vat_input_claimable BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT;
+        ADD COLUMN IF NOT EXISTS vat_recovery_percent NUMERIC(5,2) NOT NULL DEFAULT 100,
 
         ALTER TABLE {schema}.assets
             ADD COLUMN IF NOT EXISTS uop_usage_mode text NULL,
             ADD COLUMN IF NOT EXISTS uop_opening_reading numeric(18,4);
-
+            
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS accumulated_impairment NUMERIC(18,2) NOT NULL DEFAULT 0;
 
@@ -13062,6 +13063,8 @@ class DatabaseService:
         ALTER TABLE {schema}.asset_acquisitions
         ADD COLUMN IF NOT EXISTS vat_input_claimable BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT,
+        ADD COLUMN IF NOT EXISTS vat_recovery_percent NUMERIC(5,2) NOT NULL DEFAULT 100,
+        ADD COLUMN IF NOT EXISTS non_recoverable_vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(18,2) DEFAULT 0,
         ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,2),
         ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(18,2);
