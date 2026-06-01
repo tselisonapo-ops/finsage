@@ -804,7 +804,7 @@ def acquisitions_post(company_id, acq_id):
                         or (acq or {}).get("source_company_id")
                     ),
                     engagement_id=(acq or {}).get("engagement_id"),
-                    posted_by=_actor_user_id(payload),
+                    user={"id": _actor_user_id(payload)},
                 )
                 # ✅ AUDIT
                 _audit_safe(
