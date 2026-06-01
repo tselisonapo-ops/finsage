@@ -58851,14 +58851,15 @@ async function renderAuditTrailScreen(meta = {}) {
   el.innerHTML = `
     <div class="flex items-center justify-between mb-3">
       <div>
-        <div class="text-sm font-semibold">Audit Trail</div>
-        <div class="text-xs text-slate-500">Who did what, when (filters below)</div>
+        <div class="text-sm font-semibold">Control Room: Audit Trail</div>
+        <div class="text-xs text-slate-500">Immutable ledger of all system and user actions</div>
       </div>
       <div class="flex items-center gap-2">
-        <button id="audReload" class="px-3 py-1.5 text-xs rounded border">Reload</button>
+        <button id="audReload" class="px-4 py-2 text-xs font-bold rounded-lg bg-slate-100 border hover:bg-white transition-colors">Reload Logs</button>
       </div>
     </div>
 
+    <!-- Filters Area -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
       <input id="audModule" class="border rounded px-2 py-1 text-xs" placeholder="module (ap/ar/gl)">
       <input id="audEntityType" class="border rounded px-2 py-1 text-xs" placeholder="entity_type (journal/bill)">
@@ -58872,18 +58873,18 @@ async function renderAuditTrailScreen(meta = {}) {
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-      <input id="audActor" class="border rounded px-2 py-1 text-xs" placeholder="actor_user_id">
+      <input id="audActor" class="border rounded px-2 py-1 text-xs" placeholder="actor name or ID">
       <input id="audFrom" type="date" class="border rounded px-2 py-1 text-xs">
       <input id="audTo" type="date" class="border rounded px-2 py-1 text-xs">
       <select id="audLimit" class="border rounded px-2 py-1 text-xs">
-        <option value="50">50</option>
-        <option value="100" selected>100</option>
-        <option value="200">200</option>
-        <option value="500">500</option>
+        <option value="50">50 items</option>
+        <option value="100" selected>100 items</option>
+        <option value="200">200 items</option>
+        <option value="500">500 items</option>
       </select>
     </div>
 
-    <div id="audMsg" class="text-xs text-slate-500 mb-2"></div>
+    <div id="audMsg" class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider"></div>
     <div id="audList" class="space-y-2"></div>
   `;
 
@@ -58903,8 +58904,15 @@ async function renderAuditTrailScreen(meta = {}) {
   const msgEl = el.querySelector("#audMsg");
   const listEl = el.querySelector("#audList");
 
+  // Helper for Severity Color Badges
+  function getSevClass(sev) {
+    if (sev === 'critical') return 'bg-red-100 text-red-700 border-red-200';
+    if (sev === 'warn') return 'bg-amber-100 text-amber-700 border-amber-200';
+    return 'bg-blue-50 text-blue-700 border-blue-100'; // Default/Info
+  }
+
   async function load() {
-    msgEl.textContent = "Loading…";
+    msgEl.textContent = "Fetching Audit Logs...";
     listEl.innerHTML = "";
 
     const opts = {
@@ -58922,28 +58930,49 @@ async function renderAuditTrailScreen(meta = {}) {
     const data = await apiFetch(ENDPOINTS.audit.list(cid, opts));
     const items = data?.items || [];
 
-    msgEl.textContent = `${items.length} event(s)`;
+    msgEl.textContent = `${items.length} Secure Event(s) Found`;
 
     if (!items.length) {
-      listEl.innerHTML = `<div class="text-xs text-slate-500">No audit events found.</div>`;
+      listEl.innerHTML = `<div class="text-xs text-slate-500 py-10 text-center border-2 border-dashed rounded-lg">No audit events match your filters.</div>`;
       return;
     }
 
-    listEl.innerHTML = items.map(a => `
-      <div class="border rounded-lg p-3">
-        <div class="text-xs font-semibold">
-          ${esc(a.module)} · ${esc(a.action)} · <span class="text-slate-500">${esc(a.severity)}</span>
+    listEl.innerHTML = items.map(a => {
+      // LOGIC: Use actor_name if available, otherwise show ID
+      const actorName = a.actor_name || `User ID: ${a.actor_user_id}`;
+      const sevClass = getSevClass(a.severity);
+
+      return `
+        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-sm hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-xs font-bold text-slate-800">
+              <span class="text-slate-400 mr-1">${esc(a.module).toUpperCase()}</span> 
+              <span class="mx-1">/</span> 
+              ${esc(a.action).replace(/_/g, ' ')}
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${sevClass}">
+              ${esc(a.severity)}
+            </span>
+          </div>
+          
+          <div class="text-[11px] text-slate-600">
+             <strong>Target:</strong> ${esc(a.entity_type)} (${esc(a.entity_id)}) ${a.entity_ref ? `· <span class="text-blue-600">${esc(a.entity_ref)}</span>` : ""}
+          </div>
+          
+          <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
+            <div class="text-[10px] text-slate-400">
+              ${esc(a.occurred_at || a.created_at || "")}
+            </div>
+            <div class="text-[10px] font-semibold text-slate-700">
+              <span class="text-slate-400 font-normal">Actor:</span> ${esc(actorName)}
+              ${a.amount ? ` · <span class="text-teal-600">${esc(a.currency || "")} ${esc(a.amount)}</span>` : ""}
+            </div>
+          </div>
+          
+          ${a.message ? `<div class="text-[11px] mt-2 p-2 bg-slate-50 rounded italic text-slate-600 border-l-2 border-slate-200">${esc(a.message)}</div>` : ""}
         </div>
-        <div class="text-xs text-slate-600 mt-1">
-          ${esc(a.entity_type)}:${esc(a.entity_id)} ${a.entity_ref ? `· ${esc(a.entity_ref)}` : ""}
-        </div>
-        <div class="text-xs text-slate-500 mt-1">
-          ${esc(a.occurred_at || a.created_at || "")} · actor: ${esc(a.actor_user_id)}
-          ${a.amount ? ` · ${esc(a.currency || "")} ${esc(a.amount)}` : ""}
-        </div>
-        ${a.message ? `<div class="text-xs mt-2">${esc(a.message)}</div>` : ""}
-      </div>
-    `).join("");
+      `;
+    }).join("");
   }
 
   el.querySelector("#audReload").addEventListener("click", load);
@@ -58953,7 +58982,6 @@ async function renderAuditTrailScreen(meta = {}) {
 
   await load();
 }
-
 // ================================
 // Subscreen Router
 // ================================
