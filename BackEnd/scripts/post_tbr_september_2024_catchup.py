@@ -45,20 +45,6 @@ def main():
         return
 
     lines = [
-        {
-            "account_code": "BS_CA_1000",
-            "account": "Cash & Bank",
-            "debit": 20780.00,
-            "credit": 0,
-            "memo": "Galitos Maseru Augt2 receipt - clears August receivable"
-        },
-        {
-            "account_code": "BS_CA_1700",
-            "account": "Accounts Receivable",
-            "debit": 0,
-            "credit": 20780.00,
-            "memo": "Clear August Galitos invoice"
-        },
 
         {
             "account_code": "PL_COS_5003",

@@ -7,10 +7,7 @@ import traceback
 def main():
     print("=== Posting TBR August 2024 AR invoice ===")
 
-    ROOT = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    )
-
+    ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     if ROOT not in sys.path:
         sys.path.insert(0, ROOT)
 
@@ -18,103 +15,76 @@ def main():
     from BackEnd.Services.routes.invoice_routes import build_invoice_journal_lines
 
     company_id = int(os.getenv("COMPANY_ID", "0"))
-
     if not company_id:
-        raise RuntimeError(
-            "Set COMPANY_ID before running this script"
-        )
+        raise RuntimeError("Set COMPANY_ID before running this script")
 
     schema = db_service.company_schema(company_id)
 
     customer_id = 1
     invoice_number = "TBR-GALITOS-2024-08"
+    amount = 20780.00
 
     existing = db_service.fetch_one(f"""
-        SELECT id
+        SELECT id, posted_journal_id
         FROM {schema}.invoices
         WHERE company_id = %s
           AND LOWER(TRIM(number)) = LOWER(TRIM(%s))
         LIMIT 1
     """, (company_id, invoice_number))
 
-    if existing:
+    if existing and existing.get("posted_journal_id"):
         print(
-            f"Skipping existing invoice "
-            f"invoice_id={existing['id']}"
+            f"Skipping existing posted invoice "
+            f"invoice_id={existing['id']} "
+            f"journal_id={existing['posted_journal_id']}"
         )
         return
 
-    header = {
-        "customer_id": customer_id,
-        "invoice_date": "2024-08-31",
-        "due_date": "2024-09-03",
-        "currency": "LSL",
-        "number": invoice_number,
-        "notes": (
-            "Delivery services rendered to "
-            "GALITO'S STATION for August 2024"
-        ),
-        "status": "approved",
-    }
-
-    lines = [
-        {
-            "item_name": "Delivery Services",
-            "item_type": "service",
-            "description": (
-                "Last-mile delivery services "
-                "for August 2024"
-            ),
-
-            # Use exact TBR revenue account
-            "account_code": "4100",
-
-            "quantity": 1,
-            "unit_price": 20780.00,
-
-            "discount_amount": 0,
-            "vat_rate": 0,
-
-            "net_amount": 20780.00,
-            "vat_amount": 0,
-            "total_amount": 20780.00,
+    if existing and not existing.get("posted_journal_id"):
+        invoice_id = int(existing["id"])
+        print(f"Existing invoice found but not posted invoice_id={invoice_id}")
+    else:
+        header = {
+            "customer_id": customer_id,
+            "invoice_date": "2024-08-31",
+            "due_date": "2024-09-03",
+            "currency": "LSL",
+            "number": invoice_number,
+            "notes": "Delivery services rendered to GALITO'S STATION for August 2024",
+            "status": "approved",
         }
-    ]
 
-    print("Creating invoice...")
+        lines = [
+            {
+                "item_name": "Delivery Services",
+                "item_type": "gl",
+                "description": "Last-mile delivery services for August 2024",
+                "account_code": "4100",
+                "quantity": 1,
+                "unit_price": amount,
+                "discount_amount": 0,
+                "vat_rate": 0,
+                "net_amount": amount,
+                "vat_amount": 0,
+                "total_amount": amount,
+            }
+        ]
 
-    invoice_id = db_service.insert_invoice_with_lines(
-        company_id,
-        header,
-        lines,
-    )
+        print("Creating invoice...")
+        invoice_id = db_service.insert_invoice_with_lines(company_id, header, lines)
+        print(f"Created invoice_id={invoice_id}")
 
-    print(f"Created invoice_id={invoice_id}")
-
-    inv = db_service.get_invoice_with_lines(
-        company_id,
-        invoice_id,
-    )
-
+    inv = db_service.get_invoice_with_lines(company_id, invoice_id)
     if not inv:
-        raise RuntimeError(
-            "Invoice inserted but could not be reloaded"
-        )
+        raise RuntimeError("Invoice inserted/found but could not be reloaded")
 
     print("Building AR journal lines...")
-
-    payload = build_invoice_journal_lines(
-        inv,
-        company_id,
-    )
+    payload = build_invoice_journal_lines(inv, company_id)
 
     if not payload.get("lines"):
-        raise RuntimeError(
-            "No journal lines generated"
-        )
+        raise RuntimeError("No journal lines generated")
 
     print("Posting invoice to GL...")
-
     journal_id = db_service.post_invoice_to_gl(
         company_id,
         invoice_id,
@@ -124,11 +94,7 @@ def main():
         require_approved=False,
     )
 
-    print(
-        f"Posted invoice to GL "
-        f"journal_id={journal_id}"
-    )
-
+    print(f"Posted invoice to GL journal_id={journal_id}")
     print("=== done ===")
 
 
