@@ -33,7 +33,7 @@ def main():
 
     schema = db_service.company_schema(company_id)
 
-    ref = "TBR-BANK-CATCHUP-2024-08"
+    ref = "TBR-BANK-CATCHUP-2024-08-REV2"
 
     # ------------------------------------------------------------------
     # Estimated related-party motorbike financing

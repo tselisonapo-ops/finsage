@@ -23,7 +23,7 @@ def main():
         raise RuntimeError("Set COMPANY_ID before running this script")
 
     schema = db_service.company_schema(company_id)
-    ref = "TBR-BANK-CATCHUP-2024-09"
+    ref = "TBR-BANK-CATCHUP-2024-09-REV2"
 
     total_loan_payment = money("1200.00")
     loan_interest = money(os.getenv("SEP2024_LOAN_INTEREST", "615.00"))
