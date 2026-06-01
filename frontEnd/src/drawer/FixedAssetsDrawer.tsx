@@ -179,7 +179,7 @@ type CreateAssetPayload = {
   opening_revaluation_surplus?: number | null;
   opening_as_at?: string | null;
   opening_cost?: number | null;
-
+  vat_recovery_percent?: number | null;
   vat_input_claimable?: boolean;
   vat_recovery_reason?: VatRecoveryReason | string | null;
 
@@ -409,7 +409,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     opening_as_at: "",
     opening_cost: null,
-
+    vat_recovery_percent: 100,
     vat_input_claimable: false,
     vat_recovery_reason: "",
 
@@ -483,7 +483,12 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       reference: sourceDocRef?.trim() || journalRef || `ASSET-${String(assetId)}`,
       notes: form.notes?.trim() || null,
       status: "draft",
-
+      vat_recovery_percent:
+        form.vat_recovery_reason === "mixed_use"
+          ? Number(form.vat_recovery_percent ?? 0)
+          : form.vat_input_claimable
+            ? 100
+            : 0,
       vat_input_claimable: !!form.vat_input_claimable,
       vat_recovery_reason: form.vat_recovery_reason?.trim() || null,
     };
@@ -589,6 +594,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       available_for_use_date: String(defaults.availableForUseDate || ""),
       is_qualifying_asset: Boolean(defaults.is_qualifying_asset || defaults.isQualifyingAsset || false),
       cost: Number(defaults.cost || 0),
+      vat_recovery_percent:
+        defaults.vat_recovery_percent == null
+          ? 100
+          : Number(defaults.vat_recovery_percent),
       vat_input_claimable: Boolean(defaults.vat_input_claimable || defaults.vatInputClaimable || false),
       vat_recovery_reason: String(defaults.vat_recovery_reason || defaults.vatRecoveryReason || ""),
       residual_value: Number(defaults.residualValue || 0),
@@ -846,6 +855,12 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
         opening_as_at: isOpeningBalance ? (form.opening_as_at?.trim() || null) : null,
         opening_cost: isOpeningBalance ? Number(form.opening_cost ?? form.cost ?? 0) : null,
+        vat_recovery_percent:
+          form.vat_recovery_reason === "mixed_use"
+            ? Number(form.vat_recovery_percent ?? 0)
+            : form.vat_input_claimable
+              ? 100
+              : 0,
         vat_input_claimable: !!form.vat_input_claimable,
         vat_recovery_reason: form.vat_recovery_reason?.trim() || null,
         opening_accum_dep: isOpeningBalance ? Number(form.opening_accum_dep ?? 0) : null,
@@ -1361,6 +1376,27 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 </div>
               </div>
             </>
+          ) : null}
+          {form.vat_recovery_reason === "mixed_use" ? (
+            <div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>VAT recovery percentage *</div>
+              <input
+                value={String(form.vat_recovery_percent ?? 100)}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    vat_recovery_percent: Math.max(0, Math.min(100, toNum(e.target.value))),
+                  }))
+                }
+                placeholder="e.g. 60"
+                style={{
+                  width: "100%",
+                  border: "1px solid rgba(0,0,0,0.15)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                }}
+              />
+            </div>
           ) : null}
           {form.measurement_model === "revaluation" ? (
             <div>

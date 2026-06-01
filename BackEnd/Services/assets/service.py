@@ -886,7 +886,7 @@ def create_asset(cur, company_id, payload):
     category = str(payload.get("category") or "").strip() or None
     vat_input_claimable = bool(payload.get("vat_input_claimable") or False)
     vat_recovery_reason = (payload.get("vat_recovery_reason") or "").strip() or None
-
+    vat_recovery_percent = Decimal(str(payload.get("vat_recovery_percent") or (100 if vat_input_claimable else 0)))
     # IAS 23 qualifying asset policy
     if payload.get("is_qualifying_asset") is True:
         if not is_asset_class_potentially_qualifying(payload):
@@ -922,6 +922,7 @@ def create_asset(cur, company_id, payload):
         created_by_user_id,
         updated_by_user_id,
         acquisition_date, available_for_use_date, cost, residual_value,
+        vat_recovery_percent,
         vat_input_claimable,
         vat_recovery_reason,
         depreciation_method, useful_life_months,
@@ -950,7 +951,7 @@ def create_asset(cur, company_id, payload):
             %s,%s,%s,%s,
             %s,
             %s,%s,
-            %s,%s,
+            %s,%s,%s,
 
             %s,%s,%s,%s,
 
@@ -976,7 +977,9 @@ def create_asset(cur, company_id, payload):
             payload.get("updated_by_user_id"),
             payload["acquisition_date"], payload.get("available_for_use_date"),
             cost, residual_value,
-            vat_input_claimable, vat_recovery_reason,
+            vat_recovery_percent,
+            vat_input_claimable,
+            vat_recovery_reason,
             payload.get("depreciation_method", "SL"), 
             payload.get("useful_life_months", 0),
             payload.get("rb_rate_percent"),
@@ -1004,7 +1007,7 @@ _ASSET_UPDATE_ALLOWED = {
     "location", "serial_no", "notes",
     "acquisition_date", "available_for_use_date",
     "cost", "residual_value", "vat_input_claimable",
-    "vat_recovery_reason",
+    "vat_recovery_reason", "vat_recovery_percent",
     "depreciation_method", "useful_life_months",
     "rb_rate_percent", "uop_total_units", "uop_unit_name",
     "status", "disposed_date",
@@ -1192,10 +1195,13 @@ def create_acquisition(cur, company_id, asset_id, payload):
 
     vat_input_claimable = bool(payload.get("vat_input_claimable") or False)
     vat_recovery_reason = (payload.get("vat_recovery_reason") or "").strip() or None
+    vat_recovery_percent = Decimal(str(payload.get("vat_recovery_percent") or (100 if vat_input_claimable else 0)))
+    if vat_recovery_percent < 0 or vat_recovery_percent > 100:
+        raise Exception("vat_recovery_percent must be between 0 and 100")
 
     if not vat_recovery_reason:
         raise Exception("vat_recovery_reason is required")
-
+    non_recoverable_vat = Decimal("0.00")
     net_amount = None
     vat_amount = Decimal("0.00")
     gross_amount = None
@@ -1208,12 +1214,11 @@ def create_acquisition(cur, company_id, asset_id, payload):
         gross_amount = _q2(amt)
         net_calc, vat_calc, _ = _vat_split(gross_amount)
 
-        if vat_input_claimable:
-            net_amount = net_calc
-            vat_amount = vat_calc
-        else:
-            net_amount = gross_amount
-            vat_amount = Decimal("0.00")
+        recoverable_vat = _q2(vat_calc * vat_recovery_percent / Decimal("100"))
+        non_recoverable_vat = _q2(vat_calc - recoverable_vat)
+
+        net_amount = _q2(net_calc + non_recoverable_vat)
+        vat_amount = recoverable_vat
 
     if funding == "grni":
         # GRNI must be NET (invoice not received yet)
@@ -1307,7 +1312,8 @@ def create_acquisition(cur, company_id, asset_id, payload):
         gross_amount,
         vat_input_claimable,
         vat_recovery_reason,
-
+        vat_recovery_percent,
+        non_recoverable_vat_amount,
         funding_source,
         bank_account_id,
         bank_account_code,
@@ -1329,7 +1335,7 @@ def create_acquisition(cur, company_id, asset_id, payload):
 
         %s,%s,%s,%s,%s,
 
-        %s,%s,%s,%s,
+        %s,%s,%s,%s,%s,%s,
 
         %s,%s,%s,
 
@@ -1353,6 +1359,8 @@ def create_acquisition(cur, company_id, asset_id, payload):
     gross_amount,
     vat_input_claimable,
     vat_recovery_reason,
+    vat_recovery_percent,
+    non_recoverable_vat,
 
     funding,
     bank_account_id,
