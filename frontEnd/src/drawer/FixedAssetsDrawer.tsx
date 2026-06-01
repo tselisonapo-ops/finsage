@@ -483,6 +483,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       reference: sourceDocRef?.trim() || journalRef || `ASSET-${String(assetId)}`,
       notes: form.notes?.trim() || null,
       status: "draft",
+
+      vat_input_claimable: !!form.vat_input_claimable,
+      vat_recovery_reason: form.vat_recovery_reason?.trim() || null,
     };
 
     if (funding === "bank_cash") {
@@ -726,7 +729,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       return setErr(isOpeningBalance ? "Historical cost must be greater than 0." : "Cost must be greater than 0.");
     }
 
-    if (!String(form.vat_recovery_reason || "").trim()) {
+    if (
+      form.vat_input_claimable === true &&
+      !String(form.vat_recovery_reason || "").trim()
+    ) {
       return setErr("VAT recovery reason is required.");
     }
 
