@@ -25,7 +25,7 @@ def main():
 
     schema = db_service.company_schema(company_id)
 
-    ref = "TBR-BANK-CATCHUP-2024-10-REV2"
+    ref = "TBR-BANK-CATCHUP-2024-10-REV3"
 
     existing = db_service.fetch_one(f"""
         SELECT id
@@ -86,7 +86,7 @@ def main():
             "account_code": "BS_CL_2100",
             "account": "Loan Payable",
             "debit": float(loan_principal),
-            "credit": 0,
+            "credit": 585.00,
             "memo": "Loan principal repayment"
         },
 
@@ -95,7 +95,7 @@ def main():
             "account_code": "PL_FIN_7210",
             "account": "Interest Expense",
             "debit": float(loan_interest),
-            "credit": 0,
+            "credit": 615.00,
             "memo": "Loan interest"
         },
 
@@ -117,6 +117,28 @@ def main():
             "memo": "ATM withdrawals and unidentified items"
         },
 
+        {
+            "account_code": "PL_ADJ_8250",
+            "account": "Miscellaneous Adjustment",
+            "debit": 630.00,
+            "credit": 0,
+            "memo": "October ATM withdrawals after 05 Oct - purpose unknown"
+        },
+        {
+            "account_code": "PL_OPEX_6800",
+            "account": "Staff Welfare",
+            "debit": 110.00,
+            "credit": 0,
+            "memo": "Galitos Restaurant POS purchase 04 Oct posted 07 Oct"
+        },
+        {
+            "account_code": "PL_ADJ_8250",
+            "account": "Miscellaneous Adjustment",
+            "debit": 514.00,
+            "credit": 0,
+            "memo": "Ha Pita Clinic POS purchase - purpose unknown"
+        },
+
         # Alliance prepaid insurance
         {
             "account_code": "BS_CA_1400",
@@ -131,7 +153,7 @@ def main():
             "account_code": "BS_CA_1000",
             "account": "Cash & Bank",
             "debit": 0,
-            "credit": 18320.43,
+            "credit": 20774.43,
             "memo": "October bank payments and charges"
         },
     ]

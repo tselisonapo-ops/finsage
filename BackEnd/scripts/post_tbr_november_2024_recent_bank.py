@@ -24,7 +24,7 @@ def main():
         raise RuntimeError("Set COMPANY_ID before running this script")
 
     schema = db_service.company_schema(company_id)
-    ref = "TBR-BANK-CATCHUP-2024-11"
+    ref = "TBR-BANK-CATCHUP-2024-11-REV2"
 
     existing = db_service.fetch_one(f"""
         SELECT id
@@ -39,58 +39,21 @@ def main():
         return
 
     lines = [
-        {
-            "account_code": "PL_ADJ_8250",
-            "account": "Miscellaneous Adjustment",
-            "debit": 2250.00,
-            "credit": 0,
-            "memo": "November ATM cash withdrawals - purpose unknown"
-        },
-        {
-            "account_code": "PL_COS_5004",
-            "account": "Fuel Expense",
-            "debit": 1098.36,
-            "credit": 0,
-            "memo": "November Lesotho Nissan fuel purchases"
-        },
-        {
-            "account_code": "PL_COS_5005",
-            "account": "Vehicle Repairs & Maintenance",
-            "debit": 160.00,
-            "credit": 0,
-            "memo": "Pioneer Auto purchase"
-        },
-        {
-            "account_code": "PL_ADJ_8250",
-            "account": "Miscellaneous Adjustment",
-            "debit": 1301.70,
-            "credit": 0,
-            "memo": "Takealot, Galitos, Kobeli Business and Cash Crusade purchases"
-        },
+        {"account_code": "PL_OPEX_6000", "account": "Driver & Ops Salaries", "debit": 5350.00, "credit": 0, "memo": "Net November salaries after unpaid reversal"},
+        {"account_code": "PL_COS_5005", "account": "Vehicle Repairs & Maintenance", "debit": 715.00, "credit": 0, "memo": "Repairs: 550 + Front Line Motors 165"},
+        {"account_code": "PL_OPEX_6001", "account": "Rent Expense", "debit": 2146.00, "credit": 0, "memo": "November rent B11"},
+        {"account_code": "PL_ADJ_8250", "account": "Miscellaneous Adjustment", "debit": 5050.00, "credit": 0, "memo": "November ATM cash withdrawals"},
+        {"account_code": "BS_CL_2100", "account": "Loan Payable", "debit": 585.00, "credit": 0, "memo": "Principal portion of November loan payment"},
+        {"account_code": "PL_FIN_7210", "account": "Interest Expense", "debit": 615.00, "credit": 0, "memo": "Interest portion of November loan payment"},
+        {"account_code": "PL_OPEX_6105", "account": "Bank Charges", "debit": 370.76, "credit": 0, "memo": "November bank charges"},
+        {"account_code": "PL_COS_5004", "account": "Fuel Expense", "debit": 1229.42, "credit": 0, "memo": "November fuel purchases"},
+        {"account_code": "BS_CL_2200", "account": "Accounts Payable Control", "debit": 1505.29, "credit": 0, "memo": "Alliance insurance AP paid by bank"},
+        {"account_code": "PL_ADJ_8250", "account": "Miscellaneous Adjustment", "debit": 1301.70, "credit": 0, "memo": "Takealot, Galitos, Kobeli and Cash Crusade purchases"},
 
-        # Non-bank monthly adjustment
-        {
-            "account_code": "PL_OPEX_6002",
-            "account": "Fleet Insurance",
-            "debit": 242.11,
-            "credit": 0,
-            "memo": "November amortisation of Alliance prepaid insurance"
-        },
-        {
-            "account_code": "BS_CA_1400",
-            "account": "Prepaid Expenses",
-            "debit": 0,
-            "credit": 242.11,
-            "memo": "Release November prepaid insurance portion"
-        },
+        {"account_code": "PL_OPEX_6002", "account": "Fleet Insurance", "debit": 242.11, "credit": 0, "memo": "November amortisation of Alliance prepaid insurance"},
+        {"account_code": "BS_CA_1400", "account": "Prepaid Expenses", "debit": 0, "credit": 242.11, "memo": "Release November prepaid insurance portion"},
 
-        {
-            "account_code": "BS_CA_1000",
-            "account": "Cash & Bank",
-            "debit": 0,
-            "credit": 4810.06,
-            "memo": "November bank payments excluding AR receipt"
-        },
+        {"account_code": "BS_CA_1000", "account": "Cash & Bank", "debit": 0, "credit": 19028.17, "memo": "November bank payments excluding Galitos receipt/reversal"},
     ]
 
     total_debit = sum(money(x["debit"]) for x in lines)
