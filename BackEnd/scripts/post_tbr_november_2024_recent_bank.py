@@ -53,7 +53,7 @@ def main():
         {"account_code": "PL_OPEX_6002", "account": "Fleet Insurance", "debit": 242.11, "credit": 0, "memo": "November amortisation of Alliance prepaid insurance"},
         {"account_code": "BS_CA_1400", "account": "Prepaid Expenses", "debit": 0, "credit": 242.11, "memo": "Release November prepaid insurance portion"},
 
-        {"account_code": "BS_CA_1000", "account": "Cash & Bank", "debit": 0, "credit": 19028.17, "memo": "November bank payments excluding Galitos receipt/reversal"},
+        {"account_code": "BS_CA_1000", "account": "Cash & Bank", "debit": 0, "credit": 18868.17, "memo": "November bank payments excluding Galitos receipt/reversal"},
     ]
 
     total_debit = sum(money(x["debit"]) for x in lines)

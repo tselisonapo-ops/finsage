@@ -82,22 +82,8 @@ def main():
         },
 
         # Loan principal
-        {
-            "account_code": "BS_CL_2100",
-            "account": "Loan Payable",
-            "debit": float(loan_principal),
-            "credit": 585.00,
-            "memo": "Loan principal repayment"
-        },
-
-        # Loan interest
-        {
-            "account_code": "PL_FIN_7210",
-            "account": "Interest Expense",
-            "debit": float(loan_interest),
-            "credit": 615.00,
-            "memo": "Loan interest"
-        },
+        {"account_code": "BS_CL_2100", "account": "Loan Payable", "debit": 585.00, "credit": 0, "memo": "Loan principal repayment"},
+        {"account_code": "PL_FIN_7210", "account": "Interest Expense", "debit": 615.00, "credit": 0, "memo": "Loan interest"},
 
         # Bank charges
         {
@@ -153,7 +139,7 @@ def main():
             "account_code": "BS_CA_1000",
             "account": "Cash & Bank",
             "debit": 0,
-            "credit": 20774.43,
+            "credit": 19574.43,
             "memo": "October bank payments and charges"
         },
     ]
