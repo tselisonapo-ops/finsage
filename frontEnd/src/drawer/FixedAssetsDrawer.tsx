@@ -122,7 +122,7 @@ type CoaRow = {
   statement?: string;
 };
 
-type DepreciationMethod = "" | "SL" | "RB" | "UOP";
+type DepreciationMethod = "" | "SL" | "RB" | "UOP" | "APP";
 
 type VatRecoveryReason =
   | ""
@@ -444,7 +444,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
   const selectedClassGroup = String(form.asset_class_group || "").toLowerCase();
   const selectedClassLabel = String(form.asset_class || "").toLowerCase();
-
+  const isLandOnly =
+    selectedClassGroup === "land and buildings" &&
+    selectedClassLabel.includes("land") &&
+    !selectedClassLabel.includes("building");
   const isLandAndBuildings = selectedClassGroup === "land and buildings";
   const isIntangibleAsset =
     selectedClassGroup.includes("intangible") ||
@@ -560,6 +563,21 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       }
     })();
   }, [open, args]);
+
+  useEffect(() => {
+    if (isLandOnly && form.depreciation_method !== "APP") {
+      setForm((p) => ({
+        ...p,
+        depreciation_method: "APP",
+        useful_life_months: 0,
+        rb_rate_percent: null,
+        uop_total_units: null,
+        uop_usage_mode: null,
+        uop_opening_reading: null,
+        uop_unit_name: null,
+      }));
+    }
+  }, [isLandOnly, form.depreciation_method]);
 
   useEffect(() => {
     if (!open || !args) return;
@@ -766,15 +784,15 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       return setErr("Select depreciation method.");
     }
 
-    if (form.depreciation_method === "SL" && Number(form.useful_life_months || 0) <= 0) {
+    if (!isLandOnly && form.depreciation_method === "SL" && Number(form.useful_life_months || 0) <= 0) {
       return setErr("Useful life is required for straight-line depreciation.");
     }
 
-    if (form.depreciation_method === "RB" && Number(form.rb_rate_percent || 0) <= 0) {
+    if (!isLandOnly && form.depreciation_method === "RB" && Number(form.rb_rate_percent || 0) <= 0) {
       return setErr("Depreciation rate is required for reducing balance.");
     }
 
-    if (form.depreciation_method === "UOP" && Number(form.uop_total_units || 0) <= 0) {
+    if (!isLandOnly && form.depreciation_method === "UOP" && Number(form.uop_total_units || 0) <= 0) {
       return setErr("Total units are required for units of production.");
     }
 
@@ -819,7 +837,17 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       const journalRef = readJournalRefFromArgs(args);
 
       const depreciationFields =
-        form.depreciation_method === "SL"
+      form.depreciation_method === "APP"
+          ? {
+              depreciation_method: "APP" as DepreciationMethod,
+              useful_life_months: 0,
+              rb_rate_percent: null,
+              uop_total_units: null,
+              uop_usage_mode: null,
+              uop_opening_reading: null,
+              uop_unit_name: null,
+            }
+        : form.depreciation_method === "SL"
           ? {
               depreciation_method: "SL" as DepreciationMethod,
               useful_life_months: Number(form.useful_life_months || 0),
@@ -1201,7 +1229,25 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class *</div>
               <input
                 value={form.asset_class}
-                onChange={(e) => setForm((p) => ({ ...p, asset_class: e.target.value }))}
+                onChange={(e) => {
+                  const assetClass = e.target.value;
+                  const assetClassLower = assetClass.toLowerCase();
+                  const groupLower = String(form.asset_class_group || "").toLowerCase();
+
+                  const landOnly =
+                    groupLower === "land and buildings" &&
+                    assetClassLower.includes("land") &&
+                    !assetClassLower.includes("building");
+
+                  setForm((p) => ({
+                    ...p,
+                    asset_class: assetClass,
+                    depreciation_method: landOnly ? "APP" : p.depreciation_method,
+                    useful_life_months: landOnly ? 0 : p.useful_life_months,
+                    rb_rate_percent: landOnly ? null : p.rb_rate_percent,
+                    uop_total_units: landOnly ? null : p.uop_total_units,
+                  }));
+                }}
                 placeholder="e.g. Lorries, Motor vehicles, TLBs, Servers"
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
@@ -1495,28 +1541,44 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation method</div>
               <select
                 value={form.depreciation_method}
-                onChange={(e) => {
-                  const m = e.target.value as DepreciationMethod;
-                  setForm((p) => ({
-                    ...p,
-                    depreciation_method: m,
-                    useful_life_months: m === "SL" ? p.useful_life_months || 60 : 0,
-                    rb_rate_percent: m === "RB" ? p.rb_rate_percent ?? 20 : null,
-                    uop_total_units: m === "UOP" ? p.uop_total_units ?? 0 : null,
-                    uop_usage_mode: m === "UOP" ? p.uop_usage_mode ?? "DELTA" : null,
-                    uop_opening_reading: m === "UOP" ? p.uop_opening_reading ?? null : null,
-                  }));
-                }}
+                  onChange={(e) => {
+                    const m = e.target.value as DepreciationMethod;
+
+                    if (m === "APP") {
+                      setForm((p) => ({
+                        ...p,
+                        depreciation_method: "APP",
+                        useful_life_months: 0,
+                        rb_rate_percent: null,
+                        uop_total_units: null,
+                        uop_usage_mode: null,
+                        uop_opening_reading: null,
+                        uop_unit_name: null,
+                      }));
+                      return;
+                    }
+
+                    setForm((p) => ({
+                      ...p,
+                      depreciation_method: m,
+                      useful_life_months: m === "SL" ? p.useful_life_months || 60 : 0,
+                      rb_rate_percent: m === "RB" ? p.rb_rate_percent ?? 20 : null,
+                      uop_total_units: m === "UOP" ? p.uop_total_units ?? 0 : null,
+                      uop_usage_mode: m === "UOP" ? p.uop_usage_mode ?? "DELTA" : null,
+                      uop_opening_reading: m === "UOP" ? p.uop_opening_reading ?? null : null,
+                    }));
+                  }}
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               >
                 <option value="">Select depreciation method...</option>
                 <option value="SL">Straight-line (SL)</option>
                 <option value="RB">Reducing balance (RB)</option>
                 <option value="UOP">Units of Production (UOP)</option>
+                <option value="APP">Appreciation / Not depreciated</option>
               </select>
             </div>
 
-            {form.depreciation_method === "SL" ? (
+            {!isLandOnly && form.depreciation_method === "SL" ? (
               <div>
                 <div style={{ fontSize: 12, marginBottom: 4 }}>Useful life (months) *</div>
                 <input
@@ -1526,7 +1588,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
                 />
               </div>
-            ) : form.depreciation_method === "RB" ? (
+            ) : !isLandOnly && form.depreciation_method === "RB" ? (
               <div>
                 <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation rate (% p.a.) *</div>
                 <input
