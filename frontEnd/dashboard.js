@@ -62346,6 +62346,7 @@ async function openBillFromAssetAcquisition(acqId) {
 
   const funding = String(prefill.funding_source || "").toLowerCase();
   const isAssetGrni = funding === "grni" || prefill.posting_mode === "grni_clearing";
+  const vatRate = Number(prefill.vat_rate ?? 15);
 
   if (isAssetGrni) {
     const recoveryPct = Number(prefill.vat_recovery_percent ?? 100);
@@ -62387,8 +62388,6 @@ async function openBillFromAssetAcquisition(acqId) {
 
   vatEnabledEl?.dispatchEvent(new Event("change", { bubbles: true }));
   vatModeEl?.dispatchEvent(new Event("change", { bubbles: true }));
-
-  const vatRate = Number(prefill.vat_rate ?? 15);
 
   const lineUnitPrice = isAssetGrni
     ? Number(prefill.net_amount ?? prefill.amount ?? 0)
