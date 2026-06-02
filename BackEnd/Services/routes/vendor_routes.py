@@ -65,15 +65,32 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
         if not (bill.get("number") or "").strip():
             raise ValueError("VENDOR_INVOICE_NUMBER_REQUIRED|Vendor invoice number is required before approving/posting this bill")
 
+    is_asset_grni_bill = False
+    asset_vat_recovery_percent = Decimal("100")
+    asset_capital_account_code = None
+
     asset_acq_id = bill.get("asset_acquisition_id")
+
     if asset_acq_id:
         schema = f"company_{int(company_id)}"
 
         acq = db_service.fetch_one(
             f"""
-            SELECT id, asset_id, funding_source, posted_journal_id
-            FROM {schema}.asset_acquisitions
-            WHERE company_id=%s AND id=%s
+            SELECT
+                ac.id,
+                ac.asset_id,
+                ac.funding_source,
+                ac.posted_journal_id,
+                ac.vat_input_claimable,
+                ac.vat_recovery_reason,
+                ac.vat_recovery_percent,
+                a.asset_account_code
+            FROM {schema}.asset_acquisitions ac
+            LEFT JOIN {schema}.assets a
+            ON a.company_id = ac.company_id
+            AND a.id = ac.asset_id
+            WHERE ac.company_id=%s
+            AND ac.id=%s
             LIMIT 1
             """,
             (int(company_id), int(asset_acq_id)),
@@ -89,6 +106,76 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
                     f"Use post_bill_with_asset_awareness(). acquisition_id={asset_acq_id}, "
                     f"asset_posted_journal_id={posted_journal_id or 'NULL'}"
                 )
+
+            if funding == "grni":
+                is_asset_grni_bill = True
+                asset_vat_recovery_percent = Decimal(
+                    str(acq.get("vat_recovery_percent") or 0)
+                )
+
+                if asset_vat_recovery_percent < 0 or asset_vat_recovery_percent > 100:
+                    raise ValueError(
+                        f"INVALID_VAT_RECOVERY_PERCENT|{asset_vat_recovery_percent}"
+                    )
+
+                asset_id = acq.get("asset_id")
+
+                if not asset_id:
+                    raise ValueError(
+                        f"ASSET_REQUIRED|No asset linked to acquisition {asset_acq_id}"
+                    )
+
+                asset_row = db_service.fetch_one(
+                    f"""
+                    SELECT
+                        asset_account_code,
+                        asset_class_id
+                    FROM {schema}.assets
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (
+                        int(company_id),
+                        int(asset_id),
+                    ),
+                )
+
+                if not asset_row:
+                    raise ValueError(
+                        f"ASSET_NOT_FOUND|Asset {asset_id} not found"
+                    )
+
+                asset_capital_account_code = (
+                    asset_row.get("asset_account_code") or ""
+                ).strip()
+
+                if not asset_capital_account_code:
+                    asset_class_id = asset_row.get("asset_class_id")
+
+                    if asset_class_id:
+                        cls = db_service.fetch_one(
+                            f"""
+                            SELECT asset_account_code
+                            FROM {schema}.asset_classes
+                            WHERE company_id=%s
+                            AND id=%s
+                            LIMIT 1
+                            """,
+                            (
+                                int(company_id),
+                                int(asset_class_id),
+                            ),
+                        )
+
+                        asset_capital_account_code = (
+                            (cls or {}).get("asset_account_code") or ""
+                        ).strip()
+
+                if not asset_capital_account_code:
+                    raise ValueError(
+                        f"ASSET_ACCOUNT_REQUIRED|Asset {asset_id} has no asset account mapping"
+                    )
     # -----------------------------
     # 1) Controls
     # -----------------------------
@@ -274,8 +361,42 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
 
     # VAT input
     if vat_total:
-        jlines.append({"account_code": VAT_ACCOUNT, "dc": "D", "amount": money(vat_total)})
+        if is_asset_grni_bill:
+            recovery_pct = asset_vat_recovery_percent
 
+            recoverable_vat = money(
+                Decimal(str(vat_total)) * recovery_pct / Decimal("100")
+            )
+            non_recoverable_vat = money(
+                Decimal(str(vat_total)) - Decimal(str(recoverable_vat))
+            )
+
+            if recoverable_vat > 0:
+                jlines.append({
+                    "account_code": VAT_ACCOUNT,
+                    "dc": "D",
+                    "amount": recoverable_vat,
+                })
+
+            if non_recoverable_vat > 0:
+                # use the asset/PPE account from the bill line
+                if not asset_capital_account_code:
+                    raise ValueError(
+                        "ASSET_ACCOUNT_REQUIRED|Asset-linked GRNI bill needs asset_account_code for non-recoverable VAT capitalization"
+                    )
+
+                asset_line_account = resolve_posting_code(asset_capital_account_code)
+                jlines.append({
+                    "account_code": asset_line_account,
+                    "dc": "D",
+                    "amount": non_recoverable_vat,
+                })
+        else:
+            jlines.append({
+                "account_code": VAT_ACCOUNT,
+                "dc": "D",
+                "amount": money(vat_total),
+            })
     # AP credit
     jlines.append({"account_code": AP_ACCOUNT, "dc": "C", "amount": money(gross_total)})
 
