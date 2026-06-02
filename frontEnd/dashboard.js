@@ -62341,27 +62341,36 @@ async function openBillFromAssetAcquisition(acqId) {
       recoveryPct,
     };
 
-  // normal bill form fields
-  window.writeBillForm?.({
-    vendor_id: prefill.vendor_id,
-    vendorName: prefill.vendor_name,
-    number: prefill.number || "",
-    bill_date: new Date().toISOString().slice(0, 10),
-    currency: window.CURRENT_COMPANY?.currency || "ZAR",
-    notes: prefill.notes || "",
-    asset_id: prefill.asset_id,
-    asset_acquisition_id: prefill.asset_acquisition_id,
-    posting_mode: postingMode,
-  });
+    window._CURRENT_ASSET_BILL_PREFILL.vat_note = {
+      recoveryPct,
+      fullVat,
+      recoverableVat,
+      capitalisedVat,
+    };
 
-  const linesBody = root.querySelector("#billLines");
-  if (linesBody) linesBody.innerHTML = "";
+    window._CURRENT_ASSET_BILL_PREFILL.useVatRecoverySplit = true;
 
-  const vatEnabledEl = root.querySelector("#apBillVatEnabled");
-  const vatModeEl = root.querySelector("#apBillVatMode");
-  const isAssetGrni = funding === "grni";
-  const isVendorCreditAsset = funding === "vendor_credit";
-  const vatRate = Number(prefill.vat_rate ?? 15);
+    // normal bill form fields
+    window.writeBillForm?.({
+      vendor_id: prefill.vendor_id,
+      vendorName: prefill.vendor_name,
+      number: prefill.number || "",
+      bill_date: new Date().toISOString().slice(0, 10),
+      currency: window.CURRENT_COMPANY?.currency || "ZAR",
+      notes: prefill.notes || "",
+      asset_id: prefill.asset_id,
+      asset_acquisition_id: prefill.asset_acquisition_id,
+      posting_mode: postingMode,
+    });
+
+    const linesBody = root.querySelector("#billLines");
+    if (linesBody) linesBody.innerHTML = "";
+
+    const vatEnabledEl = root.querySelector("#apBillVatEnabled");
+    const vatModeEl = root.querySelector("#apBillVatMode");
+    const isAssetGrni = funding === "grni";
+    const isVendorCreditAsset = funding === "vendor_credit";
+    const vatRate = Number(prefill.vat_rate ?? 15);
 
   if (isAssetGrni || isVendorCreditAsset) {
     const recoveryPct = Number(prefill.vat_recovery_percent ?? 100);
@@ -62374,12 +62383,16 @@ async function openBillFromAssetAcquisition(acqId) {
     const recoverableVat = fullVat * (recoveryPct / 100);
     const capitalisedVat = fullVat - recoverableVat;
 
-    console.log("[GRNI VAT DEBUG]", {
+    console.log("[ASSET VAT DEBUG]", {
       acquisition_id: prefill.asset_acquisition_id,
       funding_source: prefill.funding_source,
+      posting_mode: prefill.posting_mode,
       vat_input_claimable: prefill.vat_input_claimable,
       vat_recovery_percent: prefill.vat_recovery_percent,
       vat_recovery_reason: prefill.vat_recovery_reason,
+      net_amount: prefill.net_amount,
+      vat_amount: prefill.vat_amount,
+      gross_amount: prefill.gross_amount,
       prefill,
     });
 
