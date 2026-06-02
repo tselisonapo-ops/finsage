@@ -331,11 +331,6 @@ function pickContraForAsset(assetAcctCode: string, allAccounts: CoaRow[]): strin
   return findBy("equipment") || "";
 }
 
-function getAccountName(code: string, all: CoaRow[]): string {
-  const acc = all.find((a) => a.code === code);
-  return acc ? (acc.name || acc.account_name || code) : code;
-}
-
 /** For safe parsing of API shapes (no any) */
 type CoaListResponse = { rows?: CoaRow[]; data?: CoaRow[]; accounts?: CoaRow[] };
 type VendorsResponse = { vendors?: Vendor[]; rows?: Vendor[]; data?: Vendor[] };
@@ -1114,7 +1109,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
         )}
 
         <div style={{ display: "grid", gap: 10 }}>
-          {/* Asset code / class */}
+          {/* Asset code / class group */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Asset code *</div>
@@ -1125,13 +1120,13 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
             </div>
+
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class group *</div>
               <select
                 value={String(form.asset_class_group || "")}
                 onChange={(e) => {
                   const group = e.target.value;
-
                   setForm((p) => ({
                     ...p,
                     asset_class_group: group,
@@ -1150,29 +1145,34 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             </div>
           </div>
 
-          <div>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>Asset name *</div>
-            <input
-              value={form.asset_name}
-              onChange={(e) => setForm((p) => ({ ...p, asset_name: e.target.value }))}
-              placeholder="e.g. Motor Vehicle - Toyota"
-              style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-            />
-          </div>
+          {/* Asset name / class label */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset name *</div>
+              <input
+                value={form.asset_name}
+                onChange={(e) => setForm((p) => ({ ...p, asset_name: e.target.value }))}
+                placeholder="e.g. Motor Vehicle - Toyota"
+                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+              />
+            </div>
 
-          <div>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class label</div>
-            <input
-              value={form.asset_class}
-              onChange={(e) => setForm((p) => ({ ...p, asset_class: e.target.value }))}
-              placeholder="e.g. Lorries, Motor vehicles, TLBs, Servers"
-              style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-            />
-            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-              Use this for the company’s own class name. The group above keeps reporting consistent.
+            <div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class label *</div>
+              <input
+                value={form.asset_class}
+                onChange={(e) => setForm((p) => ({ ...p, asset_class: e.target.value }))}
+                placeholder="e.g. Lorries, Motor vehicles, TLBs, Servers"
+                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+              />
             </div>
           </div>
 
+          <div style={{ fontSize: 11, opacity: 0.75, marginTop: -6 }}>
+            Use class label for the company’s own name. The group keeps reporting consistent.
+          </div>
+
+          {/* VIN / Location */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Serial number / VIN</div>
@@ -1195,6 +1195,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             </div>
           </div>
 
+          {/* Notes */}
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>Notes</div>
             <textarea
@@ -1206,6 +1207,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             />
           </div>
 
+          {/* Dates */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Acquisition date *</div>
@@ -1216,6 +1218,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
             </div>
+
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Available for use date</div>
               <input
@@ -1227,33 +1230,10 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             </div>
           </div>
 
-          <div style={{ marginTop: 10 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={!!form.is_qualifying_asset}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    is_qualifying_asset: e.target.checked,
-                  }))
-                }
-              />
-              <span style={{ fontSize: 13, fontWeight: 600 }}>
-                Qualifying asset (IAS 23)
-              </span>
-            </label>
-
-            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
-              Tick this for assets that take time to get ready (e.g. construction, large projects).
-            </div>
-          </div>
-
+          {/* Cost / residual */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>
-                {isOpeningBalance ? "Historical cost *" : "Cost *"}
-              </div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>{isOpeningBalance ? "Historical cost *" : "Cost *"}</div>
               <input
                 value={String(form.cost)}
                 onChange={(e) => setForm((p) => ({ ...p, cost: toNum(e.target.value) }))}
@@ -1261,6 +1241,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
             </div>
+
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Residual value</div>
               <input
@@ -1271,7 +1252,18 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               />
             </div>
           </div>
-          <div style={{ marginTop: 10 }}>
+
+          {/* IAS 23 / VAT checkbox */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!form.is_qualifying_asset}
+                onChange={(e) => setForm((p) => ({ ...p, is_qualifying_asset: e.target.checked }))}
+              />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Qualifying asset (IAS 23)</span>
+            </label>
+
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 type="checkbox"
@@ -1283,47 +1275,71 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                     vat_recovery_reason: e.target.checked
                       ? p.vat_recovery_reason || "production_income_use"
                       : "passenger_vehicle_disallowed",
+                    vat_recovery_percent: e.target.checked ? p.vat_recovery_percent ?? 100 : 0,
                   }))
                 }
               />
-              <span style={{ fontSize: 13, fontWeight: 700 }}>
-                Input VAT claimable
-              </span>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Input VAT claimable</span>
             </label>
+          </div>
 
-            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
-              Untick where VAT is not recoverable, for example passenger vehicles not qualifying under VAT rules.
+          {/* VAT reason / percentage */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: form.vat_recovery_reason === "mixed_use" ? "2fr 1fr" : "1fr",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>VAT recovery reason *</div>
+              <select
+                value={String(form.vat_recovery_reason || "")}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    vat_recovery_reason: e.target.value,
+                    vat_recovery_percent:
+                      e.target.value === "mixed_use"
+                        ? p.vat_recovery_percent ?? 100
+                        : p.vat_input_claimable
+                          ? 100
+                          : 0,
+                  }))
+                }
+                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+              >
+                <option value="">Select VAT reason...</option>
+                <option value="commercial_vehicle">Commercial vehicle / delivery vehicle</option>
+                <option value="production_income_use">Used directly to produce taxable income</option>
+                <option value="mixed_use">Mixed use - review required</option>
+                <option value="dealer_stock">Vehicle dealer stock</option>
+                <option value="rental_fleet">Rental fleet vehicle</option>
+                <option value="taxi_transport">Passenger transport / taxi business</option>
+                <option value="passenger_vehicle_disallowed">Passenger vehicle - input VAT disallowed</option>
+                <option value="not_registered_or_exempt">Not claimable / exempt activity</option>
+              </select>
             </div>
+
+            {form.vat_recovery_reason === "mixed_use" ? (
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>VAT recovery % *</div>
+                <input
+                  value={String(form.vat_recovery_percent ?? 100)}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      vat_recovery_percent: Math.max(0, Math.min(100, toNum(e.target.value))),
+                    }))
+                  }
+                  placeholder="e.g. 60"
+                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                />
+              </div>
+            ) : null}
           </div>
 
-          <div>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>VAT recovery reason *</div>
-            <select
-              value={String(form.vat_recovery_reason || "")}
-              onChange={(e) =>
-                setForm((p) => ({
-                  ...p,
-                  vat_recovery_reason: e.target.value,
-                }))
-              }
-              style={{
-                width: "100%",
-                border: "1px solid rgba(0,0,0,0.15)",
-                borderRadius: 10,
-                padding: "10px 12px",
-              }}
-            >
-              <option value="">Select VAT reason...</option>
-              <option value="commercial_vehicle">Commercial vehicle / delivery vehicle</option>
-              <option value="production_income_use">Used directly to produce taxable income</option>
-              <option value="mixed_use">Mixed use - review required</option>
-              <option value="dealer_stock">Vehicle dealer stock</option>
-              <option value="rental_fleet">Rental fleet vehicle</option>
-              <option value="taxi_transport">Passenger transport / taxi business</option>
-              <option value="passenger_vehicle_disallowed">Passenger vehicle - input VAT disallowed</option>
-              <option value="not_registered_or_exempt">Not claimable / exempt activity</option>
-            </select>
-          </div>
+          {/* Opening balance fields */}
           {isOpeningBalance ? (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1377,77 +1393,25 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               </div>
             </>
           ) : null}
-          {form.vat_recovery_reason === "mixed_use" ? (
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>VAT recovery percentage *</div>
-              <input
-                value={String(form.vat_recovery_percent ?? 100)}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    vat_recovery_percent: Math.max(0, Math.min(100, toNum(e.target.value))),
-                  }))
-                }
-                placeholder="e.g. 60"
-                style={{
-                  width: "100%",
-                  border: "1px solid rgba(0,0,0,0.15)",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                }}
-              />
-            </div>
-          ) : null}
-          {form.measurement_model === "revaluation" ? (
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>
-                Opening revaluation surplus
-              </div>
 
-              <input
-                value={String(form.opening_revaluation_surplus ?? "")}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    opening_revaluation_surplus: e.target.value.trim()
-                      ? toNum(e.target.value)
-                      : null,
-                  }))
-                }
-                placeholder="0.00"
-                style={{
-                  width: "100%",
-                  border: "1px solid rgba(0,0,0,0.15)",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                }}
-              />
-
-              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                Credit goes to Balance Sheet equity / OCI revaluation surplus.
-              </div>
-            </div>
-          ) : null}
-          {/* Depreciation inputs */}
+          {/* Depreciation */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation method</div>
               <select
                 value={form.depreciation_method}
-                  onChange={(e) => {
-                    const m = e.target.value as DepreciationMethod;
-                    setForm((p) => ({
-                      ...p,
-                      depreciation_method: m,
-                      useful_life_months: m === "SL" ? (p.useful_life_months || 60) : 0,
-                      rb_rate_percent: m === "RB" ? (p.rb_rate_percent ?? 20) : null,
-                      uop_total_units: m === "UOP" ? (p.uop_total_units ?? 0) : null,
-
-                      // ✅ defaults for UOP
-                      uop_usage_mode: m === "UOP" ? (p.uop_usage_mode ?? "DELTA") : null,
-                      uop_opening_reading: m === "UOP" ? (p.uop_opening_reading ?? null) : null,
-                    }));
-                  }}
+                onChange={(e) => {
+                  const m = e.target.value as DepreciationMethod;
+                  setForm((p) => ({
+                    ...p,
+                    depreciation_method: m,
+                    useful_life_months: m === "SL" ? p.useful_life_months || 60 : 0,
+                    rb_rate_percent: m === "RB" ? p.rb_rate_percent ?? 20 : null,
+                    uop_total_units: m === "UOP" ? p.uop_total_units ?? 0 : null,
+                    uop_usage_mode: m === "UOP" ? p.uop_usage_mode ?? "DELTA" : null,
+                    uop_opening_reading: m === "UOP" ? p.uop_opening_reading ?? null : null,
+                  }));
+                }}
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               >
                 <option value="">Select depreciation method...</option>
@@ -1477,104 +1441,83 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
                 />
               </div>
-            ) : form.depreciation_method === "UOP" ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Total units (lifetime) *</div>
-                  <input
-                    value={String(form.uop_total_units ?? "")}
-                    onChange={(e) => setForm((p) => ({ ...p, uop_total_units: toNum(e.target.value) }))}
-                    placeholder="e.g. 200000"
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </div>
-                  <div>
-                    <div style={{ fontSize: 12, marginBottom: 4 }}>Usage capture mode</div>
-                    <select
-                      value={(form.uop_usage_mode || "DELTA") as "DELTA" | "READING"}
-                      onChange={(e) => {
-                        const m = e.target.value as "DELTA" | "READING";
-                        setForm((p) => ({
-                          ...p,
-                          uop_usage_mode: m,
-                          uop_opening_reading: m === "READING" ? (p.uop_opening_reading ?? null) : null,
-                        }));
-                      }}
-                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                    >
-                      <option value="DELTA">Period usage (km driven / hours used)</option>
-                      <option value="READING">Meter reading (odometer / hour meter)</option>
-                    </select>
-
-                    <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                      Choose <b>Meter reading</b> if you enter cumulative readings. Choose <b>Period usage</b> if you enter usage per period.
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, marginBottom: 4 }}>
-                      Opening reading (odometer) at “Available for use” date
-                    </div>
-                      {(form.uop_usage_mode || "DELTA") === "READING" ? (
-                        <div>
-                          <div style={{ fontSize: 12, marginBottom: 4 }}>
-                            Opening reading (baseline at “Available for use”)
-                          </div>
-                          <input
-                            value={form.uop_opening_reading == null ? "" : String(form.uop_opening_reading)}
-                            onChange={(e) => {
-                              const raw = e.target.value.trim();
-                              setForm((p) => ({ ...p, uop_opening_reading: raw ? toNum(raw) : null }));
-                            }}
-                            placeholder="e.g. 25"
-                            style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                          />
-                          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                            The reading the asset arrived with (delivery/handover). Depreciation uses differences between readings.
-                          </div>
-                        </div>
-                      ) : null}
-                    <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                      This is the odometer reading when the vehicle becomes available for use (baseline).
-                    </div>
-                  </div>         
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Unit name</div>
-                  <input
-                    value={String(form.uop_unit_name ?? "")}
-                    onChange={(e) => setForm((p) => ({ ...p, uop_unit_name: e.target.value }))}
-                    placeholder="e.g. km, hours, units"
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </div>
-              </div>
-              ) : null}
+            ) : null}
           </div>
 
-          {/* Accounts */}
-          <div style={{ fontWeight: 800, marginTop: 6 }}>Accounts (GL mapping)</div>
+          {form.depreciation_method === "UOP" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Total units (lifetime) *</div>
+                <input
+                  value={String(form.uop_total_units ?? "")}
+                  onChange={(e) => setForm((p) => ({ ...p, uop_total_units: toNum(e.target.value) }))}
+                  placeholder="e.g. 200000"
+                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                />
+              </div>
 
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Unit name</div>
+                <input
+                  value={String(form.uop_unit_name ?? "")}
+                  onChange={(e) => setForm((p) => ({ ...p, uop_unit_name: e.target.value }))}
+                  placeholder="e.g. km, hours, units"
+                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Usage capture mode</div>
+                <select
+                  value={(form.uop_usage_mode || "DELTA") as "DELTA" | "READING"}
+                  onChange={(e) => {
+                    const m = e.target.value as "DELTA" | "READING";
+                    setForm((p) => ({
+                      ...p,
+                      uop_usage_mode: m,
+                      uop_opening_reading: m === "READING" ? p.uop_opening_reading ?? null : null,
+                    }));
+                  }}
+                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                >
+                  <option value="DELTA">Period usage</option>
+                  <option value="READING">Meter reading</option>
+                </select>
+              </div>
+
+              {(form.uop_usage_mode || "DELTA") === "READING" ? (
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening reading</div>
+                  <input
+                    value={form.uop_opening_reading == null ? "" : String(form.uop_opening_reading)}
+                    onChange={(e) => {
+                      const raw = e.target.value.trim();
+                      setForm((p) => ({ ...p, uop_opening_reading: raw ? toNum(raw) : null }));
+                    }}
+                    placeholder="e.g. 25"
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Asset account only */}
           <div>
+            <div style={{ fontWeight: 800, marginTop: 6, marginBottom: 6 }}>Accounts (GL mapping)</div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>Asset cost account (Non-current assets only) *</div>
             <select
               disabled={coaLoading}
               value={form.asset_account_code || ""}
               onChange={(e) => {
                 const code = e.target.value;
-
                 const contraCode = code ? pickContraForAsset(code, coaAll) : "";
-
                 setForm((p) => ({
                   ...p,
                   asset_account_code: code,
-                  accum_dep_account_code: contraCode,   // still store CODE
-                  dep_expense_account_code: "",   // force blank
+                  accum_dep_account_code: contraCode,
+                  dep_expense_account_code: "",
                 }));
-
-                // 👇 Write NAME into visible input
-                const contraInput = document.getElementById("accumDepDisplay") as HTMLInputElement;
-                if (contraInput) {
-                  contraInput.value = getAccountName(contraCode, coaAll);
-                }
               }}
               style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
             >
@@ -1590,79 +1533,89 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   </option>
                 ))}
             </select>
-            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>This dropdown is filtered to Non-current assets / PPE only.</div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Accumulated depreciation</div>
-              <input
-                id="accumDepDisplay"
-                defaultValue=""
-                readOnly
-                placeholder="Auto-selected contra account"
-                style={{
-                  width: "100%",
-                  border: "1px solid rgba(0,0,0,0.15)",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                  background: "#f8fafc"
-                }}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation expense</div>
-              <input
-                value={form.dep_expense_account_code || ""}
-                onChange={(e) => setForm((p) => ({ ...p, dep_expense_account_code: e.target.value }))}
-                placeholder="e.g. PL_OPEX_7100"
-                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              />
-            </div>
-          </div>
-
-          {/* Funding source */}
-          <div style={{ fontWeight: 800, marginTop: 6 }}>Funding source</div>
-
-          <select
-            value={fundingSource}
-            onChange={(e) => {
-              const v = e.target.value as FundingSource;
-              setFundingSource(v);
-              setShowSourceDocNote(false);
-
-              if (v === "vendor_credit") {
-                setSourceDocType("invoice");
-                setSourceDocRef("");
-              } else if (v === "grni") {
-                setSourceDocType("grn");
-                setSourceDocRef("");
-              } else {
-                setSourceDocRef("");
-              }
-
-              if (v !== "other") setOtherCreditAccountCode("");
-
-              if (v !== "vendor_credit" && v !== "grni") setSelectedVendorId("");
-              if (v !== "bank" && v !== "cash") setSelectedBankId("");
-            }}
-            style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-          >
-            <option value="cash">Cash</option>
-            <option value="bank">Bank</option>
-            <option value="vendor_credit">Vendor / Credit (AP)</option>
-            <option value="grni">GRNI (Goods received not invoiced)</option>
-            <option value="other">Other (manual / suspense)</option>
-          </select>
-
-          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-            This controls which account gets credited when you post the acquisition.
-          </div>
-
+          {/* Funding */}
           {!isOpeningBalance ? (
             <>
-              {(fundingSource === "vendor_credit" || fundingSource === "grni") ? (
-                <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ fontWeight: 800, marginTop: 6 }}>Funding source</div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Funding source *</div>
+                  <select
+                    value={fundingSource}
+                    onChange={(e) => {
+                      const v = e.target.value as FundingSource;
+                      setFundingSource(v);
+                      setShowSourceDocNote(false);
+
+                      if (v === "vendor_credit") {
+                        setSourceDocType("invoice");
+                        setSourceDocRef("");
+                      } else if (v === "grni") {
+                        setSourceDocType("grn");
+                        setSourceDocRef("");
+                        setShowSourceDocNote(false);
+                      } else {
+                        setShowSourceDocNote(false);
+                        setSourceDocRef("");
+                      }
+
+                      if (v !== "other") setOtherCreditAccountCode("");
+                      if (v !== "vendor_credit" && v !== "grni") setSelectedVendorId("");
+                      if (v !== "bank" && v !== "cash") setSelectedBankId("");
+                    }}
+                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank</option>
+                    <option value="vendor_credit">Vendor / Credit (AP)</option>
+                    <option value="grni">GRNI (Goods received not invoiced)</option>
+                    <option value="other">Other (manual / suspense)</option>
+                  </select>
+                </div>
+
+                {(fundingSource === "bank" || fundingSource === "cash") ? (
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Bank account *</div>
+                    <select
+                      disabled={banksLoading}
+                      value={selectedBankId}
+                      onChange={(e) => setSelectedBankId(e.target.value)}
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    >
+                      <option value="">{banksLoading ? "Loading..." : "Select bank account..."}</option>
+                      {banks.map((b) => {
+                        const label = [b.bank_name, b.account_name, b.account_number].filter(Boolean).join(" • ");
+                        const code = (b.ledger_account_code || "").trim();
+                        const missing = !code;
+
+                        return (
+                          <option key={String(b.id)} value={String(b.id)} disabled={missing}>
+                            {label || `Bank ${b.id}`}{missing ? " (Missing ledger code)" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : null}
+
+                {showSourceDocNote && (
+                  <div
+                    style={{
+                      padding: 10,
+                      borderRadius: 8,
+                      background: "rgba(59,130,246,.08)",
+                      fontSize: 12,
+                      border: "1px solid rgba(59,130,246,.15)",
+                    }}
+                  >
+                    GRNI acquisitions create a temporary liability. Input VAT will normally
+                    be recognized when the supplier invoice is received.
+                  </div>
+                )}
+                {(fundingSource === "vendor_credit" || fundingSource === "grni") ? (
                   <div>
                     <div style={{ fontSize: 12, marginBottom: 4 }}>Vendor *</div>
                     <select
@@ -1679,55 +1632,25 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                       ))}
                     </select>
                   </div>
+                ) : null}
 
+                {fundingSource === "other" ? (
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <div style={{ fontSize: 12 }}>Source document</div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Credit account code *</div>
+                    <input
+                      value={otherCreditAccountCode}
+                      onChange={(e) => setOtherCreditAccountCode(e.target.value)}
+                      placeholder="e.g. BS_CL_2000"
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
+                ) : null}
+              </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowSourceDocNote((s) => !s)}
-                        title="Help"
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                          border: "1px solid rgba(0,0,0,0.25)",
-                          background: "white",
-                          fontSize: 12,
-                          fontWeight: 900,
-                          lineHeight: "16px",
-                          cursor: "pointer",
-                          padding: 0,
-                        }}
-                      >
-                        ?
-                      </button>
-                    </div>
-
-                    {showSourceDocNote ? (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          padding: 10,
-                          borderRadius: 10,
-                          background: "rgba(255, 243, 199, 0.9)",
-                          border: "1px solid rgba(0,0,0,0.12)",
-                          fontSize: 12,
-                        }}
-                      >
-                        {fundingSource === "vendor_credit" ? (
-                          <>
-                            <b>Vendor / Credit (AP)</b> is locked to <b>Invoice</b>.
-                          </>
-                        ) : (
-                          <>
-                            <b>GRNI</b> uses a <b>GRN / Goods Receipt</b> reference.
-                          </>
-                        )}
-                      </div>
-                    ) : null}
-
+              {(fundingSource === "vendor_credit" || fundingSource === "grni") ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Source document</div>
                     <select
                       value={sourceDocType}
                       onChange={(e) => setSourceDocType(e.target.value as SourceDocType)}
@@ -1737,12 +1660,6 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                       <option value="invoice">Invoice</option>
                       <option value="grn">GRN / Goods Receipt</option>
                     </select>
-
-                    <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                      {fundingSource === "vendor_credit"
-                        ? "Reference supplier invoice."
-                        : "Reference GRN."}
-                    </div>
                   </div>
 
                   <div>
@@ -1758,45 +1675,9 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                   </div>
                 </div>
               ) : null}
-
-              {(fundingSource === "bank" || fundingSource === "cash") ? (
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Bank account *</div>
-                  <select
-                    disabled={banksLoading}
-                    value={selectedBankId}
-                    onChange={(e) => setSelectedBankId(e.target.value)}
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  >
-                    <option value="">{banksLoading ? "Loading..." : "Select bank account..."}</option>
-                    {banks.map((b) => {
-                      const label = [b.bank_name, b.account_name, b.account_number].filter(Boolean).join(" • ");
-                      const code = (b.ledger_account_code || "").trim();
-                      const missing = !code;
-
-                      return (
-                        <option key={String(b.id)} value={String(b.id)} disabled={missing}>
-                          {label || `Bank ${b.id}`}{missing ? " (Missing ledger code)" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              ) : null}
-
-              {fundingSource === "other" ? (
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Credit account code *</div>
-                  <input
-                    value={otherCreditAccountCode}
-                    onChange={(e) => setOtherCreditAccountCode(e.target.value)}
-                    placeholder="e.g. BS_CL_2000"
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </div>
-              ) : null}
             </>
           ) : null}
+        </div>
 
           {/* ✅ Journal Preview appears ONLY after draft (step 2) */}
           {step === 2 ? (
@@ -1973,7 +1854,6 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 </button>
               </div>
             )}
-        </div>
       </div>
     </DrawerShell>
   );
