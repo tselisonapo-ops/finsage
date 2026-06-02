@@ -1212,6 +1212,43 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             Use class label for the company’s own name. The group keeps reporting consistent.
           </div>
 
+          {supportsRevaluationModel ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: "rgba(0,0,0,0.03)",
+                border: "1px solid rgba(0,0,0,0.08)",
+              }}
+            >
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.measurement_model === "revaluation"}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      measurement_model: e.target.checked ? "revaluation" : "cost",
+                      opening_revaluation_surplus: e.target.checked
+                        ? p.opening_revaluation_surplus
+                        : null,
+                    }))
+                  }
+                />
+                <span style={{ fontSize: 13, fontWeight: 700 }}>
+                  Revaluation model
+                </span>
+              </label>
+
+              <span style={{ fontSize: 11, opacity: 0.7 }}>
+                Untick to use cost model.
+              </span>
+            </div>
+          ) : null}
+
           {/* VIN / Location */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
@@ -1382,38 +1419,56 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           {/* Opening balance fields */}
           {isOpeningBalance ? (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening as at *</div>
-                  <input
-                    type="date"
-                    value={form.opening_as_at || ""}
-                    onChange={(e) => setForm((p) => ({ ...p, opening_as_at: e.target.value }))}
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Accumulated depreciation *</div>
-                  <input
-                    value={String(form.opening_accum_dep ?? 0)}
-                    onChange={(e) => setForm((p) => ({ ...p, opening_accum_dep: toNum(e.target.value) }))}
-                    placeholder="0.00"
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    supportsRevaluationModel && form.measurement_model === "revaluation"
+                      ? "1fr 1fr 1fr"
+                      : "1fr 1fr",
+                  gap: 10,
+                }}
+              >
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>Opening impairment</div>
                   <input
                     value={String(form.opening_impairment ?? 0)}
-                    onChange={(e) => setForm((p) => ({ ...p, opening_impairment: toNum(e.target.value) }))}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, opening_impairment: toNum(e.target.value) }))
+                    }
                     placeholder="0.00"
-                    style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    style={{
+                      width: "100%",
+                      border: "1px solid rgba(0,0,0,0.15)",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                    }}
                   />
                 </div>
+
+                {supportsRevaluationModel && form.measurement_model === "revaluation" ? (
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>
+                      Opening revaluation surplus *
+                    </div>
+                    <input
+                      value={String(form.opening_revaluation_surplus ?? "")}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          opening_revaluation_surplus: toNum(e.target.value),
+                        }))
+                      }
+                      placeholder="0.00"
+                      style={{
+                        width: "100%",
+                        border: "1px solid rgba(0,0,0,0.15)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    />
+                  </div>
+                ) : null}
 
                 <div>
                   <div style={{ fontSize: 12, marginBottom: 4 }}>Carrying amount</div>
