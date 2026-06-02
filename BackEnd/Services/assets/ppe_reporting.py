@@ -4975,7 +4975,17 @@ def acquisition_bill_prefill(company_id: int, acq_id: int):
                         ac.asset_id,
                         ac.supplier_id AS vendor_id,
                         ac.funding_source,
+
                         ac.amount,
+                        ac.net_amount,
+                        ac.vat_amount,
+                        ac.gross_amount,
+
+                        ac.vat_input_claimable,
+                        ac.vat_recovery_reason,
+                        ac.vat_recovery_percent,
+                        ac.non_recoverable_vat_amount,
+
                         ac.vendor_invoice_no,
                         ac.grn_no,
                         ac.reference,
@@ -5029,6 +5039,38 @@ def acquisition_bill_prefill(company_id: int, acq_id: int):
                     "reference": row.get("reference"),
 
                     "amount": float(row.get("amount") or 0),
+                    "net_amount": float(row.get("net_amount") or row.get("amount")
+                        or 0
+                    ),
+
+                    "vat_amount": float(
+                        row.get("vat_amount")
+                        or 0
+                    ),
+
+                    "gross_amount": float(
+                        row.get("gross_amount")
+                        or row.get("amount")
+                        or 0
+                    ),
+
+                    "vat_input_claimable": bool(
+                        row.get("vat_input_claimable")
+                    ),
+
+                    "vat_recovery_reason": row.get(
+                        "vat_recovery_reason"
+                    ),
+
+                    "vat_recovery_percent": float(
+                        row.get("vat_recovery_percent")
+                        or 100
+                    ),
+
+                    "non_recoverable_vat_amount": float(
+                        row.get("non_recoverable_vat_amount")
+                        or 0
+                    ),
                     "description": f"{row.get('asset_code') or ''} - {row.get('asset_name') or ''}".strip(" -"),
                     "notes": row.get("asset_notes"),
 
