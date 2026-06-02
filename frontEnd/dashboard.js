@@ -532,6 +532,17 @@ async function resolveCompanyProfile(currentUser) {
     window.CURRENT_COMPANY = company || null;
     window.CURRENT_CURRENCY = cur;
 
+    // NEW
+    const companyName =
+      company?.company_name ||
+      company?.name ||
+      company?.legal_name ||
+      "";
+
+    if (companyName) {
+      localStorage.setItem("active_company_name", companyName);
+    }
+
     // ✅ persist ONE key consistently
     if (finalCid) {
       localStorage.setItem("CURRENT_COMPANY_ID", String(finalCid));
@@ -9241,7 +9252,6 @@ function closeLeaseWizard() {
 }
 
 function getActiveCompanyName() {
-  // 1️⃣ Primary source — your header badge
   const badge = document.getElementById("companyBadge");
   const fromBadge = badge?.textContent?.trim();
 
@@ -9249,23 +9259,41 @@ function getActiveCompanyName() {
     return fromBadge;
   }
 
-  // 2️⃣ Fallback — active company object (if present)
   const fromObj =
     window.activeCompany?.company_name ||
     window.activeCompany?.name ||
     window.ACTIVE_COMPANY?.company_name ||
-    window.ACTIVE_COMPANY?.name;
+    window.ACTIVE_COMPANY?.name ||
+    window.CURRENT_COMPANY?.company_name ||
+    window.CURRENT_COMPANY?.name;
 
   if (fromObj) return String(fromObj).trim();
 
-  // 3️⃣ Fallback — localStorage
+  const selectors = [
+    "#companySelect",
+    "#company_id",
+    "#activeCompanyId",
+    "select[name='company_id']",
+    "select[data-company-select='1']",
+  ];
+
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el && el.selectedOptions && el.selectedOptions[0]) {
+      const txt = el.selectedOptions[0].textContent?.trim();
+      if (txt && txt !== "Select company" && txt !== "Your company") {
+        return txt;
+      }
+    }
+  }
+
   const fromLS =
     localStorage.getItem("company_name") ||
-    localStorage.getItem("active_company_name");
+    localStorage.getItem("active_company_name") ||
+    localStorage.getItem("current_company_name");
 
   if (fromLS) return String(fromLS).trim();
 
-  // 4️⃣ Last fallback — show ID instead
   return "";
 }
 
@@ -17270,7 +17298,7 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
       localStorage.getItem("active_company_name") ||
       localStorage.getItem("company_name") ||
       "";
-
+    console.log("[CURRENT COMPANY]", window.CURRENT_COMPANY);
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
       companyName,
