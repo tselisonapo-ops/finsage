@@ -63942,6 +63942,8 @@ function bindAP() {
     setVal("billAssetAcquisitionId", "");
     setVal("billPostingMode", "");
     window._CURRENT_ASSET_BILL_PREFILL = null;
+    const vatNote = root.querySelector("#assetGrniVatNote") || document.getElementById("assetGrniVatNote");
+    if (vatNote) vatNote.remove();
     const today = new Date().toISOString().slice(0, 10);
     setVal("billDate", today);
     setVal("billDue", "");

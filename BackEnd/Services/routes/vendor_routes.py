@@ -22,6 +22,141 @@ from BackEnd.Services.assets import posting as asset_posting
 
 ap_bp = Blueprint("ap", __name__)
 
+from decimal import Decimal, ROUND_HALF_UP
+
+def _money(v) -> Decimal:
+    return Decimal(str(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisition_id: int, payload: dict | None = None):
+    schema = f"company_{int(company_id)}"
+
+    bill = db_service.get_bill_full(company_id, bill_id)
+    if not bill:
+        raise Exception("Bill not found")
+
+    acq = db_service.fetch_one(f"""
+        SELECT
+            ac.*,
+            a.asset_account_code
+        FROM {schema}.asset_acquisitions ac
+        JOIN {schema}.assets a
+          ON a.company_id = ac.company_id
+         AND a.id = ac.asset_id
+        WHERE ac.company_id = %s
+          AND ac.id = %s
+        LIMIT 1
+    """, (int(company_id), int(acquisition_id)))
+
+    if not acq:
+        raise Exception("Linked asset acquisition not found")
+
+    net = _money(acq.get("net_amount") or acq.get("amount") or bill.get("subtotal_amount") or 0)
+    full_vat = _money(bill.get("vat_amount") or 0)
+    gross = _money(bill.get("total_amount") or (net + full_vat))
+
+    recovery_pct = _money(acq.get("vat_recovery_percent") if acq.get("vat_recovery_percent") is not None else 100)
+    recoverable_vat = _money(full_vat * recovery_pct / Decimal("100"))
+    capitalised_vat = _money(full_vat - recoverable_vat)
+
+    settings = db_service.get_company_account_settings(company_id) or {}
+    grni_code = (settings.get("grni_control_code") or settings.get("ppv_control_code") or "").strip()
+    vat_code = (settings.get("vat_input_code") or settings.get("input_vat_code") or "BS_CA_1410").strip()
+    ap_code = (settings.get("ap_control_code") or "BS_CL_2000").strip()
+    asset_code = (acq.get("asset_account_code") or "").strip()
+
+    if not grni_code:
+        raise Exception("GRNI control account is not configured")
+    if not asset_code and capitalised_vat > 0:
+        raise Exception("Asset account code is missing for capitalised VAT")
+
+    jlines = [
+        {
+            "account_code": grni_code,
+            "debit": float(net),
+            "credit": 0.0,
+        },
+    ]
+
+    if recoverable_vat > 0:
+        jlines.append({
+            "account_code": vat_code,
+            "debit": float(recoverable_vat),
+            "credit": 0.0,
+        })
+    if capitalised_vat > 0:
+        jlines.append({
+            "account_code": asset_code,
+            "debit": float(capitalised_vat),
+            "credit": 0.0,
+        })
+        jlines.append({
+            "account_code": ap_code,
+            "debit": 0.0,
+            "credit": float(gross),
+        })
+    entry = {
+        "date": bill.get("bill_date"),
+        "ref": bill.get("number") or f"BILL-{bill_id}",
+        "description": f"Asset GRNI bill clearing for acquisition {acquisition_id}",
+        "source": "asset_grni_bill",
+        "source_id": int(bill_id),
+        "lines": jlines,
+    }
+
+    jid = db_service.post_journal(
+        company_id,
+        entry,
+    )
+
+    with get_conn(company_id) as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                UPDATE {schema}.asset_acquisitions
+                   SET vat_amount = %s,
+                       gross_amount = %s,
+                       non_recoverable_vat_amount = %s,
+                       updated_at = NOW()
+                 WHERE company_id = %s
+                   AND id = %s
+            """, (
+                float(full_vat),
+                float(gross),
+                float(capitalised_vat),
+                int(company_id),
+                int(acquisition_id),
+            ))
+
+            cur.execute(f"""
+                UPDATE {schema}.bills
+                   SET status = 'posted',
+                       posted_journal_id = %s,
+                       posted_at = COALESCE(posted_at, NOW()),
+                       updated_at = NOW()
+                 WHERE company_id = %s
+                   AND id = %s
+            """, (
+                int(jid),
+                int(company_id),
+                int(bill_id),
+            ))
+
+        conn.commit()
+
+    return {
+        "journal_id": int(jid),
+        "mode": "asset_grni_bill",
+        "asset_id": int(asset_id),
+        "asset_acquisition_id": int(acquisition_id),
+        "posting_skipped": False,
+        "vat": {
+            "full_vat": float(full_vat),
+            "recoverable_vat": float(recoverable_vat),
+            "capitalised_vat": float(capitalised_vat),
+            "recovery_percent": float(recovery_pct),
+        },
+    }
+
 def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
     if bill is None or not isinstance(bill, dict):
         raise TypeError("Bill must be a dict")
@@ -547,12 +682,15 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
                     }
 
                 # grni -> continue into normal AP flow
+                # GRNI asset acquisition
                 elif funding == "grni":
-                    pass
-
-                # grni -> continue into normal AP flow
-                elif funding == "grni":
-                    pass
+                    return post_asset_grni_bill(
+                        company_id=company_id,
+                        bill_id=int(bill_id),
+                        asset_id=int(asset_id),
+                        acquisition_id=int(asset_acq_id),
+                        payload=payload,
+                    )
 
     # 🔒 Hard stop: asset-linked bills must never fall through to normal AP posting.
     if asset_id or asset_acq_id:
@@ -958,10 +1096,12 @@ def api_bills(company_id: int):
 
     header["status"] = bill_status
 
+    posting_mode = str(header.get("posting_mode") or "").strip().lower()
+
     is_asset_acq_bill = (
         header.get("asset_id") not in (None, "", 0, "0")
         and header.get("asset_acquisition_id") not in (None, "", 0, "0")
-        and str(header.get("posting_mode") or "").strip().lower() == "asset_acquisition"
+        and posting_mode in {"asset_acquisition", "grni_clearing", "post_via_acquisition", "document_only"}
     )
 
     if is_asset_acq_bill:
@@ -971,7 +1111,7 @@ def api_bills(company_id: int):
                 "error": "Asset-linked bill requires both asset_id and asset_acquisition_id"
             }), 400
 
-        if str(header.get("posting_mode")).strip().lower() != "asset_acquisition":
+        if posting_mode not in {"asset_acquisition", "grni_clearing", "post_via_acquisition", "document_only"}:
             return jsonify({
                 "ok": False,
                 "error": "Invalid posting_mode for asset-linked bill"
@@ -1238,11 +1378,8 @@ def api_bill_detail(company_id: int, bill_id: int):
             header["asset_acquisition_id"] = bill.get("asset_acquisition_id")
 
         if not header.get("posting_mode"):
-            header["posting_mode"] = bill.get("posting_mode") or (
-                "asset_acquisition"
-                if header.get("asset_id") and header.get("asset_acquisition_id")
-                else None
-            )
+            header["posting_mode"] = bill.get("posting_mode") or None
+    
     except Exception:
         return jsonify({
             "ok": False,
@@ -1285,10 +1422,12 @@ def api_bill_detail(company_id: int, bill_id: int):
 
     header["status"] = bill_status
 
+    posting_mode = str(header.get("posting_mode") or "").strip().lower()
+
     is_asset_acq_bill = (
-        header.get("asset_id")
-        and header.get("asset_acquisition_id")
-        and str(header.get("posting_mode") or "").strip().lower() == "asset_acquisition"
+        header.get("asset_id") not in (None, "", 0, "0")
+        and header.get("asset_acquisition_id") not in (None, "", 0, "0")
+        and posting_mode in {"asset_acquisition", "grni_clearing", "post_via_acquisition", "document_only"}
     )
 
     try:
