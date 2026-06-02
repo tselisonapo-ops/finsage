@@ -17265,8 +17265,15 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   }
 
   if (moduleKey === "ppe") {
+    const companyName =
+      getActiveCompanyName?.() ||
+      localStorage.getItem("active_company_name") ||
+      localStorage.getItem("company_name") ||
+      "";
+
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
+      companyName,
       accountCode: account?.code,
       accountName: account?.name,
       defaults: {
@@ -17327,8 +17334,15 @@ async function redirectToModule({ moduleKey, account, side, meta = {} }) {
   }
 
   if (moduleKey === "amort") {
+    const companyName =
+      getActiveCompanyName?.() ||
+      localStorage.getItem("active_company_name") ||
+      localStorage.getItem("company_name") ||
+      "";
+
     return await window.openFixedAssetsDrawer?.({
       mode: "acquire",
+      companyName,
       accountCode: account?.code,
       accountName: account?.name,
       defaults: {
