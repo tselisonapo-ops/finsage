@@ -62221,6 +62221,7 @@ function showAssetGrniVatNote({
     Capitalised VAT: ${F(capitalisedVat)}
   `;
 }
+window.showAssetGrniVatNote = showAssetGrniVatNote;
 
 function bindBillVendorGuards() {
   const vendEl = document.getElementById("billVendor");
@@ -62361,7 +62362,7 @@ async function openBillFromAssetAcquisition(acqId) {
     const recoverableVat = fullVat * (recoveryPct / 100);
     const capitalisedVat = fullVat - recoverableVat;
 
-    showAssetGrniVatNote({
+    window.showAssetGrniVatNote?.({
       recoveryPct,
       fullVat,
       recoverableVat,
