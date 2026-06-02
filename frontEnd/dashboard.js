@@ -62932,7 +62932,16 @@ function bindAP() {
   }
   
   function applyVatVisibility() {
-    const enable = !!vatEnabledEl?.checked;
+    const assetPrefill = window._CURRENT_ASSET_BILL_PREFILL || {};
+    const isAssetGrni =
+      String(assetPrefill.funding_source || "").toLowerCase() === "grni";
+
+    const enable = isAssetGrni ? true : !!vatEnabledEl?.checked;
+
+    if (isAssetGrni && vatEnabledEl) {
+      vatEnabledEl.checked = true;
+    }
+
     setVatUIVisible(enable);
 
     if (!enable) {
