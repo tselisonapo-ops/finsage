@@ -62301,10 +62301,18 @@ async function openBillFromAssetAcquisition(acqId) {
   const acqIdEl = root.querySelector("#billAssetAcquisitionId");
   const modeEl = root.querySelector("#billPostingMode");
 
+  const funding = String(prefill.funding_source || "").trim().toLowerCase();
+
+  const postingMode =
+    funding === "grni"
+      ? "grni_clearing"
+      : funding === "vendor_credit"
+        ? "document_only"
+        : String(prefill.posting_mode || "").trim();
+
   if (assetIdEl) assetIdEl.value = String(prefill.asset_id || "");
   if (acqIdEl) acqIdEl.value = String(prefill.asset_acquisition_id || "");
-  if (modeEl) modeEl.value = String(prefill.posting_mode || "");
-
+  if (modeEl) modeEl.value = postingMode;
   if (!Array.isArray(window.VENDORS_CACHE) || window.VENDORS_CACHE.length === 0) {
     await window.fillBillVendorList?.();
   }
@@ -62343,7 +62351,7 @@ async function openBillFromAssetAcquisition(acqId) {
     notes: prefill.notes || "",
     asset_id: prefill.asset_id,
     asset_acquisition_id: prefill.asset_acquisition_id,
-    posting_mode: prefill.posting_mode,
+    posting_mode: postingMode,
   });
 
   const linesBody = root.querySelector("#billLines");
@@ -62351,21 +62359,18 @@ async function openBillFromAssetAcquisition(acqId) {
 
   const vatEnabledEl = root.querySelector("#apBillVatEnabled");
   const vatModeEl = root.querySelector("#apBillVatMode");
-
-  const funding = String(prefill.funding_source || "").toLowerCase();
-  const isAssetGrni = funding === "grni" || prefill.posting_mode === "grni_clearing";
+  const isAssetGrni = funding === "grni";
+  const isVendorCreditAsset = funding === "vendor_credit";
   const vatRate = Number(prefill.vat_rate ?? 15);
 
-  if (isAssetGrni) {
+  if (isAssetGrni || isVendorCreditAsset) {
     const recoveryPct = Number(prefill.vat_recovery_percent ?? 100);
 
-    const netAmount = Number(
-      prefill.net_amount ??
-      prefill.amount ??
-      0
-    );
+    const baseAmount = isAssetGrni
+      ? Number(prefill.net_amount ?? prefill.amount ?? 0)
+      : Number(prefill.net_amount ?? prefill.amount ?? prefill.gross_amount ?? 0);
 
-    const fullVat = netAmount * (vatRate / 100);
+    const fullVat = Number(prefill.vat_amount ?? (baseAmount * (vatRate / 100)));
     const recoverableVat = fullVat * (recoveryPct / 100);
     const capitalisedVat = fullVat - recoverableVat;
 
@@ -62386,6 +62391,14 @@ async function openBillFromAssetAcquisition(acqId) {
     });
   }
 
+      console.log("[GRNI VAT DEBUG]", {
+      acquisition_id: prefill.asset_acquisition_id,
+      funding_source: prefill.funding_source,
+      vat_input_claimable: prefill.vat_input_claimable,
+      vat_recovery_percent: prefill.vat_recovery_percent,
+      vat_recovery_reason: prefill.vat_recovery_reason,
+      prefill,
+    });
   if (vatEnabledEl) {
     vatEnabledEl.checked = true;
     vatEnabledEl.disabled = isAssetGrni;
@@ -63132,20 +63145,18 @@ function bindAP() {
     const isAssetGrni =
       String(assetPrefill.funding_source || "").toLowerCase() === "grni";
 
-    if (isAssetGrni) {
-      const recoveryPct = Number(assetPrefill.vat_recovery_percent ?? 100);
+    if (isAssetGrni || isVendorCreditAsset) {
+      const recoveryPct = Number(prefill.vat_recovery_percent ?? 100);
 
-      const fullVat = vatDisplay;
+      const baseAmount = isAssetGrni
+        ? Number(prefill.net_amount ?? prefill.amount ?? 0)
+        : Number(prefill.net_amount ?? prefill.amount ?? prefill.gross_amount ?? 0);
 
-      const recoverableVat =
-        fullVat * (recoveryPct / 100);
+      const fullVat = Number(prefill.vat_amount ?? (baseAmount * (vatRate / 100)));
+      const recoverableVat = fullVat * (recoveryPct / 100);
+      const capitalisedVat = fullVat - recoverableVat;
 
-      const capitalisedVat =
-        fullVat - recoverableVat;
-
-      vatDisplay = recoverableVat;
-
-      showAssetGrniVatNote?.({
+      window.showAssetGrniVatNote?.({
         recoveryPct,
         fullVat,
         recoverableVat,

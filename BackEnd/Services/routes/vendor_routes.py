@@ -112,14 +112,31 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
 
     with get_conn(company_id) as conn:
         with conn.cursor() as cur:
+            # Lock acquisition row so same bill/acquisition cannot be processed twice
+            cur.execute(f"""
+                SELECT non_recoverable_vat_amount
+                FROM {schema}.asset_acquisitions
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(acquisition_id),
+            ))
+
+            locked_acq = cur.fetchone()
+            existing_nonrec = _money((locked_acq or [0])[0] if locked_acq else 0)
+
+            already_capitalised = existing_nonrec > 0
+
             cur.execute(f"""
                 UPDATE {schema}.asset_acquisitions
-                   SET vat_amount = %s,
-                       gross_amount = %s,
-                       non_recoverable_vat_amount = %s,
-                       updated_at = NOW()
-                 WHERE company_id = %s
-                   AND id = %s
+                SET vat_amount = %s,
+                    gross_amount = %s,
+                    non_recoverable_vat_amount = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
             """, (
                 float(full_vat),
                 float(gross),
@@ -128,27 +145,27 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
                 int(acquisition_id),
             ))
 
-        if capitalised_vat > 0:
-            cur.execute(f"""
-                UPDATE {schema}.assets
-                SET cost = COALESCE(cost, 0) + %s,
-                    updated_at = NOW()
-                WHERE company_id = %s
-                AND id = %s
-            """, (
-                float(capitalised_vat),
-                int(company_id),
-                int(asset_id),
-            ))
+            if capitalised_vat > 0 and not already_capitalised:
+                cur.execute(f"""
+                    UPDATE {schema}.assets
+                    SET cost = COALESCE(cost, 0) + %s,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                """, (
+                    float(capitalised_vat),
+                    int(company_id),
+                    int(asset_id),
+                ))
 
             cur.execute(f"""
                 UPDATE {schema}.bills
-                   SET status = 'posted',
-                       posted_journal_id = %s,
-                       posted_at = COALESCE(posted_at, NOW()),
-                       updated_at = NOW()
-                 WHERE company_id = %s
-                   AND id = %s
+                SET status = 'posted',
+                    posted_journal_id = %s,
+                    posted_at = COALESCE(posted_at, NOW()),
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
             """, (
                 int(jid),
                 int(company_id),
