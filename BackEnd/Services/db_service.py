@@ -13065,6 +13065,8 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT,
         ADD COLUMN IF NOT EXISTS vat_recovery_percent NUMERIC(5,2) NOT NULL DEFAULT 100,
         ADD COLUMN IF NOT EXISTS non_recoverable_vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS nonrecoverable_vat_capitalized BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS nonrecoverable_vat_capitalized_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(18,2) DEFAULT 0,
         ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,2),
         ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(18,2);

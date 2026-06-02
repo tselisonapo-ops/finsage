@@ -114,7 +114,7 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
         with conn.cursor() as cur:
             # Lock acquisition row so same bill/acquisition cannot be processed twice
             cur.execute(f"""
-                SELECT non_recoverable_vat_amount
+                SELECT nonrecoverable_vat_capitalized
                 FROM {schema}.asset_acquisitions
                 WHERE company_id = %s
                 AND id = %s
@@ -125,21 +125,19 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
             ))
 
             locked_acq = cur.fetchone()
-            existing_nonrec = _money(
-                locked_acq.get("non_recoverable_vat_amount") if locked_acq else 0
-            )
 
-            already_capitalised = existing_nonrec > 0
+            already_capitalised = bool(
+                locked_acq.get("nonrecoverable_vat_capitalized")
+            ) if locked_acq else False
 
             cur.execute(f"""
                 UPDATE {schema}.asset_acquisitions
                 SET vat_amount = %s,
                     gross_amount = %s,
-                    non_recoverable_vat_amount = %s,
-                    updated_at = NOW()
+                    non_recoverable_vat_amount = %s
                 WHERE company_id = %s
                 AND id = %s
-            """, (
+            """,(
                 float(full_vat),
                 float(gross),
                 float(capitalised_vat),
@@ -158,6 +156,17 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
                     float(capitalised_vat),
                     int(company_id),
                     int(asset_id),
+                ))
+
+                cur.execute(f"""
+                    UPDATE {schema}.asset_acquisitions
+                    SET nonrecoverable_vat_capitalized = TRUE,
+                        nonrecoverable_vat_capitalized_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                """, (
+                    int(company_id),
+                    int(acquisition_id),
                 ))
 
             cur.execute(f"""
