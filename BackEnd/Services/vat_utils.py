@@ -800,11 +800,7 @@ def vat_summary(company_id: int):
         AND COALESCE(j.source, '') NOT IN ('vat_filing', 'vat_filing_payment')
     """
 
-    with db_service._conn_cursor() as (_conn, cur):
-        cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
-        
-
-    with db_service._conn_cursor() as (_conn, cur):
+    with db_service._conn_cursor() as (_, cur):
         cur.execute(sql, (int(company_id), start_date, end_date, *vat_codes))
         rows = cur.fetchall() or []
 
@@ -816,17 +812,18 @@ def vat_summary(company_id: int):
         code = str(r.get("account") or "")
         dr = float(r.get("debit") or 0)
         cr = float(r.get("credit") or 0)
-        bal = dr - cr
 
         label = assign_period_label(r["date"], cfg) if cfg else "Period"
 
         if code in input_codes:
-            input_total += bal
-            buckets[label]["input"] += bal
+            amount = dr - cr
+            input_total += amount
+            buckets[label]["input"] += amount
+
         elif code in output_codes:
-            amt = -bal
-            output_total += amt
-            buckets[label]["output"] += amt
+            amount = cr - dr
+            output_total += amount
+            buckets[label]["output"] += amount
 
     periods = [
         {"label": k, "input": v["input"], "output": v["output"]}
@@ -993,12 +990,12 @@ def vat_prepare_filing(company_id: int):
             code = str(r.get("account") or "")
             dr = float(r.get("debit") or 0)
             cr = float(r.get("credit") or 0)
-            bal = dr - cr
+            vat_amount = abs(dr - cr)
 
             if code in input_codes:
-                input_total += bal
+                input_total += vat_amount
             elif code in output_codes:
-                output_total += -bal
+                output_total += vat_amount
 
     input_total = round(float(input_total or 0), 2)
     output_total = round(float(output_total or 0), 2)
