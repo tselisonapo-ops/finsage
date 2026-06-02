@@ -90,16 +90,17 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
             "debit": float(capitalised_vat),
             "credit": 0.0,
         })
-        jlines.append({
-            "account_code": ap_code,
-            "debit": 0.0,
-            "credit": float(gross),
-        })
+
+    jlines.append({
+        "account_code": ap_code,
+        "debit": 0.0,
+        "credit": float(gross),
+    })
     entry = {
         "date": bill.get("bill_date"),
         "ref": bill.get("number") or f"BILL-{bill_id}",
         "description": f"Asset GRNI bill clearing for acquisition {acquisition_id}",
-        "source": "asset_grni_bill",
+        "source": "bill",
         "source_id": int(bill_id),
         "lines": jlines,
     }
@@ -125,6 +126,19 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
                 float(capitalised_vat),
                 int(company_id),
                 int(acquisition_id),
+            ))
+
+        if capitalised_vat > 0:
+            cur.execute(f"""
+                UPDATE {schema}.assets
+                SET cost = COALESCE(cost, 0) + %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+            """, (
+                float(capitalised_vat),
+                int(company_id),
+                int(asset_id),
             ))
 
             cur.execute(f"""
