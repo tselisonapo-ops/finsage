@@ -457,19 +457,42 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
         gl_cost AS (
             SELECT
-                acq.asset_id,
+                a.id AS asset_id,
                 SUM(jl.debit - jl.credit)::numeric(18,2) AS cost_gl
-            FROM {{schema}}.asset_acquisitions acq
-            JOIN {{schema}}.journal j
-              ON j.id = acq.posted_journal_id
-            JOIN {{schema}}.journal_lines jl
-              ON jl.journal_id = j.id
-            JOIN base a
-              ON a.id = acq.asset_id
-            WHERE LOWER(acq.status) = 'posted'
-              AND acq.acquisition_date <= %s
-              AND jl.account_code = a.asset_account_code
-            GROUP BY acq.asset_id
+            FROM base a
+            JOIN {schema}.journal_lines jl
+            ON jl.account_code = a.asset_account_code
+            JOIN {schema}.journal j
+            ON j.id = jl.journal_id
+            AND j.company_id = a.company_id
+            WHERE j.company_id = %s
+            AND j.date <= %s
+            AND COALESCE(j.is_reversal, FALSE) = FALSE
+            AND (
+                (
+                    j.source = 'asset_acquisition'
+                    AND j.source_id IN (
+                        SELECT acq.id
+                        FROM {schema}.asset_acquisitions acq
+                        WHERE acq.company_id = a.company_id
+                            AND acq.asset_id = a.id
+                            AND LOWER(acq.status) = 'posted'
+                    )
+                )
+                OR
+                (
+                    j.source = 'bill'
+                    AND j.source_id IN (
+                        SELECT b.id
+                        FROM {schema}.bills b
+                        WHERE b.company_id = a.company_id
+                            AND b.asset_id = a.id
+                            AND b.asset_acquisition_id IS NOT NULL
+                            AND LOWER(b.status) = 'posted'
+                    )
+                )
+            )
+            GROUP BY a.id
         ),
 
         hfs AS (
@@ -672,7 +695,9 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
         *params,
 
         as_at,       # posted_flags acquisition cutoff
-        as_at,       # gl_cost acquisition cutoff
+
+        company_id,  # gl_cost company
+        as_at,       # gl_cost journal date cutoff
 
         company_id,  # hfs company
         as_at,       # hfs cutoff
