@@ -62195,14 +62195,19 @@ function showAssetGrniVatNote({
   recoverableVat,
   capitalisedVat,
 }) {
-  const root = getBillRoot?.() || document;
+  const root = window.getBillRoot?.() || document;
+
+  const fmtMoney = (n) => {
+    const x = Number(String(n ?? 0).replace(/,/g, "")) || 0;
+    if (typeof window.fmt === "function") return window.fmt(x);
+    return x.toFixed(2);
+  };
 
   let box = root.querySelector("#assetGrniVatNote");
 
   if (!box) {
     box = document.createElement("div");
     box.id = "assetGrniVatNote";
-
     box.style.padding = "10px";
     box.style.marginTop = "8px";
     box.style.borderRadius = "8px";
@@ -62216,11 +62221,13 @@ function showAssetGrniVatNote({
 
   box.innerHTML = `
     <b>Asset GRNI VAT position</b><br/>
-    Recovery %: ${recoveryPct.toFixed(2)}%<br/>
-    Recoverable VAT: ${F(recoverableVat)}<br/>
-    Capitalised VAT: ${F(capitalisedVat)}
+    Recovery %: ${Number(recoveryPct || 0).toFixed(2)}%<br/>
+    Full VAT: ${fmtMoney(fullVat)}<br/>
+    Recoverable VAT: ${fmtMoney(recoverableVat)}<br/>
+    Capitalised VAT: ${fmtMoney(capitalisedVat)}
   `;
 }
+
 window.showAssetGrniVatNote = showAssetGrniVatNote;
 
 function bindBillVendorGuards() {
