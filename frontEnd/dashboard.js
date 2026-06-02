@@ -63099,8 +63099,39 @@ function bindAP() {
 
     const netAfterDisc = Math.max(0, subtotalRawNet - netDiscAmt);
     const subtotalDisplay = Math.max(0, netAfterDisc + other);
-    const vatDisplay      = Math.max(0, vatAfterDisc);
-    const totalDisplay    = Math.max(0, subtotalDisplay + vatDisplay);
+
+    let vatDisplay = Math.max(0, vatAfterDisc);
+
+    const assetPrefill = window._CURRENT_ASSET_BILL_PREFILL || {};
+
+    const isAssetGrni =
+      String(assetPrefill.funding_source || "").toLowerCase() === "grni";
+
+    if (isAssetGrni) {
+      const recoveryPct = Number(assetPrefill.vat_recovery_percent ?? 100);
+
+      const fullVat = vatDisplay;
+
+      const recoverableVat =
+        fullVat * (recoveryPct / 100);
+
+      const capitalisedVat =
+        fullVat - recoverableVat;
+
+      vatDisplay = recoverableVat;
+
+      showAssetGrniVatNote?.({
+        recoveryPct,
+        fullVat,
+        recoverableVat,
+        capitalisedVat,
+      });
+    }
+
+    const totalDisplay = Math.max(
+      0,
+      subtotalDisplay + vatAfterDisc
+    );
 
     if (!window._BILL_TOTALS_LOCKED || force) {
       const subEl = root.querySelector("#billSubtotal");
@@ -63125,7 +63156,9 @@ function bindAP() {
       subtotal_amount: subtotalDisplay,
       discount_amount: netDiscAmt,
       discount_rate: discRate,
-      vat_amount: vatDisplay,
+      vat_amount: isAssetGrni ? Math.max(0, vatAfterDisc) : vatDisplay,
+      recoverable_vat_amount: vatDisplay,
+      capitalised_vat_amount: isAssetGrni ? Math.max(0, vatAfterDisc - vatDisplay) : 0,
       total_amount: totalDisplay,
       other,
       vat_mode: vatMode,
