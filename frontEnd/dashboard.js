@@ -62294,16 +62294,30 @@ async function openBillFromAssetAcquisition(acqId) {
   const vatEnabledEl = root.querySelector("#apBillVatEnabled");
   const vatModeEl = root.querySelector("#apBillVatMode");
 
-  if (vatEnabledEl) vatEnabledEl.checked = true;
+  const funding = String(prefill.funding_source || "").toLowerCase();
+  const isAssetGrni = funding === "grni" || prefill.posting_mode === "grni_clearing";
+
+  if (vatEnabledEl) {
+    vatEnabledEl.checked = true;
+    vatEnabledEl.disabled = isAssetGrni;
+    vatEnabledEl.classList.toggle("opacity-50", isAssetGrni);
+    vatEnabledEl.classList.toggle("cursor-not-allowed", isAssetGrni);
+  }
 
   if (vatModeEl) {
-    vatModeEl.value = "inclusive"; // 🔥 critical
+    vatModeEl.value = isAssetGrni ? "exclusive" : "inclusive";
+    vatModeEl.disabled = isAssetGrni;
+    vatModeEl.classList.toggle("opacity-50", isAssetGrni);
+    vatModeEl.classList.toggle("cursor-not-allowed", isAssetGrni);
+    vatModeEl.title = isAssetGrni
+      ? "Asset GRNI bills are locked to VAT Exclusive because the GRNI amount is net of VAT."
+      : "";
   }
 
   vatEnabledEl?.dispatchEvent(new Event("change", { bubbles: true }));
   vatModeEl?.dispatchEvent(new Event("change", { bubbles: true }));
 
-const vatRate = Number(prefill.vat_rate ?? 15);
+  const vatRate = Number(prefill.vat_rate ?? 15);
 
   window.addBillLine?.({
     item_name: prefill.asset_code || "Asset acquisition",
@@ -62588,7 +62602,7 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
 
       const clickable =
         !!x?.acquisition_id &&
-        funding === "vendor_credit" &&
+        ["vendor_credit", "grni"].includes(funding) &&
         !hasActiveBill &&
         status !== "cancelled" &&
         status !== "completed";
@@ -62601,11 +62615,20 @@ function maybePromptForVendorLinkedAssetBill(vendorObj) {
         asset_journal_id: x?.posted_journal_id || null,
         asset_label: assetLabel,
         reference: x?.vendor_invoice_no || x?.reference || "",
+
         amount: x?.amount || x?.gross_amount || 0,
+
+        funding_source: funding,
+        vat_input_claimable: !!x?.vat_input_claimable,
+        vat_recovery_reason: x?.vat_recovery_reason || "",
+        vat_recovery_percent: Number(x?.vat_recovery_percent ?? 100),
+
         clickable,
+
         status_label: hasActiveBill
           ? `Bill ${billStatus || "captured"} #${billId}`
           : status || "Draft",
+
         bill_label: clickable
           ? `<span class="ap-badge ap-badge--ok">Prefill</span>`
           : `<span class="ap-badge ap-badge--muted">Already captured</span>`,

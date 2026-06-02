@@ -740,7 +740,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     }
 
     if (!String(form.asset_class || "").trim()) {
-      return setErr("Asset class label is required.");
+      return setErr("Asset class is required.");
     }
     if (!form.acquisition_date) return setErr("Acquisition date is required.");
 
@@ -1198,7 +1198,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             </div>
 
             <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class label *</div>
+              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class *</div>
               <input
                 value={form.asset_class}
                 onChange={(e) => setForm((p) => ({ ...p, asset_class: e.target.value }))}

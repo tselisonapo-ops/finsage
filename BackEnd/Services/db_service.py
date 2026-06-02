@@ -12680,8 +12680,8 @@ class DatabaseService:
 
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS vat_input_claimable BOOLEAN DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT;
-        ADD COLUMN IF NOT EXISTS vat_recovery_percent NUMERIC(5,2) NOT NULL DEFAULT 100,
+        ADD COLUMN IF NOT EXISTS vat_recovery_reason TEXT,
+        ADD COLUMN IF NOT EXISTS vat_recovery_percent NUMERIC(5,2) NOT NULL DEFAULT 100;
 
         ALTER TABLE {schema}.assets
             ADD COLUMN IF NOT EXISTS uop_usage_mode text NULL,
@@ -36513,6 +36513,16 @@ class DatabaseService:
                             'reference', ac.reference,
                             'status', ac.status,
 
+                            'amount', ac.amount,
+                            'net_amount', ac.net_amount,
+                            'vat_amount', ac.vat_amount,
+                            'gross_amount', ac.gross_amount,
+
+                            'vat_input_claimable', ac.vat_input_claimable,
+                            'vat_recovery_reason', ac.vat_recovery_reason,
+                            'vat_recovery_percent', ac.vat_recovery_percent,
+                            'non_recoverable_vat_amount', ac.non_recoverable_vat_amount,
+
                             -- asset acquisition journal
                             'posted_journal_id', ac.posted_journal_id,
 
@@ -36669,6 +36679,16 @@ class DatabaseService:
                             'grn_no', ac.grn_no,
                             'reference', ac.reference,
                             'status', ac.status,
+
+                            'amount', ac.amount,
+                            'net_amount', ac.net_amount,
+                            'vat_amount', ac.vat_amount,
+                            'gross_amount', ac.gross_amount,
+
+                            'vat_input_claimable', ac.vat_input_claimable,
+                            'vat_recovery_reason', ac.vat_recovery_reason,
+                            'vat_recovery_percent', ac.vat_recovery_percent,
+                            'non_recoverable_vat_amount', ac.non_recoverable_vat_amount,
 
                             -- asset acquisition journal
                             'posted_journal_id', ac.posted_journal_id,
