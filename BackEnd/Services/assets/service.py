@@ -1379,6 +1379,245 @@ def create_acquisition(cur, company_id, asset_id, payload):
     row = cur.fetchone()
     return (row.get("id") if isinstance(row, dict) else row[0])
 
+def update_acquisition_draft(cur, company_id: int, acq_id: int, payload: dict, *, actor_user_id=None):
+    schema = company_schema(company_id)
+    payload = payload or {}
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.asset_acquisitions
+        WHERE company_id=%s AND id=%s
+        FOR UPDATE
+    """), (company_id, acq_id))
+
+    acq = fetchone(cur)
+    if not acq:
+        raise Exception("Asset acquisition not found")
+
+    if acq.get("status") == "posted" or acq.get("posted_journal_id"):
+        raise Exception("Posted acquisition cannot be edited")
+
+    funding = (payload.get("funding_source") or acq.get("funding_source") or "bank_cash")
+    funding = str(funding).strip().lower()
+
+    if funding in ("bank", "cash"):
+        funding = "bank_cash"
+    if funding == "ap":
+        funding = "vendor_credit"
+
+    allowed = {"bank_cash", "vendor_credit", "grni", "other"}
+    if funding not in allowed:
+        raise Exception(f"invalid funding_source: {funding}")
+
+    amt = _D(payload.get("amount", acq.get("amount")))
+    if amt <= 0:
+        raise Exception("amount must be > 0")
+
+    acquisition_date = payload.get("acquisition_date") or acq.get("acquisition_date")
+    posting_date = payload.get("posting_date") or acq.get("posting_date") or acquisition_date
+
+    if not acquisition_date:
+        raise Exception("acquisition_date is required")
+    if not posting_date:
+        raise Exception("posting_date is required")
+
+    amount_is_gross = payload.get("amount_is_gross")
+    if amount_is_gross is None:
+        amount_is_gross = funding != "grni"
+    amount_is_gross = bool(amount_is_gross)
+
+    vat_input_claimable = bool(payload.get("vat_input_claimable", acq.get("vat_input_claimable") or False))
+    vat_recovery_reason = (
+        payload.get("vat_recovery_reason")
+        or acq.get("vat_recovery_reason")
+        or ""
+    )
+    vat_recovery_reason = str(vat_recovery_reason).strip() or None
+
+    if not vat_recovery_reason:
+        raise Exception("vat_recovery_reason is required")
+
+    vat_recovery_percent = Decimal(str(
+        payload.get(
+            "vat_recovery_percent",
+            acq.get("vat_recovery_percent") if acq.get("vat_recovery_percent") is not None else (100 if vat_input_claimable else 0)
+        )
+    ))
+
+    if vat_recovery_percent < 0 or vat_recovery_percent > 100:
+        raise Exception("vat_recovery_percent must be between 0 and 100")
+
+    net_amount = Decimal("0.00")
+    vat_amount = Decimal("0.00")
+    gross_amount = Decimal("0.00")
+    non_recoverable_vat = Decimal("0.00")
+
+    if funding == "grni":
+        if amount_is_gross:
+            raise Exception("GRNI amount must be NET. Set amount_is_gross=false or capture net amount.")
+
+        net_amount = _q2(amt)
+        gross_amount = net_amount
+        vat_amount = Decimal("0.00")
+        non_recoverable_vat = Decimal("0.00")
+        stored_amount = str(net_amount)
+
+    else:
+        if not amount_is_gross:
+            raise Exception("For bank_cash/vendor_credit/other, amount must be VAT-inclusive gross.")
+
+        gross_amount = _q2(amt)
+        net_calc, vat_calc, _ = _vat_split(gross_amount)
+
+        recoverable_vat = _q2(vat_calc * vat_recovery_percent / Decimal("100"))
+        non_recoverable_vat = _q2(vat_calc - recoverable_vat)
+
+        net_amount = _q2(net_calc + non_recoverable_vat)
+        vat_amount = recoverable_vat
+        stored_amount = str(gross_amount)
+
+    supplier_id = payload.get("supplier_id", acq.get("supplier_id"))
+    supplier_id = int(supplier_id) if supplier_id else None
+
+    vendor_invoice_no = (
+        payload.get("vendor_invoice_no")
+        or payload.get("invoice_no")
+        or payload.get("invoice_number")
+        or acq.get("vendor_invoice_no")
+        or ""
+    )
+    vendor_invoice_no = str(vendor_invoice_no).strip() or None
+
+    grn_no = (
+        payload.get("grn_no")
+        or payload.get("grn_number")
+        or payload.get("grn_ref")
+        or acq.get("grn_no")
+        or ""
+    )
+    grn_no = str(grn_no).strip() or None
+
+    if funding in ("vendor_credit", "grni"):
+        if not supplier_id or supplier_id <= 0:
+            raise Exception("supplier_id required for vendor_credit/grni funding_source")
+
+    if funding == "vendor_credit" and not vendor_invoice_no:
+        raise Exception("vendor_invoice_no required for vendor_credit")
+
+    if funding == "grni" and not grn_no:
+        raise Exception("grn_no required for grni")
+
+    bank_account_id = payload.get("bank_account_id", acq.get("bank_account_id"))
+    bank_account_id = int(bank_account_id) if bank_account_id else None
+
+    bank_account_code = (
+        payload.get("bank_account_code")
+        or acq.get("bank_account_code")
+        or ""
+    )
+    bank_account_code = str(bank_account_code).strip() or None
+
+    credit_account_code = (
+        payload.get("credit_account_code")
+        or acq.get("credit_account_code")
+        or ""
+    )
+    credit_account_code = str(credit_account_code).strip() or None
+
+    if funding == "bank_cash":
+        if not bank_account_id:
+            raise Exception("bank_account_id required for bank_cash funding_source")
+
+        if not bank_account_code:
+            cur.execute(_q(schema, """
+                SELECT ledger_account_code
+                FROM {schema}.company_bank_accounts
+                WHERE id=%s
+                LIMIT 1
+            """), (bank_account_id,))
+            r = cur.fetchone() or {}
+            bank_account_code = (r.get("ledger_account_code") or "").strip() or None
+
+        if not bank_account_code:
+            raise Exception("Selected bank_account_id has no ledger_account_code mapping")
+
+    if funding == "other" and not credit_account_code:
+        raise Exception("credit_account_code required for other funding_source")
+
+    reference = (
+        payload.get("reference")
+        or acq.get("reference")
+        or f"ASSET-{acq.get('asset_id')}"
+    )
+    reference = str(reference).strip() or None
+
+    notes = payload.get("notes", acq.get("notes"))
+    status = payload.get("status") or acq.get("status") or "draft"
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.asset_acquisitions
+        SET
+            posting_date=%s,
+            acquisition_date=%s,
+            amount=%s,
+
+            net_amount=%s,
+            vat_amount=%s,
+            gross_amount=%s,
+            vat_input_claimable=%s,
+            vat_recovery_reason=%s,
+            vat_recovery_percent=%s,
+            non_recoverable_vat_amount=%s,
+
+            funding_source=%s,
+            bank_account_id=%s,
+            bank_account_code=%s,
+            credit_account_code=%s,
+
+            supplier_id=%s,
+            vendor_invoice_no=%s,
+            grn_no=%s,
+
+            reference=%s,
+            notes=%s,
+            status=%s,
+            updated_by_user_id=%s,
+            updated_at=NOW()
+        WHERE company_id=%s AND id=%s
+        RETURNING *
+    """), (
+        posting_date,
+        acquisition_date,
+        stored_amount,
+
+        net_amount,
+        vat_amount,
+        gross_amount,
+        vat_input_claimable,
+        vat_recovery_reason,
+        vat_recovery_percent,
+        non_recoverable_vat,
+
+        funding,
+        bank_account_id,
+        bank_account_code,
+        credit_account_code,
+
+        supplier_id,
+        vendor_invoice_no,
+        grn_no,
+
+        reference,
+        notes,
+        status,
+        actor_user_id,
+
+        company_id,
+        acq_id,
+    ))
+
+    return fetchone(cur)
+
 def patch_acquisition_posting_fields(cur, company_id, acq_id, *, posting_date=None, reference=None):
     schema = company_schema(company_id)
 

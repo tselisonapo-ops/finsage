@@ -244,6 +244,10 @@ function assetAcqPreviewUrl(companyId: number | string, acqId: number | string):
   return `/api/companies/${encodeURIComponent(String(companyId))}/asset-acquisitions/${encodeURIComponent(String(acqId))}/journal-preview`;
 }
 
+function assetAcqUpdateUrl(companyId: number | string, acqId: number | string): string {
+  return `/api/companies/${encodeURIComponent(String(companyId))}/asset-acquisitions/${encodeURIComponent(String(acqId))}`;
+}
+
 async function handoffToApBillFromAcquisition(
   companyId: number | string,
   assetId: number | string,
@@ -706,10 +710,28 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     setErr("");
 
-    if (createdAssetId || createdAcqId) {
-      return setErr(
-        "This draft was already created. To change amount, depreciation, or asset details safely, add an update-draft endpoint or discard this draft and create a new one."
-      );
+    if (createdAssetId && createdAcqId) {
+      const companyId = args.companyId;
+      const acqPayload = buildAcqPayload(createdAssetId);
+
+      const acqRes = await apiFetchFn(assetAcqUpdateUrl(companyId, createdAcqId), {
+        method: "PATCH",
+        body: JSON.stringify(acqPayload),
+      });
+
+      const updated = acqRes as {
+        ok?: boolean;
+        data?: { id?: number | string };
+      };
+
+      if (!updated.ok) {
+        throw new Error("Draft acquisition update failed.");
+      }
+
+      await loadJournalPreview(String(companyId), String(createdAcqId));
+      setStep(2);
+      setErr("");
+      return;
     }
     if (!form.asset_code.trim()) return setErr("Asset code is required.");
     if (!form.asset_name.trim()) return setErr("Asset name is required.");

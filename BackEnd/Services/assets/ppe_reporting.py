@@ -774,7 +774,42 @@ def acquisitions_list_or_create(company_id, asset_id):
         current_app.logger.exception("create_acquisition failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route("/api/companies/<int:company_id>/asset-acquisitions/<int:acq_id>", methods=["PATCH", "OPTIONS"])
+@require_auth
+def asset_acquisition_update(company_id, acq_id):
+    if request.method == "OPTIONS":
+        return _opt()
 
+    payload = request.jwt_payload or {}
+    actor_user_id = _actor_user_id(payload)
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    body = request.get_json(force=True) or {}
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                updated = service.update_acquisition_draft(
+                    cur,
+                    company_id,
+                    acq_id,
+                    body,
+                    actor_user_id=actor_user_id,
+                )
+
+                conn.commit()
+                return jsonify({"ok": True, "data": updated})
+    except Exception as e:
+        current_app.logger.exception("update asset acquisition draft failed")
+        return _json_error(str(e), 400)
+    
 @ppe_bp.route("/api/companies/<int:company_id>/asset-acquisitions/<int:acq_id>/post", methods=["POST", "OPTIONS"])
 @require_auth
 def acquisitions_post(company_id, acq_id):
