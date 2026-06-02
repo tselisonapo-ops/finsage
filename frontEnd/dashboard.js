@@ -63142,21 +63142,22 @@ function bindAP() {
 
     const assetPrefill = window._CURRENT_ASSET_BILL_PREFILL || {};
 
-    const isAssetGrni =
-      String(assetPrefill.funding_source || "").toLowerCase() === "grni";
+    const fundingSource = String(assetPrefill.funding_source || "").toLowerCase();
+
+    const isAssetGrni = fundingSource === "grni";
+    const isVendorCreditAsset = fundingSource === "vendor_credit";
 
     if (isAssetGrni || isVendorCreditAsset) {
-      const recoveryPct = Number(prefill.vat_recovery_percent ?? 100);
+      const recoveryPct = Number(assetPrefill.vat_recovery_percent ?? 100);
 
-      const baseAmount = isAssetGrni
-        ? Number(prefill.net_amount ?? prefill.amount ?? 0)
-        : Number(prefill.net_amount ?? prefill.amount ?? prefill.gross_amount ?? 0);
-
-      const fullVat = Number(prefill.vat_amount ?? (baseAmount * (vatRate / 100)));
+      const fullVat = vatDisplay;
       const recoverableVat = fullVat * (recoveryPct / 100);
       const capitalisedVat = fullVat - recoverableVat;
 
-      window.showAssetGrniVatNote?.({
+      // show only claimable VAT in VAT column
+      vatDisplay = recoverableVat;
+
+      showAssetGrniVatNote?.({
         recoveryPct,
         fullVat,
         recoverableVat,
