@@ -125,7 +125,9 @@ def post_asset_grni_bill(company_id: int, bill_id: int, asset_id: int, acquisiti
             ))
 
             locked_acq = cur.fetchone()
-            existing_nonrec = _money((locked_acq or [0])[0] if locked_acq else 0)
+            existing_nonrec = _money(
+                locked_acq.get("non_recoverable_vat_amount") if locked_acq else 0
+            )
 
             already_capitalised = existing_nonrec > 0
 
