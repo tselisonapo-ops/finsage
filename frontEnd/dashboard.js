@@ -62369,6 +62369,15 @@ async function openBillFromAssetAcquisition(acqId) {
     const recoverableVat = fullVat * (recoveryPct / 100);
     const capitalisedVat = fullVat - recoverableVat;
 
+    console.log("[GRNI VAT DEBUG]", {
+      acquisition_id: prefill.asset_acquisition_id,
+      funding_source: prefill.funding_source,
+      vat_input_claimable: prefill.vat_input_claimable,
+      vat_recovery_percent: prefill.vat_recovery_percent,
+      vat_recovery_reason: prefill.vat_recovery_reason,
+      prefill,
+    });
+
     window.showAssetGrniVatNote?.({
       recoveryPct,
       fullVat,
