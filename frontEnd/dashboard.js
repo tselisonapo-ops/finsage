@@ -9451,8 +9451,22 @@ function openFixedAssetsDrawer(ctx = {}) {
     return Promise.resolve({ action: "close" });
   }
 
-  const companyName = ctx.companyName || getActiveCompanyName();
+  const rawCompanyName = ctx.companyName || getActiveCompanyName?.();
+
+  const companyName =
+    rawCompanyName && String(rawCompanyName).trim()
+      ? String(rawCompanyName).trim()
+      : "";
   const mode = ctx.mode === "dispose" ? "dispose" : "acquire";
+
+  console.log("[PPE] drawer company", {
+    companyId,
+    companyName,
+    activeCompany: window.activeCompany,
+    ACTIVE_COMPANY: window.ACTIVE_COMPANY,
+    badgeText: document.getElementById("companyBadge")?.textContent?.trim(),
+    ctx
+  });
 
   const args = {
     companyId,

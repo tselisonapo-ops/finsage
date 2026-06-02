@@ -997,9 +997,27 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           <div>
             <b>Posting date:</b> {readPostingDateFromArgs(args) || "—"}
           </div>
+
           <div>
             <b>Reference:</b> {readJournalRefFromArgs(args) || "—"}
           </div>
+
+          {!readPostingDateFromArgs(args) || !readJournalRefFromArgs(args) ? (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: "rgba(245,158,11,0.10)",
+                border: "1px solid rgba(245,158,11,0.25)",
+                color: "#92400e",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              Tip: Open this drawer from Journal Desk after choosing the journal date and reference. This keeps the asset acquisition posting aligned to the correct period and source document.
+            </div>
+          ) : null}
         </div>
       )}
 
