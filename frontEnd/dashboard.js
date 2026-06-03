@@ -35032,6 +35032,60 @@ async function saveEditModal() {
     }
   }
 
+  async function loadSmPreview() {
+    const msg = $("smPreviewMsg");
+    const box = $("smPreviewLines");
+
+    try {
+      const payload = smPayloadFromUI();
+
+      if (!payload.asset_id || !payload.event_date || !payload.event_type) {
+        clearSmPreview();
+        return null;
+      }
+
+      const { previewSM } = EP();
+
+      if (msg) {
+        msg.textContent = "Loading preview…";
+        msg.className = "mt-2 text-xs text-slate-500";
+      }
+
+      const out = await api(previewSM, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      smPreviewState.ok = true;
+      smPreviewState.payloadHash = smPreviewHash(payload);
+      smPreviewState.result = out;
+
+      renderSmPreview(out);
+
+      if (msg) {
+        msg.textContent = "Preview loaded.";
+        msg.className = "mt-2 text-xs text-emerald-700";
+      }
+
+      return out;
+    } catch (e) {
+      smPreviewState.ok = false;
+      smPreviewState.payloadHash = "";
+      smPreviewState.result = null;
+
+      if (box) {
+        box.innerHTML = `<div class="p-3 text-xs text-slate-500">No preview yet.</div>`;
+      }
+
+      if (msg) {
+        msg.textContent = e.message || "Preview failed.";
+        msg.className = "mt-2 text-xs text-red-600";
+      }
+
+      throw e;
+    }
+  }
+  
   async function loadSM() {
     const { listSM } = EP();
     setMsg($("smMsg"), "Loading…", "info");
@@ -35087,6 +35141,8 @@ async function saveEditModal() {
 
     assetsLoaded = true;
   }
+
+
 
   function setSelectedAsset(assetOrId) {
     invalidateSmPreview();
@@ -35438,6 +35494,7 @@ async function saveEditModal() {
   function smPreviewHash(payload) {
     return JSON.stringify(payload || {});
   }
+
 
   async function ensurePreviewIsCurrent() {
     const payload = smPayloadFromUI();
