@@ -822,8 +822,16 @@ def create_asset(cur, company_id, payload):
     elif m == "UOP":
         if Decimal(str(payload.get("uop_total_units") or 0)) <= 0:
             raise Exception("uop_total_units required for Units of Production")
+
+    elif m in ("APP", "NONE", "NOT_DEPRECIATED"):
+        m = "APP"
+        payload["depreciation_method"] = "APP"
+        payload["useful_life_months"] = 0
+        payload["rb_rate_percent"] = None
+        payload["uop_total_units"] = None
+        payload["uop_unit_name"] = None
     else:
-        raise Exception("Invalid depreciation_method")
+        raise Exception("Invalid depreciation_method") 
 
     # ----------------------------
     # UOP usage config
@@ -1005,7 +1013,7 @@ def create_asset(cur, company_id, payload):
             vat_recovery_percent,
             vat_input_claimable,
             vat_recovery_reason,
-            payload.get("depreciation_method", "SL"), 
+            m, 
             payload.get("useful_life_months", 0),
             payload.get("rb_rate_percent"),
             payload.get("uop_total_units"), payload.get("uop_unit_name"),

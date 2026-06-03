@@ -2243,6 +2243,9 @@ def post_opening_balance(
     if not asset:
         raise Exception("asset not found")
 
+    dep_method = str(asset.get("depreciation_method") or "").strip().upper()
+    is_non_depreciable = dep_method in ("APP", "NONE", "NOT_DEPRECIATED")
+
     asset_account_code = (asset.get("asset_account_code") or "").strip()
 
     # Resolve depreciation accounts
@@ -2260,7 +2263,7 @@ def post_opening_balance(
 
     if not asset_account_code:
         raise Exception("asset missing asset_account_code")
-    if not accum_dep_account_code:
+    if not is_non_depreciable and not accum_dep_account_code:
         raise Exception("asset missing accum_dep_account_code (could not resolve from asset or COA defaults)")
 
     cost = Decimal(str(asset.get("cost") or 0))
@@ -2281,6 +2284,10 @@ def post_opening_balance(
         raise Exception("opening asset cost must be > 0")
     if opening_accum_dep < 0:
         raise Exception("opening_accum_dep cannot be negative")
+
+    if is_non_depreciable and opening_accum_dep > 0:
+        raise Exception("Non-depreciable assets cannot have opening accumulated depreciation")
+
     if opening_impairment < 0:
         raise Exception("opening_impairment cannot be negative")
     if opening_revaluation_surplus < 0:
@@ -2387,14 +2394,22 @@ def post_opening_balance(
     cur.execute(_q(schema, """
         UPDATE {schema}.assets
         SET
-            accum_dep_account_code = COALESCE(NULLIF(accum_dep_account_code, ''), %s),
-            dep_expense_account_code = COALESCE(NULLIF(dep_expense_account_code, ''), %s),
+            accum_dep_account_code = CASE
+                WHEN %s THEN accum_dep_account_code
+                ELSE COALESCE(NULLIF(accum_dep_account_code, ''), %s)
+            END,
+            dep_expense_account_code = CASE
+                WHEN %s THEN dep_expense_account_code
+                ELSE COALESCE(NULLIF(dep_expense_account_code, ''), %s)
+            END,
             accum_impairment_account_code = COALESCE(NULLIF(accum_impairment_account_code, ''), %s),
             impairment_loss_account_code = COALESCE(NULLIF(impairment_loss_account_code, ''), %s),
             updated_at = NOW()
         WHERE company_id=%s AND id=%s
     """), (
+        is_non_depreciable,
         resolved_accum_dep_code,
+        is_non_depreciable,
         resolved_dep_exp_code,
         resolved_accum_impairment_code,
         resolved_impairment_loss_code,
