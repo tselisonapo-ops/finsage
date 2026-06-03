@@ -65,6 +65,7 @@ def build_statement_of_changes_in_equity(
     company_id: int,
     company_name: str,
     currency: str,
+    organization_type: str = "private_company",
     period_from: str,
     period_to: str,
     opening_equity_accounts: list[dict],
@@ -94,14 +95,73 @@ def build_statement_of_changes_in_equity(
         }
     """
 
-    columns = [
-        {"key": "ordinary_share_capital", "label": "Ordinary Share Capital"},
-        {"key": "preference_share_capital", "label": "Preference Share Capital"},
-        {"key": "share_premium", "label": "Share Premium"},
-        {"key": "retained_earnings", "label": "Retained Earnings"},
-        {"key": "reserves", "label": "Reserves"},
-        {"key": "total", "label": "Total Equity"},
-    ]
+    organization_type = (organization_type or "private_company").strip().lower()
+
+    SOCIE_COLUMNS_BY_ORG = {
+        "private_company": [
+            ("ordinary_share_capital", "Ordinary Share Capital"),
+            ("preference_share_capital", "Preference Share Capital"),
+            ("share_premium", "Share Premium"),
+            ("retained_earnings", "Retained Earnings"),
+            ("reserves", "Reserves"),
+        ],
+        "public_company": [
+            ("ordinary_share_capital", "Ordinary Share Capital"),
+            ("preference_share_capital", "Preference Share Capital"),
+            ("share_premium", "Share Premium"),
+            ("retained_earnings", "Retained Earnings"),
+            ("reserves", "Reserves"),
+        ],
+        "sole_trader": [
+            ("owner_capital", "Owner Capital"),
+            ("retained_earnings", "Accumulated Profit / Loss"),
+        ],
+        "partnership": [
+            ("partner_capital", "Partners' Capital"),
+            ("partner_current", "Partners' Current Accounts"),
+        ],
+        "ngo": [
+            ("restricted_funds", "Restricted Funds"),
+            ("unrestricted_funds", "Unrestricted Funds"),
+            ("accumulated_surplus", "Accumulated Surplus"),
+        ],
+        "npo": [
+            ("restricted_funds", "Restricted Funds"),
+            ("unrestricted_funds", "Unrestricted Funds"),
+            ("accumulated_surplus", "Accumulated Surplus"),
+        ],
+        "trust": [
+            ("trust_capital", "Trust Capital"),
+            ("beneficiary_funds", "Beneficiary Funds"),
+            ("accumulated_surplus", "Accumulated Income"),
+        ],
+        "cooperative": [
+            ("member_capital", "Member Shares"),
+            ("retained_earnings", "Retained Earnings"),
+            ("reserves", "Reserves"),
+        ],
+        "body_corporate": [
+            ("accumulated_surplus", "Accumulated Surplus"),
+            ("restricted_funds", "Reserve Fund"),
+        ],
+        "club_association": [
+            ("accumulated_surplus", "Accumulated Fund"),
+            ("restricted_funds", "Restricted Funds"),
+            ("current_year_surplus", "Current Year Surplus / (Deficit)"),
+        ],
+        "government_entity": [
+            ("accumulated_surplus", "Accumulated Surplus"),
+            ("reserves", "Reserves"),
+        ],
+    }
+
+    bucket_pairs = SOCIE_COLUMNS_BY_ORG.get(
+        organization_type,
+        SOCIE_COLUMNS_BY_ORG["private_company"]
+    )
+
+    columns = [{"key": key, "label": label} for key, label in bucket_pairs]
+    columns.append({"key": "total", "label": "Total"})
 
     row_keys = [
         "opening_balance",
@@ -124,13 +184,7 @@ def build_statement_of_changes_in_equity(
         "closing_balance": "Closing balance",
     }
 
-    bucket_keys = [
-        "ordinary_share_capital",
-        "preference_share_capital",
-        "share_premium",
-        "retained_earnings",
-        "reserves",
-    ]
+    bucket_keys = [key for key, label in bucket_pairs]
 
     rows = {
         k: {"key": k, "label": row_labels[k], "values": {bk: Decimal("0") for bk in bucket_keys}}

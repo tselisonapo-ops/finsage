@@ -15,6 +15,47 @@
   // Cached meta for reuse (country → currency & phone)
   let COUNTRY_META = [];
 
+function updateCountryFieldHints(countryCode) {
+  const code = String(countryCode || "").toUpperCase();
+  const selected = COUNTRY_META.find(c => String(c.code || "").toUpperCase() === code);
+
+  const regHint = document.getElementById("regNumberHint");
+  const tinHint = document.getElementById("taxNumberHint");
+  const vatHint = document.getElementById("vatNumberHint");
+
+  const regInput = document.getElementById("regNumber");
+  const tinInput = document.getElementById("taxNumber");
+  const vatInput = document.getElementById("vatNumber");
+
+  if (!selected) {
+    if (regHint) regHint.textContent = "Select country to see required format.";
+    if (tinHint) tinHint.textContent = "Select country to see required format.";
+    if (vatHint) vatHint.textContent = "Leave blank if not VAT registered.";
+    return;
+  }
+
+  if (regHint) {
+    regHint.textContent = selected.regno_example
+      ? `Expected format: ${selected.regno_example}`
+      : "Enter the official company registration number.";
+  }
+
+  if (tinHint) {
+    tinHint.textContent = selected.tin_example
+      ? `Expected format: ${selected.tin_example}`
+      : "Enter the official Tax Identification Number.";
+  }
+
+  if (vatHint) {
+    vatHint.textContent = selected.vat_example
+      ? `Expected format: ${selected.vat_example}`
+      : "Leave blank if not VAT registered.";
+  }
+
+  if (regInput && selected.regno_example) regInput.placeholder = selected.regno_example;
+  if (tinInput && selected.tin_example) tinInput.placeholder = selected.tin_example;
+  if (vatInput && selected.vat_example) vatInput.placeholder = selected.vat_example;
+}
 /* =========================================================
  * Static Industry Catalog  (front-end only)
  * =======================================================*/
@@ -883,7 +924,7 @@ function validateStep2() {
     if (!saved) return;
     const data = JSON.parse(saved || "{}");
     [
-      "companyName","clientCode","industry","subIndustry","country",
+      "companyName","organizationType","clientCode","industry","subIndustry","country",
       "regNumber","taxNumber","vatNumber","companyEmail",
       "currency","finYearStart","companyRegDate","address",
 
@@ -987,8 +1028,9 @@ function handleRegistration(event) {
 
   // --- Company payload ---
   const company = {
-    companyName:    val("companyName"),
-    clientCode:     val("clientCode") || null,
+    companyName:      val("companyName"),
+    organizationType: val("organizationType") || null,
+    clientCode:       val("clientCode") || null,
     industry:       val("industry") || null,
     subIndustry:    val("subIndustry") || null,
 

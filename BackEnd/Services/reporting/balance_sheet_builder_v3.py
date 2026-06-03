@@ -399,6 +399,29 @@ def build_balance_sheet_v3(
     currency = ctx.get("currency") or "ZAR"
     company_name = ctx.get("company_name") or ""
 
+    organization_type = (
+        ctx.get("organization_type")
+        or ctx.get("organisation_type")
+        or "private_company"
+    ).strip().lower()
+
+    EQUITY_LABELS = {
+        "private_company": "Equity",
+        "public_company": "Equity",
+        "sole_trader": "Owner's Equity",
+        "partnership": "Partners' Equity",
+        "ngo": "Funds and Reserves",
+        "npo": "Funds and Reserves",
+        "trust": "Trust Funds",
+        "cooperative": "Members' Equity",
+        "body_corporate": "Funds and Reserves",
+        "club_association": "Accumulated Funds",
+        "government_entity": "Accumulated Surplus and Reserves",
+        "other": "Equity",
+    }
+
+    equity_label = EQUITY_LABELS.get(organization_type, "Equity")
+
     view = (view or "external").lower()
     if view not in ("external", "internal"):
         view = "external"
@@ -892,7 +915,7 @@ def build_balance_sheet_v3(
                 "totals": tot_ncl,
             },
             "equity": {
-                "label": "Equity",
+                "label": equity_label,
                 "lines": eq_lines,
                 "totals": tot_eq,
             },

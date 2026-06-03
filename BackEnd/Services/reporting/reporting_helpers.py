@@ -170,6 +170,59 @@ def map_layout_key(layout: str) -> str:
     }
     return mapping.get(layout, layout)
 
+def org_statement_labels(organization_type: str) -> Dict[str, str]:
+    org = (organization_type or "private_company").strip().lower()
+
+    if org in {"ngo", "npo", "club_association", "body_corporate"}:
+        return {
+            "statement_title": "Statement of Income and Expenditure",
+            "gross_profit": "Gross surplus",
+            "total_income": "Total income",
+            "operating_income": "Operating surplus / (deficit)",
+            "profit_before_tax": "Surplus / (deficit) before tax",
+            "tax": "Tax expense",
+            "net_income": "Surplus / (Deficit)",
+            "net_result": "Surplus / (Deficit)",
+            "total_expenses": "Total expenditure",
+        }
+
+    if org == "government_entity":
+        return {
+            "statement_title": "Statement of Financial Performance",
+            "gross_profit": "Gross surplus",
+            "total_income": "Total revenue",
+            "operating_income": "Operating surplus / (deficit)",
+            "profit_before_tax": "Surplus / (deficit) before tax",
+            "tax": "Tax expense",
+            "net_income": "Surplus / (Deficit)",
+            "net_result": "Surplus / (Deficit)",
+            "total_expenses": "Total expenses",
+        }
+
+    if org == "trust":
+        return {
+            "statement_title": "Statement of Income and Expenses",
+            "gross_profit": "Gross income",
+            "total_income": "Total income",
+            "operating_income": "Operating income / (loss)",
+            "profit_before_tax": "Income before tax",
+            "tax": "Tax expense",
+            "net_income": "Net income / (loss)",
+            "net_result": "Net income / (loss)",
+            "total_expenses": "Total expenses",
+        }
+
+    return {
+        "statement_title": "Statement of Profit or Loss",
+        "gross_profit": "Gross profit",
+        "total_income": "Total income",
+        "operating_income": "Operating profit",
+        "profit_before_tax": "Profit before tax",
+        "tax": "Income tax expense",
+        "net_income": "Net income",
+        "net_result": "Net Profit",
+        "total_expenses": "Total expenses",
+    }
 # ============================================================
 # Income Statement Template Builder
 # ============================================================
@@ -203,7 +256,16 @@ def build_income_statement_template(
     currency = ctx.get("currency") or "ZAR"
     company_name = ctx.get("name") or ctx.get("company_name") or ""
 
+    organization_type = (
+        ctx.get("organization_type")
+        or ctx.get("organisation_type")
+        or "private_company"
+    ).strip().lower()
+
+    org_labels = org_statement_labels(organization_type)
+
     industry = ctx.get("industry")
+
     sub_industry = ctx.get("sub_industry")
 
     # ✅ Use the centralized profile mapping
@@ -482,6 +544,7 @@ def build_income_statement_template(
                     "section": it.get("section"),
                     "category": it.get("category"),
                     "standard": it.get("standard"),
+
                 }
             })
         return out
@@ -629,7 +692,7 @@ def build_income_statement_template(
         })
         blocks.append({
             "key": "gross_profit",
-            "label": "Gross profit",
+            "label": org_labels["gross_profit"],
             "values": maybe_values(gross_profit),
         })
 
@@ -644,7 +707,7 @@ def build_income_statement_template(
         })
         blocks.append({
             "key": "gross_profit",
-            "label": "Gross profit",
+            "label": org_labels["gross_profit"],
             "values": maybe_values(gross_profit),
         })
 
@@ -652,7 +715,7 @@ def build_income_statement_template(
         print(f"[DEBUG] Fallback branch triggered: layout={layout}, is_hunter={is_hunter}, uses_inventory={uses_inventory}, uses_cogs={uses_cogs}, cogs={cogs}")
         blocks.append({
             "key": "gross_profit",
-            "label": "Total income",
+            "label": org_labels["total_income"],
             "values": maybe_values(net_sales),
         })
 
@@ -686,7 +749,7 @@ def build_income_statement_template(
 
     blocks.append({
         "key": "total_expenses",
-        "label": "Total expenses",
+        "label": org_labels["total_expenses"],
         "values": maybe_values(total_expenses),
     })
 
@@ -698,7 +761,7 @@ def build_income_statement_template(
 
     blocks.append({
         "key": "tax_line",
-        "label": "Income tax expense",
+        "label": org_labels["tax"],
         "values": (
             col(c3=tax) if want_3tier
             else col(col2=tax) if cols_mode == 2
@@ -708,7 +771,7 @@ def build_income_statement_template(
 
     blocks.append({
         "key": "net_income",
-        "label": "Net income",
+        "label": org_labels["net_income"],
         "values": maybe_values(net_income),
     })
 
@@ -721,6 +784,8 @@ def build_income_statement_template(
             "company_name": company_name,
             "currency": currency,
             "statement": "pnl",
+            "statement_title": org_labels["statement_title"],
+            "organization_type": organization_type,
             "template": template,
             "basis": basis,
             "layout": layout,
@@ -744,7 +809,7 @@ def build_income_statement_template(
             "net_income": maybe_values(net_income),
         },
         "net_result": {
-            "label": "Net Profit",
+            "label": org_labels["net_result"],
             "values": (
                 col(c3=net_income) if want_3tier
                 else {"col2": net_income} if cols_mode == 2

@@ -9054,8 +9054,8 @@ html, body {
       <div id="faSettingsModal" class="fixed inset-0 z-50 hidden">
         <div id="faSettingsBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-       <div class="absolute left-1/2 top-10 w-[min(1400px,94vw)] -translate-x-1/2">
-          <div class="border rounded-xl bg-white shadow-xl overflow-hidden">
+       <div class="absolute left-1/2 top-2 w-[96vw] h-[96vh] lg:top-6 lg:w-[min(1700px,98vw)] lg:h-[92vh] -translate-x-1/2">
+          <div class="border rounded-xl bg-white shadow-xl overflow-hidden h-full flex flex-col">
             <!-- Header -->
             <div class="p-3 border-b flex items-center justify-between">
               <div>
@@ -9071,9 +9071,9 @@ html, body {
             </div>
 
             <!-- Body -->
-            <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-[48%_52%] gap-3 lg:gap-4 flex-1 overflow-auto lg:overflow-hidden">
               <!-- LEFT: Asset Rules (saved to /assets/policies) -->
-              <div class="border rounded p-3">
+              <div class="border rounded p-3 overflow-auto">
                 <div class="flex items-center justify-between">
                   <div class="font-semibold">Asset rules</div>
                   <div id="faPolicyMsg" class="text-sm text-slate-500"></div>
@@ -9125,7 +9125,7 @@ html, body {
               </div>
 
               <!-- RIGHT: Subsequent Measurements -->
-              <div class="border rounded p-3">
+              <div class="border rounded p-3 overflow-auto">
                 <div class="flex items-center justify-between">
                   <div>
                     <div class="font-semibold">Subsequent measurements</div>
@@ -9163,8 +9163,8 @@ html, body {
       <div id="smModal" class="fixed inset-0 z-50 hidden">
         <div id="smBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-        <div class="absolute left-1/2 top-6 w-[min(1180px,96vw)] -translate-x-1/2">
-          <div class="border rounded-xl bg-white shadow-xl overflow-hidden bg-white">
+        <div class="absolute left-1/2 top-2 w-[96vw] h-[96vh] lg:top-4 lg:w-[min(1750px,99vw)] lg:h-[94vh] -translate-x-1/2">
+          <div class="border rounded-xl bg-white shadow-xl overflow-hidden bg-white h-full flex flex-col">
             <div class="p-3 border-b flex items-center justify-between">
               <div>
                 <div class="font-semibold" id="smTitle">New subsequent measurement</div>
@@ -9173,7 +9173,7 @@ html, body {
               <button id="smClose" class="btn">Close</button>
             </div>
 
-            <div class="p-4 max-h-[85vh] overflow-y-auto">
+            <div class="p-3 lg:p-4 flex-1 overflow-auto lg:overflow-hidden">
               <input id="smId" type="hidden" />
 
               <!-- TOP ROW -->
@@ -9201,9 +9201,9 @@ html, body {
               </div>
 
               <!-- MAIN CONTENT -->
-              <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 text-sm">
+              <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-3 lg:gap-4 text-sm lg:h-full lg:overflow-hidden">
                 <!-- LEFT -->
-                <div class="border rounded-lg flex flex-col h-[520px]">
+                <div class="border rounded-lg flex flex-col h-full min-h-0">
                   <div class="p-3 border-b bg-slate-50">
                     <div class="text-xs text-slate-500 mb-1">Asset</div>
 
@@ -9226,7 +9226,7 @@ html, body {
                 </div>
 
                 <!-- RIGHT -->
-                <div class="min-h-[520px] overflow-auto pr-1">
+                <div class="min-h-0 overflow-auto pr-1">
                   <div class="border rounded-lg p-3 mb-3">
                     <div class="flex items-center justify-between">
                       <div class="font-medium">Asset details</div>
@@ -9353,7 +9353,7 @@ html, body {
                   <div id="smFormMsg" class="text-sm text-slate-500 mt-3"></div>
                 </div>
 
-                <div class="lg:col-span-2 border rounded-lg p-3">
+                <div class="lg:col-span-2 border rounded-lg p-3 min-h-0 overflow-auto">
                   <div class="flex items-center justify-between gap-3">
                     <div class="font-medium shrink-0">Journal preview</div>
 
@@ -9393,6 +9393,7 @@ html, body {
             </div>
           </div>
         </div>
+      </div>
 
       <!-- VALUATION MODAL -->
       <div id="valuationModal" class="fixed inset-0 z-[60] hidden">

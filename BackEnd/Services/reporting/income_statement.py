@@ -45,6 +45,15 @@ def get_pnl_full_v2(
 
     currency = ctx.get("currency") or "ZAR"
     company_name = ctx.get("name") or ctx.get("company_name") or ""
+
+    organization_type = (
+        ctx.get("organization_type")
+        or ctx.get("organisation_type")
+        or "private_company"
+    ).strip().lower()
+
+    org_labels = rh.org_statement_labels(organization_type)
+
     industry = ctx.get("industry")
     sub_industry = ctx.get("sub_industry")
     prof = ctx.get("industry_profile") or get_industry_profile(industry, sub_industry)
@@ -347,21 +356,21 @@ def get_pnl_full_v2(
 
     if show_cogs:
         _section("cogs", cogs_label, cogs_lines, cogs_total, cogs_total_pri)
-        _section("gross_profit", "Gross profit", [], gross_cur, gross_pri)
+        _section("gross_profit", org_labels["gross_profit"], [], gross_cur, gross_pri)
     else:
-        _section("gross_profit", "Total income", [], rev_total, rev_total_pri)
+        _section("gross_profit", org_labels["total_income"], [], rev_total, rev_total_pri)
 
     _section("operating_expenses", "Operating expenses", exp_lines, exp_total, exp_total_pri)
-    _section("operating_profit", "Operating profit", [], op_profit_cur, op_profit_pri)
+    _section("operating_profit", org_labels["operating_income"], [], op_profit_cur, op_profit_pri)
     _section("other", "Other income/(expense)", oth_lines, oth_total, oth_total_pri)
 
-    _section("profit_before_tax", "Profit before tax", [], pbt_cur, pbt_pri)
+    _section("profit_before_tax", org_labels["profit_before_tax"], [], pbt_cur, pbt_pri)
 
     net_values = _vals(net_cur, net_pri if has_prior else None)
 
     if abs(tax_cur) > 1e-9 or (has_prior and abs(tax_pri) > 1e-9):
         tax_lines, _ = _line_amounts_from_rows(cur_tax_rows)
-        _section("tax", "Income tax", tax_lines, tax_cur, tax_pri)
+        _section("tax", org_labels["tax"], tax_lines, tax_cur, tax_pri)
 
     # -----------------------------
     # Base stmt
@@ -372,6 +381,8 @@ def get_pnl_full_v2(
             "company_name": company_name,
             "currency": currency,
             "statement": "pnl",
+            "statement_title": org_labels["statement_title"],
+            "organization_type": organization_type,
             "template": template,
             "basis": "external",
             "detail": mode,
@@ -387,7 +398,7 @@ def get_pnl_full_v2(
         "columns": columns,
         "sections": out_sections,
         "net_result": {
-            "label": "Net Profit",
+            "label": org_labels["net_result"],
             "values": dict(net_values),
             "amount": float(net_cur),
             "prior_amount": float(net_pri) if has_prior else None,

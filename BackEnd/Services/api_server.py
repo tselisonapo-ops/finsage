@@ -80,6 +80,7 @@ from BackEnd.Services.coa_seed_service import seed_company_coa_once
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services.period_core import resolve_company_period, resolve_compare_period
 from BackEnd.Services.utils.registration_utils import create_company_record_from_payload
+from BackEnd.Services.validation import REGNO_REGEX, TIN_REGEX, VAT_REGEX, FIELD_EXAMPLES
 # ────────────────────────────────────────────────────────────────
 # Third-party imports
 # ────────────────────────────────────────────────────────────────
@@ -1181,7 +1182,11 @@ def api_auth_signup():
     # 2) OPTIONAL: Company payload (validate BEFORE creating the user)
     company_payload = data.get("company") or {}
     company_name = (company_payload.get("companyName") or "").strip()
-
+    organization_type = (
+        company_payload.get("organizationType")
+        or company_payload.get("organisationType")
+        or ""
+    ).strip().lower()
     requires_company = bool(company_name)
 
     # ----------------------------
@@ -1193,6 +1198,33 @@ def api_auth_signup():
     sub_industry_slug = None
 
     if requires_company:
+        ALLOWED_ORGANIZATION_TYPES = {
+            "private_company",
+            "public_company",
+            "sole_trader",
+            "partnership",
+            "ngo",
+            "npo",
+            "trust",
+            "cooperative",
+            "body_corporate",
+            "club_association",
+            "government_entity",
+            "other",
+        }
+
+        if not organization_type:
+            return jsonify({
+                "error": "Organisation type is required to create your company."
+            }), 400
+
+        if organization_type not in ALLOWED_ORGANIZATION_TYPES:
+            return jsonify({
+                "error": "Invalid organisation type selected.",
+                "errors": {
+                    "organizationType": "Please choose a valid organisation type."
+                }
+            }), 400
         industry_raw = (company_payload.get("industry") or "").strip()
         if not industry_raw:
             return jsonify({"error": "Industry is required to create your company."}), 400
@@ -1361,6 +1393,7 @@ def api_auth_signup():
 
             created_company_id = db_service.insert_company(
                 name=company_name or "Company",
+                organization_type=organization_type,
                 client_code=company_payload.get("clientCode") or f"C{int(time.time())}",
                 industry=industry,                 # ✅ display name
                 sub_industry=sub_industry,         # ✅ display name
@@ -5011,7 +5044,25 @@ def api_list_users():
 @app.route("/api/meta/countries", methods=["GET"])
 def api_country_meta():
     countries = load_countries()
-    return jsonify({"countries": countries}), 200
+
+    enriched = []
+    for c in countries:
+        row = dict(c)
+        code = (row.get("code") or "").upper().strip()
+
+        examples = FIELD_EXAMPLES.get(code, {})
+
+        row["regno_pattern"] = REGNO_REGEX.get(code)
+        row["tin_pattern"] = TIN_REGEX.get(code)
+        row["vat_pattern"] = VAT_REGEX.get(code)
+
+        row["regno_example"] = examples.get("regno")
+        row["tin_example"] = examples.get("tin")
+        row["vat_example"] = examples.get("vat")
+
+        enriched.append(row)
+
+    return jsonify({"countries": enriched}), 200
 
 # ────────────────────────────────────────────────────────────────
 # VAT SETTINGS (DB-backed)

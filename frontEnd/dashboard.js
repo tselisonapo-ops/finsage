@@ -21878,9 +21878,11 @@ function renderPnLClassicHtml(stmt) {
     : [{ key: "cur", label: "Amount" }];
 
   const company = meta.company_name || "Company";
-  const title = meta.template === "npo"
-    ? "Statement of Financial Performance"
-    : "Income Statement";
+  const title =
+    meta.statement_title ||
+    (meta.template === "npo"
+      ? "Statement of Financial Performance"
+      : "Income Statement");
   const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
 
   const th = cols
@@ -22644,7 +22646,7 @@ function renderBSScientificTwoColumnHtml(bs, { cols_mode = 2, basis = "" } = {})
             <div class="text-sm font-bold tracking-wide">${esc(company.toUpperCase())}</div>
 
             <div class="text-xs font-semibold">
-              ${esc("STATEMENT OF FINANCIAL POSITION")}
+              ${esc(meta.statement_title || "STATEMENT OF FINANCIAL POSITION")}
             </div>
 
             ${asOf ? `<div class="text-xs">${esc("As at " + asOf)}</div>` : ""}
@@ -22676,7 +22678,16 @@ function renderBSScientificTwoColumnHtml(bs, { cols_mode = 2, basis = "" } = {})
 
                 <tr>
                   <td colspan="${1 + colKeys.length}" class="pt-4 pb-2 px-2 font-bold text-slate-900 text-left">
-                    Liabilities and Stockholders’ Equity
+                    ${esc(
+                      EL?.label ||
+                      (
+                        meta.organization_type === "sole_trader"
+                          ? "Liabilities and Owner's Equity"
+                          : meta.organization_type === "partnership"
+                          ? "Liabilities and Partners' Equity"
+                          : "Liabilities and Equity"
+                      )
+                    )}
                   </td>
                 </tr>
 
@@ -22720,7 +22731,9 @@ function renderBSClassicTwoColumnHtml(stmt) {
   const cols = [{ key: firstKey, label: firstLabel }];
 
   const company = meta.company_name || "Company";
-  const title = "Balance Sheet";
+  const title =
+    meta.statement_title ||
+    "Balance Sheet";
   const asOf = meta.as_of || meta.as_of_date || meta.period?.to || meta.as_of || "";
 
   const th = cols
@@ -22846,7 +22859,14 @@ function renderBSClassicTwoColumnHtml(stmt) {
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       ${renderSide(leftFallback, "Assets")}
-      ${renderSide(rightFallback, "Liabilities and Equity")}
+      ${renderSide(
+        rightFallback,
+        meta.organization_type === "sole_trader"
+          ? "Liabilities and Owner's Equity"
+          : meta.organization_type === "partnership"
+          ? "Liabilities and Partners' Equity"
+          : "Liabilities and Equity"
+      )}
     </div>
   `;
 }
@@ -22923,7 +22943,9 @@ function renderBSScientificSinglePageHtml(bs) {
   <div class="max-w-3xl mx-auto">
     <div class="mb-3 text-left">
       <div class="text-sm font-bold tracking-wide">${esc(company.toUpperCase())}</div>
-      <div class="text-xs font-semibold">${esc("STATEMENT OF FINANCIAL POSITION")}</div>
+      <div class="text-xs font-semibold">
+        ${esc(meta.statement_title || "STATEMENT OF FINANCIAL POSITION")}
+      </div>
       <div class="text-xs">${esc(asOf ? ("As at " + asOf) : "")}</div>
       ${currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(currency)})</div>` : ""}
     </div>
@@ -22964,13 +22986,30 @@ function renderBSScientificSinglePageHtml(bs) {
 
           <tr><td colspan="${1 + cols.length}" class="py-3"></td></tr>
 
-          <tr><td colspan="${1 + cols.length}" class="pt-1 pb-1 font-bold text-slate-900">Liabilities and Stockholders’ Equity</td></tr>
-
+          <tr>
+            <td colspan="${1 + cols.length}" class="pt-1 pb-1 font-bold text-slate-900">
+              ${esc(
+                EL?.label ||
+                (
+                  meta.organization_type === "sole_trader"
+                    ? "Liabilities and Owner's Equity"
+                    : meta.organization_type === "partnership"
+                    ? "Liabilities and Partners' Equity"
+                    : "Liabilities and Equity"
+                )
+              )}
+            </td>
+          </tr>
           ${sectionBlock(
             EL?.equity?.label || "Equity",
             EL?.equity?.lines,
             EL?.equity,
-            { totalLabel: "Total equity" }
+            {
+              totalLabel:
+                EL?.equity?.label
+                  ? `Total ${EL.equity.label.toLowerCase()}`
+                  : "Total equity"
+            }
           )}
 
           ${sectionBlock(
@@ -23167,7 +23206,10 @@ function renderStatementV2Html(stmt) {
     //tb: "Trial Balance",
   };
 
-  const title = titleMap[meta.statement] || "Statement";
+  const title =
+    meta.statement_title ||
+    titleMap[meta.statement] ||
+    "Statement";
 
   const periodText =
     meta.statement === "bs"
@@ -23502,7 +23544,9 @@ function renderStatementV2Html(stmt) {
     const hasOCISections = ociSections.length > 0;
 
     html += `
-      <div class="mt-4 text-sm font-semibold text-slate-700">Other Comprehensive Income</div>
+      <div class="mt-4 text-sm font-semibold text-slate-700">
+        ${esc(stmt.oci?.label || "Other Comprehensive Income")}
+      </div>
     `;
 
     if (hasOCISections) {
@@ -23577,7 +23621,7 @@ function fmtAcct(n) {
 function renderPnLHunter3ColHtml(stmt) {
   const meta = stmt?.meta || {};
   const company = meta.company_name || "Company";
-  const title = "Income Statement";
+  const title = meta.statement_title || "Income Statement";
   const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
 
   // Detect semi-detailed vs full (backend: meta.detail = "summary" | "mid" | "full")

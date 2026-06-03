@@ -1221,4 +1221,81 @@ def _coa_role_from_text(
 
         return "accumulated_depreciation_ppe"
 
+    # ----------------------------
+    # Equity
+    # ----------------------------
+    if "equity" in sec:
+
+        if has_any(
+            "ordinary share capital",
+            "share capital",
+            "members' interest",
+            "member's interest"
+        ):
+            return "equity_share_capital"
+
+        if has_any("preference share capital"):
+            return "equity_preference_share_capital"
+
+        if has_any("share premium"):
+            return "equity_share_premium"
+
+        if has_any(
+            "owner's capital",
+            "owners capital",
+            "owner's contribution",
+            "capital injection",
+            "farm capital",
+            "clinic capital",
+            "retail capital",
+            "contractor capital",
+            "founder's capital",
+            "engineering capital",
+            "hospitality fund capital",
+            "security services capital"
+        ):
+            return "equity_owner_capital"
+
+        if has_any("drawings"):
+            return "equity_drawings"
+
+        if has_any("dividends declared"):
+            return "equity_dividends"
+
+        if has_any("retained earnings"):
+            return "equity_retained_earnings"
+
+        if has_any(
+            "accumulated surplus",
+            "accumulated fund",
+            "net surplus"
+        ):
+            return "equity_accumulated_surplus"
+
+        if has_any(
+            "restricted fund",
+            "restricted funds",
+            "grant fund",
+            "tech grants"
+        ):
+            return "equity_restricted_funds"
+
+        if has_any(
+            "regulatory reserves"
+        ):
+            return "equity_regulatory_reserve"
+
+        if has_any(
+            "revaluation reserve",
+            "foreign currency translation reserve"
+        ):
+            return "equity_oci_reserve"
+
+        if has_any(
+            "current year surplus",
+            "current year surplus / (deficit)"
+        ):
+            return "equity_current_year_surplus"
+
+        return "equity_general"
     return ""

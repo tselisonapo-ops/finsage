@@ -252,3 +252,39 @@ utc_now = datetime.utcnow()
 maseru_time = utc_now.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Africa/Maseru"))
 print("UTC:", utc_now)
 print("Maseru:", maseru_time)
+
+FIELD_EXAMPLES = {
+    "ZA": {"regno": "2014/123456/07", "tin": "9123456789", "vat": "4123456789"},
+    "LS": {"regno": "A1234/12345", "tin": "123456789", "vat": "TN1234567-8"},
+    "BW": {"regno": "ABC12345", "tin": "BW00005290056", "vat": "BW00005290056"},
+    "NA": {"regno": "1234/5678", "tin": "123456789", "vat": "123456789"},
+    "ZW": {"regno": "1234/5678", "tin": "123456789", "vat": "123456789"},
+
+    "GB": {"regno": "12345678", "tin": "1234567890", "vat": "GB123456789"},
+    "IE": {"regno": "123456A", "tin": "1234567A", "vat": "IE9S99999L"},
+    "DE": {"regno": "HRB12345", "tin": "123456789", "vat": "DE123456789"},
+    "FR": {"regno": "123456789", "tin": "12345678901", "vat": "FRAB123456789"},
+    "ES": {"regno": "A1234567B", "tin": "A1234567B", "vat": "ESA1234567B"},
+    "IT": {"regno": "12345678901", "tin": "12345678901", "vat": "IT12345678901"},
+    "NL": {"regno": "12345678", "tin": "ABC1234567", "vat": "NL123456789B01"},
+    "BE": {"regno": "0123456789", "tin": "01234567890", "vat": "BE0123456789"},
+    "PT": {"regno": "123456789", "tin": "123456789", "vat": "PT123456789"},
+    "PL": {"regno": "1234567890", "tin": "1234567890", "vat": "PL1234567890"},
+
+    "US": {"regno": "ABC-123456", "tin": "12-3456789", "vat": "STATE-12345"},
+    "CA": {"regno": "123456789", "tin": "123456789", "vat": "123456789RT0001"},
+    "MX": {"regno": "ABC010101ABC", "tin": "ABC010101ABC", "vat": "ABC010101ABC"},
+
+    "AU": {"regno": "123456789", "tin": "123456789", "vat": "12345678901"},
+    "NZ": {"regno": "1234567890123", "tin": "123456789", "vat": "123456789"},
+
+    "IN": {"regno": "U12345AB2020PLC123456", "tin": "ABCDE1234F", "vat": "GST number if applicable"},
+    "SG": {"regno": "201912345A", "tin": "201912345A", "vat": "GST number if applicable"},
+    "HK": {"regno": "12345678", "tin": "12345678", "vat": "Tax number if applicable"},
+    "AE": {"regno": "1234567", "tin": "123456789012345", "vat": "123456789012345"},
+    "SA": {"regno": "1234567890", "tin": "1234567890", "vat": "123456789012345"},
+
+    "KE": {"regno": "ABC-123456", "tin": "A123456789B", "vat": "P123456789A"},
+    "TZ": {"regno": "ABC-123456", "tin": "123456789", "vat": "123456789"},
+    "UG": {"regno": "ABC-123456", "tin": "123456789", "vat": "123456789"},
+}

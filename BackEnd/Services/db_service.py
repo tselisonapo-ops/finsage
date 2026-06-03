@@ -1576,6 +1576,9 @@ class DatabaseService:
         );
 
         ALTER TABLE public.companies
+            ADD COLUMN IF NOT EXISTS organization_type TEXT;
+
+        ALTER TABLE public.companies
             ADD COLUMN IF NOT EXISTS inventory_mode TEXT DEFAULT 'none',
             ADD COLUMN IF NOT EXISTS inventory_valuation TEXT NULL,
             ADD COLUMN IF NOT EXISTS vat_settings JSONB NULL,
@@ -4942,6 +4945,7 @@ class DatabaseService:
         client_code: str,
         industry: Optional[str] = None,
         sub_industry: Optional[str] = None,
+        organization_type: Optional[str] = None,
         currency: Optional[str] = None,
         fin_year_start: Optional[str] = None,
         company_reg_date: Optional[str] = None,
@@ -5018,13 +5022,14 @@ class DatabaseService:
             created_via = None
 
         provisioning_context = (provisioning_context or "").strip() or None
+        organization_type = (organization_type or "private_company").strip().lower()
 
         with self._conn_cursor() as (conn, cur):
             cur.execute(
                 """
                 INSERT INTO public.companies
                 (
-                    name, client_code, industry, sub_industry,
+                    name, client_code, industry, sub_industry, organization_type,
                     industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
                     currency, fin_year_start, company_reg_date,
                     country, company_reg_no, tin, vat,
@@ -5038,7 +5043,7 @@ class DatabaseService:
                 )
                 VALUES
                 (
-                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
@@ -5053,7 +5058,7 @@ class DatabaseService:
                 RETURNING id;
                 """,
                 (
-                    name, client_code, industry, sub_industry,
+                    name, client_code, industry, sub_industry, organization_type,
                     industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
                     currency, fin_year_start, company_reg_date,
                     country, company_reg_no, tin, vat,

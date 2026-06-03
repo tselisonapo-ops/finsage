@@ -44,6 +44,118 @@ def _coa_is_seeded(db_service, company_id: int) -> bool:
     # choose threshold you expect from a full industry template
     return n_template_posting >= 50
 
+ORG_EQUITY_REQUIRED = {
+    "private_company": {
+        "equity_share_capital": "Ordinary Share Capital",
+        "equity_retained_earnings": "Retained Earnings",
+        "equity_dividends": "Dividends Declared",
+    },
+    "public_company": {
+        "equity_share_capital": "Ordinary Share Capital",
+        "equity_preference_share_capital": "Preference Share Capital",
+        "equity_share_premium": "Share Premium",
+        "equity_retained_earnings": "Retained Earnings",
+        "equity_dividends": "Dividends Declared",
+    },
+    "sole_trader": {
+        "equity_owner_capital": "Owner Capital",
+        "equity_retained_earnings": "Accumulated Profit / Loss",
+        "equity_drawings": "Drawings",
+    },
+    "partnership": {
+        "equity_partner_capital": "Partners' Capital",
+        "equity_partner_current": "Partners' Current Accounts",
+        "equity_drawings": "Partners' Drawings",
+    },
+    "ngo": {
+        "equity_restricted_funds": "Restricted Funds",
+        "equity_unrestricted_funds": "Unrestricted Funds",
+        "equity_accumulated_surplus": "Accumulated Surplus",
+    },
+    "npo": {
+        "equity_restricted_funds": "Restricted Funds",
+        "equity_unrestricted_funds": "Unrestricted Funds",
+        "equity_accumulated_surplus": "Accumulated Surplus",
+    },
+    "trust": {
+        "equity_trust_capital": "Trust Capital",
+        "equity_beneficiary_funds": "Beneficiary Funds",
+        "equity_accumulated_surplus": "Accumulated Income",
+    },
+    "cooperative": {
+        "equity_member_capital": "Member Shares",
+        "equity_retained_earnings": "Retained Earnings",
+        "equity_reserve": "Statutory Reserve",
+    },
+    "body_corporate": {
+        "equity_accumulated_surplus": "Accumulated Surplus",
+        "equity_restricted_funds": "Reserve Fund",
+    },
+    "club_association": {
+        "equity_accumulated_surplus": "Accumulated Fund",
+        "equity_restricted_funds": "Restricted Funds",
+        "equity_current_year_surplus": "Current Year Surplus / (Deficit)",
+    },
+    "government_entity": {
+        "equity_accumulated_surplus": "Accumulated Surplus",
+        "equity_reserve": "Reserves",
+    },
+}
+
+def apply_organization_equity_accounts(db_service, company_id: int, organization_type: str) -> None:
+    schema = f"company_{int(company_id)}"
+    org_type = (organization_type or "private_company").strip().lower()
+
+    required = ORG_EQUITY_REQUIRED.get(org_type, ORG_EQUITY_REQUIRED["private_company"])
+
+    existing = db_service.fetch_all(
+        f"""
+        SELECT id, code, name, role, section, category
+        FROM {schema}.coa
+        WHERE LOWER(COALESCE(section, '')) = 'equity'
+           OR COALESCE(role, '') LIKE 'equity_%'
+        ORDER BY code;
+        """,
+        (),
+    ) or []
+
+    existing_by_role = {
+        (r.get("role") or "").strip(): r
+        for r in existing
+        if (r.get("role") or "").strip()
+    }
+
+    # 1) Rename existing matching roles to organisation wording
+    for role, desired_name in required.items():
+        row = existing_by_role.get(role)
+        if row:
+            db_service.execute_sql(
+                f"""
+                UPDATE {schema}.coa
+                SET name = %s
+                WHERE id = %s;
+                """,
+                (desired_name, row["id"]),
+            )
+
+    # 2) Deactivate unsuitable equity rows for this organisation type
+    allowed_roles = set(required.keys()) | {
+        "equity_oci_reserve",
+        "equity_regulatory_reserve",
+        "equity_reserve",
+    }
+
+    db_service.execute_sql(
+        f"""
+        UPDATE {schema}.coa
+        SET posting = FALSE
+        WHERE COALESCE(role, '') LIKE 'equity_%'
+          AND COALESCE(role, '') <> ''
+          AND NOT (role = ANY(%s));
+        """,
+        (list(allowed_roles),),
+    )
+    
 def seed_company_coa_once(
     db_service,
     *,
@@ -74,7 +186,7 @@ def seed_company_coa_once(
 
         row = db_service.fetch_one(
             """
-            SELECT industry, sub_industry, industry_slug, sub_industry_slug
+            SELECT industry, sub_industry, industry_slug, sub_industry_slug, organization_type
             FROM public.companies
             WHERE id = %s
             """,
@@ -112,6 +224,13 @@ def seed_company_coa_once(
 
         print(f"[SEED] pool inserted={inserted}")
 
+        organization_type = (row.get("organization_type") or "private_company").strip().lower()
+
+        apply_organization_equity_accounts(
+            db_service,
+            company_id=company_id,
+            organization_type=organization_type,
+        )
         if inserted > 0:
             source_used = "pool"
         else:
