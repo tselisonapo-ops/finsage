@@ -16555,7 +16555,8 @@ async function renderRecentJournals() {
                     const isNewBatch = r.isFirst;
                     const batchTop = isNewBatch ? `border-t-4 border-slate-200 bg-slate-100/40` : ``;
                     const vatRow = r.is_vat ? "bg-slate-50" : "";
-
+                    const isCredit = Number(r.credit || 0) > 0;
+                    const accountIndentPx = isCredit ? 28 : 0;
                     const dateCell = r.isFirst ? esc(r.date) : "";
                     const refCell  = r.isFirst ? esc(r.ref) : "";
                     const descCell = r.isFirst ? esc(r.description) : "";
@@ -16581,7 +16582,9 @@ async function renderRecentJournals() {
                         <td class="px-2 py-2 align-top">${descCell}</td>
 
                         <td class="px-2 py-2">
-                          ${esc(r.account_label)}
+                          <span style="display:inline-block; padding-left:${accountIndentPx}px">
+                            ${esc(r.account_label)}
+                          </span>
                           ${r.is_vat ? `<span class="ml-2 text-[10px] px-2 py-[1px] rounded bg-slate-100 text-slate-700">VAT</span>` : ""}
                         </td>
 
@@ -19411,7 +19414,8 @@ function renderLedgerTable(rows, meta) {
             const dr = +ln.debit  || 0;
             const cr = +ln.credit || 0;
             const side = dr > 0 ? "Dr" : cr > 0 ? "Cr" : "";
-
+            const isCredit = cr > 0;
+            const accountIndentPx = isCredit ? 28 : 0;
             const accRow = getCoaAccount(ln.account);
             const acctName =
               ln.account_name ||
@@ -19426,7 +19430,9 @@ function renderLedgerTable(rows, meta) {
                 <td class="px-2 py-1 text-xs"></td>
                 <td class="px-2 py-1 text-xs"></td>
                 <td class="px-2 py-1 text-[11px] text-slate-600" colspan="${isAll ? 2 : 1}">
-                  ${side} ${acctName}
+                  <span style="display:inline-block; padding-left:${accountIndentPx}px">
+                    ${side} ${acctName}
+                  </span>
                 </td>
                 <td class="px-2 py-1 text-[11px] text-right">${debitCol}</td>
                 <td class="px-2 py-1 text-[11px] text-right">${creditCol}</td>
@@ -23694,9 +23700,21 @@ function renderPnLHunter3ColHtml(stmt) {
     `;
 
     for (const ln of lines) {
+      console.log(ln);
       const name = ln.name || ln.label || "";
       const indent = Math.max(0, Math.min(Number(ln.indent || 0), 10));
-      const padPx = indent * 16;
+
+      // If backend didn't provide indent, automatically indent detail rows
+      const isDetail =
+        !ln.is_subtotal &&
+        !ln.is_section &&
+        !ln.is_group &&
+        indent === 0;
+
+      const padPx =
+        indent > 0
+          ? indent * 16
+          : (isDetail ? 28 : 0);
 
       const lessCls = ln.is_less_line ? "text-slate-600 italic" : "text-slate-800";
 
@@ -23712,7 +23730,12 @@ function renderPnLHunter3ColHtml(stmt) {
 
       rows += `
         <tr class="border-b border-slate-100">
-          <td class="py-2 px-2 ${lessCls}" style="padding-left:${padPx}px">${esc(name)}</td>
+          <td
+            class="py-2 px-2 ${lessCls}"
+            style="padding-left:${padPx}px"
+          >
+            ${esc(name)}
+          </td>
           ${rowCells(ln.values || {})}
         </tr>
       `;
@@ -34862,14 +34885,11 @@ async function saveEditModal() {
     currentPolicy.capitalization.threshold_amount = th ? Number(th.value || 0) : 0;
 
     // if JSON editor exists and user edited it, let JSON win (but keep safe)
+    // Do NOT let stale JSON overwrite checkbox changes.
+    // Checkbox table is the source of truth.
     const jsonEl = $("faPoliciesJson");
-    if (jsonEl && String(jsonEl.value || "").trim()) {
-      try {
-        const p = JSON.parse(jsonEl.value);
-        currentPolicy = ensurePolicyShape(p);
-      } catch (_) {
-        // ignore JSON if invalid; user will see "Invalid JSON" when saving
-      }
+    if (jsonEl) {
+      jsonEl.value = JSON.stringify(currentPolicy, null, 2);
     }
 
     return currentPolicy;
@@ -34920,7 +34940,7 @@ async function saveEditModal() {
     // populate UI controls
     $("faCapThreshold").value = Number(item?.capitalization?.threshold_amount || 0);
 
-    currentPolicy = item;
+    currentPolicy = ensurePolicyShape(item);
     renderModelSwitchTable(currentPolicy);
 
     setMsg($("faPolicyMsg"), "Loaded.", "ok");

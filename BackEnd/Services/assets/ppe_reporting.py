@@ -606,11 +606,13 @@ def assets_get_or_update(company_id, asset_id):
                 if not before:
                     return _json_error("Not found", 404)
 
+                if "measurement_model" in payload_in and "measurement_basis" not in payload_in:
+                    payload_in["measurement_basis"] = payload_in.pop("measurement_model")
                 # -----------------------------
                 # ✅ Policy enforcement: model switch eligibility
                 # -----------------------------
                 # Only enforce if caller is changing measurement_model
-                new_model = payload_in.get("measurement_model")
+                new_model = payload_in.get("measurement_basis")
                 if new_model is not None:
                     old_model = (before.get("measurement_model") or "").strip().lower()
                     nm = (str(new_model) or "").strip().lower()
@@ -625,7 +627,7 @@ def assets_get_or_update(company_id, asset_id):
                         posting.assert_model_switch_allowed(before, nm, policy_doc)
 
                         # store normalized model value so DB is consistent
-                        payload_in["measurement_model"] = nm
+                        payload_in["measurement_basis"] = nm
 
                 # -----------------------------
                 # Update

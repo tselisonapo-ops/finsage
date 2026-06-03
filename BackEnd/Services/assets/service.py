@@ -926,6 +926,14 @@ def create_asset(cur, company_id, payload):
         opening_impairment = None
 
     asset_class = str(payload.get("asset_class") or "").strip()
+    measurement_basis = (
+        payload.get("measurement_basis")
+        or payload.get("measurement_model")
+        or "cost"
+    ).strip().lower()
+
+    if measurement_basis not in ("cost", "revaluation"):
+        raise Exception("Invalid measurement_basis. Use 'cost' or 'revaluation'.")
     asset_name = str(payload.get("asset_name") or "").strip()
     category = str(payload.get("category") or "").strip() or None
     vat_input_claimable = bool(payload.get("vat_input_claimable") or False)
@@ -1006,7 +1014,7 @@ def create_asset(cur, company_id, payload):
             COALESCE(%s,'cost'), %s,
             %s,%s,
             %s,%s,%s,
-            %s,%s   -- 👈 ADD THESE TWO (new fields)
+            %s,%s   
         )
       RETURNING id
     """), 
@@ -1036,7 +1044,7 @@ def create_asset(cur, company_id, payload):
             payload.get("supplier_id"), payload.get("acquisition_ref"),
             payload.get("asset_account_code"), payload.get("accum_dep_account_code"), payload.get("dep_expense_account_code"),
             payload.get("disposal_gain_account_code"), payload.get("disposal_loss_account_code"),
-            payload.get("measurement_basis", "cost"), payload.get("revaluation_reserve_account_code"),
+            measurement_basis, payload.get("revaluation_reserve_account_code"),
             payload.get("revaluation_surplus_to_pnl_account_code"), payload.get("revaluation_deficit_pnl_account_code"),
             payload.get("impairment_loss_account_code"), payload.get("impairment_reversal_account_code"),
             payload.get("held_for_sale_account_code"),
@@ -1059,7 +1067,7 @@ _ASSET_UPDATE_ALLOWED = {
     "opening_as_at", "opening_cost", "opening_accum_dep", "opening_impairment",
     "asset_account_code", "accum_dep_account_code", "dep_expense_account_code",
     "disposal_gain_account_code", "disposal_loss_account_code",
-    "measurement_basis",
+    "measurement_basis", "measurement_model",
     "revaluation_reserve_account_code",
     "revaluation_surplus_to_pnl_account_code",
     "revaluation_deficit_pnl_account_code",
