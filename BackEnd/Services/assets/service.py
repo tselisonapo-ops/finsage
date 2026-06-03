@@ -512,6 +512,17 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
         SELECT
             b.*,
+            LOWER(COALESCE(b.measurement_basis, 'cost')) AS measurement_model_flag,
+
+            CASE
+                WHEN LOWER(COALESCE(b.measurement_basis, 'cost')) = 'revaluation'
+                THEN TRUE ELSE FALSE
+            END AS uses_revaluation_model,
+
+            CASE
+                WHEN UPPER(COALESCE(b.depreciation_method, '')) IN ('APP', 'NONE', 'NOT_DEPRECIATED')
+                THEN TRUE ELSE FALSE
+            END AS is_non_depreciable,
             hfs.hfs_id,
             hfs.hfs_classification_date,
             hfs.hfs_status,
