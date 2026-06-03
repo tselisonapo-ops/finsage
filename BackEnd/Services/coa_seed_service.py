@@ -139,23 +139,27 @@ def apply_organization_equity_accounts(db_service, company_id: int, organization
             )
 
     # 2) Deactivate unsuitable equity rows for this organisation type
-    allowed_roles = set(required.keys()) | {
-        "equity_oci_reserve",
-        "equity_regulatory_reserve",
-        "equity_reserve",
-    }
+    allowed_roles = list(
+        set(required.keys()) | {
+            "equity_oci_reserve",
+            "equity_regulatory_reserve",
+            "equity_reserve",
+        }
+    )
+
+    placeholders = ",".join(["%s"] * len(allowed_roles))
 
     db_service.execute_sql(
         f"""
         UPDATE {schema}.coa
         SET posting = FALSE
-        WHERE COALESCE(role, '') LIKE 'equity_%'
-          AND COALESCE(role, '') <> ''
-          AND NOT (role = ANY(%s));
+        WHERE COALESCE(role, '') LIKE 'equity_%%'
+        AND COALESCE(role, '') <> ''
+        AND COALESCE(role, '') NOT IN ({placeholders});
         """,
-        (list(allowed_roles),),
+        tuple(allowed_roles),
     )
-    
+
 def seed_company_coa_once(
     db_service,
     *,
