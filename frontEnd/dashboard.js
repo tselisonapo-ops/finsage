@@ -21886,7 +21886,7 @@ function renderPnLClassicHtml(stmt) {
   const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
 
   const th = cols
-    .map(c => `<th class="text-right py-2 px-2">${esc(pnlColLabel(c, cols))}</th>`)
+    .map(c => `<th class="text-right py-2 px-2">${esc("Amount")}</th>`)
     .join("");
 
   function rowCells(values, { bold = false, underline = false } = {}) {
@@ -23466,7 +23466,7 @@ function renderStatementV2Html(stmt) {
         <thead class="bg-slate-50 text-slate-600">
           <tr>
             <th class="text-left py-2 px-2">Description</th>
-            ${cols.map(c => `<th class="text-right py-2 px-2">${esc(c.label || c.key)}</th>`).join("")}
+            ${cols.map(() => `<th class="text-right py-2 px-2">${esc("Amount")}</th>`).join("")}
           </tr>
         </thead>
       </table>
@@ -23636,9 +23636,8 @@ function renderPnLHunter3ColHtml(stmt) {
   const colKeys = cols.map(c => c.key);
 
   // ---- Header cells: hide first numeric column label in semi-detailed mode
-  const th = cols.map(c => {
-    if (isSemi && c.key === "c1") return `<th class="text-right py-2 px-2"></th>`;
-    return `<th class="text-right py-2 px-2">${esc(pnlColLabel(c, cols))}</th>`;
+  const th = cols.map(() => {
+    return `<th class="text-right py-2 px-2">${esc("Amount")}</th>`;
   }).join("");
 
   // blank cell if not provided
@@ -23782,33 +23781,30 @@ function renderPnLHunter3ColHtml(stmt) {
   }
 
   return `
-  <div class="mx-auto max-w-[900px]">
-    <div class="a4-page">
-      <div class="bg-white rounded border border-slate-200 p-4">
+  <div class="mx-auto max-w-[900px] bg-white p-4">
 
-        <!-- Header (inside the page) -->
-        <div class="mb-3 text-left">
-          <div class="text-sm font-bold tracking-wide">${esc(String(company || "").toUpperCase())}</div>
-          <div class="text-xs font-semibold">${esc(title)}</div>
-          <div class="text-xs text-slate-600">${esc(periodText)}</div>
-          ${meta?.currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(meta.currency)})</div>` : ""}
-        </div>
-
-        <!-- Table -->
-        <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
-          <table class="w-full text-xs">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="text-left py-2 px-2">Description</th>
-                ${th}
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-
-      </div>
+    <!-- Header -->
+    <div class="mb-3 text-left">
+      <div class="text-sm font-bold tracking-wide">${esc(String(company || "").toUpperCase())}</div>
+      <div class="text-xs font-semibold">${esc(title)}</div>
+      <div class="text-xs text-slate-600">${esc(periodText)}</div>
+      ${meta?.currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(meta.currency)})</div>` : ""}
     </div>
+
+    <!-- Table -->
+    <div class="overflow-hidden bg-white">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 text-slate-600">
+          <tr>
+            <th class="text-left py-2 px-2">Description</th>
+            ${th}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+
+  </div>
   `;
 }
 
@@ -23998,7 +23994,7 @@ function renderSOCIEHtml(stmt) {
   const meta = stmt?.meta || {};
   const company = meta.company_name || "Company";
   const currency = meta.currency || "";
-  const title = "Statement of Changes in Equity";
+  const title = meta.statement_title || "Statement of Changes in Equity";
   const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
 
   const cols = Array.isArray(stmt?.columns) && stmt.columns.length
@@ -24045,22 +24041,29 @@ function renderSOCIEHtml(stmt) {
     `;
   }).join("");
 
+  const pageMax = cols.length > 4 ? "max-w-[1400px]" : "max-w-[900px]";
+  const tableMin = cols.length > 4 ? "min-w-[1150px]" : "";
+
   return `
-    <div class="mx-auto max-w-[900px]">
+    <div class="mx-auto w-full ${pageMax}">
       <div class="bg-white rounded border border-slate-200 p-4">
         <div class="mb-3">
           <div class="text-lg font-bold text-slate-900">${esc(company)}</div>
-          <div class="text-sm font-semibold text-slate-700">${esc(title)}</div>
+          <div class="text-sm font-semibold text-slate-700">${esc(meta.statement_title || title)}</div>
           <div class="text-xs text-slate-500">${esc(periodText)}</div>
           ${currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(currency)})</div>` : ""}
         </div>
 
-        <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
-          <table class="w-full text-xs">
+        <div class="border border-slate-100 rounded-lg overflow-x-auto bg-white">
+          <table class="w-full ${tableMin} text-xs">
             <thead class="bg-slate-50 text-slate-600">
               <tr>
-                <th class="text-left py-2 px-2">Description</th>
-                ${cols.map(c => `<th class="text-right py-2 px-2">${esc(c.label || c.key)}</th>`).join("")}
+                <th class="text-left py-2 px-3 min-w-[240px] whitespace-nowrap">Description</th>
+                ${cols.map(c => `
+                  <th class="text-right py-2 px-3 whitespace-nowrap min-w-[150px]">
+                    ${esc(c.label || c.key)}
+                  </th>
+                `).join("")}
               </tr>
             </thead>
             <tbody>
