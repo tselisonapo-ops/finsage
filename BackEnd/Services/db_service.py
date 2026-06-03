@@ -13008,7 +13008,7 @@ class DatabaseService:
             CHECK (
             cost >= 0 AND residual_value >= 0
             AND useful_life_months >= 0
-            AND depreciation_method IN (''SL'',''RB'',''UOP'')
+            AND depreciation_method IN (''SL'',''RB'',''UOP'',''APP'')
             AND status IN (''active'',''disposed'',''held_for_sale'',''inactive'')
             )',
             '{schema}'
