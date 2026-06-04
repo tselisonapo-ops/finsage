@@ -332,8 +332,12 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         if not isinstance(r, dict):
             continue
 
-        asset_class = _class_key(r.get("asset_class"))
-
+        asset_class = _class_key(
+            r.get("asset_class_group")
+            or r.get("asset_class")
+            or r.get("account_name")
+            or r.get("name")
+        )
         additions = (
             _n(r.get("additions_cost"))
             + _n(r.get("subsequent_additions_cost"))

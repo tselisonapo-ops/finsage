@@ -69,6 +69,61 @@ def _resolve_cf_columns(*, basis: str, cols_mode: int, preview_columns: int,
         "columns": columns,
     }
 
+def _cf_group_label(row: Dict[str, Any]) -> str:
+    role = str(row.get("cf_role") or "").lower()
+    bucket = str(row.get("cf_bucket") or "").lower()
+    name = str(row.get("account_name") or row.get("name") or "").strip()
+
+    if "lease" in role or "lease" in bucket or "lease liability" in name.lower():
+        return "Lease liability payments"
+
+    if "loan" in role or "borrow" in role or "loan payable" in name.lower():
+        return "Borrowings"
+
+    if "vat" in bucket or "vat" in name.lower():
+        return "VAT paid / received"
+
+    if "receivable" in bucket or "receivable" in name.lower():
+        return "Cash received from customers"
+
+    if "payable" in bucket or "supplier" in bucket or "payable" in name.lower():
+        return "Cash paid to suppliers"
+
+    if "wages" in name.lower() or "salaries" in name.lower() or "employee" in name.lower():
+        return "Cash paid to employees"
+
+    if "interest" in name.lower():
+        return "Interest paid"
+
+    if "furniture" in name.lower() or "asset" in name.lower() or "ppe" in bucket:
+        return "Purchase of property, plant and equipment"
+
+    return name or "Other cash flow item"
+
+
+def _aggregate_cf_detail_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[str, Dict[str, Any]] = {}
+
+    for row in lines or []:
+        label = _cf_group_label(row)
+
+        if label not in grouped:
+            grouped[label] = {
+                **row,
+                "account_name": label,
+                "name": label,
+                "amount": 0.0,
+                "detail": [],
+            }
+
+        grouped[label]["amount"] += float(row.get("amount") or 0.0)
+        grouped[label]["detail"].append(row)
+
+    return [
+        row for row in grouped.values()
+        if abs(float(row.get("amount") or 0.0)) > 0.000001
+    ]
+
 # -----------------------------
 # Types (hooks)
 # -----------------------------
@@ -178,6 +233,8 @@ def build_cashflow_full_v2(
                     sec = "operating"
 
                 sec_totals[sec] += adj
+                meta = ac.resolve_account_cf_meta(ln)
+
                 sec_lines[sec].append({
                     "date": jdate,
                     "ref": jref,
@@ -185,6 +242,10 @@ def build_cashflow_full_v2(
                     "account_name": ln.get("account_name") or ln.get("name") or (ln.get("account") or ln.get("account_code") or ""),
                     "memo": ln.get("memo") or "",
                     "amount": adj,
+                    "cf_bucket": meta.get("bucket"),
+                    "cf_role": meta.get("role"),
+                    "cf_section": meta.get("section"),
+                    "account_code": ln.get("account") or ln.get("account_code") or ln.get("code") or "",
                 })
 
         return {"totals": sec_totals, "lines": sec_lines}
@@ -221,10 +282,10 @@ def build_cashflow_full_v2(
                 "code": "DETAIL",
                 "name": "Details",
                 "values": _val(cur_amt, pri_amt),
-                "detail": {
-                    "cur": cur["lines"].get(key, []),
-                    "pri": pri["lines"].get(key, []) if has_prior and pri else [],
-                }
+                    "detail": {
+                        "cur": _aggregate_cf_detail_lines(cur["lines"].get(key, [])),
+                        "pri": _aggregate_cf_detail_lines(pri["lines"].get(key, [])) if has_prior and pri else [],
+                    }
             }],
             "totals": _val(cur_amt, pri_amt),
         }
@@ -824,7 +885,7 @@ def build_cashflow_indirect_v2(
     financing_total_pri = float(jf_pri["totals"]["financing"]) if has_prior and jf_pri else 0.0
 
     investing_lines = []
-    for row in jf_cur["lines"]["investing"]:
+    for row in _aggregate_cf_detail_lines(jf_cur["lines"]["investing"]):
         cur_amt = float(row.get("amount") or 0.0)
         investing_lines.append({
             "code": "DETAIL",
@@ -853,7 +914,7 @@ def build_cashflow_indirect_v2(
     }
 
     financing_lines = []
-    for row in jf_cur["lines"]["financing"]:
+    for row in _aggregate_cf_detail_lines(jf_cur["lines"]["financing"]):
         cur_amt = float(row.get("amount") or 0.0)
         financing_lines.append({
             "code": "DETAIL",
