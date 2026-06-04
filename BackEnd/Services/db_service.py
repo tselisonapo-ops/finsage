@@ -66902,6 +66902,183 @@ class DatabaseService:
             return f"for the reporting period ended {date_to}"
         return "for the reporting period"
 
+    def build_ppe_note_package(
+        self,
+        company_id: int,
+        date_from,
+        date_to,
+        *,
+        cur=None,
+    ) -> dict:
+        """
+        IAS 16 PPE disclosure package.
+
+        Returns:
+        - policy_note: narrative IAS 16 accounting policy / disclosure text
+        - ppe_summary_table: movement summary by asset class
+        - totals: overall PPE totals
+        """
+
+        if cur is None:
+            with self._conn_cursor() as (_conn, cur):
+                return self.build_ppe_note_package(
+                    company_id,
+                    date_from,
+                    date_to,
+                    cur=cur,
+                )
+
+        def num(v):
+            try:
+                return float(v or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def fmt(v):
+            return f"{num(v):,.2f}"
+
+        disclosure = self.get_ppe_disclosure_by_class(
+            cur,
+            company_id,
+            date_from,
+            date_to,
+        ) or []
+
+        preferred_order = {
+            "land": 1,
+            "buildings": 2,
+            "plant & equipment": 3,
+            "plant and equipment": 3,
+            "vehicles": 4,
+            "motor vehicles": 4,
+            "computer equipment": 5,
+            "computers": 5,
+            "furniture & fittings": 6,
+            "furniture and fittings": 6,
+            "office equipment": 7,
+            "construction in progress": 8,
+            "expansion project": 8,
+        }
+
+        def normalise_class(name: str) -> str:
+            n = (name or "").strip()
+            low = n.lower()
+
+            if low in ("computer", "computers"):
+                return "Computer Equipment"
+            if low in ("vehicle", "vehicles", "motor vehicle", "motor vehicles"):
+                return "Motor Vehicles"
+            if low in ("plant and equipment", "plant & equipment"):
+                return "Plant & Equipment"
+            if low in ("furniture", "furniture and fittings", "furniture & fittings"):
+                return "Furniture & Fittings"
+            if low in ("cip", "construction in progress", "expansion project"):
+                return "Construction in Progress"
+            if low == "land":
+                return "Land"
+            if low == "buildings":
+                return "Buildings"
+            if low == "office equipment":
+                return "Office Equipment"
+
+            return n.title() if n else "Unclassified PPE"
+
+        grouped = {}
+
+        for r in disclosure:
+            if not isinstance(r, dict):
+                continue
+
+            asset_class = normalise_class(r.get("asset_class"))
+
+            g = grouped.setdefault(asset_class, {
+                "asset_class": asset_class,
+                "opening_carrying": 0.0,
+                "additions": 0.0,
+                "transfers": 0.0,
+                "disposals": 0.0,
+                "depreciation": 0.0,
+                "impairment": 0.0,
+                "revaluation": 0.0,
+                "closing_carrying": 0.0,
+            })
+
+            additions = num(r.get("additions_cost")) + num(r.get("subsequent_additions_cost"))
+
+            transfers = (
+                num(r.get("transfers_in_carrying"))
+                + num(r.get("transfers_out_carrying"))
+            )
+
+            disposals = num(r.get("disposals_carrying"))
+
+            impairment = (
+                num(r.get("impairment_losses"))
+                - num(r.get("impairment_reversals"))
+            )
+
+            revaluation = (
+                num(r.get("revaluation_upward"))
+                + num(r.get("revaluation_downward"))
+            )
+
+            g["opening_carrying"] += num(r.get("opening_carrying"))
+            g["additions"] += additions
+            g["transfers"] += transfers
+            g["disposals"] += disposals
+            g["depreciation"] += num(r.get("depreciation_charge"))
+            g["impairment"] += impairment
+            g["revaluation"] += revaluation
+            g["closing_carrying"] += num(r.get("closing_carrying"))
+
+        rows = list(grouped.values())
+
+        rows.sort(
+            key=lambda x: preferred_order.get(
+                (x.get("asset_class") or "").lower(),
+                99,
+            )
+        )
+
+        totals = {
+            "opening_carrying": sum(num(r["opening_carrying"]) for r in rows),
+            "additions": sum(num(r["additions"]) for r in rows),
+            "transfers": sum(num(r["transfers"]) for r in rows),
+            "disposals": sum(num(r["disposals"]) for r in rows),
+            "depreciation": sum(num(r["depreciation"]) for r in rows),
+            "impairment": sum(num(r["impairment"]) for r in rows),
+            "revaluation": sum(num(r["revaluation"]) for r in rows),
+            "closing_carrying": sum(num(r["closing_carrying"]) for r in rows),
+        }
+
+        period_label = self._period_label(date_from, date_to)
+
+        policy_note = f"""
+    Property, plant and equipment are initially recognised at cost. Cost includes the purchase price and any costs directly attributable to bringing the asset to the location and condition necessary for it to operate as intended by management.
+
+    Subsequent expenditure is capitalised only when it is probable that future economic benefits associated with the item will flow to the company and the cost can be measured reliably. All other repairs and maintenance are recognised in profit or loss as incurred.
+
+    Property, plant and equipment are subsequently measured at cost less accumulated depreciation and accumulated impairment losses, unless a revaluation model is applied to specific asset classes.
+
+    Depreciation is recognised so as to allocate the depreciable amount of assets over their estimated useful lives. Land and construction in progress are not depreciated. The residual values, useful lives and depreciation methods are reviewed at each reporting date and adjusted prospectively where necessary.
+
+    The company's major classes of property, plant and equipment comprise land, buildings, plant and equipment, motor vehicles, computer equipment, furniture and fittings, office equipment, and construction in progress.
+
+    During {period_label}, additions to property, plant and equipment amounted to R{fmt(totals["additions"])}. Depreciation charged for the period amounted to R{fmt(totals["depreciation"])}. The closing carrying amount of property, plant and equipment was R{fmt(totals["closing_carrying"])}.
+    """.strip()
+
+        total_row = {
+            "asset_class": "Total",
+            **totals,
+        }
+
+        return {
+            "policy_note": policy_note,
+            "ppe_summary_table": rows,
+            "ppe_summary_total": total_row,
+            "raw_disclosure": disclosure,
+        }
+
     def build_ppe_policy_note_text(
         self,
         company_id: int,
@@ -66910,119 +67087,13 @@ class DatabaseService:
         *,
         cur=None,
     ) -> str:
-
-        if cur is None:
-            with self._conn_cursor() as (_conn, cur):
-                return self.build_ppe_policy_note_text(
-                    company_id,
-                    date_from,
-                    date_to,
-                    cur=cur,
-                )
-
-        summary = self.get_ppe_note_summary(cur, company_id, date_from, date_to) or {}
-        period_label = self._period_label(date_from, date_to)
-        current_app.logger.warning(
-            "PPE NOTE SUMMARY BEFORE FALLBACK company_id=%s from=%s to=%s summary=%s",
+        package = self.build_ppe_note_package(
             company_id,
             date_from,
             date_to,
-            summary,
+            cur=cur,
         )
-
-        def num(v):
-            try:
-                return float(v)
-            except (TypeError, ValueError):
-                return 0.0
-            
-        # fallback: use PPE disclosure payload/table if summary came back empty/zero
-        if not any(float(summary.get(k) or 0) for k in (
-            "additions_cost",
-            "subsequent_additions_cost",
-            "closing_carrying",
-            "depreciation_charge",
-        )):
-            disclosure = self.get_ppe_disclosure_by_class(
-                cur,
-                company_id,
-                date_from,
-                date_to,
-            ) or []
-
-            current_app.logger.warning(
-                "PPE DISCLOSURE TYPE=%s LEN=%s SAMPLE=%s",
-                type(disclosure).__name__,
-                len(disclosure) if isinstance(disclosure, list) else None,
-                disclosure[:3] if isinstance(disclosure, list) else disclosure,
-            )
-
-            if isinstance(disclosure, list):
-                summary = {
-                    "additions_cost": sum(num(r.get("additions_cost")) for r in disclosure if isinstance(r, dict)),
-                    "subsequent_additions_cost": sum(num(r.get("subsequent_additions_cost")) for r in disclosure if isinstance(r, dict)),
-                    "closing_carrying": sum(num(r.get("closing_carrying")) for r in disclosure if isinstance(r, dict)),
-                    "depreciation_charge": sum(num(r.get("depreciation_charge")) for r in disclosure if isinstance(r, dict)),
-                    "impairment_losses": sum(num(r.get("impairment_losses")) for r in disclosure if isinstance(r, dict)),
-                    "revaluation_upward": sum(num(r.get("revaluation_upward")) for r in disclosure if isinstance(r, dict)),
-                    "revaluation_downward": sum(num(r.get("revaluation_downward")) for r in disclosure if isinstance(r, dict)),
-                }
-
-                current_app.logger.warning(
-                    "PPE NOTE SUMMARY AFTER FALLBACK summary=%s",
-                    summary,
-                )
-        def fmt(v):
-            try:
-                return f"{float(v or 0):,.2f}"
-            except Exception:
-                return "0.00"
-
-        closing_carrying = fmt(summary.get("closing_carrying"))
-        additions = fmt(
-            (summary.get("additions_cost") or 0)
-            + (summary.get("subsequent_additions_cost") or 0)
-        )
-        depreciation = fmt(summary.get("depreciation_charge"))
-        impairment_losses = float(summary.get("impairment_losses") or 0)
-        revaluation_upward = float(summary.get("revaluation_upward") or 0)
-        revaluation_downward = float(summary.get("revaluation_downward") or 0)
-
-        # -----------------------------------
-        # Optional movements section
-        # -----------------------------------
-        extra_lines = []
-
-        if impairment_losses:
-            extra_lines.append(
-                f"Impairment losses recognised during the reporting period amounted to R{fmt(impairment_losses)}."
-            )
-
-        if revaluation_upward or revaluation_downward:
-            extra_lines.append(
-                f"Revaluation movements recognised during the reporting period comprised upward revaluations of R{fmt(revaluation_upward)} and downward revaluations of R{fmt(revaluation_downward)}."
-            )
-
-        extra_text = "\n\n".join(extra_lines)
-
-        # -----------------------------------
-        # Final note (IAS 1 structured)
-        # -----------------------------------
-        return f"""
-    Property, plant and equipment are initially recognised at cost. Cost includes the purchase price and any costs directly attributable to bringing the asset to the location and condition necessary for it to operate as intended by management.
-
-    Subsequent expenditure is capitalised only when it is probable that future economic benefits associated with the item will flow to the company and the cost can be measured reliably. All other repairs and maintenance are recognised in profit or loss as incurred.
-
-    Property, plant and equipment are subsequently measured at cost less accumulated depreciation and accumulated impairment losses, unless a revaluation model is applied to specific asset classes.
-
-    Depreciation is recognised so as to allocate the depreciable amount of assets over their estimated useful lives. The residual values, useful lives and depreciation methods are reviewed at each reporting date and adjusted prospectively where necessary.
-
-    The determination of useful lives, residual values and depreciation methods requires the use of judgement and is based on expected usage of the assets, physical wear and tear, technical or commercial obsolescence, and asset replacement strategies.
-
-    During {period_label}, additions to property, plant and equipment amounted to R{additions}. Depreciation charged for the period amounted to R{depreciation}. The closing carrying amount of property, plant and equipment was R{closing_carrying}.
-    {extra_text}
-    """.strip()
-
+        return package.get("policy_note") or ""
 
     def build_lease_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
         d = self.get_ifrs16_disclosure_strict(
@@ -67063,6 +67134,122 @@ class DatabaseService:
 
     For {period_label}, depreciation on right-of-use assets amounted to R{_money(pnl.get("depreciation")):,.2f}, and interest expense on lease liabilities amounted to R{_money(pnl.get("interest")):,.2f}. The closing carrying amount of right-of-use assets was R{_money(rou.get("closing_rou_nbv_as_of")):,.2f}, and the closing lease liability was R{_money(liability.get("closing_liability_as_of")):,.2f}. Undiscounted future lease payments amounted to R{_money(maturity.get("undiscounted_net_total")):,.2f}.{exemption_text}
     """.strip()
+
+    def build_ifrs16_rou_asset_class_table(self, disclosure: dict) -> list[dict]:
+        rows = disclosure.get("rou_asset_table") or []
+
+        class_map = {
+            "head office": "Buildings",
+            "branch": "Buildings",
+            "warehouse": "Buildings",
+            "vehicle": "Vehicles",
+            "fleet": "Vehicles",
+            "equipment": "Equipment",
+            "it": "IT Infrastructure",
+            "infrastructure": "IT Infrastructure",
+            "office space": "Buildings",
+        }
+
+        grouped = {}
+
+        for r in rows:
+            lease_name = (r.get("lease_name") or "").lower()
+
+            asset_class = "Other ROU Assets"
+            for key, value in class_map.items():
+                if key in lease_name:
+                    asset_class = value
+                    break
+
+            g = grouped.setdefault(asset_class, {
+                "asset_class": asset_class,
+                "opening": 0.0,
+                "additions": 0.0,
+                "remeasurements": 0.0,
+                "depreciation": 0.0,
+                "disposals": 0.0,
+                "closing": 0.0,
+            })
+
+            g["opening"] += float(r.get("opening") or 0)
+            g["additions"] += float(r.get("additions") or 0)
+            g["remeasurements"] += float(r.get("remeasurements") or 0)
+            g["depreciation"] += float(r.get("depreciation") or 0)
+            g["disposals"] += float(r.get("disposals") or 0)
+            g["closing"] += float(r.get("closing") or 0)
+
+        return list(grouped.values())
+
+    def build_ifrs16_lease_portfolio_table(self, disclosure: dict) -> list[dict]:
+        leases = disclosure.get("leases") or []
+
+        out = []
+        for l in leases:
+            name = l.get("lease_name") or ""
+
+            asset_class = "Other"
+            n = name.lower()
+
+            if any(x in n for x in ["office", "branch", "warehouse", "building"]):
+                asset_class = "Buildings"
+            elif any(x in n for x in ["vehicle", "fleet"]):
+                asset_class = "Vehicles"
+            elif "equipment" in n:
+                asset_class = "Equipment"
+            elif any(x in n for x in ["it", "infrastructure", "server"]):
+                asset_class = "IT Infrastructure"
+
+            out.append({
+                "lease_name": name,
+                "asset_class": asset_class,
+                "start_date": l.get("start_date"),
+                "end_date": l.get("end_date"),
+                "frequency": l.get("payment_frequency"),
+                "payment": float(l.get("payment_amount") or 0),
+                "vat_rate": float(l.get("vat_rate") or 0),
+                "status": l.get("status") or "active",
+            })
+
+        return out
+
+    def build_ifrs16_disclosure_package(
+        self,
+        company_id: int,
+        date_from,
+        date_to,
+        *,
+        cur=None,
+    ) -> dict:
+
+        d = self.get_ifrs16_disclosure_strict(
+            company_id,
+            from_date=date_from,
+            to_date=date_to,
+            as_of=date_to,
+            include_terminated=True,
+            cur=cur,
+        )
+
+        policy_note = self.build_lease_policy_note_text(
+            company_id,
+            date_from,
+            date_to,
+            cur=cur,
+        )
+
+        return {
+            "policy_note": policy_note,
+            "rou_asset_class_table": self.build_ifrs16_rou_asset_class_table(d),
+            "lease_portfolio_table": self.build_ifrs16_lease_portfolio_table(d),
+            "rou_asset_table_by_lease": d.get("rou_asset_table") or [],
+            "liability_reconciliation": d.get("liability_reconciliation") or {},
+            "maturity_analysis": d.get("maturity_analysis") or {},
+            "pnl": d.get("pnl") or {},
+            "liability": d.get("liability") or {},
+            "cashflow": d.get("cashflow") or {},
+            "checks": d.get("liability_closing_checks") or {},
+            "raw": d,
+        }    
 
     def build_revenue_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
         schema = self.company_schema(company_id)

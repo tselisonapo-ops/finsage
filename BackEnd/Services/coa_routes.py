@@ -697,7 +697,17 @@ def coa_save_account(cid: int):
             except Exception:
                 current_app.logger.exception("audit_log failed (coa_save_account update)")
 
-        return jsonify(_get_coa_normalised(company_id)), 200
+        rows = db_service.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.coa
+            WHERE company_id = %s
+            ORDER BY code;
+            """,
+            (company_id,),
+        ) or []
+
+        return jsonify(_get_coa_normalised(rows)), 200
 
     except ValueError as ve:
         return jsonify({"ok": False, "error": str(ve)}), 400
@@ -765,7 +775,17 @@ def coa_delete_account(cid: int, code: str):
         except Exception:
             current_app.logger.exception("audit_log failed (coa_delete_account)")
 
-        return jsonify(_get_coa_normalised(company_id)), 200
+        rows = db_service.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.coa
+            WHERE company_id = %s
+            ORDER BY code;
+            """,
+            (company_id,),
+        ) or []
+
+        return jsonify(_get_coa_normalised(rows)), 200
 
     except Exception as e:
         current_app.logger.exception("coa_delete_account failed")

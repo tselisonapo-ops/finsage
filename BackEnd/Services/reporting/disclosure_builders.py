@@ -201,155 +201,146 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
 def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) -> Dict[str, Any]:
     """
     IAS 16 PPE disclosure.
+
     Source:
-    - Posted asset acquisitions for cost/additions
-    - Posted depreciation table for accumulated depreciation
-    - Posted impairments/revaluations where available
+    - db.get_ppe_disclosure_by_class()
+    - Asset classes are shown as columns
+    - Movements are shown as rows
     """
 
     ctx = db.get_company_context(company_id) if hasattr(db, "get_company_context") else {}
     ctx = ctx or {}
-    schema = db_service.company_schema(company_id)
-
-    open_as_of = date_from - timedelta(days=1)
 
     with db._conn_cursor() as (_conn, cur):
-        # Opening posted cost
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
-            FROM {schema}.asset_acquisitions acq
-            JOIN {schema}.assets a ON a.id = acq.asset_id
-            JOIN {schema}.journal j ON j.id = acq.posted_journal_id
-            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
-            WHERE acq.company_id = %s
-                AND lower(acq.status) = 'posted'
-                AND acq.acquisition_date <= %s
-                AND jl.account_code = a.asset_account_code
-        """), (company_id, open_as_of))
-        opening_cost = _d((cur.fetchone() or {}).get("amount"))
+        ppe_rows = db.get_ppe_disclosure_by_class(
+            cur,
+            company_id,
+            date_from,
+            date_to,
+        ) or []
 
-        # Closing posted cost
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
-            FROM {schema}.asset_acquisitions acq
-            JOIN {schema}.assets a ON a.id = acq.asset_id
-            JOIN {schema}.journal j ON j.id = acq.posted_journal_id
-            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
-            WHERE acq.company_id = %s
-                AND lower(acq.status) = 'posted'
-                AND acq.acquisition_date <= %s
-                AND jl.account_code = a.asset_account_code
-        """), (company_id, date_to))
-        closing_cost = _d((cur.fetchone() or {}).get("amount"))
+    def _n(v):
+        try:
+            return Decimal(str(v or 0))
+        except Exception:
+            return Decimal("0")
 
-        # Additions in period
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS amount
-            FROM {schema}.asset_acquisitions acq
-            JOIN {schema}.assets a ON a.id = acq.asset_id
-            JOIN {schema}.journal j ON j.id = acq.posted_journal_id
-            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
-            WHERE acq.company_id = %s
-                AND lower(acq.status) = 'posted'
-                AND acq.acquisition_date BETWEEN %s AND %s
-                AND jl.account_code = a.asset_account_code
-        """), (company_id, date_from, date_to))
-        additions = _d((cur.fetchone() or {}).get("amount"))
+    def _class_key(name):
+        n = str(name or "").strip().lower()
 
-        # Opening accumulated depreciation
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(x.accumulated_depreciation), 0) AS amount
-            FROM (
-                SELECT DISTINCT ON (d.asset_id)
-                    d.asset_id,
-                    d.accumulated_depreciation
-                FROM {schema}.asset_depreciation d
-                WHERE d.company_id = %s
-                  AND lower(d.status) = 'posted'
-                  AND d.period_end <= %s
-                ORDER BY d.asset_id, d.period_end DESC, d.id DESC
-            ) x
-        """), (company_id, open_as_of))
-        opening_acc_dep = _d((cur.fetchone() or {}).get("amount"))
+        if n in ("land",):
+            return "land"
+        if n in ("building", "buildings"):
+            return "buildings"
+        if n in ("plant", "plant & equipment", "plant and equipment", "equipment"):
+            return "plant_equipment"
+        if n in ("vehicle", "vehicles", "motor vehicle", "motor vehicles"):
+            return "vehicles"
+        if n in ("computer", "computers", "computer equipment"):
+            return "computer_equipment"
+        if n in ("furniture", "furniture & fittings", "furniture and fittings"):
+            return "furniture_fittings"
+        if n in ("cip", "construction in progress", "expansion project"):
+            return "construction_in_progress"
 
-        # Closing accumulated depreciation
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(x.accumulated_depreciation), 0) AS amount
-            FROM (
-                SELECT DISTINCT ON (d.asset_id)
-                    d.asset_id,
-                    d.accumulated_depreciation
-                FROM {schema}.asset_depreciation d
-                WHERE d.company_id = %s
-                  AND lower(d.status) = 'posted'
-                  AND d.period_end <= %s
-                ORDER BY d.asset_id, d.period_end DESC, d.id DESC
-            ) x
-        """), (company_id, date_to))
-        closing_acc_dep = _d((cur.fetchone() or {}).get("amount"))
+        return "other"
 
-        # Depreciation charge in period
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(d.depreciation_amount), 0) AS amount
-            FROM {schema}.asset_depreciation d
-            WHERE d.company_id = %s
-              AND lower(d.status) = 'posted'
-              AND d.period_end BETWEEN %s AND %s
-        """), (company_id, date_from, date_to))
-        depreciation = _d((cur.fetchone() or {}).get("amount"))
+    columns = [
+        {"key": "land", "label": "Land"},
+        {"key": "buildings", "label": "Buildings"},
+        {"key": "plant_equipment", "label": "Plant & Equipment"},
+        {"key": "vehicles", "label": "Motor Vehicles"},
+        {"key": "computer_equipment", "label": "Computer Equipment"},
+        {"key": "furniture_fittings", "label": "Furniture & Fittings"},
+        {"key": "construction_in_progress", "label": "Construction in Progress"},
+        {"key": "other", "label": "Other"},
+        {"key": "total", "label": "Total"},
+    ]
 
-        # Optional impairments
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(
-                COALESCE(i.impairment_amount,0) - COALESCE(i.reversal_amount,0)
-            ), 0) AS amount
-            FROM {schema}.asset_impairments i
-            WHERE i.company_id = %s
-              AND lower(i.status) = 'posted'
-              AND i.impairment_date BETWEEN %s AND %s
-        """), (company_id, date_from, date_to))
-        impairment = _d((cur.fetchone() or {}).get("amount"))
+    movement_keys = [
+        "opening_carrying",
+        "additions",
+        "disposals",
+        "depreciation",
+        "impairment",
+        "revaluation",
+        "closing_carrying",
+    ]
 
-        # Optional revaluations
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(COALESCE(r.revaluation_change,0)), 0) AS amount
-            FROM {schema}.asset_revaluations r
-            WHERE r.company_id = %s
-              AND lower(r.status) = 'posted'
-              AND r.revaluation_date BETWEEN %s AND %s
-        """), (company_id, date_from, date_to))
-        revaluation = _d((cur.fetchone() or {}).get("amount"))
+    summary = {
+        movement: {col["key"]: Decimal("0") for col in columns}
+        for movement in movement_keys
+    }
 
-        cur.execute(_q(schema, """
-            SELECT COALESCE(SUM(ABS(jl.credit - jl.debit)), 0) AS amount
-            FROM {schema}.asset_disposals disp
-            JOIN {schema}.assets a ON a.id = disp.asset_id
-            JOIN {schema}.journal j ON j.id = disp.posted_journal_id
-            JOIN {schema}.journal_lines jl ON jl.journal_id = j.id
-            WHERE disp.company_id = %s
-            AND lower(disp.status) = 'posted'
-            AND disp.disposal_date BETWEEN %s AND %s
-            AND jl.account_code = a.asset_account_code
-        """), (company_id, date_from, date_to))
-        disposals = _d((cur.fetchone() or {}).get("amount"))
+    for r in ppe_rows:
+        if not isinstance(r, dict):
+            continue
 
-    opening_carrying = opening_cost - opening_acc_dep
-    closing_carrying = closing_cost - closing_acc_dep - impairment
+        asset_class = _class_key(r.get("asset_class"))
+
+        additions = (
+            _n(r.get("additions_cost"))
+            + _n(r.get("subsequent_additions_cost"))
+        )
+
+        disposals = _n(r.get("disposals_carrying"))
+
+        depreciation = _n(r.get("depreciation_charge"))
+
+        impairment = (
+            _n(r.get("impairment_losses"))
+            - _n(r.get("impairment_reversals"))
+        )
+
+        revaluation = (
+            _n(r.get("revaluation_upward"))
+            + _n(r.get("revaluation_downward"))
+        )
+
+        values = {
+            "opening_carrying": _n(r.get("opening_carrying")),
+            "additions": additions,
+            "disposals": disposals,
+            "depreciation": -abs(depreciation),
+            "impairment": -abs(impairment),
+            "revaluation": revaluation,
+            "closing_carrying": _n(r.get("closing_carrying")),
+        }
+
+        for movement, amount in values.items():
+            summary[movement][asset_class] += amount
+            summary[movement]["total"] += amount
 
     rows = [
-        {"label": "Opening cost", "values": {"amount": _money(opening_cost)}},
-        {"label": "Additions", "values": {"amount": _money(additions)}},
-        {"label": "Disposals", "values": {"amount": _money(-disposals)}},
-        {"label": "Revaluation movement", "values": {"amount": _money(revaluation)}},
-        {"label": "Closing cost", "values": {"amount": _money(closing_cost)}, "row_type": "subtotal"},
-
-        {"label": "Opening accumulated depreciation", "values": {"amount": _money(-opening_acc_dep)}},
-        {"label": "Depreciation charge", "values": {"amount": _money(-depreciation)}},
-        {"label": "Impairment", "values": {"amount": _money(-impairment)}},
-        {"label": "Closing accumulated depreciation", "values": {"amount": _money(-closing_acc_dep)}, "row_type": "subtotal"},
-
-        {"label": "Opening carrying amount", "values": {"amount": _money(opening_carrying)}, "row_type": "total"},
-        {"label": "Closing carrying amount", "values": {"amount": _money(closing_carrying)}, "row_type": "total"},
+        {
+            "label": "Opening carrying amount",
+            "values": {k: _money(v) for k, v in summary["opening_carrying"].items()},
+        },
+        {
+            "label": "Additions",
+            "values": {k: _money(v) for k, v in summary["additions"].items()},
+        },
+        {
+            "label": "Disposals",
+            "values": {k: _money(v) for k, v in summary["disposals"].items()},
+        },
+        {
+            "label": "Depreciation charge",
+            "values": {k: _money(v) for k, v in summary["depreciation"].items()},
+        },
+        {
+            "label": "Impairment",
+            "values": {k: _money(v) for k, v in summary["impairment"].items()},
+        },
+        {
+            "label": "Revaluation movement",
+            "values": {k: _money(v) for k, v in summary["revaluation"].items()},
+        },
+        {
+            "label": "Closing carrying amount",
+            "values": {k: _money(v) for k, v in summary["closing_carrying"].items()},
+            "row_type": "total",
+        },
     ]
 
     return {
@@ -360,10 +351,14 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
             "statement": "ppe_disclosure",
             "report_name": "Property, Plant and Equipment Disclosure",
             "standard": "IAS 16",
-            "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+            "period": {
+                "from": date_from.isoformat(),
+                "to": date_to.isoformat(),
+            },
         },
-        "columns": [{"key": "amount", "label": "Amount"}],
+        "columns": columns,
         "rows": rows,
+        "source": ppe_rows,
     }
 
 def build_lease_disclosure(
@@ -376,14 +371,54 @@ def build_lease_disclosure(
 ) -> Dict[str, Any]:
     """
     IFRS 16 lease disclosure.
-    Prefer strict lease disclosure engine if available; otherwise fallback to TB/P&L roles.
+
+    Preferred source:
+    - db.get_ifrs16_disclosure_strict()
+
+    Layout:
+    - ROU asset classes as columns
+    - Movements as rows
+    - Lease liability and maturity analysis as supporting sections
     """
 
     as_of = as_of or date_to
+
     ctx = db.get_company_context(company_id) if hasattr(db, "get_company_context") else {}
     ctx = ctx or {}
 
-    # Best source: your strict IFRS16 engine if present
+    def _n(v):
+        try:
+            return Decimal(str(v or 0))
+        except Exception:
+            return Decimal("0")
+
+    def _lease_class_key(name: str) -> str:
+        n = str(name or "").strip().lower()
+
+        if any(x in n for x in ("office", "building", "branch", "warehouse", "premises", "head office")):
+            return "buildings"
+        if any(x in n for x in ("vehicle", "vehicles", "fleet", "car", "truck")):
+            return "vehicles"
+        if any(x in n for x in ("equipment", "machine", "plant", "production")):
+            return "equipment"
+        if any(x in n for x in ("it", "server", "software", "infrastructure", "computer")):
+            return "it_infrastructure"
+
+        return "other"
+
+    def _empty_col_values(columns):
+        return {col["key"]: Decimal("0") for col in columns}
+
+    meta = {
+        "company_id": company_id,
+        "company_name": ctx.get("company_name") or ctx.get("name"),
+        "currency": ctx.get("currency") or "ZAR",
+        "statement": "lease_disclosure",
+        "report_name": "Lease Disclosure",
+        "standard": "IFRS 16",
+        "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+    }
+
     if hasattr(db, "get_ifrs16_disclosure_strict"):
         strict = db.get_ifrs16_disclosure_strict(
             company_id,
@@ -393,153 +428,189 @@ def build_lease_disclosure(
             include_terminated=True,
         )
 
-        return {
-            "meta": {
-                "company_id": company_id,
-                "company_name": ctx.get("company_name") or ctx.get("name"),
-                "currency": ctx.get("currency") or "ZAR",
-                "statement": "lease_disclosure",
-                "report_name": "Lease Disclosure",
-                "standard": "IFRS 16",
-                "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+        columns = [
+            {"key": "buildings", "label": "Buildings"},
+            {"key": "vehicles", "label": "Vehicles"},
+            {"key": "equipment", "label": "Equipment"},
+            {"key": "it_infrastructure", "label": "IT Infrastructure"},
+            {"key": "other", "label": "Other"},
+            {"key": "total", "label": "Total"},
+        ]
+
+        movement_keys = [
+            "opening",
+            "additions",
+            "remeasurements",
+            "depreciation",
+            "disposals",
+            "closing",
+        ]
+
+        summary = {
+            movement: _empty_col_values(columns)
+            for movement in movement_keys
+        }
+
+        rou_asset_table = strict.get("rou_asset_table") or []
+
+        for r in rou_asset_table:
+            if not isinstance(r, dict):
+                continue
+
+            asset_class = _lease_class_key(r.get("lease_name"))
+
+            values = {
+                "opening": _n(r.get("opening")),
+                "additions": _n(r.get("additions")),
+                "remeasurements": _n(r.get("remeasurements")),
+                "depreciation": -abs(_n(r.get("depreciation"))),
+                "disposals": -abs(_n(r.get("disposals"))),
+                "closing": _n(r.get("closing")),
+            }
+
+            for movement, amount in values.items():
+                summary[movement][asset_class] += amount
+                summary[movement]["total"] += amount
+
+        rows = [
+            {"label": "Right-of-use assets", "values": {}, "row_type": "header"},
+
+            {
+                "label": "Opening carrying amount",
+                "values": {k: _money(v) for k, v in summary["opening"].items()},
             },
-            "columns": [{"key": "amount", "label": "Amount"}],
-            "rows": _ifrs16_strict_to_rows(strict),
+            {
+                "label": "Additions",
+                "values": {k: _money(v) for k, v in summary["additions"].items()},
+            },
+            {
+                "label": "Remeasurements / modifications",
+                "values": {k: _money(v) for k, v in summary["remeasurements"].items()},
+            },
+            {
+                "label": "Depreciation charge",
+                "values": {k: _money(v) for k, v in summary["depreciation"].items()},
+            },
+            {
+                "label": "Disposals / terminations",
+                "values": {k: _money(v) for k, v in summary["disposals"].items()},
+            },
+            {
+                "label": "Closing carrying amount",
+                "values": {k: _money(v) for k, v in summary["closing"].items()},
+                "row_type": "total",
+            },
+        ]
+
+        liability_recon = strict.get("liability_reconciliation") or {}
+        maturity = strict.get("maturity_analysis") or {}
+        maturity_rows = maturity.get("rows") or []
+        pnl = strict.get("pnl") or {}
+        cashflow = strict.get("cashflow") or {}
+        liability = strict.get("liability") or {}
+
+        rows.extend([
+            {"label": "Lease liabilities", "values": {}, "row_type": "header"},
+            {
+                "label": "Opening lease liability",
+                "values": {"total": _money(liability_recon.get("opening_liability"))},
+            },
+            {
+                "label": "Additions from new leases",
+                "values": {"total": _money(liability_recon.get("additions_new_leases"))},
+            },
+            {
+                "label": "Interest expense",
+                "values": {"total": _money(liability_recon.get("interest_accretion"))},
+            },
+            {
+                "label": "Principal reductions",
+                "values": {"total": _money(-abs(_n(liability_recon.get("principal_reduction"))))},
+            },
+            {
+                "label": "Remeasurements / modifications",
+                "values": {"total": _money(liability_recon.get("remeasurements_modifications"))},
+            },
+            {
+                "label": "Derecognitions / terminations",
+                "values": {"total": _money(-abs(_n(liability_recon.get("derecognitions_terminations"))))},
+            },
+            {
+                "label": "Closing lease liability",
+                "values": {"total": _money(liability_recon.get("closing_liability"))},
+                "row_type": "total",
+            },
+
+            {"label": "Lease payments and finance cost", "values": {}, "row_type": "header"},
+            {
+                "label": "Depreciation of right-of-use assets",
+                "values": {"total": _money(pnl.get("depreciation"))},
+            },
+            {
+                "label": "Interest expense on lease liabilities",
+                "values": {"total": _money(pnl.get("interest"))},
+            },
+            {
+                "label": "Lease payments - gross",
+                "values": {"total": _money(cashflow.get("lease_payments_gross"))},
+            },
+            {
+                "label": "Lease payments - net of VAT",
+                "values": {"total": _money(cashflow.get("lease_payments_net"))},
+            },
+            {
+                "label": "VAT on lease payments",
+                "values": {"total": _money(cashflow.get("vat"))},
+            },
+
+            {"label": "Maturity analysis", "values": {}, "row_type": "header"},
+        ])
+
+        for m in maturity_rows:
+            if not isinstance(m, dict):
+                continue
+
+            bucket = m.get("bucket") or "Unclassified"
+
+            rows.append({
+                "label": bucket,
+                "values": {
+                    "total": _money(m.get("undiscounted_net")),
+                },
+            })
+
+        rows.extend([
+            {
+                "label": "Undiscounted lease payments",
+                "values": {"total": _money(maturity.get("undiscounted_net_total"))},
+                "row_type": "subtotal",
+            },
+            {
+                "label": "Less: finance charges / discount effect",
+                "values": {"total": _money(-abs(_n(maturity.get("discount_gap"))))},
+            },
+            {
+                "label": "Carrying amount of lease liability",
+                "values": {"total": _money(maturity.get("carrying_amount_liability"))},
+                "row_type": "total",
+            },
+        ])
+
+        return {
+            "meta": meta,
+            "columns": columns,
+            "rows": rows,
             "source": strict,
         }
 
-    # Fallback
-    open_as_of = date_from - timedelta(days=1)
-
-    tb_open = db.get_trial_balance(company_id, None, open_as_of) or []
-    tb_close = db.get_trial_balance(company_id, None, as_of) or []
-    tb_period = db.get_trial_balance(company_id, date_from, date_to) or []
-
-    def sum_asset(rows, pred):
-        total = Decimal("0")
-        for r in rows or []:
-            if pred(r):
-                total += _signed_asset_amount(r)
-        return total
-
-    def sum_liability(rows, pred):
-        total = Decimal("0")
-        for r in rows or []:
-            if pred(r):
-                total += _signed_liability_amount(r)
-        return total
-
-    def is_lease_liab(r):
-        txt = _row_text(r)
-        role = str(r.get("role") or "").lower()
-        return (
-            "lease liability" in txt
-            or role in {"lease_liability_current", "lease_liability_noncurrent"}
-        )
-
-    rou_open = sum_asset(tb_open, _is_rou_row)
-    rou_close = sum_asset(tb_close, _is_rou_row)
-
-    liab_open = sum_liability(tb_open, is_lease_liab)
-    liab_close = sum_liability(tb_close, is_lease_liab)
-
-    dep = Decimal("0")
-    interest = Decimal("0")
-    payments = Decimal("0")
-
-    for r in tb_period:
-        txt = _row_text(r)
-        role = str(r.get("role") or "").lower()
-
-        amount = abs(_d(r.get("debit_total") or r.get("debit")) - _d(r.get("credit_total") or r.get("credit")))
-
-        if role == "lease_rou_depreciation_expense" or "lease amortization" in txt or "lease amortisation" in txt:
-            dep += amount
-
-        if role == "lease_interest_expense" or "lease interest" in txt:
-            interest += amount
-
-        if is_lease_liab(r):
-            # debit movement to liability usually means payment/principal reduction
-            dr = _d(r.get("debit_total") or r.get("debit"))
-            if dr > 0:
-                payments += dr
-
-    rows = [
-        {"label": "Right-of-use assets", "values": {}, "row_type": "header"},
-        {"label": "Opening carrying amount", "values": {"amount": _money(rou_open)}},
-        {"label": "Depreciation / amortisation charge", "values": {"amount": _money(-dep)}},
-        {"label": "Closing carrying amount", "values": {"amount": _money(rou_close)}, "row_type": "total"},
-
-        {"label": "Lease liabilities", "values": {}, "row_type": "header"},
-        {"label": "Opening lease liability", "values": {"amount": _money(liab_open)}},
-        {"label": "Interest expense", "values": {"amount": _money(interest)}},
-        {"label": "Lease payments / principal reductions", "values": {"amount": _money(-payments)}},
-        {"label": "Closing lease liability", "values": {"amount": _money(liab_close)}, "row_type": "total"},
-    ]
-
+    # Fallback only if strict engine is unavailable
     return {
-        "meta": {
-            "company_id": company_id,
-            "company_name": ctx.get("company_name") or ctx.get("name"),
-            "currency": ctx.get("currency") or "ZAR",
-            "statement": "lease_disclosure",
-            "report_name": "Lease Disclosure",
-            "standard": "IFRS 16",
-            "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
-        },
+        "meta": meta,
         "columns": [{"key": "amount", "label": "Amount"}],
-        "rows": rows,
+        "rows": [],
+        "source": None,
+        "warning": "Strict IFRS 16 disclosure engine is not available.",
     }
-
-
-def _ifrs16_strict_to_rows(strict: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Adapter for db.get_ifrs16_disclosure_strict() output.
-    Keeps this tolerant because your strict disclosure shape can evolve.
-    """
-    rows: List[Dict[str, Any]] = []
-
-    def add(label, amount=None, row_type="normal"):
-        rows.append({
-            "label": label,
-            "values": {"amount": _money(amount)} if amount is not None else {},
-            "row_type": row_type,
-        })
-
-    def dig(*keys, default=None):
-        cur = strict or {}
-        for k in keys:
-            if not isinstance(cur, dict):
-                return default
-            cur = cur.get(k)
-        return cur if cur is not None else default
-
-    add("Right-of-use assets", None, "header")
-    add("Opening carrying amount", dig("rou_assets", "opening", default=0))
-    add("Additions / modifications", dig("rou_assets", "additions", default=0))
-    add("Depreciation / amortisation", -_d(dig("rou_assets", "depreciation", default=0)))
-    add("Derecognition / terminations", -_d(dig("rou_assets", "derecognition", default=0)))
-    add("Closing carrying amount", dig("rou_assets", "closing", default=0), "total")
-
-    add("Lease liabilities", None, "header")
-    add("Opening lease liability", dig("lease_liabilities", "opening", default=0))
-    add("Interest expense", dig("lease_liabilities", "interest", default=0))
-    add("Additions / modifications", dig("lease_liabilities", "additions", default=0))
-    add("Payments", -_d(dig("lease_liabilities", "payments", default=0)))
-    add("Closing lease liability", dig("lease_liabilities", "closing", default=0), "total")
-
-    maturity = strict.get("maturity") if isinstance(strict, dict) else None
-    if isinstance(maturity, dict):
-        add("Lease maturity analysis", None, "header")
-        for key, label in [
-            ("within_1_year", "Within one year"),
-            ("one_to_five_years", "One to five years"),
-            ("after_five_years", "After five years"),
-        ]:
-            add(label, maturity.get(key, 0))
-
-    return rows
 
 def build_revenue_disclosure(
     db,

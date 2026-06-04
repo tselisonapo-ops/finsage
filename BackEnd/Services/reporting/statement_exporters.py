@@ -17,7 +17,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.platypus import KeepTogether
 from xml.sax.saxutils import escape
-
+from BackEnd.Services.vat_pack_pdf_builder import _add_brand_header
 
 
 THIN = Side(style="thin", color="D9E2F3")
@@ -42,18 +42,71 @@ def _note_para(text, style):
     text = escape(str(text or "")).replace("\n", "<br/>")
     return Paragraph(text, style)
 
+def _company_from_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
+    company = dict(meta.get("company") or {})
+    company.setdefault("company_name", meta.get("company_name") or meta.get("name"))
+    company.setdefault("currency", meta.get("currency"))
 
-def _financial_table(rows, amount_keys=None):
+    for k in (
+        "logo_path",
+        "logo_file",
+        "logo_local_path",
+        "logo",
+        "company_logo",
+        "attachment_path",
+        "logo_attachment_path",
+        "logo_url",
+        "branding_logo_url",
+        "company_reg_no",
+        "reg_no",
+        "vat_no",
+        "vat_number",
+        "company_email",
+        "email",
+        "company_phone",
+        "phone",
+        "address",
+        "physical_address",
+        "postal_address",
+    ):
+        if meta.get(k) and not company.get(k):
+            company[k] = meta.get(k)
+
+    return company
+
+def _financial_table(rows, amount_keys=None, amount_labels=None, page_width_mm=260):
     """
-    Plain FS-style table:
-    no Excel grid,
-    only total lines,
-    professional PDF spacing.
+    FS-style table with dynamic widths.
+    Supports wide disclosure notes such as PPE and IFRS 16.
     """
     amount_keys = amount_keys or ["amount"]
+    amount_labels = amount_labels or {k: k.replace("_", " ").title() for k in amount_keys}
 
     data = []
     row_types = []
+
+    # Header row
+    header_style = ParagraphStyle(
+        "tbl_header",
+        fontName="Helvetica-Bold",
+        fontSize=7.5,
+        leading=9,
+        alignment=TA_RIGHT,
+    )
+
+    label_header_style = ParagraphStyle(
+        "tbl_header_label",
+        fontName="Helvetica-Bold",
+        fontSize=7.5,
+        leading=9,
+        alignment=TA_LEFT,
+    )
+
+    data.append(
+        [Paragraph("Movement", label_header_style)]
+        + [Paragraph(escape(str(amount_labels.get(k, k))), header_style) for k in amount_keys]
+    )
+    row_types.append("header")
 
     for r in rows or []:
         label = r.get("label") or r.get("name") or ""
@@ -63,8 +116,8 @@ def _financial_table(rows, amount_keys=None):
         row = [Paragraph(escape(label), ParagraphStyle(
             "tbl_label",
             fontName="Helvetica-Bold" if rt in ("header", "subtotal", "total") else "Helvetica",
-            fontSize=9,
-            leading=11,
+            fontSize=8,
+            leading=10,
             alignment=TA_LEFT,
         ))]
 
@@ -72,31 +125,40 @@ def _financial_table(rows, amount_keys=None):
             row.append(Paragraph(_pdf_amount(values.get(k)), ParagraphStyle(
                 "tbl_amt",
                 fontName="Helvetica-Bold" if rt in ("subtotal", "total") else "Helvetica",
-                fontSize=9,
-                leading=11,
+                fontSize=8,
+                leading=10,
                 alignment=TA_RIGHT,
             )))
 
         data.append(row)
         row_types.append(rt)
 
-    if not data:
+    if len(data) <= 1:
         return None
 
-    table = Table(data, colWidths=[125 * mm, *([32 * mm] * len(amount_keys))], hAlign="LEFT")
+    label_width = 55 * mm
+    available = page_width_mm * mm - label_width
+    amount_width = max(20 * mm, available / max(len(amount_keys), 1))
+
+    table = Table(
+        data,
+        colWidths=[label_width, *([amount_width] * len(amount_keys))],
+        hAlign="LEFT",
+        repeatRows=1,
+    )
 
     style = TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.black),
     ])
 
     for idx, rt in enumerate(row_types):
         if rt == "header":
-            style.add("TOPPADDING", (0, idx), (-1, idx), 7)
-            style.add("BOTTOMPADDING", (0, idx), (-1, idx), 3)
+            style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
 
         if rt == "subtotal":
             style.add("LINEABOVE", (1, idx), (-1, idx), 0.4, colors.black)
@@ -551,12 +613,21 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     headers, flat_rows = _flatten_payload(payload)
     col_keys = [c.get("key") for c in cols]
 
+    wide_table = len(cols) > 4
+    page_size = landscape(A4) if wide_table else A4
+    page_width_mm = 260 if wide_table else 174
+
+    amount_labels = {
+        c.get("key"): c.get("label") or c.get("key")
+        for c in cols
+    }
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
+        pagesize=page_size,
+        leftMargin=12 * mm if wide_table else 18 * mm,
+        rightMargin=12 * mm if wide_table else 18 * mm,
         topMargin=14 * mm,
         bottomMargin=14 * mm,
     )
@@ -577,15 +648,24 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
         leading=11,
     )
 
-    story = [
-        Paragraph(escape(title), title_style),
-    ]
+    story = []
 
-    if company_name:
-        story.append(Paragraph(f"<b>{escape(company_name)}</b>", meta_style))
+    company = _company_from_meta(meta)
 
+    if company.get("logo_path") or company.get("logo_file") or company.get("logo_url") or company.get("company_logo"):
+        _add_brand_header(story, doc, title, company)
+    else:
+        story.append(Paragraph(escape(title), title_style))
+
+        if company_name:
+            story.append(Paragraph(f"<b>{escape(company_name)}</b>", meta_style))
+            
     if period_from or period_to:
-        label = f"Period: {period_from or ''} to {period_to or ''}" if period_from else f"As at: {period_to or ''}"
+        label = (
+            f"Period: {period_from or ''} to {period_to or ''}"
+            if period_from
+            else f"As at: {period_to or ''}"
+        )
         story.append(Paragraph(escape(label), meta_style))
 
     if currency:
@@ -593,7 +673,13 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
     story.append(Spacer(1, 10))
 
-    tbl = _financial_table(flat_rows, col_keys)
+    tbl = _financial_table(
+        flat_rows,
+        col_keys,
+        amount_labels=amount_labels,
+        page_width_mm=page_width_mm,
+    )
+
     if tbl:
         story.append(tbl)
 
