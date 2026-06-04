@@ -167,34 +167,39 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
         cur=cur,
     )
 
-    strict = db.get_ifrs16_disclosure_strict(
+    lease_payload = build_lease_disclosure(
+        db,
         company_id,
-        from_date=period_from,
-        to_date=period_to,
+        period_from,
+        period_to,
         as_of=period_to,
-        include_terminated=True,
-        cur=cur,
     )
+
+    columns = lease_payload.get("columns") or [{"key": "amount", "label": "Amount"}]
+
+    amount_keys = [
+        c.get("key")
+        for c in columns
+        if c.get("key")
+    ]
+
+    amount_labels = {
+        c.get("key"): c.get("label") or c.get("key")
+        for c in columns
+        if c.get("key")
+    }
 
     return {
         "title": "Leases",
         "text": note.get("content_text") or note.get("system_draft") or "",
         "sections": [
             {
-                "title": "Right-of-use assets",
-                "rows": _ifrs16_rou_rows(strict),
-                "amount_keys": ["amount"],
-            },
-            {
-                "title": "Lease liabilities",
-                "rows": _ifrs16_liability_rows(strict),
-                "amount_keys": ["amount"],
-            },
-            {
-                "title": "Maturity analysis",
-                "rows": _ifrs16_maturity_rows(strict),
-                "amount_keys": ["amount"],
-            },
+                "title": "Lease disclosure",
+                "rows": lease_payload.get("rows") or [],
+                "columns": columns,
+                "amount_keys": amount_keys,
+                "amount_labels": amount_labels,
+            }
         ],
     }
 
@@ -717,7 +722,15 @@ def build_ppe_note_export_payload(note, payload):
             {
                 "title": "Property, plant and equipment movement",
                 "rows": rows,
-                "amount_keys": ["amount"],
+                "columns": payload.get("columns") or [],
+                "amount_keys": [
+                    c["key"]
+                    for c in (payload.get("columns") or [])
+                ],
+                "amount_labels": {
+                    c["key"]: c["label"]
+                    for c in (payload.get("columns") or [])
+                },
             }
         ] if rows else [],
     }
