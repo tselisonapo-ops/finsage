@@ -708,13 +708,33 @@ def export_fs_notes_pdf(notes: List[Dict[str, Any]], filename: str = "financial_
       }
     ]
     """
+    all_section_keys = []
+
+    for note in notes or []:
+        for sec in note.get("sections") or []:
+            rows = sec.get("rows") or []
+            keys = sec.get("amount_keys") or []
+
+            if not keys and sec.get("columns"):
+                keys = [c.get("key") for c in sec.get("columns") or [] if c.get("key")]
+
+            if not keys:
+                for r in rows:
+                    for k in (r.get("values") or {}).keys():
+                        if k not in keys:
+                            keys.append(k)
+
+            all_section_keys.extend(keys)
+
+    wide_notes = len(set(all_section_keys)) > 4
+    page_size = landscape(A4) if wide_notes else A4
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
+        pagesize=page_size,
+        leftMargin=12 * mm if wide_notes else 18 * mm,
+        rightMargin=12 * mm if wide_notes else 18 * mm,
         topMargin=14 * mm,
         bottomMargin=14 * mm,
     )
@@ -768,8 +788,41 @@ def export_fs_notes_pdf(notes: List[Dict[str, Any]], filename: str = "financial_
 
             block.append(Paragraph(escape(sec.get("title") or ""), section_title))
 
-            amount_keys = sec.get("amount_keys") or ["amount"]
-            tbl = _financial_table(rows, amount_keys)
+            amount_keys = sec.get("amount_keys")
+
+            if not amount_keys:
+                # Prefer explicit columns if section provides them
+                if sec.get("columns"):
+                    amount_keys = [c.get("key") for c in sec.get("columns") or [] if c.get("key")]
+                else:
+                    # Infer keys from row values
+                    keys = []
+                    for r in rows:
+                        vals = r.get("values") or {}
+                        for k in vals.keys():
+                            if k not in keys:
+                                keys.append(k)
+
+                    amount_keys = keys or ["amount"]
+
+            amount_labels = sec.get("amount_labels") or {}
+
+            if sec.get("columns"):
+                amount_labels.update({
+                    c.get("key"): c.get("label") or c.get("key")
+                    for c in sec.get("columns") or []
+                    if c.get("key")
+                })
+
+            wide_table = len(amount_keys) > 4
+            page_width_mm = 260 if wide_table else 174
+
+            tbl = _financial_table(
+                rows,
+                amount_keys,
+                amount_labels=amount_labels,
+                page_width_mm=page_width_mm,
+            )
             if tbl:
                 block.append(tbl)
                 block.append(Spacer(1, 6))
