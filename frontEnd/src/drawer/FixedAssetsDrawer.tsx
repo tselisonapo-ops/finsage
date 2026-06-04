@@ -148,6 +148,7 @@ const ASSET_CLASS_GROUPS = [
   "Furniture and fittings",
   "Tools and small equipment",
   "Leasehold improvements",
+  "Assets under construction",
   "Other PPE",
 ] as const;
 

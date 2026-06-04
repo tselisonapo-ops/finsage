@@ -15,6 +15,15 @@ def _d(v: Any) -> Decimal:
     except Exception:
         return Decimal("0")
 
+def _has_nonzero_column(rows, key):
+    for r in rows or []:
+        try:
+            if abs(float((r.get("values") or {}).get(key) or 0)) > 0.000001:
+                return True
+        except Exception:
+            pass
+    return False
+
 def _q(schema: str, sql: str) -> str:
     """
     Injects schema safely into SQL templates that use {schema}.
@@ -235,30 +244,72 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
 
         if n in ("land",):
             return "land"
+
         if n in ("building", "buildings"):
             return "buildings"
-        if n in ("plant", "plant & equipment", "plant and equipment", "equipment"):
-            return "plant_equipment"
+
+        if n in ("plant", "plant & equipment", "plant and equipment", "equipment", "plant and machinery"):
+            return "plant_machinery"
+
         if n in ("vehicle", "vehicles", "motor vehicle", "motor vehicles"):
             return "vehicles"
-        if n in ("computer", "computers", "computer equipment"):
+
+        if n in ("heavy vehicle", "heavy vehicles", "truck", "trucks", "lorry", "lorries"):
+            return "heavy_vehicles"
+
+        if n in ("construction equipment", "construction machinery"):
+            return "construction_equipment"
+
+        if n in ("mining equipment", "mining machinery"):
+            return "mining_equipment"
+
+        if n in ("manufacturing equipment", "manufacturing machinery", "production equipment"):
+            return "manufacturing_equipment"
+
+        if n in ("computer", "computers", "computer equipment", "it equipment"):
             return "computer_equipment"
-        if n in ("furniture", "furniture & fittings", "furniture and fittings"):
+
+        if n in ("office equipment",):
+            return "office_equipment"
+
+        if n in ("furniture", "furniture & fittings", "furniture and fittings", "furniture and fixtures"):
             return "furniture_fittings"
-        if n in ("cip", "construction in progress", "expansion project"):
-            return "construction_in_progress"
+
+        if n in ("tools", "tools and small equipment", "small tools", "small equipment"):
+            return "tools_small_equipment"
+
+        if n in ("leasehold improvements", "leasehold improvement"):
+            return "leasehold_improvements"
+
+        if n in (
+            "cip",
+            "construction in progress",
+            "assets under construction",
+            "asset under construction",
+            "expansion project",
+            "capital work in progress",
+            "cwip",
+        ):
+            return "assets_under_construction"
 
         return "other"
 
     columns = [
         {"key": "land", "label": "Land"},
         {"key": "buildings", "label": "Buildings"},
-        {"key": "plant_equipment", "label": "Plant & Equipment"},
-        {"key": "vehicles", "label": "Motor Vehicles"},
+        {"key": "plant_machinery", "label": "Plant and Machinery"},
+        {"key": "vehicles", "label": "Vehicles"},
+        {"key": "heavy_vehicles", "label": "Heavy Vehicles"},
+        {"key": "construction_equipment", "label": "Construction Equipment"},
+        {"key": "mining_equipment", "label": "Mining Equipment"},
+        {"key": "manufacturing_equipment", "label": "Manufacturing Equipment"},
         {"key": "computer_equipment", "label": "Computer Equipment"},
-        {"key": "furniture_fittings", "label": "Furniture & Fittings"},
-        {"key": "construction_in_progress", "label": "Construction in Progress"},
-        {"key": "other", "label": "Other"},
+        {"key": "office_equipment", "label": "Office Equipment"},
+        {"key": "furniture_fittings", "label": "Furniture and Fittings"},
+        {"key": "tools_small_equipment", "label": "Tools and Small Equipment"},
+        {"key": "leasehold_improvements", "label": "Leasehold Improvements"},
+        {"key": "assets_under_construction", "label": "Assets under Construction"},
+        {"key": "other", "label": "Other PPE"},
         {"key": "total", "label": "Total"},
     ]
 
@@ -346,6 +397,11 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
             "values": {k: _money(v) for k, v in summary["closing_carrying"].items()},
             "row_type": "total",
         },
+    ]
+
+    columns = [
+        c for c in columns
+        if c["key"] == "total" or _has_nonzero_column(rows, c["key"])
     ]
 
     return {

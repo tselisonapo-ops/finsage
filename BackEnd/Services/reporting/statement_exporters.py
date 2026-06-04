@@ -136,10 +136,14 @@ def _financial_table(rows, amount_keys=None, amount_labels=None, page_width_mm=2
     if len(data) <= 1:
         return None
 
-    label_width = 55 * mm
-    available = page_width_mm * mm - label_width
-    amount_width = max(20 * mm, available / max(len(amount_keys), 1))
-
+    if len(amount_keys) == 1:
+        label_width = 115 * mm
+        amount_width = 42 * mm
+    else:
+        label_width = 55 * mm
+        available = page_width_mm * mm - label_width
+        amount_width = max(20 * mm, available / max(len(amount_keys), 1))
+        
     table = Table(
         data,
         colWidths=[label_width, *([amount_width] * len(amount_keys))],
@@ -297,7 +301,13 @@ def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str,
 
             totals = section.get("totals")
             if totals:
-                vals = totals.get("values") if isinstance(totals, dict) else totals
+                if isinstance(totals, dict):
+                    vals = totals.get("values") or {
+                        k: v for k, v in totals.items()
+                        if k not in ("label", "name", "row_type", "meta")
+                    }
+                else:
+                    vals = totals
                 _append_row(out_rows, f"Total {label}", vals or {}, "total")
 
         assets = payload.get("assets") or {}
