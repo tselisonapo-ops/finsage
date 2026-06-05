@@ -130,7 +130,23 @@ def make_columns(
 def has_delta(columns: List[Dict[str, Any]]) -> bool:
     return any((c.get("key") == "delta") for c in (columns or []))
 
+ZERO_TOL = 0.005
 
+def line_has_amount(line: Dict[str, Any], *, tol: float = ZERO_TOL) -> bool:
+    if (line.get("meta") or {}).get("row_type") == "header":
+        return True
+
+    vals = line.get("values") or {}
+    return any(abs(float(v or 0.0)) >= tol for v in vals.values())
+
+
+def filter_zero_lines(lines: List[Dict[str, Any]], *, tol: float = ZERO_TOL) -> List[Dict[str, Any]]:
+    return [ln for ln in (lines or []) if line_has_amount(ln, tol=tol)]
+
+
+def block_has_amount(block: Dict[str, Any], *, tol: float = ZERO_TOL) -> bool:
+    vals = block.get("values") or block.get("totals") or {}
+    return any(abs(float(v or 0.0)) >= tol for v in vals.values())
 # ============================================================
 # Totals helpers (report shaping)
 # ============================================================

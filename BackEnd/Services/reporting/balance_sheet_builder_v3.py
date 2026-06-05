@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from BackEnd.Services.reporting.tb_helpers import split_cash_and_overdraft
 from BackEnd.Services.accounting_classifiers import _is_contra_row
 from BackEnd.Services.periods import parse_date_maybe
-
+from . import reporting_helpers as rh
 # ============================================================
 # TB field-safe getters (support debit/credit OR debit_total/credit_total)
 # ============================================================
@@ -817,6 +817,16 @@ def build_balance_sheet_v3(
                 or 0.0
             )
 
+        # -------------------------
+        # Hide zero lines for external reporting only
+        # -------------------------
+        if view == "external":
+            non_current_assets = rh.filter_zero_lines(non_current_assets)
+            ca_lines = rh.filter_zero_lines(ca_lines)
+            cl_lines = rh.filter_zero_lines(cl_lines)
+            ncl_lines = rh.filter_zero_lines(ncl_lines)
+            eq_lines = rh.filter_zero_lines(eq_lines)
+            
         # --- build values for BS columns ---
         if view == "external":
             v = {"cur": net_cur} if not has_prior else {

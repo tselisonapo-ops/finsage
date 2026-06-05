@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional
 from BackEnd.Services import accounting_classifiers as ac
-
+from . import reporting_helpers as rh
 # -----------------------------
 # Shared normalisers (single source of truth)
 # -----------------------------
@@ -283,8 +283,8 @@ def build_cashflow_full_v2(
                 "name": "Details",
                 "values": _val(cur_amt, pri_amt),
                     "detail": {
-                        "cur": _aggregate_cf_detail_lines(cur["lines"].get(key, [])),
-                        "pri": _aggregate_cf_detail_lines(pri["lines"].get(key, [])) if has_prior and pri else [],
+                    "cur": rh.filter_zero_lines(_aggregate_cf_detail_lines(cur["lines"].get(key, []))),
+                    "pri": rh.filter_zero_lines(_aggregate_cf_detail_lines(pri["lines"].get(key, []))) if has_prior and pri else [],
                     }
             }],
             "totals": _val(cur_amt, pri_amt),

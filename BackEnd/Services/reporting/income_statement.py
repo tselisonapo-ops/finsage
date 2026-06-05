@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from BackEnd.Services.company_context import get_company_context
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services import accounting_classifiers as ac
-
+from . import reporting_helpers as rh
 from . import reporting_helpers as rh  # ✅ same folder import
 
 
@@ -298,6 +298,8 @@ def get_pnl_full_v2(
                 pri_amt = _pnl_contrib(pri_by_code[code])
 
             v = _vals(cur_amt, pri_amt)
+            if not rh.line_has_amount({"values": v}):
+                continue
             lines.append(_emit(code, name, v, meta={
                 "section": r.get("section"),
                 "category": r.get("category")
