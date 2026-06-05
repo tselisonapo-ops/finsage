@@ -24325,6 +24325,78 @@ class DatabaseService:
 
         self.execute_sql(sql, params)
 
+    def get_pnl_trial_balance_movement(
+        self,
+        company_id: int,
+        date_from: date,
+        date_to: date,
+    ) -> List[Dict[str, Any]]:
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+        SELECT
+            l.account                       AS code,
+            COALESCE(c.name, l.account)     AS name,
+            COALESCE(c.section, '')         AS section,
+            COALESCE(c.category, '')        AS category,
+            COALESCE(c.standard, '')        AS standard,
+
+            c.template_code                 AS template_code,
+            c.code_family                   AS code_family,
+            c.code_numeric                  AS code_numeric,
+
+            COALESCE(c.subcategory, '')     AS subcategory,
+            COALESCE(c.description, '')     AS description,
+
+            SUM(l.debit)                    AS debit_total,
+            SUM(l.credit)                   AS credit_total,
+            SUM(l.debit - l.credit)         AS closing_balance,
+
+            MIN(l.date)                     AS min_date,
+            MAX(l.date)                     AS max_date
+
+        FROM {schema}.ledger l
+        LEFT JOIN {schema}.coa c
+            ON c.code = l.account
+        WHERE l.date >= %s
+        AND l.date <= %s
+        GROUP BY
+            l.account,
+            c.name, c.section, c.category, c.standard,
+            c.template_code, c.code_family, c.code_numeric,
+            c.subcategory, c.description
+        ORDER BY l.account::text ASC;
+        """
+
+        rows = self.fetch_all(sql, [date_from, date_to]) or []
+        out: List[Dict[str, Any]] = []
+
+        for r in rows:
+            row = {
+                "code":            str(r.get("code") or "").strip(),
+                "name":            r.get("name") or "",
+                "section":         r.get("section") or "",
+                "category":        r.get("category") or "",
+                "standard":        r.get("standard") or "",
+                "template_code":   r.get("template_code"),
+                "code_family":     r.get("code_family") or "",
+                "code_numeric":    r.get("code_numeric"),
+                "subcategory":     r.get("subcategory") or "",
+                "description":     r.get("description") or "",
+                "debit_total":     float(r.get("debit_total") or 0.0),
+                "credit_total":    float(r.get("credit_total") or 0.0),
+                "min_date":        r.get("min_date"),
+                "max_date":        r.get("max_date"),
+            }
+
+            raw = float(r.get("closing_balance") or 0.0)
+            row["closing_balance_raw"] = raw
+            row["is_contra"] = bool(ac.is_contra_row(row))
+            row["closing_balance"] = raw * ac.normal_balance_sign(row)
+
+            out.append(row)
+
+        return out
 
     def get_trial_balance_as_of(self, company_id: int, as_of: date) -> List[Dict[str, Any]]:
         schema = self.company_schema(company_id)

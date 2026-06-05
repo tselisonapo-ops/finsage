@@ -118,7 +118,7 @@ def get_pnl_full_v2(
     # -----------------------------
     # TB (current + prior)
     # -----------------------------
-    cur_rows = self.get_trial_balance(company_id, date_from, date_to) or []
+    cur_rows = self.get_pnl_trial_balance_movement(company_id, date_from, date_to) or []
 
     # ✅ PRIOR resolution:
     # 1) Use passed-in priors if provided AND compare != none
@@ -131,7 +131,7 @@ def get_pnl_full_v2(
             pri_from, pri_to = rh.build_compare_range(date_from, date_to, compare)
 
     if pri_from and pri_to:
-        pri_rows = self.get_trial_balance(company_id, pri_from, pri_to) or []
+        pri_rows = self.get_pnl_trial_balance_movement(company_id, pri_from, pri_to) or []
     else:
         pri_rows = []
 
