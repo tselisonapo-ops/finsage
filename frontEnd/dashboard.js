@@ -13348,6 +13348,30 @@ function computePeriodRange(periodKey) {
   }
 }
 
+async function resolveLedgerRange(periodKey) {
+  const range = computePeriodRange(periodKey);
+
+  if (range.from && range.to) return range;
+
+  // financial-year presets need backend resolution
+  const cid =
+    CURRENT_COMPANY_ID ||
+    window.CURRENT_COMPANY_ID ||
+    getActiveCompanyId();
+
+  const params = new URLSearchParams({ preset: range.preset || periodKey });
+
+  const resolved = await apiFetch(
+    `${API_BASE}/api/companies/${encodeURIComponent(cid)}/period-range?${params.toString()}`
+  );
+
+  return {
+    from: resolved.from,
+    to: resolved.to,
+    label: resolved.label || range.label,
+  };
+}
+
 function buildPeriodParams(periodKey, extra = {}) {
   const r = computePeriodRange(periodKey);
 
@@ -19550,7 +19574,7 @@ function bindLedger() {
 
     const acc = selAcc.value || "ALL";
     const periodKey = selPeriod ? (selPeriod.value || CURRENT_PERIOD_KEY) : CURRENT_PERIOD_KEY;
-    const range = periodKeyToRange(periodKey);
+    const range = await resolveLedgerRange(periodKey);
 
     // 👇 read current layout from dropdown
     const layout = selLayout ? selLayout.value : "single";
