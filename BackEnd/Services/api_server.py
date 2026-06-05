@@ -4154,7 +4154,33 @@ def api_get_ledger(company_id: int):
         current_app.logger.exception("Error in GET /ledger: %s", e)
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/companies/<int:company_id>/period-range", methods=["GET"])
+@require_auth
+def api_company_period_range(company_id: int):
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
 
+    try:
+        date_from, date_to, meta = resolve_company_period(
+            db_service,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        return jsonify({
+            "from": date_from.isoformat() if date_from else None,
+            "to": date_to.isoformat() if date_to else None,
+            "label": meta.get("label"),
+            "preset": meta.get("preset"),
+            "period": meta.get("period"),
+            "fin_year_start": meta.get("fin_year_start"),
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("Error resolving company period range: %s", e)
+        return jsonify({"error": str(e)}), 500
 # ────────────────────────────────────────────────────────────────
 # POS Summaries API 
 # ────────────────────────────────────────────────────────────────

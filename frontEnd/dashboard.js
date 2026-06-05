@@ -655,6 +655,13 @@ const ENDPOINTS = {
     submit: `${API_BASE}/api/credit/submit`,
   },
 
+  periodRange: (companyId, preset) => {
+    const params = new URLSearchParams();
+    if (preset) params.set("preset", preset);
+
+    return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/period-range?${params.toString()}`;
+  },
+
   // --- Approvals / audit trails ---
   approvals: {
     // GET /api/companies/<cid>/approvals?status=&module=&limit=&offset=
@@ -13348,27 +13355,23 @@ function computePeriodRange(periodKey) {
   }
 }
 
-async function resolveLedgerRange(periodKey) {
-  const range = computePeriodRange(periodKey);
+async function resolveLedgerRange(companyId, periodKey) {
+  const localRange = computePeriodRange(periodKey);
 
-  if (range.from && range.to) return range;
+  // Calendar periods already have from/to
+  if (localRange.from && localRange.to) {
+    return localRange;
+  }
 
-  // financial-year presets need backend resolution
-  const cid =
-    CURRENT_COMPANY_ID ||
-    window.CURRENT_COMPANY_ID ||
-    getActiveCompanyId();
-
-  const params = new URLSearchParams({ preset: range.preset || periodKey });
-
+  // FY presets resolved by backend
   const resolved = await apiFetch(
-    `${API_BASE}/api/companies/${encodeURIComponent(cid)}/period-range?${params.toString()}`
+    ENDPOINTS.periodRange(companyId, localRange.preset || periodKey)
   );
 
   return {
     from: resolved.from,
     to: resolved.to,
-    label: resolved.label || range.label,
+    label: resolved.label || localRange.label || periodKey,
   };
 }
 
@@ -19574,7 +19577,7 @@ function bindLedger() {
 
     const acc = selAcc.value || "ALL";
     const periodKey = selPeriod ? (selPeriod.value || CURRENT_PERIOD_KEY) : CURRENT_PERIOD_KEY;
-    const range = await resolveLedgerRange(periodKey);
+    const range = await resolveLedgerRange(cid, periodKey);
 
     // 👇 read current layout from dropdown
     const layout = selLayout ? selLayout.value : "single";
