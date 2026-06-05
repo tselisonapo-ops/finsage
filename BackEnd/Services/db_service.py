@@ -24378,18 +24378,10 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         try:
-            # If filtering by date, compute from ledger so presets work
-            if date_from is not None or date_to is not None:
-                where_clauses = ["1=1"]
-                params: list = []
-
-                if date_from is not None:
-                    where_clauses.append("l.date >= %s")   # ✅ confirm ledger column is 'date'
-                    params.append(date_from)
-
-                if date_to is not None:
-                    where_clauses.append("l.date <= %s")   # ✅ confirm ledger column is 'date'
-                    params.append(date_to)
+            # Trial Balance = position AS AT date_to
+            if date_to is not None:
+                where_clauses = ["l.date <= %s"]
+                params = [date_to]
 
                 where_sql = " AND ".join(where_clauses)
 
@@ -24443,9 +24435,8 @@ class DatabaseService:
         where_clauses = ["1=1"]
         params: list = []
 
-        if date_from is not None:
-            where_clauses.append("l.date >= %s")
-            params.append(date_from)
+        where_clauses = ["1=1"]
+        params: list = []
 
         if date_to is not None:
             where_clauses.append("l.date <= %s")
