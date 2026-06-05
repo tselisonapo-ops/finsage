@@ -171,25 +171,55 @@ def _is_ppe(row: Dict[str, Any]) -> bool:
     tag = str(row.get("standard") or row.get("ifrs_tag") or row.get("std_tag") or "").upper()
     section = str(row.get("section") or "").strip().lower()
     category = str(row.get("category") or "").strip().lower()
+    subcategory = str(row.get("subcategory") or "").strip().lower()
+    role = str(row.get("role") or "").strip().lower()
     name = str(_tb_name(row) or "").strip().lower()
 
-    # Exclude ROU and investment property from IAS 16 PPE rollup
-    if "right-of-use" in name or "right of use" in name or "rou" in name:
+    txt = _norm(section, category, subcategory, role, name)
+
+    # Exclude ROU and investment property
+    if "right-of-use" in txt or "right of use" in txt or "rou" in txt:
         return False
-    if "investment property" in name or "ias 40" in tag:
+    if "investment property" in txt or "ias 40" in tag:
         return False
 
-    # Strict PPE bucket
-    if category == "property, plant & equipment":
+    # Exclude depreciation / amortisation expense accounts
+    if section == "expense" or category == "expense":
+        return False
+
+    # Role-based PPE detection
+    if role.startswith("ppe_"):
         return True
 
-    if category in ("property, plant and equipment", "ppe"):
+    if role in (
+        "land",
+        "buildings",
+        "plant_equipment",
+        "office_furniture",
+        "computer_equipment",
+        "office_equipment",
+        "motor_vehicles",
+        "heavy_vehicles",
+        "construction_equipment",
+        "mining_equipment",
+        "manufacturing_equipment",
+        "tools",
+        "leasehold_improvements",
+        "assets_under_construction",
+        "other_ppe",
+    ):
         return True
 
-    # IAS 16 fallback only if it is an asset cost account, not depreciation/impairment
-    if "IAS 16" in tag and section in ("asset", "assets"):
-        if "accum" in name or "depreciation" in name or "impairment" in name:
-            return False
+    # Accumulated depreciation roles are PPE-related, but not PPE cost
+    if role.startswith("accumulated_depreciation_"):
+        return False
+
+    # Old seeded company fallback
+    if "property, plant" in txt or "plant and equipment" in txt or "ppe" in txt:
+        return True
+
+    # IAS 16 asset fallback
+    if "IAS 16" in tag and "asset" in txt:
         return True
 
     return False
