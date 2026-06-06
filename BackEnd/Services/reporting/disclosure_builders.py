@@ -537,9 +537,20 @@ def build_lease_disclosure(
                 summary[movement][asset_class] += amount
                 summary[movement]["total"] += amount
 
-        rows = [
-            {"label": "Right-of-use assets", "values": {}, "row_type": "header"},
+        # REMOVE EMPTY ASSET CLASSES
+        active_keys = [
+            col["key"]
+            for col in columns
+            if col["key"] == "total"
+            or any(summary[m][col["key"]] != 0 for m in movement_keys)
+        ]
 
+        active_rou_columns = [
+            col for col in columns
+            if col["key"] in active_keys
+        ]
+
+        rou_rows = [
             {
                 "label": "Opening carrying amount",
                 "values": {k: _money(v) for k, v in summary["opening"].items()},
@@ -569,102 +580,117 @@ def build_lease_disclosure(
 
         liability_recon = strict.get("liability_reconciliation") or {}
         maturity = strict.get("maturity_analysis") or {}
-        maturity_rows = maturity.get("rows") or []
+        maturity_source_rows = maturity.get("rows") or []
         pnl = strict.get("pnl") or {}
         cashflow = strict.get("cashflow") or {}
-        liability = strict.get("liability") or {}
 
-        rows.extend([
-            {"label": "Lease liabilities", "values": {}, "row_type": "header"},
+        liability_rows = [
             {
                 "label": "Opening lease liability",
-                "values": {"total": _money(liability_recon.get("opening_liability"))},
+                "values": {"amount": _money(liability_recon.get("opening_liability"))},
             },
             {
                 "label": "Additions from new leases",
-                "values": {"total": _money(liability_recon.get("additions_new_leases"))},
+                "values": {"amount": _money(liability_recon.get("additions_new_leases"))},
             },
             {
                 "label": "Interest expense",
-                "values": {"total": _money(liability_recon.get("interest_accretion"))},
+                "values": {"amount": _money(liability_recon.get("interest_accretion"))},
             },
             {
                 "label": "Principal reductions",
-                "values": {"total": _money(-abs(_n(liability_recon.get("principal_reduction"))))},
+                "values": {"amount": _money(-abs(_n(liability_recon.get("principal_reduction"))))},
             },
             {
                 "label": "Remeasurements / modifications",
-                "values": {"total": _money(liability_recon.get("remeasurements_modifications"))},
+                "values": {"amount": _money(liability_recon.get("remeasurements_modifications"))},
             },
             {
                 "label": "Derecognitions / terminations",
-                "values": {"total": _money(-abs(_n(liability_recon.get("derecognitions_terminations"))))},
+                "values": {"amount": _money(-abs(_n(liability_recon.get("derecognitions_terminations"))))},
             },
             {
                 "label": "Closing lease liability",
-                "values": {"total": _money(liability_recon.get("closing_liability"))},
+                "values": {"amount": _money(liability_recon.get("closing_liability"))},
                 "row_type": "total",
             },
+        ]
 
-            {"label": "Lease payments and finance cost", "values": {}, "row_type": "header"},
+        pnl_cashflow_rows = [
             {
                 "label": "Depreciation of right-of-use assets",
-                "values": {"total": _money(pnl.get("depreciation"))},
+                "values": {"amount": _money(pnl.get("depreciation"))},
             },
             {
                 "label": "Interest expense on lease liabilities",
-                "values": {"total": _money(pnl.get("interest"))},
+                "values": {"amount": _money(pnl.get("interest"))},
             },
             {
                 "label": "Lease payments - gross",
-                "values": {"total": _money(cashflow.get("lease_payments_gross"))},
+                "values": {"amount": _money(cashflow.get("lease_payments_gross"))},
             },
             {
                 "label": "Lease payments - net of VAT",
-                "values": {"total": _money(cashflow.get("lease_payments_net"))},
+                "values": {"amount": _money(cashflow.get("lease_payments_net"))},
             },
             {
                 "label": "VAT on lease payments",
-                "values": {"total": _money(cashflow.get("vat"))},
+                "values": {"amount": _money(cashflow.get("vat"))},
             },
+        ]
 
-            {"label": "Maturity analysis", "values": {}, "row_type": "header"},
-        ])
+        maturity_rows_clean = []
 
-        for m in maturity_rows:
+        for m in maturity_source_rows:
             if not isinstance(m, dict):
                 continue
 
-            bucket = m.get("bucket") or "Unclassified"
-
-            rows.append({
-                "label": bucket,
-                "values": {
-                    "total": _money(m.get("undiscounted_net")),
-                },
+            maturity_rows_clean.append({
+                "label": m.get("bucket") or "Unclassified",
+                "values": {"amount": _money(m.get("undiscounted_net"))},
             })
 
-        rows.extend([
+        maturity_rows_clean.extend([
             {
                 "label": "Undiscounted lease payments",
-                "values": {"total": _money(maturity.get("undiscounted_net_total"))},
+                "values": {"amount": _money(maturity.get("undiscounted_net_total"))},
                 "row_type": "subtotal",
             },
             {
                 "label": "Less: finance charges / discount effect",
-                "values": {"total": _money(-abs(_n(maturity.get("discount_gap"))))},
+                "values": {"amount": _money(-abs(_n(maturity.get("discount_gap"))))},
             },
             {
                 "label": "Carrying amount of lease liability",
-                "values": {"total": _money(maturity.get("carrying_amount_liability"))},
+                "values": {"amount": _money(maturity.get("carrying_amount_liability"))},
                 "row_type": "total",
             },
         ])
 
         return {
             "meta": meta,
-            "columns": columns,
-            "rows": rows,
+            "sections": [
+                {
+                    "title": "Right-of-use assets",
+                    "columns": active_rou_columns,
+                    "rows": rou_rows,
+                },
+                {
+                    "title": "Lease liabilities",
+                    "columns": [{"key": "amount", "label": "Amount"}],
+                    "rows": liability_rows,
+                },
+                {
+                    "title": "Amounts recognised in profit or loss and cash flows",
+                    "columns": [{"key": "amount", "label": "Amount"}],
+                    "rows": pnl_cashflow_rows,
+                },
+                {
+                    "title": "Maturity analysis",
+                    "columns": [{"key": "amount", "label": "Amount"}],
+                    "rows": maturity_rows_clean,
+                },
+            ],
             "source": strict,
         }
 
