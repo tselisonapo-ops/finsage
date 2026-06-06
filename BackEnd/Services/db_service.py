@@ -26531,7 +26531,7 @@ class DatabaseService:
             })
 
             lines.append({
-                "account_code": liab_non or liab_cur,
+                "account_code": liab_cur,
                 "debit": 0.0,
                 "credit": amt,
                 "memo": f"IFRS16 interest accrual – P{period_no}",
@@ -27568,7 +27568,7 @@ class DatabaseService:
             # The cash payment reduces the lease liability for the full net amount.
             if alloc_net > money("0"):
                 lines.append({
-                    "account_code": LIAB_NCUR or LIAB_CUR,
+                    "account_code": LIAB_CUR,
                     "debit": float(alloc_net),
                     "credit": 0.0,
                     "memo": "Reduce lease liability",
