@@ -621,17 +621,18 @@ def build_balance_sheet_v3(
         is_ppe_acc  = _is_accum_dep(row_any) or ("accumulated depreciation" in name_l)
 
         if view == "external" and kind == "asset" and (is_ppe_cost or is_ppe_acc):
-            cur_amt = _raw_close(cur_by.get(code, {}) or {})
-            pri_amt = _raw_close(pri_by.get(code, {}) or {}) if has_prior else 0.0
+            cur_amt = _bs_signed_amount("asset", cur_by.get(code, {}) or {})
+            pri_amt = _bs_signed_amount("asset", pri_by.get(code, {}) or {}) if has_prior else 0.0
 
             if is_ppe_acc:
                 ppe_acc_cur += abs(cur_amt)
                 if has_prior:
                     ppe_acc_pri += abs(pri_amt)
             else:
-                ppe_cost_cur += cur_amt
+                ppe_cost_cur += float(cur_amt)
                 if has_prior:
-                    ppe_cost_pri += pri_amt
+                    ppe_cost_pri += float(pri_amt)
+
             continue
 
         # --- INTERNAL VIEW: force accumulated depreciation to Acc Dep column (middle) and negative ---
