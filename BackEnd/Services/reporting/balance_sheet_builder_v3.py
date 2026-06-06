@@ -893,6 +893,17 @@ def build_balance_sheet_v3(
             out[k] = float((a or {}).get(k, 0.0) or 0.0) - float((b or {}).get(k, 0.0) or 0.0)
         return out
 
+    print("PPE COST :", ppe_cost_cur)
+    print("PPE ACC  :", ppe_acc_cur)
+    print("PPE CARRY:", ppe_carry_cur)
+
+    for ln in non_current_assets:
+        print(
+            ln.get("code"),
+            ln.get("name"),
+            ln.get("values", {}).get("cur"),
+            ln.get("is_contra")
+        )
     tot_nca = _sum(non_current_assets)
     tot_ca = _sum(ca_lines)
     tot_assets = _sum_vals(tot_nca, tot_ca)
