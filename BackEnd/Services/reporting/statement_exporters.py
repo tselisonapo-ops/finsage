@@ -837,7 +837,7 @@ def export_fs_notes_pdf(notes: List[Dict[str, Any]], filename: str = "financial_
                 block.append(tbl)
                 block.append(Spacer(1, 6))
 
-        story.append(KeepTogether(block))
+        story.extend(block)
         story.append(Spacer(1, 10))
 
     doc.build(story)

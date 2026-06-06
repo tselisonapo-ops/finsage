@@ -184,32 +184,10 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
         as_of=period_to,
     )
 
-    columns = lease_payload.get("columns") or [{"key": "amount", "label": "Amount"}]
-
-    amount_keys = [
-        c.get("key")
-        for c in columns
-        if c.get("key")
-    ]
-
-    amount_labels = {
-        c.get("key"): c.get("label") or c.get("key")
-        for c in columns
-        if c.get("key")
-    }
-
     return {
         "title": "Leases",
         "text": note.get("content_text") or note.get("system_draft") or "",
-        "sections": [
-            {
-                "title": "Lease disclosure",
-                "rows": lease_payload.get("rows") or [],
-                "columns": columns,
-                "amount_keys": amount_keys,
-                "amount_labels": amount_labels,
-            }
-        ],
+        "sections": lease_payload.get("sections") or [],
     }
 
 def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) -> Dict[str, Any]:
