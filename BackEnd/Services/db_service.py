@@ -29319,18 +29319,26 @@ class DatabaseService:
         # ------------------------------------------------------------
         opening_row = self.fetch_one(
             f"""
-            SELECT COALESCE(SUM(l.opening_lease_liability),0) AS opening
-            FROM {schema}.leases l
-            WHERE l.company_id=%s
-            AND l.start_date < %s
-            AND (
-                COALESCE(l.status,'active') <> 'terminated'
-                OR (l.termination_date IS NULL OR l.termination_date >= %s)
+            WITH last_posted_before_period AS (
+                SELECT DISTINCT ON (s.lease_id)
+                    s.lease_id,
+                    s.closing_liability
+                FROM {schema}.lease_schedule s
+                JOIN {schema}.leases l ON l.id = s.lease_id
+                WHERE s.company_id = %s
+                AND s.is_active = TRUE
+                AND COALESCE(s.posted_journal_id,0) > 0
+                AND s.period_end < %s
+                {lease_status_sql}
+                ORDER BY s.lease_id, s.period_end DESC, s.period_no DESC
             )
+            SELECT COALESCE(SUM(closing_liability),0) AS opening
+            FROM last_posted_before_period;
             """,
-            (int(company_id), from_date, from_date),
+            (int(company_id), from_date),
             cur=cur,
         ) or {}
+
         opening_liability = float(opening_row.get("opening") or 0.0)
 
         sched_asof_row = self.fetch_one(
@@ -66960,10 +66968,10 @@ class DatabaseService:
 
     def _period_label(self, date_from, date_to) -> str:
         if date_from and date_to:
-            return f"for the reporting period from {date_from} to {date_to}"
+            return f"the reporting period from {date_from} to {date_to}"
         if date_to:
-            return f"for the reporting period ended {date_to}"
-        return "for the reporting period"
+            return f"the reporting period ended {date_to}"
+        return "the reporting period"
 
     def build_ppe_note_package(
         self,
