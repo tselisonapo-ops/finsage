@@ -621,8 +621,16 @@ def build_balance_sheet_v3(
         is_ppe_acc  = _is_accum_dep(row_any) or ("accumulated depreciation" in name_l)
 
         if view == "external" and kind == "asset" and (is_ppe_cost or is_ppe_acc):
-            cur_amt = _bs_signed_amount("asset", cur_by.get(code, {}) or {})
-            pri_amt = _bs_signed_amount("asset", pri_by.get(code, {}) or {}) if has_prior else 0.0
+            if is_ppe_acc:
+                cur_amt = _tb_credit(cur_by.get(code, {}) or {}) - _tb_debit(cur_by.get(code, {}) or {})
+                pri_amt = (
+                    _tb_credit(pri_by.get(code, {}) or {}) - _tb_debit(pri_by.get(code, {}) or {})
+                ) if has_prior else 0.0
+            else:
+                cur_amt = _tb_debit(cur_by.get(code, {}) or {}) - _tb_credit(cur_by.get(code, {}) or {})
+                pri_amt = (
+                    _tb_debit(pri_by.get(code, {}) or {}) - _tb_credit(pri_by.get(code, {}) or {})
+                ) if has_prior else 0.0
 
             if is_ppe_acc:
                 ppe_acc_cur += abs(cur_amt)
