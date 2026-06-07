@@ -714,7 +714,14 @@ def build_balance_sheet_v3(
             eq_lines.append(line)
 
     # PPE rollup line + table (EXTERNAL ONLY)
-    ppe_line = None  # default for internal view
+    # PPE / ROU rollup defaults
+    ppe_line = None
+    ppe_carry_cur = 0.0
+    ppe_carry_pri = 0.0
+
+    rou_line = None
+    rou_carry_cur = 0.0
+    rou_carry_pri = 0.0
 
     if view == "external":
         ppe_carry_cur = float(ppe_cost_cur - ppe_acc_cur)
@@ -901,9 +908,10 @@ def build_balance_sheet_v3(
             out[k] = float((a or {}).get(k, 0.0) or 0.0) - float((b or {}).get(k, 0.0) or 0.0)
         return out
 
-    print("PPE COST :", ppe_cost_cur)
-    print("PPE ACC  :", ppe_acc_cur)
-    print("PPE CARRY:", ppe_carry_cur)
+    if view == "external":
+        print("PPE COST :", ppe_cost_cur)
+        print("PPE ACC  :", ppe_acc_cur)
+        print("PPE CARRY:", ppe_carry_cur)
 
     for ln in non_current_assets:
         print(
