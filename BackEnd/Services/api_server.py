@@ -184,7 +184,7 @@ from BackEnd.Services.routes.loans_routes import loans_bp
 from BackEnd.Services.routes.revenue_routes import revenue_bp
 from BackEnd.Routes.report_run import report_bp
 from BackEnd.Services.routes.project_routes import projects_bp
-
+from BackEnd.Services.routes.pos_routes import pos_bp
 
 
 # ────────────────────────────────────────────────────────────────
@@ -322,6 +322,7 @@ app.register_blueprint(loans_bp)
 app.register_blueprint(revenue_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(projects_bp)
+app.register_blueprint(pos_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

@@ -1935,6 +1935,15 @@ class DatabaseService:
         ALTER TABLE public.company_users
             ADD COLUMN IF NOT EXISTS access_origin TEXT NOT NULL DEFAULT 'direct';
 
+        ALTER TABLE public.company_users
+        ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
+        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS pos_is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+        ALTER TABLE public.company_invites
+        ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
+        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+
         UPDATE public.company_users
         SET access_scope = 'core'
         WHERE access_scope IS NULL OR btrim(access_scope) = '';
@@ -10567,7 +10576,8 @@ class DatabaseService:
         -- ==================================================
         CREATE TABLE IF NOT EXISTS {schema}.company_bank_accounts (
             id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
+            company_id INT NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+
             name TEXT NOT NULL,
             bank_name TEXT NOT NULL,
             account_name TEXT NOT NULL,
@@ -10575,31 +10585,46 @@ class DatabaseService:
             branch_code TEXT NULL,
             swift_code TEXT NULL,
             currency TEXT NULL,
+
             ledger_account_code TEXT NULL,
+
             is_default_receipts BOOLEAN NOT NULL DEFAULT FALSE,
             is_default_payments BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT company_bank_accounts_account_no_blank_chk
+            CHECK (trim(account_number) <> ''),
+
+            CONSTRAINT company_bank_accounts_name_blank_chk
+            CHECK (trim(name) <> '')
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_idx
         ON {schema}.company_bank_accounts(company_id);
 
-        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_receipts_idx
-        ON {schema}.company_bank_accounts(company_id, is_default_receipts);
-
-        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_default_payments_idx
-        ON {schema}.company_bank_accounts(company_id, is_default_payments);
-
-        SELECT company_id, account_number, COUNT(*)
-        FROM {schema}.company_bank_accounts
-        GROUP BY company_id, account_number
-        HAVING COUNT(*) > 1;
+        CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_ledger_idx
+        ON {schema}.company_bank_accounts(company_id, ledger_account_code);
 
         DELETE FROM {schema}.company_bank_accounts a
         USING {schema}.company_bank_accounts b
         WHERE a.id > b.id
         AND a.company_id = b.company_id
-        AND a.account_number = b.account_number;
+        AND lower(trim(a.account_number)) = lower(trim(b.account_number));
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_company_bank_accounts_account_uniq
+        ON {schema}.company_bank_accounts(company_id, lower(trim(account_number)))
+        WHERE account_number IS NOT NULL AND trim(account_number) <> '';
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_company_bank_default_receipts_uniq
+        ON {schema}.company_bank_accounts(company_id)
+        WHERE is_default_receipts = TRUE;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_company_bank_default_payments_uniq
+        ON {schema}.company_bank_accounts(company_id)
+        WHERE is_default_payments = TRUE;
 
         DO $uq_company_bank_accounts_account$
         BEGIN
@@ -10619,6 +10644,46 @@ class DatabaseService:
                 );
             END IF;
         END $uq_company_bank_accounts_account$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.bank_transactions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            bank_account_id INT NOT NULL REFERENCES {schema}.company_bank_accounts(id),
+            tx_date DATE NOT NULL,
+            description TEXT NOT NULL,
+            reference TEXT NULL,
+
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            direction TEXT NOT NULL, -- in|out
+
+            matched_journal_id INT NULL REFERENCES {schema}.journal(id) ON DELETE SET NULL,
+            source TEXT NULL,
+            source_id INT NULL,
+
+            status TEXT NOT NULL DEFAULT 'unmatched', -- unmatched|matched|posted|void
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_bank_tx_account_date_idx
+        ON {schema}.bank_transactions(company_id, bank_account_id, tx_date);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_bank_tx_source_uniq
+        ON {schema}.bank_transactions(company_id, source, source_id)
+        WHERE source IS NOT NULL AND source_id IS NOT NULL;
+
+        ALTER TABLE {schema}.bank_transactions
+        ADD CONSTRAINT {schema}_bank_tx_direction_chk
+        CHECK (direction IN ('in','out'));
+
+        ALTER TABLE {schema}.bank_transactions
+        ADD CONSTRAINT {schema}_bank_tx_status_chk
+        CHECK (status IN ('unmatched','matched','posted','void'));
+
+        ALTER TABLE {schema}.bank_transactions
+        ADD CONSTRAINT {schema}_bank_tx_amount_nonzero_chk
+        CHECK (amount <> 0);
 
         -- ==================================================
         -- LEASES
@@ -18305,14 +18370,14 @@ class DatabaseService:
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_pos_summary_lines_company_idx
-        ON {schema}.pos_summary_lines(company_id);
+            ON {schema}.pos_summary_lines(company_id);
 
-        ALTER TABLE {schema}.pos_summary_lines
-        ADD COLUMN IF NOT EXISTS item_type TEXT NULL,
-        ADD COLUMN IF NOT EXISTS item_id INT NULL;
+            ALTER TABLE {schema}.pos_summary_lines
+            ADD COLUMN IF NOT EXISTS item_type TEXT NULL,
+            ADD COLUMN IF NOT EXISTS item_id INT NULL;
 
-        CREATE INDEX IF NOT EXISTS {schema}_pos_lines_item_idx
-        ON {schema}.pos_summary_lines(item_type, item_id);
+            CREATE INDEX IF NOT EXISTS {schema}_pos_lines_item_idx
+            ON {schema}.pos_summary_lines(item_type, item_id);
 
         -- 4) pos_item_map (depends on inventory_items + service_items, so keep AFTER those tables)
         CREATE TABLE IF NOT EXISTS {schema}.pos_item_map (
@@ -18335,6 +18400,454 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_pos_item_map_barcode_idx
         ON {schema}.pos_item_map(company_id, barcode);
 
+        -- =========================
+        -- PHASE 1: LIVE POS CORE
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_terminals (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            terminal_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            branch_name TEXT NULL,
+            location TEXT NULL,
+            receipt_printer_name TEXT NULL,
+            label_printer_name TEXT NULL,
+            cash_drawer_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_terminals_code_uniq
+        ON {schema}.pos_terminals(company_id, lower(trim(terminal_code)));
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_shifts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            terminal_id INT NOT NULL REFERENCES {schema}.pos_terminals(id),
+            cashier_user_id INT NOT NULL,
+            opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            closed_at TIMESTAMPTZ NULL,
+            opening_float NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expected_cash NUMERIC(18,2) NOT NULL DEFAULT 0,
+            counted_cash NUMERIC(18,2) NULL,
+            cash_difference NUMERIC(18,2) NULL,
+            status TEXT NOT NULL DEFAULT 'open', -- open|closed|void
+            manager_user_id INT NULL,
+            notes TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_sales (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            sale_no TEXT NOT NULL,
+            sale_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            business_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            terminal_id INT NULL REFERENCES {schema}.pos_terminals(id),
+            shift_id INT NULL REFERENCES {schema}.pos_shifts(id),
+            cashier_user_id INT NULL,
+            customer_id INT NULL,
+            customer_name TEXT NULL,
+            customer_vat_no TEXT NULL,
+            customer_account_id INT NULL,
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|held|completed|void|refunded
+            sale_type TEXT NOT NULL DEFAULT 'cash_sale', -- cash_sale|account_sale|layby|quote_conversion
+            subtotal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            amount_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            change_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source_invoice_id INT NULL,
+            source_quote_id INT NULL,
+            posted_journal_id INT NULL,
+            printed_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_sales_no_uniq
+        ON {schema}.pos_sales(company_id, lower(trim(sale_no)));
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_sale_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            sale_id INT NOT NULL REFERENCES {schema}.pos_sales(id) ON DELETE CASCADE,
+            line_no INT NOT NULL,
+            item_type TEXT NOT NULL DEFAULT 'inventory', -- inventory|service|misc
+            item_id INT NULL REFERENCES {schema}.inventory_items(id),
+            barcode TEXT NULL,
+            sku TEXT NULL,
+            description TEXT NOT NULL,
+            qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            unit_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            discount_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_code TEXT NULL,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            cost_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            price_source TEXT NULL, -- normal|customer_price|bulk_discount|manual_override|promotion
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_sale_lines_line_uniq
+        ON {schema}.pos_sale_lines(sale_id, line_no);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_payments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            sale_id INT NOT NULL REFERENCES {schema}.pos_sales(id) ON DELETE CASCADE,
+            shift_id INT NULL REFERENCES {schema}.pos_shifts(id),
+            payment_method TEXT NOT NULL, -- cash|card|eft|account|voucher|mobile_money
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            reference TEXT NULL,
+            card_last4 TEXT NULL,
+            received_amount NUMERIC(18,2) NULL,
+            change_amount NUMERIC(18,2) NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_cash_movements (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            shift_id INT NOT NULL REFERENCES {schema}.pos_shifts(id),
+            movement_type TEXT NOT NULL, -- float_in|cash_in|cash_out|bank_drop|correction
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            reason TEXT NULL,
+            approved_by INT NULL,
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_barcode_labels (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+            barcode TEXT NOT NULL,
+            label_type TEXT NOT NULL DEFAULT 'code128',
+            copies INT NOT NULL DEFAULT 1,
+            printed_by INT NULL,
+            printed_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- =========================
+        -- POS QUICK QUOTATIONS
+        -- Cashier printable, no approval by default
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_quotes (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            quote_no TEXT NOT NULL,
+            quote_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            valid_until DATE NULL,
+            terminal_id INT NULL REFERENCES {schema}.pos_terminals(id),
+            cashier_user_id INT NULL,
+            customer_id INT NULL,
+            customer_name TEXT NULL,
+            customer_phone TEXT NULL,
+            customer_email TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|printed|accepted|converted|expired|cancelled
+            subtotal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            converted_sale_id INT NULL,
+            approval_required BOOLEAN NOT NULL DEFAULT FALSE,
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+            notes TEXT NULL,
+            printed_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_quotes_no_uniq
+        ON {schema}.pos_quotes(company_id, lower(trim(quote_no)));
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_quote_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            quote_id INT NOT NULL REFERENCES {schema}.pos_quotes(id) ON DELETE CASCADE,
+            line_no INT NOT NULL,
+            item_type TEXT NOT NULL DEFAULT 'inventory',
+            item_id INT NULL REFERENCES {schema}.inventory_items(id),
+            barcode TEXT NULL,
+            sku TEXT NULL,
+            description TEXT NOT NULL,
+            qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            unit_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            discount_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_code TEXT NULL,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            price_source TEXT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_quote_lines_line_uniq
+        ON {schema}.pos_quote_lines(quote_id, line_no);
+
+        -- =========================
+        -- CUSTOMER ACCOUNTS + WHOLESALE PRICING
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_customer_profiles (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            customer_id INT NULL,
+            customer_name TEXT NOT NULL,
+            customer_type TEXT NOT NULL DEFAULT 'retail', -- retail|wholesale|account|staff
+            price_level TEXT NOT NULL DEFAULT 'retail', -- retail|wholesale|vip|staff
+            default_discount_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            credit_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+            credit_limit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            current_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            payment_terms_days INT NOT NULL DEFAULT 0,
+            vat_no TEXT NULL,
+            phone TEXT NULL,
+            email TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_price_levels (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            price_level TEXT NOT NULL,
+            description TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_price_levels_uniq
+        ON {schema}.pos_price_levels(company_id, lower(trim(price_level)));
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_item_prices (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+            price_level TEXT NOT NULL DEFAULT 'retail',
+            unit_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            effective_from DATE NULL,
+            effective_to DATE NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_item_prices_uniq
+        ON {schema}.pos_item_prices(company_id, item_id, lower(trim(price_level)));
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_bulk_discounts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            item_id INT NULL REFERENCES {schema}.inventory_items(id),
+            category TEXT NULL,
+            customer_type TEXT NULL, -- wholesale|retail|account
+            min_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+            discount_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            fixed_unit_price NUMERIC(18,4) NULL,
+            effective_from DATE NULL,
+            effective_to DATE NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- =========================
+        -- PHASE 2: RETURNS, OVERRIDES, APPROVALS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_returns (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            return_no TEXT NOT NULL,
+            original_sale_id INT NULL REFERENCES {schema}.pos_sales(id),
+            return_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            terminal_id INT NULL REFERENCES {schema}.pos_terminals(id),
+            shift_id INT NULL REFERENCES {schema}.pos_shifts(id),
+            cashier_user_id INT NULL,
+            reason TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|completed|void
+            refund_method TEXT NULL,
+            refund_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source_credit_note_id INT NULL,
+            posted_journal_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_return_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            return_id INT NOT NULL REFERENCES {schema}.pos_returns(id) ON DELETE CASCADE,
+            original_sale_line_id INT NULL REFERENCES {schema}.pos_sale_lines(id),
+            item_id INT NULL REFERENCES {schema}.inventory_items(id),
+            description TEXT NOT NULL,
+            qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            unit_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            restock BOOLEAN NOT NULL DEFAULT TRUE
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_discount_approvals (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            source_type TEXT NOT NULL, -- sale|quote
+            source_id INT NOT NULL,
+            requested_by INT NULL,
+            approved_by INT NULL,
+            requested_discount_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            requested_discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            reason TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', -- pending|approved|declined
+            requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            decided_at TIMESTAMPTZ NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_price_overrides (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            source_type TEXT NOT NULL, -- sale|quote
+            source_line_id INT NOT NULL,
+            original_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            override_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            reason TEXT NULL,
+            approved_by INT NULL,
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- =========================
+        -- PHASE 3: PROMOTIONS, LOYALTY, VOUCHERS, OFFLINE
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_promotions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            promo_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            promo_type TEXT NOT NULL, -- percent|fixed|buy_x_get_y|bundle
+            discount_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            starts_at TIMESTAMPTZ NULL,
+            ends_at TIMESTAMPTZ NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            rules_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_loyalty_accounts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            customer_profile_id INT NOT NULL REFERENCES {schema}.pos_customer_profiles(id),
+            loyalty_no TEXT NOT NULL,
+            points_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_gift_vouchers (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            voucher_no TEXT NOT NULL,
+            original_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            balance_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            issued_sale_id INT NULL REFERENCES {schema}.pos_sales(id),
+            status TEXT NOT NULL DEFAULT 'active', -- active|redeemed|expired|void
+            expires_at DATE NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_offline_batches (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            terminal_id INT NULL REFERENCES {schema}.pos_terminals(id),
+            batch_uuid TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', -- pending|synced|failed
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            synced_at TIMESTAMPTZ NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_orders (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            order_no TEXT NOT NULL,
+            order_type TEXT NOT NULL DEFAULT 'table',
+            -- table|collection|delivery
+
+            table_no TEXT NULL,
+
+            waiter_user_id INT NULL,
+            cashier_user_id INT NULL,
+
+            customer_id INT NULL,
+            customer_name TEXT NULL,
+            customer_phone TEXT NULL,
+
+            delivery_address TEXT NULL,
+            delivery_notes TEXT NULL,
+            driver_user_id INT NULL,
+            delivery_fee NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'open',
+            -- open|sent_to_kitchen|ready|out_for_delivery|completed|billed|cancelled
+
+            subtotal NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            source_sale_id INT NULL REFERENCES {schema}.pos_sales(id),
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_orders_no_uniq
+        ON {schema}.pos_orders(company_id, lower(trim(order_no)));
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_orders_status_idx
+        ON {schema}.pos_orders(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_orders_waiter_idx
+        ON {schema}.pos_orders(company_id, waiter_user_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_orders_driver_idx
+        ON {schema}.pos_orders(company_id, driver_user_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_order_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            order_id INT NOT NULL REFERENCES {schema}.pos_orders(id) ON DELETE CASCADE,
+            line_no INT NOT NULL,
+
+            item_id INT NULL REFERENCES {schema}.inventory_items(id),
+            description TEXT NOT NULL,
+
+            qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            unit_price NUMERIC(18,4) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_code TEXT NULL,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            notes TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            -- open|sent|preparing|ready|served|cancelled
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_order_lines_line_uniq
+        ON {schema}.pos_order_lines(order_id, line_no);
 
         -- ==================================================
         -- BANK STATEMENTS
@@ -32992,6 +33505,1620 @@ class DatabaseService:
             except Exception:
                 conn.rollback()
                 raise
+
+    # =========================
+    # POS TERMINALS
+    # =========================
+
+    def pos_list_terminals(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_terminals
+            WHERE company_id=%s
+            ORDER BY is_active DESC, name ASC
+        """, (int(company_id),))
+
+
+    def pos_create_terminal(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_terminals
+            (
+                company_id, terminal_code, name, branch_name, location,
+                receipt_printer_name, label_printer_name,
+                cash_drawer_enabled, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            (data.get("terminal_code") or "").strip(),
+            (data.get("name") or "").strip(),
+            data.get("branch_name"),
+            data.get("location"),
+            data.get("receipt_printer_name"),
+            data.get("label_printer_name"),
+            bool(data.get("cash_drawer_enabled", False)),
+            bool(data.get("is_active", True)),
+        ))
+        return int(row["id"])
+
+
+    def pos_update_terminal(self, company_id: int, terminal_id: int, data: dict) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "terminal_code", "name", "branch_name", "location",
+            "receipt_printer_name", "label_printer_name",
+            "cash_drawer_enabled", "is_active"
+        }
+
+        sets, params = [], []
+        for k, v in (data or {}).items():
+            if k in allowed:
+                sets.append(f"{k}=%s")
+                params.append(v)
+
+        if not sets:
+            return self.fetch_one(
+                f"SELECT * FROM {schema}.pos_terminals WHERE company_id=%s AND id=%s",
+                (int(company_id), int(terminal_id)),
+            )
+
+        params.extend([int(company_id), int(terminal_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_terminals
+            SET {", ".join(sets)}
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, tuple(params))
+
+    # =========================
+    # POS SHIFTS / CASH-UP
+    # =========================
+
+    def pos_list_shifts(self, company_id: int, *, status: str = "", limit: int = 50) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["s.company_id=%s"]
+        params = [int(company_id)]
+
+        if status:
+            where.append("s.status=%s")
+            params.append(status)
+
+        params.append(int(limit))
+
+        return self.fetch_all(f"""
+            SELECT
+                s.*,
+                t.name AS terminal_name,
+                t.terminal_code
+            FROM {schema}.pos_shifts s
+            LEFT JOIN {schema}.pos_terminals t ON t.id=s.terminal_id
+            WHERE {" AND ".join(where)}
+            ORDER BY s.opened_at DESC
+            LIMIT %s
+        """, tuple(params))
+
+
+    def pos_close_shift(
+        self,
+        company_id: int,
+        shift_id: int,
+        *,
+        counted_cash: float,
+        manager_user_id: int | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        shift = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_shifts
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(shift_id)))
+
+        if not shift:
+            raise ValueError("Shift not found")
+
+        expected = float(shift.get("expected_cash") or 0)
+        counted = float(counted_cash or 0)
+        diff = counted - expected
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.pos_shifts
+            SET closed_at=NOW(),
+                counted_cash=%s,
+                cash_difference=%s,
+                manager_user_id=%s,
+                notes=%s,
+                status='closed'
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, (
+            counted,
+            diff,
+            manager_user_id,
+            notes,
+            int(company_id),
+            int(shift_id),
+        ))
+
+        return row
+
+
+    def pos_add_cash_movement(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        movement_type = (data.get("movement_type") or "").strip().lower()
+        if movement_type not in {"float_in", "cash_in", "cash_out", "bank_drop", "correction"}:
+            raise ValueError("Invalid movement_type")
+
+        amount = float(data.get("amount") or 0)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_cash_movements
+            (company_id, shift_id, movement_type, amount, reason, approved_by, created_by)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(data.get("shift_id")),
+            movement_type,
+            amount,
+            data.get("reason"),
+            data.get("approved_by"),
+            data.get("created_by"),
+        ))
+
+        # update expected cash for cash movements
+        if movement_type in {"float_in", "cash_in"}:
+            self.execute_sql(f"""
+                UPDATE {schema}.pos_shifts
+                SET expected_cash = COALESCE(expected_cash,0) + %s
+                WHERE company_id=%s AND id=%s
+            """, (amount, int(company_id), int(data.get("shift_id"))))
+
+        if movement_type in {"cash_out", "bank_drop"}:
+            self.execute_sql(f"""
+                UPDATE {schema}.pos_shifts
+                SET expected_cash = COALESCE(expected_cash,0) - %s
+                WHERE company_id=%s AND id=%s
+            """, (amount, int(company_id), int(data.get("shift_id"))))
+
+        return int(row["id"])
+
+
+    def pos_list_cash_movements(self, company_id: int, shift_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_cash_movements
+            WHERE company_id=%s AND shift_id=%s
+            ORDER BY created_at DESC
+        """, (int(company_id), int(shift_id)))
+
+    # =========================
+    # POS CUSTOMER PROFILES
+    # =========================
+
+    def pos_list_customer_profiles(self, company_id: int, q: str = "", limit: int = 50) -> list[dict]:
+        schema = self.company_schema(company_id)
+        q = (q or "").strip()
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_customer_profiles
+            WHERE company_id=%s
+            AND (
+                %s=''
+                OR customer_name ILIKE %s
+                OR phone ILIKE %s
+                OR email ILIKE %s
+                OR vat_no ILIKE %s
+            )
+            ORDER BY customer_name ASC
+            LIMIT %s
+        """, (
+            int(company_id), q,
+            f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%",
+            int(limit),
+        ))
+
+
+    def pos_create_customer_profile(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_customer_profiles
+            (
+                company_id, customer_id, customer_name, customer_type,
+                price_level, default_discount_percent,
+                credit_allowed, credit_limit, current_balance,
+                payment_terms_days, vat_no, phone, email, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("customer_id"),
+            data.get("customer_name"),
+            data.get("customer_type") or "retail",
+            data.get("price_level") or "retail",
+            float(data.get("default_discount_percent") or 0),
+            bool(data.get("credit_allowed", False)),
+            float(data.get("credit_limit") or 0),
+            float(data.get("current_balance") or 0),
+            int(data.get("payment_terms_days") or 0),
+            data.get("vat_no"),
+            data.get("phone"),
+            data.get("email"),
+            bool(data.get("is_active", True)),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_get_customer_profile(self, company_id: int, profile_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_customer_profiles
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(profile_id)))
+
+    # =========================
+    # PRICE LEVELS / ITEM PRICES / BULK DISCOUNTS
+    # =========================
+
+    def pos_create_price_level(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_price_levels
+            (company_id, price_level, description, is_active)
+            VALUES (%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("price_level"),
+            data.get("description"),
+            bool(data.get("is_active", True)),
+        ))
+        return int(row["id"])
+
+
+    def pos_list_price_levels(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_price_levels
+            WHERE company_id=%s
+            ORDER BY price_level
+        """, (int(company_id),))
+
+
+    def pos_set_item_price(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_item_prices
+            (
+                company_id, item_id, price_level, unit_price,
+                effective_from, effective_to, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (company_id, item_id, lower(trim(price_level)))
+            DO NOTHING
+            RETURNING id
+        """, (
+            int(company_id),
+            int(data.get("item_id")),
+            data.get("price_level") or "retail",
+            float(data.get("unit_price") or 0),
+            data.get("effective_from"),
+            data.get("effective_to"),
+            bool(data.get("is_active", True)),
+        ))
+
+        if row:
+            return int(row["id"])
+
+        updated = self.fetch_one(f"""
+            UPDATE {schema}.pos_item_prices
+            SET unit_price=%s,
+                effective_from=%s,
+                effective_to=%s,
+                is_active=%s
+            WHERE company_id=%s
+            AND item_id=%s
+            AND lower(trim(price_level))=lower(trim(%s))
+            RETURNING id
+        """, (
+            float(data.get("unit_price") or 0),
+            data.get("effective_from"),
+            data.get("effective_to"),
+            bool(data.get("is_active", True)),
+            int(company_id),
+            int(data.get("item_id")),
+            data.get("price_level") or "retail",
+        ))
+
+        return int(updated["id"])
+
+
+    def pos_list_item_prices(self, company_id: int, item_id: int | None = None) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        if item_id:
+            return self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.pos_item_prices
+                WHERE company_id=%s AND item_id=%s
+                ORDER BY price_level
+            """, (int(company_id), int(item_id)))
+
+        return self.fetch_all(f"""
+            SELECT p.*, i.name AS item_name, i.sku
+            FROM {schema}.pos_item_prices p
+            LEFT JOIN {schema}.inventory_items i ON i.id=p.item_id
+            WHERE p.company_id=%s
+            ORDER BY i.name, p.price_level
+        """, (int(company_id),))
+
+
+    def pos_create_bulk_discount(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_bulk_discounts
+            (
+                company_id, item_id, category, customer_type, min_qty,
+                discount_percent, fixed_unit_price,
+                effective_from, effective_to, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("item_id"),
+            data.get("category"),
+            data.get("customer_type"),
+            float(data.get("min_qty") or 0),
+            float(data.get("discount_percent") or 0),
+            data.get("fixed_unit_price"),
+            data.get("effective_from"),
+            data.get("effective_to"),
+            bool(data.get("is_active", True)),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_list_bulk_discounts(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT d.*, i.name AS item_name, i.sku
+            FROM {schema}.pos_bulk_discounts d
+            LEFT JOIN {schema}.inventory_items i ON i.id=d.item_id
+            WHERE d.company_id=%s
+            ORDER BY d.is_active DESC, d.item_id, d.min_qty
+        """, (int(company_id),))
+
+    # =========================
+    # RETURNS
+    # =========================
+
+    def pos_create_return(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.pos_returns
+                (
+                    company_id, return_no, original_sale_id, terminal_id,
+                    shift_id, cashier_user_id, reason, refund_method,
+                    refund_amount, status
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
+                RETURNING id
+            """, (
+                int(company_id),
+                data.get("return_no"),
+                data.get("original_sale_id"),
+                data.get("terminal_id"),
+                data.get("shift_id"),
+                data.get("cashier_user_id"),
+                data.get("reason"),
+                data.get("refund_method"),
+                float(data.get("refund_amount") or 0),
+            ))
+
+            return_id = int(cur.fetchone()["id"])
+
+            for i, ln in enumerate(data.get("lines") or [], start=1):
+                cur.execute(f"""
+                    INSERT INTO {schema}.pos_return_lines
+                    (
+                        company_id, return_id, original_sale_line_id, item_id,
+                        description, qty, unit_price, vat_amount,
+                        gross_amount, restock
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    int(company_id),
+                    return_id,
+                    ln.get("original_sale_line_id"),
+                    ln.get("item_id"),
+                    ln.get("description") or "",
+                    float(ln.get("qty") or 1),
+                    float(ln.get("unit_price") or 0),
+                    float(ln.get("vat_amount") or 0),
+                    float(ln.get("gross_amount") or 0),
+                    bool(ln.get("restock", True)),
+                ))
+
+            conn.commit()
+            return return_id
+
+
+    def pos_list_returns(self, company_id: int, limit: int = 50) -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_returns
+            WHERE company_id=%s
+            ORDER BY return_date DESC
+            LIMIT %s
+        """, (int(company_id), int(limit)))
+
+
+    def pos_get_return(self, company_id: int, return_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        ret = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_returns
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(return_id)))
+
+        if not ret:
+            return None
+
+        ret["lines"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_return_lines
+            WHERE company_id=%s AND return_id=%s
+            ORDER BY id
+        """, (int(company_id), int(return_id))) or []
+
+        return ret
+
+    # =========================
+    # RETURNS
+    # =========================
+
+    def pos_create_return(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.pos_returns
+                (
+                    company_id, return_no, original_sale_id, terminal_id,
+                    shift_id, cashier_user_id, reason, refund_method,
+                    refund_amount, status
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
+                RETURNING id
+            """, (
+                int(company_id),
+                data.get("return_no"),
+                data.get("original_sale_id"),
+                data.get("terminal_id"),
+                data.get("shift_id"),
+                data.get("cashier_user_id"),
+                data.get("reason"),
+                data.get("refund_method"),
+                float(data.get("refund_amount") or 0),
+            ))
+
+            return_id = int(cur.fetchone()["id"])
+
+            for i, ln in enumerate(data.get("lines") or [], start=1):
+                cur.execute(f"""
+                    INSERT INTO {schema}.pos_return_lines
+                    (
+                        company_id, return_id, original_sale_line_id, item_id,
+                        description, qty, unit_price, vat_amount,
+                        gross_amount, restock
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    int(company_id),
+                    return_id,
+                    ln.get("original_sale_line_id"),
+                    ln.get("item_id"),
+                    ln.get("description") or "",
+                    float(ln.get("qty") or 1),
+                    float(ln.get("unit_price") or 0),
+                    float(ln.get("vat_amount") or 0),
+                    float(ln.get("gross_amount") or 0),
+                    bool(ln.get("restock", True)),
+                ))
+
+            conn.commit()
+            return return_id
+
+
+    def pos_list_returns(self, company_id: int, limit: int = 50) -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_returns
+            WHERE company_id=%s
+            ORDER BY return_date DESC
+            LIMIT %s
+        """, (int(company_id), int(limit)))
+
+
+    def pos_get_return(self, company_id: int, return_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        ret = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_returns
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(return_id)))
+
+        if not ret:
+            return None
+
+        ret["lines"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_return_lines
+            WHERE company_id=%s AND return_id=%s
+            ORDER BY id
+        """, (int(company_id), int(return_id))) or []
+
+        return ret
+
+    # =========================
+    # DISCOUNT APPROVALS / PRICE OVERRIDES
+    # =========================
+
+    def pos_request_discount_approval(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_discount_approvals
+            (
+                company_id, source_type, source_id, requested_by,
+                requested_discount_percent, requested_discount_amount,
+                reason, status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,'pending')
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("source_type"),
+            int(data.get("source_id")),
+            data.get("requested_by"),
+            float(data.get("requested_discount_percent") or 0),
+            float(data.get("requested_discount_amount") or 0),
+            data.get("reason"),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_decide_discount_approval(
+        self,
+        company_id: int,
+        approval_id: int,
+        *,
+        status: str,
+        approved_by: int | None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        status = (status or "").strip().lower()
+        if status not in {"approved", "declined"}:
+            raise ValueError("status must be approved or declined")
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_discount_approvals
+            SET status=%s,
+                approved_by=%s,
+                decided_at=NOW()
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, (status, approved_by, int(company_id), int(approval_id)))
+
+
+    def pos_list_discount_approvals(self, company_id: int, status: str = "pending") -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_discount_approvals
+            WHERE company_id=%s
+            AND (%s='' OR status=%s)
+            ORDER BY requested_at DESC
+        """, (int(company_id), status or "", status or ""))
+
+
+    def pos_create_price_override(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_price_overrides
+            (
+                company_id, source_type, source_line_id,
+                original_price, override_price, reason,
+                approved_by, created_by
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("source_type"),
+            int(data.get("source_line_id")),
+            float(data.get("original_price") or 0),
+            float(data.get("override_price") or 0),
+            data.get("reason"),
+            data.get("approved_by"),
+            data.get("created_by"),
+        ))
+
+        return int(row["id"])
+
+    # =========================
+    # PROMOTIONS
+    # =========================
+
+    def pos_create_promotion(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_promotions
+            (
+                company_id, promo_code, name, promo_type,
+                discount_percent, discount_amount,
+                starts_at, ends_at, is_active, rules_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("promo_code"),
+            data.get("name"),
+            data.get("promo_type"),
+            float(data.get("discount_percent") or 0),
+            float(data.get("discount_amount") or 0),
+            data.get("starts_at"),
+            data.get("ends_at"),
+            bool(data.get("is_active", True)),
+            Json(data.get("rules_json") or {}),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_list_promotions(self, company_id: int, active_only: bool = False) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        if active_only:
+            return self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.pos_promotions
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY created_at DESC
+            """, (int(company_id),))
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_promotions
+            WHERE company_id=%s
+            ORDER BY created_at DESC
+        """, (int(company_id),))
+
+    # =========================
+    # PROMOTIONS
+    # =========================
+
+    def pos_create_promotion(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_promotions
+            (
+                company_id, promo_code, name, promo_type,
+                discount_percent, discount_amount,
+                starts_at, ends_at, is_active, rules_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("promo_code"),
+            data.get("name"),
+            data.get("promo_type"),
+            float(data.get("discount_percent") or 0),
+            float(data.get("discount_amount") or 0),
+            data.get("starts_at"),
+            data.get("ends_at"),
+            bool(data.get("is_active", True)),
+            Json(data.get("rules_json") or {}),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_list_promotions(self, company_id: int, active_only: bool = False) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        if active_only:
+            return self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.pos_promotions
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY created_at DESC
+            """, (int(company_id),))
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_promotions
+            WHERE company_id=%s
+            ORDER BY created_at DESC
+        """, (int(company_id),))
+
+    # =========================
+    # LOYALTY / VOUCHERS / OFFLINE
+    # =========================
+
+    def pos_create_loyalty_account(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_loyalty_accounts
+            (company_id, customer_profile_id, loyalty_no, points_balance, is_active)
+            VALUES (%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(data.get("customer_profile_id")),
+            data.get("loyalty_no"),
+            float(data.get("points_balance") or 0),
+            bool(data.get("is_active", True)),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_get_loyalty_account(self, company_id: int, loyalty_no: str) -> dict | None:
+        schema = self.company_schema(company_id)
+        return self.fetch_one(f"""
+            SELECT la.*, cp.customer_name, cp.phone
+            FROM {schema}.pos_loyalty_accounts la
+            LEFT JOIN {schema}.pos_customer_profiles cp ON cp.id=la.customer_profile_id
+            WHERE la.company_id=%s
+            AND lower(trim(la.loyalty_no))=lower(trim(%s))
+            LIMIT 1
+        """, (int(company_id), loyalty_no))
+
+
+    def pos_create_gift_voucher(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        amount = float(data.get("original_amount") or data.get("amount") or 0)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_gift_vouchers
+            (
+                company_id, voucher_no, original_amount,
+                balance_amount, issued_sale_id, status, expires_at
+            )
+            VALUES (%s,%s,%s,%s,%s,'active',%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("voucher_no"),
+            amount,
+            float(data.get("balance_amount") or amount),
+            data.get("issued_sale_id"),
+            data.get("expires_at"),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_get_gift_voucher(self, company_id: int, voucher_no: str) -> dict | None:
+        schema = self.company_schema(company_id)
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_gift_vouchers
+            WHERE company_id=%s
+            AND lower(trim(voucher_no))=lower(trim(%s))
+            LIMIT 1
+        """, (int(company_id), voucher_no))
+
+
+    def pos_save_offline_batch(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_offline_batches
+            (company_id, terminal_id, batch_uuid, status, payload_json)
+            VALUES (%s,%s,%s,'pending',%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("terminal_id"),
+            data.get("batch_uuid"),
+            Json(data.get("payload_json") or {}),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_list_offline_batches(self, company_id: int, status: str = "pending") -> list[dict]:
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_offline_batches
+            WHERE company_id=%s
+            AND (%s='' OR status=%s)
+            ORDER BY created_at DESC
+        """, (int(company_id), status or "", status or ""))
+
+ 
+    def pos_generate_barcode(self, company_id: int, item_id: int) -> str:
+        schema = self.company_schema(company_id)
+
+        barcode = f"FS-{int(company_id)}-{int(item_id):06d}"
+
+        self.execute_sql(f"""
+            UPDATE {schema}.inventory_items
+            SET barcode = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND (barcode IS NULL OR trim(barcode) = '')
+        """, (barcode, int(company_id), int(item_id)))
+
+        return barcode
+
+    def pos_queue_barcode_label(
+        self,
+        company_id: int,
+        *,
+        item_id: int,
+        barcode: str,
+        copies: int = 1,
+        printed_by: int | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_barcode_labels
+            (company_id, item_id, barcode, copies, printed_by)
+            VALUES (%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(item_id),
+            barcode,
+            int(copies or 1),
+            printed_by,
+        ))
+
+        return int(row["id"])
+
+
+    def pos_record_payment(
+        self,
+        company_id: int,
+        *,
+        sale_id: int,
+        shift_id: int | None,
+        payment_method: str,
+        amount: float,
+        reference: str | None = None,
+        received_amount: float | None = None,
+        change_amount: float | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_payments
+            (
+                company_id, sale_id, shift_id, payment_method,
+                amount, reference, received_amount, change_amount
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(sale_id),
+            shift_id,
+            payment_method,
+            float(amount or 0),
+            reference,
+            received_amount,
+            change_amount,
+        ))
+
+        return int(row["id"])
+
+    def pos_add_sale_line(self, company_id: int, sale_id: int, line: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT COALESCE(MAX(line_no), 0) + 1 AS next_line_no
+            FROM {schema}.pos_sale_lines
+            WHERE company_id = %s AND sale_id = %s
+        """, (int(company_id), int(sale_id)))
+
+        line_no = int(row["next_line_no"])
+
+        inserted = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_sale_lines
+            (
+                company_id, sale_id, line_no, item_type, item_id,
+                barcode, sku, description, qty, unit_price,
+                discount_percent, discount_amount,
+                net_amount, vat_code, vat_amount, gross_amount,
+                cost_amount, price_source
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(sale_id),
+            line_no,
+            line.get("item_type") or "inventory",
+            line.get("item_id"),
+            line.get("barcode"),
+            line.get("sku"),
+            line.get("description") or "",
+            float(line.get("qty") or 1),
+            float(line.get("unit_price") or 0),
+            float(line.get("discount_percent") or 0),
+            float(line.get("discount_amount") or 0),
+            float(line.get("net_amount") or 0),
+            line.get("vat_code"),
+            float(line.get("vat_amount") or 0),
+            float(line.get("gross_amount") or 0),
+            float(line.get("cost_amount") or 0),
+            line.get("price_source") or "normal",
+        ))
+
+        return int(inserted["id"])
+
+    def pos_create_sale_draft(
+        self,
+        company_id: int,
+        *,
+        sale_no: str,
+        terminal_id: int,
+        shift_id: int,
+        cashier_user_id: int,
+        customer_id: int | None = None,
+        customer_name: str | None = None,
+        customer_account_id: int | None = None,
+        source_quote_id: int | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_sales
+            (
+                company_id, sale_no, terminal_id, shift_id, cashier_user_id,
+                customer_id, customer_name, customer_account_id,
+                source_quote_id, status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
+            RETURNING id
+        """, (
+            int(company_id),
+            sale_no,
+            int(terminal_id),
+            int(shift_id),
+            int(cashier_user_id),
+            customer_id,
+            customer_name,
+            customer_account_id,
+            source_quote_id,
+        ))
+
+        return int(row["id"])
+
+    def pos_create_quote(
+        self,
+        company_id: int,
+        *,
+        quote_no: str,
+        terminal_id: int | None,
+        cashier_user_id: int | None,
+        customer_id: int | None,
+        customer_name: str | None,
+        lines: list[dict],
+        valid_until=None,
+        notes: str | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        if not lines:
+            raise ValueError("Quote lines are required")
+
+        subtotal = sum(float(x.get("qty") or 0) * float(x.get("unit_price") or 0) for x in lines)
+        discount = sum(float(x.get("discount_amount") or 0) for x in lines)
+        net = subtotal - discount
+        vat = sum(float(x.get("vat_amount") or 0) for x in lines)
+        gross = net + vat
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.pos_quotes
+                (
+                    company_id, quote_no, terminal_id, cashier_user_id,
+                    customer_id, customer_name, valid_until,
+                    subtotal, discount_amount, net_amount, vat_amount, gross_amount,
+                    status, notes
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'printed',%s)
+                RETURNING id
+            """, (
+                int(company_id),
+                quote_no,
+                terminal_id,
+                cashier_user_id,
+                customer_id,
+                customer_name,
+                valid_until,
+                subtotal,
+                discount,
+                net,
+                vat,
+                gross,
+                notes,
+            ))
+
+            quote_id = int(cur.fetchone()["id"])
+
+            for i, ln in enumerate(lines, start=1):
+                cur.execute(f"""
+                    INSERT INTO {schema}.pos_quote_lines
+                    (
+                        company_id, quote_id, line_no, item_type, item_id,
+                        barcode, sku, description, qty, unit_price,
+                        discount_percent, discount_amount,
+                        net_amount, vat_code, vat_amount, gross_amount,
+                        price_source
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    int(company_id),
+                    quote_id,
+                    i,
+                    ln.get("item_type") or "inventory",
+                    ln.get("item_id"),
+                    ln.get("barcode"),
+                    ln.get("sku"),
+                    ln.get("description") or "",
+                    float(ln.get("qty") or 0),
+                    float(ln.get("unit_price") or 0),
+                    float(ln.get("discount_percent") or 0),
+                    float(ln.get("discount_amount") or 0),
+                    float(ln.get("net_amount") or 0),
+                    ln.get("vat_code"),
+                    float(ln.get("vat_amount") or 0),
+                    float(ln.get("gross_amount") or 0),
+                    ln.get("price_source") or "normal",
+                ))
+
+            conn.commit()
+            return quote_id
+
+    def pos_open_shift(
+        self,
+        company_id: int,
+        *,
+        terminal_id: int,
+        cashier_user_id: int,
+        opening_float: float = 0,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.pos_shifts
+            WHERE company_id = %s
+            AND terminal_id = %s
+            AND cashier_user_id = %s
+            AND status = 'open'
+            LIMIT 1
+        """, (int(company_id), int(terminal_id), int(cashier_user_id)))
+
+        if existing:
+            return int(existing["id"])
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_shifts
+            (company_id, terminal_id, cashier_user_id, opening_float, expected_cash, status)
+            VALUES (%s, %s, %s, %s, %s, 'open')
+            RETURNING id
+        """, (
+            int(company_id),
+            int(terminal_id),
+            int(cashier_user_id),
+            float(opening_float or 0),
+            float(opening_float or 0),
+        ))
+
+        return int(row["id"])
+
+    def pos_search_items(self, company_id: int, q: str = "", limit: int = 20) -> list[dict]:
+        schema = self.company_schema(company_id)
+        q = (q or "").strip()
+
+        return self.fetch_all(f"""
+            SELECT
+                i.id,
+                i.sku,
+                i.name,
+                i.barcode,
+                i.sales_price,
+                i.vat_code,
+                i.is_taxable,
+                i.track_stock,
+                COALESCE(SUM(l.qty_in - l.qty_out), 0)::numeric(18,4) AS qty_on_hand
+            FROM {schema}.inventory_items i
+            LEFT JOIN {schema}.inventory_layers l
+                ON l.company_id = i.company_id
+            AND l.item_id = i.id
+            WHERE i.company_id = %s
+            AND i.is_active = TRUE
+            AND (
+                %s = ''
+                OR i.name ILIKE %s
+                OR i.sku ILIKE %s
+                OR i.barcode ILIKE %s
+            )
+            GROUP BY i.id
+            ORDER BY i.name
+            LIMIT %s
+        """, (
+            int(company_id),
+            q,
+            f"%{q}%",
+            f"%{q}%",
+            f"%{q}%",
+            int(limit),
+        ))
+
+    def pos_get_item_by_barcode(self, company_id: int, barcode: str) -> dict | None:
+        schema = self.company_schema(company_id)
+        barcode = (barcode or "").strip()
+
+        if not barcode:
+            return None
+
+        return self.fetch_one(f"""
+            SELECT
+                i.*,
+                COALESCE(SUM(l.qty_in - l.qty_out), 0)::numeric(18,4) AS qty_on_hand
+            FROM {schema}.inventory_items i
+            LEFT JOIN {schema}.inventory_layers l
+                ON l.company_id = i.company_id
+            AND l.item_id = i.id
+            WHERE i.company_id = %s
+            AND i.is_active = TRUE
+            AND lower(trim(i.barcode)) = lower(trim(%s))
+            GROUP BY i.id
+            LIMIT 1
+        """, (int(company_id), barcode))
+
+    def pos_complete_sale(self, company_id: int, sale_id: int, *, user_id: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            # 1. Lock sale row
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.pos_sales
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (int(company_id), int(sale_id)))
+
+            sale = cur.fetchone()
+            if not sale:
+                raise ValueError("POS sale not found")
+
+            if sale["status"] == "completed":
+                return {
+                    "sale_id": int(sale_id),
+                    "status": "completed",
+                    "invoice_id": sale.get("source_invoice_id"),
+                    "journal_id": sale.get("posted_journal_id"),
+                }
+
+            if sale["status"] not in ("draft", "held"):
+                raise ValueError(f"Cannot complete sale with status {sale['status']}")
+
+            # 2. Lock sale lines
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.pos_sale_lines
+                WHERE company_id = %s
+                AND sale_id = %s
+                ORDER BY line_no
+                FOR UPDATE
+            """, (int(company_id), int(sale_id)))
+
+            lines = cur.fetchall() or []
+            if not lines:
+                raise ValueError("Cannot complete sale without lines")
+
+            # 3. Lock stock layers for inventory items only
+            item_ids = [
+                int(l["item_id"])
+                for l in lines
+                if (l.get("item_type") or "").lower() == "inventory"
+                and l.get("item_id")
+            ]
+
+            for item_id in sorted(set(item_ids)):
+                cur.execute(f"""
+                    SELECT id
+                    FROM {schema}.inventory_layers
+                    WHERE company_id = %s
+                    AND item_id = %s
+                    AND (qty_in - qty_out) > 0
+                    ORDER BY tx_date, id
+                    FOR UPDATE
+                """, (int(company_id), int(item_id)))
+
+            # 4. Recheck stock after locks
+            for item_id in sorted(set(item_ids)):
+                required_qty = sum(
+                    float(l.get("qty") or 0)
+                    for l in lines
+                    if int(l.get("item_id") or 0) == item_id
+                )
+
+                cur.execute(f"""
+                    SELECT COALESCE(SUM(qty_in - qty_out), 0)::numeric(18,4) AS onhand
+                    FROM {schema}.inventory_layers
+                    WHERE company_id = %s
+                    AND item_id = %s
+                """, (int(company_id), int(item_id)))
+
+                r = cur.fetchone() or {}
+                onhand = float(r.get("onhand") or 0)
+
+                if required_qty > onhand:
+                    raise ValueError(
+                        f"Insufficient stock for item_id={item_id}. "
+                        f"Available {onhand}, required {required_qty}."
+                    )
+
+            # 5. Check payment
+            cur.execute(f"""
+                SELECT COALESCE(SUM(amount), 0)::numeric(18,2) AS paid
+                FROM {schema}.pos_payments
+                WHERE company_id = %s
+                AND sale_id = %s
+            """, (int(company_id), int(sale_id)))
+
+            paid = float((cur.fetchone() or {}).get("paid") or 0)
+            gross = sum(float(l.get("gross_amount") or 0) for l in lines)
+
+            if paid + 0.01 < gross and (sale.get("sale_type") or "") != "account_sale":
+                raise ValueError("Payment is less than sale total")
+
+            # 6. Create/post invoice using SAME cursor
+            # invoice_id = self.create_invoice_from_pos(..., cur=cur)
+            # journal_id = self.post_invoice_to_gl(company_id, invoice_id, cur=cur)
+
+            invoice_id = None
+            journal_id = None
+
+            # 7. Mark sale completed
+            cur.execute(f"""
+                UPDATE {schema}.pos_sales
+                SET status = 'completed',
+                    amount_paid = %s,
+                    gross_amount = %s,
+                    source_invoice_id = %s,
+                    posted_journal_id = %s
+                WHERE company_id = %s
+                AND id = %s
+            """, (
+                paid,
+                gross,
+                invoice_id,
+                journal_id,
+                int(company_id),
+                int(sale_id),
+            ))
+
+            conn.commit()
+
+            return {
+                "sale_id": int(sale_id),
+                "status": "completed",
+                "invoice_id": invoice_id,
+                "journal_id": journal_id,
+                "gross_amount": gross,
+                "amount_paid": paid,
+            }
+            
+    def pos_create_order(
+        self,
+        company_id: int,
+        *,
+        order_no: str,
+        order_type: str = "table",
+        table_no: str | None = None,
+        waiter_user_id: int | None = None,
+        cashier_user_id: int | None = None,
+        customer_id: int | None = None,
+        customer_name: str | None = None,
+        customer_phone: str | None = None,
+        delivery_address: str | None = None,
+        delivery_notes: str | None = None,
+        driver_user_id: int | None = None,
+        delivery_fee: float = 0,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        order_type = (order_type or "table").strip().lower()
+        if order_type not in {"table", "collection", "delivery"}:
+            raise ValueError("Invalid order_type")
+
+        if order_type == "table" and not (table_no or "").strip():
+            raise ValueError("table_no is required for table orders")
+
+        if order_type == "delivery" and not (delivery_address or "").strip():
+            raise ValueError("delivery_address is required for delivery orders")
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_orders
+            (
+                company_id, order_no, order_type, table_no,
+                waiter_user_id, cashier_user_id,
+                customer_id, customer_name, customer_phone,
+                delivery_address, delivery_notes, driver_user_id, delivery_fee,
+                status
+            )
+            VALUES
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open')
+            RETURNING id
+        """, (
+            int(company_id),
+            order_no,
+            order_type,
+            (table_no or None),
+            waiter_user_id,
+            cashier_user_id,
+            customer_id,
+            customer_name,
+            customer_phone,
+            delivery_address,
+            delivery_notes,
+            driver_user_id,
+            float(delivery_fee or 0),
+        ))
+
+        return int(row["id"])
+
+    def pos_add_order_line(self, company_id: int, order_id: int, line: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT COALESCE(MAX(line_no),0) + 1 AS next_line_no
+            FROM {schema}.pos_order_lines
+            WHERE company_id=%s AND order_id=%s
+        """, (int(company_id), int(order_id)))
+
+        line_no = int(row["next_line_no"])
+
+        qty = float(line.get("qty") or 1)
+        unit_price = float(line.get("unit_price") or 0)
+        discount = float(line.get("discount_amount") or 0)
+        vat = float(line.get("vat_amount") or 0)
+        gross = float(line.get("gross_amount") or ((qty * unit_price) - discount + vat))
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_order_lines
+            (
+                company_id, order_id, line_no, item_id, description,
+                qty, unit_price, discount_amount, vat_code, vat_amount,
+                gross_amount, notes, status
+            )
+            VALUES
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open')
+            RETURNING id
+        """, (
+            int(company_id),
+            int(order_id),
+            line_no,
+            line.get("item_id"),
+            line.get("description") or "",
+            qty,
+            unit_price,
+            discount,
+            line.get("vat_code"),
+            vat,
+            gross,
+            line.get("notes"),
+        ))
+
+        self.pos_recalculate_order_totals(company_id, order_id)
+
+        return int(row["id"])
+
+    def pos_recalculate_order_totals(self, company_id: int, order_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        totals = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(qty * unit_price),0)::numeric(18,2) AS subtotal,
+                COALESCE(SUM(discount_amount),0)::numeric(18,2) AS discount_amount,
+                COALESCE(SUM(vat_amount),0)::numeric(18,2) AS vat_amount,
+                COALESCE(SUM(gross_amount),0)::numeric(18,2) AS lines_gross
+            FROM {schema}.pos_order_lines
+            WHERE company_id=%s
+            AND order_id=%s
+            AND status <> 'cancelled'
+        """, (int(company_id), int(order_id))) or {}
+
+        subtotal = float(totals.get("subtotal") or 0)
+        discount = float(totals.get("discount_amount") or 0)
+        vat = float(totals.get("vat_amount") or 0)
+        lines_gross = float(totals.get("lines_gross") or 0)
+
+        order = self.fetch_one(f"""
+            SELECT delivery_fee
+            FROM {schema}.pos_orders
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(order_id))) or {}
+
+        delivery_fee = float(order.get("delivery_fee") or 0)
+        gross = lines_gross + delivery_fee
+
+        self.execute_sql(f"""
+            UPDATE {schema}.pos_orders
+            SET subtotal=%s,
+                discount_amount=%s,
+                vat_amount=%s,
+                gross_amount=%s,
+                updated_at=NOW()
+            WHERE company_id=%s AND id=%s
+        """, (
+            subtotal,
+            discount,
+            vat,
+            gross,
+            int(company_id),
+            int(order_id),
+        ))
+
+        return {
+            "subtotal": subtotal,
+            "discount_amount": discount,
+            "vat_amount": vat,
+            "gross_amount": gross,
+            "delivery_fee": delivery_fee,
+        }
+
+    def pos_update_order_status(
+        self,
+        company_id: int,
+        order_id: int,
+        *,
+        status: str,
+        driver_user_id: int | None = None,
+    ) -> bool:
+        schema = self.company_schema(company_id)
+
+        status = (status or "").strip().lower()
+        allowed = {
+            "open",
+            "sent_to_kitchen",
+            "ready",
+            "out_for_delivery",
+            "completed",
+            "billed",
+            "cancelled",
+        }
+
+        if status not in allowed:
+            raise ValueError("Invalid order status")
+
+        params = [status]
+        sets = ["status=%s", "updated_at=NOW()"]
+
+        if driver_user_id is not None:
+            sets.append("driver_user_id=%s")
+            params.append(int(driver_user_id))
+
+        params.extend([int(company_id), int(order_id)])
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.pos_orders
+            SET {", ".join(sets)}
+            WHERE company_id=%s AND id=%s
+            RETURNING id
+        """, tuple(params))
+
+        return bool(row)
+
+    def pos_list_orders(
+        self,
+        company_id: int,
+        *,
+        status: str = "",
+        order_type: str = "",
+        limit: int = 50,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["company_id=%s"]
+        params = [int(company_id)]
+
+        if status:
+            where.append("status=%s")
+            params.append(status)
+
+        if order_type:
+            where.append("order_type=%s")
+            params.append(order_type)
+
+        params.append(int(limit))
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_orders
+            WHERE {" AND ".join(where)}
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, tuple(params))
+
+    def pos_get_order(self, company_id: int, order_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        order = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_orders
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(order_id)))
+
+        if not order:
+            return None
+
+        lines = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_order_lines
+            WHERE company_id=%s AND order_id=%s
+            ORDER BY line_no
+        """, (int(company_id), int(order_id)))
+
+        order["lines"] = lines or []
+        return order
+
 
     def fifo_consume(
         self,
