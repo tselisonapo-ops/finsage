@@ -568,3 +568,41 @@ input:disabled {
 .manager-content {
   min-width: 0;
 }
+
+.signin-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f1f5f9;
+}
+
+.signin-card {
+  width: 100%;
+  max-width: 460px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  border: 1px solid #e2e8f0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.signin-card h1 {
+  margin: 0;
+  text-align: center;
+}
+
+.signin-card p {
+  margin: 0 0 12px 0;
+  text-align: center;
+  color: #64748b;
+}
+
+.signin-card button {
+  width: 100%;
+}
