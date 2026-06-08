@@ -1,3 +1,5 @@
+
+import { getCompanyContext, getPosMode } from "../config.js";
 import { useEffect, useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
@@ -20,6 +22,12 @@ const TABS = [
 ];
 
 export function ManagerPage() {
+    const company = getCompanyContext();
+    const mode = getPosMode(company);
+
+    const isRestaurantLike =
+    mode === "restaurant" ||
+    mode === "club";
   const [tab, setTab] = useState("overview");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -302,6 +310,12 @@ export function ManagerPage() {
 
     setMessage(`Barcode queued: ${barcode}`);
   }
+  const visibleTabs = TABS.filter(([id]) => {
+    if (["recipes", "costing"].includes(id)) {
+      return isRestaurantLike;
+    }
+    return true;
+  });
 
   return (
     <main className="pos-page">
@@ -314,7 +328,9 @@ export function ManagerPage() {
 
         <nav className="header-actions">
           <a href="#/cashier">Cashier</a>
-          <a href="#/orders">Orders</a>
+          {isRestaurantLike && (
+            <a href="#/orders">Orders</a>
+            )}
           <button onClick={() => (window.location.href = "/dashboard")}>
             Back to FinSage
           </button>
@@ -327,7 +343,7 @@ export function ManagerPage() {
 
       <section className="manager-shell">
         <aside className="manager-sidebar">
-          {TABS.map(([id, label]) => (
+          {visibleTabs.map(([id, label]) => (
             <button
               key={id}
               className={tab === id ? "active-tab" : ""}
