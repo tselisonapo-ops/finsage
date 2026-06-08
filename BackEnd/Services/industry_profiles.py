@@ -338,8 +338,8 @@ def get_industry_profile(industry: Optional[str], sub_industry: Optional[str]) -
         "default_valuation": profile.get("default_valuation"),
         "pnl_layout": profile.get("pnl_layout"),
         "pnl_labels": profile.get("pnl_labels") or {},
+        "pos_mode": profile.get("pos_mode"),
 
-        # ✅ Project Desk capability flags
         "uses_material_costing": project_uses_material_costing(industry, sub_industry),
         "uses_boq_budgeting": project_uses_boq_budgeting(industry, sub_industry),
         "work_unit_label": project_work_unit_label(industry, sub_industry),

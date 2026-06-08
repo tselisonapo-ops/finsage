@@ -5346,12 +5346,19 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
           name: "Launch POS",
           screen: "pos-launch",
           icon: "🛒",
-          feature: "pos",
+          companyCapability: "uses_cogs",
           minRole: "clerk",
           permissionAny: ["can_access_pos", "can_manage_pos"],
         },
 
-        { name: "POS Summaries", screen: "pos", icon: "🧾", feature: "pos", minRole: "assistant" },
+        {
+          name: "POS Summaries",
+          screen: "pos",
+          icon: "🧾",
+          companyCapability: "uses_cogs",
+          minRole: "assistant",
+          permissionAny: ["can_view_pos_summaries", "can_access_pos", "can_manage_pos"],
+        },
       ],
     },
 
@@ -6912,6 +6919,13 @@ const DELEGATED_HIDDEN_SCREENS = new Set([
   "approvals",
 ]);
 
+function companyUsesCogs(company = window.CURRENT_COMPANY) {
+  return (
+    company?.industry_profile?.uses_cogs === true ||
+    company?.uses_cogs === true
+  );
+}
+
 function shouldShowNavItem(item) {
   if (!item) return false;
 
@@ -6935,6 +6949,10 @@ function shouldShowNavItem(item) {
 
   if (item.projectCapability === "boq_budgeting") {
     if (!companyAllowsFeature("project-boq-budgeting")) return false;
+  }
+
+  if (item.companyCapability === "uses_cogs") {
+    if (!companyUsesCogs()) return false;
   }
 
   const screen = item.screen
@@ -7147,18 +7165,17 @@ const SCREEN_POLICY = {
   "project-material-issues": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
   "project-profitability": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
   // POS
-  // POS
   pos: {
     auth: "private",
     minRole: "assistant",
-    feature: "pos",
+    companyCapability: "uses_cogs",
     permissionAny: ["can_view_pos_summaries", "can_access_pos", "can_manage_pos"],
   },
 
   "pos-launch": {
     auth: "private",
     minRole: "clerk",
-    feature: "pos",
+    companyCapability: "uses_cogs",
     permissionAny: ["can_access_pos", "can_manage_pos"],
   },
 
@@ -8105,6 +8122,17 @@ function renderPostingDashboardContextBanner(mount, me, postingCtx = null) {
   `;
 }
 
+function companyHasCapability(capability) {
+  const company = window.CURRENT_COMPANY || {};
+  const profile = company.industry_profile || {};
+
+  if (capability === "uses_cogs") {
+    return profile.uses_cogs === true || company.uses_cogs === true;
+  }
+
+  return false;
+}
+
 function guardScreenAccess(name) {
   const resolved = resolveScreenName(name);
   const rule = SCREEN_POLICY[resolved];
@@ -8468,11 +8496,6 @@ async function switchScreen(name) {
   if (name === "reports") {
     bindReportsScreen?.();
   }
-
-  if (name === "pos-launch") {
-    launchPos();
-    return;
-  }
   // ─────────────────────────────
   // Route grouping
   // ─────────────────────────────
@@ -8526,10 +8549,10 @@ async function switchScreen(name) {
     "reorder",
     "inventory-valuation",
     "service-items",
-
-    // ADD
     "purchase-orders",
     "goods-receipts",
+    "pos",
+    "pos-launch",
   ].includes(name);
 
   // 🔐 Auth guard
