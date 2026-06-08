@@ -950,3 +950,104 @@ def api_pos_offline_batches(cid: int):
         current_app.logger.exception("api_pos_offline_batches failed")
         return _err("Server error", 500, ex)
     
+# =========================
+# RECIPES / MENU COSTING
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/recipes", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_recipes(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            rows = db_service.pos_list_recipes(cid)
+            return jsonify({"ok": True, "recipes": rows, "count": len(rows)}), 200
+
+        recipe_id = db_service.pos_create_recipe(cid, _body())
+        return _ok({"recipe_id": int(recipe_id)}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_recipes failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/recipes/item/<int:item_id>", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_get_recipe_by_item(cid: int, item_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        recipe = db_service.pos_get_active_recipe_for_item(cid, item_id)
+        if not recipe:
+            return _err("Recipe not found", 404)
+
+        return jsonify({"ok": True, "recipe": recipe}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_get_recipe_by_item failed")
+        return _err("Server error", 500, ex)
+    
+# =========================
+# HOSPITALITY COST POOLS
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/cost-pools", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_cost_pools(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            rows = db_service.pos_list_cost_pools(cid)
+            return jsonify({"ok": True, "cost_pools": rows, "count": len(rows)}), 200
+
+        pool_id = db_service.pos_create_cost_pool(cid, _body())
+        return _ok({"cost_pool_id": int(pool_id)}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_cost_pools failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/menu-cost-allocations", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_menu_cost_allocations(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            item_id = request.args.get("item_id")
+            rows = db_service.pos_list_menu_cost_allocations(
+                cid,
+                menu_item_id=int(item_id) if item_id else None,
+            )
+            return jsonify({"ok": True, "allocations": rows, "count": len(rows)}), 200
+
+        allocation_id = db_service.pos_create_menu_cost_allocation(cid, _body())
+        return _ok({"allocation_id": int(allocation_id)}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_menu_cost_allocations failed")
+        return _err("Server error", 500, ex)
+

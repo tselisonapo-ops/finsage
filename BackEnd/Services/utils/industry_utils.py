@@ -20,6 +20,8 @@ INDUSTRY_ALIASES = {
     "clubs and associations": "Clubs & Associations",
     "club": "Clubs & Associations",
     "association": "Clubs & Associations",
+    "professional association": "Clubs & Associations",
+
 }
 
 
@@ -37,6 +39,13 @@ SUB_INDUSTRY_ALIASES = {
     "new vehicles": "New Vehicles",
     "used vehicles": "Used Vehicles",
     "motorcycle dealership": "Motorcycle Dealership",
+    
+    "sportsclub": "Sports Club",
+    "sports club": "Sports Club",
+    "socialclub": "Social Club",
+    "social club": "Social Club",
+    "professionalassociation": "Professional Association",
+    "professional association": "Professional Association",
 }
 
 

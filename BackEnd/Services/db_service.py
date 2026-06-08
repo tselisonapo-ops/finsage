@@ -1944,6 +1944,15 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
         ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+        ALTER TABLE public.company_users
+        ADD COLUMN IF NOT EXISTS employee_code TEXT,
+        ADD COLUMN IF NOT EXISTS pin_hash TEXT,
+        ADD COLUMN IF NOT EXISTS pos_display_name TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS company_users_pos_employee_code_uq
+        ON public.company_users(company_id, employee_code)
+        WHERE employee_code IS NOT NULL;
+
         UPDATE public.company_users
         SET access_scope = 'core'
         WHERE access_scope IS NULL OR btrim(access_scope) = '';
@@ -17550,6 +17559,32 @@ class DatabaseService:
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS grni_type TEXT NOT NULL DEFAULT 'inventory';
 
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS funding_type TEXT NOT NULL DEFAULT 'supplier_credit',
+        ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_inventory_tx_bank_account_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (bank_account_id)
+            REFERENCES %I.company_bank_accounts(id)
+            ON DELETE SET NULL',
+            '{schema}',
+            '{schema}_inventory_tx_bank_account_fk',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -18466,6 +18501,9 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.pos_sales
+        ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(18,2) NOT NULL DEFAULT 0;
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_sales_no_uniq
         ON {schema}.pos_sales(company_id, lower(trim(sale_no)));
 
@@ -18848,6 +18886,96 @@ class DatabaseService:
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_order_lines_line_uniq
         ON {schema}.pos_order_lines(order_id, line_no);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_cost_pools (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            pool_code TEXT NOT NULL,
+            pool_name TEXT NOT NULL,
+
+            pool_type TEXT NOT NULL DEFAULT 'overhead',
+            -- labour|rent|utilities|water|electricity|gas|depreciation|security|cleaning|other
+
+            allocation_basis TEXT NOT NULL DEFAULT 'meals_sold',
+            -- meals_sold|sales_value|food_cost|prep_minutes|floor_area|manual_weight
+
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_cost_pools_period_idx
+        ON {schema}.pos_cost_pools(company_id, period_start, period_end);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_menu_cost_allocations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            menu_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+            cost_pool_id INT NOT NULL REFERENCES {schema}.pos_cost_pools(id) ON DELETE CASCADE,
+
+            allocation_weight NUMERIC(18,6) NOT NULL DEFAULT 1,
+            allocated_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allocated_cost_per_unit NUMERIC(18,6) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_menu_alloc_item_idx
+        ON {schema}.pos_menu_cost_allocations(company_id, menu_item_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_consumptions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sale_id INT NULL REFERENCES {schema}.pos_sales(id),
+            sale_line_id INT NULL REFERENCES {schema}.pos_sale_lines(id),
+
+            menu_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+            recipe_id INT NULL REFERENCES {schema}.pos_recipe_headers(id),
+            ingredient_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+
+            qty_sold NUMERIC(18,4) NOT NULL DEFAULT 0,
+            ingredient_qty_consumed NUMERIC(18,6) NOT NULL DEFAULT 0,
+            fifo_cost_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            source TEXT NOT NULL DEFAULT 'pos_sale',
+            source_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_cons_sale_idx
+        ON {schema}.pos_recipe_consumptions(company_id, sale_id, sale_line_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_cons_item_idx
+        ON {schema}.pos_recipe_consumptions(company_id, ingredient_item_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_receipt_settings (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            receipt_title TEXT NULL,
+            footer_message TEXT NULL,
+            returns_policy TEXT NULL,
+            refund_policy TEXT NULL,
+            vat_note TEXT NULL,
+            show_vat_no BOOLEAN NOT NULL DEFAULT TRUE,
+            show_cashier_name BOOLEAN NOT NULL DEFAULT TRUE,
+            show_customer_name BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_receipt_settings_company_uniq
+        ON {schema}.pos_receipt_settings(company_id)
+        WHERE is_active = TRUE;
 
         -- ==================================================
         -- BANK STATEMENTS
@@ -21496,12 +21624,12 @@ class DatabaseService:
             try:
                 cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v59")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v60")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
                     migration_key=f"{schema}:bootstrap",
-                    migration_version=59,
+                    migration_version=60,
                 )
 
                 print(f"RUNNING MIGRATION {schema}:ap v7")
@@ -31712,9 +31840,9 @@ class DatabaseService:
         def _norm_str(v):
             return (str(v).strip() if v is not None else "")
 
-        def _to_bool(v):
+        def _to_bool(v, default=None):
             if v is None:
-                return None
+                return default
             if isinstance(v, bool):
                 return v
             s = str(v).strip().lower()
@@ -31760,6 +31888,31 @@ class DatabaseService:
             if dup:
                 raise ValueError("SKU already exists")
             patch["sku"] = incoming_sku
+
+            auto_generate_barcode = _to_bool(
+                patch.get("auto_generate_barcode"),
+                default=False,
+            )
+
+            if auto_generate_barcode and not _norm_str(existing.get("barcode")) and "barcode" not in patch:
+                generated_barcode = f"FS{int(company_id):04d}{int(item_id):08d}"
+
+                dup_generated = self.fetch_one(
+                    f"""
+                    SELECT id
+                    FROM {schema}.inventory_items
+                    WHERE company_id=%s
+                    AND barcode=%s
+                    AND id<>%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), generated_barcode, int(item_id)),
+                )
+
+                if dup_generated:
+                    raise ValueError(f"Generated barcode already exists: {generated_barcode}")
+
+                patch["barcode"] = generated_barcode
 
         if "barcode" in (patch or {}):
             patch["barcode"] = incoming_barcode or None
@@ -31868,6 +32021,8 @@ class DatabaseService:
             raise ValueError("name is required")
 
         barcode = _norm_str(data.get("barcode")) or None
+        auto_generate_barcode = _to_bool(data.get("auto_generate_barcode"), default=False)
+
         unit = _norm_str(data.get("unit") or data.get("uom")) or None
         category = _norm_str(data.get("category")) or None
 
@@ -31955,7 +32110,39 @@ class DatabaseService:
 
             _cur.execute(sql, params)
             row = _cur.fetchone()
-            return int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
+            item_id = int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
+
+            if not barcode and auto_generate_barcode:
+                generated_barcode = f"FS{int(company_id):04d}{item_id:08d}"
+
+                dup_generated = self.fetch_one(
+                    f"""
+                    SELECT id
+                    FROM {schema}.inventory_items
+                    WHERE company_id=%s
+                    AND barcode=%s
+                    AND id<>%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), generated_barcode, int(item_id)),
+                    cur=_cur,
+                )
+
+                if dup_generated:
+                    raise ValueError(f"Generated barcode already exists: {generated_barcode}")
+
+                _cur.execute(
+                    f"""
+                    UPDATE {schema}.inventory_items
+                    SET barcode=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    """,
+                    (generated_barcode, int(company_id), int(item_id)),
+                )
+
+            return item_id
 
         if cur is not None:
             return _run(cur)
@@ -33062,6 +33249,9 @@ class DatabaseService:
         if already:
             return int(already)
 
+        funding_type = (tx.get("funding_type") or "supplier_credit").strip().lower()
+        bank_account_id = tx.get("bank_account_id")
+
         tx_type = (tx.get("tx_type") or "").strip().lower()
         if tx_type not in ("receipt", "receive"):
             raise ValueError(f"INVALID_TX_TYPE_FOR_RECEIPT_POST|tx_type={tx_type}")
@@ -33146,12 +33336,37 @@ class DatabaseService:
             })
 
         # Cr GRNI
-        journal_lines.append({
-            "account_code": GRNI,
-            "debit": 0.0,
-            "credit": total,
-            "memo": "GRNI (receipt accrual)",
-        })
+        if funding_type == "cash_bank":
+            if not bank_account_id:
+                raise ValueError("BANK_ACCOUNT_REQUIRED_FOR_CASH_RECEIPT")
+
+            bank = self.fetch_one(
+                f"""
+                SELECT ledger_account_code
+                FROM {schema}.company_bank_accounts
+                WHERE company_id=%s AND id=%s AND is_active=TRUE
+                LIMIT 1
+                """,
+                (company_id, int(bank_account_id)),
+                cur=cur,
+            ) or {}
+
+            bank_raw = (bank.get("ledger_account_code") or "").strip()
+            BANK = resolve_posting(bank_raw, "BANK_ACCOUNT")
+
+            journal_lines.append({
+                "account_code": BANK,
+                "debit": 0.0,
+                "credit": total,
+                "memo": "Cash purchase / bank paid inventory receipt",
+            })
+        else:
+            journal_lines.append({
+                "account_code": GRNI,
+                "debit": 0.0,
+                "credit": total,
+                "memo": "GRNI (receipt accrual)",
+            })
 
         engagement_company_id = (
             tx.get("engagement_company_id")
@@ -34727,11 +34942,95 @@ class DatabaseService:
             LIMIT 1
         """, (int(company_id), barcode))
 
+    def _resolve_account_by_roles(self, company_id: int, roles: list[str], *, cur=None) -> str | None:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT code
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND COALESCE(role, '') = ANY(%s)
+            ORDER BY
+                CASE COALESCE(role, '')
+                    WHEN %s THEN 1
+                    ELSE 2
+                END,
+                code
+            LIMIT 1
+        """, (
+            int(company_id),
+            roles,
+            roles[0] if roles else "",
+        ), cur=cur)
+
+        return (row.get("code") or "").strip() if row else None
+
+    def _pos_resolve_gl_accounts(self, company_id: int, *, item_type: str = "", cur=None) -> dict:
+        item_type = (item_type or "").lower()
+
+        if item_type in {"menu", "recipe", "food"}:
+            inventory_roles = ["inventory_food", "inventory_raw_materials", "inventory"]
+            cogs_roles = ["cogs_food", "direct_materials_cost", "cogs"]
+            sales_roles = ["contract_revenue", "CONTRACT_REVENUE"]
+        elif item_type in {"bar", "beverage", "drink"}:
+            inventory_roles = ["inventory_beverage", "inventory"]
+            cogs_roles = ["cogs_beverage", "cogs"]
+            sales_roles = ["contract_revenue", "CONTRACT_REVENUE"]
+        else:
+            inventory_roles = [
+                "inventory",
+                "inventory_finished_goods",
+                "inventory_raw_materials",
+                "inventory_spares_consumables",
+            ]
+            cogs_roles = ["cogs", "direct_materials_cost"]
+            sales_roles = ["contract_revenue", "CONTRACT_REVENUE"]
+
+        accounts = {
+            "sales": self._resolve_account_by_roles(company_id, sales_roles, cur=cur),
+            "vat_output": self._resolve_account_by_roles(company_id, ["vat_output"], cur=cur),
+            "inventory": self._resolve_account_by_roles(company_id, inventory_roles, cur=cur),
+            "cost_of_sales": self._resolve_account_by_roles(company_id, cogs_roles, cur=cur),
+            "receivable": self._resolve_account_by_roles(company_id, ["ar"], cur=cur),
+        }
+
+        missing = [k for k, v in accounts.items() if not v and k not in {"vat_output"}]
+        if missing:
+            raise ValueError(f"Missing POS GL account roles: {', '.join(missing)}")
+
+        return accounts
+
+    def _resolve_pos_payment_account(self, company_id: int, sale_id: int, *, cur=None) -> str | None:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT payment_method
+            FROM {schema}.pos_payments
+            WHERE company_id = %s
+            AND sale_id = %s
+            ORDER BY id
+            LIMIT 1
+        """, (int(company_id), int(sale_id)), cur=cur)
+
+        method = ((row or {}).get("payment_method") or "").lower()
+
+        if method in {"card", "eft", "bank", "mobile_money"}:
+            bank_row = self.fetch_one(f"""
+                SELECT ledger_account_code
+                FROM {schema}.company_bank_accounts
+                WHERE company_id = %s
+                AND COALESCE(is_default, FALSE) = TRUE
+                LIMIT 1
+            """, (int(company_id),), cur=cur)
+
+            return (bank_row.get("ledger_account_code") or "").strip() if bank_row else None
+
+        return self._resolve_account_by_roles(company_id, ["cash", "cash_bank"], cur=cur)
+
     def pos_complete_sale(self, company_id: int, sale_id: int, *, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
-            # 1. Lock sale row
             cur.execute(f"""
                 SELECT *
                 FROM {schema}.pos_sales
@@ -34755,7 +35054,6 @@ class DatabaseService:
             if sale["status"] not in ("draft", "held"):
                 raise ValueError(f"Cannot complete sale with status {sale['status']}")
 
-            # 2. Lock sale lines
             cur.execute(f"""
                 SELECT *
                 FROM {schema}.pos_sale_lines
@@ -34769,50 +35067,6 @@ class DatabaseService:
             if not lines:
                 raise ValueError("Cannot complete sale without lines")
 
-            # 3. Lock stock layers for inventory items only
-            item_ids = [
-                int(l["item_id"])
-                for l in lines
-                if (l.get("item_type") or "").lower() == "inventory"
-                and l.get("item_id")
-            ]
-
-            for item_id in sorted(set(item_ids)):
-                cur.execute(f"""
-                    SELECT id
-                    FROM {schema}.inventory_layers
-                    WHERE company_id = %s
-                    AND item_id = %s
-                    AND (qty_in - qty_out) > 0
-                    ORDER BY tx_date, id
-                    FOR UPDATE
-                """, (int(company_id), int(item_id)))
-
-            # 4. Recheck stock after locks
-            for item_id in sorted(set(item_ids)):
-                required_qty = sum(
-                    float(l.get("qty") or 0)
-                    for l in lines
-                    if int(l.get("item_id") or 0) == item_id
-                )
-
-                cur.execute(f"""
-                    SELECT COALESCE(SUM(qty_in - qty_out), 0)::numeric(18,4) AS onhand
-                    FROM {schema}.inventory_layers
-                    WHERE company_id = %s
-                    AND item_id = %s
-                """, (int(company_id), int(item_id)))
-
-                r = cur.fetchone() or {}
-                onhand = float(r.get("onhand") or 0)
-
-                if required_qty > onhand:
-                    raise ValueError(
-                        f"Insufficient stock for item_id={item_id}. "
-                        f"Available {onhand}, required {required_qty}."
-                    )
-
-            # 5. Check payment
             cur.execute(f"""
                 SELECT COALESCE(SUM(amount), 0)::numeric(18,2) AS paid
                 FROM {schema}.pos_payments
@@ -34821,33 +35075,170 @@ class DatabaseService:
             """, (int(company_id), int(sale_id)))
 
             paid = float((cur.fetchone() or {}).get("paid") or 0)
+
+            subtotal = sum(float(l.get("net_amount") or 0) for l in lines)
+            vat = sum(float(l.get("vat_amount") or 0) for l in lines)
             gross = sum(float(l.get("gross_amount") or 0) for l in lines)
 
             if paid + 0.01 < gross and (sale.get("sale_type") or "") != "account_sale":
                 raise ValueError("Payment is less than sale total")
 
-            # 6. Create/post invoice using SAME cursor
-            # invoice_id = self.create_invoice_from_pos(..., cur=cur)
-            # journal_id = self.post_invoice_to_gl(company_id, invoice_id, cur=cur)
+            # 1) Consume inventory / recipe ingredients and update line costs
+            total_cost = 0.0
+
+            for line in lines:
+                item_type = (line.get("item_type") or "").lower()
+
+                if item_type in {"service", "misc"}:
+                    continue
+
+                item_id = line.get("item_id")
+                if not item_id:
+                    continue
+
+                qty = float(line.get("qty") or 0)
+
+                line_cost = self._pos_consume_recipe_for_sale_line(
+                    cur,
+                    schema,
+                    int(company_id),
+                    sale_id=int(sale_id),
+                    sale_line_id=int(line["id"]),
+                    menu_item_id=int(item_id),
+                    qty_sold=qty,
+                )
+
+                total_cost += float(line_cost or 0)
+
+                cur.execute(f"""
+                    UPDATE {schema}.pos_sale_lines
+                    SET cost_amount = %s
+                    WHERE company_id = %s
+                    AND id = %s
+                """, (
+                    round(float(line_cost or 0), 2),
+                    int(company_id),
+                    int(line["id"]),
+                ))
+
+            total_cost = round(total_cost, 2)
+
+            # 2) Resolve GL accounts
+            accounts = self._pos_resolve_gl_accounts(
+                company_id,
+                item_type="pos",
+                cur=cur,
+            )
+
+            payment_account = None
+
+            if (sale.get("sale_type") or "") == "account_sale":
+                payment_account = accounts.get("receivable")
+            else:
+                payment_account = self._resolve_pos_payment_account(
+                    company_id,
+                    sale_id=int(sale_id),
+                    cur=cur,
+                )
+
+            if not payment_account:
+                raise ValueError("POS payment/bank/cash posting account could not be resolved")
+
+            if not accounts.get("sales"):
+                raise ValueError("POS sales revenue account could not be resolved")
+
+            if vat and not accounts.get("vat_output"):
+                raise ValueError("VAT output account could not be resolved")
+
+            if total_cost > 0:
+                if not accounts.get("cost_of_sales"):
+                    raise ValueError("Cost of sales account could not be resolved")
+                if not accounts.get("inventory"):
+                    raise ValueError("Inventory account could not be resolved")
+
+            # 3) Build and post journal
+            entry_lines = [
+                {
+                    "account_code": payment_account,
+                    "debit": gross,
+                    "credit": 0.0,
+                    "memo": f"POS sale {sale.get('sale_no')}",
+                },
+                {
+                    "account_code": accounts["sales"],
+                    "debit": 0.0,
+                    "credit": subtotal,
+                    "memo": f"POS sales revenue {sale.get('sale_no')}",
+                },
+            ]
+
+            if vat:
+                entry_lines.append({
+                    "account_code": accounts["vat_output"],
+                    "debit": 0.0,
+                    "credit": vat,
+                    "memo": f"POS output VAT {sale.get('sale_no')}",
+                })
+
+            if total_cost > 0:
+                entry_lines.extend([
+                    {
+                        "account_code": accounts["cost_of_sales"],
+                        "debit": total_cost,
+                        "credit": 0.0,
+                        "memo": f"POS cost of sales {sale.get('sale_no')}",
+                    },
+                    {
+                        "account_code": accounts["inventory"],
+                        "debit": 0.0,
+                        "credit": total_cost,
+                        "memo": f"POS inventory issue {sale.get('sale_no')}",
+                    },
+                ])
+
+            journal_id = self.post_journal(company_id, {
+                "date": str(sale.get("business_date") or date.today().isoformat()),
+                "ref": f"POS-{sale.get('sale_no') or sale_id}",
+                "description": f"POS sale completed: {sale.get('sale_no') or sale_id}",
+                "gross_amount": gross,
+                "net_amount": subtotal,
+                "vat_amount": vat,
+                "source": "pos_sale",
+                "source_id": int(sale_id),
+                "module_name": "pos",
+                "event_type": "posted",
+                "source_table": "pos_sales",
+                "created_by_user_id": user_id,
+                "updated_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": entry_lines,
+            }, cur=cur)
 
             invoice_id = None
-            journal_id = None
 
-            # 7. Mark sale completed
+            # 4) Mark sale completed
             cur.execute(f"""
                 UPDATE {schema}.pos_sales
                 SET status = 'completed',
-                    amount_paid = %s,
+                    subtotal = %s,
+                    net_amount = %s,
+                    vat_amount = %s,
                     gross_amount = %s,
+                    amount_paid = %s,
+                    cost_amount = %s,
                     source_invoice_id = %s,
                     posted_journal_id = %s
                 WHERE company_id = %s
                 AND id = %s
             """, (
-                paid,
+                subtotal,
+                subtotal,
+                vat,
                 gross,
+                paid,
+                total_cost,
                 invoice_id,
-                journal_id,
+                int(journal_id),
                 int(company_id),
                 int(sale_id),
             ))
@@ -34858,11 +35249,12 @@ class DatabaseService:
                 "sale_id": int(sale_id),
                 "status": "completed",
                 "invoice_id": invoice_id,
-                "journal_id": journal_id,
+                "journal_id": int(journal_id),
                 "gross_amount": gross,
                 "amount_paid": paid,
+                "cost_amount": total_cost,
             }
-            
+    
     def pos_create_order(
         self,
         company_id: int,
@@ -35119,6 +35511,399 @@ class DatabaseService:
         order["lines"] = lines or []
         return order
 
+    def pos_get_active_recipe_for_item(self, company_id: int, menu_item_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        recipe = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_recipe_headers
+            WHERE company_id=%s
+            AND menu_item_id=%s
+            AND is_active=TRUE
+            ORDER BY id DESC
+            LIMIT 1
+        """, (int(company_id), int(menu_item_id)))
+
+        if not recipe:
+            return None
+
+        recipe["lines"] = self.fetch_all(f"""
+            SELECT
+                rl.*,
+                i.name AS ingredient_name,
+                i.sku AS ingredient_sku,
+                i.track_stock
+            FROM {schema}.pos_recipe_lines rl
+            LEFT JOIN {schema}.inventory_items i
+            ON i.id = rl.ingredient_item_id
+            WHERE rl.company_id=%s
+            AND rl.recipe_id=%s
+            ORDER BY rl.line_no
+        """, (int(company_id), int(recipe["id"]))) or []
+
+        return recipe
+
+    def pos_create_recipe(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.pos_recipe_headers
+                (
+                    company_id, menu_item_id, recipe_code, recipe_name,
+                    yield_qty, yield_uom, is_active, notes
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                int(company_id),
+                int(data.get("menu_item_id")),
+                data.get("recipe_code"),
+                data.get("recipe_name") or "Recipe",
+                float(data.get("yield_qty") or 1),
+                data.get("yield_uom"),
+                bool(data.get("is_active", True)),
+                data.get("notes"),
+            ))
+
+            recipe_id = int(cur.fetchone()["id"])
+
+            for i, ln in enumerate(data.get("lines") or [], start=1):
+                cur.execute(f"""
+                    INSERT INTO {schema}.pos_recipe_lines
+                    (
+                        company_id, recipe_id, line_no, ingredient_item_id,
+                        qty_required, uom, wastage_percent, notes
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    int(company_id),
+                    recipe_id,
+                    i,
+                    int(ln.get("ingredient_item_id")),
+                    float(ln.get("qty_required") or 0),
+                    ln.get("uom"),
+                    float(ln.get("wastage_percent") or 0),
+                    ln.get("notes"),
+                ))
+
+            conn.commit()
+            return recipe_id
+
+    def pos_list_recipes(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                rh.*,
+                i.name AS menu_item_name,
+                i.sku AS menu_item_sku,
+                i.sales_price
+            FROM {schema}.pos_recipe_headers rh
+            LEFT JOIN {schema}.inventory_items i
+            ON i.id = rh.menu_item_id
+            WHERE rh.company_id=%s
+            ORDER BY rh.is_active DESC, i.name ASC
+        """, (int(company_id),))
+
+    def _pos_consume_fifo_layers(self, cur, schema: str, company_id: int, item_id: int, qty_required: float) -> float:
+        remaining = float(qty_required or 0)
+        total_cost = 0.0
+
+        cur.execute(f"""
+            SELECT id, qty_in, qty_out, unit_cost
+            FROM {schema}.inventory_layers
+            WHERE company_id=%s
+            AND item_id=%s
+            AND (qty_in - qty_out) > 0
+            ORDER BY tx_date, id
+            FOR UPDATE
+        """, (int(company_id), int(item_id)))
+
+        layers = cur.fetchall() or []
+
+        for layer in layers:
+            if remaining <= 0:
+                break
+
+            available = float(layer["qty_in"] or 0) - float(layer["qty_out"] or 0)
+            take_qty = min(available, remaining)
+            unit_cost = float(layer["unit_cost"] or 0)
+
+            cur.execute(f"""
+                UPDATE {schema}.inventory_layers
+                SET qty_out = COALESCE(qty_out,0) + %s
+                WHERE id=%s
+            """, (take_qty, int(layer["id"])))
+
+            total_cost += take_qty * unit_cost
+            remaining -= take_qty
+
+        if remaining > 0.0001:
+            raise ValueError(f"Insufficient stock for item_id={item_id}")
+
+        return round(total_cost, 2)
+
+    def _pos_consume_recipe_for_sale_line(
+        self,
+        cur,
+        schema: str,
+        company_id: int,
+        *,
+        sale_id: int,
+        sale_line_id: int,
+        menu_item_id: int,
+        qty_sold: float,
+    ) -> float:
+        cur.execute(f"""
+            SELECT *
+            FROM {schema}.pos_recipe_headers
+            WHERE company_id=%s
+            AND menu_item_id=%s
+            AND is_active=TRUE
+            ORDER BY id DESC
+            LIMIT 1
+        """, (int(company_id), int(menu_item_id)))
+
+        recipe = cur.fetchone()
+        if not recipe:
+            return self._pos_consume_fifo_layers(
+                cur, schema, company_id, int(menu_item_id), float(qty_sold or 0)
+            )
+
+        recipe_id = int(recipe["id"])
+        yield_qty = float(recipe.get("yield_qty") or 1)
+        if yield_qty <= 0:
+            yield_qty = 1
+
+        cur.execute(f"""
+            SELECT *
+            FROM {schema}.pos_recipe_lines
+            WHERE company_id=%s
+            AND recipe_id=%s
+            ORDER BY line_no
+        """, (int(company_id), recipe_id))
+
+        recipe_lines = cur.fetchall() or []
+        if not recipe_lines:
+            raise ValueError(f"Recipe has no lines for menu_item_id={menu_item_id}")
+
+        total_food_cost = 0.0
+
+        for rl in recipe_lines:
+            ingredient_id = int(rl["ingredient_item_id"])
+            base_qty = float(rl.get("qty_required") or 0)
+            wastage = float(rl.get("wastage_percent") or 0)
+
+            ingredient_qty = (base_qty / yield_qty) * float(qty_sold or 0)
+            ingredient_qty = ingredient_qty * (1 + (wastage / 100))
+
+            fifo_cost = self._pos_consume_fifo_layers(
+                cur, schema, company_id, ingredient_id, ingredient_qty
+            )
+
+            total_food_cost += fifo_cost
+
+            cur.execute(f"""
+                INSERT INTO {schema}.pos_recipe_consumptions
+                (
+                    company_id, sale_id, sale_line_id,
+                    menu_item_id, recipe_id, ingredient_item_id,
+                    qty_sold, ingredient_qty_consumed, fifo_cost_amount,
+                    source, source_id
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pos_sale',%s)
+            """, (
+                int(company_id),
+                int(sale_id),
+                int(sale_line_id),
+                int(menu_item_id),
+                recipe_id,
+                ingredient_id,
+                float(qty_sold or 0),
+                ingredient_qty,
+                fifo_cost,
+                int(sale_id),
+            ))
+
+        return round(total_food_cost, 2)
+
+    def pos_create_cost_pool(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_cost_pools
+            (
+                company_id, pool_code, pool_name, pool_type,
+                allocation_basis, amount, period_start, period_end,
+                is_active, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("pool_code"),
+            data.get("pool_name"),
+            data.get("pool_type") or "overhead",
+            data.get("allocation_basis") or "meals_sold",
+            float(data.get("amount") or 0),
+            data.get("period_start"),
+            data.get("period_end"),
+            bool(data.get("is_active", True)),
+            data.get("notes"),
+        ))
+
+        return int(row["id"])
+
+    def pos_list_cost_pools(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_cost_pools
+            WHERE company_id=%s
+            ORDER BY period_start DESC, pool_name ASC
+        """, (int(company_id),))
+
+    def pos_create_menu_cost_allocation(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_menu_cost_allocations
+            (
+                company_id, menu_item_id, cost_pool_id,
+                allocation_weight, allocated_amount, allocated_cost_per_unit
+            )
+            VALUES (%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(data.get("menu_item_id")),
+            int(data.get("cost_pool_id")),
+            float(data.get("allocation_weight") or 1),
+            float(data.get("allocated_amount") or 0),
+            float(data.get("allocated_cost_per_unit") or 0),
+        ))
+
+        return int(row["id"])
+
+    def pos_list_menu_cost_allocations(self, company_id: int, menu_item_id: int | None = None) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = ["a.company_id=%s"]
+
+        if menu_item_id:
+            where.append("a.menu_item_id=%s")
+            params.append(int(menu_item_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                a.*,
+                i.name AS menu_item_name,
+                i.sku AS menu_item_sku,
+                p.pool_name,
+                p.pool_type,
+                p.allocation_basis,
+                p.period_start,
+                p.period_end
+            FROM {schema}.pos_menu_cost_allocations a
+            LEFT JOIN {schema}.inventory_items i
+            ON i.id = a.menu_item_id
+            LEFT JOIN {schema}.pos_cost_pools p
+            ON p.id = a.cost_pool_id
+            WHERE {" AND ".join(where)}
+            ORDER BY p.period_start DESC, i.name ASC
+        """, tuple(params))
+
+    def pos_get_receipt_settings(self, company_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_receipt_settings
+            WHERE company_id = %s
+            AND is_active = TRUE
+            ORDER BY id DESC
+            LIMIT 1
+        """, (int(company_id),))
+
+        if row:
+            return row
+
+        return {
+            "company_id": int(company_id),
+            "receipt_title": "Tax Invoice / Receipt",
+            "footer_message": "Thank you for your business.",
+            "returns_policy": "Returns accepted within 7 days with original receipt. Items must be unused and in original condition.",
+            "refund_policy": "Refunds are issued via the original payment method. Management reserves the right to refuse non-compliant returns.",
+            "vat_note": "This document is not a tax invoice unless VAT details are displayed.",
+            "show_vat_no": True,
+            "show_cashier_name": True,
+            "show_customer_name": True,
+            "is_active": True,
+        }
+
+    def pos_save_receipt_settings(self, company_id: int, data: dict) -> dict:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_receipt_settings
+            (
+                company_id,
+                receipt_title,
+                footer_message,
+                returns_policy,
+                refund_policy,
+                vat_note,
+                show_vat_no,
+                show_cashier_name,
+                show_customer_name,
+                is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
+            ON CONFLICT (company_id)
+            WHERE is_active = TRUE
+            DO UPDATE SET
+                receipt_title = EXCLUDED.receipt_title,
+                footer_message = EXCLUDED.footer_message,
+                returns_policy = EXCLUDED.returns_policy,
+                refund_policy = EXCLUDED.refund_policy,
+                vat_note = EXCLUDED.vat_note,
+                show_vat_no = EXCLUDED.show_vat_no,
+                show_cashier_name = EXCLUDED.show_cashier_name,
+                show_customer_name = EXCLUDED.show_customer_name,
+                updated_at = NOW()
+            RETURNING *
+        """, (
+            int(company_id),
+            data.get("receipt_title"),
+            data.get("footer_message"),
+            data.get("returns_policy"),
+            data.get("refund_policy"),
+            data.get("vat_note"),
+            bool(data.get("show_vat_no", True)),
+            bool(data.get("show_cashier_name", True)),
+            bool(data.get("show_customer_name", True)),
+        ))
+
+        return row
+
+    def pos_update_receipt_settings(self, company_id: int, data: dict) -> dict:
+        existing = self.pos_get_receipt_settings(company_id)
+
+        merged = {
+            "receipt_title": data.get("receipt_title", existing.get("receipt_title")),
+            "footer_message": data.get("footer_message", existing.get("footer_message")),
+            "returns_policy": data.get("returns_policy", existing.get("returns_policy")),
+            "refund_policy": data.get("refund_policy", existing.get("refund_policy")),
+            "vat_note": data.get("vat_note", existing.get("vat_note")),
+            "show_vat_no": data.get("show_vat_no", existing.get("show_vat_no", True)),
+            "show_cashier_name": data.get("show_cashier_name", existing.get("show_cashier_name", True)),
+            "show_customer_name": data.get("show_customer_name", existing.get("show_customer_name", True)),
+        }
+
+        return self.pos_save_receipt_settings(company_id, merged)
 
     def fifo_consume(
         self,

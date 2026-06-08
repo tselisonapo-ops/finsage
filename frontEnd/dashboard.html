@@ -10599,6 +10599,11 @@ html, body {
             <input id="invItemBarcode" class="w-full border rounded px-2 py-2 text-sm" placeholder="Optional">
           </label>
 
+          <label class="flex items-center gap-2 text-xs">
+            <input id="invItemAutoBarcode" type="checkbox" class="h-4 w-4" checked>
+            Generate system barcode if barcode is empty
+          </label>
+
           <label class="text-xs">
             <div class="text-slate-600 mb-1">Category</div>
             <input id="invItemCategory" class="w-full border rounded px-2 py-2 text-sm" placeholder="Optional">
@@ -10767,10 +10772,29 @@ html, body {
       <div class="p-4">
         <div id="invReceiveMsg" class="text-xs text-slate-600 mb-3"></div>
 
-        <label class="block text-xs text-slate-500 mt-2">Supplier</label>
-        <select id="invReceiveVendor" class="w-full border rounded px-2 py-1 text-xs">
-          <option value="">— Select supplier —</option>
-        </select>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <label class="text-xs">
+            <div class="text-slate-600 mb-1">Funding</div>
+            <select id="invReceiveFundingType" class="w-full border rounded px-2 py-2 text-sm">
+              <option value="supplier_credit">Supplier credit / GRNI</option>
+              <option value="cash_bank">Cash purchase / Bank paid</option>
+            </select>
+          </label>
+
+          <label id="invReceiveVendorWrap" class="text-xs">
+            <div class="text-slate-600 mb-1">Supplier</div>
+            <select id="invReceiveVendor" class="w-full border rounded px-2 py-2 text-sm">
+              <option value="">— Select supplier —</option>
+            </select>
+          </label>
+
+          <label id="invReceiveBankWrap" class="text-xs hidden">
+            <div class="text-slate-600 mb-1">Bank account</div>
+            <select id="invReceiveBank" class="w-full border rounded px-2 py-2 text-sm">
+              <option value="">— Select bank account —</option>
+            </select>
+          </label>
+        </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <label class="text-xs">

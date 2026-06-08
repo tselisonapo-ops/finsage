@@ -120,6 +120,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
 
     "Transport": {
@@ -161,6 +162,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "optional",   # or "none" if you don’t want it enabled automatically
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of goods / supplies"},
+        "pos_mode": "retail",
     },
 
     "College / Training Center": {
@@ -180,6 +182,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "club",
     },
 
     "Private Healthcare": {
@@ -190,6 +193,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of service"},
+        "pos_mode": "retail",
     },
     "NPO Healthcare": {
         "pnl_layout": "npo_performance",
@@ -209,6 +213,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
     "Car Dealership": {
         "pnl_layout": "trading_hunter",
@@ -217,6 +222,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
     "Restaurant": {
         "pnl_layout": "trading_hunter",
@@ -225,6 +231,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "restaurant",
     },
     "Hospitality": {
         "pnl_layout": "service_gross_margin",
@@ -233,6 +240,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "restaurant",
     },
     "Automotive Services": {
         "pnl_layout": "service_gross_margin",
@@ -241,6 +249,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
     "Security Services": {
         "pnl_layout": "service_gross_margin",
@@ -249,6 +258,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
     "Telecommunications": {
         "pnl_layout": "service_gross_margin",
@@ -257,6 +267,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
     "Manufacturing": {
         "pnl_layout": "trading_hunter",
@@ -265,6 +276,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
     "Agriculture": {
         "pnl_layout": "trading_hunter",
@@ -273,6 +285,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "uses_cogs": True,
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
+        "pos_mode": "retail",
     },
 
     "Logistics & Transport": {
@@ -296,6 +309,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"revenue": "Revenue", "cogs": "Cost of revenue"},
+        "pos_mode": "retail",
     },
 }
 

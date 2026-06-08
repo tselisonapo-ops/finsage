@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from BackEnd.Services.emailer import send_mail
 from BackEnd.Services.industry_profiles import normalize_industry_pair
 from BackEnd.Services.coa_service import initialize_coa  # ✅ now exists in coa_service.py
-
+from flask import current_app
 
 # JWT config
 JWT_SECRET = os.getenv("JWT_SECRET_KEY", "fallback-secret-change-me")
@@ -81,6 +81,22 @@ def make_jwt(
     }
 
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def make_pos_jwt(*, company_id, company_user_id, user_id, employee_code, pos_role):
+    now = datetime.utcnow()
+
+    payload = {
+        "typ": "pos",
+        "company_id": int(company_id),
+        "company_user_id": int(company_user_id),
+        "user_id": int(user_id),
+        "employee_code": str(employee_code),
+        "pos_role": str(pos_role or ""),
+        "iat": now,
+        "exp": now + timedelta(hours=12),
+    }
+
+    return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
 
 def decode_jwt(token: str) -> Dict[str, Any]:
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])

@@ -1,4 +1,5 @@
 # BackEnd/Services/auth_middleware.py
+import jwt
 from functools import wraps
 from flask import request, jsonify, g, make_response, current_app
 from BackEnd.Services.auth_service import decode_jwt
@@ -327,3 +328,27 @@ def _company_auth_or_403(company_id: int):
     if user.get("company_id") != int(company_id):
         return None, (jsonify({"error": "Not authorised for this company"}), 403)
     return user, None
+
+def require_pos_auth(fn):
+    @wraps(fn)
+    def wrapper(company_id, *args, **kwargs):
+        token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+
+        if not token:
+            return jsonify({"error": "POS authentication required"}), 401
+
+        try:
+            payload = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+        except Exception:
+            return jsonify({"error": "Invalid POS token"}), 401
+
+        if payload.get("typ") != "pos":
+            return jsonify({"error": "Invalid POS token type"}), 401
+
+        if int(payload.get("company_id")) != int(company_id):
+            return jsonify({"error": "Wrong POS company"}), 403
+
+        request.pos_user = payload
+        return fn(company_id, *args, **kwargs)
+
+    return wrapper

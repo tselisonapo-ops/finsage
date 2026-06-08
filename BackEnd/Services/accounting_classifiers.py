@@ -902,6 +902,17 @@ def _coa_role_from_text(
             "produce inventory",
             "ore stockpiles",
             "refined metal inventory",
+            "food inventory",
+            "beverage inventory",
+            "bar inventory",
+            "catering inventory",
+            "kitchen stock",
+            "restaurant inventory",
+            "ingredients",
+            "ingredient inventory",
+            "food supplies",
+            "beverages",
+            "drinks inventory",
         )
     )
 
@@ -947,6 +958,15 @@ def _coa_role_from_text(
 
         if has_any("ore stockpiles", "concentrate", "refined metal"):
             return "inventory_mining"
+        
+        if has_any("food inventory", "ingredient inventory", "ingredients", "food supplies", "kitchen stock", "restaurant inventory"):
+            return "inventory_food"
+
+        if has_any("beverage inventory", "bar inventory", "beverages", "drinks inventory"):
+            return "inventory_beverage"
+
+        if has_any("catering inventory"):
+            return "inventory_catering"
 
         return "inventory"
 
@@ -970,6 +990,18 @@ def _coa_role_from_text(
 
         if has_any("subcontractor", "subcontractor payments", "direct subcontractor"):
             return "direct_subcontractor_cost"
+
+        if has_any("food cost", "cost of food sales", "cost of meals", "restaurant food cost"):
+            return "cogs_food"
+
+        if has_any("beverage cost", "cost of bar sales", "cost of beverages", "bar cost of sales"):
+            return "cogs_beverage"
+
+        if has_any("cost of catering", "catering cost", "cost of catering & events", "food supplies and catering cogs"):
+            return "cogs_catering"
+
+        if has_any("cost of merchandise sold", "merchandise cost of sales"):
+            return "cogs_merchandise"
 
     # ----------------------------
     # IFRS 15 / contract liability

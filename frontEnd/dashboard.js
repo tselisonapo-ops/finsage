@@ -582,6 +582,59 @@ async function resolveCompanyProfile(currentUser) {
 }
 window.resolveCompanyProfile = resolveCompanyProfile
 
+function canAccessPos() {
+  const user = JSON.parse(localStorage.getItem("fs_user") || "{}");
+  const role = String(localStorage.getItem("userRole") || user.role || "").toLowerCase();
+
+  const ownerLike =
+    role === "cfo" ||
+    role.includes("owner") ||
+    role.includes("admin") ||
+    role.includes("manager");
+
+  const explicitPos =
+    user?.permissions?.pos === true ||
+    user?.permissions?.pos_access === true ||
+    user?.dashboards?.pos === true;
+
+  return ownerLike || explicitPos;
+}
+
+function companyCanUsePos(company = window.CURRENT_COMPANY) {
+  const mode =
+    company?.industry_profile?.pos_mode ||
+    company?.pos_mode ||
+    "";
+
+  const industry = String(company?.industry || "").toLowerCase();
+
+  return (
+    ["retail", "restaurant", "club", "service"].includes(mode) ||
+    industry.includes("restaurant") ||
+    industry.includes("retail") ||
+    industry.includes("club") ||
+    industry.includes("hospitality") ||
+    industry.includes("dealership")
+  );
+}
+
+function launchPos() {
+  if (!canAccessPos()) {
+    alert("You do not have permission to access Point of Sale.");
+    return;
+  }
+
+  if (!companyCanUsePos()) {
+    alert("Point of Sale is not enabled for this company type.");
+    return;
+  }
+
+  localStorage.setItem("pos_company", JSON.stringify(window.CURRENT_COMPANY || {}));
+  localStorage.setItem("pos_company_id", String(window.CURRENT_COMPANY_ID || localStorage.getItem("company_id") || ""));
+
+  window.open("/pos/", "_blank");
+}
+
   async function apiFetchText(url, options = {}) {
     try {
       const authObj = (typeof AUTH_HEADER === "function" ? AUTH_HEADER() : {}) || {};
@@ -5289,6 +5342,15 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         // ✅ NEW
         { name: "Inventory Valuation", screen: "inventory-valuation", icon: "💰", feature: "inventory-module", minRole: "assistant" },
 
+        {
+          name: "Launch POS",
+          screen: "pos-launch",
+          icon: "🛒",
+          feature: "pos",
+          minRole: "clerk",
+          permissionAny: ["can_access_pos", "can_manage_pos"],
+        },
+
         { name: "POS Summaries", screen: "pos", icon: "🧾", feature: "pos", minRole: "assistant" },
       ],
     },
@@ -7067,7 +7129,6 @@ const SCREEN_POLICY = {
 
   // Inventory (feature flags later)
   inventory: { auth: "private", minRole: "clerk", feature: "inventory-module" },
-  pos:       { auth: "private", minRole: "assistant", feature: "inventory-module" },
   services:  { auth: "private", minRole: "clerk", feature: "service-billing" },
   // Inventory (Catalog Studio)
   "inventory-items":      { auth: "private", minRole: "clerk",     feature: "inventory-module" },
@@ -7086,7 +7147,20 @@ const SCREEN_POLICY = {
   "project-material-issues": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
   "project-profitability": { auth: "private", minRole: "clerk", permission: "can_manage_ap"},
   // POS
-  "pos": { auth: "private", minRole: "assistant", feature: "pos" },
+  // POS
+  pos: {
+    auth: "private",
+    minRole: "assistant",
+    feature: "pos",
+    permissionAny: ["can_view_pos_summaries", "can_access_pos", "can_manage_pos"],
+  },
+
+  "pos-launch": {
+    auth: "private",
+    minRole: "clerk",
+    feature: "pos",
+    permissionAny: ["can_access_pos", "can_manage_pos"],
+  },
 
   // Master Data
   customers: { auth: "private", minRole: "clerk" },
@@ -8395,6 +8469,10 @@ async function switchScreen(name) {
     bindReportsScreen?.();
   }
 
+  if (name === "pos-launch") {
+    launchPos();
+    return;
+  }
   // ─────────────────────────────
   // Route grouping
   // ─────────────────────────────
@@ -9411,7 +9489,23 @@ async function switchActiveCompany(companyId, { goTo = "dashboard" } = {}) {
     console.warn("[CompanySwitcher] ensureCompanyDataLoaded failed:", e);
   }
 
-  if (typeof setupNav === "function") {
+  if (typeof function launchPos() {
+  const company = window.CURRENT_COMPANY || {};
+  const companyId =
+    window.CURRENT_COMPANY_ID ||
+    localStorage.getItem("CURRENT_COMPANY_ID") ||
+    localStorage.getItem("company_id");
+
+  if (!companyId) {
+    alert("No active company selected.");
+    return;
+  }
+
+  localStorage.setItem("pos_company", JSON.stringify(company));
+  localStorage.setItem("pos_company_id", String(companyId));
+
+  window.open("/pos/", "_blank");
+} === "function") {
     await setupNav();
   }
 
@@ -45221,23 +45315,23 @@ async function saveInvItemFromModal() {
   const salesPriceRaw = document.getElementById("invItemSalesPrice")?.value || "";
   const reorderRaw    = document.getElementById("invItemReorder")?.value || "";
 
+  const barcode = document.getElementById("invItemBarcode")?.value?.trim() || "";
+  const autoBarcode = !!document.getElementById("invItemAutoBarcode")?.checked;
+
   const payload = {
-    sku,
-    name,
-    barcode: (document.getElementById("invItemBarcode")?.value || "").trim() || null,
-    category: (document.getElementById("invItemCategory")?.value || "").trim() || null,
-    unit: (document.getElementById("invItemUnit")?.value || "").trim() || null,
-    vat_code: (document.getElementById("invItemVatCode")?.value || "").trim() || null,
-
-    // ensure numbers store correctly
-    sales_price: moneyToNumStr(salesPriceRaw),
-    reorder_level: moneyToNumStr(reorderRaw),
-
+    sku: document.getElementById("invItemSku")?.value?.trim() || "",
+    name: document.getElementById("invItemName")?.value?.trim() || "",
+    barcode,
+    auto_generate_barcode: autoBarcode,
+    category: document.getElementById("invItemCategory")?.value?.trim() || "",
+    unit: document.getElementById("invItemUnit")?.value?.trim() || "",
+    vat_code: document.getElementById("invItemVatCode")?.value?.trim() || "",
+    sales_price: Number(document.getElementById("invItemSalesPrice")?.value || 0),
+    reorder_level: Number(document.getElementById("invItemReorder")?.value || 0),
     track_stock: !!document.getElementById("invItemTrackStock")?.checked,
-    is_active: !!document.getElementById("invItemActive")?.checked,
     is_taxable: !!document.getElementById("invItemTaxable")?.checked,
-
-    meta,
+    is_active: !!document.getElementById("invItemActive")?.checked,
+    meta: collectInvItemMetaFromUI(),
   };
 
   const btn = document.getElementById("invItemSaveBtn");
@@ -59772,6 +59866,9 @@ function bindReceiveModalOnce() {
       addReceiveLine();
     });
 
+  document.getElementById("invReceiveFundingType")
+    ?.addEventListener("change", applyReceiveFundingPolicy);
+
   // ✅ Save / Receive (prevent default submit + stop bubbling)
   document.getElementById("invReceiveSaveBtn")
     ?.addEventListener("click", async (e) => {
@@ -61035,6 +61132,25 @@ function addReceiveLine(line = {}) {
   applyReceiveColumnPolicy();
 }
 
+async function loadReceiveBanks() {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid) return;
+
+  const el = document.getElementById("invReceiveBank");
+  if (!el) return;
+
+  const data = await apiFetch(`/api/companies/${cid}/bank-accounts`);
+  const rows = data?.rows || data?.items || data || [];
+
+  el.innerHTML =
+    `<option value="">— Select bank account —</option>` +
+    rows.map(b => `
+      <option value="${esc(String(b.id))}">
+        ${esc(b.name || b.bank_name || `Bank #${b.id}`)}
+      </option>
+    `).join("");
+}
+
 async function submitReceiveStock() {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return;
@@ -61049,10 +61165,21 @@ async function submitReceiveStock() {
   // ✅ NEW: supplier (vendor) link
   const vendor_id_raw = (document.getElementById("invReceiveVendor")?.value || "").trim();
   const vendor_id = vendor_id_raw && /^\d+$/.test(vendor_id_raw) ? parseInt(vendor_id_raw, 10) : null;
+  const funding_type =
+    document.getElementById("invReceiveFundingType")?.value || "supplier_credit";
+
+  const bank_account_id =
+    Number(document.getElementById("invReceiveBank")?.value || 0) || null;
 
   if (!tx_date) return showReceiveMsg("Date is required (use YYYY-MM-DD).", "error");
   if (!ref) return showReceiveMsg("Reference is required (GRN / Supplier Inv / PO #).", "error");
-  if (!vendor_id) return showReceiveMsg("Supplier is required.", "error"); // ✅ ADD
+  if (funding_type === "supplier_credit" && !vendor_id) {
+    return showReceiveMsg("Supplier is required for supplier credit / GRNI receipts.", "error");
+  }
+
+  if (funding_type === "cash_bank" && !bank_account_id) {
+    return showReceiveMsg("Bank account is required for cash purchase receipts.", "error");
+  } // ✅ ADD
 
   try { await ensureInvItemCache?.(); } catch (_) {}
 
@@ -61120,7 +61247,15 @@ async function submitReceiveStock() {
   try {
     await apiFetch(ENDPOINTS.inventory.receive(cid), {
       method: "POST",
-      body: JSON.stringify({ tx_date, ref, notes, vendor_id, lines }), // ✅ KEEP vendor_id
+      body: JSON.stringify({
+        tx_date,
+        ref,
+        notes,
+        funding_type,
+        bank_account_id,
+        vendor_id: funding_type === "supplier_credit" ? vendor_id : null,
+        lines,
+      }), // ✅ KEEP vendor_id
     });
 
     showReceiveMsg("Received ✔", "ok");
@@ -61204,6 +61339,16 @@ function renderReceiveVendorsSelect(vendors) {
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 
+function applyReceiveFundingPolicy() {
+  const type = document.getElementById("invReceiveFundingType")?.value || "supplier_credit";
+
+  document.getElementById("invReceiveVendorWrap")
+    ?.classList.toggle("hidden", type === "cash_bank");
+
+  document.getElementById("invReceiveBankWrap")
+    ?.classList.toggle("hidden", type !== "cash_bank");
+}
+
 async function openReceiveModal(prefill = {}) {
   const m = document.getElementById("invReceiveModal");
   if (!m) return;
@@ -61215,7 +61360,11 @@ async function openReceiveModal(prefill = {}) {
 
   document.getElementById("invReceiveRef").value = prefill.ref || "";
   document.getElementById("invReceiveNotes").value = prefill.notes || "";
+  document.getElementById("invReceiveFundingType").value =
+    prefill.funding_type || "supplier_credit";
 
+  applyReceiveFundingPolicy();
+  await loadReceiveBanks();
   // ✅ NEW: load vendors + populate dropdown
   try {
     const vendors = await ensureVendorsCache();

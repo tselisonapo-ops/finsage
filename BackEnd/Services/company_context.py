@@ -154,6 +154,15 @@ DUAL_DASHBOARD_ROLES = {
     "client_service_manager",
 }
 
+POS_ROLES = {
+    "store_manager",
+    "cashier",
+    "waiter",
+    "waitress",
+    "kitchen",
+    "driver",
+}
+
 def get_dashboard_access(role: str, access_scope: str):
     role = normalize_role(role)
     scope = (access_scope or "core").strip().lower()
@@ -193,6 +202,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": False,
         "can_manage_company_setup": False,
         "can_edit_tax_settings": False,
+        "can_access_pos": False,
+        "can_manage_pos": False,
+        "can_view_pos_summaries": False,
     },
     "clerk": {
         "can_view_dashboard": True,
@@ -209,6 +221,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": False,
         "can_manage_company_setup": False,
         "can_edit_tax_settings": False,
+        "can_access_pos": False,
+        "can_manage_pos": False,
+        "can_view_pos_summaries": True,
     },
     
     "accountant": {
@@ -228,6 +243,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": False,
         "can_manage_company_setup": False,
         "can_edit_tax_settings": False,
+        "can_access_pos": False,
+        "can_manage_pos": False,
+        "can_view_pos_summaries": True,
     },
     "senior": {
         "can_view_dashboard": True,
@@ -245,6 +263,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": False,
         "can_manage_company_setup": False,
         "can_edit_tax_settings": False,
+        "can_access_pos": False,
+        "can_manage_pos": False,
+        "can_view_pos_summaries": True,
     },
     "manager": {
         "can_view_dashboard": True,
@@ -262,6 +283,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": True,
         "can_manage_company_setup": True,
         "can_edit_tax_settings": True,
+        "can_access_pos": False,
+        "can_manage_pos": False,
+        "can_view_pos_summaries": False,
     },
     "cfo": {
         "can_view_dashboard": True,
@@ -279,6 +303,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": True,
         "can_manage_company_setup": True,
         "can_edit_tax_settings": True,
+        "can_access_pos": True,
+        "can_manage_pos": True,
+        "can_view_pos_summaries": True,
     },
     "owner": {
         "can_view_dashboard": True,
@@ -296,6 +323,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": True,
         "can_manage_company_setup": True,
         "can_edit_tax_settings": True,
+        "can_access_pos": True,
+        "can_manage_pos": True,
+        "can_view_pos_summaries": True,
     },
     "admin": {
         "can_view_dashboard": True,
@@ -313,6 +343,9 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": True,
         "can_manage_company_setup": True,
         "can_edit_tax_settings": True,
+        "can_access_pos": True,
+        "can_manage_pos": True,
+        "can_view_pos_summaries": True,
     },
 
     # -----------------------------
@@ -480,6 +513,42 @@ ROLE_PERMISSION_PROFILE = {
         "can_manage_users": False,
         "can_manage_company_setup": False,
         "can_edit_tax_settings": False,
+    },
+}
+
+POS_ROLE_PERMISSIONS = {
+    "store_manager": {
+        "can_open_pos": True,
+        "can_manage_pos_staff": True,
+        "can_view_pos_reports": True,
+        "can_close_shift": True,
+        "can_void_sales": True,
+    },
+    "cashier": {
+        "can_open_pos": True,
+        "can_process_sales": True,
+        "can_process_returns": True,
+        "can_take_counter_orders": True,
+    },
+    "waiter": {
+        "can_open_pos": True,
+        "can_take_table_orders": True,
+        "can_take_delivery_orders": True,
+    },
+    "waitress": {
+        "can_open_pos": True,
+        "can_take_table_orders": True,
+        "can_take_delivery_orders": True,
+    },
+    "kitchen": {
+        "can_open_pos": True,
+        "can_view_kitchen_orders": True,
+        "can_update_order_status": True,
+    },
+    "driver": {
+        "can_open_pos": True,
+        "can_view_assigned_deliveries": True,
+        "can_update_delivery_status": True,
     },
 }
 

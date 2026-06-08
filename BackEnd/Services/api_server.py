@@ -103,10 +103,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 # NOW it's safe to import your BackEnd modules (they need env vars)
 # ────────────────────────────────────────────────────────────────
 from BackEnd.Services.db_service import db_service
-from BackEnd.Services.db_service import split_cash_and_overdraft
 
-from BackEnd.Services.auth_middleware import _corsify, require_auth
-from BackEnd.Services.auth_service import make_jwt
+from BackEnd.Services.auth_middleware import _corsify, require_auth, require_pos_auth
+from BackEnd.Services.auth_service import make_jwt, make_pos_jwt
 
 from BackEnd.Services.coa_service import (
     build_coa,
@@ -2081,6 +2080,87 @@ def api_auth_me():
     }
 
     return jsonify(out), 200
+
+@app.route("/api/companies/<int:company_id>/pos/auth/signin", methods=["POST", "OPTIONS"])
+@require_pos_auth
+def pos_auth_signin(company_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    data = request.get_json(silent=True) or {}
+
+    employee_code = str(data.get("employee_code") or "").strip()
+    pin = str(data.get("pin") or "").strip()
+
+    if not employee_code or not pin:
+        return jsonify({"error": "Employee ID and PIN are required"}), 400
+
+    row = db_service.fetch_one("""
+        SELECT
+            cu.id AS company_user_id,
+            cu.company_id,
+            cu.user_id,
+            cu.employee_code,
+            cu.pos_display_name,
+            cu.pos_role,
+            cu.pos_permissions,
+            cu.pos_is_active,
+            cu.pin_hash,
+            u.email,
+            u.first_name,
+            u.last_name
+        FROM public.company_users cu
+        JOIN public.users u ON u.id = cu.user_id
+        WHERE cu.company_id = %s
+          AND cu.employee_code = %s
+          AND cu.pos_is_active = TRUE
+          AND cu.is_active = TRUE
+        LIMIT 1;
+    """, (company_id, employee_code))
+
+    if not row or not row.get("pin_hash"):
+        return jsonify({"error": "Invalid employee ID or PIN"}), 401
+
+    if not check_password_hash(row["pin_hash"], pin):
+        return jsonify({"error": "Invalid employee ID or PIN"}), 401
+
+    company = db_service.fetch_one("""
+        SELECT id, name, industry, sub_industry, currency
+        FROM public.companies
+        WHERE id = %s
+          AND is_active = TRUE
+        LIMIT 1;
+    """, (company_id,))
+
+    if not company:
+        return jsonify({"error": "Company not active"}), 403
+
+    employee = {
+        "company_user_id": row["company_user_id"],
+        "user_id": row["user_id"],
+        "employee_code": row["employee_code"],
+        "name": row.get("pos_display_name")
+            or f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+            or row.get("email"),
+        "pos_role": row.get("pos_role"),
+        "pos_permissions": row.get("pos_permissions") or {},
+    }
+
+    pos_token = make_pos_jwt(
+        company_id=company_id,
+        company_user_id=row["company_user_id"],
+        user_id=row["user_id"],
+        employee_code=row["employee_code"],
+        pos_role=row.get("pos_role"),
+    )
+
+    return jsonify({
+        "ok": True,
+        "pos_token": pos_token,
+        "employee": employee,
+        "company": company,
+    }), 200
+
 
 @app.route("/api/auth/reauth", methods=["POST", "OPTIONS"])
 @require_auth
@@ -8927,6 +9007,7 @@ def create_inventory_item(cid: int):
             pass
 
         cols, meta = _split_item_payload(raw, INVENTORY_ITEM_COLS)
+        cols["auto_generate_barcode"] = raw.get("auto_generate_barcode")
 
         # =========================
         # DEBUG: after split/normalize
@@ -9072,17 +9153,24 @@ def receive_inventory(cid: int):
 
         lines = payload.get("lines") or []
 
+        funding_type = (payload.get("funding_type") or "supplier_credit").strip().lower()
+        bank_account_id = int(payload.get("bank_account_id") or 0) or None
+
+        if funding_type not in ("supplier_credit", "cash_bank"):
+            return jsonify({"error": "Invalid funding_type"}), 400
+
+        if funding_type == "supplier_credit" and not vendor_id:
+            return jsonify({"error": "vendor_id is required for supplier credit receipts"}), 400
+
+        if funding_type == "cash_bank" and not bank_account_id:
+            return jsonify({"error": "bank_account_id is required for cash purchase receipts"}), 400
+
         if not tx_date:
             return jsonify({"error": "tx_date is required"}), 400
         if not isinstance(lines, list) or not lines:
             return jsonify({"error": "lines[] is required"}), 400
         if not ref:
             return jsonify({"error": "ref is required for receiving inventory (e.g. GRN / supplier doc ref)"}), 400
-
-        # ✅ Decide your policy:
-        # If you want ALL receipts to be supplier-linked (recommended for GRNI clearing):
-        if not vendor_id:
-            return jsonify({"error": "vendor_id is required for receiving inventory"}), 400
 
         schema = f"company_{company_id}"
 
@@ -9224,6 +9312,8 @@ def receive_inventory(cid: int):
             vendor_id=vendor_id,
             po_id=po_id,
             supplier_invoice_no=supplier_invoice_no,
+            funding_type=funding_type,
+            bank_account_id=bank_account_id,
         )
 
         tx = db_service.fetch_one(
@@ -9349,7 +9439,8 @@ def update_inventory_item(cid: int, item_id: int):
     schema = f"company_{company_id}"
 
     cols, meta = _split_item_payload(raw, INVENTORY_ITEM_COLS)
-
+    cols["auto_generate_barcode"] = raw.get("auto_generate_barcode")
+    
     # normalize sku/barcode if present
     sku = _norm_str(cols.get("sku")) if "sku" in cols else ""
     barcode = _norm_str(cols.get("barcode")) if "barcode" in cols else ""
