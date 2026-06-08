@@ -1,16 +1,30 @@
 import { getAuthToken } from "./config.js";
 
-export async function apiFetch(path, options = {}) {
-  const token = getAuthToken();
+function getPosToken() {
+  return localStorage.getItem("pos_token") || "";
+}
+
+function buildHeaders(options = {}) {
+  const normalToken = getAuthToken();
+  const posToken = getPosToken();
 
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  // POS token must win inside /pos API calls
+  if (posToken) {
+    headers.Authorization = `Bearer ${posToken}`;
+  } else if (normalToken) {
+    headers.Authorization = `Bearer ${normalToken}`;
   }
+
+  return headers;
+}
+
+export async function apiFetch(path, options = {}) {
+  const headers = buildHeaders(options);
 
   const res = await fetch(path, {
     ...options,
@@ -26,19 +40,21 @@ export async function apiFetch(path, options = {}) {
   return data;
 }
 
-export function getJson(path) {
-  return apiFetch(path);
+export function getJson(path, options = {}) {
+  return apiFetch(path, options);
 }
 
-export function postJson(path, body = {}) {
+export function postJson(path, body = {}, options = {}) {
   return apiFetch(path, {
+    ...options,
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
-export function patchJson(path, body = {}) {
+export function patchJson(path, body = {}, options = {}) {
   return apiFetch(path, {
+    ...options,
     method: "PATCH",
     body: JSON.stringify(body),
   });

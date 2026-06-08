@@ -9,6 +9,9 @@ let managerState = {
   customers: [],
   priceLevels: [],
   promotions: [],
+  recipes: [],
+  costPools: [],
+  allocations: [],
 };
 
 export function renderManagerDashboard() {
@@ -38,9 +41,12 @@ export function renderManagerDashboard() {
         ${tabButton("terminals", "Terminals")}
         ${tabButton("customers", "Customers")}
         ${tabButton("pricing", "Pricing")}
+        ${tabButton("recipes", "Recipes")}
+        ${tabButton("costing", "Meal Costing")}
         ${tabButton("promotions", "Promotions")}
         ${tabButton("labels", "Barcode Labels")}
         ${tabButton("staff", "POS Staff")}
+        ${tabButton("receiptSettings", "Receipt Settings")}
       </section>
 
       ${renderActiveTab()}
@@ -64,6 +70,8 @@ function renderActiveTab() {
   if (managerState.tab === "terminals") return renderTerminalsTab();
   if (managerState.tab === "customers") return renderCustomersTab();
   if (managerState.tab === "pricing") return renderPricingTab();
+  if (managerState.tab === "recipes") return renderRecipesTab();
+  if (managerState.tab === "costing") return renderCostingTab();
   if (managerState.tab === "promotions") return renderPromotionsTab();
   if (managerState.tab === "labels") return renderLabelsTab();
   if (managerState.tab === "staff") return renderStaffTab();
@@ -246,6 +254,73 @@ function renderPricingTab() {
   `;
 }
 
+function renderRecipesTab() {
+  return `
+    <section class="manager-workspace">
+      <div class="workspace-head">
+        <div>
+          <h2>Recipes / Menu BOM</h2>
+          <p>Link menu items to ingredient recipes for automatic food-cost tracing.</p>
+        </div>
+        <button class="scan-btn" data-action="new-recipe">New Recipe</button>
+      </div>
+
+      <div class="data-list">
+        ${
+          managerState.recipes.length
+            ? managerState.recipes.map(r => `
+              <div class="data-row">
+                <div>
+                  <strong>${r.recipe_name || r.menu_item_name || "Recipe"}</strong>
+                  <small>${r.menu_item_name || ""} • Yield: ${r.yield_qty || 1} ${r.yield_uom || ""}</small>
+                </div>
+                <div>
+                  <strong>${money(r.sales_price || 0)}</strong>
+                  <span class="badge">${r.is_active ? "Active" : "Inactive"}</span>
+                </div>
+              </div>
+            `).join("")
+            : `<div class="empty-state"><strong>No recipes</strong><p>Create recipes for meals, drinks, combos or prepared food items.</p></div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderCostingTab() {
+  return `
+    <section class="manager-workspace">
+      <div class="workspace-head">
+        <div>
+          <h2>Meal Costing</h2>
+          <p>Allocate rent, electricity, water, labour and other overheads to menu items.</p>
+        </div>
+        <button class="scan-btn" data-action="new-cost-pool">New Cost Pool</button>
+      </div>
+
+      <div class="data-list">
+        ${
+          managerState.costPools.length
+            ? managerState.costPools.map(p => `
+              <div class="data-row">
+                <div>
+                  <strong>${p.pool_name}</strong>
+                  <small>${p.pool_type} • ${p.allocation_basis} • ${p.period_start || ""} to ${p.period_end || ""}</small>
+                </div>
+                <div>
+                  <strong>${money(p.amount || 0)}</strong>
+                  <span class="badge">${p.is_active ? "Active" : "Inactive"}</span>
+                </div>
+              </div>
+            `).join("")
+            : `<div class="empty-state"><strong>No cost pools</strong><p>Add monthly rent, utilities, kitchen labour or other overhead pools.</p></div>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+
 function renderPromotionsTab() {
   return `
     <section class="manager-workspace">
@@ -324,6 +399,79 @@ function renderStaffTab() {
   `;
 }
 
+async function loadRecipes() {
+  const res = await posApi.listRecipes();
+  managerState.recipes = res.recipes || [];
+}
+
+async function loadCostPools() {
+  const res = await posApi.listCostPools();
+  managerState.costPools = res.cost_pools || [];
+}
+
+async function createRecipe() {
+  const menu_item_id = Number(prompt("Menu item ID:"));
+  if (!menu_item_id) return;
+
+  const recipe_name = prompt("Recipe name:", "New Recipe") || "New Recipe";
+  const yield_qty = Number(prompt("Yield quantity:", "1") || 1);
+  const yield_uom = prompt("Yield UOM:", "portion") || "portion";
+
+  const ingredient_item_id = Number(prompt("First ingredient item ID:"));
+  if (!ingredient_item_id) return;
+
+  const qty_required = Number(prompt("Ingredient quantity required:", "1") || 1);
+  const uom = prompt("Ingredient UOM:", "") || "";
+
+  await posApi.createRecipe({
+    menu_item_id,
+    recipe_name,
+    yield_qty,
+    yield_uom,
+    is_active: true,
+    lines: [
+      {
+        ingredient_item_id,
+        qty_required,
+        uom,
+        wastage_percent: 0,
+      },
+    ],
+  });
+
+  setMessage("Recipe created.");
+  await loadRecipes();
+  refresh();
+}
+
+async function createCostPool() {
+  const pool_name = prompt("Cost pool name:", "Monthly Rent");
+  if (!pool_name) return;
+
+  const pool_code = `POOL-${Date.now()}`;
+  const pool_type = prompt("Pool type: labour / rent / utilities / water / electricity / gas / other", "rent") || "rent";
+  const allocation_basis = prompt("Allocation basis: meals_sold / sales_value / food_cost / prep_minutes / manual_weight", "meals_sold") || "meals_sold";
+  const amount = Number(prompt("Amount:", "0") || 0);
+  const period_start = prompt("Period start YYYY-MM-DD:", new Date().toISOString().slice(0, 10));
+  const period_end = prompt("Period end YYYY-MM-DD:", new Date().toISOString().slice(0, 10));
+
+  await posApi.createCostPool({
+    pool_code,
+    pool_name,
+    pool_type,
+    allocation_basis,
+    amount,
+    period_start,
+    period_end,
+    is_active: true,
+  });
+
+  setMessage("Cost pool created.");
+  await loadCostPools();
+  refresh();
+}
+
+
 function bindManagerEvents() {
   document.querySelectorAll("[data-manager-tab]").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -343,6 +491,8 @@ function bindManagerEvents() {
         if (action === "new-customer") return await createCustomer();
         if (action === "search-customers") return await searchCustomers();
         if (action === "new-price-level") return await createPriceLevel();
+        if (action === "new-recipe") return await createRecipe();
+        if (action === "new-cost-pool") return await createCostPool();
         if (action === "new-promotion") return await createPromotion();
         if (action === "generate-label") return await generateLabel();
         if (action === "new-pos-staff") return addPosStaffMessage();
@@ -378,6 +528,8 @@ async function loadTabData() {
       loadCustomers(),
       loadPriceLevels(),
       loadPromotions(),
+      loadRecipes(),
+      loadCostPools(),
     ]);
     return;
   }
@@ -386,6 +538,8 @@ async function loadTabData() {
   if (managerState.tab === "shifts") await loadShifts();
   if (managerState.tab === "customers") await loadCustomers();
   if (managerState.tab === "pricing") await loadPriceLevels();
+  if (managerState.tab === "recipes") await loadRecipes();
+  if (managerState.tab === "costing") await loadCostPools();
   if (managerState.tab === "promotions") await loadPromotions();
 }
 

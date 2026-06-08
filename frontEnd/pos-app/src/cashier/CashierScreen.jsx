@@ -1,15 +1,23 @@
+
 import { useMemo, useState } from "react";
 import { getCompanyContext, getPosMode, companyUsesInventory } from "../config.js";
 import { money } from "../utils/currency.js";
+import { posApi } from "../services/posApi.js";
 
 export function CashierPage() {
   const company = getCompanyContext();
   const mode = getPosMode(company);
+  const isRestaurantLike = mode === "restaurant" || mode === "club";
   const usesInventory = companyUsesInventory(company);
 
   const [signedIn, setSignedIn] = useState(false);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState("");
+
+  const [showSignin, setShowSignin] = useState(false);
+  const [employeeCode, setEmployeeCode] = useState("");
+  const [pin, setPin] = useState("");
+  const [cashier, setCashier] = useState(null);
 
   const totals = useMemo(() => {
     const subtotal = cart.reduce((s, x) => s + Number(x.qty || 0) * Number(x.unit_price || 0), 0);
@@ -19,13 +27,36 @@ export function CashierPage() {
     return { subtotal, discount, vat, gross };
   }, [cart]);
 
-  function signIn() {
-    setSignedIn(true);
-    setMessage("Cashier signed in.");
+  async function signIn() {
+    if (!employeeCode.trim() || !pin.trim()) {
+      setMessage("Employee ID and password/PIN are required.");
+      return;
+    }
+
+    try {
+      const res = await posApi.cashierSignin({
+        employee_code: employeeCode.trim(),
+        pin: pin.trim(),
+      });
+
+      const activeCashier = res.cashier || res.data?.cashier || {
+        employee_code: employeeCode.trim(),
+      };
+
+      setCashier(activeCashier);
+      setSignedIn(true);
+      setShowSignin(false);
+      setEmployeeCode("");
+      setPin("");
+      setMessage("Cashier signed in.");
+    } catch (err) {
+      setMessage(err.message || "Cashier sign-in failed.");
+    }
   }
 
   function signOut() {
     setSignedIn(false);
+    setCashier(null);
     setCart([]);
     setMessage("Cashier signed out.");
   }
@@ -34,28 +65,61 @@ export function CashierPage() {
     <main className="pos-page">
       <header className="pos-header">
         <div>
-          <span className="eyebrow">{mode === "restaurant" ? "Restaurant POS" : "Retail POS"}</span>
+          <span className="eyebrow">
+            {
+              mode === "club"
+                ? "Club / Bar POS"
+                : mode === "restaurant"
+                ? "Restaurant POS"
+                : mode === "service"
+                ? "Service POS"
+                : "Retail POS"
+            }
+          </span>
+
           <h1>{company?.name || "FinSage POS"}</h1>
-          <p>{mode === "restaurant" ? "Order taking and billing workspace" : "Cashier sales workspace"}</p>
+
+          <p>
+            {
+              mode === "club"
+                ? "Bar tabs, food orders and cashier workspace"
+                : mode === "restaurant"
+                ? "Order taking and billing workspace"
+                : mode === "service"
+                ? "Service sales workspace"
+                : "Cashier sales workspace"
+            }
+          </p>
         </div>
 
         <nav className="header-actions">
           {signedIn ? (
-            <button onClick={signOut}>Sign Out</button>
+            <button onClick={signOut}>
+              Sign Out
+              {cashier?.name ? ` (${cashier.name})` : ""}
+            </button>
           ) : (
-            <button onClick={signIn}>Cashier Sign In</button>
+            <button onClick={() => setShowSignin(true)}>
+              Cashier Sign In
+            </button>
           )}
 
-          {mode === "restaurant" && <a href="#/orders">Orders</a>}
+          {(mode === "restaurant" || mode === "club") && (
+            <a href="#/orders">Orders</a>
+          )}
+
           <a href="#/manager">Manager Workspace</a>
-          <button onClick={() => (window.location.href = "/dashboard")}>Back to FinSage</button>
+
+          <button onClick={() => (window.location.href = "/dashboard")}>
+            Back to FinSage
+          </button>
         </nav>
       </header>
 
       <section className="status-strip">
         <div><span>POS Mode</span><strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong></div>
         <div><span>Inventory</span><strong>{usesInventory ? "Enabled" : "Service Only"}</strong></div>
-        <div><span>Cashier</span><strong>{signedIn ? "Signed In" : "Not Signed In"}</strong></div>
+        <div><span>Cashier</span><strong>{signedIn ? cashier?.name || cashier?.employee_code || "Signed In" : "Not Signed In"}</strong></div>
         <div><span>Currency</span><strong>{company?.currency || "ZAR"}</strong></div>
       </section>
 
@@ -63,21 +127,19 @@ export function CashierPage() {
 
       <section className="pos-grid">
         <aside className="left-panel">
-          {mode === "restaurant" ? (
-            <>
-              <div className="scan-card">
-                <label>Order type</label>
-                <div className="quick-actions">
-                  <button onClick={() => (window.location.hash = "#/orders?type=table")}>Table Order</button>
-                  <button onClick={() => (window.location.hash = "#/orders?type=collection")}>Collection</button>
-                  <button onClick={() => (window.location.hash = "#/orders?type=delivery")}>Delivery</button>
-                  <button>Send to Kitchen</button>
-                  <button>Print Bill</button>
-                  <button>Close Table</button>
-                </div>
+          {mode === "restaurant" && (
+            <div className="scan-card">
+              <label>Order type</label>
+              <div className="quick-actions">
+                <button onClick={() => (window.location.hash = "#/orders?type=table")}>Table Order</button>
+                <button onClick={() => (window.location.hash = "#/orders?type=collection")}>Collection</button>
+                <button onClick={() => (window.location.hash = "#/orders?type=delivery")}>Delivery</button>
+                <button>Send to Kitchen</button>
+                <button>Print Bill</button>
+                <button>Close Table</button>
               </div>
-            </>
-          ) : null}
+            </div>
+          )}
 
           <div className="scan-card">
             <label>{usesInventory ? "Scan barcode or search product" : "Search service item"}</label>
@@ -158,6 +220,50 @@ export function CashierPage() {
           </div>
         </section>
       </section>
+
+      {showSignin && (
+        <div className="modal-backdrop">
+          <div className="modal-card small-modal">
+            <div className="modal-head">
+              <h2>Cashier Sign In</h2>
+              <button onClick={() => setShowSignin(false)}>×</button>
+            </div>
+
+            <div className="modal-body">
+              <label>Employee ID</label>
+              <input
+                className="scan-input"
+                placeholder="4 or 5 digit ID"
+                value={employeeCode}
+                maxLength={5}
+                autoFocus
+                onChange={(e) => setEmployeeCode(e.target.value.replace(/\D/g, ""))}
+              />
+
+              <label>Password / PIN</label>
+              <input
+                className="scan-input"
+                type="password"
+                placeholder="Enter PIN"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") signIn();
+                }}
+              />
+            </div>
+
+            <div className="modal-footer">
+              <button className="soft" onClick={() => setShowSignin(false)}>
+                Cancel
+              </button>
+              <button className="success" onClick={signIn}>
+                Sign In
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -531,3 +531,40 @@ input:disabled {
 .modal-body {
   margin: 16px 0;
 }
+
+.manager-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.manager-sidebar {
+  background: white;
+  border-radius: 22px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  position: sticky;
+  top: 16px;
+}
+
+.manager-sidebar button {
+  border: 0;
+  border-radius: 14px;
+  padding: 13px 14px;
+  text-align: left;
+  font-weight: 900;
+  background: #f4fbfb;
+  color: #0f3d4a;
+  cursor: pointer;
+}
+
+.manager-sidebar .active-tab {
+  background: #0f766e;
+  color: white;
+}
+
+.manager-content {
+  min-width: 0;
+}
