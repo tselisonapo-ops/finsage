@@ -45,18 +45,11 @@ export function PosSigninPage() {
   }
 
     return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-        <form
-        onSubmit={signIn}
-        className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-8 flex flex-col gap-3"
-        >
-        <h1 className="text-3xl font-bold text-center">
-            FinSage POS
-        </h1>
+    <main className="signin-page">
+        <form className="signin-card" onSubmit={signIn}>
+        <h1>FinSage POS</h1>
 
-        <p className="text-center text-slate-500">
-            Employee sign-in
-        </p>
+        <p>Employee sign-in</p>
 
         {message && <div className="pos-message">{message}</div>}
 
