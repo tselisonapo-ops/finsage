@@ -630,9 +630,12 @@ function launchPos() {
   }
 
   localStorage.setItem("pos_company", JSON.stringify(window.CURRENT_COMPANY || {}));
-  localStorage.setItem("pos_company_id", String(window.CURRENT_COMPANY_ID || localStorage.getItem("company_id") || ""));
+  localStorage.setItem(
+    "pos_company_id",
+    String(window.CURRENT_COMPANY_ID || localStorage.getItem("CURRENT_COMPANY_ID") || localStorage.getItem("company_id") || "")
+  );
 
-  window.open("/pos/", "_blank");
+  window.open("/pos/#/manager", "_blank");
 }
 
   async function apiFetchText(url, options = {}) {
@@ -8496,6 +8499,12 @@ async function switchScreen(name) {
   if (name === "reports") {
     bindReportsScreen?.();
   }
+
+  if (name === "pos-launch") {
+    launchPos();
+    return;
+  }
+
   // ─────────────────────────────
   // Route grouping
   // ─────────────────────────────
