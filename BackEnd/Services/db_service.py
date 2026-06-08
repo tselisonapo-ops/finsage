@@ -1601,21 +1601,21 @@ class DatabaseService:
         -- Add missing keys to credit_policy safely
         UPDATE public.companies
         SET credit_policy =
-        COALESCE(credit_policy, '{}'::jsonb)
+        COALESCE(credit_policy, '{{}}'::jsonb)
         || jsonb_build_object(
             'mode', COALESCE(credit_policy->>'mode', 'owner_managed')
         )
-        || CASE WHEN credit_policy ? 'review_enabled' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'review_enabled' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('review_enabled', false) END
-        || CASE WHEN credit_policy ? 'ap_review_enabled' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'ap_review_enabled' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('ap_review_enabled', false) END
-        || CASE WHEN credit_policy ? 'ap_auto_post' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'ap_auto_post' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('ap_auto_post', false) END
-        || CASE WHEN credit_policy ? 'payment_workflow_enabled' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'payment_workflow_enabled' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('payment_workflow_enabled', false) END
-        || CASE WHEN credit_policy ? 'require_payment_approval' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'require_payment_approval' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('require_payment_approval', false) END
-        || CASE WHEN credit_policy ? 'require_vendor_kyc_on_release' THEN '{}'::jsonb
+        || CASE WHEN credit_policy ? 'require_vendor_kyc_on_release' THEN '{{}}'::jsonb
                 ELSE jsonb_build_object('require_vendor_kyc_on_release', false) END
                 
         WHERE credit_policy IS NULL
@@ -1937,12 +1937,12 @@ class DatabaseService:
 
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
-        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{{}}'::jsonb,
         ADD COLUMN IF NOT EXISTS pos_is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
         ALTER TABLE public.company_invites
         ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
-        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{{}}'::jsonb;
 
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS employee_code TEXT,
@@ -18774,7 +18774,7 @@ class DatabaseService:
             starts_at TIMESTAMPTZ NULL,
             ends_at TIMESTAMPTZ NULL,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            rules_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            rules_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -18806,7 +18806,7 @@ class DatabaseService:
             terminal_id INT NULL REFERENCES {schema}.pos_terminals(id),
             batch_uuid TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending', -- pending|synced|failed
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             error TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             synced_at TIMESTAMPTZ NULL
