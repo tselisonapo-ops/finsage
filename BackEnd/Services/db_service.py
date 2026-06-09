@@ -6203,6 +6203,7 @@ class DatabaseService:
                         ''opening_balance'',
                         ''vat_filing'',
                         ''vat_filing_payment'',
+                        ''pos_return'',
                         ''year_end''
                     ]::text[])
                 )',
@@ -18714,6 +18715,49 @@ class DatabaseService:
             posted_journal_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'pending_approval';
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS requires_manager_approval BOOLEAN NOT NULL DEFAULT TRUE;
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS requested_by INT NULL;
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS approved_by INT NULL;
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS approval_note TEXT NULL;
+
+        ALTER TABLE {schema}.pos_returns
+        ADD COLUMN IF NOT EXISTS posted_journal_id INT NULL;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_pos_returns_posted_journal_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.pos_returns
+            ADD CONSTRAINT %I
+            FOREIGN KEY (posted_journal_id)
+            REFERENCES %I.journal(id)
+            ON DELETE SET NULL',
+            '{schema}',
+            '{schema}_pos_returns_posted_journal_fk',
+            '{schema}'
+            );
+        END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.pos_return_lines (
             id SERIAL PRIMARY KEY,
@@ -34132,14 +34176,34 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
+
             cur.execute(f"""
                 INSERT INTO {schema}.pos_returns
                 (
-                    company_id, return_no, original_sale_id, terminal_id,
-                    shift_id, cashier_user_id, reason, refund_method,
-                    refund_amount, status
+                    company_id,
+                    return_no,
+                    original_sale_id,
+                    terminal_id,
+                    shift_id,
+                    cashier_user_id,
+                    reason,
+                    refund_method,
+                    refund_amount,
+                    status,
+                    approval_status,
+                    requires_manager_approval,
+                    requested_by,
+                    approval_note
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
+                VALUES
+                (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    'pending_approval',
+                    'pending_approval',
+                    TRUE,
+                    %s,
+                    %s
+                )
                 RETURNING id
             """, (
                 int(company_id),
@@ -34151,19 +34215,31 @@ class DatabaseService:
                 data.get("reason"),
                 data.get("refund_method"),
                 float(data.get("refund_amount") or 0),
+                data.get("requested_by") or data.get("cashier_user_id"),
+                data.get("approval_note"),
             ))
 
             return_id = int(cur.fetchone()["id"])
 
-            for i, ln in enumerate(data.get("lines") or [], start=1):
+            for ln in data.get("lines") or []:
                 cur.execute(f"""
                     INSERT INTO {schema}.pos_return_lines
                     (
-                        company_id, return_id, original_sale_line_id, item_id,
-                        description, qty, unit_price, vat_amount,
-                        gross_amount, restock
+                        company_id,
+                        return_id,
+                        original_sale_line_id,
+                        item_id,
+                        description,
+                        qty,
+                        unit_price,
+                        vat_amount,
+                        gross_amount,
+                        restock
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    VALUES
+                    (
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                    )
                 """, (
                     int(company_id),
                     return_id,
@@ -34178,99 +34254,144 @@ class DatabaseService:
                 ))
 
             conn.commit()
+
             return return_id
 
 
-    def pos_list_returns(self, company_id: int, limit: int = 50) -> list[dict]:
-        schema = self.company_schema(company_id)
-        return self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.pos_returns
-            WHERE company_id=%s
-            ORDER BY return_date DESC
-            LIMIT %s
-        """, (int(company_id), int(limit)))
-
-
-    def pos_get_return(self, company_id: int, return_id: int) -> dict | None:
+    def pos_decide_return_approval(
+        self,
+        company_id: int,
+        return_id: int,
+        *,
+        status: str,
+        approved_by: int | None,
+        approval_note: str | None = None,
+    ) -> dict | None:
         schema = self.company_schema(company_id)
 
-        ret = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.pos_returns
-            WHERE company_id=%s AND id=%s
-            LIMIT 1
-        """, (int(company_id), int(return_id)))
-
-        if not ret:
-            return None
-
-        ret["lines"] = self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.pos_return_lines
-            WHERE company_id=%s AND return_id=%s
-            ORDER BY id
-        """, (int(company_id), int(return_id))) or []
-
-        return ret
-
-    # =========================
-    # RETURNS
-    # =========================
-
-    def pos_create_return(self, company_id: int, data: dict) -> int:
-        schema = self.company_schema(company_id)
+        status = (status or "").strip().lower()
+        if status not in {"approved", "rejected"}:
+            raise ValueError("status must be approved or rejected")
 
         with self._conn_cursor() as (conn, cur):
-            cur.execute(f"""
-                INSERT INTO {schema}.pos_returns
-                (
-                    company_id, return_no, original_sale_id, terminal_id,
-                    shift_id, cashier_user_id, reason, refund_method,
-                    refund_amount, status
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
-                RETURNING id
-            """, (
-                int(company_id),
-                data.get("return_no"),
-                data.get("original_sale_id"),
-                data.get("terminal_id"),
-                data.get("shift_id"),
-                data.get("cashier_user_id"),
-                data.get("reason"),
-                data.get("refund_method"),
-                float(data.get("refund_amount") or 0),
-            ))
+            ret = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.pos_returns
+                WHERE company_id=%s AND id=%s
+                FOR UPDATE
+            """, (int(company_id), int(return_id)), cur=cur)
 
-            return_id = int(cur.fetchone()["id"])
+            if not ret:
+                conn.rollback()
+                return None
 
-            for i, ln in enumerate(data.get("lines") or [], start=1):
-                cur.execute(f"""
-                    INSERT INTO {schema}.pos_return_lines
-                    (
-                        company_id, return_id, original_sale_line_id, item_id,
-                        description, qty, unit_price, vat_amount,
-                        gross_amount, restock
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            if ret.get("approval_status") in {"approved", "rejected", "completed"}:
+                conn.rollback()
+                raise ValueError("Return has already been decided")
+
+            if status == "rejected":
+                row = self.fetch_one(f"""
+                    UPDATE {schema}.pos_returns
+                    SET approval_status='rejected',
+                        status='rejected',
+                        requires_manager_approval=FALSE,
+                        approved_by=%s,
+                        approved_at=NOW(),
+                        approval_note=%s
+                    WHERE company_id=%s AND id=%s
+                    RETURNING *
                 """, (
+                    approved_by,
+                    approval_note,
                     int(company_id),
-                    return_id,
-                    ln.get("original_sale_line_id"),
-                    ln.get("item_id"),
-                    ln.get("description") or "",
-                    float(ln.get("qty") or 1),
-                    float(ln.get("unit_price") or 0),
-                    float(ln.get("vat_amount") or 0),
-                    float(ln.get("gross_amount") or 0),
-                    bool(ln.get("restock", True)),
-                ))
+                    int(return_id),
+                ), cur=cur)
+
+                conn.commit()
+                return row
+
+            lines = self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.pos_return_lines
+                WHERE company_id=%s AND return_id=%s
+                ORDER BY id
+            """, (int(company_id), int(return_id)), cur=cur) or []
+
+            refund_amount = float(ret.get("refund_amount") or 0)
+            vat_amount = sum(float(x.get("vat_amount") or 0) for x in lines)
+            gross_amount = sum(float(x.get("gross_amount") or 0) for x in lines) or refund_amount
+            net_amount = max(gross_amount - vat_amount, 0)
+
+            accounts = self._pos_resolve_gl_accounts(company_id, cur=cur)
+
+            sales_returns_acct = accounts.get("sales_returns") or accounts.get("sales")
+            cash_bank_acct = accounts.get("cash_bank")
+            receivable_acct = accounts.get("receivable")
+            vat_output_acct = accounts.get("vat_output")
+
+            refund_credit_acct = cash_bank_acct if (ret.get("refund_method") or "cash") != "account" else receivable_acct
+
+            journal_lines = [
+                {
+                    "account": sales_returns_acct,
+                    "debit": net_amount,
+                    "credit": 0,
+                    "description": f"POS return {ret.get('return_no') or return_id} - sales return",
+                },
+                {
+                    "account": refund_credit_acct,
+                    "debit": 0,
+                    "credit": gross_amount,
+                    "description": f"POS return {ret.get('return_no') or return_id} - refund",
+                },
+            ]
+
+            if vat_output_acct and vat_amount:
+                journal_lines.append({
+                    "account": vat_output_acct,
+                    "debit": vat_amount,
+                    "credit": 0,
+                    "description": f"POS return {ret.get('return_no') or return_id} - VAT reversal",
+                })
+
+            journal_id = self.post_journal(
+                company_id,
+                {
+                    "date": date.today().isoformat(),
+                    "ref": f"POS-RET-{return_id}",
+                    "description": f"POS return approved {ret.get('return_no') or return_id}",
+                    "source": "pos_return",
+                    "source_id": return_id,
+                    "gross_amount": gross_amount,
+                    "net_amount": net_amount,
+                    "vat_amount": vat_amount,
+                    "lines": journal_lines,
+                },
+                cur=cur,
+            )
+
+            row = self.fetch_one(f"""
+                UPDATE {schema}.pos_returns
+                SET approval_status='approved',
+                    status='completed',
+                    requires_manager_approval=FALSE,
+                    approved_by=%s,
+                    approved_at=NOW(),
+                    approval_note=%s,
+                    posted_journal_id=%s
+                WHERE company_id=%s AND id=%s
+                RETURNING *
+            """, (
+                approved_by,
+                approval_note,
+                int(journal_id),
+                int(company_id),
+                int(return_id),
+            ), cur=cur)
 
             conn.commit()
-            return return_id
-
-
+            return row
+    
     def pos_list_returns(self, company_id: int, limit: int = 50) -> list[dict]:
         schema = self.company_schema(company_id)
         return self.fetch_all(f"""
@@ -34303,6 +34424,7 @@ class DatabaseService:
         """, (int(company_id), int(return_id))) or []
 
         return ret
+
 
     # =========================
     # DISCOUNT APPROVALS / PRICE OVERRIDES
@@ -34649,27 +34771,69 @@ class DatabaseService:
         change_amount: float | None = None,
     ) -> int:
         schema = self.company_schema(company_id)
+        payment_method = (payment_method or "").strip().lower()
+        amount = float(amount or 0)
 
-        row = self.fetch_one(f"""
-            INSERT INTO {schema}.pos_payments
-            (
-                company_id, sale_id, shift_id, payment_method,
-                amount, reference, received_amount, change_amount
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
-        """, (
-            int(company_id),
-            int(sale_id),
-            shift_id,
-            payment_method,
-            float(amount or 0),
-            reference,
-            received_amount,
-            change_amount,
-        ))
+        with self._conn_cursor() as (conn, cur):
+            row = self.fetch_one(f"""
+                INSERT INTO {schema}.pos_payments
+                (
+                    company_id, sale_id, shift_id, payment_method,
+                    amount, reference, received_amount, change_amount
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                int(company_id),
+                int(sale_id),
+                shift_id,
+                payment_method,
+                amount,
+                reference,
+                received_amount,
+                change_amount,
+            ), cur=cur)
 
-        return int(row["id"])
+            payment_id = int(row["id"])
+
+            if payment_method != "account" and amount > 0:
+                accounts = self._pos_resolve_gl_accounts(company_id, cur=cur)
+
+                journal_id = self.post_journal(
+                    company_id,
+                    {
+                        "date": date.today().isoformat(),
+                        "ref": f"POS-PAY-{payment_id}",
+                        "description": f"POS payment for sale {sale_id}",
+                        "source": "pos_payment",
+                        "source_id": payment_id,
+                        "gross_amount": amount,
+                        "lines": [
+                            {
+                                "account": accounts["cash_bank"],
+                                "debit": amount,
+                                "credit": 0,
+                                "description": f"POS {payment_method} payment",
+                            },
+                            {
+                                "account": accounts["receivable"],
+                                "debit": 0,
+                                "credit": amount,
+                                "description": f"Clear POS receivable for sale {sale_id}",
+                            },
+                        ],
+                    },
+                    cur=cur,
+                )
+
+                cur.execute(f"""
+                    UPDATE {schema}.pos_payments
+                    SET posted_journal_id=%s
+                    WHERE company_id=%s AND id=%s
+                """, (int(journal_id), int(company_id), int(payment_id)))
+
+            conn.commit()
+            return payment_id
 
     def pos_add_sale_line(self, company_id: int, sale_id: int, line: dict) -> int:
         schema = self.company_schema(company_id)
@@ -34986,13 +35150,16 @@ class DatabaseService:
 
         accounts = {
             "sales": self._resolve_account_by_roles(company_id, sales_roles, cur=cur),
+            "sales_returns": self._resolve_account_by_roles(company_id, ["sales_returns"], cur=cur),
+            "sales_discounts": self._resolve_account_by_roles(company_id, ["sales_discounts"], cur=cur),
             "vat_output": self._resolve_account_by_roles(company_id, ["vat_output"], cur=cur),
             "inventory": self._resolve_account_by_roles(company_id, inventory_roles, cur=cur),
             "cost_of_sales": self._resolve_account_by_roles(company_id, cogs_roles, cur=cur),
             "receivable": self._resolve_account_by_roles(company_id, ["ar"], cur=cur),
+            "cash_bank": self._resolve_account_by_roles(company_id, ["cash_bank", "cash"], cur=cur),
         }
 
-        missing = [k for k, v in accounts.items() if not v and k not in {"vat_output"}]
+        missing = [k for k, v in accounts.items() if not v and k not in {"vat_output", "sales_returns", "sales_discounts"}]
         if missing:
             raise ValueError(f"Missing POS GL account roles: {', '.join(missing)}")
 

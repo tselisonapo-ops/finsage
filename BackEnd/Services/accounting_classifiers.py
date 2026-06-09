@@ -1086,6 +1086,36 @@ def _coa_role_from_text(
         return "CONTRACT_REVENUE"
 
     # ----------------------------
+    # POS / Sales contra revenue roles
+    # ----------------------------
+    if (
+        "income" in sec
+        or "revenue" in sec
+        or "income" in cat
+        or "revenue" in cat
+        or "profit or loss" in sec
+    ):
+        if has_any(
+            "sales returns",
+            "sale returns",
+            "returns and allowances",
+            "sales allowances",
+            "customer returns",
+            "returned goods"
+        ):
+            return "sales_returns"
+
+        if has_any(
+            "sales discounts",
+            "sale discounts",
+            "discount allowed",
+            "discounts allowed",
+            "customer discounts",
+            "pos discounts",
+            "trade discounts"
+        ):
+            return "sales_discounts"
+    # ----------------------------
     # IFRS 15 / contract revenue
     # ----------------------------
     # --- IFRS 15 fallback (industry revenue accounts) ---

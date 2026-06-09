@@ -652,3 +652,46 @@ input:disabled {
 .signin-card button {
   width: 100%;
 }
+
+.clickable-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.clickable-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.08);
+}
+
+.report-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.report-table-wrap {
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid rgba(10, 55, 65, 0.08);
+  overflow: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.report-table th,
+.report-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(10, 55, 65, 0.08);
+  text-align: left;
+  font-size: 13px;
+}
+
+.report-table th {
+  background: #f4fbfb;
+  font-weight: 800;
+}

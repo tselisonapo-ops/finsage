@@ -164,7 +164,22 @@ export function CashierPage() {
           <div className="quick-actions">
             <button onClick={() => setCart([])}>New Sale</button>
             <button onClick={() => (window.location.hash = "#/quotes")}>Quotation</button>
-            <button onClick={() => (window.location.hash = "#/returns")}>Return</button>
+            <button
+              onClick={() => {
+                if (
+                  cashier?.role !== "manager" &&
+                  cashier?.role !== "supervisor"
+                ) {
+                  setMessage(
+                    "Return requests require manager approval."
+                  );
+                }
+
+                window.location.hash = "#/returns";
+              }}
+            >
+              Return
+            </button>
             <button>Hold Sale</button>
             <button onClick={() => (window.location.hash = "#/customers")}>Customer</button>
             {usesInventory && <button onClick={() => (window.location.hash = "#/price-check")}>Price Check</button>}

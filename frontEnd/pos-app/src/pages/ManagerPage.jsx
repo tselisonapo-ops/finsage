@@ -22,10 +22,10 @@ const TABS = [
 ];
 
 export function ManagerPage() {
-    const company = getCompanyContext();
-    const mode = getPosMode(company);
+  const company = getCompanyContext();
+  const mode = getPosMode(company);
 
-    const isRestaurantLike =
+  const isRestaurantLike =
     mode === "restaurant" ||
     mode === "club";
   const [tab, setTab] = useState("overview");
@@ -37,10 +37,12 @@ export function ManagerPage() {
   const [customers, setCustomers] = useState([]);
   const [priceLevels, setPriceLevels] = useState([]);
   const [promotions, setPromotions] = useState([]);
-    const [recipes, setRecipes] = useState([]);
-    const [costPools, setCostPools] = useState([]);
-    const [receiptSettings, setReceiptSettings] = useState(null);
-    const [modal, setModal] = useState(null);
+  const [recipes, setRecipes] = useState([]);
+  const [costPools, setCostPools] = useState([]);
+  const [receiptSettings, setReceiptSettings] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [reportView, setReportView] = useState(null);
+  const [settingsView, setSettingsView] = useState(null);
 
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
@@ -63,8 +65,8 @@ export function ManagerPage() {
           loadCustomers(),
           loadPriceLevels(),
           loadPromotions(),
-            loadRecipes(),
-            loadCostPools(),
+          loadRecipes(),
+          loadCostPools(),
         ]);
       }
 
@@ -73,9 +75,9 @@ export function ManagerPage() {
       if (activeTab === "customers") await loadCustomers();
       if (activeTab === "pricing") await loadPriceLevels();
       if (activeTab === "promotions") await loadPromotions();
-        if (activeTab === "recipes") await loadRecipes();
-        if (activeTab === "costing") await loadCostPools();
-        if (activeTab === "settings") await loadReceiptSettings();
+      if (activeTab === "recipes") await loadRecipes();
+      if (activeTab === "costing") await loadCostPools();
+      if (activeTab === "settings") await loadReceiptSettings();
     } catch (err) {
       setMessage(err.message || "Failed to load manager data.");
     } finally {
@@ -414,7 +416,12 @@ export function ManagerPage() {
 
           {tab === "sales" && <SalesTab />}
 
-          {tab === "reports" && <ReportsTab />}
+          {tab === "reports" && (
+            <ReportsTab
+              reportView={reportView}
+              setReportView={setReportView}
+            />
+          )}
 
           {tab === "shifts" && (
             <ShiftsTab
@@ -464,13 +471,81 @@ export function ManagerPage() {
               </div>
 
               <section className="manager-grid">
-                <ManagerCard icon="🧾" title="Receipt Settings" value="Configure" text="Receipt title, footer message, refund policy, returns policy and VAT notes." />
-                <ManagerCard icon="👁️" title="Receipt Preview" value="Preview" text="Preview how customer receipts will appear before printing." />
-                <ManagerCard icon="🖨️" title="Printers" value="Configure" text="Receipt printers, kitchen printers and label printers." />
-                <ManagerCard icon="🧮" title="Taxes" value="Configure" text="VAT display, tax invoice wording and fiscal receipt options." />
-                <ManagerCard icon="🖥️" title="Terminals" value="Configure" text="Terminal defaults, cash drawers and opening float amounts." />
-                <ManagerCard icon="💵" title="Cash Controls" value="Configure" text="Cash-up tolerances, variance approvals and supervisor overrides." />
+                <ManagerCard
+                  icon="🧾"
+                  title="Receipt Settings"
+                  value="Configure"
+                  text="Receipt title, footer message, refund policy, returns policy and VAT notes."
+                  onClick={() => setSettingsView("receipt")}
+                />
+
+                <ManagerCard
+                  icon="👁️"
+                  title="Receipt Preview"
+                  value="Preview"
+                  text="Preview how customer receipts will appear before printing."
+                  onClick={() => setSettingsView("preview")}
+                />
+
+                <ManagerCard
+                  icon="🖨️"
+                  title="Printers"
+                  value="Configure"
+                  text="Receipt printers, kitchen printers and barcode label printers."
+                  onClick={() => setSettingsView("printers")}
+                />
+
+                <ManagerCard
+                  icon="🧮"
+                  title="Taxes"
+                  value="Configure"
+                  text="VAT inclusive/exclusive pricing, tax invoice wording and fiscal receipt options."
+                  onClick={() => setSettingsView("taxes")}
+                />
+
+                <ManagerCard
+                  icon="🖥️"
+                  title="Terminals"
+                  value="Configure"
+                  text="Terminal defaults, opening float, cash drawers and shift rules."
+                  onClick={() => setSettingsView("terminals")}
+                />
+
+                <ManagerCard
+                  icon="💵"
+                  title="Cash Controls"
+                  value="Configure"
+                  text="Cash-up tolerances, variance approvals and supervisor overrides."
+                  onClick={() => setSettingsView("cash_controls")}
+                />
               </section>
+
+              {settingsView === "receipt" && (
+                <ReceiptSettingsTab
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                />
+              )}
+
+              {settingsView === "preview" && (
+                <ReceiptPreviewTab />
+              )}
+
+              {settingsView === "printers" && (
+                <PrinterSettingsTab />
+              )}
+
+              {settingsView === "taxes" && (
+                <PosTaxSettingsTab />
+              )}
+
+              {settingsView === "terminals" && (
+                <PosTerminalSettingsTab />
+              )}
+
+              {settingsView === "cash_controls" && (
+                <CashControlSettingsTab />
+              )}
 
               <section className="settings-layout">
                 <div className="settings-panel">
@@ -652,9 +727,12 @@ function OverviewTab({ openShifts, terminals, customers, priceLevels, promotions
   );
 }
 
-function ManagerCard({ icon = "📊", title, value, text }) {
+function ManagerCard({ icon = "📊", title, value, text, onClick }) {
   return (
-    <article className="manager-card">
+    <article
+      className={`manager-card ${onClick ? "clickable-card" : ""}`}
+      onClick={onClick}
+    >
       <div className="manager-card-icon">{icon}</div>
       <div>
         <h3>{title}</h3>
@@ -753,7 +831,27 @@ function TerminalsTab({ terminals, onCreate }) {
   );
 }
 
-function ReportsTab() {
+function ReportsTab({ reportView, setReportView }) {
+  const reports = [
+    ["daily_sales", "📅", "Daily Sales", "Sales by day, shift, terminal and cashier."],
+    ["sales_product", "📦", "Sales Per Product", "Top products, slow movers, quantity sold and revenue."],
+    ["sales_category", "🗂️", "Sales Per Category", "Category totals for retail or restaurant menu groups."],
+    ["cashier_performance", "👨‍💼", "Cashier Performance", "Sales, discounts, voids, returns and cash-up variance."],
+    ["customer_accounts", "👥", "Customer Accounts", "Account sales, balances, credit limits and collections."],
+    ["discount_report", "🏷️", "Discount Report", "Manual discounts, promotions, bulk pricing and approvals."],
+    ["returns_report", "↩️", "Returns Report", "Returned items, refund method, restocked and not restocked."],
+    ["stock_movement", "📉", "Stock Movement", "Items sold, stock reduced and negative stock warnings."],
+  ];
+
+  if (reportView) {
+    return (
+      <ReportGridScreen
+        reportView={reportView}
+        onBack={() => setReportView(null)}
+      />
+    );
+  }
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -764,14 +862,16 @@ function ReportsTab() {
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="📅" title="Daily Sales" value="View" text="Sales by day, shift, terminal and cashier." />
-        <ManagerCard icon="📦" title="Sales Per Product" value="View" text="Top products, slow movers, quantity sold and revenue." />
-        <ManagerCard icon="🗂️" title="Sales Per Category" value="View" text="Category totals for retail or restaurant menu groups." />
-        <ManagerCard icon="👨‍💼" title="Cashier Performance" value="View" text="Sales, discounts, voids, returns and cash-up variance." />
-        <ManagerCard icon="👥" title="Customer Accounts" value="View" text="Account sales, balances, credit limits and collections." />
-        <ManagerCard icon="🏷️" title="Discount Report" value="View" text="Manual discounts, promotions, bulk pricing and approvals." />
-        <ManagerCard icon="↩️" title="Returns Report" value="View" text="Returned items, refund method, restocked and not restocked." />
-        <ManagerCard icon="📉" title="Stock Movement" value="View" text="Items sold, stock reduced and negative stock warnings." />
+        {reports.map(([id, icon, title, text]) => (
+          <ManagerCard
+            key={id}
+            icon={icon}
+            title={title}
+            value="View"
+            text={text}
+            onClick={() => setReportView(id)}
+          />
+        ))}
       </section>
 
       <div className="manager-workspace" style={{ marginTop: 18 }}>
@@ -794,13 +894,100 @@ function ReportsTab() {
   );
 }
 
+function ReportGridScreen({ reportView, onBack }) {
+  const titles = {
+    daily_sales: "Daily Sales Report",
+    sales_product: "Sales Per Product",
+    sales_category: "Sales Per Category",
+    cashier_performance: "Cashier Performance",
+    customer_accounts: "Customer Accounts",
+    discount_report: "Discount Report",
+    returns_report: "Returns Report",
+    stock_movement: "Stock Movement",
+  };
+
+  const columns = {
+    daily_sales: ["Date", "Shift", "Terminal", "Cashier", "Sales", "Payments"],
+    sales_product: ["Product", "SKU", "Qty Sold", "Sales", "Cost", "Gross Profit", "Margin"],
+    sales_category: ["Category", "Qty Sold", "Sales", "Cost", "Gross Profit", "Margin"],
+    cashier_performance: ["Cashier", "Sales", "Discounts", "Returns", "Cash Variance"],
+    customer_accounts: ["Customer", "Type", "Account Sales", "Balance", "Credit Limit"],
+    discount_report: ["Promotion", "Type", "Discount", "Transactions", "Value"],
+    returns_report: ["Date", "Receipt", "Item", "Reason", "Refund"],
+    stock_movement: ["Item", "SKU", "Opening", "Sold", "Closing", "Sales", "Cost"],
+  };
+
+  const sampleRows = {
+    daily_sales: [["-", "-", "-", "-", "0.00", "0.00"]],
+    sales_product: [["No products sold yet", "-", "0", "0.00", "0.00", "0.00", "0.00%"]],
+    sales_category: [["No categories yet", "0", "0.00", "0.00", "0.00", "0.00%"]],
+    cashier_performance: [["No cashier activity yet", "0.00", "0.00", "0.00", "0.00"]],
+    customer_accounts: [["No customer account sales yet", "-", "0.00", "0.00", "0.00"]],
+    discount_report: [["No discounts used yet", "-", "0.00", "0", "0.00"]],
+    returns_report: [["No returns yet", "-", "-", "-", "0.00"]],
+    stock_movement: [["No stock movement yet", "-", "0", "0", "0", "0.00", "0.00"]],
+  };
+
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>{titles[reportView] || "POS Report"}</h2>
+          <p>Detailed report grid for review, filtering and export.</p>
+        </div>
+        <button className="scan-btn" onClick={onBack}>
+          Back to Reports
+        </button>
+      </div>
+
+      <section className="report-toolbar">
+        <input className="scan-input" placeholder="Search item, cashier, customer..." />
+        <input className="scan-input" type="date" />
+        <input className="scan-input" type="date" />
+        <button className="scan-btn">Apply</button>
+        <button className="scan-btn">Export CSV</button>
+        <button className="scan-btn">Print</button>
+      </section>
+
+      <section className="manager-grid">
+        <ManagerCard icon="💰" title="Total Sales" value="0.00" text="Revenue from selected POS sales." />
+        <ManagerCard icon="📦" title="Total Cost" value="0.00" text="Cost of items sold for those sales." />
+        <ManagerCard icon="📊" title="Gross Profit" value="0.00" text="Sales less cost of items sold." />
+        <ManagerCard icon="📈" title="Margin" value="0.00%" text="Gross profit as percentage of sales." />
+      </section>
+
+      <div className="report-table-wrap">
+        <table className="report-table">
+          <thead>
+            <tr>
+              {(columns[reportView] || []).map((c) => (
+                <th key={c}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {(sampleRows[reportView] || []).map((row, idx) => (
+              <tr key={idx}>
+                {row.map((cell, cidx) => (
+                  <td key={cidx}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function StaffTab({ setMessage }) {
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
         <div>
           <h2>Staff & Access</h2>
-          <p>Add employees and assign POS roles for retail or restaurant.</p>
+          <p>Add POS employees, assign roles, control access and review staff readiness.</p>
         </div>
         <button className="scan-btn" onClick={() => setMessage("Connect this to company_invites with access_scope='pos'.")}>
           Add Staff
@@ -808,11 +995,86 @@ function StaffTab({ setMessage }) {
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="💳" title="Cashiers" value="Manage" text="Sales, returns and payments." />
-        <ManagerCard icon="🧑‍💼" title="Managers" value="Manage" text="Reporting and approvals." />
-        <ManagerCard icon="🍽️" title="Waiters" value="Manage" text="Tables and orders." />
-        <ManagerCard icon="👨‍🍳" title="Kitchen" value="Manage" text="Kitchen production." />
-        <ManagerCard icon="🚚" title="Drivers" value="Manage" text="Deliveries and dispatch." />
+        <ManagerCard icon="💳" title="Cashiers" value="0" text="Users who can process sales, returns and payments." />
+        <ManagerCard icon="🧑‍💼" title="Managers" value="0" text="Users who can manage shifts, pricing, reports and approvals." />
+        <ManagerCard icon="🍽️" title="Waiters" value="0" text="Users who can take table, collection and delivery orders." />
+        <ManagerCard icon="👨‍🍳" title="Kitchen Users" value="0" text="Users who can view and update kitchen order status." />
+        <ManagerCard icon="🚚" title="Drivers" value="0" text="Users who can manage deliveries and dispatch updates." />
+      </section>
+
+      <section className="settings-layout" style={{ marginTop: 18 }}>
+        <div className="settings-panel">
+          <div className="workspace-head">
+            <div>
+              <h2>Access Roles</h2>
+              <p>Suggested POS roles and what each role can do.</p>
+            </div>
+          </div>
+
+          <section className="manager-grid">
+            <ManagerCard icon="🛒" title="Sales Access" value="Cashier" text="Create sales, returns, quotes and customer payments." />
+            <ManagerCard icon="🍽️" title="Order Access" value="Waiter" text="Create table, collection and delivery orders." />
+            <ManagerCard icon="🧾" title="Shift Access" value="Supervisor" text="Open shifts, close cashiers and approve cash-up differences." />
+            <ManagerCard icon="📊" title="Report Access" value="Manager" text="View sales reports, margin reports and staff performance." />
+          </section>
+        </div>
+
+        <div className="receipt-preview-card">
+          <div className="receipt-paper">
+            <h3>Staff Setup Checklist</h3>
+            <div className="receipt-line"><span>Cashiers created</span><strong>0</strong></div>
+            <div className="receipt-line"><span>Terminals assigned</span><strong>0</strong></div>
+            <div className="receipt-line"><span>PINs configured</span><strong>0</strong></div>
+            <div className="receipt-line"><span>Active staff</span><strong>0</strong></div>
+            <div className="receipt-total"><span>Status</span><strong>Pending</strong></div>
+            <small>Add staff, assign POS roles and configure employee PINs before going live.</small>
+          </div>
+        </div>
+      </section>
+
+      <section className="manager-workspace" style={{ marginTop: 18 }}>
+        <div className="workspace-head">
+          <div>
+            <h2>Waiter Table Assignments</h2>
+            <p>Assign restaurant tables or sections to waiters and waitresses.</p>
+          </div>
+          <button
+            className="scan-btn"
+            onClick={() => setMessage("Next: connect this to POS tables and waiter assignments.")}
+          >
+            Assign Table
+          </button>
+        </div>
+
+        <section className="manager-grid">
+          <ManagerCard icon="🍽️" title="Tables Assigned" value="0" text="Tables currently allocated to waiters." />
+          <ManagerCard icon="🧑‍🍽️" title="Active Waiters" value="0" text="Waiters available for table service." />
+          <ManagerCard icon="🪑" title="Unassigned Tables" value="0" text="Tables not yet allocated to staff." />
+          <ManagerCard icon="📍" title="Sections" value="0" text="Dining areas such as floor, patio, bar or VIP." />
+        </section>
+
+        <div className="report-table-wrap" style={{ marginTop: 16 }}>
+          <table className="report-table">
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Table</th>
+                <th>Assigned Waiter</th>
+                <th>Status</th>
+                <th>Open Orders</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Main Floor</td>
+                <td>Table 1</td>
+                <td>Unassigned</td>
+                <td>Available</td>
+                <td>0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </section>
   );

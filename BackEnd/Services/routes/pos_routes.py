@@ -1089,3 +1089,33 @@ def api_pos_receipt_settings(cid: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_receipt_settings failed")
         return _err("Server error", 500, ex)
+    
+@pos_bp.route("/api/companies/<int:cid>/pos/returns/<int:return_id>/approval", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_decide_return_approval(cid: int, return_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    body = _body()
+
+    try:
+        row = db_service.pos_decide_return_approval(
+            cid,
+            return_id,
+            status=body.get("status"),
+            approved_by=body.get("approved_by") or _user_id(),
+            approval_note=body.get("approval_note"),
+        )
+
+        if not row:
+            return _err("Return not found", 404)
+
+        return jsonify({"ok": True, "return": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_decide_return_approval failed")
+        return _err("Server error", 500, ex)

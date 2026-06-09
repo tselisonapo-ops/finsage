@@ -2,6 +2,34 @@ import { useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 
+function getPosEmployee() {
+  return JSON.parse(localStorage.getItem("pos_employee") || "null");
+}
+
+function getFsUser() {
+  return JSON.parse(localStorage.getItem("fs_user") || "{}");
+}
+
+function isManagerOrSupervisor() {
+  const posEmployee = getPosEmployee();
+  const fsUser = getFsUser();
+
+  const role = String(
+    posEmployee?.role ||
+    posEmployee?.pos_role ||
+    fsUser?.role ||
+    fsUser?.access_level ||
+    ""
+  ).toLowerCase();
+
+  return (
+    role.includes("manager") ||
+    role.includes("supervisor") ||
+    role.includes("owner") ||
+    role.includes("admin")
+  );
+}
+
 export function ReturnsPage() {
   const [returnNo, setReturnNo] = useState("");
   const [originalSaleId, setOriginalSaleId] = useState("");
@@ -11,6 +39,8 @@ export function ReturnsPage() {
   const [unitPrice, setUnitPrice] = useState("");
   const [lines, setLines] = useState([]);
   const [message, setMessage] = useState("");
+
+  const canApproveReturn = isManagerOrSupervisor();
 
   const refundAmount = useMemo(() => {
     return lines.reduce((sum, line) => sum + Number(line.gross_amount || 0), 0);
@@ -51,6 +81,13 @@ export function ReturnsPage() {
       return;
     }
 
+    if (!reason.trim()) {
+      setMessage("Return reason is required.");
+      return;
+    }
+
+    const approvalStatus = canApproveReturn ? "approved" : "pending_approval";
+
     try {
       const res = await posApi.createReturn({
         return_no: returnNo.trim() || `RET-${Date.now()}`,
@@ -58,10 +95,18 @@ export function ReturnsPage() {
         original_sale_id: originalSaleId || null,
         refund_method: "cash",
         refund_amount: refundAmount,
+        approval_status: approvalStatus,
+        status: approvalStatus,
+        requires_manager_approval: !canApproveReturn,
         lines,
       });
 
-      setMessage(`Return saved: ${res.return_id || res.data?.return_id}`);
+      setMessage(
+        canApproveReturn
+          ? `Return approved and saved: ${res.return_id || res.data?.return_id || ""}`
+          : `Return request saved and sent for manager approval: ${res.return_id || res.data?.return_id || ""}`
+      );
+
       setLines([]);
       setReturnNo("");
       setOriginalSaleId("");
@@ -77,7 +122,11 @@ export function ReturnsPage() {
         <div>
           <span className="eyebrow">Returns</span>
           <h1>Customer Returns</h1>
-          <p>Process refunds and restocking.</p>
+          <p>
+            {canApproveReturn
+              ? "Approve customer returns and process refunds."
+              : "Create return requests for manager approval."}
+          </p>
         </div>
 
         <nav className="header-actions">
@@ -87,6 +136,12 @@ export function ReturnsPage() {
       </header>
 
       {message && <div className="pos-message">{message}</div>}
+
+      {!canApproveReturn && (
+        <div className="pos-message">
+          Returns created by cashiers require manager or supervisor approval before refund processing.
+        </div>
+      )}
 
       <section className="pos-grid">
         <aside className="left-panel">
@@ -151,7 +206,9 @@ export function ReturnsPage() {
               <h2>Return Basket</h2>
               <p>{lines.length} item(s)</p>
             </div>
-            <span className="badge">Draft</span>
+            <span className="badge">
+              {canApproveReturn ? "Approved Entry" : "Pending Approval"}
+            </span>
           </div>
 
           <div className="cart-table">
@@ -183,11 +240,18 @@ export function ReturnsPage() {
               <span>Refund Amount</span>
               <strong>{money(refundAmount)}</strong>
             </div>
+
+            <div>
+              <span>Approval Status</span>
+              <strong>
+                {canApproveReturn ? "Manager Approved" : "Pending Manager Approval"}
+              </strong>
+            </div>
           </div>
 
           <div className="payment-bar">
             <button className="primary" onClick={saveReturn}>
-              Save Return
+              {canApproveReturn ? "Approve & Save Return" : "Submit Return Request"}
             </button>
 
             <button className="soft" onClick={() => setLines([])}>
