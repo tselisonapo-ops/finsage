@@ -33,10 +33,26 @@ export function getAuthToken() {
 }
 
 export function getPosMode(company = getCompanyContext()) {
-  const industry = String(company?.industry || company?.industry_profile?.key || "").toLowerCase();
+  const raw =
+    company?.industry_profile?.pos_mode ||
+    company?.pos_mode ||
+    company?.industry_slug ||
+    company?.industry_profile?.key ||
+    company?.industry ||
+    "";
 
-  if (industry.includes("restaurant") || industry.includes("hospitality")) {
+  const value = String(raw).toLowerCase();
+
+  if (value.includes("restaurant") || value.includes("hospitality")) {
     return "restaurant";
+  }
+
+  if (value.includes("club") || value.includes("bar")) {
+    return "club";
+  }
+
+  if (value.includes("service")) {
+    return "service";
   }
 
   return "retail";

@@ -1,7 +1,6 @@
 
 import { useMemo, useState } from "react";
-import { getCompanyContext, getPosMode, companyUsesInventory } from "../config.js";
-import { money } from "../utils/currency.js";
+import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from "../config.js";import { money } from "../utils/currency.js";
 import { posApi } from "../services/posApi.js";
 
 const fsToken =
@@ -128,7 +127,7 @@ export function CashierPage() {
         <div><span>POS Mode</span><strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong></div>
         <div><span>Inventory</span><strong>{usesInventory ? "Enabled" : "Service Only"}</strong></div>
         <div><span>Cashier</span><strong>{signedIn ? cashier?.name || cashier?.employee_code || "Signed In" : "Not Signed In"}</strong></div>
-        <div><span>Currency</span><strong>{company?.currency || "ZAR"}</strong></div>
+        <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
       </section>
 
       {message && <div className="pos-message">{message}</div>}

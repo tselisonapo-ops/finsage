@@ -547,114 +547,6 @@ export function ManagerPage() {
                 <CashControlSettingsTab />
               )}
 
-              <section className="settings-layout">
-                <div className="settings-panel">
-                  <div className="workspace-head">
-                    <div>
-                      <h2>Receipt Settings</h2>
-                      <p>Configure wording printed at the bottom of customer receipts.</p>
-                    </div>
-
-                    <button
-                      className="scan-btn"
-                      onClick={() => {
-                        if (receiptSettings) saveReceiptSettings(receiptSettings);
-                      }}
-                    >
-                      Save Settings
-                    </button>
-                  </div>
-
-                  <div className="settings-form-grid">
-                    <label>
-                      Receipt Title
-                      <input
-                        className="scan-input"
-                        value={receiptSettings?.receipt_title || ""}
-                        onChange={(e) =>
-                          setReceiptSettings((prev) => ({
-                            ...(prev || {}),
-                            receipt_title: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Footer Message
-                      <textarea
-                        className="scan-input"
-                        rows={3}
-                        value={receiptSettings?.footer_message || ""}
-                        onChange={(e) =>
-                          setReceiptSettings((prev) => ({
-                            ...(prev || {}),
-                            footer_message: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Returns Policy
-                      <textarea
-                        className="scan-input"
-                        rows={4}
-                        value={receiptSettings?.returns_policy || ""}
-                        onChange={(e) =>
-                          setReceiptSettings((prev) => ({
-                            ...(prev || {}),
-                            returns_policy: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-
-                    <label>
-                      Refund Policy
-                      <textarea
-                        className="scan-input"
-                        rows={4}
-                        value={receiptSettings?.refund_policy || ""}
-                        onChange={(e) =>
-                          setReceiptSettings((prev) => ({
-                            ...(prev || {}),
-                            refund_policy: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-
-                    <label className="span-2">
-                      VAT Note
-                      <textarea
-                        className="scan-input"
-                        rows={3}
-                        value={receiptSettings?.vat_note || ""}
-                        onChange={(e) =>
-                          setReceiptSettings((prev) => ({
-                            ...(prev || {}),
-                            vat_note: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="receipt-preview-card">
-                  <div className="receipt-paper">
-                    <h3>{receiptSettings?.receipt_title || "Tax Invoice / Receipt"}</h3>
-                    <div className="receipt-line"><span>Milk</span><strong>{money(25)}</strong></div>
-                    <div className="receipt-line"><span>Bread</span><strong>{money(18)}</strong></div>
-                    <div className="receipt-total"><span>Total</span><strong>{money(43)}</strong></div>
-                    <small>{receiptSettings?.footer_message}</small>
-                    <small>{receiptSettings?.returns_policy}</small>
-                    <small>{receiptSettings?.refund_policy}</small>
-                    <small>{receiptSettings?.vat_note}</small>
-                  </div>
-                </div>
-              </section>
             </section>
           )}
         </section>
@@ -1398,6 +1290,110 @@ function CostingTab({ costPools, onCreate }) {
         )) : (
           <ManagerCard icon="🧮" title="No Cost Pools" value="Create" text="Add rent, utilities, labour or other overhead pools." />
         )}
+      </section>
+    </section>
+  );
+}
+
+function ReceiptPreviewTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Receipt Preview</h2>
+          <p>Preview how the receipt will look before printing.</p>
+        </div>
+      </div>
+
+      <div className="receipt-preview-card">
+        <div className="receipt-paper">
+          <h3>Tax Invoice / Receipt</h3>
+          <div className="receipt-line"><span>Item 1</span><strong>{money(25)}</strong></div>
+          <div className="receipt-line"><span>Item 2</span><strong>{money(18)}</strong></div>
+          <div className="receipt-line"><span>VAT</span><strong>{money(5.61)}</strong></div>
+          <div className="receipt-total"><span>Total</span><strong>{money(43)}</strong></div>
+          <small>Thank you for your business.</small>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PrinterSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Printer Settings</h2>
+          <p>Configure receipt, kitchen and label printers.</p>
+        </div>
+        <button className="scan-btn">Save Printer Settings</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🧾" title="Receipt Printer" value="Not Set" text="Default customer receipt printer." />
+        <ManagerCard icon="👨‍🍳" title="Kitchen Printer" value="Not Set" text="Used for restaurant kitchen orders." />
+        <ManagerCard icon="🏷️" title="Label Printer" value="Not Set" text="Used for barcode and shelf labels." />
+      </section>
+    </section>
+  );
+}
+
+function PosTaxSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>POS Tax Settings</h2>
+          <p>Choose whether item prices include VAT or VAT is added on top.</p>
+        </div>
+        <button className="scan-btn">Save Tax Settings</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="✅" title="VAT Inclusive" value="Retail" text="Selling price already includes VAT." />
+        <ManagerCard icon="➕" title="VAT Exclusive" value="Wholesale" text="VAT is added above the item price." />
+        <ManagerCard icon="🧾" title="Receipt Display" value="Cost + VAT + Total" text="Show tax breakdown on receipt." />
+      </section>
+    </section>
+  );
+}
+
+function PosTerminalSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Terminal Settings</h2>
+          <p>Configure terminal defaults, cash drawers and opening floats.</p>
+        </div>
+        <button className="scan-btn">Save Terminal Settings</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🖥️" title="Default Terminal" value="Not Set" text="Terminal used when POS opens." />
+        <ManagerCard icon="💵" title="Opening Float" value="0.00" text="Default cash float per shift." />
+        <ManagerCard icon="🔐" title="Cash Drawer" value="Disabled" text="Require drawer control for cash sales." />
+      </section>
+    </section>
+  );
+}
+
+function CashControlSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Cash Control Settings</h2>
+          <p>Set approval rules for cash-up differences, returns and overrides.</p>
+        </div>
+        <button className="scan-btn">Save Cash Controls</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="↩️" title="Returns" value="Manager Approval" text="Cashier returns require approval." />
+        <ManagerCard icon="⚠️" title="Cash Variance" value="Supervisor Review" text="Cash-up differences require review." />
+        <ManagerCard icon="🏷️" title="Discount Overrides" value="Approval Required" text="Manual discounts need authorisation." />
       </section>
     </section>
   );
