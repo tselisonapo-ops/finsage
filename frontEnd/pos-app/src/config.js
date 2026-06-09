@@ -24,9 +24,10 @@ export function getCompanyId() {
 
 export function getAuthToken() {
   return (
-    localStorage.getItem("access_token") ||
+    sessionStorage.getItem("fs_user_token") ||
+    localStorage.getItem("fs_user_token") ||
+    localStorage.getItem("authToken") ||
     localStorage.getItem("token") ||
-    sessionStorage.getItem("access_token") ||
     ""
   );
 }

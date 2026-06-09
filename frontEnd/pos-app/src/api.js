@@ -20,6 +20,12 @@ function buildHeaders(options = {}) {
     headers.Authorization = `Bearer ${normalToken}`;
   }
 
+  console.log("[POS API AUTH]", {
+    hasPosToken: !!posToken,
+    hasFsToken: !!normalToken,
+    authHeader: headers.Authorization || null,
+  });
+
   return headers;
 }
 
