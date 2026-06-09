@@ -77,6 +77,52 @@ a {
   cursor: pointer;
 }
 
+.manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.manager-card {
+  background: #ffffff;
+  border: 1px solid rgba(10, 55, 65, 0.08);
+  border-radius: 18px;
+  padding: 18px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+}
+
+.manager-card-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: #e8fbf8;
+  font-size: 22px;
+  flex: 0 0 auto;
+}
+
+.manager-card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.manager-card strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.manager-card p {
+  margin: 0;
+  color: #58707a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

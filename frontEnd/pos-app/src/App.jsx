@@ -33,16 +33,10 @@ export function App() {
 
   if (route.startsWith("#/signin")) return <PosSigninPage />;
 
-  const isManagerRoute = route.startsWith("#/manager");
+  const hasFsAccess = !!fsToken;
+  const hasPosAccess = !!posEmployee && !!posToken;
 
-  if (isManagerRoute && !fsToken) {
-    window.location.href = "/signin.html";
-    return null;
-  }
-
-  if (!isManagerRoute && (!posEmployee || !posToken)) {
-    localStorage.removeItem("pos_employee");
-    localStorage.removeItem("pos_token");
+  if (!hasFsAccess && !hasPosAccess) {
     window.location.hash = "#/signin";
     return null;
   }

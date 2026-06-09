@@ -1051,3 +1051,41 @@ def api_pos_menu_cost_allocations(cid: int):
         current_app.logger.exception("api_pos_menu_cost_allocations failed")
         return _err("Server error", 500, ex)
 
+# =========================
+# RECEIPT SETTINGS
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/receipt-settings", methods=["GET", "POST", "PATCH", "OPTIONS"])
+@require_auth
+def api_pos_receipt_settings(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            settings = db_service.pos_get_receipt_settings(cid)
+            return jsonify({
+                "ok": True,
+                "receipt_settings": settings or {},
+            }), 200
+
+        if request.method == "PATCH":
+            settings = db_service.pos_update_receipt_settings(cid, _body())
+            return jsonify({
+                "ok": True,
+                "receipt_settings": settings or {},
+            }), 200
+
+        settings = db_service.pos_save_receipt_settings(cid, _body())
+        return jsonify({
+            "ok": True,
+            "receipt_settings": settings or {},
+        }), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_receipt_settings failed")
+        return _err("Server error", 500, ex)

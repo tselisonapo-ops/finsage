@@ -4,6 +4,14 @@ import { getCompanyContext, getPosMode, companyUsesInventory } from "../config.j
 import { money } from "../utils/currency.js";
 import { posApi } from "../services/posApi.js";
 
+const fsToken =
+  sessionStorage.getItem("fs_user_token") ||
+  localStorage.getItem("fs_user_token") ||
+  "";
+
+const fsUser = JSON.parse(localStorage.getItem("fs_user") || "{}");
+const isFsUser = !!fsToken;
+
 export function CashierPage() {
   const company = getCompanyContext();
   const mode = getPosMode(company);
