@@ -2066,10 +2066,10 @@ def api_auth_me():
         LIMIT 1;
     """, (user_id,))
 
-    if primary_mem and primary_mem.get("company_id"):
-        company_id = int(primary_mem["company_id"])
-    elif token_cid and token_cid in native_allowed:
+    if token_cid and token_cid in native_allowed:
         company_id = token_cid
+    elif primary_mem and primary_mem.get("company_id"):
+        company_id = int(primary_mem["company_id"])
     elif native_allowed:
         company_id = native_allowed[0]
     else:
@@ -2116,6 +2116,12 @@ def api_auth_me():
         access_scope=access_scope,
     )
 
+    active_company_context = None
+    for r in allowed_companies:
+        if company_id and int(r["id"]) == int(company_id):
+            active_company_context = r
+            break
+
     out = {
         "id": int(user["id"]),
         "email": user["email"],
@@ -2130,6 +2136,10 @@ def api_auth_me():
         "sub_industry": sub_industry,
         "governance_mode": governance_mode,
         "allowed_company_ids": native_allowed,
+        "primary_company_id": primary_company_id,
+        "active_company_id": company_id,
+        "allowed_companies": allowed_companies,
+        "company_context": active_company_context,
         "token_company_id": payload.get("company_id"),
         "token_access_scope": payload.get("access_scope"),
         "token_allowed_company_ids": payload.get("allowed_company_ids"),
