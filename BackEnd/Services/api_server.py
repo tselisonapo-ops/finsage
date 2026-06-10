@@ -3224,6 +3224,42 @@ def create_related_company(parent_company_id: int):
             company_result,
         )
 
+        if auto_membership:
+            db_service.fetch_one("""
+                INSERT INTO public.company_users (
+                    company_id,
+                    user_id,
+                    role,
+                    access_scope,
+                    membership_kind,
+                    is_primary,
+                    is_active,
+                    joined_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE, NOW())
+                ON CONFLICT (company_id, user_id) DO UPDATE
+                SET
+                    role = EXCLUDED.role,
+                    access_scope = EXCLUDED.access_scope,
+                    membership_kind = EXCLUDED.membership_kind,
+                    is_primary = EXCLUDED.is_primary,
+                    is_active = TRUE
+                RETURNING id;
+            """, (
+                int(company_result["company_id"]),
+                int(current_user["id"]),
+                "owner",
+                "core",
+                "secondary",
+                False,
+            ))
+
+            current_app.logger.warning(
+                "[RELATED COMPANY MEMBERSHIP CREATED] company=%s user=%s kind=secondary",
+                company_result["company_id"],
+                current_user["id"],
+            )
+
         rel_id = db_service.create_company_relationship(
             parent_company_id=parent_company_id,
             child_company_id=company_result["company_id"],
