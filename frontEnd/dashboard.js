@@ -65,9 +65,11 @@
 // ====== HARD BOOTSTRAP (must be outside the IIFE) ======
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
+  const ACTIVE_COMPANY_TOKEN_KEY = "fs_active_company_token";
 
   window.getToken = function () {
     return (
+      sessionStorage.getItem(ACTIVE_COMPANY_TOKEN_KEY) ||
       sessionStorage.getItem(TOKEN_KEY) ||
       localStorage.getItem(TOKEN_KEY) ||
       ""
@@ -89,7 +91,17 @@
     (persist ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
   };
 
+  window.setActiveCompanyToken = function (token) {
+    if (!token) return;
+    sessionStorage.setItem(ACTIVE_COMPANY_TOKEN_KEY, token);
+  };
+
+  window.clearActiveCompanyToken = function () {
+    sessionStorage.removeItem(ACTIVE_COMPANY_TOKEN_KEY);
+  };
+
   window.clearToken = function () {
+    sessionStorage.removeItem(ACTIVE_COMPANY_TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_KEY);
   };
@@ -711,6 +723,7 @@ const ENDPOINTS = {
     changePassword: `${API_BASE}/api/auth/change-password`,
     restoreNative: `${API_BASE}/api/auth/restore-native-context`,
     reauth: `${API_BASE}/api/auth/reauth`,
+    switchCompany: `${API_BASE}/api/auth/switch-company`,
   },
 
   // --- Credit control / approvals ---
@@ -9505,6 +9518,20 @@ async function switchActiveCompany(companyId, { goTo = "dashboard" } = {}) {
   if (!allowedIds.includes(cid)) {
     alert("You do not have access to that company.");
     return;
+  }
+
+  const primaryCompanyId =
+    Number(window.currentUser?.primary_company_id || window.currentUser?.company_id || 0);
+
+  if (primaryCompanyId && cid === primaryCompanyId) {
+    clearActiveCompanyToken?.();
+  } else {
+    const switched = await apiFetch(ENDPOINTS.auth.switchCompany, {
+      method: "POST",
+      body: JSON.stringify({ company_id: cid }),
+    });
+
+    setActiveCompanyToken?.(switched.token);
   }
 
   localStorage.setItem("company_id", String(cid));
