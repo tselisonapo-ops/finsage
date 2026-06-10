@@ -61181,7 +61181,10 @@ async function loadReceiveBanks() {
   const el = document.getElementById("invReceiveBank");
   if (!el) return;
 
-  const data = await apiFetch(`/api/companies/${cid}/bank-accounts`);
+  const data = await apiFetch(ENDPOINTS.bankAccounts(cid), {
+    method: "GET"
+  });
+
   const rows = data?.rows || data?.items || data || [];
 
   el.innerHTML =
