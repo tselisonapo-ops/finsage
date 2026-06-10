@@ -2101,6 +2101,7 @@ def pos_auth_signin(company_id):
             cu.company_id,
             cu.user_id,
             cu.employee_code,
+            cu.pos_access_code,
             cu.pos_display_name,
             cu.pos_role,
             cu.pos_permissions,
@@ -2112,7 +2113,7 @@ def pos_auth_signin(company_id):
         FROM public.company_users cu
         JOIN public.users u ON u.id = cu.user_id
         WHERE cu.company_id = %s
-          AND cu.employee_code = %s
+          AND cu.pos_access_code = %s
           AND cu.pos_is_active = TRUE
           AND cu.is_active = TRUE
         LIMIT 1;
@@ -2139,6 +2140,7 @@ def pos_auth_signin(company_id):
         "company_user_id": row["company_user_id"],
         "user_id": row["user_id"],
         "employee_code": row["employee_code"],
+        "access_code": row["pos_access_code"],
         "name": row.get("pos_display_name")
             or f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
             or row.get("email"),

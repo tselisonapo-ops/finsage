@@ -482,13 +482,29 @@ export function ManagerPage() {
         is_active: true,
       });
 
-      const code =
-        res.staff?.employee_code ||
-        res.employee_code ||
-        res.staff_id ||
+      const staff = res.staff || {};
+
+    if (modal.type === "edit_staff") {
+      await posApi.updateStaffMember(modal.staffId, {
+        full_name: values.full_name,
+        phone: values.phone || "",
+        role: values.role || "cashier",
+        access_code: values.access_code || "",
+        pin: values.pin || "",
+      });
+
+      setMessage("Staff member updated.");
+      await loadStaffMembers();
+    }
+
+      const accessCode =
+        staff.pos_access_code ||
+        staff.access_code ||
+        res.pos_access_code ||
+        res.access_code ||
         "-";
 
-      setMessage(`Staff member added. Employee sign-in code: ${code}`);
+      setMessage(`Staff member added. POS access code: ${accessCode}`);
 
       await loadTabData("staff");
     }
@@ -590,6 +606,21 @@ export function ManagerPage() {
         { key: "combo_description", label: "Combo Description", value: "" },
         { key: "add_ons", label: "Add-ons e.g Extra Cheese, Extra Chips", value: "" },
         { key: "image_url", label: "Image URL", value: "" },
+      ],
+    });
+  }
+
+  function openEditStaffModal(staff) {
+    setModal({
+      type: "edit_staff",
+      title: "Edit POS Staff Member",
+      staffId: staff.id,
+      fields: [
+        { key: "full_name", label: "Full Name", value: staff.full_name || "" },
+        { key: "phone", label: "Phone Number", value: staff.phone || "" },
+        { key: "role", label: "POS Role", value: staff.role || "cashier" },
+        { key: "access_code", label: "POS Access Code", value: staff.pos_access_code || "" },
+        { key: "pin", label: "New PIN (leave blank to keep old PIN)", value: "" },
       ],
     });
   }
@@ -738,6 +769,7 @@ export function ManagerPage() {
               staffMembers={staffMembers}
               isRestaurantLike={isRestaurantLike}
               onAddStaff={openStaffModal}
+              onEditStaff={openEditStaffModal}
               onDeactivate={deactivateStaffMember}
               onRefresh={loadStaffMembers}
             />
@@ -1573,6 +1605,7 @@ function StaffTab({
   staffMembers = [],
   isRestaurantLike = false,
   onAddStaff,
+  onEditStaff,
   onDeactivate,
   onRefresh,
 }) {
@@ -1600,6 +1633,13 @@ function StaffTab({
           <button className="scan-btn" onClick={onAddStaff}>
             + Add Staff
           </button>
+
+          <button
+            className="soft"
+            onClick={() => onEditStaff(s)}
+          >
+            Edit
+          </button>
         </div>
       </div>
 
@@ -1616,7 +1656,9 @@ function StaffTab({
           <thead>
             <tr>
               <th>Employee Code</th>
+              <th>Access Code</th>
               <th>Name</th>
+              <th>Phone</th>
               <th>Email</th>
               <th>POS Role</th>
               <th>Status</th>
@@ -1635,7 +1677,11 @@ function StaffTab({
               staffMembers.map((s) => (
                 <tr key={s.id}>
                   <td>{s.employee_code || "-"}</td>
+                  <td>
+                    <strong>{s.pos_access_code || s.access_code || "-"}</strong>
+                  </td>
                   <td>{s.full_name || s.pos_display_name || s.name || "-"}</td>
+                  <td>{s.phone || "-"}</td>
                   <td>{s.email || "-"}</td>
                   <td>{s.role || s.pos_role || "-"}</td>
                   <td>{s.is_active !== false ? "Active" : "Inactive"}</td>
@@ -2588,7 +2634,7 @@ function TableSettingsTab({ tables = [], setMessage }) {
               ))
             ) : (
               <tr>
-                <td colSpan="6">No tables configured yet.</td>
+                <td colSpan="8">No tables configured yet.</td>
               </tr>
             )}
           </tbody>

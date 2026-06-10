@@ -1948,6 +1948,13 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS pin_hash TEXT,
         ADD COLUMN IF NOT EXISTS pos_display_name TEXT;
 
+        ALTER TABLE public.company_users
+        ADD COLUMN IF NOT EXISTS pos_access_code TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS company_users_pos_access_code_uq
+        ON public.company_users(company_id, pos_access_code)
+        WHERE pos_access_code IS NOT NULL;
+
         CREATE UNIQUE INDEX IF NOT EXISTS company_users_pos_employee_code_uq
         ON public.company_users(company_id, employee_code)
         WHERE employee_code IS NOT NULL;
@@ -36925,7 +36932,7 @@ class DatabaseService:
             RETURNING *
         """, (int(company_id), int(table_id)))
 
-    def pos_create_staff_member(self, company_id: int, data: dict) -> int:
+    def pos_create_staff_member(self, company_id: int, data: dict) -> dict:
         full_name = (data.get("full_name") or "").strip()
         email = (data.get("email") or "").strip().lower()
         phone = (data.get("phone") or "").strip()
@@ -36948,6 +36955,12 @@ class DatabaseService:
             or f"POS-{secrets.token_hex(3).upper()}"
         )
 
+        access_code = (
+            data.get("access_code")
+            or data.get("pos_access_code")
+            or str(secrets.randbelow(9000) + 1000)
+        )
+
         pin_hash = generate_password_hash(pin)
 
         with self._conn_cursor() as (conn, cur):
@@ -36967,7 +36980,12 @@ class DatabaseService:
                 )
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (email) DO UPDATE
-                SET is_active = TRUE
+                SET
+                    is_active = TRUE,
+                    first_name = EXCLUDED.first_name,
+                    last_name = EXCLUDED.last_name,
+                    user_role = EXCLUDED.user_role,
+                    access_level = EXCLUDED.access_level
                 RETURNING id
             """, (
                 email,
@@ -37000,15 +37018,17 @@ class DatabaseService:
                     pos_permissions,
                     pos_is_active,
                     employee_code,
+                    pos_access_code,
                     pin_hash,
-                    pos_display_name
+                    pos_display_name,
+                    phone
                 )
                 VALUES
                 (
                     %s,%s,%s,%s,%s,%s,%s,
                     TRUE,NOW(),
                     %s,%s::jsonb,TRUE,
-                    %s,%s,%s
+                    %s,%s,%s,%s,%s
                 )
                 ON CONFLICT (company_id, user_id) DO UPDATE
                 SET
@@ -37021,9 +37041,20 @@ class DatabaseService:
                     pos_permissions = EXCLUDED.pos_permissions,
                     pos_is_active = TRUE,
                     employee_code = EXCLUDED.employee_code,
+                    pos_access_code = EXCLUDED.pos_access_code,
                     pin_hash = EXCLUDED.pin_hash,
-                    pos_display_name = EXCLUDED.pos_display_name
-                RETURNING id
+                    pos_display_name = EXCLUDED.pos_display_name,
+                    phone = EXCLUDED.phone
+                RETURNING
+                    id,
+                    company_id,
+                    user_id,
+                    employee_code,
+                    pos_access_code,
+                    pos_display_name,
+                    pos_role,
+                    phone,
+                    pos_is_active
             """, (
                 int(company_id),
                 user_id,
@@ -37035,8 +37066,10 @@ class DatabaseService:
                 pos_role,
                 "{}",
                 employee_code,
+                access_code,
                 pin_hash,
                 full_name,
+                phone,
             ), cur=cur)
 
             conn.commit()
@@ -37049,6 +37082,8 @@ class DatabaseService:
                 cu.company_id,
                 cu.user_id,
                 cu.employee_code,
+                cu.pos_access_code,
+                cu.phone,
                 cu.pos_display_name AS full_name,
                 cu.pos_role AS role,
                 cu.pos_permissions,
@@ -37063,14 +37098,15 @@ class DatabaseService:
             ORDER BY cu.pos_is_active DESC, cu.pos_display_name ASC
         """, (int(company_id),))
 
-
     def pos_update_staff_member(self, company_id: int, staff_id: int, data: dict) -> dict | None:
         allowed = {
             "pos_role",
             "pos_permissions",
             "pos_is_active",
             "employee_code",
+            "pos_access_code",
             "pos_display_name",
+            "phone",
             "is_active",
         }
 
@@ -37084,6 +37120,10 @@ class DatabaseService:
                 db_key = "pos_role"
             if key == "full_name":
                 db_key = "pos_display_name"
+            if key == "access_code":
+                db_key = "pos_access_code"
+            if key == "phone":
+                db_key = "phone"
             if key == "is_active":
                 db_key = "pos_is_active"
 
