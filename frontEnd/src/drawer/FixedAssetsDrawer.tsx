@@ -309,17 +309,16 @@ function isContraAccount(a: CoaRow): boolean {
 }
 
 function isNcaCostAccount(a: CoaRow): boolean {
-  const code = String(a.code || "").toUpperCase();
-  const section = String(a.section || "").toLowerCase();
-  const cfBucket = String(a.cf_bucket || "").toLowerCase();
+  const bucket = String(a.cf_bucket || "").toLowerCase();
 
-  if (section && !section.includes("asset")) return false;
+  if (a.is_contra) return false;
 
-  const isNca = code.startsWith("BS_NCA_") || ["ppe", "rou_asset", "investment_property", "intangible"].includes(cfBucket);
-  if (!isNca) return false;
-  if (isContraAccount(a)) return false;
-
-  return true;
+  return [
+    "ppe",
+    "rou_asset",
+    "investment_property",
+    "intangible"
+  ].includes(bucket);
 }
 
 function pickContraForAsset(assetAcctCode: string, allAccounts: CoaRow[]): string {
