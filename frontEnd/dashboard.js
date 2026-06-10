@@ -61192,19 +61192,38 @@ async function loadReceiveBanks() {
   const el = document.getElementById("invReceiveBank");
   if (!el) return;
 
-  const data = await apiFetch(ENDPOINTS.bankAccounts(cid), {
-    method: "GET"
-  });
+  try {
+    const data = await apiFetch(ENDPOINTS.bankAccounts(cid), {
+      method: "GET"
+    });
 
-  const rows = data?.rows || data?.items || data || [];
+    const rows = data?.rows || data?.items || data || [];
 
-  el.innerHTML =
-    `<option value="">— Select bank account —</option>` +
-    rows.map(b => `
-      <option value="${esc(String(b.id))}">
-        ${esc(b.name || b.bank_name || `Bank #${b.id}`)}
-      </option>
-    `).join("");
+    el.innerHTML =
+      `<option value="">— Select bank account —</option>` +
+      rows.map(b => `
+        <option value="${esc(String(b.id))}">
+          ${esc(b.name || b.bank_name || `Bank #${b.id}`)}
+        </option>
+      `).join("");
+
+  } catch (err) {
+    console.warn("[Receive] bank accounts load failed", {
+      cid,
+      status: err?.status,
+      message: err?.message,
+      tokenCompany: (() => {
+        try {
+          const token = window.getToken?.();
+          return JSON.parse(atob(String(token).split(".")[1]))?.company_id;
+        } catch {
+          return null;
+        }
+      })()
+    });
+
+    el.innerHTML = `<option value="">— No bank accounts available —</option>`;
+  }
 }
 
 async function submitReceiveStock() {
@@ -61432,12 +61451,8 @@ async function openReceiveModal(prefill = {}) {
   const m = document.getElementById("invReceiveModal");
   if (!m) return;
 
-  console.log("CURRENT_COMPANY", window.CURRENT_COMPANY);
-
-  console.log("Industry", window.CURRENT_COMPANY?.industry);
-  console.log("Sub Industry", window.CURRENT_COMPANY?.sub_industry);
-  console.log("Industry Slug", window.CURRENT_COMPANY?.industry_slug);
-  console.log("Sub Industry Slug", window.CURRENT_COMPANY?.sub_industry_slug);
+  console.log("[Receive] CURRENT_COMPANY", window.CURRENT_COMPANY);
+  console.log("[Receive] is dealership?", isCarDealershipCompany?.());
 
   showReceiveMsg("");
 
@@ -61446,17 +61461,26 @@ async function openReceiveModal(prefill = {}) {
 
   document.getElementById("invReceiveRef").value = prefill.ref || "";
   document.getElementById("invReceiveNotes").value = prefill.notes || "";
+
   document.getElementById("invReceiveFundingType").value =
     prefill.funding_type || "supplier_credit";
 
   applyReceiveFundingPolicy();
-  applyReceiveFundingPolicy();
-  await loadReceiveBanks();
-  // ✅ NEW: load vendors + populate dropdown
+  applyReceiveVehiclePolicy();
+
+  try {
+    await loadReceiveBanks();
+  } catch (e) {
+    console.warn("[Receive] bank load ignored", e);
+  }
+
   try {
     const vendors = await ensureVendorsCache();
     renderReceiveVendorsSelect(vendors);
-    if (prefill.vendor_id) document.getElementById("invReceiveVendor").value = String(prefill.vendor_id);
+
+    if (prefill.vendor_id) {
+      document.getElementById("invReceiveVendor").value = String(prefill.vendor_id);
+    }
   } catch (e) {
     console.warn("[Receive] vendors load failed", e);
   }
@@ -61465,7 +61489,13 @@ async function openReceiveModal(prefill = {}) {
   if (tbody) tbody.innerHTML = "";
 
   applyReceiveColumnPolicy();
-  await ensureInvItemCache();
+
+  try {
+    await ensureInvItemCache();
+  } catch (e) {
+    console.warn("[Receive] item cache load failed", e);
+  }
+
   addReceiveLine();
 
   m.classList.remove("hidden");
