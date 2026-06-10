@@ -433,25 +433,28 @@ def api_pos_update_order_status(cid: int, order_id: int):
     if deny:
         return deny
 
-    body = _body()
-
     try:
+        data = _body()
+        status = (data.get("status") or "").strip().lower()
+
         ok = db_service.pos_update_order_status(
             cid,
             order_id,
-            status=body.get("status"),
-            driver_user_id=body.get("driver_user_id"),
+            status=status,
+            driver_user_id=data.get("driver_user_id"),
         )
 
         if not ok:
             return _err("Order not found", 404)
 
-        return _ok({"order_id": int(order_id), "status": body.get("status")}, 200)
+        order = db_service.pos_get_order(cid, order_id)
+
+        return jsonify({"ok": True, "order": order}), 200
 
     except Exception as ex:
         current_app.logger.exception("api_pos_update_order_status failed")
         return _err("Server error", 500, ex)
-    
+     
 # =========================
 # TERMINALS
 # =========================
@@ -1264,9 +1267,149 @@ def api_pos_staff_members(cid: int):
             rows = db_service.pos_list_staff_members(cid)
             return jsonify({"ok": True, "staff": rows, "count": len(rows)}), 200
 
-        staff_id = db_service.pos_create_staff_member(cid, _body())
-        return _ok({"staff_id": int(staff_id)}, 201)
+        staff = db_service.pos_create_staff_member(cid, _body())
+        return _ok({"staff": staff}, 201)
 
     except Exception as ex:
         current_app.logger.exception("api_pos_staff_members failed")
+        return _err("Server error", 500, ex)
+    
+# =========================
+# RESTAURANT MENU ITEMS
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/menu-items", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_menu_items(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            active_only = str(request.args.get("active_only", "1")).lower() not in {"0", "false", "no"}
+            rows = db_service.pos_list_menu_items(cid, active_only=active_only)
+            return jsonify({"ok": True, "menu_items": rows, "count": len(rows)}), 200
+
+        menu_item_id = db_service.pos_create_menu_item(cid, _body())
+        item = db_service.pos_get_menu_item(cid, menu_item_id)
+        return _ok({"menu_item_id": int(menu_item_id), "menu_item": item}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_menu_items failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/menu-items/<int:item_id>", methods=["GET", "PATCH", "OPTIONS"])
+@require_auth
+def api_pos_menu_item(cid: int, item_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            item = db_service.pos_get_menu_item(cid, item_id)
+            if not item:
+                return _err("Menu item not found", 404)
+            return jsonify({"ok": True, "menu_item": item}), 200
+
+        row = db_service.pos_update_menu_item(cid, item_id, _body())
+        if not row:
+            return _err("Menu item not found", 404)
+
+        item = db_service.pos_get_menu_item(cid, item_id)
+        return jsonify({"ok": True, "menu_item": item}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_menu_item failed")
+        return _err("Server error", 500, ex)
+
+
+# =========================
+# MENU DISPLAY SETTINGS
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/menu-display/settings", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_menu_display_settings(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            settings = db_service.pos_get_menu_display_settings(cid)
+            return jsonify({"ok": True, "settings": settings}), 200
+
+        settings = db_service.pos_save_menu_display_settings(cid, _body())
+        return jsonify({"ok": True, "settings": settings}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_menu_display_settings failed")
+        return _err("Server error", 500, ex)
+
+
+# =========================
+# PACKING QUEUE
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/packing-queue", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_packing_queue(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        status = (request.args.get("status") or "").strip()
+        rows = db_service.pos_list_packing_queue(cid, status=status)
+        return jsonify({"ok": True, "queue": rows, "count": len(rows)}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_packing_queue failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/packing-queue/<int:queue_id>/status", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_packing_queue_status(cid: int, queue_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        data = _body()
+        user_id = getattr(g, "user_id", None)
+
+        row = db_service.pos_update_packing_queue_status(
+            cid,
+            queue_id,
+            status=data.get("status"),
+            user_id=user_id,
+            notes=data.get("notes"),
+        )
+
+        if not row:
+            return _err("Packing queue item not found", 404)
+
+        return jsonify({"ok": True, "queue_item": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_packing_queue_status failed")
         return _err("Server error", 500, ex)

@@ -296,4 +296,22 @@ export const posApi = {
     return getJson(`${base()}/barcodes/labels`);
     },
 
+    listMenuItems() {
+    return getJson(`${base()}/menu-items`);
+    },
+
+    createMenuItem(payload) {
+    return postJson(`${base()}/menu-items`, payload);
+    },
+
+    updateMenuItem(itemId, payload) {
+    return patchJson(`${base()}/menu-items/${itemId}`, payload);
+    },
+
+    deactivateMenuItem(itemId) {
+    return patchJson(`${base()}/menu-items/${itemId}`, {
+        is_active: false,
+    });
+    },
+
 };

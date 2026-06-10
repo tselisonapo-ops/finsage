@@ -39,7 +39,7 @@ const RESTAURANT_TABS = [
   ["costing", "Meal Costing"],
   ["inventory", "Inventory"],
   ["purchasing", "Purchasing"],
-
+  ["menu", "Menu"],
   ["customers", "Customers"],
   ["pricing", "Pricing"],
   ["promotions", "Promotions"],
@@ -85,6 +85,7 @@ export function ManagerPage() {
   const [staffMembers, setStaffMembers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [barcodeLabels, setBarcodeLabels] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
 
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
@@ -129,6 +130,7 @@ export function ManagerPage() {
       if (activeTab === "staff") await loadStaffMembers();
       if (activeTab === "orders") await loadOrders();
       if (activeTab === "labels") await loadBarcodeLabels();
+      if (activeTab === "menu") await loadMenuItems();
 
       if (activeTab === "tables") {
         await Promise.allSettled([
@@ -174,6 +176,11 @@ export function ManagerPage() {
   async function loadPromotions() {
     const res = await posApi.listPromotions();
     setPromotions(res.promotions || []);
+  }
+
+  async function loadMenuItems() {
+    const res = await posApi.listMenuItems();
+    setMenuItems(res.menu_items || res.items || []);
   }
 
   async function deactivateStaffMember(staffId) {
@@ -383,6 +390,25 @@ export function ManagerPage() {
       await loadPriceLevels();
     }
 
+    if (modal.type === "menu_item") {
+      await posApi.createMenuItem({
+        name: values.name,
+        category: values.category || "Meals",
+        price: Number(values.price || 0),
+        combo_description: values.combo_description || "",
+        add_ons: String(values.add_ons || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
+        image_url: values.image_url || "",
+        is_active: true,
+        show_on_display: true,
+      });
+
+      setMessage("Menu item created.");
+      await loadMenuItems();
+    }
+
     if (modal.type === "promotion") {
       await posApi.createPromotion({
         promo_code: values.promo_code,
@@ -446,7 +472,7 @@ export function ManagerPage() {
     }
 
     if (modal.type === "staff") {
-      await posApi.createStaffMember({
+      const res = await posApi.createStaffMember({
         full_name: values.full_name,
         email: values.email,
         phone: values.phone || "",
@@ -456,7 +482,14 @@ export function ManagerPage() {
         is_active: true,
       });
 
-      setMessage("Staff member added.");
+      const code =
+        res.staff?.employee_code ||
+        res.employee_code ||
+        res.staff_id ||
+        "-";
+
+      setMessage(`Staff member added. Employee sign-in code: ${code}`);
+
       await loadTabData("staff");
     }
 
@@ -545,7 +578,22 @@ export function ManagerPage() {
       ],
     });
   }
-    
+
+  function openMenuItemModal() {
+    setModal({
+      type: "menu_item",
+      title: "New Menu Item",
+      fields: [
+        { key: "name", label: "Menu Item Name", value: "" },
+        { key: "category", label: "Category", value: "Meals" },
+        { key: "price", label: "Selling Price", value: "0" },
+        { key: "combo_description", label: "Combo Description", value: "" },
+        { key: "add_ons", label: "Add-ons e.g Extra Cheese, Extra Chips", value: "" },
+        { key: "image_url", label: "Image URL", value: "" },
+      ],
+    });
+  }
+
   const visibleTabs = isRestaurantLike ? RESTAURANT_TABS : RETAIL_TABS;
 
   return (
@@ -603,6 +651,14 @@ export function ManagerPage() {
             <ReportsTab
               reportView={reportView}
               setReportView={setReportView}
+            />
+          )}
+
+          {tab === "menu" && isRestaurantLike && (
+            <MenuManagerTab
+              menuItems={menuItems}
+              onRefresh={loadMenuItems}
+              onCreate={openMenuItemModal}
             />
           )}
 
@@ -975,6 +1031,98 @@ function ManagerCard({ icon = "📊", title, value, text, onClick }) {
 }
 
 function SalesTab() {
+  const [salesView, setSalesView] = useState(null);
+
+  const views = {
+    total_sales: {
+      title: "Total Sales - Sold Items",
+      columns: ["Item", "SKU", "Qty Sold", "Unit Price", "Total Sales"],
+      rows: [["No sold items yet", "-", "0", "0.00", "0.00"]],
+    },
+    transactions: {
+      title: "POS Transactions",
+      columns: ["Receipt No", "Date", "Cashier", "Customer", "Amount", "Status"],
+      rows: [["No transactions yet", "-", "-", "-", "0.00", "-"]],
+    },
+    returns: {
+      title: "Returns Report",
+      columns: ["Return No", "Item", "Qty", "Reason", "Refund Amount", "Approval Status"],
+      rows: [["No returns yet", "-", "0", "-", "0.00", "-"]],
+    },
+    cash_payments: {
+      title: "Cash Payments",
+      columns: ["Receipt No", "Date", "Cashier", "Received", "Change", "Net Cash"],
+      rows: [["No cash payments yet", "-", "-", "0.00", "0.00", "0.00"]],
+    },
+    card_payments: {
+      title: "Card Payments",
+      columns: ["Receipt No", "Date", "Terminal", "Reference", "Amount", "Status"],
+      rows: [["No card payments yet", "-", "-", "-", "0.00", "-"]],
+    },
+    account_sales: {
+      title: "Account Sales",
+      columns: ["Customer", "Receipt No", "Date", "Sale Amount", "Balance", "Credit Limit"],
+      rows: [["No account sales yet", "-", "-", "0.00", "0.00", "0.00"]],
+    },
+  };
+
+  const active = salesView ? views[salesView] : null;
+
+  if (active) {
+    return (
+      <section className="manager-workspace">
+        <div className="workspace-head">
+          <div>
+            <h2>{active.title}</h2>
+            <p>Detailed listing behind the selected sales KPI.</p>
+          </div>
+
+          <div className="workspace-actions">
+            <button className="refresh-btn" onClick={() => setSalesView(null)}>
+              ← Back
+            </button>
+
+            <button
+              className="refresh-btn"
+              onClick={() => exportReportToExcel(active.title, active.columns, active.rows)}
+            >
+              Export Excel
+            </button>
+
+            <button
+              className="scan-btn"
+              onClick={() => printReport(active.title, active.columns, active.rows)}
+            >
+              Print
+            </button>
+          </div>
+        </div>
+
+        <div className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                {active.columns.map((c) => (
+                  <th key={c}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {active.rows.map((row, idx) => (
+                <tr key={idx}>
+                  {row.map((cell, cidx) => (
+                    <td key={cidx}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -982,16 +1130,137 @@ function SalesTab() {
           <h2>Sales</h2>
           <p>Daily sales, transactions, payments, returns and cashier activity.</p>
         </div>
+
+        <div className="workspace-actions">
+          <button
+            className="refresh-btn"
+            onClick={() =>
+              exportReportToExcel("POS Sales Summary", ["Metric", "Amount", "Description"], [
+                ["Today Sales", "0.00", "Total POS sales captured today."],
+                ["Transactions", "0", "Number of completed sales."],
+                ["Returns", "0.00", "Refunds and reversed sales."],
+                ["Cash Payments", "0.00", "Cash received through POS."],
+                ["Card Payments", "0.00", "Card payments processed."],
+                ["Account Sales", "0.00", "Sales posted to customer accounts."],
+              ])
+            }
+          >
+            Export Excel
+          </button>
+
+          <button
+            className="scan-btn"
+            onClick={() =>
+              printReport("POS Sales Summary", ["Metric", "Amount", "Description"], [
+                ["Today Sales", "0.00", "Total POS sales captured today."],
+                ["Transactions", "0", "Number of completed sales."],
+                ["Returns", "0.00", "Refunds and reversed sales."],
+                ["Cash Payments", "0.00", "Cash received through POS."],
+                ["Card Payments", "0.00", "Card payments processed."],
+                ["Account Sales", "0.00", "Sales posted to customer accounts."],
+              ])
+            }
+          >
+            Print
+          </button>
+        </div>
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="💰" title="Today Sales" value="0.00" text="Total POS sales captured today." />
-        <ManagerCard icon="🧾" title="Transactions" value="0" text="Number of completed sales." />
-        <ManagerCard icon="↩️" title="Returns" value="0.00" text="Refunds and reversed sales." />
-        <ManagerCard icon="💵" title="Cash Payments" value="0.00" text="Cash received through POS." />
-        <ManagerCard icon="💳" title="Card Payments" value="0.00" text="Card payments processed." />
-        <ManagerCard icon="👤" title="Account Sales" value="0.00" text="Sales posted to customer accounts." />
+        <ManagerCard
+          icon="💰"
+          title="Today Sales"
+          value="0.00"
+          text="Click to view sold items and quantities."
+          onClick={() => setSalesView("total_sales")}
+        />
+
+        <ManagerCard
+          icon="🧾"
+          title="Transactions"
+          value="0"
+          text="Click to view completed POS transactions."
+          onClick={() => setSalesView("transactions")}
+        />
+
+        <ManagerCard
+          icon="↩️"
+          title="Returns"
+          value="0.00"
+          text="Click to view return requests and refunds."
+          onClick={() => setSalesView("returns")}
+        />
+
+        <ManagerCard
+          icon="💵"
+          title="Cash Payments"
+          value="0.00"
+          text="Click to view cash received."
+          onClick={() => setSalesView("cash_payments")}
+        />
+
+        <ManagerCard
+          icon="💳"
+          title="Card Payments"
+          value="0.00"
+          text="Click to view card payments."
+          onClick={() => setSalesView("card_payments")}
+        />
+
+        <ManagerCard
+          icon="👤"
+          title="Account Sales"
+          value="0.00"
+          text="Click to view customer account sales."
+          onClick={() => setSalesView("account_sales")}
+        />
       </section>
+    </section>
+  );
+}
+
+function MenuManagerTab({
+  menuItems = [],
+  onRefresh,
+  onCreate,
+}) {
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Restaurant Menu</h2>
+          <p>Create meals, combos, add-ons, prices and display-screen menu items.</p>
+        </div>
+
+        <div className="workspace-actions">
+          <button className="soft" onClick={onRefresh}>↻ Refresh</button>
+          <button className="scan-btn" onClick={onCreate}>+ New Menu Item</button>
+        </div>
+      </div>
+
+      <div className="menu-admin-grid">
+        {!menuItems.length ? (
+          <div className="empty-state">
+            <strong>No menu items yet</strong>
+            <p>Add meals like Chicken & Chips, Bunny Chow, or combo meals.</p>
+          </div>
+        ) : (
+          menuItems.map((item) => (
+            <article className="menu-admin-card" key={item.id}>
+              <div className="menu-admin-image">
+                {item.image_url ? <img src={item.image_url} alt={item.name} /> : <span>🍽️</span>}
+              </div>
+
+              <div>
+                <h3>{item.name}</h3>
+                <p>{item.combo_description || item.category}</p>
+                <strong>{money(item.price || 0)}</strong>
+                <small>{item.is_active !== false ? "Active" : "Inactive"}</small>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
     </section>
   );
 }
@@ -1176,8 +1445,19 @@ function ReportGridScreen({ reportView, onBack }) {
         <input className="scan-input" type="date" />
         <input className="scan-input" type="date" />
         <button className="scan-btn">Apply</button>
-        <button className="scan-btn">Export CSV</button>
-        <button className="scan-btn">Print</button>
+        <button
+          className="scan-btn"
+          onClick={() => exportReportToExcel(titles[reportView], columns[reportView], sampleRows[reportView])}
+        >
+          Export Excel
+        </button>
+
+        <button
+          className="scan-btn"
+          onClick={() => printReport(titles[reportView], columns[reportView], sampleRows[reportView])}
+        >
+          Print
+        </button>
       </section>
 
       <section className="manager-grid">
@@ -1210,6 +1490,83 @@ function ReportGridScreen({ reportView, onBack }) {
       </div>
     </section>
   );
+}
+
+function exportReportToExcel(title, columns = [], rows = []) {
+  const tableRows = rows.map((row) => `
+    <tr>
+      ${row.map((cell) => `<td>${cell}</td>`).join("")}
+    </tr>
+  `).join("");
+
+  const html = `
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <style>
+          table { border-collapse: collapse; width: 100%; table-layout: auto; }
+          th { background: #064653; color: white; font-weight: bold; }
+          th, td { border: 1px solid #d9e6e6; padding: 8px; white-space: nowrap; }
+          h2 { font-family: Arial; color: #064653; }
+        </style>
+      </head>
+      <body>
+        <h2>${title}</h2>
+        <table>
+          <thead>
+            <tr>${columns.map((c) => `<th>${c}</th>`).join("")}</tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const blob = new Blob([html], { type: "application/vnd.ms-excel" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = `${title.replace(/\s+/g, "_")}.xls`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function printReport(title, columns = [], rows = []) {
+  const tableRows = rows.map((row) => `
+    <tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>
+  `).join("");
+
+  const win = window.open("", "_blank");
+
+  win.document.write(`
+    <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial; padding: 24px; }
+          h2 { color: #064653; }
+          table { width: 100%; border-collapse: collapse; }
+          th { background: #064653; color: white; }
+          th, td { border: 1px solid #d9e6e6; padding: 8px; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <h2>${title}</h2>
+        <table>
+          <thead>
+            <tr>${columns.map((c) => `<th>${c}</th>`).join("")}</tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body>
+    </html>
+  `);
+
+  win.document.close();
+  win.focus();
+  win.print();
 }
 
 function StaffTab({
@@ -1679,13 +2036,13 @@ function RecipesTab({
           <p>Link menu items to ingredient recipes for automatic food-cost tracking.</p>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="soft" onClick={onRefresh}>
-            Refresh
+        <div className="workspace-actions">
+          <button className="soft action-btn" onClick={onRefresh}>
+            ↻ Refresh
           </button>
 
-          <button className="scan-btn" onClick={onCreate}>
-            New Recipe
+          <button className="scan-btn action-btn" onClick={onCreate}>
+            + New Recipe
           </button>
         </div>
       </div>

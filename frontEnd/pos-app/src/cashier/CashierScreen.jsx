@@ -26,6 +26,43 @@ export function CashierPage() {
   const [pin, setPin] = useState("");
   const [cashier, setCashier] = useState(null);
 
+const [menuItems, setMenuItems] = useState([
+  {
+    id: 1,
+    name: "Bunny Chow",
+    price: 65,
+    image_url: "",
+    category: "Meals",
+  },
+  {
+    id: 2,
+    name: "Chicken & Chips",
+    price: 55,
+    image_url: "",
+    category: "Meals",
+  },
+]);
+
+  const posRole = String(
+    cashier?.pos_role ||
+    cashier?.role ||
+    ""
+  ).toLowerCase();
+
+  const canSell = ["cashier", "manager", "supervisor"].includes(posRole);
+
+  const canOrder = [
+    "waiter",
+    "waitress",
+    "cashier",
+    "manager",
+    "supervisor",
+  ].includes(posRole);
+
+  const canAccessPos =
+    signedIn &&
+    ["cashier", "manager", "supervisor", "waiter", "waitress"].includes(posRole);
+    
   const totals = useMemo(() => {
     const subtotal = cart.reduce((s, x) => s + Number(x.qty || 0) * Number(x.unit_price || 0), 0);
     const discount = cart.reduce((s, x) => s + Number(x.discount_amount || 0), 0);
@@ -46,9 +83,14 @@ export function CashierPage() {
         pin: pin.trim(),
       });
 
-      const activeCashier = res.cashier || res.data?.cashier || {
-        employee_code: employeeCode.trim(),
-      };
+      const activeCashier =
+        res.employee ||
+        res.cashier ||
+        res.data?.employee ||
+        res.data?.cashier ||
+        {
+          employee_code: employeeCode.trim(),
+        };
 
       setCashier(activeCashier);
       setSignedIn(true);
@@ -66,6 +108,44 @@ export function CashierPage() {
     setCashier(null);
     setCart([]);
     setMessage("Cashier signed out.");
+  }
+
+  function addMenuItemToCart(item) {
+    if (!canOrder && !canSell) {
+      setMessage("You do not have permission to add items.");
+      return;
+    }
+
+    setCart((prev) => {
+      const existing = prev.find((x) => x.item_id === item.id);
+
+      if (existing) {
+        return prev.map((x) =>
+          x.item_id === item.id
+            ? {
+                ...x,
+                qty: Number(x.qty || 0) + 1,
+                gross_amount:
+                  (Number(x.qty || 0) + 1) * Number(x.unit_price || 0),
+              }
+            : x
+        );
+      }
+
+      return [
+        ...prev,
+        {
+          item_id: item.id,
+          description: item.name,
+          qty: 1,
+          unit_price: Number(item.price || 0),
+          vat_amount: 0,
+          discount_amount: 0,
+          gross_amount: Number(item.price || 0),
+          image_url: item.image_url,
+        },
+      ];
+    });
   }
 
   return (
@@ -132,20 +212,27 @@ export function CashierPage() {
 
       {message && <div className="pos-message">{message}</div>}
 
-      <section className="pos-grid">
-        <aside className="left-panel">
-          {mode === "restaurant" && (
-            <div className="scan-card">
-              <label>Order type</label>
-              <div className="quick-actions">
-                <button onClick={() => (window.location.hash = "#/orders?type=table")}>Table Order</button>
-                <button onClick={() => (window.location.hash = "#/orders?type=collection")}>Collection</button>
-                <button onClick={() => (window.location.hash = "#/orders?type=delivery")}>Delivery</button>
-                <button>Send to Kitchen</button>
-                <button>Print Bill</button>
-                <button>Close Table</button>
+      {signedIn && !canAccessPos && (
+        <div className="pos-message">
+          Your role does not have access to this POS screen.
+        </div>
+      )}
+
+      {canAccessPos && (
+        <section className="pos-grid">
+          <aside className="left-panel">
+            {mode === "restaurant" && (
+              <div className="scan-card">
+                <label>Order type</label>
+                <div className="quick-actions">
+                  <button onClick={() => (window.location.hash = "#/orders?type=table")}>Table Order</button>
+                  <button onClick={() => (window.location.hash = "#/orders?type=collection")}>Collection</button>
+                  <button onClick={() => (window.location.hash = "#/orders?type=delivery")}>Delivery</button>
+                  <button>Send to Kitchen</button>
+                  <button>Print Bill</button>
+                  <button>Close Table</button>
+                </div>
               </div>
-            </div>
           )}
 
           <div className="scan-card">
@@ -161,38 +248,70 @@ export function CashierPage() {
           </div>
 
           <div className="quick-actions">
-            <button onClick={() => setCart([])}>New Sale</button>
-            <button onClick={() => (window.location.hash = "#/quotes")}>Quotation</button>
-            <button
-              onClick={() => {
-                if (
-                  cashier?.role !== "manager" &&
-                  cashier?.role !== "supervisor"
-                ) {
-                  setMessage(
-                    "Return requests require manager approval."
-                  );
-                }
+            {canSell && <button onClick={() => setCart([])}>New Sale</button>}
 
-                window.location.hash = "#/returns";
-              }}
-            >
-              Return
+            {canSell && (
+              <button onClick={() => (window.location.hash = "#/quotes")}>
+                Quotation
+              </button>
+            )}
+
+            {canSell && (
+              <button onClick={() => (window.location.hash = "#/returns")}>
+                Return
+              </button>
+            )}
+
+            {canSell && <button>Hold Sale</button>}
+
+            <button onClick={() => (window.location.hash = "#/customers")}>
+              Customer
             </button>
-            <button>Hold Sale</button>
-            <button onClick={() => (window.location.hash = "#/customers")}>Customer</button>
-            {usesInventory && <button onClick={() => (window.location.hash = "#/price-check")}>Price Check</button>}
+
+            {usesInventory && canSell && (
+              <button onClick={() => (window.location.hash = "#/price-check")}>
+                Price Check
+              </button>
+            )}
           </div>
 
           <div className="product-list">
             <div className="section-title">
-              <h2>{usesInventory ? "Product Search" : "Service Search"}</h2>
-              <span>Waiting</span>
+              <h2>{isRestaurantLike ? "Menu" : "Product Search"}</h2>
+              <span>{canOrder || canSell ? "Tap item to add" : "No access"}</span>
             </div>
-            <div className="empty-state">
-              <strong>No item selected</strong>
-              <p>Search or scan to add items to the sale.</p>
-            </div>
+
+            {isRestaurantLike ? (
+              <div className="menu-grid">
+                {menuItems.map((item) => (
+                  <button
+                    key={item.id}
+                    className="menu-item-card"
+                    disabled={!canOrder && !canSell}
+                    onClick={() => addMenuItemToCart(item)}
+                  >
+                    <div className="menu-image">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.name} />
+                      ) : (
+                        <span>🍽️</span>
+                      )}
+                    </div>
+
+                    <div className="menu-info">
+                      <strong>{item.name}</strong>
+                      <small>{item.category}</small>
+                      <b>{money(item.price)}</b>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <strong>No item selected</strong>
+                <p>Search or scan to add items to the sale.</p>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -236,12 +355,20 @@ export function CashierPage() {
 
           <div className="payment-bar">
             <button className="soft">Print Quote/Bill</button>
-            <button className="warning">Discount</button>
-            <button className="primary">Payment</button>
-            <button className="success">Complete Sale</button>
+
+            {canSell && <button className="warning">Discount</button>}
+
+            {canSell && <button className="primary">Payment</button>}
+
+            {canSell && <button className="success">Complete Sale</button>}
+
+            {!canSell && canOrder && (
+              <button className="success">Proceed to Payout</button>
+            )}
           </div>
         </section>
       </section>
+      )}
 
       {showSignin && (
         <div className="modal-backdrop">

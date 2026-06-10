@@ -19173,6 +19173,149 @@ class DatabaseService:
             status TEXT NOT NULL DEFAULT 'waiting'
         );
 
+        -- =========================
+        -- RESTAURANT MENU ITEMS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_menu_items (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            item_id INT NULL REFERENCES {schema}.inventory_items(id) ON DELETE SET NULL,
+
+            menu_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'Meals',
+
+            description TEXT NULL,
+            combo_description TEXT NULL,
+
+            price NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_code TEXT NULL,
+
+            image_url TEXT NULL,
+
+            is_combo BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            show_on_cashier BOOLEAN NOT NULL DEFAULT TRUE,
+            show_on_display BOOLEAN NOT NULL DEFAULT TRUE,
+
+            sort_order INT NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_menu_items_code_uniq
+        ON {schema}.pos_menu_items(company_id, lower(trim(menu_code)));
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_menu_items_active_idx
+        ON {schema}.pos_menu_items(company_id, is_active, show_on_cashier);
+
+
+        -- =========================
+        -- MENU COMBO COMPONENTS
+        -- Example: Chicken + Chips + Coleslaw
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_menu_combo_components (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            menu_item_id INT NOT NULL REFERENCES {schema}.pos_menu_items(id) ON DELETE CASCADE,
+            component_item_id INT NULL REFERENCES {schema}.inventory_items(id) ON DELETE SET NULL,
+
+            component_name TEXT NOT NULL,
+            qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            uom TEXT NULL,
+
+            sort_order INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_menu_combo_components_menu_idx
+        ON {schema}.pos_menu_combo_components(company_id, menu_item_id);
+
+
+        -- =========================
+        -- MENU ADD-ONS
+        -- Example: Extra cheese, extra chips, extra sauce
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_menu_addons (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            menu_item_id INT NULL REFERENCES {schema}.pos_menu_items(id) ON DELETE CASCADE,
+
+            addon_name TEXT NOT NULL,
+            addon_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order INT NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_menu_addons_item_idx
+        ON {schema}.pos_menu_addons(company_id, menu_item_id, is_active);
+
+
+        -- =========================
+        -- CUSTOMER MENU DISPLAY SLIDESHOW SETTINGS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_menu_display_settings (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            display_name TEXT NOT NULL DEFAULT 'Main Menu Display',
+            slide_seconds INT NOT NULL DEFAULT 12,
+            show_prices BOOLEAN NOT NULL DEFAULT TRUE,
+            show_categories BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_menu_display_settings_active_uniq
+        ON {schema}.pos_menu_display_settings(company_id)
+        WHERE is_active = TRUE;
+
+
+        -- =========================
+        -- PACKING QUEUE
+        -- Kitchen ready orders go here for packers.
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_packing_queue (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            order_id INT NOT NULL REFERENCES {schema}.pos_orders(id) ON DELETE CASCADE,
+
+            queue_no TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'waiting',
+            -- waiting|packing|packed|archived|cancelled
+
+            packed_by INT NULL,
+            packed_at TIMESTAMPTZ NULL,
+            archived_by INT NULL,
+            archived_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_packing_queue_no_uniq
+        ON {schema}.pos_packing_queue(company_id, lower(trim(queue_no)));
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_packing_queue_status_idx
+        ON {schema}.pos_packing_queue(company_id, status);
+
         -- ==================================================
         -- BANK STATEMENTS
         -- ==================================================
@@ -33917,6 +34060,341 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
+    def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
+        schema = self.company_schema(company_id)
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.pos_packing_queue
+            WHERE company_id = %s
+            AND order_id = %s
+            AND status <> 'archived'
+            LIMIT 1
+        """, (int(company_id), int(order_id)))
+
+        if existing:
+            return int(existing["id"])
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_packing_queue
+            (
+                company_id,
+                order_id,
+                queue_no,
+                status
+            )
+            VALUES (%s,%s,%s,'waiting')
+            RETURNING id
+        """, (
+            int(company_id),
+            int(order_id),
+            f"PACK-{order_id}",
+        ))
+
+        return int(row["id"])
+
+    def pos_list_menu_items(self, company_id: int, active_only: bool = True) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        rows = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_menu_items
+            WHERE company_id=%s
+            AND (%s=FALSE OR is_active=TRUE)
+            ORDER BY sort_order ASC, category ASC, name ASC
+        """, (int(company_id), bool(active_only))) or []
+
+        for row in rows:
+            row["components"] = self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.pos_menu_combo_components
+                WHERE company_id=%s AND menu_item_id=%s
+                ORDER BY sort_order ASC, id ASC
+            """, (int(company_id), int(row["id"]))) or []
+
+            row["addons"] = self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.pos_menu_addons
+                WHERE company_id=%s
+                AND (menu_item_id=%s OR menu_item_id IS NULL)
+                AND is_active=TRUE
+                ORDER BY sort_order ASC, addon_name ASC
+            """, (int(company_id), int(row["id"]))) or []
+
+        return rows
+
+
+    def pos_get_menu_item(self, company_id: int, menu_item_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_menu_items
+            WHERE company_id=%s AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(menu_item_id)))
+
+        if not row:
+            return None
+
+        row["components"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_menu_combo_components
+            WHERE company_id=%s AND menu_item_id=%s
+            ORDER BY sort_order ASC, id ASC
+        """, (int(company_id), int(menu_item_id))) or []
+
+        row["addons"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_menu_addons
+            WHERE company_id=%s
+            AND (menu_item_id=%s OR menu_item_id IS NULL)
+            AND is_active=TRUE
+            ORDER BY sort_order ASC, addon_name ASC
+        """, (int(company_id), int(menu_item_id))) or []
+
+        return row
+
+
+    def pos_create_menu_item(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise ValueError("name is required")
+
+        menu_code = (data.get("menu_code") or f"MENU-{int(datetime.now().timestamp())}").strip()
+
+        components = data.get("components") or []
+        addons = data.get("addons") or []
+
+        with self._conn_cursor() as (conn, cur):
+            row = self.fetch_one(f"""
+                INSERT INTO {schema}.pos_menu_items
+                (
+                    company_id, item_id, menu_code, name, category,
+                    description, combo_description, price, vat_code, image_url,
+                    is_combo, is_active, show_on_cashier, show_on_display, sort_order
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                int(company_id),
+                data.get("item_id"),
+                menu_code,
+                name,
+                data.get("category") or "Meals",
+                data.get("description"),
+                data.get("combo_description"),
+                float(data.get("price") or 0),
+                data.get("vat_code"),
+                data.get("image_url"),
+                bool(data.get("is_combo", bool(components))),
+                bool(data.get("is_active", True)),
+                bool(data.get("show_on_cashier", True)),
+                bool(data.get("show_on_display", True)),
+                int(data.get("sort_order") or 0),
+            ), cur=cur)
+
+            menu_item_id = int(row["id"])
+
+            for idx, c in enumerate(components, start=1):
+                self.fetch_one(f"""
+                    INSERT INTO {schema}.pos_menu_combo_components
+                    (
+                        company_id, menu_item_id, component_item_id,
+                        component_name, qty, uom, sort_order
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    RETURNING id
+                """, (
+                    int(company_id),
+                    menu_item_id,
+                    c.get("component_item_id"),
+                    c.get("component_name") or c.get("name") or "",
+                    float(c.get("qty") or 1),
+                    c.get("uom"),
+                    int(c.get("sort_order") or idx),
+                ), cur=cur)
+
+            for idx, a in enumerate(addons, start=1):
+                self.fetch_one(f"""
+                    INSERT INTO {schema}.pos_menu_addons
+                    (
+                        company_id, menu_item_id, addon_name,
+                        addon_price, is_active, sort_order
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    RETURNING id
+                """, (
+                    int(company_id),
+                    menu_item_id,
+                    a.get("addon_name") or a.get("name") or "",
+                    float(a.get("addon_price") or a.get("price") or 0),
+                    bool(a.get("is_active", True)),
+                    int(a.get("sort_order") or idx),
+                ), cur=cur)
+
+            conn.commit()
+            return menu_item_id
+
+
+    def pos_update_menu_item(self, company_id: int, menu_item_id: int, data: dict) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "item_id", "menu_code", "name", "category", "description",
+            "combo_description", "price", "vat_code", "image_url",
+            "is_combo", "is_active", "show_on_cashier",
+            "show_on_display", "sort_order"
+        }
+
+        sets, params = [], []
+        for k, v in (data or {}).items():
+            if k in allowed:
+                sets.append(f"{k}=%s")
+                params.append(v)
+
+        if not sets:
+            return self.pos_get_menu_item(company_id, menu_item_id)
+
+        sets.append("updated_at=NOW()")
+        params.extend([int(company_id), int(menu_item_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_menu_items
+            SET {", ".join(sets)}
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, tuple(params))
+
+
+    def pos_get_menu_display_settings(self, company_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_menu_display_settings
+            WHERE company_id=%s AND is_active=TRUE
+            ORDER BY id DESC
+            LIMIT 1
+        """, (int(company_id),))
+
+        if row:
+            return row
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_menu_display_settings
+            (company_id, display_name, slide_seconds, show_prices, show_categories, is_active)
+            VALUES (%s,'Main Menu Display',12,TRUE,TRUE,TRUE)
+            RETURNING *
+        """, (int(company_id),))
+
+        return row
+
+
+    def pos_save_menu_display_settings(self, company_id: int, data: dict) -> dict:
+        schema = self.company_schema(company_id)
+
+        self.execute_sql(f"""
+            UPDATE {schema}.pos_menu_display_settings
+            SET is_active=FALSE
+            WHERE company_id=%s
+        """, (int(company_id),))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.pos_menu_display_settings
+            (
+                company_id, display_name, slide_seconds,
+                show_prices, show_categories, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,TRUE)
+            RETURNING *
+        """, (
+            int(company_id),
+            data.get("display_name") or "Main Menu Display",
+            int(data.get("slide_seconds") or 12),
+            bool(data.get("show_prices", True)),
+            bool(data.get("show_categories", True)),
+        ))
+
+
+    def pos_list_packing_queue(self, company_id: int, status: str = "") -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                pq.*,
+                o.order_no,
+                o.order_type,
+                o.table_no,
+                o.customer_name,
+                o.gross_amount
+            FROM {schema}.pos_packing_queue pq
+            JOIN {schema}.pos_orders o ON o.id=pq.order_id
+            WHERE pq.company_id=%s
+            AND (%s='' OR pq.status=%s)
+            ORDER BY pq.created_at ASC
+        """, (int(company_id), status or "", status or ""))
+
+
+    def pos_create_packing_queue_item(self, company_id: int, order_id: int) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_packing_queue
+            (
+                company_id, order_id, queue_no, status
+            )
+            VALUES (%s,%s,%s,'waiting')
+            RETURNING id
+        """, (
+            int(company_id),
+            int(order_id),
+            f"PACK-{order_id}",
+        ))
+
+        return int(row["id"])
+
+
+    def pos_update_packing_queue_status(
+        self,
+        company_id: int,
+        queue_id: int,
+        *,
+        status: str,
+        user_id: int | None = None,
+        notes: str | None = None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        status = (status or "").strip().lower()
+        if status not in {"waiting", "packing", "packed", "archived", "cancelled"}:
+            raise ValueError("Invalid packing queue status")
+
+        extra = ""
+        params = [status, notes]
+
+        if status == "packed":
+            extra = ", packed_by=%s, packed_at=NOW()"
+            params.extend([user_id])
+
+        if status == "archived":
+            extra = ", archived_by=%s, archived_at=NOW()"
+            params.extend([user_id])
+
+        params.extend([int(company_id), int(queue_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_packing_queue
+            SET status=%s,
+                notes=COALESCE(%s, notes),
+                updated_at=NOW()
+                {extra}
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, tuple(params))
+
     # =========================
     # POS TERMINALS
     # =========================
@@ -35774,6 +36252,12 @@ class DatabaseService:
             RETURNING id
         """, tuple(params))
 
+        if row and status == "ready":
+            self.pos_ensure_packing_queue_item(
+                company_id=company_id,
+                order_id=order_id,
+            )
+
         return bool(row)
 
     def pos_list_orders(
@@ -36556,7 +37040,7 @@ class DatabaseService:
             ), cur=cur)
 
             conn.commit()
-            return int(row["id"])
+            return dict(row)
 
     def pos_list_staff_members(self, company_id: int) -> list[dict]:
         return self.fetch_all("""
