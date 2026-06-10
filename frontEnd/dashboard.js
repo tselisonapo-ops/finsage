@@ -11300,6 +11300,11 @@ window.loadCompanyProfile = loadCompanyProfile;
 
     const payload = collectFormPayload(form);
 
+    console.log(
+      "[CorporateStructure] payload",
+      JSON.stringify(payload, null, 2)
+    );
+
     if (!payload.name) {
       alert("Name is required.");
       return;

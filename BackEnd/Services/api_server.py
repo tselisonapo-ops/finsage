@@ -1151,6 +1151,53 @@ def _assign_vat_period_label(tx_date: date, cfg: dict) -> str:
             return p["label"]
     return tx_date.strftime("%b %Y")
 
+def build_user_allowed_companies(user_id: int):
+    rows = db_service.fetch_all("""
+        SELECT
+            c.id,
+            c.name,
+            c.system_company_code,
+            c.industry,
+            c.sub_industry,
+            cu.role,
+            cu.access_scope,
+            cu.membership_kind,
+            cu.is_primary,
+            rel.parent_company_id,
+            rel.relationship_type,
+            rel.ownership_percent,
+            rel.consolidation_method,
+            CASE
+                WHEN cu.is_primary = TRUE THEN 'primary'
+                WHEN rel.relationship_type IS NOT NULL THEN rel.relationship_type
+                ELSE 'member'
+            END AS company_context
+        FROM public.company_users cu
+        JOIN public.companies c
+          ON c.id = cu.company_id
+        LEFT JOIN public.company_relationships rel
+          ON rel.child_company_id = c.id
+         AND rel.is_active = TRUE
+        WHERE cu.user_id = %s
+          AND cu.is_active = TRUE
+        ORDER BY cu.is_primary DESC, c.name ASC;
+    """, (int(user_id),)) or []
+
+    allowed_company_ids = [
+        int(r["id"]) for r in rows if r.get("id") is not None
+    ]
+
+    primary_company_id = None
+    for r in rows:
+        if bool(r.get("is_primary")):
+            primary_company_id = int(r["id"])
+            break
+
+    if not primary_company_id and rows:
+        primary_company_id = int(rows[0]["id"])
+
+    return rows, sorted(set(allowed_company_ids)), primary_company_id
+
 @app.route("/api/auth/signup", methods=["POST"])
 def api_auth_signup():
     data = request.get_json(silent=True) or {}
@@ -1885,6 +1932,7 @@ def api_auth_me():
         ORDER BY company_id;
     """, (user_id,)) or []
     native_allowed = [int(r["company_id"]) for r in allowed_rows]
+    allowed_companies, native_allowed, primary_company_id = build_user_allowed_companies(user_id)
 
     token_cid_raw = payload.get("target_company_id") or payload.get("company_id")
     try:
@@ -1954,6 +2002,12 @@ def api_auth_me():
         # also force scope for frontend logic
         access_scope = "delegated_workspace"
 
+        active_company_context = None
+        for r in allowed_companies:
+            if company_id and int(r["id"]) == int(company_id):
+                active_company_context = r
+                break 
+
         out = {
             "id": int(user["id"]),
             "email": user["email"],
@@ -1968,6 +2022,11 @@ def api_auth_me():
             "industry": industry,
             "sub_industry": sub_industry,
             "governance_mode": governance_mode,
+
+            "primary_company_id": primary_company_id,
+            "active_company_id": company_id,
+            "allowed_companies": allowed_companies,
+            "company_context": active_company_context,
 
             "allowed_company_ids": delegated_allowed,
             "token_company_id": company_id,
@@ -3136,6 +3195,13 @@ def create_related_company(parent_company_id: int):
     auto_membership = relationship_type in {"subsidiary", "branch"}
 
     try:
+        current_app.logger.warning(
+            "[CREATE RELATED COMPANY] parent=%s type=%s payload=%s",
+            parent_company_id,
+            relationship_type,
+            data,
+        )
+
         company_result = create_company_record_from_payload(
             data=data,
             owner_user_id=current_user["id"] if auto_membership else None,
@@ -3143,7 +3209,12 @@ def create_related_company(parent_company_id: int):
             membership_kind="secondary",
         )
 
-        db_service.create_company_relationship(
+        current_app.logger.warning(
+            "[COMPANY CREATED] result=%s",
+            company_result,
+        )
+
+        rel_id = db_service.create_company_relationship(
             parent_company_id=parent_company_id,
             child_company_id=company_result["company_id"],
             relationship_type=relationship_type,
@@ -3153,6 +3224,14 @@ def create_related_company(parent_company_id: int):
             consolidation_method=consolidation_method,
             effective_from=effective_from,
             notes=notes,
+        )
+
+        current_app.logger.warning(
+            "[RELATIONSHIP CREATED] rel_id=%s parent=%s child=%s type=%s",
+            rel_id,
+            parent_company_id,
+            company_result["company_id"],
+            relationship_type,
         )
 
     except ValueError as e:
@@ -3167,6 +3246,7 @@ def create_related_company(parent_company_id: int):
     return jsonify({
         "message": f"{relationship_type.replace('_', ' ').title()} created",
         "parent_company_id": parent_company_id,
+        "relationship_id": rel_id,
         **company_result,
         "relationship_type": relationship_type,
         "ownership_percent": ownership_percent,
@@ -3261,34 +3341,13 @@ def api_auth_switch_company():
     permissions = build_permissions(role=role, access_scope=access_scope)
 
     # build all active accessible companies for this user
-    allowed_rows = db_service.fetch_all("""
-        SELECT company_id
-        FROM public.company_users
-        WHERE user_id=%s
-          AND is_active=TRUE
-        ORDER BY company_id;
-    """, (int(user_id),)) or []
+    allowed_companies, allowed_company_ids, primary_company_id = build_user_allowed_companies(int(user_id))
 
-    allowed_company_ids = [
-        int(r["company_id"])
-        for r in allowed_rows
-        if r.get("company_id") is not None
-    ]
-
-    # owner fallback
-    owned_rows = db_service.fetch_all("""
-        SELECT id AS company_id
-        FROM public.companies
-        WHERE owner_user_id=%s
-        ORDER BY id;
-    """, (int(user_id),)) or []
-
-    for r in owned_rows:
-        cid = r.get("company_id")
-        if cid is not None:
-            allowed_company_ids.append(int(cid))
-
-    allowed_company_ids = sorted(set(allowed_company_ids))
+    active_company_context = None
+    for r in allowed_companies:
+        if int(r["id"]) == int(company_id):
+            active_company_context = r
+            break
 
     if int(company_id) not in allowed_company_ids:
         allowed_company_ids.append(int(company_id))
@@ -3319,6 +3378,10 @@ def api_auth_switch_company():
         "sub_industry": company.get("sub_industry"),
         "role": role,
         "access_scope": access_scope,
+        "primary_company_id": primary_company_id,
+        "active_company_id": int(company_id),
+        "allowed_companies": allowed_companies,
+        "company_context": active_company_context,
         "membership_kind": membership_kind,
         "is_primary": is_primary,
         "user_type": user_type,
