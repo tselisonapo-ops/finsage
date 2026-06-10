@@ -59997,20 +59997,40 @@ function bindInventoryMovementsUI() {
 
 function isCarDealershipCompany() {
   const c = window.CURRENT_COMPANY || window.ACTIVE_COMPANY || {};
+
   const industry = String(c.industry || c.industry_slug || "").toLowerCase();
   const sub = String(c.sub_industry || c.sub_industry_slug || "").toLowerCase();
 
-  return industry.includes("car") ||
-         industry.includes("vehicle") ||
-         industry.includes("dealership") ||
-         sub.includes("vehicle");
+  const result =
+    industry.includes("car") ||
+    industry.includes("vehicle") ||
+    industry.includes("dealership") ||
+    sub.includes("vehicle");
+
+  console.log("[DEALERSHIP CHECK]", {
+    company: c,
+    industry,
+    sub,
+    result
+  });
+
+  return result;
 }
 
 function applyReceiveVehiclePolicy() {
   const wrap = document.getElementById("vehicleReceiveFields");
+
+  console.log("[VEHICLE POLICY]", {
+    foundElement: !!wrap,
+    dealership: isCarDealershipCompany()
+  });
+
   if (!wrap) return;
 
-  wrap.classList.toggle("hidden", !isCarDealershipCompany());
+  wrap.classList.toggle(
+    "hidden",
+    !isCarDealershipCompany()
+  );
 }
 
 async function loadInventoryMovements({ limit = 50, offset = 0 } = {}) {
@@ -61411,6 +61431,13 @@ function applyReceiveFundingPolicy() {
 async function openReceiveModal(prefill = {}) {
   const m = document.getElementById("invReceiveModal");
   if (!m) return;
+
+  console.log("CURRENT_COMPANY", window.CURRENT_COMPANY);
+
+  console.log("Industry", window.CURRENT_COMPANY?.industry);
+  console.log("Sub Industry", window.CURRENT_COMPANY?.sub_industry);
+  console.log("Industry Slug", window.CURRENT_COMPANY?.industry_slug);
+  console.log("Sub Industry Slug", window.CURRENT_COMPANY?.sub_industry_slug);
 
   showReceiveMsg("");
 
