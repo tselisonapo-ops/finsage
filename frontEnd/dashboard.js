@@ -59995,6 +59995,24 @@ function bindInventoryMovementsUI() {
   });
 }
 
+function isCarDealershipCompany() {
+  const c = window.CURRENT_COMPANY || window.ACTIVE_COMPANY || {};
+  const industry = String(c.industry || c.industry_slug || "").toLowerCase();
+  const sub = String(c.sub_industry || c.sub_industry_slug || "").toLowerCase();
+
+  return industry.includes("car") ||
+         industry.includes("vehicle") ||
+         industry.includes("dealership") ||
+         sub.includes("vehicle");
+}
+
+function applyReceiveVehiclePolicy() {
+  const wrap = document.getElementById("vehicleReceiveFields");
+  if (!wrap) return;
+
+  wrap.classList.toggle("hidden", !isCarDealershipCompany());
+}
+
 async function loadInventoryMovements({ limit = 50, offset = 0 } = {}) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return;
@@ -60158,33 +60176,6 @@ function fillReceiveVendorSelect(vendors, selectedId = "") {
 }
 window.fillReceiveVendorSelect = fillReceiveVendorSelect;
 
-async function openReceiveModal(prefill = {}) {
-  const m = document.getElementById("invReceiveModal");
-  if (!m) return;
-
-  showReceiveMsg("");
-
-  const iso = normalizeToISODate(prefill.tx_date) || new Date().toISOString().slice(0, 10);
-  document.getElementById("invReceiveDate").value = iso;
-
-  document.getElementById("invReceiveRef").value = prefill.ref || "";
-  document.getElementById("invReceiveNotes").value = prefill.notes || "";
-
-  const tbody = document.getElementById("invReceiveTbody");
-  if (tbody) tbody.innerHTML = "";
-
-  applyReceiveColumnPolicy();
-
-  // ✅ load caches
-  await ensureInvItemCache();
-  await fetchVendorsFromBackend(false);
-  fillReceiveVendorSelect(window.VENDORS_CACHE || [], prefill.vendor_id || "");
-
-  addReceiveLine();
-
-  m.classList.remove("hidden");
-}
-window.openReceiveModal = openReceiveModal;
 
 function getReceiveColumnPolicy() {
   const ind = currentIndustry();
@@ -61202,33 +61193,50 @@ async function submitReceiveStock() {
 
   showReceiveMsg("");
 
-  // ✅ normalize date to ISO
   const tx_date = readReceiveDateISO();
-  const ref     = (document.getElementById("invReceiveRef")?.value || "").trim() || null;
-  const notes   = (document.getElementById("invReceiveNotes")?.value || "").trim() || null;
+  const ref = (document.getElementById("invReceiveRef")?.value || "").trim() || null;
+  const notes = (document.getElementById("invReceiveNotes")?.value || "").trim() || null;
 
-  // ✅ NEW: supplier (vendor) link
   const vendor_id_raw = (document.getElementById("invReceiveVendor")?.value || "").trim();
-  const vendor_id = vendor_id_raw && /^\d+$/.test(vendor_id_raw) ? parseInt(vendor_id_raw, 10) : null;
+  const vendor_id = vendor_id_raw && /^\d+$/.test(vendor_id_raw)
+    ? parseInt(vendor_id_raw, 10)
+    : null;
+
   const funding_type =
     document.getElementById("invReceiveFundingType")?.value || "supplier_credit";
 
   const bank_account_id =
     Number(document.getElementById("invReceiveBank")?.value || 0) || null;
 
+  const isVehicleReceive = isCarDealershipCompany?.() === true;
+
+  const vehicle_details = isVehicleReceive ? {
+    vin: (document.getElementById("receiveVin")?.value || "").trim() || null,
+    engine_no: (document.getElementById("receiveEngineNo")?.value || "").trim() || null,
+    colour: (document.getElementById("receiveColour")?.value || "").trim() || null,
+    mileage: Number(document.getElementById("receiveMileage")?.value || 0) || null,
+    condition: document.getElementById("receiveCondition")?.value || null,
+    registration_no: (document.getElementById("receiveRegNo")?.value || "").trim() || null,
+  } : null;
+
   if (!tx_date) return showReceiveMsg("Date is required (use YYYY-MM-DD).", "error");
   if (!ref) return showReceiveMsg("Reference is required (GRN / Supplier Inv / PO #).", "error");
+
   if (funding_type === "supplier_credit" && !vendor_id) {
     return showReceiveMsg("Supplier is required for supplier credit / GRNI receipts.", "error");
   }
 
   if (funding_type === "cash_bank" && !bank_account_id) {
     return showReceiveMsg("Bank account is required for cash purchase receipts.", "error");
-  } // ✅ ADD
+  }
+
+  if (isVehicleReceive && !vehicle_details.vin) {
+    return showReceiveMsg("VIN is required when receiving vehicle stock.", "error");
+  }
 
   try { await ensureInvItemCache?.(); } catch (_) {}
 
-  const pol = getReceiveColumnPolicy?.() || { showBatch:false, showExpiry:false };
+  const pol = getReceiveColumnPolicy?.() || { showBatch: false, showExpiry: false };
 
   const tbody = document.getElementById("invReceiveTbody");
   const rows = Array.from(tbody?.querySelectorAll("tr") || []);
@@ -61242,25 +61250,28 @@ async function submitReceiveStock() {
       (tr.querySelector(".inv-rec-item")?.value || "").trim() ||
       (tr.querySelector(".inv-rec-itemid")?.value || "").trim();
 
-    let item_id = item_id_raw && /^\d+$/.test(item_id_raw) ? parseInt(item_id_raw, 10) : null;
+    let item_id = item_id_raw && /^\d+$/.test(item_id_raw)
+      ? parseInt(item_id_raw, 10)
+      : null;
 
     const sku = (tr.querySelector(".inv-rec-sku")?.value || "").trim();
+
     if (!item_id && sku) {
-      const match = (window._INV_ITEM_CACHE?.items || []).find(it => normSku(it.sku) === normSku(sku));
+      const match = (window._INV_ITEM_CACHE?.items || [])
+        .find(it => normSku(it.sku) === normSku(sku));
       if (match?.id) item_id = match.id;
     }
 
     const qty = Number(String(tr.querySelector(".inv-rec-qty")?.value || "0").replace(/,/g, ""));
     const unit_cost = Number(String(tr.querySelector(".inv-rec-cost")?.value || "0").replace(/,/g, ""));
 
-    // ✅ normalize expiry date if enabled
     let expiry_date = null;
     if (pol.showExpiry) {
       const rawExp = (tr.querySelector(".inv-rec-exp")?.value || "").trim();
       expiry_date = rawExp ? normalizeToISODate(rawExp) : null;
       if (rawExp && !expiry_date) {
         skipped++;
-        continue; // invalid expiry format
+        continue;
       }
     }
 
@@ -61285,9 +61296,16 @@ async function submitReceiveStock() {
     );
   }
 
+  if (isVehicleReceive && lines.length > 1) {
+    return showReceiveMsg("For vehicle stock, receive one vehicle per transaction so the VIN links correctly.", "error");
+  }
+
   const btn = document.getElementById("invReceiveSaveBtn");
   const old = btn?.textContent || "Receive";
-  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+  }
 
   try {
     await apiFetch(ENDPOINTS.inventory.receive(cid), {
@@ -61299,37 +61317,33 @@ async function submitReceiveStock() {
         funding_type,
         bank_account_id,
         vendor_id: funding_type === "supplier_credit" ? vendor_id : null,
+        vehicle_details,
         lines,
-      }), // ✅ KEEP vendor_id
+      }),
     });
 
     showReceiveMsg("Received ✔", "ok");
 
-    // ===============================
-    // ✅ Reset header fields (partial)
-    // ===============================
-
-    // ❌ DO NOT change date
-    // document.getElementById("invReceiveDate").value = tx_date;
-
-    // ✅ Clear supplier dropdown (UI only — backend already saved vendor_id)
     const elVendor = document.getElementById("invReceiveVendor");
     if (elVendor) elVendor.value = "";
 
-    // ✅ Clear reference + notes
-    const elRef   = document.getElementById("invReceiveRef");
+    const elRef = document.getElementById("invReceiveRef");
     const elNotes = document.getElementById("invReceiveNotes");
 
-    if (elRef)   elRef.value = "";
+    if (elRef) elRef.value = "";
     if (elNotes) elNotes.value = "";
 
-    // ===============================
-    // ✅ Reset lines but keep modal open
-    // ===============================
+    ["receiveVin", "receiveEngineNo", "receiveColour", "receiveMileage", "receiveRegNo"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+
+    const condition = document.getElementById("receiveCondition");
+    if (condition) condition.value = "new";
+
     if (tbody) tbody.innerHTML = "";
     addReceiveLine?.();
 
-    // Refresh movements grid
     loadInventoryMovements?.();
 
   } catch (err) {
@@ -61408,6 +61422,7 @@ async function openReceiveModal(prefill = {}) {
   document.getElementById("invReceiveFundingType").value =
     prefill.funding_type || "supplier_credit";
 
+  applyReceiveFundingPolicy();
   applyReceiveFundingPolicy();
   await loadReceiveBanks();
   // ✅ NEW: load vendors + populate dropdown
