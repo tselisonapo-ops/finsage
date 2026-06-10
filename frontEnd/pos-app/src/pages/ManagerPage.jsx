@@ -680,7 +680,7 @@ export function ManagerPage() {
           {tab === "staff" && (
             <StaffTab
               staffMembers={staffMembers}
-              setMessage={setMessage}
+              isRestaurantLike={isRestaurantLike}
               onAddStaff={openStaffModal}
               onDeactivate={deactivateStaffMember}
               onRefresh={loadStaffMembers}
@@ -1214,14 +1214,13 @@ function ReportGridScreen({ reportView, onBack }) {
 
 function StaffTab({
   staffMembers = [],
-  setMessage,
+  isRestaurantLike = false,
   onAddStaff,
   onDeactivate,
   onRefresh,
 }) {
-  const [staffView, setStaffView] = useState("access");
-
   const activeStaff = staffMembers.filter((s) => s.is_active !== false);
+
   const cashiers = activeStaff.filter((s) => String(s.role).toLowerCase() === "cashier").length;
   const managers = activeStaff.filter((s) => String(s.role).toLowerCase() === "manager").length;
   const waiters = activeStaff.filter((s) => String(s.role).toLowerCase() === "waiter").length;
@@ -1236,100 +1235,69 @@ function StaffTab({
           <p>Add POS employees, assign roles, control access and review staff readiness.</p>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="soft" onClick={onRefresh}>Refresh</button>
-          {staffView === "access" && (
-            <button className="scan-btn" onClick={onAddStaff}>Add Staff</button>
-          )}
-          {staffView === "tables" && (
-            <button
-              className="scan-btn"
-              onClick={() => setMessage("Next: connect this to POS tables and waiter assignments.")}
-            >
-              Assign Table
-            </button>
-          )}
+        <div className="workspace-actions">
+          <button className="soft" onClick={onRefresh}>
+            ↻ Refresh
+          </button>
+
+          <button className="scan-btn" onClick={onAddStaff}>
+            + Add Staff
+          </button>
         </div>
       </div>
 
-      <div className="report-toolbar" style={{ marginBottom: 16 }}>
-        <button className={staffView === "access" ? "scan-btn" : "soft"} onClick={() => setStaffView("access")}>
-          Staff Access
-        </button>
-        <button className={staffView === "tables" ? "scan-btn" : "soft"} onClick={() => setStaffView("tables")}>
-          Waiter Table Assignments
-        </button>
-      </div>
+      <section className="manager-grid">
+        <ManagerCard icon="💳" title="Cashiers" value={cashiers} text="Users who can process sales, returns and payments." />
+        <ManagerCard icon="🧑‍💼" title="Managers" value={managers} text="Users who can manage shifts, pricing, reports and approvals." />
+        <ManagerCard icon="🍽️" title="Waiters" value={waiters} text="Users who can take table, collection and delivery orders." />
+        <ManagerCard icon="👨‍🍳" title="Kitchen Users" value={kitchen} text="Users who can view and update kitchen order status." />
+        <ManagerCard icon="🚚" title="Drivers" value={drivers} text="Users who can manage deliveries and dispatch updates." />
+      </section>
 
-      {staffView === "access" && (
-        <>
-          <section className="manager-grid">
-            <ManagerCard icon="💳" title="Cashiers" value={cashiers} text="Users who can process sales, returns and payments." />
-            <ManagerCard icon="🧑‍💼" title="Managers" value={managers} text="Users who can manage shifts, pricing, reports and approvals." />
-            <ManagerCard icon="🍽️" title="Waiters" value={waiters} text="Users who can take table, collection and delivery orders." />
-            <ManagerCard icon="👨‍🍳" title="Kitchen Users" value={kitchen} text="Users who can view and update kitchen order status." />
-            <ManagerCard icon="🚚" title="Drivers" value={drivers} text="Users who can manage deliveries and dispatch updates." />
-          </section>
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Employee Code</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>POS Role</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
 
-          <div className="report-table-wrap" style={{ marginTop: 16 }}>
-            <table className="report-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Action</th>
+          <tbody>
+            {!staffMembers.length ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: "center" }}>
+                  No staff members found
+                </td>
+              </tr>
+            ) : (
+              staffMembers.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.employee_code || "-"}</td>
+                  <td>{s.full_name || s.pos_display_name || s.name || "-"}</td>
+                  <td>{s.email || "-"}</td>
+                  <td>{s.role || s.pos_role || "-"}</td>
+                  <td>{s.is_active !== false ? "Active" : "Inactive"}</td>
+                  <td>
+                    {s.is_active !== false && (
+                      <button
+                        className="soft danger"
+                        onClick={() => onDeactivate(s.id)}
+                      >
+                        Deactivate
+                      </button>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {!staffMembers.length ? (
-                  <tr>
-                    <td colSpan="6" style={{ textAlign: "center" }}>No staff members found</td>
-                  </tr>
-                ) : (
-                  staffMembers.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.full_name || s.name || "-"}</td>
-                      <td>{s.email || "-"}</td>
-                      <td>{s.phone || "-"}</td>
-                      <td>{s.role || "-"}</td>
-                      <td>{s.is_active !== false ? "Active" : "Inactive"}</td>
-                      <td>
-                        {s.is_active !== false && (
-                          <button className="soft danger" onClick={() => onDeactivate(s.id)}>
-                            Deactivate
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {staffView === "tables" && (
-        <section className="manager-workspace" style={{ marginTop: 18 }}>
-          <div className="workspace-head">
-            <div>
-              <h2>Waiter Table Assignments</h2>
-              <p>Assign restaurant tables or sections to waiters and waitresses.</p>
-            </div>
-          </div>
-
-          <section className="manager-grid">
-            <ManagerCard icon="🍽️" title="Tables Assigned" value="0" text="Tables currently allocated to waiters." />
-            <ManagerCard icon="🧑‍🍽️" title="Active Waiters" value={waiters} text="Waiters available for table service." />
-            <ManagerCard icon="🪑" title="Unassigned Tables" value="0" text="Tables not yet allocated to staff." />
-            <ManagerCard icon="📍" title="Sections" value="0" text="Dining areas such as floor, patio, bar or VIP." />
-          </section>
-        </section>
-      )}
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -1776,9 +1744,14 @@ function CostingTab({
           <p>Allocate rent, electricity, water, labour and other overheads to menu items.</p>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="soft" onClick={onRefresh}>Refresh</button>
-          <button className="scan-btn" onClick={onCreate}>New Cost Pool</button>
+        <div className="workspace-actions">
+          <button className="soft" onClick={onRefresh}>
+            ↻ Refresh
+          </button>
+
+          <button className="scan-btn">
+            + New Cost Pool
+          </button>
         </div>
       </div>
 
@@ -1954,12 +1927,24 @@ function OrdersManagerTab() {
   );
 }
 
-function TablesTab() {
-  const tables = [
-    ["Main Floor", "Table 1", "Available", "Unassigned", "0.00"],
-    ["Main Floor", "Table 2", "Occupied", "Waiter 1", "0.00"],
-    ["Patio", "Table 3", "Reserved", "Unassigned", "0.00"],
-  ];
+function TablesTab({
+  tables = [],
+  sections = [],
+  onRefresh,
+}) {
+  const totalTables = tables.length;
+
+  const available = tables.filter((t) =>
+    String(t.status || "").toLowerCase() === "available"
+  ).length;
+
+  const occupied = tables.filter((t) =>
+    String(t.status || "").toLowerCase() === "occupied"
+  ).length;
+
+  const billRequested = tables.filter((t) =>
+    String(t.status || "").toLowerCase() === "bill_requested"
+  ).length;
 
   return (
     <section className="manager-workspace">
@@ -1968,14 +1953,23 @@ function TablesTab() {
           <h2>Table Management</h2>
           <p>Manage table status, waiter assignments, reservations and open balances.</p>
         </div>
-        <button className="scan-btn">New Table</button>
+
+        <div className="workspace-actions">
+          <button className="soft" onClick={onRefresh}>
+            ↻ Refresh
+          </button>
+
+          <button className="scan-btn">
+            + New Table
+          </button>
+        </div>
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="🪑" title="Total Tables" value={tables.length} text="Configured restaurant tables." />
-        <ManagerCard icon="🟢" title="Available" value="1" text="Tables ready for customers." />
-        <ManagerCard icon="🔴" title="Occupied" value="1" text="Tables with active orders." />
-        <ManagerCard icon="🧾" title="Bill Requested" value="0" text="Customers waiting for bill." />
+        <ManagerCard icon="🪑" title="Total Tables" value={totalTables} text="Configured restaurant tables." />
+        <ManagerCard icon="🟢" title="Available" value={available} text="Tables ready for customers." />
+        <ManagerCard icon="🔴" title="Occupied" value={occupied} text="Tables with active orders." />
+        <ManagerCard icon="🧾" title="Bill Requested" value={billRequested} text="Customers waiting for bill." />
       </section>
 
       <div className="report-table-wrap" style={{ marginTop: 16 }}>
@@ -1984,19 +1978,32 @@ function TablesTab() {
             <tr>
               <th>Section</th>
               <th>Table</th>
+              <th>Capacity</th>
               <th>Status</th>
               <th>Waiter</th>
               <th>Open Balance</th>
             </tr>
           </thead>
+
           <tbody>
-            {tables.map((row, idx) => (
-              <tr key={idx}>
-                {row.map((cell, cidx) => (
-                  <td key={cidx}>{cell}</td>
-                ))}
+            {!tables.length ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: "center" }}>
+                  No tables configured yet
+                </td>
               </tr>
-            ))}
+            ) : (
+              tables.map((t, idx) => (
+                <tr key={t.id || idx}>
+                  <td>{t.section_name || t.section || "Main Floor"}</td>
+                  <td>{t.table_name || t.name || `Table ${idx + 1}`}</td>
+                  <td>{t.capacity || "-"}</td>
+                  <td>{t.status || "available"}</td>
+                  <td>{t.waiter_name || t.assigned_waiter || "Unassigned"}</td>
+                  <td>{money(t.open_balance || 0)}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

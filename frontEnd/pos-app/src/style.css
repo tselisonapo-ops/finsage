@@ -695,3 +695,75 @@ input:disabled {
   background: #f4fbfb;
   font-weight: 800;
 }
+
+/* ==========================================
+   Manager Toolbar
+========================================== */
+
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workspace-actions button {
+  border: none;
+  border-radius: 14px;
+  height: 42px;
+  padding: 0 18px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+/* Secondary button (Refresh) */
+.workspace-actions .soft {
+  background: #f4fbfb;
+  color: #0f3d4a;
+  border: 1px solid #d7e7ea;
+}
+
+.workspace-actions .soft:hover {
+  background: #e8fbf8;
+  border-color: #0f766e;
+  color: #0f766e;
+  transform: translateY(-1px);
+}
+
+/* Primary action */
+.workspace-actions .scan-btn {
+  background: #0f766e;
+  color: white;
+  box-shadow: 0 8px 20px rgba(15,118,110,0.22);
+}
+
+.workspace-actions .scan-btn:hover {
+  background: #0d6b63;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15,118,110,0.28);
+}
+
+.workspace-actions .scan-btn:active,
+.workspace-actions .soft:active {
+  transform: translateY(0);
+}
+
+.header-actions a,
+.header-actions button {
+  border: 0;
+  border-radius: 14px;
+  height: 40px;
+  padding: 0 18px;
+  background: rgba(255,255,255,0.14);
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.header-actions a:hover,
+.header-actions button:hover {
+  background: rgba(255,255,255,0.22);
+  transform: translateY(-1px);
+}
