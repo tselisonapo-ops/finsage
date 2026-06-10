@@ -29,7 +29,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
 from flask import current_app, g, request
 import hashlib
-
+from werkzeug.security import generate_password_hash
+import secrets
 from dateutil.relativedelta import relativedelta
 from psycopg2 import errorcodes
 import psycopg2
@@ -36439,6 +36440,191 @@ class DatabaseService:
             WHERE company_id=%s AND id=%s
             RETURNING *
         """, (int(company_id), int(table_id)))
+
+    def pos_create_staff_member(self, company_id: int, data: dict) -> int:
+        full_name = (data.get("full_name") or "").strip()
+        email = (data.get("email") or "").strip().lower()
+        phone = (data.get("phone") or "").strip()
+        pos_role = (data.get("role") or data.get("pos_role") or "cashier").strip().lower()
+        pin = str(data.get("pin") or "").strip()
+
+        if not full_name:
+            raise ValueError("full_name is required")
+        if not email:
+            raise ValueError("email is required")
+        if not pin:
+            raise ValueError("PIN is required")
+
+        parts = full_name.split(" ", 1)
+        first_name = parts[0]
+        last_name = parts[1] if len(parts) > 1 else "-"
+
+        employee_code = (
+            data.get("employee_code")
+            or f"POS-{secrets.token_hex(3).upper()}"
+        )
+
+        pin_hash = generate_password_hash(pin)
+
+        with self._conn_cursor() as (conn, cur):
+            user = self.fetch_one("""
+                INSERT INTO public.users
+                (
+                    email,
+                    password_hash,
+                    user_type,
+                    first_name,
+                    last_name,
+                    user_role,
+                    access_level,
+                    is_confirmed,
+                    is_active,
+                    company_id
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (email) DO UPDATE
+                SET is_active = TRUE
+                RETURNING id
+            """, (
+                email,
+                generate_password_hash(secrets.token_urlsafe(16)),
+                "company_user",
+                first_name,
+                last_name,
+                pos_role,
+                "pos",
+                True,
+                True,
+                int(company_id),
+            ), cur=cur)
+
+            user_id = int(user["id"])
+
+            row = self.fetch_one("""
+                INSERT INTO public.company_users
+                (
+                    company_id,
+                    user_id,
+                    role,
+                    access_level,
+                    access_scope,
+                    assignment_role,
+                    membership_kind,
+                    is_active,
+                    joined_at,
+                    pos_role,
+                    pos_permissions,
+                    pos_is_active,
+                    employee_code,
+                    pin_hash,
+                    pos_display_name
+                )
+                VALUES
+                (
+                    %s,%s,%s,%s,%s,%s,%s,
+                    TRUE,NOW(),
+                    %s,%s::jsonb,TRUE,
+                    %s,%s,%s
+                )
+                ON CONFLICT (company_id, user_id) DO UPDATE
+                SET
+                    role = EXCLUDED.role,
+                    access_level = EXCLUDED.access_level,
+                    access_scope = EXCLUDED.access_scope,
+                    assignment_role = EXCLUDED.assignment_role,
+                    is_active = TRUE,
+                    pos_role = EXCLUDED.pos_role,
+                    pos_permissions = EXCLUDED.pos_permissions,
+                    pos_is_active = TRUE,
+                    employee_code = EXCLUDED.employee_code,
+                    pin_hash = EXCLUDED.pin_hash,
+                    pos_display_name = EXCLUDED.pos_display_name
+                RETURNING id
+            """, (
+                int(company_id),
+                user_id,
+                pos_role,
+                "pos",
+                "pos",
+                pos_role,
+                "secondary",
+                pos_role,
+                "{}",
+                employee_code,
+                pin_hash,
+                full_name,
+            ), cur=cur)
+
+            conn.commit()
+            return int(row["id"])
+
+    def pos_list_staff_members(self, company_id: int) -> list[dict]:
+        return self.fetch_all("""
+            SELECT
+                cu.id,
+                cu.company_id,
+                cu.user_id,
+                cu.employee_code,
+                cu.pos_display_name AS full_name,
+                cu.pos_role AS role,
+                cu.pos_permissions,
+                cu.pos_is_active AS is_active,
+                u.email,
+                u.first_name,
+                u.last_name
+            FROM public.company_users cu
+            JOIN public.users u ON u.id = cu.user_id
+            WHERE cu.company_id = %s
+            AND cu.access_scope = 'pos'
+            ORDER BY cu.pos_is_active DESC, cu.pos_display_name ASC
+        """, (int(company_id),))
+
+
+    def pos_update_staff_member(self, company_id: int, staff_id: int, data: dict) -> dict | None:
+        allowed = {
+            "pos_role",
+            "pos_permissions",
+            "pos_is_active",
+            "employee_code",
+            "pos_display_name",
+            "is_active",
+        }
+
+        sets = []
+        params = []
+
+        for key, value in (data or {}).items():
+            db_key = key
+
+            if key == "role":
+                db_key = "pos_role"
+            if key == "full_name":
+                db_key = "pos_display_name"
+            if key == "is_active":
+                db_key = "pos_is_active"
+
+            if db_key in allowed:
+                sets.append(f"{db_key} = %s")
+                params.append(value)
+
+        pin = str(data.get("pin") or "").strip()
+        if pin:
+            sets.append("pin_hash = %s")
+            params.append(generate_password_hash(pin))
+
+        if not sets:
+            return None
+
+        params.extend([int(company_id), int(staff_id)])
+
+        return self.fetch_one(f"""
+            UPDATE public.company_users
+            SET {", ".join(sets)}
+            WHERE company_id = %s
+            AND id = %s
+            AND access_scope = 'pos'
+            RETURNING *
+        """, tuple(params))
 
     def fifo_consume(
         self,

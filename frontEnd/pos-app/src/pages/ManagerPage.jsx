@@ -82,6 +82,9 @@ export function ManagerPage() {
   const [inventoryItems, setInventoryItems] = useState([]);
   const [stockCounts, setStockCounts] = useState([]);
   const [purchasingSummary, setPurchasingSummary] = useState({});
+  const [staffMembers, setStaffMembers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [barcodeLabels, setBarcodeLabels] = useState([]);
 
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
@@ -123,6 +126,9 @@ export function ManagerPage() {
       if (activeTab === "tables") await loadTables();
       if (activeTab === "kitchen") await loadKitchenQueue();
       if (activeTab === "purchasing") await loadPurchasing();
+      if (activeTab === "staff") await loadStaffMembers();
+      if (activeTab === "orders") await loadOrders();
+      if (activeTab === "labels") await loadBarcodeLabels();
 
       if (activeTab === "tables") {
         await Promise.allSettled([
@@ -168,6 +174,14 @@ export function ManagerPage() {
   async function loadPromotions() {
     const res = await posApi.listPromotions();
     setPromotions(res.promotions || []);
+  }
+
+  async function deactivateStaffMember(staffId) {
+    await posApi.deactivateStaffMember(staffId);
+
+    setMessage("Staff member deactivated.");
+
+    await loadTabData("staff");
   }
 
   async function saveReceiptSettings(payload) {
@@ -258,6 +272,21 @@ export function ManagerPage() {
         price_variances: 0,
       });
     }
+  }
+
+  async function loadStaffMembers() {
+    const res = await posApi.listStaffMembers();
+    setStaffMembers(res.staff || res.users || []);
+  }
+
+  async function loadOrders() {
+    const res = await posApi.listOrders();
+    setOrders(res.orders || []);
+  }
+
+  async function loadBarcodeLabels() {
+    const res = await posApi.listBarcodeLabels?.();
+    setBarcodeLabels(res?.labels || []);
   }
 
   function openTerminalModal() {
@@ -416,6 +445,21 @@ export function ManagerPage() {
       await loadRecipes();
     }
 
+    if (modal.type === "staff") {
+      await posApi.createStaffMember({
+        full_name: values.full_name,
+        email: values.email,
+        phone: values.phone || "",
+        role: values.role || "cashier",
+        pin: values.pin || "",
+        access_scope: "pos",
+        is_active: true,
+      });
+
+      setMessage("Staff member added.");
+      await loadTabData("staff");
+    }
+
     if (modal.type === "cost_pool") {
       await posApi.createCostPool({
         pool_code: `POOL-${Date.now()}`,
@@ -442,6 +486,20 @@ export function ManagerPage() {
     }
 
     setModal(null);
+  }
+
+  function openStaffModal() {
+    setModal({
+      type: "staff",
+      title: "Add POS Staff Member",
+      fields: [
+        { key: "full_name", label: "Full Name", value: "" },
+        { key: "email", label: "Email Address", value: "" },
+        { key: "phone", label: "Phone Number", value: "" },
+        { key: "role", label: "POS Role", value: "cashier" },
+        { key: "pin", label: "Employee PIN", value: "" },
+      ],
+    });
   }
 
   function openRecipeModal() {
@@ -569,11 +627,19 @@ export function ManagerPage() {
           )}
 
           {tab === "recipes" && (
-          <RecipesTab recipes={recipes} onCreate={openRecipeModal} />
+            <RecipesTab
+              recipes={recipes}
+              onCreate={openRecipeModal}
+              onRefresh={loadRecipes}
+            />
           )}
 
           {tab === "costing" && (
-          <CostingTab costPools={costPools} onCreate={openCostPoolModal} />
+            <CostingTab
+              costPools={costPools}
+              onCreate={openCostPoolModal}
+              onRefresh={loadCostPools}
+            />
           )}
 
           {tab === "orders" && isRestaurantLike && <OrdersManagerTab />}
@@ -588,11 +654,22 @@ export function ManagerPage() {
 
           {tab === "kitchen" && isRestaurantLike && <KitchenTab />}
 
-          {tab === "inventory" && <InventoryTab isRestaurantLike={isRestaurantLike} />}
+          {tab === "inventory" && (
+            <InventoryTab
+              isRestaurantLike={isRestaurantLike}
+              inventoryItems={inventoryItems}
+              onRefresh={loadInventory}
+            />
+          )}
+
+          {tab === "purchasing" && isRestaurantLike && (
+            <PurchasingTab
+              purchasingSummary={purchasingSummary}
+              onRefresh={loadPurchasing}
+            />
+          )}
 
           {tab === "stock_count" && !isRestaurantLike && <StockCountTab />}
-
-          {tab === "purchasing" && isRestaurantLike && <PurchasingTab />}
 
           {tab === "promotions" && (
             <PromotionsTab promotions={promotions} onCreate={openPromotionModal} />
@@ -600,7 +677,15 @@ export function ManagerPage() {
 
           {tab === "labels" && <LabelsTab onGenerate={openBarcodeModal} />}
 
-          {tab === "staff" && <StaffTab setMessage={setMessage} />}
+          {tab === "staff" && (
+            <StaffTab
+              staffMembers={staffMembers}
+              setMessage={setMessage}
+              onAddStaff={openStaffModal}
+              onDeactivate={deactivateStaffMember}
+              onRefresh={loadStaffMembers}
+            />
+          )}
 
           {tab === "attendance" && <AttendanceTab />}
 
@@ -1127,7 +1212,22 @@ function ReportGridScreen({ reportView, onBack }) {
   );
 }
 
-function StaffTab({ setMessage }) {
+function StaffTab({
+  staffMembers = [],
+  setMessage,
+  onAddStaff,
+  onDeactivate,
+  onRefresh,
+}) {
+  const [staffView, setStaffView] = useState("access");
+
+  const activeStaff = staffMembers.filter((s) => s.is_active !== false);
+  const cashiers = activeStaff.filter((s) => String(s.role).toLowerCase() === "cashier").length;
+  const managers = activeStaff.filter((s) => String(s.role).toLowerCase() === "manager").length;
+  const waiters = activeStaff.filter((s) => String(s.role).toLowerCase() === "waiter").length;
+  const kitchen = activeStaff.filter((s) => String(s.role).toLowerCase() === "kitchen").length;
+  const drivers = activeStaff.filter((s) => String(s.role).toLowerCase() === "driver").length;
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -1135,93 +1235,101 @@ function StaffTab({ setMessage }) {
           <h2>Staff & Access</h2>
           <p>Add POS employees, assign roles, control access and review staff readiness.</p>
         </div>
-        <button className="scan-btn" onClick={() => setMessage("Connect this to company_invites with access_scope='pos'.")}>
-          Add Staff
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="soft" onClick={onRefresh}>Refresh</button>
+          {staffView === "access" && (
+            <button className="scan-btn" onClick={onAddStaff}>Add Staff</button>
+          )}
+          {staffView === "tables" && (
+            <button
+              className="scan-btn"
+              onClick={() => setMessage("Next: connect this to POS tables and waiter assignments.")}
+            >
+              Assign Table
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="report-toolbar" style={{ marginBottom: 16 }}>
+        <button className={staffView === "access" ? "scan-btn" : "soft"} onClick={() => setStaffView("access")}>
+          Staff Access
+        </button>
+        <button className={staffView === "tables" ? "scan-btn" : "soft"} onClick={() => setStaffView("tables")}>
+          Waiter Table Assignments
         </button>
       </div>
 
-      <section className="manager-grid">
-        <ManagerCard icon="💳" title="Cashiers" value="0" text="Users who can process sales, returns and payments." />
-        <ManagerCard icon="🧑‍💼" title="Managers" value="0" text="Users who can manage shifts, pricing, reports and approvals." />
-        <ManagerCard icon="🍽️" title="Waiters" value="0" text="Users who can take table, collection and delivery orders." />
-        <ManagerCard icon="👨‍🍳" title="Kitchen Users" value="0" text="Users who can view and update kitchen order status." />
-        <ManagerCard icon="🚚" title="Drivers" value="0" text="Users who can manage deliveries and dispatch updates." />
-      </section>
+      {staffView === "access" && (
+        <>
+          <section className="manager-grid">
+            <ManagerCard icon="💳" title="Cashiers" value={cashiers} text="Users who can process sales, returns and payments." />
+            <ManagerCard icon="🧑‍💼" title="Managers" value={managers} text="Users who can manage shifts, pricing, reports and approvals." />
+            <ManagerCard icon="🍽️" title="Waiters" value={waiters} text="Users who can take table, collection and delivery orders." />
+            <ManagerCard icon="👨‍🍳" title="Kitchen Users" value={kitchen} text="Users who can view and update kitchen order status." />
+            <ManagerCard icon="🚚" title="Drivers" value={drivers} text="Users who can manage deliveries and dispatch updates." />
+          </section>
 
-      <section className="settings-layout" style={{ marginTop: 18 }}>
-        <div className="settings-panel">
+          <div className="report-table-wrap" style={{ marginTop: 16 }}>
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {!staffMembers.length ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: "center" }}>No staff members found</td>
+                  </tr>
+                ) : (
+                  staffMembers.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.full_name || s.name || "-"}</td>
+                      <td>{s.email || "-"}</td>
+                      <td>{s.phone || "-"}</td>
+                      <td>{s.role || "-"}</td>
+                      <td>{s.is_active !== false ? "Active" : "Inactive"}</td>
+                      <td>
+                        {s.is_active !== false && (
+                          <button className="soft danger" onClick={() => onDeactivate(s.id)}>
+                            Deactivate
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {staffView === "tables" && (
+        <section className="manager-workspace" style={{ marginTop: 18 }}>
           <div className="workspace-head">
             <div>
-              <h2>Access Roles</h2>
-              <p>Suggested POS roles and what each role can do.</p>
+              <h2>Waiter Table Assignments</h2>
+              <p>Assign restaurant tables or sections to waiters and waitresses.</p>
             </div>
           </div>
 
           <section className="manager-grid">
-            <ManagerCard icon="🛒" title="Sales Access" value="Cashier" text="Create sales, returns, quotes and customer payments." />
-            <ManagerCard icon="🍽️" title="Order Access" value="Waiter" text="Create table, collection and delivery orders." />
-            <ManagerCard icon="🧾" title="Shift Access" value="Supervisor" text="Open shifts, close cashiers and approve cash-up differences." />
-            <ManagerCard icon="📊" title="Report Access" value="Manager" text="View sales reports, margin reports and staff performance." />
+            <ManagerCard icon="🍽️" title="Tables Assigned" value="0" text="Tables currently allocated to waiters." />
+            <ManagerCard icon="🧑‍🍽️" title="Active Waiters" value={waiters} text="Waiters available for table service." />
+            <ManagerCard icon="🪑" title="Unassigned Tables" value="0" text="Tables not yet allocated to staff." />
+            <ManagerCard icon="📍" title="Sections" value="0" text="Dining areas such as floor, patio, bar or VIP." />
           </section>
-        </div>
-
-        <div className="receipt-preview-card">
-          <div className="receipt-paper">
-            <h3>Staff Setup Checklist</h3>
-            <div className="receipt-line"><span>Cashiers created</span><strong>0</strong></div>
-            <div className="receipt-line"><span>Terminals assigned</span><strong>0</strong></div>
-            <div className="receipt-line"><span>PINs configured</span><strong>0</strong></div>
-            <div className="receipt-line"><span>Active staff</span><strong>0</strong></div>
-            <div className="receipt-total"><span>Status</span><strong>Pending</strong></div>
-            <small>Add staff, assign POS roles and configure employee PINs before going live.</small>
-          </div>
-        </div>
-      </section>
-
-      <section className="manager-workspace" style={{ marginTop: 18 }}>
-        <div className="workspace-head">
-          <div>
-            <h2>Waiter Table Assignments</h2>
-            <p>Assign restaurant tables or sections to waiters and waitresses.</p>
-          </div>
-          <button
-            className="scan-btn"
-            onClick={() => setMessage("Next: connect this to POS tables and waiter assignments.")}
-          >
-            Assign Table
-          </button>
-        </div>
-
-        <section className="manager-grid">
-          <ManagerCard icon="🍽️" title="Tables Assigned" value="0" text="Tables currently allocated to waiters." />
-          <ManagerCard icon="🧑‍🍽️" title="Active Waiters" value="0" text="Waiters available for table service." />
-          <ManagerCard icon="🪑" title="Unassigned Tables" value="0" text="Tables not yet allocated to staff." />
-          <ManagerCard icon="📍" title="Sections" value="0" text="Dining areas such as floor, patio, bar or VIP." />
         </section>
-
-        <div className="report-table-wrap" style={{ marginTop: 16 }}>
-          <table className="report-table">
-            <thead>
-              <tr>
-                <th>Section</th>
-                <th>Table</th>
-                <th>Assigned Waiter</th>
-                <th>Status</th>
-                <th>Open Orders</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Main Floor</td>
-                <td>Table 1</td>
-                <td>Unassigned</td>
-                <td>Available</td>
-                <td>0</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      )}
     </section>
   );
 }
@@ -1590,35 +1698,76 @@ function ReceiptSettingsTab({ settings, onSave }) {
   );
 }
 
-function RecipesTab({ recipes, onCreate }) {
+function RecipesTab({
+  recipes = [],
+  onCreate,
+  onRefresh,
+}) {
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
         <div>
           <h2>Recipes / Menu BOM</h2>
-          <p>Link menu items to ingredient recipes for automatic food-cost tracing.</p>
+          <p>Link menu items to ingredient recipes for automatic food-cost tracking.</p>
         </div>
-        <button className="scan-btn" onClick={onCreate}>New Recipe</button>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="soft" onClick={onRefresh}>
+            Refresh
+          </button>
+
+          <button className="scan-btn" onClick={onCreate}>
+            New Recipe
+          </button>
+        </div>
       </div>
 
-      <section className="manager-grid">
-        {recipes.length ? recipes.map((r) => (
-          <ManagerCard
-            key={r.id}
-            icon="🍽️"
-            title={r.recipe_name || r.menu_item_name || "Recipe"}
-            value={`${r.yield_qty || 1} ${r.yield_uom || "portion"}`}
-            text={r.menu_item_name || "Menu recipe / bill of materials."}
-          />
-        )) : (
-          <ManagerCard icon="🍽️" title="No Recipes" value="Create" text="Create recipes for meals, drinks or combos." />
-        )}
-      </section>
+      <div className="report-table-wrap">
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Recipe Code</th>
+              <th>Recipe Name</th>
+              <th>Yield Qty</th>
+              <th>Unit</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {!recipes.length ? (
+              <tr>
+                <td colSpan="5" style={{ textAlign: "center" }}>
+                  No recipes found
+                </td>
+              </tr>
+            ) : (
+              recipes.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.recipe_code || "-"}</td>
+                  <td>{r.recipe_name || r.name}</td>
+                  <td>{r.yield_qty ?? 0}</td>
+                  <td>{r.yield_uom || "-"}</td>
+                  <td>
+                    {r.is_active !== false
+                      ? "Active"
+                      : "Inactive"}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
 
-function CostingTab({ costPools, onCreate }) {
+function CostingTab({
+  costPools = [],
+  onCreate,
+  onRefresh,
+}) {
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -1626,22 +1775,52 @@ function CostingTab({ costPools, onCreate }) {
           <h2>Meal Costing</h2>
           <p>Allocate rent, electricity, water, labour and other overheads to menu items.</p>
         </div>
-        <button className="scan-btn" onClick={onCreate}>New Cost Pool</button>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="soft" onClick={onRefresh}>Refresh</button>
+          <button className="scan-btn" onClick={onCreate}>New Cost Pool</button>
+        </div>
       </div>
 
-      <section className="manager-grid">
-        {costPools.length ? costPools.map((p) => (
-          <ManagerCard
-            key={p.id}
-            icon="🧮"
-            title={p.pool_name || "Cost Pool"}
-            value={money(p.amount || 0)}
-            text={`${p.pool_type || "other"} • ${p.allocation_basis || "manual_weight"}`}
-          />
-        )) : (
-          <ManagerCard icon="🧮" title="No Cost Pools" value="Create" text="Add rent, utilities, labour or other overhead pools." />
-        )}
-      </section>
+      <div className="report-table-wrap">
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Pool Code</th>
+              <th>Cost Pool</th>
+              <th>Type</th>
+              <th>Allocation Basis</th>
+              <th>Amount</th>
+              <th>Period</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {!costPools.length ? (
+              <tr>
+                <td colSpan="7" style={{ textAlign: "center" }}>
+                  No cost pools found
+                </td>
+              </tr>
+            ) : (
+              costPools.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.pool_code || "-"}</td>
+                  <td>{p.pool_name || "-"}</td>
+                  <td>{p.pool_type || "-"}</td>
+                  <td>{p.allocation_basis || "-"}</td>
+                  <td>{money(p.amount || 0)}</td>
+                  <td>
+                    {(p.period_start || "-") + " to " + (p.period_end || "-")}
+                  </td>
+                  <td>{p.is_active !== false ? "Active" : "Inactive"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -1852,7 +2031,19 @@ function KitchenTab() {
   );
 }
 
-function InventoryTab({ isRestaurantLike }) {
+function InventoryTab({
+  isRestaurantLike,
+  inventoryItems = [],
+  onRefresh,
+}) {
+  const lowStock = inventoryItems.filter((x) =>
+    Number(x.qty_on_hand || x.quantity_on_hand || 0) <= Number(x.reorder_level || 0)
+  ).length;
+
+  const negativeStock = inventoryItems.filter((x) =>
+    Number(x.qty_on_hand || x.quantity_on_hand || 0) < 0
+  ).length;
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -1864,22 +2055,56 @@ function InventoryTab({ isRestaurantLike }) {
               : "Monitor stock on hand, low stock, negative stock and recent movements."}
           </p>
         </div>
-        <button className="scan-btn">Refresh Stock</button>
+
+        <button className="scan-btn" onClick={onRefresh}>
+          Refresh Stock
+        </button>
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="📦" title="Stock Items" value="0" text="Inventory items available for POS." />
-        <ManagerCard icon="⚠️" title="Low Stock" value="0" text="Items below reorder level." />
-        <ManagerCard icon="📉" title="Negative Stock" value="0" text="Items sold below available quantity." />
-        <ManagerCard icon="🔄" title="Recent Movements" value="0" text="Stock movements from POS sales and adjustments." />
-
-        {isRestaurantLike && (
-          <>
-            <ManagerCard icon="🥬" title="Ingredients" value="0" text="Ingredient items linked to recipes." />
-            <ManagerCard icon="🗑️" title="Waste Recorded" value="0.00" text="Spoilage, breakages and kitchen waste." />
-          </>
-        )}
+        <ManagerCard icon="📦" title="Stock Items" value={inventoryItems.length} text="Inventory items available for POS." />
+        <ManagerCard icon="⚠️" title="Low Stock" value={lowStock} text="Items below reorder level." />
+        <ManagerCard icon="📉" title="Negative Stock" value={negativeStock} text="Items sold below available quantity." />
+        <ManagerCard icon="🔄" title="Recent Movements" value="View" text="Stock movements from POS sales and adjustments." />
       </section>
+
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>SKU</th>
+              <th>Barcode</th>
+              <th>Category</th>
+              <th>Qty On Hand</th>
+              <th>Reorder Level</th>
+              <th>Unit Price</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {!inventoryItems.length ? (
+              <tr>
+                <td colSpan="7" style={{ textAlign: "center" }}>
+                  No inventory items found
+                </td>
+              </tr>
+            ) : (
+              inventoryItems.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.name || item.item_name || "-"}</td>
+                  <td>{item.sku || "-"}</td>
+                  <td>{item.barcode || "-"}</td>
+                  <td>{item.category || "-"}</td>
+                  <td>{item.qty_on_hand ?? item.quantity_on_hand ?? 0}</td>
+                  <td>{item.reorder_level ?? 0}</td>
+                  <td>{money(item.unit_price || item.selling_price || 0)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -1905,7 +2130,10 @@ function StockCountTab() {
   );
 }
 
-function PurchasingTab() {
+function PurchasingTab({
+  purchasingSummary = {},
+  onRefresh,
+}) {
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -1913,17 +2141,25 @@ function PurchasingTab() {
           <h2>Purchasing</h2>
           <p>Manage suppliers, purchase orders, goods received and outstanding deliveries.</p>
         </div>
-        <button className="scan-btn">New Purchase Order</button>
+
+        <button className="scan-btn" onClick={onRefresh}>
+          Refresh Purchasing
+        </button>
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="🏢" title="Suppliers" value="0" text="Suppliers linked to restaurant purchasing." />
-        <ManagerCard icon="🧾" title="Purchase Orders" value="0" text="Open purchase orders for ingredients and supplies." />
-        <ManagerCard icon="📥" title="Goods Received" value="0" text="Received supplier deliveries." />
-        <ManagerCard icon="🚚" title="Outstanding Deliveries" value="0" text="Orders not yet received." />
-        <ManagerCard icon="💰" title="Purchase Value" value="0.00" text="Total purchases for selected period." />
-        <ManagerCard icon="⚠️" title="Price Variances" value="0" text="Ingredient price changes needing review." />
+        <ManagerCard icon="🏢" title="Suppliers" value={purchasingSummary.suppliers || 0} text="Suppliers linked to restaurant purchasing." />
+        <ManagerCard icon="🧾" title="Purchase Orders" value={purchasingSummary.purchase_orders || 0} text="Open purchase orders for ingredients and supplies." />
+        <ManagerCard icon="📥" title="Goods Received" value={purchasingSummary.goods_received || 0} text="Received supplier deliveries." />
+        <ManagerCard icon="🚚" title="Outstanding Deliveries" value={purchasingSummary.outstanding_deliveries || 0} text="Orders not yet received." />
+        <ManagerCard icon="💰" title="Purchase Value" value={money(purchasingSummary.purchase_value || 0)} text="Total purchases for selected period." />
+        <ManagerCard icon="⚠️" title="Price Variances" value={purchasingSummary.price_variances || 0} text="Ingredient price changes needing review." />
       </section>
+
+      <div className="empty-state" style={{ marginTop: 16 }}>
+        <strong>Purchasing detail list</strong>
+        <p>Add list routes later for suppliers, purchase orders and goods received.</p>
+      </div>
     </section>
   );
 }

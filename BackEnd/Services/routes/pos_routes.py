@@ -1248,3 +1248,25 @@ def api_pos_delete_table(cid: int, table_id: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_delete_table failed")
         return _err("Server error", 500, ex)
+
+@pos_bp.route("/api/companies/<int:cid>/pos/staff", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_staff_members(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            rows = db_service.pos_list_staff_members(cid)
+            return jsonify({"ok": True, "staff": rows, "count": len(rows)}), 200
+
+        staff_id = db_service.pos_create_staff_member(cid, _body())
+        return _ok({"staff_id": int(staff_id)}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_staff_members failed")
+        return _err("Server error", 500, ex)

@@ -175,4 +175,125 @@ export const posApi = {
     deleteTable(tableId) {
     return postJson(`${base()}/tables/${tableId}/delete`, {});
     },
+
+    // =========================
+    // RECIPES / MENU BOM
+    // =========================
+
+    listRecipes() {
+    return getJson(`${base()}/recipes`);
+    },
+
+    getRecipe(recipeId) {
+    return getJson(`${base()}/recipes/${recipeId}`);
+    },
+
+    createRecipe(payload) {
+    return postJson(`${base()}/recipes`, payload);
+    },
+
+    updateRecipe(recipeId, payload) {
+    return patchJson(`${base()}/recipes/${recipeId}`, payload);
+    },
+
+    deactivateRecipe(recipeId) {
+    return patchJson(`${base()}/recipes/${recipeId}`, {
+        is_active: false,
+    });
+    },
+
+    // =========================
+    // MEAL COSTING
+    // =========================
+
+    listCostPools() {
+    return getJson(`${base()}/cost-pools`);
+    },
+
+    getCostPool(poolId) {
+    return getJson(`${base()}/cost-pools/${poolId}`);
+    },
+
+    createCostPool(payload) {
+    return postJson(`${base()}/cost-pools`, payload);
+    },
+
+    updateCostPool(poolId, payload) {
+    return patchJson(`${base()}/cost-pools/${poolId}`, payload);
+    },
+
+    deactivateCostPool(poolId) {
+    return patchJson(`${base()}/cost-pools/${poolId}`, {
+        is_active: false,
+    });
+    },
+
+    // =========================
+    // INVENTORY
+    // =========================
+
+    listInventoryItems(q = "") {
+    return getJson(`${base()}/items/search?q=${encodeURIComponent(q)}&limit=100`);
+    },
+
+    getInventoryItemByBarcode(barcode) {
+    return getJson(`${base()}/items/barcode/${encodeURIComponent(barcode)}`);
+    },
+
+    // =========================
+    // PURCHASING SUMMARY
+    // =========================
+
+    getPurchasingSummary() {
+    return getJson(`${base()}/purchasing/summary`);
+    },
+
+    // =========================
+    // STAFF
+    // =========================
+
+    listStaffMembers() {
+    return getJson(`${base()}/staff`);
+    },
+
+    createStaffMember(payload) {
+    return postJson(`${base()}/staff`, payload);
+    },
+
+    updateStaffMember(staffId, payload) {
+    return patchJson(`${base()}/staff/${staffId}`, payload);
+    },
+
+    deactivateStaffMember(staffId) {
+    return patchJson(`${base()}/staff/${staffId}`, {
+        is_active: false,
+    });
+    },
+
+    // =========================
+    // ORDERS
+    // =========================
+
+    listOrders(status = "", orderType = "") {
+    return getJson(
+        `${base()}/orders?status=${encodeURIComponent(status)}&order_type=${encodeURIComponent(orderType)}&limit=100`
+    );
+    },
+
+    getOrder(orderId) {
+    return getJson(`${base()}/orders/${orderId}`);
+    },
+
+    updateOrderStatus(orderId, payload) {
+    return postJson(`${base()}/orders/${orderId}/status`, payload);
+    },
+
+    // =========================
+    // BARCODE LABELS
+    // =========================
+
+    listBarcodeLabels() {
+    return getJson(`${base()}/barcodes/labels`);
+    },
+
 };
