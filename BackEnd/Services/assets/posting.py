@@ -5226,3 +5226,4 @@ def get_asset_policies(company_id: int) -> dict:
             """), (company_id,))
             row = cur.fetchone() or {}
             return row.get("payload_json") or {}
+

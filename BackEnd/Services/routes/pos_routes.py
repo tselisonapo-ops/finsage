@@ -1119,3 +1119,132 @@ def api_pos_decide_return_approval(cid: int, return_id: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_decide_return_approval failed")
         return _err("Server error", 500, ex)
+    
+# =========================
+# RESTAURANT TABLE SECTIONS
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/table-sections", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_table_sections(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            active_only = request.args.get("active_only", "0") in {"1", "true", "yes"}
+            rows = db_service.pos_list_table_sections(cid, active_only=active_only)
+            return jsonify({"ok": True, "sections": rows, "count": len(rows)}), 200
+
+        section_id = db_service.pos_create_table_section(cid, _body())
+        return _ok({"section_id": int(section_id)}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_table_sections failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/table-sections/<int:section_id>", methods=["PATCH", "OPTIONS"])
+@require_auth
+def api_pos_update_table_section(cid: int, section_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.pos_update_table_section(cid, section_id, _body())
+        if not row:
+            return _err("Table section not found", 404)
+
+        return jsonify({"ok": True, "section": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_update_table_section failed")
+        return _err("Server error", 500, ex)
+
+
+# =========================
+# RESTAURANT TABLES
+# =========================
+
+@pos_bp.route("/api/companies/<int:cid>/pos/tables", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_tables(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            active_only = request.args.get("active_only", "0") in {"1", "true", "yes"}
+            section_id_raw = request.args.get("section_id")
+            section_id = int(section_id_raw) if section_id_raw else None
+
+            rows = db_service.pos_list_tables(
+                cid,
+                active_only=active_only,
+                section_id=section_id,
+            )
+
+            return jsonify({"ok": True, "tables": rows, "count": len(rows)}), 200
+
+        table_id = db_service.pos_create_table(cid, _body())
+        return _ok({"table_id": int(table_id)}, 201)
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_tables failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/tables/<int:table_id>", methods=["PATCH", "OPTIONS"])
+@require_auth
+def api_pos_update_table(cid: int, table_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.pos_update_table(cid, table_id, _body())
+        if not row:
+            return _err("Table not found", 404)
+
+        return jsonify({"ok": True, "table": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_update_table failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/tables/<int:table_id>/delete", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_delete_table(cid: int, table_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.pos_delete_table(cid, table_id)
+        if not row:
+            return _err("Table not found", 404)
+
+        return jsonify({"ok": True, "table": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_delete_table failed")
+        return _err("Server error", 500, ex)

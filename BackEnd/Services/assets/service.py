@@ -1251,8 +1251,15 @@ def create_acquisition(cur, company_id, asset_id, payload):
     if vat_recovery_percent < 0 or vat_recovery_percent > 100:
         raise Exception("vat_recovery_percent must be between 0 and 100")
 
-    if not vat_recovery_reason:
+    # Require VAT reason only when input VAT is claimable
+    if vat_input_claimable and not vat_recovery_reason:
         raise Exception("vat_recovery_reason is required")
+
+    # If VAT is not claimable, keep reason empty and percent 0
+    if not vat_input_claimable:
+        vat_recovery_reason = None
+        vat_recovery_percent = Decimal("0")
+
     non_recoverable_vat = Decimal("0.00")
     net_amount = None
     vat_amount = Decimal("0.00")

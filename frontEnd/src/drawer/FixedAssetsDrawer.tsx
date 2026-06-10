@@ -120,6 +120,10 @@ type CoaRow = {
   type?: string;
   group?: string;
   statement?: string;
+
+  // add these
+  is_contra?: boolean;
+  role?: string;
 };
 
 type DepreciationMethod = "" | "SL" | "RB" | "UOP" | "APP";
@@ -553,7 +557,35 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
         const list: CoaRow[] = Array.isArray(res)
           ? (res as CoaRow[])
-          : ((res as CoaListResponse)?.rows ?? (res as CoaListResponse)?.data ?? (res as CoaListResponse)?.accounts ?? []);
+          : (
+              (res as CoaListResponse)?.rows ??
+              (res as CoaListResponse)?.data ??
+              (res as CoaListResponse)?.accounts ??
+              []
+            );
+
+        console.log("COA ALL", list.length);
+
+        console.table(
+          list.map(a => ({
+            code: a.code,
+            name: a.name,
+            bucket: a.cf_bucket,
+            section: a.section,
+            contra: a.is_contra
+          }))
+        );
+
+        console.log("COA NCA", list.filter(isNcaCostAccount).length);
+
+        console.table(
+          list.filter(isNcaCostAccount).map(a => ({
+            code: a.code,
+            name: a.name,
+            bucket: a.cf_bucket,
+            contra: a.is_contra
+          }))
+        );
 
         setCoaAll(list);
         setCoaNca(list.filter(isNcaCostAccount));

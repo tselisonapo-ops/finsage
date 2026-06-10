@@ -4,20 +4,51 @@ import { useEffect, useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 
-const TABS = [
+const RETAIL_TABS = [
   ["overview", "Overview"],
   ["sales", "Sales"],
   ["reports", "Reports"],
+
+  ["inventory", "Inventory"],
+  ["stock_count", "Stock Count"],
+  ["labels", "Barcode Labels"],
+  ["pricing", "Pricing"],
+  ["promotions", "Promotions"],
+
+  ["customers", "Customers"],
+
   ["shifts", "Shifts & Cash-up"],
   ["terminals", "Terminals"],
-  ["customers", "Customers"],
-  ["pricing", "Pricing"],
-  ["recipes", "Recipes"],
-  ["costing", "Meal Costing"],
-  ["promotions", "Promotions"],
-  ["labels", "Barcode Labels"],
   ["staff", "Staff & Access"],
   ["attendance", "Attendance"],
+
+  ["settings", "Settings"],
+];
+
+const RESTAURANT_TABS = [
+  ["overview", "Overview"],
+
+  ["orders", "Orders"],
+  ["tables", "Tables"],
+  ["kitchen", "Kitchen"],
+
+  ["sales", "Sales"],
+  ["reports", "Reports"],
+
+  ["recipes", "Recipes"],
+  ["costing", "Meal Costing"],
+  ["inventory", "Inventory"],
+  ["purchasing", "Purchasing"],
+
+  ["customers", "Customers"],
+  ["pricing", "Pricing"],
+  ["promotions", "Promotions"],
+
+  ["shifts", "Shifts & Cash-up"],
+  ["terminals", "Terminals"],
+  ["staff", "Staff & Access"],
+  ["attendance", "Attendance"],
+
   ["settings", "Settings"],
 ];
 
@@ -43,6 +74,14 @@ export function ManagerPage() {
   const [modal, setModal] = useState(null);
   const [reportView, setReportView] = useState(null);
   const [settingsView, setSettingsView] = useState(null);
+
+  const [ordersSummary, setOrdersSummary] = useState({});
+  const [tableSections, setTableSections] = useState([]);
+  const [tables, setTables] = useState([]);
+  const [kitchenTickets, setKitchenTickets] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [stockCounts, setStockCounts] = useState([]);
+  const [purchasingSummary, setPurchasingSummary] = useState({});
 
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
@@ -78,6 +117,27 @@ export function ManagerPage() {
       if (activeTab === "recipes") await loadRecipes();
       if (activeTab === "costing") await loadCostPools();
       if (activeTab === "settings") await loadReceiptSettings();
+      if (activeTab === "inventory") await loadInventory();
+      if (activeTab === "stock_count") await loadStockCounts();
+      if (activeTab === "orders") await loadOrdersSummary();
+      if (activeTab === "tables") await loadTables();
+      if (activeTab === "kitchen") await loadKitchenQueue();
+      if (activeTab === "purchasing") await loadPurchasing();
+
+      if (activeTab === "tables") {
+        await Promise.allSettled([
+          loadTableSections(),
+          loadTables(),
+        ]);
+      }
+
+      if (activeTab === "settings") {
+        await Promise.allSettled([
+          loadReceiptSettings(),
+          loadTableSections(),
+          loadTables(),
+        ]);
+      }
     } catch (err) {
       setMessage(err.message || "Failed to load manager data.");
     } finally {
@@ -129,6 +189,75 @@ export function ManagerPage() {
   async function loadReceiptSettings() {
     const res = await posApi.getReceiptSettings();
     setReceiptSettings(res.receipt_settings || res.settings || res.data || res || {});
+  }
+
+  async function loadTableSections() {
+    const res = await posApi.listTableSections(true);
+    setTableSections(res.sections || []);
+  }
+
+  async function loadTables() {
+    const res = await posApi.listTables(true);
+    setTables(res.tables || []);
+  }
+
+  async function loadOrdersSummary() {
+    try {
+      const res = await posApi.getOrdersSummary?.();
+      setOrdersSummary(res?.summary || res || {});
+    } catch {
+      setOrdersSummary({
+        open_tables: 0,
+        collections: 0,
+        deliveries: 0,
+        completed_today: 0,
+        cancelled: 0,
+        bill_requested: 0,
+      });
+    }
+  }
+
+  async function loadKitchenQueue() {
+    try {
+      const res = await posApi.listKitchenQueue?.();
+      setKitchenTickets(res?.tickets || res?.orders || []);
+    } catch {
+      setKitchenTickets([]);
+    }
+  }
+
+  async function loadInventory() {
+    try {
+      const res = await posApi.listInventoryItems?.();
+      setInventoryItems(res?.items || res?.inventory || []);
+    } catch {
+      setInventoryItems([]);
+    }
+  }
+
+  async function loadStockCounts() {
+    try {
+      const res = await posApi.listStockCounts?.();
+      setStockCounts(res?.counts || []);
+    } catch {
+      setStockCounts([]);
+    }
+  }
+
+  async function loadPurchasing() {
+    try {
+      const res = await posApi.getPurchasingSummary?.();
+      setPurchasingSummary(res?.summary || res || {});
+    } catch {
+      setPurchasingSummary({
+        suppliers: 0,
+        purchase_orders: 0,
+        goods_received: 0,
+        outstanding_deliveries: 0,
+        purchase_value: 0,
+        price_variances: 0,
+      });
+    }
   }
 
   function openTerminalModal() {
@@ -359,12 +488,7 @@ export function ManagerPage() {
     });
   }
     
-  const visibleTabs = TABS.filter(([id]) => {
-    if (["recipes", "costing"].includes(id)) {
-      return isRestaurantLike;
-    }
-    return true;
-  });
+  const visibleTabs = isRestaurantLike ? RESTAURANT_TABS : RETAIL_TABS;
 
   return (
     <main className="pos-page">
@@ -406,6 +530,7 @@ export function ManagerPage() {
         <section className="manager-content">
           {tab === "overview" && (
             <OverviewTab
+              isRestaurantLike={isRestaurantLike}
               openShifts={openShifts}
               terminals={terminals}
               customers={customers}
@@ -443,13 +568,31 @@ export function ManagerPage() {
             <PricingTab priceLevels={priceLevels} onCreate={openPriceLevelModal} />
           )}
 
-            {tab === "recipes" && (
-            <RecipesTab recipes={recipes} onCreate={openRecipeModal} />
-            )}
+          {tab === "recipes" && (
+          <RecipesTab recipes={recipes} onCreate={openRecipeModal} />
+          )}
 
-            {tab === "costing" && (
-            <CostingTab costPools={costPools} onCreate={openCostPoolModal} />
-            )}
+          {tab === "costing" && (
+          <CostingTab costPools={costPools} onCreate={openCostPoolModal} />
+          )}
+
+          {tab === "orders" && isRestaurantLike && <OrdersManagerTab />}
+
+          {tab === "tables" && isRestaurantLike && (
+            <TablesTab
+              tables={tables}
+              sections={tableSections}
+              onRefresh={() => Promise.allSettled([loadTableSections(), loadTables()])}
+            />
+          )}
+
+          {tab === "kitchen" && isRestaurantLike && <KitchenTab />}
+
+          {tab === "inventory" && <InventoryTab isRestaurantLike={isRestaurantLike} />}
+
+          {tab === "stock_count" && !isRestaurantLike && <StockCountTab />}
+
+          {tab === "purchasing" && isRestaurantLike && <PurchasingTab />}
 
           {tab === "promotions" && (
             <PromotionsTab promotions={promotions} onCreate={openPromotionModal} />
@@ -471,6 +614,7 @@ export function ManagerPage() {
               </div>
 
               <section className="manager-grid">
+
                 <ManagerCard
                   icon="🧾"
                   title="Receipt Settings"
@@ -518,6 +662,71 @@ export function ManagerPage() {
                   text="Cash-up tolerances, variance approvals and supervisor overrides."
                   onClick={() => setSettingsView("cash_controls")}
                 />
+
+                {isRestaurantLike && (
+                  <>
+                    <ManagerCard
+                      icon="🪑"
+                      title="Table Settings"
+                      value="Configure"
+                      text="Dining sections, tables, seating capacity and reservation rules."
+                      onClick={() => setSettingsView("tables")}
+                    />
+
+                    <ManagerCard
+                      icon="👨‍🍳"
+                      title="Kitchen Routing"
+                      value="Configure"
+                      text="Send food, drinks and desserts to different preparation stations."
+                      onClick={() => setSettingsView("kitchen")}
+                    />
+
+                    <ManagerCard
+                      icon="🧑‍🍽️"
+                      title="Waiter Rules"
+                      value="Configure"
+                      text="Table assignments, waiter permissions and service workflow."
+                      onClick={() => setSettingsView("waiters")}
+                    />
+
+                    <ManagerCard
+                      icon="🚚"
+                      title="Delivery Rules"
+                      value="Configure"
+                      text="Delivery zones, dispatch rules, drivers and delivery fees."
+                      onClick={() => setSettingsView("delivery")}
+                    />
+                  </>
+                )}
+
+                {!isRestaurantLike && (
+                  <>
+                    <ManagerCard
+                      icon="🏷️"
+                      title="Barcode Settings"
+                      value="Configure"
+                      text="Barcode formats, shelf labels and item lookup rules."
+                      onClick={() => setSettingsView("barcode")}
+                    />
+
+                    <ManagerCard
+                      icon="⚖️"
+                      title="Scale Integration"
+                      value="Configure"
+                      text="Weighted items, produce scales and barcode weight parsing."
+                      onClick={() => setSettingsView("scale")}
+                    />
+
+                    <ManagerCard
+                      icon="🖥️"
+                      title="Customer Display"
+                      value="Configure"
+                      text="Customer-facing display, promotional screens and checkout display."
+                      onClick={() => setSettingsView("display")}
+                    />
+                  </>
+                )}
+
               </section>
 
               {settingsView === "receipt" && (
@@ -547,7 +756,39 @@ export function ManagerPage() {
                 <CashControlSettingsTab />
               )}
 
+              {settingsView === "tables" && (
+                <TableSettingsTab
+                  sections={tableSections}
+                  tables={tables}
+                  onRefresh={() => Promise.allSettled([loadTableSections(), loadTables()])}
+                />
+              )}
+
+              {settingsView === "kitchen" && (
+                <KitchenRoutingSettingsTab />
+              )}
+
+              {settingsView === "waiters" && (
+                <WaiterSettingsTab />
+              )}
+
+              {settingsView === "delivery" && (
+                <DeliverySettingsTab />
+              )}
+
+              {settingsView === "barcode" && (
+                <BarcodeSettingsTab />
+              )}
+
+              {settingsView === "scale" && (
+                <ScaleSettingsTab />
+              )}
+
+              {settingsView === "display" && (
+                <CustomerDisplaySettingsTab />
+              )}
             </section>
+
           )}
         </section>
       </section>
@@ -606,15 +847,28 @@ function FormModal({ modal, onClose, onSubmit }) {
   );
 }
 
-function OverviewTab({ openShifts, terminals, customers, priceLevels, promotions }) {
+function OverviewTab({ isRestaurantLike, openShifts, terminals, customers, priceLevels, promotions }) {
+  if (isRestaurantLike) {
+    return (
+      <section className="manager-grid">
+        <ManagerCard icon="💰" title="Sales Today" value="0.00" text="Restaurant sales captured today." />
+        <ManagerCard icon="🍽️" title="Open Orders" value="0" text="Active table, collection and delivery orders." />
+        <ManagerCard icon="🪑" title="Occupied Tables" value="0" text="Tables currently in use." />
+        <ManagerCard icon="👨‍🍳" title="Kitchen Queue" value="0" text="Orders waiting or preparing in kitchen." />
+        <ManagerCard icon="🧑‍🍽️" title="Active Waiters" value="0" text="Waiters currently on duty." />
+        <ManagerCard icon="🧾" title="Average Ticket" value="0.00" text="Average spend per restaurant order." />
+      </section>
+    );
+  }
+
   return (
     <section className="manager-grid">
+      <ManagerCard icon="💰" title="Sales Today" value="0.00" text="Retail sales captured today." />
+      <ManagerCard icon="🧾" title="Transactions" value="0" text="Number of completed sales today." />
+      <ManagerCard icon="👥" title="Customers Served" value={customers.length} text="Customers served or captured." />
+      <ManagerCard icon="📦" title="Top Selling Item" value="-" text="Best performing item today." />
       <ManagerCard icon="🟢" title="Open Shifts" value={openShifts} text="Cashiers currently active." />
-      <ManagerCard icon="🖥️" title="Terminals" value={terminals.length} text="Configured POS terminals." />
-      <ManagerCard icon="👥" title="Customers" value={customers.length} text="Retail, wholesale and account profiles." />
-      <ManagerCard icon="🏷️" title="Price Levels" value={priceLevels.length} text="Retail, wholesale, VIP and staff pricing." />
-      <ManagerCard icon="🎁" title="Promotions" value={promotions.length} text="Active and scheduled promotions." />
-      <ManagerCard icon="💵" title="Cash-up" value="Review" text="Close shifts and compare expected vs counted cash." />
+      <ManagerCard icon="📊" title="Gross Margin" value="0.00%" text="Sales margin from POS activity." />
     </section>
   );
 }
@@ -1114,15 +1368,37 @@ function LabelsTab({ onGenerate }) {
 function ReceiptSettingsTab({ settings, onSave }) {
   const DEFAULTS = {
     receipt_title: "Tax Invoice / Receipt",
+
     footer_message: "Thank you for your business.",
+
     returns_policy:
       "Returns accepted within 7 days with original receipt. Items must be unused and in original condition.",
+
     refund_policy:
       "Refunds are issued via the original payment method. Management reserves the right to refuse non-compliant returns.",
-    vat_note: "This document is not a tax invoice unless VAT details are displayed.",
+
+    vat_note:
+      "This document is not a tax invoice unless VAT details are displayed.",
+
     show_vat_no: true,
     show_cashier_name: true,
     show_customer_name: true,
+
+    // NEW
+
+    slip_template: "retail_classic",
+
+    order_template: "restaurant_order",
+
+    kitchen_ticket_template: "kitchen_ticket",
+
+    show_logo: true,
+
+    show_motto: true,
+
+    show_socials: false,
+
+    logo_position: "top_center",
   };
 
   const [form, setForm] = useState({ ...DEFAULTS, ...(settings || {}) });
@@ -1153,6 +1429,81 @@ function ReceiptSettingsTab({ settings, onSave }) {
 
       <section className="manager-grid">
         <div className="scan-card">
+          <label>Slip Template</label>
+          <select
+            className="scan-input"
+            value={form.slip_template || "retail_classic"}
+            onChange={(e) => updateField("slip_template", e.target.value)}
+          >
+            <option value="retail_classic">Retail Classic</option>
+            <option value="retail_compact">Retail Compact</option>
+            <option value="retail_modern">Retail Modern</option>
+
+            <option value="restaurant_bill">Restaurant Bill</option>
+            <option value="kitchen_ticket">Kitchen Ticket</option>
+            <option value="delivery_slip">Delivery Slip</option>
+          </select>
+
+          <label>Order Template</label>
+          <select
+            className="scan-input"
+            value={form.order_template || "restaurant_order"}
+            onChange={(e) => updateField("order_template", e.target.value)}
+          >
+            <option value="restaurant_order">Restaurant Order</option>
+            <option value="table_bill">Table Bill</option>
+            <option value="delivery_slip">Delivery Slip</option>
+          </select>
+
+          <label>Kitchen Ticket Template</label>
+          <select
+            className="scan-input"
+            value={form.kitchen_ticket_template || "kitchen_ticket"}
+            onChange={(e) => updateField("kitchen_ticket_template", e.target.value)}
+          >
+            <option value="kitchen_ticket">Kitchen Ticket</option>
+            <option value="compact_kitchen">Compact Kitchen</option>
+            <option value="detailed_kitchen">Detailed Kitchen</option>
+          </select>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={!!form.show_logo}
+              onChange={(e) => updateField("show_logo", e.target.checked)}
+            />
+            Show Company Logo
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={!!form.show_motto}
+              onChange={(e) => updateField("show_motto", e.target.checked)}
+            />
+            Show Company Motto
+          </label>
+
+          <label>
+            <input
+              type="checkbox"
+              checked={!!form.show_socials}
+              onChange={(e) => updateField("show_socials", e.target.checked)}
+            />
+            Show Contact Details
+          </label>
+
+          <label>Logo Position</label>
+          <select
+            className="scan-input"
+            value={form.logo_position || "top_center"}
+            onChange={(e) => updateField("logo_position", e.target.value)}
+          >
+            <option value="top_center">Top Centre</option>
+            <option value="top_left">Top Left</option>
+            <option value="hidden">Hide Logo</option>
+          </select>
+
           <label>Receipt Title</label>
           <input
             className="scan-input"
@@ -1398,3 +1749,444 @@ function CashControlSettingsTab() {
     </section>
   );
 }
+
+function OrdersManagerTab() {
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Orders Dashboard</h2>
+          <p>Monitor open tables, collections, deliveries and completed restaurant orders.</p>
+        </div>
+        <button className="scan-btn" onClick={() => (window.location.hash = "#/orders")}>
+          Open Orders
+        </button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🍽️" title="Open Table Orders" value="0" text="Active dine-in orders not yet closed." />
+        <ManagerCard icon="🥡" title="Collection Orders" value="0" text="Orders waiting for customer collection." />
+        <ManagerCard icon="🚚" title="Delivery Orders" value="0" text="Orders assigned or waiting for dispatch." />
+        <ManagerCard icon="✅" title="Completed Today" value="0" text="Restaurant orders completed today." />
+        <ManagerCard icon="❌" title="Cancelled Orders" value="0" text="Voided or cancelled restaurant orders." />
+        <ManagerCard icon="🧾" title="Bill Requested" value="0" text="Tables waiting for bill printing or payment." />
+      </section>
+    </section>
+  );
+}
+
+function TablesTab() {
+  const tables = [
+    ["Main Floor", "Table 1", "Available", "Unassigned", "0.00"],
+    ["Main Floor", "Table 2", "Occupied", "Waiter 1", "0.00"],
+    ["Patio", "Table 3", "Reserved", "Unassigned", "0.00"],
+  ];
+
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Table Management</h2>
+          <p>Manage table status, waiter assignments, reservations and open balances.</p>
+        </div>
+        <button className="scan-btn">New Table</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🪑" title="Total Tables" value={tables.length} text="Configured restaurant tables." />
+        <ManagerCard icon="🟢" title="Available" value="1" text="Tables ready for customers." />
+        <ManagerCard icon="🔴" title="Occupied" value="1" text="Tables with active orders." />
+        <ManagerCard icon="🧾" title="Bill Requested" value="0" text="Customers waiting for bill." />
+      </section>
+
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Section</th>
+              <th>Table</th>
+              <th>Status</th>
+              <th>Waiter</th>
+              <th>Open Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tables.map((row, idx) => (
+              <tr key={idx}>
+                {row.map((cell, cidx) => (
+                  <td key={cidx}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function KitchenTab() {
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Kitchen Queue</h2>
+          <p>Track orders waiting, preparing, ready, served or voided.</p>
+        </div>
+        <button className="scan-btn">Refresh Kitchen</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="⏳" title="Waiting" value="0" text="Orders not yet started." />
+        <ManagerCard icon="👨‍🍳" title="Preparing" value="0" text="Orders currently in preparation." />
+        <ManagerCard icon="✅" title="Ready" value="0" text="Orders ready to serve or collect." />
+        <ManagerCard icon="🍽️" title="Served" value="0" text="Orders served today." />
+        <ManagerCard icon="❌" title="Voided" value="0" text="Cancelled kitchen tickets." />
+      </section>
+
+      <div className="empty-state" style={{ marginTop: 16 }}>
+        <strong>No kitchen tickets</strong>
+        <p>Kitchen orders will appear here when waiters send orders to the kitchen.</p>
+      </div>
+    </section>
+  );
+}
+
+function InventoryTab({ isRestaurantLike }) {
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>{isRestaurantLike ? "Restaurant Inventory" : "Retail Inventory"}</h2>
+          <p>
+            {isRestaurantLike
+              ? "Monitor ingredients, menu stock, low stock and waste."
+              : "Monitor stock on hand, low stock, negative stock and recent movements."}
+          </p>
+        </div>
+        <button className="scan-btn">Refresh Stock</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="📦" title="Stock Items" value="0" text="Inventory items available for POS." />
+        <ManagerCard icon="⚠️" title="Low Stock" value="0" text="Items below reorder level." />
+        <ManagerCard icon="📉" title="Negative Stock" value="0" text="Items sold below available quantity." />
+        <ManagerCard icon="🔄" title="Recent Movements" value="0" text="Stock movements from POS sales and adjustments." />
+
+        {isRestaurantLike && (
+          <>
+            <ManagerCard icon="🥬" title="Ingredients" value="0" text="Ingredient items linked to recipes." />
+            <ManagerCard icon="🗑️" title="Waste Recorded" value="0.00" text="Spoilage, breakages and kitchen waste." />
+          </>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function StockCountTab() {
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Stock Count</h2>
+          <p>Run stock count sessions, review variances and approve adjustments.</p>
+        </div>
+        <button className="scan-btn">New Count Session</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="📋" title="Open Count Sessions" value="0" text="Stock counts currently in progress." />
+        <ManagerCard icon="📦" title="Items Counted" value="0" text="Items counted in the current session." />
+        <ManagerCard icon="⚠️" title="Variance Items" value="0" text="Items with stock differences." />
+        <ManagerCard icon="✅" title="Approved Adjustments" value="0" text="Stock adjustments approved after count." />
+      </section>
+    </section>
+  );
+}
+
+function PurchasingTab() {
+  return (
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Purchasing</h2>
+          <p>Manage suppliers, purchase orders, goods received and outstanding deliveries.</p>
+        </div>
+        <button className="scan-btn">New Purchase Order</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🏢" title="Suppliers" value="0" text="Suppliers linked to restaurant purchasing." />
+        <ManagerCard icon="🧾" title="Purchase Orders" value="0" text="Open purchase orders for ingredients and supplies." />
+        <ManagerCard icon="📥" title="Goods Received" value="0" text="Received supplier deliveries." />
+        <ManagerCard icon="🚚" title="Outstanding Deliveries" value="0" text="Orders not yet received." />
+        <ManagerCard icon="💰" title="Purchase Value" value="0.00" text="Total purchases for selected period." />
+        <ManagerCard icon="⚠️" title="Price Variances" value="0" text="Ingredient price changes needing review." />
+      </section>
+    </section>
+  );
+}
+
+function TableSettingsTab({ tables = [], setMessage }) {
+  const totalTables = tables.length;
+  const available = tables.filter((t) => String(t.status).toLowerCase() === "available").length;
+  const occupied = tables.filter((t) => String(t.status).toLowerCase() === "occupied").length;
+  const reserved = tables.filter((t) => String(t.status).toLowerCase() === "reserved").length;
+
+  const sections = [...new Set(tables.map((t) => t.section || "Main Floor"))];
+
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Table Settings</h2>
+          <p>Configure restaurant tables, sections, capacity and table workflow.</p>
+        </div>
+
+        <button
+          className="scan-btn"
+          onClick={() => setMessage("Next: connect New Table to posApi.createTable().")}
+        >
+          New Table
+        </button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🪑" title="Total Tables" value={totalTables} text="Configured restaurant tables." />
+        <ManagerCard icon="🟢" title="Available" value={available} text="Tables ready for customers." />
+        <ManagerCard icon="🔴" title="Occupied" value={occupied} text="Tables currently in use." />
+        <ManagerCard icon="📅" title="Reserved" value={reserved} text="Tables reserved for customers." />
+        <ManagerCard icon="🏠" title="Sections" value={sections.length} text={sections.join(", ") || "No sections configured."} />
+        <ManagerCard icon="👥" title="Total Capacity" value={tables.reduce((s, t) => s + Number(t.capacity || 0), 0)} text="Total seating capacity." />
+      </section>
+
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Section</th>
+              <th>Table</th>
+              <th>Capacity</th>
+              <th>Status</th>
+              <th>Waiter</th>
+              <th>Open Balance</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {tables.length ? (
+              tables.map((t, idx) => (
+                <tr key={t.id || idx}>
+                  <td>{t.section || "Main Floor"}</td>
+                  <td>{t.table_name || t.name || `Table ${idx + 1}`}</td>
+                  <td>{t.capacity || "-"}</td>
+                  <td>{t.status || "available"}</td>
+                  <td>{t.waiter_name || "Unassigned"}</td>
+                  <td>{money(t.open_balance || 0)}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6">No tables configured yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function KitchenRoutingSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Kitchen Routing</h2>
+          <p>Configure preparation stations and how restaurant orders move through the kitchen.</p>
+        </div>
+        <button className="scan-btn">New Station</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="👨‍🍳" title="Kitchen Station" value="Kitchen" text="Default food preparation station." />
+        <ManagerCard icon="🍹" title="Bar Station" value="Optional" text="Route drinks and bar orders separately." />
+        <ManagerCard icon="🍰" title="Dessert Station" value="Optional" text="Route desserts to a separate preparation point." />
+        <ManagerCard icon="🖨️" title="Kitchen Printer" value="Not Set" text="Printer used for kitchen order tickets." />
+      </section>
+
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Station</th>
+              <th>Printer</th>
+              <th>Status</th>
+              <th>Default Routing</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Kitchen</td>
+              <td>Not Set</td>
+              <td>Active</td>
+              <td>Food items</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function WaiterSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Waiter Rules</h2>
+          <p>Control waiter access, table assignments and restaurant service workflow.</p>
+        </div>
+        <button className="scan-btn">Assign Waiter</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🧑‍🍽️" title="Waiter Access" value="Enabled" text="Waiters may create and manage restaurant orders." />
+        <ManagerCard icon="🪑" title="Table Assignment" value="Optional" text="Allow tables to be assigned to specific waiters." />
+        <ManagerCard icon="🧾" title="Bill Printing" value="Allowed" text="Waiters may print bills before payment." />
+        <ManagerCard icon="💵" title="Payment Access" value="Cashier Only" text="Payments remain controlled by cashier or manager." />
+      </section>
+
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Rule</th>
+              <th>Setting</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Create Orders</td>
+              <td>Allowed</td>
+              <td>Waiters can create table, collection and delivery orders.</td>
+            </tr>
+            <tr>
+              <td>Close Orders</td>
+              <td>Manager/Cashier</td>
+              <td>Only cashier or manager should close paid orders.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function DeliverySettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Delivery Rules</h2>
+          <p>Configure delivery workflow, zones, drivers and delivery fees.</p>
+        </div>
+        <button className="scan-btn">New Delivery Zone</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🚚" title="Delivery Orders" value="Enabled" text="Allow orders to be marked for delivery." />
+        <ManagerCard icon="📍" title="Delivery Zones" value="0" text="Configured zones for delivery fees and routing." />
+        <ManagerCard icon="🧑‍✈️" title="Drivers" value="0" text="Drivers available for order dispatch." />
+        <ManagerCard icon="💰" title="Default Fee" value="0.00" text="Default delivery fee if no zone rule applies." />
+      </section>
+
+      <div className="report-table-wrap" style={{ marginTop: 16 }}>
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>Zone</th>
+              <th>Fee</th>
+              <th>Estimated Time</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>No zones configured</td>
+              <td>0.00</td>
+              <td>-</td>
+              <td>Pending setup</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function BarcodeSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Barcode Settings</h2>
+          <p>Configure barcode format, item lookup and shelf label behaviour.</p>
+        </div>
+        <button className="scan-btn">Save Barcode Settings</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🏷️" title="Default Format" value="Code128" text="Default barcode format for generated labels." />
+        <ManagerCard icon="🔎" title="Lookup Method" value="Barcode / SKU" text="Allow scanning by barcode, SKU or item name." />
+        <ManagerCard icon="🖨️" title="Label Printer" value="Not Set" text="Printer used for barcode shelf labels." />
+        <ManagerCard icon="📦" title="Auto Generate" value="Allowed" text="Generate barcode when item has none." />
+      </section>
+    </section>
+  );
+}
+
+function ScaleSettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Scale Integration</h2>
+          <p>Configure weighted items, produce labels and scale barcode parsing.</p>
+        </div>
+        <button className="scan-btn">Save Scale Settings</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="⚖️" title="Weighted Items" value="Disabled" text="Enable for produce, meat or weighable retail goods." />
+        <ManagerCard icon="🏷️" title="Scale Barcode Prefix" value="Not Set" text="Prefix used to identify scale-generated barcodes." />
+        <ManagerCard icon="📏" title="Quantity Parsing" value="Manual" text="Parse weight or quantity from the barcode." />
+        <ManagerCard icon="💰" title="Price Embedded" value="Optional" text="Support barcodes containing calculated item price." />
+      </section>
+    </section>
+  );
+}
+
+function CustomerDisplaySettingsTab() {
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>Customer Display</h2>
+          <p>Configure customer-facing checkout display and promotional screen behaviour.</p>
+        </div>
+        <button className="scan-btn">Save Display Settings</button>
+      </div>
+
+      <section className="manager-grid">
+        <ManagerCard icon="🖥️" title="Customer Display" value="Disabled" text="Show cart totals on a second screen." />
+        <ManagerCard icon="📢" title="Promo Screen" value="Optional" text="Display promotions when no sale is active." />
+        <ManagerCard icon="🧾" title="Show VAT" value="Enabled" text="Display VAT breakdown to customers." />
+        <ManagerCard icon="💳" title="Payment Prompt" value="Enabled" text="Show payment amount due at checkout." />
+      </section>
+    </section>
+  );
+}
+

@@ -147,4 +147,32 @@ export const posApi = {
     updateReceiptSettings(payload) {
     return patchJson(`${base()}/receipt-settings`, payload);
     },
+
+    listTableSections(activeOnly = true) {
+    return getJson(`${base()}/table-sections?active_only=${activeOnly ? "1" : "0"}`);
+    },
+
+    createTableSection(payload) {
+    return postJson(`${base()}/table-sections`, payload);
+    },
+
+    updateTableSection(sectionId, payload) {
+    return patchJson(`${base()}/table-sections/${sectionId}`, payload);
+    },
+
+    listTables(activeOnly = true) {
+    return getJson(`${base()}/tables?active_only=${activeOnly ? "1" : "0"}`);
+    },
+
+    createTable(payload) {
+    return postJson(`${base()}/tables`, payload);
+    },
+
+    updateTable(tableId, payload) {
+    return patchJson(`${base()}/tables/${tableId}`, payload);
+    },
+
+    deleteTable(tableId) {
+    return postJson(`${base()}/tables/${tableId}/delete`, {});
+    },
 };

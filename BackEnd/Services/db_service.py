@@ -19015,9 +19015,162 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS slip_template TEXT DEFAULT 'classic';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS order_template TEXT DEFAULT 'restaurant_order';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS kitchen_ticket_template TEXT DEFAULT 'kitchen_ticket';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS show_logo BOOLEAN NOT NULL DEFAULT TRUE;
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS logo_position TEXT NOT NULL DEFAULT 'top_center';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS company_motto TEXT DEFAULT '';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS show_motto BOOLEAN NOT NULL DEFAULT TRUE;
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS show_socials BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS whatsapp_number TEXT DEFAULT '';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS facebook_handle TEXT DEFAULT '';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS instagram_handle TEXT DEFAULT '';
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_receipt_settings_company_uniq
         ON {schema}.pos_receipt_settings(company_id)
         WHERE is_active = TRUE;
+
+        -- =========================
+        -- RESTAURANT TABLE SECTIONS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_table_sections (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            section_code TEXT NOT NULL,
+            section_name TEXT NOT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_table_sections_code_uniq
+        ON {schema}.pos_table_sections(company_id, lower(trim(section_code)));
+
+        INSERT INTO {schema}.pos_table_sections
+        (
+            company_id,
+            section_code,
+            section_name,
+            sort_order,
+            is_active
+        )
+        SELECT
+            {company_id},
+            'MAIN',
+            'Main Floor',
+            1,
+            TRUE
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM {schema}.pos_table_sections
+            WHERE company_id = {company_id}
+            AND lower(trim(section_code)) = 'main'
+        );
+
+        -- =========================
+        -- RESTAURANT TABLES
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_tables (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            section_id INT NULL REFERENCES {schema}.pos_table_sections(id) ON DELETE SET NULL,
+            table_code TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            capacity INT NOT NULL DEFAULT 4,
+            status TEXT NOT NULL DEFAULT 'available',
+            waiter_user_id INT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_tables_code_uniq
+        ON {schema}.pos_tables(company_id, lower(trim(table_code)));
+
+        -- =========================
+        -- TABLE RESERVATIONS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_table_reservations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            table_id INT NOT NULL REFERENCES {schema}.pos_tables(id) ON DELETE CASCADE,
+            customer_name TEXT NOT NULL,
+            customer_phone TEXT NULL,
+            reservation_time TIMESTAMPTZ NOT NULL,
+            guests INT NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'reserved',
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- =========================
+        -- KITCHEN STATIONS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_kitchen_stations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            station_code TEXT NOT NULL,
+            station_name TEXT NOT NULL,
+            printer_name TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_kitchen_stations_code_uniq
+        ON {schema}.pos_kitchen_stations(company_id, lower(trim(station_code)));
+
+        -- =========================
+        -- KITCHEN TICKETS
+        -- =========================
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_kitchen_tickets (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            order_id INT NOT NULL REFERENCES {schema}.pos_orders(id) ON DELETE CASCADE,
+            station_id INT NOT NULL REFERENCES {schema}.pos_kitchen_stations(id),
+            ticket_no TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'waiting',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            started_at TIMESTAMPTZ NULL,
+            completed_at TIMESTAMPTZ NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_kitchen_ticket_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            ticket_id INT NOT NULL REFERENCES {schema}.pos_kitchen_tickets(id) ON DELETE CASCADE,
+            order_line_id INT NULL,
+            item_id INT NULL,
+            description TEXT NOT NULL,
+            qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            notes TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'waiting'
+        );
 
         -- ==================================================
         -- BANK STATEMENTS
@@ -36069,6 +36222,223 @@ class DatabaseService:
         }
 
         return self.pos_save_receipt_settings(company_id, merged)
+
+    # =========================
+    # POS RESTAURANT TABLE SECTIONS / TABLES
+    # =========================
+
+    def pos_list_table_sections(self, company_id: int, active_only: bool = False) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                s.*,
+                COUNT(t.id) AS table_count
+            FROM {schema}.pos_table_sections s
+            LEFT JOIN {schema}.pos_tables t
+                ON t.section_id = s.id
+                AND t.company_id = s.company_id
+                AND t.is_active = TRUE
+            WHERE s.company_id = %s
+            AND (%s = FALSE OR s.is_active = TRUE)
+            GROUP BY s.id
+            ORDER BY s.sort_order ASC, s.section_name ASC
+        """, (int(company_id), bool(active_only)))
+
+
+    def pos_create_table_section(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        section_name = (data.get("section_name") or data.get("name") or "").strip()
+        section_code = (data.get("section_code") or section_name).strip().upper().replace(" ", "_")
+
+        if not section_name:
+            raise ValueError("section_name is required")
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_table_sections
+            (
+                company_id, section_code, section_name,
+                sort_order, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s)
+            ON CONFLICT (company_id, lower(trim(section_code)))
+            DO UPDATE SET
+                section_name = EXCLUDED.section_name,
+                sort_order = EXCLUDED.sort_order,
+                is_active = EXCLUDED.is_active
+            RETURNING id
+        """, (
+            int(company_id),
+            section_code,
+            section_name,
+            int(data.get("sort_order") or 0),
+            bool(data.get("is_active", True)),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_update_table_section(self, company_id: int, section_id: int, data: dict) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "section_code",
+            "section_name",
+            "sort_order",
+            "is_active",
+        }
+
+        sets, params = [], []
+
+        for k, v in (data or {}).items():
+            if k in allowed:
+                sets.append(f"{k}=%s")
+                params.append(v)
+
+        if not sets:
+            return self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.pos_table_sections
+                WHERE company_id=%s AND id=%s
+            """, (int(company_id), int(section_id)))
+
+        params.extend([int(company_id), int(section_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_table_sections
+            SET {", ".join(sets)}
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, tuple(params))
+
+
+    def pos_list_tables(self, company_id: int, active_only: bool = False, section_id: int | None = None) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["t.company_id=%s"]
+        params = [int(company_id)]
+
+        if active_only:
+            where.append("t.is_active=TRUE")
+
+        if section_id:
+            where.append("t.section_id=%s")
+            params.append(int(section_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                t.*,
+                s.section_name,
+                s.section_code,
+                COALESCE(o.open_balance, 0) AS open_balance,
+                COALESCE(o.open_orders, 0) AS open_orders
+            FROM {schema}.pos_tables t
+            LEFT JOIN {schema}.pos_table_sections s
+                ON s.id = t.section_id
+                AND s.company_id = t.company_id
+            LEFT JOIN (
+                SELECT
+                    table_no,
+                    COUNT(*) AS open_orders,
+                    SUM(COALESCE(gross_amount, 0)) AS open_balance
+                FROM {schema}.pos_orders
+                WHERE company_id=%s
+                AND status NOT IN ('completed', 'cancelled', 'void')
+                AND table_no IS NOT NULL
+                GROUP BY table_no
+            ) o ON lower(trim(o.table_no)) = lower(trim(t.table_code))
+            WHERE {" AND ".join(where)}
+            ORDER BY s.sort_order ASC NULLS LAST, s.section_name ASC, t.table_name ASC
+        """, tuple([int(company_id)] + params))
+
+
+    def pos_create_table(self, company_id: int, data: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        table_name = (data.get("table_name") or data.get("name") or "").strip()
+        table_code = (data.get("table_code") or table_name).strip().upper().replace(" ", "_")
+
+        if not table_name:
+            raise ValueError("table_name is required")
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_tables
+            (
+                company_id, section_id, table_code, table_name,
+                capacity, status, waiter_user_id, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (company_id, lower(trim(table_code)))
+            DO UPDATE SET
+                section_id = EXCLUDED.section_id,
+                table_name = EXCLUDED.table_name,
+                capacity = EXCLUDED.capacity,
+                status = EXCLUDED.status,
+                waiter_user_id = EXCLUDED.waiter_user_id,
+                is_active = EXCLUDED.is_active
+            RETURNING id
+        """, (
+            int(company_id),
+            data.get("section_id"),
+            table_code,
+            table_name,
+            int(data.get("capacity") or 4),
+            data.get("status") or "available",
+            data.get("waiter_user_id"),
+            bool(data.get("is_active", True)),
+        ))
+
+        return int(row["id"])
+
+
+    def pos_update_table(self, company_id: int, table_id: int, data: dict) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "section_id",
+            "table_code",
+            "table_name",
+            "capacity",
+            "status",
+            "waiter_user_id",
+            "is_active",
+        }
+
+        sets, params = [], []
+
+        for k, v in (data or {}).items():
+            if k in allowed:
+                sets.append(f"{k}=%s")
+                params.append(v)
+
+        if not sets:
+            return self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.pos_tables
+                WHERE company_id=%s AND id=%s
+            """, (int(company_id), int(table_id)))
+
+        params.extend([int(company_id), int(table_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_tables
+            SET {", ".join(sets)}
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, tuple(params))
+
+
+    def pos_delete_table(self, company_id: int, table_id: int) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_tables
+            SET is_active = FALSE,
+                status = 'out_of_service'
+            WHERE company_id=%s AND id=%s
+            RETURNING *
+        """, (int(company_id), int(table_id)))
 
     def fifo_consume(
         self,

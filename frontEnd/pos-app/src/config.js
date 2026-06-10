@@ -7,19 +7,31 @@ export function getCompanyContext() {
   ];
 
   for (const src of sources) {
-    if (src && typeof src === "object") return src;
+    if (src && typeof src === "object" && src.id) return src;
   }
 
-  try {
-    return JSON.parse(localStorage.getItem("active_company") || "{}");
-  } catch {
-    return {};
+  for (const key of ["active_company", "pos_company"]) {
+    try {
+      const company = JSON.parse(localStorage.getItem(key) || "{}");
+      if (company && typeof company === "object" && company.id) return company;
+    } catch {}
   }
+
+  return {};
 }
 
 export function getCompanyId() {
   const company = getCompanyContext();
-  return Number(company?.id || localStorage.getItem("active_company_id") || 0);
+
+  const hashQuery = window.location.hash.split("?")[1] || "";
+  const params = new URLSearchParams(hashQuery);
+
+  return Number(
+    company?.id ||
+    params.get("company_id") ||
+    localStorage.getItem("active_company_id") ||
+    0
+  );
 }
 
 export function getAuthToken() {

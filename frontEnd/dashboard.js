@@ -629,11 +629,21 @@ function launchPos() {
     return;
   }
 
-  localStorage.setItem("pos_company", JSON.stringify(window.CURRENT_COMPANY || {}));
-  localStorage.setItem(
-    "pos_company_id",
-    String(window.CURRENT_COMPANY_ID || localStorage.getItem("CURRENT_COMPANY_ID") || localStorage.getItem("company_id") || "")
-  );
+  const company = window.CURRENT_COMPANY || {};
+
+  const companyId =
+    company.id ||
+    window.CURRENT_COMPANY_ID ||
+    localStorage.getItem("CURRENT_COMPANY_ID") ||
+    localStorage.getItem("company_id") ||
+    "";
+
+  localStorage.setItem("active_company", JSON.stringify(company));
+  localStorage.setItem("active_company_id", String(companyId));
+
+  // keep POS-specific keys too, no harm
+  localStorage.setItem("pos_company", JSON.stringify(company));
+  localStorage.setItem("pos_company_id", String(companyId));
 
   window.open("/pos/#/manager", "_blank");
 }
