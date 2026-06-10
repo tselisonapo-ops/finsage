@@ -314,4 +314,7 @@ export const posApi = {
     });
     },
 
+    posMe() {
+    return getJson(`${base()}/auth/me`);
+    },
 };

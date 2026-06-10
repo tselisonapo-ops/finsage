@@ -87,11 +87,15 @@ def make_pos_jwt(*, company_id, company_user_id, user_id, employee_code, pos_rol
 
     payload = {
         "typ": "pos",
+        "type": "pos",
+        "token_type": "pos",
+
         "company_id": int(company_id),
         "company_user_id": int(company_user_id),
         "user_id": int(user_id),
         "employee_code": str(employee_code),
         "pos_role": str(pos_role or ""),
+
         "iat": now,
         "exp": now + timedelta(hours=12),
     }

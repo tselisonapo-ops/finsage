@@ -1,5 +1,4 @@
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from "../config.js";import { money } from "../utils/currency.js";
 import { posApi } from "../services/posApi.js";
 
@@ -25,6 +24,26 @@ export function CashierPage() {
   const [employeeCode, setEmployeeCode] = useState("");
   const [pin, setPin] = useState("");
   const [cashier, setCashier] = useState(null);
+
+useEffect(() => {
+  restorePosSession();
+}, []);
+
+async function restorePosSession() {
+  const token = localStorage.getItem("pos_token");
+
+  if (!token) return;
+
+  try {
+    const res = await posApi.posAuthMe();
+    setCashier(res.employee);
+    setSignedIn(true);
+  } catch {
+    localStorage.removeItem("pos_token");
+    setCashier(null);
+    setSignedIn(false);
+  }
+}
 
 const [menuItems, setMenuItems] = useState([
   {
@@ -83,6 +102,10 @@ const [menuItems, setMenuItems] = useState([
         pin: pin.trim(),
       });
 
+      if (res.pos_token) {
+        localStorage.setItem("pos_token", res.pos_token);
+      }
+
       const activeCashier =
         res.employee ||
         res.cashier ||
@@ -104,6 +127,8 @@ const [menuItems, setMenuItems] = useState([
   }
 
   function signOut() {
+    localStorage.removeItem("pos_token");
+
     setSignedIn(false);
     setCashier(null);
     setCart([]);

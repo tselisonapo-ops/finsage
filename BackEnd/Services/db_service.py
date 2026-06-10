@@ -19323,6 +19323,55 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_pos_packing_queue_status_idx
         ON {schema}.pos_packing_queue(company_id, status);
 
+    CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_headers (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL DEFAULT {company_id},
+
+        menu_item_id INT NOT NULL
+            REFERENCES {schema}.inventory_items(id),
+
+        recipe_name TEXT NOT NULL,
+
+        yield_qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+        yield_uom TEXT NULL,
+
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_headers_item_idx
+    ON {schema}.pos_recipe_headers(company_id, menu_item_id, is_active);
+
+
+
+    CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_lines (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL DEFAULT {company_id},
+
+        recipe_id INT NOT NULL
+            REFERENCES {schema}.pos_recipe_headers(id)
+            ON DELETE CASCADE,
+
+        ingredient_item_id INT NOT NULL
+            REFERENCES {schema}.inventory_items(id),
+
+        qty_required NUMERIC(18,6) NOT NULL DEFAULT 1,
+        uom TEXT NULL,
+
+        wastage_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_recipe_idx
+    ON {schema}.pos_recipe_lines(company_id, recipe_id);
+
+    CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_ingredient_idx
+    ON {schema}.pos_recipe_lines(company_id, ingredient_item_id);
+
         -- ==================================================
         -- BANK STATEMENTS
         -- ==================================================

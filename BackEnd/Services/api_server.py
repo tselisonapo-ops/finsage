@@ -2082,7 +2082,6 @@ def api_auth_me():
     return jsonify(out), 200
 
 @app.route("/api/companies/<int:company_id>/pos/auth/signin", methods=["POST", "OPTIONS"])
-@require_pos_auth
 def pos_auth_signin(company_id):
     if request.method == "OPTIONS":
         return ("", 204)
@@ -2163,6 +2162,80 @@ def pos_auth_signin(company_id):
         "company": company,
     }), 200
 
+@app.route("/api/companies/<int:company_id>/pos/auth/me", methods=["GET", "OPTIONS"])
+@require_pos_auth
+def pos_auth_me(company_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    payload = getattr(request, "pos_user", {}) or {}
+
+    company_user_id = payload.get("company_user_id")
+    user_id = payload.get("user_id")
+
+    if not company_user_id or not user_id:
+        return jsonify({"error": "Invalid POS session"}), 401
+
+    row = db_service.fetch_one("""
+        SELECT
+            cu.id AS company_user_id,
+            cu.company_id,
+            cu.user_id,
+            cu.employee_code,
+            cu.pos_access_code,
+            cu.pos_display_name,
+            cu.pos_role,
+            cu.pos_permissions,
+            cu.pos_is_active,
+            cu.is_active,
+            u.email,
+            u.first_name,
+            u.last_name
+        FROM public.company_users cu
+        JOIN public.users u ON u.id = cu.user_id
+        WHERE cu.company_id = %s
+          AND cu.id = %s
+          AND cu.user_id = %s
+          AND cu.pos_is_active = TRUE
+          AND cu.is_active = TRUE
+        LIMIT 1;
+    """, (
+        int(company_id),
+        int(company_user_id),
+        int(user_id),
+    ))
+
+    if not row:
+        return jsonify({"error": "POS user not found or inactive"}), 401
+
+    company = db_service.fetch_one("""
+        SELECT id, name, industry, sub_industry, currency
+        FROM public.companies
+        WHERE id = %s
+          AND is_active = TRUE
+        LIMIT 1;
+    """, (int(company_id),))
+
+    if not company:
+        return jsonify({"error": "Company not active"}), 403
+
+    employee = {
+        "company_user_id": row["company_user_id"],
+        "user_id": row["user_id"],
+        "employee_code": row["employee_code"],
+        "access_code": row["pos_access_code"],
+        "name": row.get("pos_display_name")
+            or f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+            or row.get("email"),
+        "pos_role": row.get("pos_role"),
+        "pos_permissions": row.get("pos_permissions") or {},
+    }
+
+    return jsonify({
+        "ok": True,
+        "employee": employee,
+        "company": company,
+    }), 200
 
 @app.route("/api/auth/reauth", methods=["POST", "OPTIONS"])
 @require_auth
