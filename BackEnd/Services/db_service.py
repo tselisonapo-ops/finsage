@@ -35595,10 +35595,18 @@ class DatabaseService:
                 i.sku,
                 i.name,
                 i.barcode,
-                i.sales_price,
+
+                COALESCE(i.category, '-') AS category,
+                COALESCE(i.reorder_level, 0)::numeric(18,4) AS reorder_level,
+
+                COALESCE(i.sales_price, 0)::numeric(18,4) AS sales_price,
+                COALESCE(i.sales_price, 0)::numeric(18,4) AS selling_price,
+                COALESCE(i.sales_price, 0)::numeric(18,4) AS unit_price,
+
                 i.vat_code,
                 i.is_taxable,
                 i.track_stock,
+
                 COALESCE(SUM(l.qty_in - l.qty_out), 0)::numeric(18,4) AS qty_on_hand
             FROM {schema}.inventory_items i
             LEFT JOIN {schema}.inventory_layers l
@@ -35612,7 +35620,17 @@ class DatabaseService:
                 OR i.sku ILIKE %s
                 OR i.barcode ILIKE %s
             )
-            GROUP BY i.id
+            GROUP BY
+                i.id,
+                i.sku,
+                i.name,
+                i.barcode,
+                i.category,
+                i.reorder_level,
+                i.sales_price,
+                i.vat_code,
+                i.is_taxable,
+                i.track_stock
             ORDER BY i.name
             LIMIT %s
         """, (
@@ -35633,7 +35651,22 @@ class DatabaseService:
 
         return self.fetch_one(f"""
             SELECT
-                i.*,
+                i.id,
+                i.sku,
+                i.name,
+                i.barcode,
+
+                COALESCE(i.category, '-') AS category,
+                COALESCE(i.reorder_level, 0)::numeric(18,4) AS reorder_level,
+
+                COALESCE(i.sales_price, 0)::numeric(18,4) AS sales_price,
+                COALESCE(i.sales_price, 0)::numeric(18,4) AS selling_price,
+                COALESCE(i.sales_price, 0)::numeric(18,4) AS unit_price,
+
+                i.vat_code,
+                i.is_taxable,
+                i.track_stock,
+
                 COALESCE(SUM(l.qty_in - l.qty_out), 0)::numeric(18,4) AS qty_on_hand
             FROM {schema}.inventory_items i
             LEFT JOIN {schema}.inventory_layers l
@@ -35642,7 +35675,17 @@ class DatabaseService:
             WHERE i.company_id = %s
             AND i.is_active = TRUE
             AND lower(trim(i.barcode)) = lower(trim(%s))
-            GROUP BY i.id
+            GROUP BY
+                i.id,
+                i.sku,
+                i.name,
+                i.barcode,
+                i.category,
+                i.reorder_level,
+                i.sales_price,
+                i.vat_code,
+                i.is_taxable,
+                i.track_stock
             LIMIT 1
         """, (int(company_id), barcode))
 
