@@ -24,6 +24,7 @@ export function CashierPage() {
   const [employeeCode, setEmployeeCode] = useState("");
   const [pin, setPin] = useState("");
   const [cashier, setCashier] = useState(null);
+  const [activePanel, setActivePanel] = useState("sale");
 
 useEffect(() => {
   restorePosSession();
@@ -273,69 +274,152 @@ const [menuItems, setMenuItems] = useState([
           </div>
 
           <div className="quick-actions">
-            {canSell && <button onClick={() => setCart([])}>New Sale</button>}
+            {canSell && (
+              <button
+                onClick={() => {
+                  setCart([]);
+                  setActivePanel("sale");
+                }}
+              >
+                New Sale
+              </button>
+            )}
 
             {canSell && (
-              <button onClick={() => (window.location.hash = "#/quotes")}>
+              <button onClick={() => setActivePanel("quotation")}>
                 Quotation
               </button>
             )}
 
             {canSell && (
-              <button onClick={() => (window.location.hash = "#/returns")}>
+              <button onClick={() => setActivePanel("return")}>
                 Return
               </button>
             )}
 
-            {canSell && <button>Hold Sale</button>}
+            {canSell && (
+              <button onClick={() => setActivePanel("holdSale")}>
+                Hold Sale
+              </button>
+            )}
 
-            <button onClick={() => (window.location.hash = "#/customers")}>
+            <button onClick={() => setActivePanel("customer")}>
               Customer
             </button>
 
             {usesInventory && canSell && (
-              <button onClick={() => (window.location.hash = "#/price-check")}>
+              <button onClick={() => setActivePanel("priceCheck")}>
                 Price Check
               </button>
             )}
           </div>
 
           <div className="product-list">
-            <div className="section-title">
-              <h2>{isRestaurantLike ? "Menu" : "Product Search"}</h2>
-              <span>{canOrder || canSell ? "Tap item to add" : "No access"}</span>
-            </div>
+            {activePanel === "sale" && (
+              <>
+                <div className="section-title">
+                  <h2>{isRestaurantLike ? "Menu" : "Product Search"}</h2>
+                  <span>{canOrder || canSell ? "Tap item to add" : "No access"}</span>
+                </div>
 
-            {isRestaurantLike ? (
-              <div className="menu-grid">
-                {menuItems.map((item) => (
-                  <button
-                    key={item.id}
-                    className="menu-item-card"
-                    disabled={!canOrder && !canSell}
-                    onClick={() => addMenuItemToCart(item)}
-                  >
-                    <div className="menu-image">
-                      {item.image_url ? (
-                        <img src={item.image_url} alt={item.name} />
-                      ) : (
-                        <span>🍽️</span>
-                      )}
-                    </div>
+                {isRestaurantLike ? (
+                  <div className="menu-grid">
+                    {menuItems.map((item) => (
+                      <button
+                        key={item.id}
+                        className="menu-item-card"
+                        disabled={!canOrder && !canSell}
+                        onClick={() => addMenuItemToCart(item)}
+                      >
+                        <div className="menu-image">
+                          {item.image_url ? <img src={item.image_url} alt={item.name} /> : <span>🍽️</span>}
+                        </div>
 
-                    <div className="menu-info">
-                      <strong>{item.name}</strong>
-                      <small>{item.category}</small>
-                      <b>{money(item.price)}</b>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <strong>No item selected</strong>
-                <p>Search or scan to add items to the sale.</p>
-              </div>
+                        <div className="menu-info">
+                          <strong>{item.name}</strong>
+                          <small>{item.category}</small>
+                          <b>{money(item.price)}</b>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <strong>No item selected</strong>
+                    <p>Search or scan to add items to the sale.</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activePanel === "holdSale" && (
+              <>
+                <div className="section-title">
+                  <h2>Hold Sale</h2>
+                  <span>Save current sale for later</span>
+                </div>
+
+                <div className="empty-state">
+                  <strong>Hold sale panel</strong>
+                  <p>This sale can be placed on hold and resumed later.</p>
+                </div>
+              </>
+            )}
+
+            {activePanel === "customer" && (
+              <>
+                <div className="section-title">
+                  <h2>Customer</h2>
+                  <span>Select or create customer</span>
+                </div>
+
+                <div className="empty-state">
+                  <strong>Customer panel</strong>
+                  <p>Customer search and customer details will render here.</p>
+                </div>
+              </>
+            )}
+
+            {activePanel === "quotation" && (
+              <>
+                <div className="section-title">
+                  <h2>Quotation</h2>
+                  <span>Create quote from current cart</span>
+                </div>
+
+                <div className="empty-state">
+                  <strong>Quotation panel</strong>
+                  <p>Quotation tools will render here.</p>
+                </div>
+              </>
+            )}
+
+            {activePanel === "return" && (
+              <>
+                <div className="section-title">
+                  <h2>Return</h2>
+                  <span>Process returned items</span>
+                </div>
+
+                <div className="empty-state">
+                  <strong>Return panel</strong>
+                  <p>Return search and processing will render here.</p>
+                </div>
+              </>
+            )}
+
+            {activePanel === "priceCheck" && (
+              <>
+                <div className="section-title">
+                  <h2>Price Check</h2>
+                  <span>Check product price</span>
+                </div>
+
+                <div className="empty-state">
+                  <strong>Price check panel</strong>
+                  <p>Scan or search item to check price.</p>
+                </div>
+              </>
             )}
           </div>
         </aside>
