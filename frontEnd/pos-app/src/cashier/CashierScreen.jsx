@@ -561,16 +561,58 @@ const [menuItems, setMenuItems] = useState([
 
           <div className="payment-bar">
             <button className="soft">Print Quote/Bill</button>
+              {canSell && (
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    console.log("PAYMENT CLICKED");
+                    setActivePanel("payment");
+                  }}
+                >
+                  Payment
+                </button>
+              )}
 
-            {canSell && <button className="warning">Discount</button>}
+              {canSell && (
+                <button
+                  type="button"
+                  className="success"
+                  onClick={() => {
+                    console.log("COMPLETE SALE CLICKED", cart, totals);
 
-            {canSell && <button className="primary">Payment</button>}
+                    if (!cart.length) {
+                      setMessage("Add at least one item before completing the sale.");
+                      return;
+                    }
 
-            {canSell && <button className="success">Complete Sale</button>}
+                    setActivePanel("payment");
+                    setMessage("Choose payment method before completing the sale.");
+                  }}
+                >
+                  Complete Sale
+                </button>
+              )}
 
-            {!canSell && canOrder && (
-              <button className="success">Proceed to Payout</button>
-            )}
+              {!canSell && canOrder && (
+                <button
+                  type="button"
+                  className="success"
+                  onClick={() => {
+                    console.log("PROCEED TO PAYOUT CLICKED", cart, totals);
+
+                    if (!cart.length) {
+                      setMessage("Add at least one item before proceeding to payout.");
+                      return;
+                    }
+
+                    setActivePanel("payment");
+                    setMessage("Send this order to cashier/payout.");
+                  }}
+                >
+                  Proceed to Payout
+                </button>
+              )}
           </div>
         </section>
       </section>

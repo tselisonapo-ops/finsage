@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 import { renderSlip, SLIP_TEMPLATE_OPTIONS } from "../utils/receiptTemplates.js";
-
 const RETAIL_TABS = [
   ["overview", "Overview"],
   ["sales", "Sales"],
@@ -567,6 +566,38 @@ export function ManagerPage() {
       setMessage("Delivery zone saved.");
     }
 
+    if (modal.type === "table_settings") {
+      await saveReceiptSettings({
+        ...(receiptSettings || {}),
+        table_reservations_enabled: values.table_reservations_enabled || "enabled",
+        default_table_status: values.default_table_status || "available",
+        table_assignment_rule: values.table_assignment_rule || "optional",
+        table_open_balance_rule: values.table_open_balance_rule || "allow",
+      });
+
+      setMessage("Table settings saved.");
+    }
+
+    if (modal.type === "new_table") {
+      await saveReceiptSettings({
+        ...(receiptSettings || {}),
+        last_table_section: values.section || "",
+        last_table_name: values.table_name || "",
+        last_table_capacity: Number(values.capacity || 0),
+        last_table_status: values.status || "available",
+      });
+
+      setMessage("Table saved.");
+    }
+
+    if (modal.type === "new_table_section") {
+      await saveReceiptSettings({
+        ...(receiptSettings || {}),
+        last_table_section_name: values.section_name || "",
+      });
+
+      setMessage("Table section saved.");
+    }
     setModal(null);
   }
 
@@ -956,10 +987,10 @@ export function ManagerPage() {
                   saveLabel="Save Printer Settings"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["receipt_printer", "Receipt Printer"],
-                    ["kitchen_printer", "Kitchen Printer"],
-                    ["label_printer", "Label Printer"],
+                  cards={[
+                    { icon: "🧾", title: "Receipt Printer", key: "receipt_printer", value: "Not Set", text: "Default customer receipt printer.", type: "text" },
+                    { icon: "👨‍🍳", title: "Kitchen Printer", key: "kitchen_printer", value: "Not Set", text: "Used for restaurant kitchen orders.", type: "text" },
+                    { icon: "🏷️", title: "Label Printer", key: "label_printer", value: "Not Set", text: "Used for barcode and shelf labels.", type: "text" },
                   ]}
                 />
               )}
@@ -971,10 +1002,46 @@ export function ManagerPage() {
                   saveLabel="Save Tax Settings"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["pricing_tax_mode", "Pricing Tax Mode"],
-                    ["tax_invoice_wording", "Tax Invoice Wording"],
-                    ["receipt_tax_display", "Receipt VAT Display"],
+                  cards={[
+                    {
+                      icon: "🧮",
+                      title: "Pricing Tax Mode",
+                      key: "pricing_tax_mode",
+                      value: "VAT Inclusive",
+                      text: "Choose whether selling prices include VAT or VAT is added separately.",
+                      type: "select",
+                      options: [
+                        { value: "inclusive", label: "VAT Inclusive" },
+                        { value: "exclusive", label: "VAT Exclusive" },
+                      ],
+                    },
+                    {
+                      icon: "🧾",
+                      title: "Receipt VAT Display",
+                      key: "receipt_tax_display",
+                      value: "Show VAT Line",
+                      text: "Choose how VAT appears on customer receipts.",
+                      type: "select",
+                      options: [
+                        { value: "total_only", label: "Total Only" },
+                        { value: "vat_line", label: "Show VAT Line" },
+                        { value: "cost_vat_total", label: "Cost + VAT + Total" },
+                      ],
+                    },
+                    {
+                      icon: "📄",
+                      title: "Receipt Wording",
+                      key: "tax_invoice_wording",
+                      value: "Tax Invoice / Receipt",
+                      text: "Choose the wording printed at the top of the receipt.",
+                      type: "select",
+                      options: [
+                        { value: "Tax Invoice / Receipt", label: "Tax Invoice / Receipt" },
+                        { value: "Tax Invoice", label: "Tax Invoice" },
+                        { value: "Receipt", label: "Receipt" },
+                        { value: "Pro-forma", label: "Pro-forma" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -982,14 +1049,25 @@ export function ManagerPage() {
               {settingsView === "terminals" && (
                 <GenericPosSettingsTab
                   title="Terminal Settings"
-                  description="Configure terminal defaults, cash drawers and opening floats."
+                  description="Configure terminal defaults, cash drawer and opening float."
                   saveLabel="Save Terminal Settings"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["default_terminal", "Default Terminal"],
-                    ["opening_float", "Opening Float"],
-                    ["cash_drawer_enabled", "Cash Drawer Enabled"],
+                  cards={[
+                    { icon: "🖥️", title: "Default Terminal", key: "default_terminal", value: "Main Till", text: "Default terminal used for POS sales.", type: "text" },
+                    { icon: "💵", title: "Opening Float", key: "opening_float", value: "0.00", text: "Default opening cash float for shifts.", type: "number" },
+                    {
+                      icon: "🧰",
+                      title: "Cash Drawer",
+                      key: "cash_drawer_enabled",
+                      value: "Disabled",
+                      text: "Enable or disable automatic cash drawer behaviour.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -997,14 +1075,50 @@ export function ManagerPage() {
               {settingsView === "cash_controls" && (
                 <GenericPosSettingsTab
                   title="Cash Control Settings"
-                  description="Set approval rules for cash-up differences, returns and overrides."
+                  description="Set approval rules for returns, variances and discount overrides."
                   saveLabel="Save Cash Controls"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["returns_approval", "Returns Approval"],
-                    ["cash_variance_rule", "Cash Variance Rule"],
-                    ["discount_override_rule", "Discount Override Rule"],
+                  cards={[
+                    {
+                      icon: "↩️",
+                      title: "Returns Approval",
+                      key: "returns_approval",
+                      value: "Manager Approval",
+                      text: "Choose who must approve POS returns.",
+                      type: "select",
+                      options: [
+                        { value: "none", label: "No Approval Required" },
+                        { value: "supervisor", label: "Supervisor Approval" },
+                        { value: "manager", label: "Manager Approval" },
+                      ],
+                    },
+                    {
+                      icon: "⚖️",
+                      title: "Cash Variance Rule",
+                      key: "cash_variance_rule",
+                      value: "Supervisor Review",
+                      text: "Choose how cash-up differences are reviewed.",
+                      type: "select",
+                      options: [
+                        { value: "none", label: "No Review" },
+                        { value: "supervisor", label: "Supervisor Review" },
+                        { value: "manager", label: "Manager Approval" },
+                      ],
+                    },
+                    {
+                      icon: "🏷️",
+                      title: "Discount Override",
+                      key: "discount_override_rule",
+                      value: "Approval Required",
+                      text: "Control manual discount permissions.",
+                      type: "select",
+                      options: [
+                        { value: "allowed", label: "Allowed" },
+                        { value: "approval_required", label: "Approval Required" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -1012,14 +1126,50 @@ export function ManagerPage() {
               {settingsView === "barcode" && (
                 <GenericPosSettingsTab
                   title="Barcode Settings"
-                  description="Configure barcode format, item lookup and shelf label behaviour."
+                  description="Configure barcode format, lookup and automatic generation."
                   saveLabel="Save Barcode Settings"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["barcode_format", "Default Barcode Format"],
-                    ["barcode_lookup_method", "Lookup Method"],
-                    ["auto_generate_barcode", "Auto Generate Barcode"],
+                  cards={[
+                    {
+                      icon: "🏷️",
+                      title: "Barcode Format",
+                      key: "barcode_format",
+                      value: "Code128",
+                      text: "Default barcode format for item labels.",
+                      type: "select",
+                      options: [
+                        { value: "code128", label: "Code128" },
+                        { value: "ean13", label: "EAN-13" },
+                        { value: "qr", label: "QR Code" },
+                      ],
+                    },
+                    {
+                      icon: "🔍",
+                      title: "Lookup Method",
+                      key: "barcode_lookup_method",
+                      value: "Barcode",
+                      text: "Choose how items are found at checkout.",
+                      type: "select",
+                      options: [
+                        { value: "barcode", label: "Barcode" },
+                        { value: "sku", label: "SKU" },
+                        { value: "name", label: "Item Name" },
+                        { value: "all", label: "Barcode, SKU or Name" },
+                      ],
+                    },
+                    {
+                      icon: "⚙️",
+                      title: "Auto Generate Barcode",
+                      key: "auto_generate_barcode",
+                      value: "Enabled",
+                      text: "Automatically generate barcode when item has none.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -1031,11 +1181,32 @@ export function ManagerPage() {
                   saveLabel="Save Scale Settings"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["weighted_items_enabled", "Weighted Items Enabled"],
-                    ["scale_barcode_prefix", "Scale Barcode Prefix"],
-                    ["scale_quantity_parsing", "Quantity Parsing"],
-                    ["scale_price_embedded", "Price Embedded"],
+                  cards={[
+                    {
+                      icon: "⚖️",
+                      title: "Weighted Items",
+                      key: "weighted_items_enabled",
+                      value: "Disabled",
+                      text: "Enable weighted products sold by mass.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    { icon: "🔢", title: "Scale Prefix", key: "scale_barcode_prefix", value: "20", text: "Barcode prefix used by weighing scales.", type: "text" },
+                    {
+                      icon: "📏",
+                      title: "Quantity Parsing",
+                      key: "scale_quantity_parsing",
+                      value: "Auto",
+                      text: "Choose how weight or quantity is read from barcode.",
+                      type: "select",
+                      options: [
+                        { value: "auto", label: "Auto" },
+                        { value: "manual", label: "Manual" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -1047,11 +1218,43 @@ export function ManagerPage() {
                   saveLabel="Save Display Settings"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
-                  fields={[
-                    ["customer_display_enabled", "Customer Display Enabled"],
-                    ["promo_screen_enabled", "Promo Screen Enabled"],
-                    ["customer_display_show_vat", "Show VAT"],
-                    ["customer_payment_prompt", "Payment Prompt"],
+                  cards={[
+                    {
+                      icon: "🖥️",
+                      title: "Customer Display",
+                      key: "customer_display_enabled",
+                      value: "Disabled",
+                      text: "Enable a customer-facing display screen.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    {
+                      icon: "📢",
+                      title: "Promo Screen",
+                      key: "promo_screen_enabled",
+                      value: "Disabled",
+                      text: "Show promotional content when POS is idle.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    {
+                      icon: "🧾",
+                      title: "Show VAT",
+                      key: "customer_display_show_vat",
+                      value: "Enabled",
+                      text: "Show VAT amount on the customer display.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -1071,18 +1274,42 @@ export function ManagerPage() {
               {settingsView === "kitchen" && (
                 <RestaurantSettingsModalTab
                   title="Kitchen Routing"
-                  description="Configure preparation stations and order routing."
+                  description="Configure preparation stations and how orders move through the kitchen."
                   saveLabel="Save Kitchen Settings"
                   buttonLabel="New Station"
                   modalType="kitchen_station"
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
                   onOpenModal={setModal}
-                  fields={[
-                    ["default_kitchen_station", "Default Kitchen Station"],
-                    ["bar_station_enabled", "Bar Station Enabled"],
-                    ["dessert_station_enabled", "Dessert Station Enabled"],
-                    ["kitchen_printer", "Kitchen Printer"],
+                  cards={[
+                    { icon: "👨‍🍳", title: "Kitchen Station", key: "default_kitchen_station", value: "Kitchen", text: "Default food preparation station.", type: "text" },
+                    {
+                      icon: "🍹",
+                      title: "Bar Station",
+                      key: "bar_station_enabled",
+                      value: "Optional",
+                      text: "Route drinks separately.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "optional", label: "Optional" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    {
+                      icon: "🍰",
+                      title: "Dessert Station",
+                      key: "dessert_station_enabled",
+                      value: "Optional",
+                      text: "Route desserts separately.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "optional", label: "Optional" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    { icon: "🖨️", title: "Kitchen Printer", key: "kitchen_printer", value: "Not Set", text: "Printer for kitchen tickets.", type: "text" },
                   ]}
                 />
               )}
@@ -1097,11 +1324,56 @@ export function ManagerPage() {
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
                   onOpenModal={setModal}
-                  fields={[
-                    ["waiter_access_enabled", "Waiter Access Enabled"],
-                    ["table_assignment_required", "Table Assignment Required"],
-                    ["waiter_bill_printing", "Waiter Bill Printing"],
-                    ["waiter_payment_access", "Payment Access"],
+                  cards={[
+                    {
+                      icon: "🧑‍🍽️",
+                      title: "Waiter Access",
+                      key: "waiter_access_enabled",
+                      value: "Enabled",
+                      text: "Allow waiters to create and manage orders.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    {
+                      icon: "🪑",
+                      title: "Table Assignment",
+                      key: "table_assignment_required",
+                      value: "Optional",
+                      text: "Assign tables to specific waiters.",
+                      type: "select",
+                      options: [
+                        { value: "required", label: "Required" },
+                        { value: "optional", label: "Optional" },
+                      ],
+                    },
+                    {
+                      icon: "🧾",
+                      title: "Bill Printing",
+                      key: "waiter_bill_printing",
+                      value: "Allowed",
+                      text: "Allow waiters to print bills.",
+                      type: "select",
+                      options: [
+                        { value: "allowed", label: "Allowed" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    {
+                      icon: "💵",
+                      title: "Payment Access",
+                      key: "waiter_payment_access",
+                      value: "Cashier Only",
+                      text: "Choose who can take payment.",
+                      type: "select",
+                      options: [
+                        { value: "cashier_only", label: "Cashier Only" },
+                        { value: "waiter_allowed", label: "Waiter Allowed" },
+                        { value: "manager_only", label: "Manager Only" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -1116,11 +1388,33 @@ export function ManagerPage() {
                   settings={receiptSettings}
                   onSave={saveReceiptSettings}
                   onOpenModal={setModal}
-                  fields={[
-                    ["delivery_orders_enabled", "Delivery Orders Enabled"],
-                    ["default_delivery_fee", "Default Delivery Fee"],
-                    ["delivery_estimated_time", "Estimated Time"],
-                    ["delivery_driver_required", "Driver Required"],
+                  cards={[
+                    {
+                      icon: "🚚",
+                      title: "Delivery Orders",
+                      key: "delivery_orders_enabled",
+                      value: "Enabled",
+                      text: "Allow delivery orders.",
+                      type: "select",
+                      options: [
+                        { value: "enabled", label: "Enabled" },
+                        { value: "disabled", label: "Disabled" },
+                      ],
+                    },
+                    { icon: "💰", title: "Default Fee", key: "default_delivery_fee", value: "0.00", text: "Default delivery fee.", type: "number" },
+                    { icon: "⏱️", title: "Estimated Time", key: "delivery_estimated_time", value: "30 min", text: "Default delivery estimate.", type: "text" },
+                    {
+                      icon: "🧍",
+                      title: "Driver Required",
+                      key: "delivery_driver_required",
+                      value: "Optional",
+                      text: "Require driver assignment.",
+                      type: "select",
+                      options: [
+                        { value: "required", label: "Required" },
+                        { value: "optional", label: "Optional" },
+                      ],
+                    },
                   ]}
                 />
               )}
@@ -1470,9 +1764,10 @@ function RestaurantSettingsModalTab({
   settings = {},
   onSave,
   onOpenModal,
-  fields = [],
+  cards = [],
 }) {
   const [form, setForm] = useState(settings || {});
+  const [activeCard, setActiveCard] = useState(null);
 
   useEffect(() => {
     setForm(settings || {});
@@ -1481,6 +1776,8 @@ function RestaurantSettingsModalTab({
   function update(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  const active = cards.find((x) => x.key === activeCard);
 
   return (
     <section className="manager-workspace" style={{ marginTop: 18 }}>
@@ -1526,18 +1823,56 @@ function RestaurantSettingsModalTab({
         </div>
       </div>
 
-      <section className="settings-form-grid">
-        {fields.map(([key, label]) => (
-          <label key={key}>
-            {label}
-            <input
-              className="scan-input"
-              value={form?.[key] ?? ""}
-              onChange={(e) => update(key, e.target.value)}
-            />
-          </label>
+      <section className="manager-grid">
+        {cards.map((card) => (
+          <ManagerCard
+            key={card.key}
+            icon={card.icon}
+            title={card.title}
+            value={form?.[card.key] || card.value}
+            text={card.text}
+            onClick={() => setActiveCard(card.key)}
+          />
         ))}
       </section>
+
+      {active && (
+        <div className="scan-card" style={{ marginTop: 16 }}>
+          <h3>{active.title}</h3>
+          <p>{active.text}</p>
+
+          {active.type === "select" && (
+            <select
+              className="scan-input"
+              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              onChange={(e) => update(active.key, e.target.value)}
+            >
+              {(active.options || []).map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {active.type === "number" && (
+            <input
+              className="scan-input"
+              type="number"
+              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              onChange={(e) => update(active.key, e.target.value)}
+            />
+          )}
+
+          {active.type === "text" && (
+            <input
+              className="scan-input"
+              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              onChange={(e) => update(active.key, e.target.value)}
+            />
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -2582,9 +2917,10 @@ function GenericPosSettingsTab({
   saveLabel,
   settings = {},
   onSave,
-  fields = [],
+  cards = [],
 }) {
   const [form, setForm] = useState(settings || {});
+  const [activeCard, setActiveCard] = useState(null);
 
   useEffect(() => {
     setForm(settings || {});
@@ -2593,6 +2929,8 @@ function GenericPosSettingsTab({
   function update(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  const active = cards.find((x) => x.key === activeCard);
 
   return (
     <section className="manager-workspace" style={{ marginTop: 18 }}>
@@ -2607,18 +2945,56 @@ function GenericPosSettingsTab({
         </button>
       </div>
 
-      <section className="settings-form-grid">
-        {fields.map(([key, label]) => (
-          <label key={key}>
-            {label}
-            <input
-              className="scan-input"
-              value={form?.[key] ?? ""}
-              onChange={(e) => update(key, e.target.value)}
-            />
-          </label>
+      <section className="manager-grid">
+        {cards.map((card) => (
+          <ManagerCard
+            key={card.key}
+            icon={card.icon}
+            title={card.title}
+            value={card.displayValue || form?.[card.key] || card.value || "Not Set"}
+            text={card.text}
+            onClick={() => setActiveCard(card.key)}
+          />
         ))}
       </section>
+
+      {active && (
+        <div className="scan-card" style={{ marginTop: 16 }}>
+          <h3>{active.title}</h3>
+          <p>{active.text}</p>
+
+          {active.type === "select" && (
+            <select
+              className="scan-input"
+              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              onChange={(e) => update(active.key, e.target.value)}
+            >
+              {(active.options || []).map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {active.type === "number" && (
+            <input
+              className="scan-input"
+              type="number"
+              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              onChange={(e) => update(active.key, e.target.value)}
+            />
+          )}
+
+          {active.type === "text" && (
+            <input
+              className="scan-input"
+              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              onChange={(e) => update(active.key, e.target.value)}
+            />
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -2972,13 +3348,36 @@ function PurchasingTab({
   );
 }
 
-function TableSettingsTab({ tables = [], setMessage }) {
+function TableSettingsTab({
+  tables = [],
+  sections = [],
+  staffMembers = [],
+  onOpenModal,
+  onRefresh,
+}) {
   const totalTables = tables.length;
-  const available = tables.filter((t) => String(t.status).toLowerCase() === "available").length;
-  const occupied = tables.filter((t) => String(t.status).toLowerCase() === "occupied").length;
-  const reserved = tables.filter((t) => String(t.status).toLowerCase() === "reserved").length;
 
-  const sections = [...new Set(tables.map((t) => t.section || "Main Floor"))];
+  const available = tables.filter(
+    (t) => String(t.status).toLowerCase() === "available"
+  ).length;
+
+  const occupied = tables.filter(
+    (t) => String(t.status).toLowerCase() === "occupied"
+  ).length;
+
+  const reserved = tables.filter(
+    (t) => String(t.status).toLowerCase() === "reserved"
+  ).length;
+
+  const sectionNames =
+    sections.length
+      ? sections.map((s) => s.section_name || s.name || s.section || "Main Floor")
+      : [...new Set(tables.map((t) => t.section || "Main Floor"))];
+
+  const totalCapacity = tables.reduce(
+    (s, t) => s + Number(t.capacity || 0),
+    0
+  );
 
   return (
     <section className="manager-workspace" style={{ marginTop: 18 }}>
@@ -2988,12 +3387,40 @@ function TableSettingsTab({ tables = [], setMessage }) {
           <p>Configure restaurant tables, sections, capacity and table workflow.</p>
         </div>
 
-        <button
-          className="scan-btn"
-          onClick={() => setMessage("Next: connect New Table to posApi.createTable().")}
-        >
-          New Table
-        </button>
+        <div className="workspace-actions">
+          <button
+            className="soft"
+            onClick={() =>
+              onOpenModal({
+                type: "new_table_section",
+                title: "New Table Section",
+                fields: [
+                  { key: "section_name", label: "Section Name", value: "Main Floor" },
+                ],
+              })
+            }
+          >
+            New Section
+          </button>
+
+          <button
+            className="scan-btn"
+            onClick={() =>
+              onOpenModal({
+                type: "new_table",
+                title: "New Table",
+                fields: [
+                  { key: "section", label: "Section", value: sectionNames[0] || "Main Floor" },
+                  { key: "table_name", label: "Table Name", value: "" },
+                  { key: "capacity", label: "Capacity", value: "4" },
+                  { key: "status", label: "Status", value: "available" },
+                ],
+              })
+            }
+          >
+            New Table
+          </button>
+        </div>
       </div>
 
       <section className="manager-grid">
@@ -3001,8 +3428,8 @@ function TableSettingsTab({ tables = [], setMessage }) {
         <ManagerCard icon="🟢" title="Available" value={available} text="Tables ready for customers." />
         <ManagerCard icon="🔴" title="Occupied" value={occupied} text="Tables currently in use." />
         <ManagerCard icon="📅" title="Reserved" value={reserved} text="Tables reserved for customers." />
-        <ManagerCard icon="🏠" title="Sections" value={sections.length} text={sections.join(", ") || "No sections configured."} />
-        <ManagerCard icon="👥" title="Total Capacity" value={tables.reduce((s, t) => s + Number(t.capacity || 0), 0)} text="Total seating capacity." />
+        <ManagerCard icon="🏠" title="Sections" value={sectionNames.length} text={sectionNames.join(", ") || "No sections configured."} />
+        <ManagerCard icon="👥" title="Total Capacity" value={totalCapacity} text="Total seating capacity." />
       </section>
 
       <div className="report-table-wrap" style={{ marginTop: 16 }}>
@@ -3022,7 +3449,7 @@ function TableSettingsTab({ tables = [], setMessage }) {
             {tables.length ? (
               tables.map((t, idx) => (
                 <tr key={t.id || idx}>
-                  <td>{t.section || "Main Floor"}</td>
+                  <td>{t.section || t.section_name || "Main Floor"}</td>
                   <td>{t.table_name || t.name || `Table ${idx + 1}`}</td>
                   <td>{t.capacity || "-"}</td>
                   <td>{t.status || "available"}</td>
@@ -3032,7 +3459,7 @@ function TableSettingsTab({ tables = [], setMessage }) {
               ))
             ) : (
               <tr>
-                <td colSpan="8">No tables configured yet.</td>
+                <td colSpan="6">No tables configured yet.</td>
               </tr>
             )}
           </tbody>
