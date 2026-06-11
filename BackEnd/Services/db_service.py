@@ -17539,15 +17539,6 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_date_idx
-        ON {schema}.inventory_tx(company_id, tx_date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_status_idx
-        ON {schema}.inventory_tx(company_id, status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_source_idx
-        ON {schema}.inventory_tx(company_id, source, source_id);
-
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
 
@@ -17568,6 +17559,9 @@ class DatabaseService:
 
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS funding_type TEXT NOT NULL DEFAULT 'supplier_credit',
+        ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
 
         DO $$
@@ -17621,6 +17615,15 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_po_idx
         ON {schema}.inventory_tx(company_id, po_id);
                 
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_date_idx
+        ON {schema}.inventory_tx(company_id, tx_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_status_idx
+        ON {schema}.inventory_tx(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_source_idx
+        ON {schema}.inventory_tx(company_id, source, source_id);
+
         -- ✅ ONE TRUE idempotency rule (drop old wrong index and recreate correct one)
         DO $$
         BEGIN
@@ -32562,6 +32565,7 @@ class DatabaseService:
         po_id: int | None = None,
         supplier_invoice_no: str | None = None,
         funding_type: str | None = None,
+        bank_account_id: int | None = None,
         source_company_id: int | None = None,
         engagement_company_id: int | None = None,
         engagement_id: int | None = None,
@@ -32645,6 +32649,7 @@ class DatabaseService:
                     updated_by_user_id,
                     vendor_id, po_id, supplier_invoice_no, grni_status, grni_type,
                     funding_type,
+                    bank_account_id,
                     created_at, updated_at
                 )
                 VALUES
@@ -32653,7 +32658,7 @@ class DatabaseService:
                     'manual',NULL,%s,
                     %s,%s,%s,%s,
                     %s,%s,%s,'unbilled','inventory',
-                    %s,
+                    %s, %s,
                     NOW(),NOW()
                 )
                 RETURNING id;
@@ -32674,6 +32679,7 @@ class DatabaseService:
                     int(po_id) if po_id else None,
                     supplier_invoice_no,
                     (funding_type or None),
+                    int(bank_account_id) if bank_account_id else None,
                 ),
             )
             row = _cur.fetchone()
