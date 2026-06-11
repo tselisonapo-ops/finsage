@@ -35460,167 +35460,6 @@ class DatabaseService:
 
         return int(row["id"])
 
-
-    def pos_record_payment(
-        self,
-        company_id: int,
-        *,
-        sale_id: int,
-        shift_id: int | None,
-        payment_method: str,
-        amount: float,
-        reference: str | None = None,
-        received_amount: float | None = None,
-        change_amount: float | None = None,
-    ) -> int:
-        schema = self.company_schema(company_id)
-        payment_method = (payment_method or "").strip().lower()
-        amount = float(amount or 0)
-
-        with self._conn_cursor() as (conn, cur):
-            row = self.fetch_one(f"""
-                INSERT INTO {schema}.pos_payments
-                (
-                    company_id, sale_id, shift_id, payment_method,
-                    amount, reference, received_amount, change_amount
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                RETURNING id
-            """, (
-                int(company_id),
-                int(sale_id),
-                shift_id,
-                payment_method,
-                amount,
-                reference,
-                received_amount,
-                change_amount,
-            ), cur=cur)
-
-            payment_id = int(row["id"])
-
-            if payment_method != "account" and amount > 0:
-                accounts = self._pos_resolve_gl_accounts(company_id, cur=cur)
-
-                journal_id = self.post_journal(
-                    company_id,
-                    {
-                        "date": date.today().isoformat(),
-                        "ref": f"POS-PAY-{payment_id}",
-                        "description": f"POS payment for sale {sale_id}",
-                        "source": "pos_payment",
-                        "source_id": payment_id,
-                        "gross_amount": amount,
-                        "lines": [
-                            {
-                                "account": accounts["cash_bank"],
-                                "debit": amount,
-                                "credit": 0,
-                                "description": f"POS {payment_method} payment",
-                            },
-                            {
-                                "account": accounts["receivable"],
-                                "debit": 0,
-                                "credit": amount,
-                                "description": f"Clear POS receivable for sale {sale_id}",
-                            },
-                        ],
-                    },
-                    cur=cur,
-                )
-
-                cur.execute(f"""
-                    UPDATE {schema}.pos_payments
-                    SET posted_journal_id=%s
-                    WHERE company_id=%s AND id=%s
-                """, (int(journal_id), int(company_id), int(payment_id)))
-
-            conn.commit()
-            return payment_id
-
-    def pos_add_sale_line(self, company_id: int, sale_id: int, line: dict) -> int:
-        schema = self.company_schema(company_id)
-
-        row = self.fetch_one(f"""
-            SELECT COALESCE(MAX(line_no), 0) + 1 AS next_line_no
-            FROM {schema}.pos_sale_lines
-            WHERE company_id = %s AND sale_id = %s
-        """, (int(company_id), int(sale_id)))
-
-        line_no = int(row["next_line_no"])
-
-        inserted = self.fetch_one(f"""
-            INSERT INTO {schema}.pos_sale_lines
-            (
-                company_id, sale_id, line_no, item_type, item_id,
-                barcode, sku, description, qty, unit_price,
-                discount_percent, discount_amount,
-                net_amount, vat_code, vat_amount, gross_amount,
-                cost_amount, price_source
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
-        """, (
-            int(company_id),
-            int(sale_id),
-            line_no,
-            line.get("item_type") or "inventory",
-            line.get("item_id"),
-            line.get("barcode"),
-            line.get("sku"),
-            line.get("description") or "",
-            float(line.get("qty") or 1),
-            float(line.get("unit_price") or 0),
-            float(line.get("discount_percent") or 0),
-            float(line.get("discount_amount") or 0),
-            float(line.get("net_amount") or 0),
-            line.get("vat_code"),
-            float(line.get("vat_amount") or 0),
-            float(line.get("gross_amount") or 0),
-            float(line.get("cost_amount") or 0),
-            line.get("price_source") or "normal",
-        ))
-
-        return int(inserted["id"])
-
-    def pos_create_sale_draft(
-        self,
-        company_id: int,
-        *,
-        sale_no: str,
-        terminal_id: int,
-        shift_id: int,
-        cashier_user_id: int,
-        customer_id: int | None = None,
-        customer_name: str | None = None,
-        customer_account_id: int | None = None,
-        source_quote_id: int | None = None,
-    ) -> int:
-        schema = self.company_schema(company_id)
-
-        row = self.fetch_one(f"""
-            INSERT INTO {schema}.pos_sales
-            (
-                company_id, sale_no, terminal_id, shift_id, cashier_user_id,
-                customer_id, customer_name, customer_account_id,
-                source_quote_id, status
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
-            RETURNING id
-        """, (
-            int(company_id),
-            sale_no,
-            int(terminal_id),
-            int(shift_id),
-            int(cashier_user_id),
-            customer_id,
-            customer_name,
-            customer_account_id,
-            source_quote_id,
-        ))
-
-        return int(row["id"])
-
     def pos_create_quote(
         self,
         company_id: int,
@@ -36122,7 +35961,167 @@ class DatabaseService:
                 "amount_paid": paid,
                 "cost_amount": total_cost,
             }
-    
+
+    def pos_record_payment(
+            self,
+            company_id: int,
+            *,
+            sale_id: int,
+            shift_id: int | None,
+            payment_method: str,
+            amount: float,
+            reference: str | None = None,
+            received_amount: float | None = None,
+            change_amount: float | None = None,
+        ) -> int:
+            schema = self.company_schema(company_id)
+            payment_method = (payment_method or "").strip().lower()
+            amount = float(amount or 0)
+
+            with self._conn_cursor() as (conn, cur):
+                row = self.fetch_one(f"""
+                    INSERT INTO {schema}.pos_payments
+                    (
+                        company_id, sale_id, shift_id, payment_method,
+                        amount, reference, received_amount, change_amount
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    RETURNING id
+                """, (
+                    int(company_id),
+                    int(sale_id),
+                    shift_id,
+                    payment_method,
+                    amount,
+                    reference,
+                    received_amount,
+                    change_amount,
+                ), cur=cur)
+
+                payment_id = int(row["id"])
+
+                if payment_method != "account" and amount > 0:
+                    accounts = self._pos_resolve_gl_accounts(company_id, cur=cur)
+
+                    journal_id = self.post_journal(
+                        company_id,
+                        {
+                            "date": date.today().isoformat(),
+                            "ref": f"POS-PAY-{payment_id}",
+                            "description": f"POS payment for sale {sale_id}",
+                            "source": "pos_payment",
+                            "source_id": payment_id,
+                            "gross_amount": amount,
+                            "lines": [
+                                {
+                                    "account": accounts["cash_bank"],
+                                    "debit": amount,
+                                    "credit": 0,
+                                    "description": f"POS {payment_method} payment",
+                                },
+                                {
+                                    "account": accounts["receivable"],
+                                    "debit": 0,
+                                    "credit": amount,
+                                    "description": f"Clear POS receivable for sale {sale_id}",
+                                },
+                            ],
+                        },
+                        cur=cur,
+                    )
+
+                    cur.execute(f"""
+                        UPDATE {schema}.pos_payments
+                        SET posted_journal_id=%s
+                        WHERE company_id=%s AND id=%s
+                    """, (int(journal_id), int(company_id), int(payment_id)))
+
+                conn.commit()
+                return payment_id
+
+    def pos_add_sale_line(self, company_id: int, sale_id: int, line: dict) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT COALESCE(MAX(line_no), 0) + 1 AS next_line_no
+            FROM {schema}.pos_sale_lines
+            WHERE company_id = %s AND sale_id = %s
+        """, (int(company_id), int(sale_id)))
+
+        line_no = int(row["next_line_no"])
+
+        inserted = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_sale_lines
+            (
+                company_id, sale_id, line_no, item_type, item_id,
+                barcode, sku, description, qty, unit_price,
+                discount_percent, discount_amount,
+                net_amount, vat_code, vat_amount, gross_amount,
+                cost_amount, price_source
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(sale_id),
+            line_no,
+            line.get("item_type") or "inventory",
+            line.get("item_id"),
+            line.get("barcode"),
+            line.get("sku"),
+            line.get("description") or "",
+            float(line.get("qty") or 1),
+            float(line.get("unit_price") or 0),
+            float(line.get("discount_percent") or 0),
+            float(line.get("discount_amount") or 0),
+            float(line.get("net_amount") or 0),
+            line.get("vat_code"),
+            float(line.get("vat_amount") or 0),
+            float(line.get("gross_amount") or 0),
+            float(line.get("cost_amount") or 0),
+            line.get("price_source") or "normal",
+        ))
+
+        return int(inserted["id"])
+
+    def pos_create_sale_draft(
+        self,
+        company_id: int,
+        *,
+        sale_no: str,
+        terminal_id: int,
+        shift_id: int,
+        cashier_user_id: int,
+        customer_id: int | None = None,
+        customer_name: str | None = None,
+        customer_account_id: int | None = None,
+        source_quote_id: int | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_sales
+            (
+                company_id, sale_no, terminal_id, shift_id, cashier_user_id,
+                customer_id, customer_name, customer_account_id,
+                source_quote_id, status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
+            RETURNING id
+        """, (
+            int(company_id),
+            sale_no,
+            int(terminal_id),
+            int(shift_id),
+            int(cashier_user_id),
+            customer_id,
+            customer_name,
+            customer_account_id,
+            source_quote_id,
+        ))
+
+        return int(row["id"])
+        
     def pos_create_order(
         self,
         company_id: int,
@@ -36480,7 +36479,18 @@ class DatabaseService:
             ORDER BY rh.is_active DESC, i.name ASC
         """, (int(company_id),))
 
-    def _pos_consume_fifo_layers(self, cur, schema: str, company_id: int, item_id: int, qty_required: float) -> float:
+    def _pos_consume_fifo_layers(
+        self,
+        cur,
+        schema: str,
+        company_id: int,
+        item_id: int,
+        qty_required: float,
+        *,
+        source: str = "pos_sale",
+        source_id: int | None = None,
+        source_line_id: int | None = None,
+    ) -> float:
         remaining = float(qty_required or 0)
         total_cost = 0.0
 
@@ -36503,12 +36513,40 @@ class DatabaseService:
             available = float(layer["qty_in"] or 0) - float(layer["qty_out"] or 0)
             take_qty = min(available, remaining)
             unit_cost = float(layer["unit_cost"] or 0)
+            cost_amount = round(take_qty * unit_cost, 2)
 
             cur.execute(f"""
                 UPDATE {schema}.inventory_layers
                 SET qty_out = COALESCE(qty_out,0) + %s
-                WHERE id=%s
-            """, (take_qty, int(layer["id"])))
+                WHERE company_id=%s
+                AND id=%s
+            """, (take_qty, int(company_id), int(layer["id"])))
+
+            cur.execute(f"""
+                INSERT INTO {schema}.inventory_fifo_allocations
+                (
+                    company_id,
+                    item_id,
+                    inventory_layer_id,
+                    qty_allocated,
+                    unit_cost,
+                    cost_amount,
+                    source,
+                    source_id,
+                    source_line_id
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                int(company_id),
+                int(item_id),
+                int(layer["id"]),
+                float(take_qty),
+                float(unit_cost),
+                float(cost_amount),
+                source,
+                int(source_id) if source_id else None,
+                int(source_line_id) if source_line_id else None,
+            ))
 
             total_cost += take_qty * unit_cost
             remaining -= take_qty
@@ -36542,7 +36580,14 @@ class DatabaseService:
         recipe = cur.fetchone()
         if not recipe:
             return self._pos_consume_fifo_layers(
-                cur, schema, company_id, int(menu_item_id), float(qty_sold or 0)
+                cur,
+                schema,
+                company_id,
+                int(menu_item_id),
+                float(qty_sold or 0),
+                source="pos_sale",
+                source_id=int(sale_id),
+                source_line_id=int(sale_line_id),
             )
 
         recipe_id = int(recipe["id"])
@@ -36573,7 +36618,14 @@ class DatabaseService:
             ingredient_qty = ingredient_qty * (1 + (wastage / 100))
 
             fifo_cost = self._pos_consume_fifo_layers(
-                cur, schema, company_id, ingredient_id, ingredient_qty
+                cur,
+                schema,
+                company_id,
+                ingredient_id,
+                ingredient_qty,
+                source="pos_sale",
+                source_id=int(sale_id),
+                source_line_id=int(sale_line_id),
             )
 
             total_food_cost += fifo_cost

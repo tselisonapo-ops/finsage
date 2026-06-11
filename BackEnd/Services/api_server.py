@@ -2152,90 +2152,94 @@ def api_auth_me():
 
 @app.route("/api/pos/auth/signin", methods=["POST", "OPTIONS"])
 def pos_auth_signin_global():
-    if request.method == "OPTIONS":
-        return ("", 204)
+    try:
+        if request.method == "OPTIONS":
+            return ("", 204)
 
-    data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True) or {}
 
-    employee_code = str(data.get("employee_code") or "").strip()
-    pin = str(data.get("pin") or "").strip()
+        employee_code = str(data.get("employee_code") or "").strip()
+        pin = str(data.get("pin") or "").strip()
 
-    if not employee_code or not pin:
-        return jsonify({"error": "Employee ID and PIN are required"}), 400
+        if not employee_code or not pin:
+            return jsonify({"error": "Employee ID and PIN are required"}), 400
 
-    row = db_service.fetch_one("""
-        SELECT
-            cu.id AS company_user_id,
-            cu.company_id,
-            cu.user_id,
-            cu.employee_code,
-            cu.pos_access_code,
-            cu.pos_display_name,
-            cu.pos_role,
-            cu.pos_permissions,
-            cu.pos_is_active,
-            cu.pin_hash,
-            u.email,
-            u.first_name,
-            u.last_name,
-            c.id AS company_id,
-            c.name AS company_name,
-            c.industry,
-            c.sub_industry,
-            c.currency
-        FROM public.company_users cu
-        JOIN public.users u ON u.id = cu.user_id
-        JOIN public.companies c ON c.id = cu.company_id
-        WHERE cu.pos_access_code = %s
-          AND cu.pos_is_active = TRUE
-          AND cu.is_active = TRUE
-          AND c.is_active = TRUE
-        LIMIT 1;
-    """, (employee_code,))
+        row = db_service.fetch_one("""
+            SELECT
+                cu.id AS company_user_id,
+                cu.company_id AS company_id,
+                cu.user_id,
+                cu.employee_code,
+                cu.pos_access_code,
+                cu.pos_display_name,
+                cu.pos_role,
+                cu.pos_permissions,
+                cu.pos_is_active,
+                cu.pin_hash,
+                u.email,
+                u.first_name,
+                u.last_name,
+                c.name AS company_name,
+                c.industry,
+                c.sub_industry,
+                c.currency
+            FROM public.company_users cu
+            JOIN public.users u ON u.id = cu.user_id
+            JOIN public.companies c ON c.id = cu.company_id
+            WHERE cu.pos_access_code = %s
+              AND cu.pos_is_active = TRUE
+              AND cu.is_active = TRUE
+              AND c.is_active = TRUE
+            LIMIT 1;
+        """, (employee_code,))
 
-    if not row or not row.get("pin_hash"):
-        return jsonify({"error": "Invalid employee ID or PIN"}), 401
+        if not row or not row.get("pin_hash"):
+            return jsonify({"error": "Invalid employee ID or PIN"}), 401
 
-    if not check_password_hash(row["pin_hash"], pin):
-        return jsonify({"error": "Invalid employee ID or PIN"}), 401
+        if not check_password_hash(row["pin_hash"], pin):
+            return jsonify({"error": "Invalid employee ID or PIN"}), 401
 
-    company_id = int(row["company_id"])
+        company_id = int(row["company_id"])
 
-    company = {
-        "id": company_id,
-        "name": row.get("company_name"),
-        "industry": row.get("industry"),
-        "sub_industry": row.get("sub_industry"),
-        "currency": row.get("currency"),
-    }
+        company = {
+            "id": company_id,
+            "name": row.get("company_name"),
+            "industry": row.get("industry"),
+            "sub_industry": row.get("sub_industry"),
+            "currency": row.get("currency"),
+        }
 
-    employee = {
-        "company_user_id": row["company_user_id"],
-        "user_id": row["user_id"],
-        "employee_code": row["employee_code"],
-        "access_code": row["pos_access_code"],
-        "name": row.get("pos_display_name")
-            or f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
-            or row.get("email"),
-        "pos_role": row.get("pos_role"),
-        "pos_permissions": row.get("pos_permissions") or {},
-    }
+        employee = {
+            "company_user_id": row["company_user_id"],
+            "user_id": row["user_id"],
+            "employee_code": row["employee_code"],
+            "access_code": row["pos_access_code"],
+            "name": row.get("pos_display_name")
+                or f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+                or row.get("email"),
+            "pos_role": row.get("pos_role"),
+            "pos_permissions": row.get("pos_permissions") or {},
+        }
 
-    pos_token = make_pos_jwt(
-        company_id=company_id,
-        company_user_id=row["company_user_id"],
-        user_id=row["user_id"],
-        employee_code=row["employee_code"],
-        pos_role=row.get("pos_role"),
-    )
+        pos_token = make_pos_jwt(
+            company_id=company_id,
+            company_user_id=row["company_user_id"],
+            user_id=row["user_id"],
+            employee_code=row["employee_code"],
+            pos_role=row.get("pos_role"),
+        )
 
-    return jsonify({
-        "ok": True,
-        "pos_token": pos_token,
-        "employee": employee,
-        "company": company,
-    }), 200
+        return jsonify({
+            "ok": True,
+            "pos_token": pos_token,
+            "employee": employee,
+            "company": company,
+        }), 200
 
+    except Exception as e:
+        current_app.logger.exception("POS GLOBAL SIGNIN FAILED")
+        return jsonify({"error": str(e)}), 500
+    
 @app.route("/api/companies/<int:company_id>/pos/auth/me", methods=["GET", "OPTIONS"])
 @require_pos_auth
 def pos_auth_me(company_id):
