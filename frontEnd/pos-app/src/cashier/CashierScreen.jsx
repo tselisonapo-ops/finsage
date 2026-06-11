@@ -26,6 +26,10 @@ export function CashierPage() {
   const [cashier, setCashier] = useState(null);
   const [activePanel, setActivePanel] = useState("sale");
 
+  const [searchText, setSearchText] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+
 useEffect(() => {
   restorePosSession();
 }, []);
@@ -139,6 +143,33 @@ const [menuItems, setMenuItems] = useState([
     setCashier(null);
     setCart([]);
     setMessage("Cashier signed out.");
+  }
+
+  async function searchProducts() {
+    const q = searchText.trim();
+
+    if (!q) {
+      setMessage("Enter barcode, SKU or product name.");
+      return;
+    }
+
+    try {
+      setSearching(true);
+      setMessage("");
+
+      const res = await posApi.searchItems(q, 20);
+      const items = res.items || res.data || res || [];
+
+      setSearchResults(Array.isArray(items) ? items : []);
+
+      if (!items.length) {
+        setMessage("No matching item found.");
+      }
+    } catch (err) {
+      setMessage(err.message || "Product search failed.");
+    } finally {
+      setSearching(false);
+    }
   }
 
   function addMenuItemToCart(item) {
@@ -273,8 +304,20 @@ const [menuItems, setMenuItems] = useState([
                 className="scan-input"
                 placeholder={usesInventory ? "Scan barcode, SKU or product name..." : "Search service..."}
                 disabled={!signedIn}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") searchProducts();
+                }}
               />
-              <button className="scan-btn" disabled={!signedIn}>Search</button>
+
+              <button
+                className="scan-btn"
+                disabled={!signedIn || searching}
+                onClick={searchProducts}
+              >
+                {searching ? "..." : "Search"}
+              </button>
             </div>
           </div>
 
@@ -337,7 +380,11 @@ const [menuItems, setMenuItems] = useState([
                         onClick={() => addMenuItemToCart(item)}
                       >
                         <div className="menu-image">
-                          {item.image_url ? <img src={item.image_url} alt={item.name} /> : <span>🍽️</span>}
+                          {item.image_url ? (
+                            <img src={item.image_url} alt={item.name} />
+                          ) : (
+                            <span>🍽️</span>
+                          )}
                         </div>
 
                         <div className="menu-info">
@@ -349,10 +396,55 @@ const [menuItems, setMenuItems] = useState([
                     ))}
                   </div>
                 ) : (
-                  <div className="empty-state">
-                    <strong>No item selected</strong>
-                    <p>Search or scan to add items to the sale.</p>
-                  </div>
+                  <>
+                    {searchResults.length ? (
+                      <div className="menu-grid">
+                        {searchResults.map((item) => (
+                          <button
+                            key={item.id}
+                            className="menu-item-card"
+                            onClick={() =>
+                              addMenuItemToCart({
+                                id: item.id,
+                                name: item.name || item.item_name || item.description,
+                                price:
+                                  item.selling_price ||
+                                  item.unit_price ||
+                                  item.price ||
+                                  0,
+                                image_url: item.image_url || "",
+                                category: item.category || item.sku || "",
+                              })
+                            }
+                          >
+                            <div className="menu-info">
+                              <strong>
+                                {item.name || item.item_name || item.description}
+                              </strong>
+
+                              <small>
+                                {item.sku || item.barcode || ""}
+                              </small>
+
+                              <b>
+                                {money(
+                                  item.selling_price ||
+                                  item.unit_price ||
+                                  item.price ||
+                                  0
+                                )}
+                              </b>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-state">
+                        <strong>No item selected</strong>
+                        <p>Search or scan to add items to the sale.</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
