@@ -3,6 +3,7 @@ import { getCompanyContext, getPosMode } from "../config.js";
 import { useEffect, useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
+import { renderSlip, SLIP_TEMPLATE_OPTIONS } from "../utils/receiptTemplates.js";
 
 const RETAIL_TABS = [
   ["overview", "Overview"],
@@ -534,6 +535,38 @@ export function ManagerPage() {
       await loadShifts();
     }
 
+    if (modal.type === "kitchen_station") {
+      await saveReceiptSettings({
+        ...(receiptSettings || {}),
+        kitchen_station_name: values.station_name || "Kitchen",
+        kitchen_printer: values.printer_name || "",
+        kitchen_default_routing: values.default_routing || "Food items",
+      });
+
+      setMessage("Kitchen station saved.");
+    }
+
+    if (modal.type === "assign_waiter") {
+      await saveReceiptSettings({
+        ...(receiptSettings || {}),
+        assigned_table_id: values.table_id || "",
+        assigned_waiter_id: values.waiter_id || "",
+      });
+
+      setMessage("Waiter assigned.");
+    }
+
+    if (modal.type === "delivery_zone") {
+      await saveReceiptSettings({
+        ...(receiptSettings || {}),
+        delivery_zone_name: values.zone_name || "",
+        default_delivery_fee: Number(values.delivery_fee || 0),
+        delivery_estimated_time: values.estimated_time || "",
+      });
+
+      setMessage("Delivery zone saved.");
+    }
+
     setModal(null);
   }
 
@@ -910,55 +943,186 @@ export function ManagerPage() {
               )}
 
               {settingsView === "preview" && (
-                <ReceiptPreviewTab />
+                <ReceiptPreviewTab
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                />
               )}
 
               {settingsView === "printers" && (
-                <PrinterSettingsTab />
+                <GenericPosSettingsTab
+                  title="Printer Settings"
+                  description="Configure receipt, kitchen and label printers."
+                  saveLabel="Save Printer Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["receipt_printer", "Receipt Printer"],
+                    ["kitchen_printer", "Kitchen Printer"],
+                    ["label_printer", "Label Printer"],
+                  ]}
+                />
               )}
 
               {settingsView === "taxes" && (
-                <PosTaxSettingsTab />
+                <GenericPosSettingsTab
+                  title="POS Tax Settings"
+                  description="Choose VAT behaviour and receipt display."
+                  saveLabel="Save Tax Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["pricing_tax_mode", "Pricing Tax Mode"],
+                    ["tax_invoice_wording", "Tax Invoice Wording"],
+                    ["receipt_tax_display", "Receipt VAT Display"],
+                  ]}
+                />
               )}
 
               {settingsView === "terminals" && (
-                <PosTerminalSettingsTab />
+                <GenericPosSettingsTab
+                  title="Terminal Settings"
+                  description="Configure terminal defaults, cash drawers and opening floats."
+                  saveLabel="Save Terminal Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["default_terminal", "Default Terminal"],
+                    ["opening_float", "Opening Float"],
+                    ["cash_drawer_enabled", "Cash Drawer Enabled"],
+                  ]}
+                />
               )}
 
               {settingsView === "cash_controls" && (
-                <CashControlSettingsTab />
+                <GenericPosSettingsTab
+                  title="Cash Control Settings"
+                  description="Set approval rules for cash-up differences, returns and overrides."
+                  saveLabel="Save Cash Controls"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["returns_approval", "Returns Approval"],
+                    ["cash_variance_rule", "Cash Variance Rule"],
+                    ["discount_override_rule", "Discount Override Rule"],
+                  ]}
+                />
+              )}
+
+              {settingsView === "barcode" && (
+                <GenericPosSettingsTab
+                  title="Barcode Settings"
+                  description="Configure barcode format, item lookup and shelf label behaviour."
+                  saveLabel="Save Barcode Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["barcode_format", "Default Barcode Format"],
+                    ["barcode_lookup_method", "Lookup Method"],
+                    ["auto_generate_barcode", "Auto Generate Barcode"],
+                  ]}
+                />
+              )}
+
+              {settingsView === "scale" && (
+                <GenericPosSettingsTab
+                  title="Scale Integration"
+                  description="Configure weighted items, scale prefix and barcode parsing."
+                  saveLabel="Save Scale Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["weighted_items_enabled", "Weighted Items Enabled"],
+                    ["scale_barcode_prefix", "Scale Barcode Prefix"],
+                    ["scale_quantity_parsing", "Quantity Parsing"],
+                    ["scale_price_embedded", "Price Embedded"],
+                  ]}
+                />
+              )}
+
+              {settingsView === "display" && (
+                <GenericPosSettingsTab
+                  title="Customer Display"
+                  description="Configure customer-facing checkout display and promotional screen."
+                  saveLabel="Save Display Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  fields={[
+                    ["customer_display_enabled", "Customer Display Enabled"],
+                    ["promo_screen_enabled", "Promo Screen Enabled"],
+                    ["customer_display_show_vat", "Show VAT"],
+                    ["customer_payment_prompt", "Payment Prompt"],
+                  ]}
+                />
               )}
 
               {settingsView === "tables" && (
                 <TableSettingsTab
                   sections={tableSections}
                   tables={tables}
-                  onRefresh={() => Promise.allSettled([loadTableSections(), loadTables()])}
+                  staffMembers={staffMembers}
+                  onRefresh={() => Promise.allSettled([loadTableSections(), loadTables(), loadStaffMembers()])}
+                  onOpenModal={setModal}
+                  onSaveSettings={saveReceiptSettings}
+                  settings={receiptSettings}
                 />
               )}
 
               {settingsView === "kitchen" && (
-                <KitchenRoutingSettingsTab />
+                <RestaurantSettingsModalTab
+                  title="Kitchen Routing"
+                  description="Configure preparation stations and order routing."
+                  saveLabel="Save Kitchen Settings"
+                  buttonLabel="New Station"
+                  modalType="kitchen_station"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  onOpenModal={setModal}
+                  fields={[
+                    ["default_kitchen_station", "Default Kitchen Station"],
+                    ["bar_station_enabled", "Bar Station Enabled"],
+                    ["dessert_station_enabled", "Dessert Station Enabled"],
+                    ["kitchen_printer", "Kitchen Printer"],
+                  ]}
+                />
               )}
 
               {settingsView === "waiters" && (
-                <WaiterSettingsTab />
+                <RestaurantSettingsModalTab
+                  title="Waiter Rules"
+                  description="Control waiter access, table assignment and payment permissions."
+                  saveLabel="Save Waiter Settings"
+                  buttonLabel="Assign Waiter"
+                  modalType="assign_waiter"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  onOpenModal={setModal}
+                  fields={[
+                    ["waiter_access_enabled", "Waiter Access Enabled"],
+                    ["table_assignment_required", "Table Assignment Required"],
+                    ["waiter_bill_printing", "Waiter Bill Printing"],
+                    ["waiter_payment_access", "Payment Access"],
+                  ]}
+                />
               )}
 
               {settingsView === "delivery" && (
-                <DeliverySettingsTab />
-              )}
-
-              {settingsView === "barcode" && (
-                <BarcodeSettingsTab />
-              )}
-
-              {settingsView === "scale" && (
-                <ScaleSettingsTab />
-              )}
-
-              {settingsView === "display" && (
-                <CustomerDisplaySettingsTab />
+                <RestaurantSettingsModalTab
+                  title="Delivery Rules"
+                  description="Configure delivery workflow, zones, drivers and delivery fees."
+                  saveLabel="Save Delivery Settings"
+                  buttonLabel="New Delivery Zone"
+                  modalType="delivery_zone"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  onOpenModal={setModal}
+                  fields={[
+                    ["delivery_orders_enabled", "Delivery Orders Enabled"],
+                    ["default_delivery_fee", "Default Delivery Fee"],
+                    ["delivery_estimated_time", "Estimated Time"],
+                    ["delivery_driver_required", "Driver Required"],
+                  ]}
+                />
               )}
             </section>
 
@@ -1293,6 +1457,87 @@ function MenuManagerTab({
           ))
         )}
       </div>
+    </section>
+  );
+}
+
+function RestaurantSettingsModalTab({
+  title,
+  description,
+  saveLabel,
+  buttonLabel,
+  modalType,
+  settings = {},
+  onSave,
+  onOpenModal,
+  fields = [],
+}) {
+  const [form, setForm] = useState(settings || {});
+
+  useEffect(() => {
+    setForm(settings || {});
+  }, [settings]);
+
+  function update(key, value) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+
+        <div className="workspace-actions">
+          <button
+            className="soft"
+            onClick={() =>
+              onOpenModal({
+                type: modalType,
+                title: buttonLabel,
+                fields:
+                  modalType === "assign_waiter"
+                    ? [
+                        { key: "table_id", label: "Table ID", value: "" },
+                        { key: "waiter_id", label: "Waiter Staff ID", value: "" },
+                      ]
+                    : modalType === "delivery_zone"
+                    ? [
+                        { key: "zone_name", label: "Zone Name", value: "" },
+                        { key: "delivery_fee", label: "Delivery Fee", value: "0" },
+                        { key: "estimated_time", label: "Estimated Time", value: "30 min" },
+                      ]
+                    : [
+                        { key: "station_name", label: "Station Name", value: "" },
+                        { key: "printer_name", label: "Printer Name", value: "" },
+                        { key: "default_routing", label: "Default Routing", value: "Food items" },
+                      ],
+              })
+            }
+          >
+            {buttonLabel}
+          </button>
+
+          <button className="scan-btn" onClick={() => onSave(form)}>
+            {saveLabel}
+          </button>
+        </div>
+      </div>
+
+      <section className="settings-form-grid">
+        {fields.map(([key, label]) => (
+          <label key={key}>
+            {label}
+            <input
+              className="scan-input"
+              value={form?.[key] ?? ""}
+              onChange={(e) => update(key, e.target.value)}
+            />
+          </label>
+        ))}
+      </section>
     </section>
   );
 }
@@ -1871,6 +2116,8 @@ function ReceiptSettingsTab({ settings, onSave }) {
 
     kitchen_ticket_template: "kitchen_ticket",
 
+    gratuity_percent: 0,
+
     show_logo: true,
 
     show_motto: true,
@@ -1944,6 +2191,14 @@ function ReceiptSettingsTab({ settings, onSave }) {
             <option value="compact_kitchen">Compact Kitchen</option>
             <option value="detailed_kitchen">Detailed Kitchen</option>
           </select>
+
+          <label>Restaurant Tip / Gratuity %</label>
+          <input
+            className="scan-input"
+            type="number"
+            value={form.gratuity_percent || ""}
+            onChange={(e) => updateField("gratuity_percent", e.target.value)}
+          />
 
           <label>
             <input
@@ -2201,26 +2456,169 @@ function CostingTab({
   );
 }
 
-function ReceiptPreviewTab() {
+function ReceiptPreviewTab({ settings = {}, onSave }) {
+  const [template, setTemplate] = useState(settings?.slip_template || "retail_classic");
+
+  useEffect(() => {
+    setTemplate(settings?.slip_template || "retail_classic");
+  }, [settings]);
+
+  const previewSettings = {
+    ...(settings || {}),
+    slip_template: template,
+    show_logo: settings?.show_logo ?? true,
+    show_motto: settings?.show_motto ?? true,
+    show_cashier_name: settings?.show_cashier_name ?? true,
+    show_customer_name: settings?.show_customer_name ?? true,
+    footer_message: settings?.footer_message || "Thank you for your business.",
+    returns_policy: settings?.returns_policy || "Returns accepted within 7 days with original receipt.",
+  };
+
+  const samplePayload = {
+    company: {
+      name: "Demo Company",
+      vat: "VAT123456",
+      company_phone: "012 345 6789",
+      physical_address: "Main Branch",
+    },
+    branding: {},
+    settings: previewSettings,
+    sale: {
+      sale_no: "DRAFT-001",
+      sale_date: new Date().toLocaleString(),
+      cashier_name: "Cashier",
+      terminal_code: "TILL-01",
+      customer_name: "Walk-in Customer",
+      payment_method: "Cash/Card",
+      subtotal: 37.39,
+      discount_amount: 0,
+      vat_amount: 5.61,
+      gross_amount: 43,
+      amount_paid: 50,
+      change_amount: 7,
+      lines: [
+        { name: "Item 1", qty: 1, gross_amount: 25 },
+        { name: "Item 2", qty: 1, gross_amount: 18 },
+      ],
+    },
+    order: {
+      order_no: "ORD-001",
+      table_no: "T1",
+      waiter_name: "Waiter",
+      guests: 2,
+      subtotal: 37.39,
+      vat_amount: 5.61,
+      gross_amount: 43,
+      lines: [
+        { name: "Meal 1", qty: 1, gross_amount: 25 },
+        { name: "Drink 1", qty: 1, gross_amount: 18 },
+      ],
+    },
+    ticket: {
+      order_no: "ORD-001",
+      table_no: "T1",
+      waiter_name: "Waiter",
+      station_name: "Kitchen",
+      lines: [
+        { name: "Meal 1", qty: 1, notes: "No onions" },
+        { name: "Drink 1", qty: 1 },
+      ],
+    },
+  };
+
+  const html = renderSlip(samplePayload);
+
   return (
     <section className="manager-workspace" style={{ marginTop: 18 }}>
       <div className="workspace-head">
         <div>
           <h2>Receipt Preview</h2>
-          <p>Preview how the receipt will look before printing.</p>
+          <p>Select the slip template, preview it, then save it.</p>
         </div>
+
+        <button
+          className="scan-btn"
+          onClick={() => onSave({ ...(settings || {}), slip_template: template })}
+        >
+          Save Slip Template
+        </button>
       </div>
 
-      <div className="receipt-preview-card">
-        <div className="receipt-paper">
-          <h3>Tax Invoice / Receipt</h3>
-          <div className="receipt-line"><span>Item 1</span><strong>{money(25)}</strong></div>
-          <div className="receipt-line"><span>Item 2</span><strong>{money(18)}</strong></div>
-          <div className="receipt-line"><span>VAT</span><strong>{money(5.61)}</strong></div>
-          <div className="receipt-total"><span>Total</span><strong>{money(43)}</strong></div>
-          <small>Thank you for your business.</small>
-        </div>
+      <label>
+        Slip Template
+        <select
+          className="scan-input"
+          value={template}
+          onChange={(e) => setTemplate(e.target.value)}
+        >
+          {SLIP_TEMPLATE_OPTIONS.map((x) => (
+            <option key={x.value} value={x.value}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="receipt-preview-card" style={{ marginTop: 14 }}>
+        <iframe
+          title="Receipt Preview"
+          srcDoc={html}
+          style={{
+            width: "100%",
+            minHeight: 520,
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            background: "#fff",
+          }}
+        />
       </div>
+    </section>
+  );
+}
+
+function GenericPosSettingsTab({
+  title,
+  description,
+  saveLabel,
+  settings = {},
+  onSave,
+  fields = [],
+}) {
+  const [form, setForm] = useState(settings || {});
+
+  useEffect(() => {
+    setForm(settings || {});
+  }, [settings]);
+
+  function update(key, value) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  return (
+    <section className="manager-workspace" style={{ marginTop: 18 }}>
+      <div className="workspace-head">
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+
+        <button className="scan-btn" onClick={() => onSave(form)}>
+          {saveLabel}
+        </button>
+      </div>
+
+      <section className="settings-form-grid">
+        {fields.map(([key, label]) => (
+          <label key={key}>
+            {label}
+            <input
+              className="scan-input"
+              value={form?.[key] ?? ""}
+              onChange={(e) => update(key, e.target.value)}
+            />
+          </label>
+        ))}
+      </section>
     </section>
   );
 }

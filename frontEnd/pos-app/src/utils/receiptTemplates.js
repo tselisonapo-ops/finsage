@@ -250,6 +250,15 @@ export function renderRetailModernSlip({ company = {}, branding = {}, settings =
 export function renderRestaurantBillSlip({ company = {}, branding = {}, settings = {}, order = {} }) {
   const items = order.lines || order.items || [];
 
+  const subtotal = Number(order.subtotal || 0);
+  const vat = Number(order.vat_amount || 0);
+  const gratuityPercent = Number(order.gratuity_percent ?? settings.gratuity_percent ?? 0);
+  const gratuityAmount = Number(
+    order.gratuity_amount ??
+    (gratuityPercent > 0 ? subtotal * gratuityPercent / 100 : 0)
+  );
+  const totalDue = Number(order.gross_amount || order.total || 0) + gratuityAmount;
+
   return `
     <!doctype html>
     <html>
@@ -278,9 +287,10 @@ export function renderRestaurantBillSlip({ company = {}, branding = {}, settings
 
           <div class="divider"></div>
 
-          ${line("Subtotal", money(order.subtotal || 0))}
-          ${line("VAT", money(order.vat_amount || 0))}
-          ${line(`<span class="total">AMOUNT DUE</span>`, `<span class="total">${money(order.gross_amount || order.total || 0)}</span>`)}
+          ${line("Subtotal", money(subtotal))}
+          ${line("VAT", money(vat))}
+          ${gratuityAmount > 0 ? line(`Tip / Gratuity ${gratuityPercent ? `(${gratuityPercent}%)` : ""}`, money(gratuityAmount)) : ""}
+          ${line(`<span class="total">AMOUNT DUE</span>`, `<span class="total">${money(totalDue)}</span>`)}
 
           <div class="divider"></div>
 
