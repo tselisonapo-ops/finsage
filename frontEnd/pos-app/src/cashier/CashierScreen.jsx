@@ -107,6 +107,11 @@ const [menuItems, setMenuItems] = useState([
         localStorage.setItem("pos_token", res.pos_token);
       }
 
+      if (res.company) {
+        localStorage.setItem("active_company", JSON.stringify(res.company));
+        localStorage.setItem("active_company_id", String(res.company.id));
+      }
+
       const activeCashier =
         res.employee ||
         res.cashier ||

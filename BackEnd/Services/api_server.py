@@ -2150,8 +2150,8 @@ def api_auth_me():
 
     return jsonify(out), 200
 
-@app.route("/api/companies/<int:company_id>/pos/auth/signin", methods=["POST", "OPTIONS"])
-def pos_auth_signin(company_id):
+@app.route("/api/pos/auth/signin", methods=["POST", "OPTIONS"])
+def pos_auth_signin_global():
     if request.method == "OPTIONS":
         return ("", 204)
 
@@ -2177,15 +2177,21 @@ def pos_auth_signin(company_id):
             cu.pin_hash,
             u.email,
             u.first_name,
-            u.last_name
+            u.last_name,
+            c.id AS company_id,
+            c.name AS company_name,
+            c.industry,
+            c.sub_industry,
+            c.currency
         FROM public.company_users cu
         JOIN public.users u ON u.id = cu.user_id
-        WHERE cu.company_id = %s
-          AND cu.pos_access_code = %s
+        JOIN public.companies c ON c.id = cu.company_id
+        WHERE cu.pos_access_code = %s
           AND cu.pos_is_active = TRUE
           AND cu.is_active = TRUE
+          AND c.is_active = TRUE
         LIMIT 1;
-    """, (company_id, employee_code))
+    """, (employee_code,))
 
     if not row or not row.get("pin_hash"):
         return jsonify({"error": "Invalid employee ID or PIN"}), 401
@@ -2193,16 +2199,15 @@ def pos_auth_signin(company_id):
     if not check_password_hash(row["pin_hash"], pin):
         return jsonify({"error": "Invalid employee ID or PIN"}), 401
 
-    company = db_service.fetch_one("""
-        SELECT id, name, industry, sub_industry, currency
-        FROM public.companies
-        WHERE id = %s
-          AND is_active = TRUE
-        LIMIT 1;
-    """, (company_id,))
+    company_id = int(row["company_id"])
 
-    if not company:
-        return jsonify({"error": "Company not active"}), 403
+    company = {
+        "id": company_id,
+        "name": row.get("company_name"),
+        "industry": row.get("industry"),
+        "sub_industry": row.get("sub_industry"),
+        "currency": row.get("currency"),
+    }
 
     employee = {
         "company_user_id": row["company_user_id"],
@@ -2237,73 +2242,12 @@ def pos_auth_me(company_id):
     if request.method == "OPTIONS":
         return ("", 204)
 
-    payload = getattr(request, "pos_user", {}) or {}
-
-    company_user_id = payload.get("company_user_id")
-    user_id = payload.get("user_id")
-
-    if not company_user_id or not user_id:
-        return jsonify({"error": "Invalid POS session"}), 401
-
-    row = db_service.fetch_one("""
-        SELECT
-            cu.id AS company_user_id,
-            cu.company_id,
-            cu.user_id,
-            cu.employee_code,
-            cu.pos_access_code,
-            cu.pos_display_name,
-            cu.pos_role,
-            cu.pos_permissions,
-            cu.pos_is_active,
-            cu.is_active,
-            u.email,
-            u.first_name,
-            u.last_name
-        FROM public.company_users cu
-        JOIN public.users u ON u.id = cu.user_id
-        WHERE cu.company_id = %s
-          AND cu.id = %s
-          AND cu.user_id = %s
-          AND cu.pos_is_active = TRUE
-          AND cu.is_active = TRUE
-        LIMIT 1;
-    """, (
-        int(company_id),
-        int(company_user_id),
-        int(user_id),
-    ))
-
-    if not row:
-        return jsonify({"error": "POS user not found or inactive"}), 401
-
-    company = db_service.fetch_one("""
-        SELECT id, name, industry, sub_industry, currency
-        FROM public.companies
-        WHERE id = %s
-          AND is_active = TRUE
-        LIMIT 1;
-    """, (int(company_id),))
-
-    if not company:
-        return jsonify({"error": "Company not active"}), 403
-
-    employee = {
-        "company_user_id": row["company_user_id"],
-        "user_id": row["user_id"],
-        "employee_code": row["employee_code"],
-        "access_code": row["pos_access_code"],
-        "name": row.get("pos_display_name")
-            or f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
-            or row.get("email"),
-        "pos_role": row.get("pos_role"),
-        "pos_permissions": row.get("pos_permissions") or {},
-    }
+    pos_user = getattr(request, "pos_user", {}) or {}
 
     return jsonify({
         "ok": True,
-        "employee": employee,
-        "company": company,
+        "employee": pos_user.get("employee"),
+        "company": pos_user.get("company"),
     }), 200
 
 @app.route("/api/auth/reauth", methods=["POST", "OPTIONS"])

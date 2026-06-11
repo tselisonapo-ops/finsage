@@ -133,7 +133,11 @@ export const posApi = {
     },
 
     cashierSignin(payload) {
-    return postJson(`${base()}/auth/signin`, payload);
+    return postJson(`/api/pos/auth/signin`, payload);
+    },
+
+    posMe() {
+    return getJson(`/api/pos/auth/me`, posHeaders());
     },
 
     getReceiptSettings() {
@@ -314,7 +318,4 @@ export const posApi = {
     });
     },
 
-    posMe() {
-    return getJson(`${base()}/auth/me`);
-    },
 };
