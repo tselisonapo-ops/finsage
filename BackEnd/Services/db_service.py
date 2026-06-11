@@ -17744,6 +17744,12 @@ class DatabaseService:
         UPDATE {schema}.inventory_tx_lines SET company_id = {company_id} WHERE company_id IS NULL;
         ALTER TABLE {schema}.inventory_tx_lines ALTER COLUMN company_id SET DEFAULT {company_id};
         ALTER TABLE {schema}.inventory_tx_lines ALTER COLUMN company_id SET NOT NULL;
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS funding_type TEXT NULL;
+
+        -- ✅ make sure column exists before indexing
+        ALTER TABLE {schema}.inventory_tx_lines
+        ADD COLUMN IF NOT EXISTS po_line_id INT NULL;
 
         -- Unique line per tx
         DO $$
@@ -17783,10 +17789,6 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_lines_item_idx
         ON {schema}.inventory_tx_lines(company_id, item_id);
-
-        -- ✅ make sure column exists before indexing
-        ALTER TABLE {schema}.inventory_tx_lines
-        ADD COLUMN IF NOT EXISTS po_line_id INT NULL;
 
         CREATE INDEX IF NOT EXISTS {schema}_inv_tx_lines_po_line_idx
         ON {schema}.inventory_tx_lines(company_id, po_line_id);
@@ -32559,6 +32561,7 @@ class DatabaseService:
         vendor_id: int | None = None,
         po_id: int | None = None,
         supplier_invoice_no: str | None = None,
+        funding_type: str | None = None,
         source_company_id: int | None = None,
         engagement_company_id: int | None = None,
         engagement_id: int | None = None,
@@ -32641,6 +32644,7 @@ class DatabaseService:
                     engagement_id,
                     updated_by_user_id,
                     vendor_id, po_id, supplier_invoice_no, grni_status, grni_type,
+                    funding_type,
                     created_at, updated_at
                 )
                 VALUES
@@ -32649,6 +32653,7 @@ class DatabaseService:
                     'manual',NULL,%s,
                     %s,%s,%s,%s,
                     %s,%s,%s,'unbilled','inventory',
+                    %s,
                     NOW(),NOW()
                 )
                 RETURNING id;
@@ -32668,6 +32673,7 @@ class DatabaseService:
                     int(vendor_id) if vendor_id else None,
                     int(po_id) if po_id else None,
                     supplier_invoice_no,
+                    (funding_type or None),
                 ),
             )
             row = _cur.fetchone()

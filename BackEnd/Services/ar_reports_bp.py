@@ -174,6 +174,13 @@ def list_period_locks(cid: int):
         """,
         (company_id,),
     ) or []
+
+    current_app.logger.info(
+        "list_period_locks company_id=%s schema=%s rows=%s",
+        company_id,
+        schema,
+        len(rows),
+    )
     return jsonify({"rows": rows}), 200
 
 @ar_reports_bp.route("/api/companies/<int:cid>/period-locks", methods=["POST", "OPTIONS"])
@@ -201,7 +208,10 @@ def create_period_lock(cid: int):
         module = (body.get("module") or "gl").strip().lower()
         if module in ("journal", "manual_journal", "manual-journal"):
             module = "gl"
-        if module not in ("gl", "ar", "ap", "all"):
+        if module in ("revenue", "ifrs15", "revenue_recognition", "revenue-recognition"):
+            module = "revenue"
+
+        if module not in ("gl", "ar", "ap", "revenue", "all"):
             return jsonify({"error": f"Invalid module: {module}"}), 400
 
         lock_from = body.get("lock_from")
