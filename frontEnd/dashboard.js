@@ -61279,7 +61279,8 @@ async function submitReceiveStock() {
   const bank_account_id =
     Number(document.getElementById("invReceiveBank")?.value || 0) || null;
 
-  const isVehicleReceive = isCarDealershipCompany?.() === true;
+  const isVehicleReceive =
+    document.getElementById("isVehicleReceipt")?.checked === true;
 
   const vehicle_details = isVehicleReceive ? {
     vin: (document.getElementById("receiveVin")?.value || "").trim() || null,
@@ -61469,6 +61470,22 @@ function renderReceiveVendorsSelect(vendors) {
   if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 
+function applyReceiveVehiclePolicy() {
+  const dealership = isCarDealershipCompany?.() === true;
+
+  const toggleWrap = document.getElementById("vehicleReceiveToggleWrap");
+  const toggle = document.getElementById("isVehicleReceipt");
+  const vehicleBox = document.getElementById("vehicleReceiveFields");
+
+  if (!toggleWrap || !toggle || !vehicleBox) return;
+
+  toggleWrap.classList.toggle("hidden", !dealership);
+
+  const isVehicle = toggle.checked;
+
+  vehicleBox.classList.toggle("hidden", !isVehicle);
+}
+
 function applyReceiveFundingPolicy() {
   const type = document.getElementById("invReceiveFundingType")?.value || "supplier_credit";
 
@@ -61499,6 +61516,16 @@ async function openReceiveModal(prefill = {}) {
 
   applyReceiveFundingPolicy();
   applyReceiveVehiclePolicy();
+
+  const vehicleToggle = document.getElementById("isVehicleReceipt");
+
+  if (vehicleToggle && !vehicleToggle.dataset.bound) {
+    vehicleToggle.dataset.bound = "1";
+
+    vehicleToggle.addEventListener("change", () => {
+      applyReceiveVehiclePolicy();
+    });
+  }
 
   try {
     await loadReceiveBanks();

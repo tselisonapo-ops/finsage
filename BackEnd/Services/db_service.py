@@ -10618,6 +10618,9 @@ class DatabaseService:
             CHECK (trim(name) <> '')
         );
 
+        ALTER TABLE {schema}.company_bank_accounts
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
         CREATE INDEX IF NOT EXISTS {schema}_bank_accounts_company_idx
         ON {schema}.company_bank_accounts(company_id);
 
