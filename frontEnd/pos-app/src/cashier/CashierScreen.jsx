@@ -286,18 +286,22 @@ const [menuItems, setMenuItems] = useState([
     try {
       const saleNo = `POS-${Date.now()}`;
 
-      const saleRes = await posApi.createSale({
+      const salePayload = {
         sale_no: saleNo,
         terminal_id: activeTerminal.id,
-        shift_id: activeShift?.id || 0,
+        shift_id: activeShift?.id || null,
         cashier_user_id:
           cashier?.company_user_id ||
           cashier?.user_id ||
           cashier?.id ||
-          0,
+          null,
         customer_name: selectedCustomer?.customer_name || "Walk-in Customer",
         customer_id: selectedCustomer?.id || null,
-      });
+      };
+
+      console.log("CREATE SALE PAYLOAD", salePayload);
+
+      const saleRes = await posApi.createSale(salePayload);
 
       const saleId =
         saleRes?.sale_id ||
@@ -794,25 +798,29 @@ const [menuItems, setMenuItems] = useState([
 
           {activePanel === "payment" && (
             <div className="payment-panel">
-              <div className="payment-line">
-                <span>Amount Tendered</span>
-                <input
-                  className="scan-input"
-                  type="number"
-                  value={amountTendered}
-                  onChange={(e) => setAmountTendered(e.target.value)}
-                />
-              </div>
+              <div className="receipt-payment-box">
+                <div className="receipt-payment-row">
+                  <label>Amount Tendered</label>
 
-              <div className="payment-line change-line">
-                <span>Change</span>
-                <strong>
-                  {money(
-                    selectedPaymentMethod === "cash"
-                      ? Math.max(Number(amountTendered || 0) - Number(totals.gross || 0), 0)
-                      : 0
-                  )}
-                </strong>
+                  <input
+                    className="scan-input"
+                    type="number"
+                    value={amountTendered}
+                    onChange={(e) => setAmountTendered(e.target.value)}
+                  />
+                </div>
+
+                <div className="receipt-payment-row change-row">
+                  <label>Change</label>
+
+                  <strong>
+                    {money(
+                      selectedPaymentMethod === "cash"
+                        ? Math.max(Number(amountTendered || 0) - Number(totals.gross || 0), 0)
+                        : 0
+                    )}
+                  </strong>
+                </div>
               </div>
 
               <div className="payment-method-title">

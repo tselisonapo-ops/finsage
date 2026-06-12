@@ -974,3 +974,46 @@ input:disabled {
   color: #0f766e;
   font-size: 20px;
 }
+
+.receipt-payment-box {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.receipt-payment-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.receipt-payment-row label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.receipt-payment-row input {
+  height: 44px;
+  padding: 10px 14px;
+  font-size: 16px;
+}
+
+.change-row strong {
+  font-size: 22px;
+  color: #0f766e;
+  font-weight: 900;
+}
+
+.change-column label {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.change-column strong {
+  font-size: 28px;
+  font-weight: 800;
+  color: #0f766e;
+  line-height: 1;
+}
