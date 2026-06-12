@@ -37393,7 +37393,15 @@ class DatabaseService:
             INSERT INTO {schema}.pos_shift_templates
             (company_id, shift_name, start_time, end_time, pattern_type, is_active)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING *
+            RETURNING
+                id,
+                company_id,
+                shift_name,
+                start_time::text AS start_time,
+                end_time::text AS end_time,
+                pattern_type,
+                is_active,
+                created_at
         """, (
             int(company_id),
             shift_name,
@@ -37414,12 +37422,19 @@ class DatabaseService:
             where.append("is_active = TRUE")
 
         return self.fetch_all(f"""
-            SELECT *
+            SELECT
+                id,
+                company_id,
+                shift_name,
+                start_time::text AS start_time,
+                end_time::text AS end_time,
+                pattern_type,
+                is_active,
+                created_at
             FROM {schema}.pos_shift_templates
             WHERE {" AND ".join(where)}
             ORDER BY start_time, shift_name
         """, tuple(params))
-
 
     def pos_update_shift_template(
         self,
