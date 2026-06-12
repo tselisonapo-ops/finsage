@@ -35,7 +35,9 @@ export function CashierPage() {
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customers, setCustomers] = useState([]);
 useEffect(() => {
   restorePosSession();
 }, []);
@@ -225,6 +227,37 @@ const [menuItems, setMenuItems] = useState([
     });
   }
 
+  async function searchCustomers() {
+    try {
+      const res = await posApi.listCustomers(customerQuery);
+      setCustomers(res.customers || []);
+      setMessage((res.customers || []).length ? "" : "No customers found.");
+    } catch (err) {
+      setMessage(err.message || "Failed to search customers.");
+    }
+  }
+
+  async function createCustomerQuick() {
+    const customer_name = prompt("Customer name:");
+    if (!customer_name) return;
+
+    const phone = prompt("Phone number:", "") || "";
+    const email = prompt("Email:", "") || "";
+    const customer_type =
+      prompt("Customer type: retail / wholesale / account", "retail") || "retail";
+
+    await posApi.createCustomer({
+      customer_name,
+      phone,
+      email,
+      customer_type,
+      price_level: customer_type === "wholesale" ? "wholesale" : "retail",
+    });
+
+    setMessage("Customer created.");
+    await searchCustomers();
+  }
+
   async function finalisePayment() {
     console.log("FINALISE SALE", cart, totals);
 
@@ -235,6 +268,12 @@ const [menuItems, setMenuItems] = useState([
 
     if (!selectedPaymentMethod) {
       setMessage("Select a payment method first.");
+      return;
+    }
+
+    if (selectedPaymentMethod === "account" && !selectedCustomer) {
+      setMessage("Select a customer for account sale.");
+      setActivePanel("customer");
       return;
     }
 
@@ -256,6 +295,7 @@ const [menuItems, setMenuItems] = useState([
           cashier?.id ||
           0,
         customer_name: selectedCustomer?.customer_name || "Walk-in Customer",
+        customer_id: selectedCustomer?.id || null,
       });
 
       const saleId =
@@ -354,11 +394,15 @@ const [menuItems, setMenuItems] = useState([
             <a href="#/orders">Orders</a>
           )}
 
-          <a href="#/manager">Manager Workspace</a>
+          {isFsUser && (
+            <>
+              <a href="#/manager">Manager Workspace</a>
 
-          <button onClick={() => (window.location.href = "/dashboard")}>
-            Back to FinSage
-          </button>
+              <button onClick={() => (window.location.href = "/dashboard")}>
+                Back to FinSage
+              </button>
+            </>
+          )}
         </nav>
       </header>
 
@@ -367,32 +411,6 @@ const [menuItems, setMenuItems] = useState([
         <div><span>Inventory</span><strong>{usesInventory ? "Enabled" : "Service Only"}</strong></div>
         <div><span>Cashier</span><strong>{signedIn ? cashier?.name || cashier?.employee_code || "Signed In" : "Not Signed In"}</strong></div>
         <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
-      </section>
-
-      <section className="status-strip">
-        <div>
-          <span>POS Mode</span>
-          <strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong>
-        </div>
-
-        <div>
-          <span>Inventory</span>
-          <strong>{usesInventory ? "Enabled" : "Service Only"}</strong>
-        </div>
-
-        <div>
-          <span>Cashier</span>
-          <strong>
-            {signedIn
-              ? cashier?.name || cashier?.employee_code || "Signed In"
-              : "Not Signed In"}
-          </strong>
-        </div>
-
-        <div>
-          <span>Currency</span>
-          <strong>{getCurrency(company)}</strong>
-        </div>
       </section>
 
       {signedIn && (
@@ -618,12 +636,61 @@ const [menuItems, setMenuItems] = useState([
               <>
                 <div className="section-title">
                   <h2>Customer</h2>
-                  <span>Select or create customer</span>
+                  <span>Optional for walk-in sales</span>
                 </div>
 
-                <div className="empty-state">
-                  <strong>Customer panel</strong>
-                  <p>Customer search and customer details will render here.</p>
+                <div className="scan-card">
+                  <label>Search customer</label>
+
+                  <div className="scan-row">
+                    <input
+                      className="scan-input"
+                      value={customerQuery}
+                      placeholder="Name, phone, email..."
+                      onChange={(e) => setCustomerQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") searchCustomers();
+                      }}
+                    />
+
+                    <button className="scan-btn" onClick={searchCustomers}>
+                      Search
+                    </button>
+                  </div>
+
+                  <div className="quick-actions" style={{ marginTop: 10 }}>
+                    <button onClick={createCustomerQuick}>New Customer</button>
+                    <button onClick={() => setSelectedCustomer(null)}>Walk-in Customer</button>
+                  </div>
+                </div>
+
+                <div className="product-list">
+                  {customers.length ? (
+                    customers.map((c) => (
+                      <button
+                        className="result-item"
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedCustomer(c);
+                          setMessage(`Customer selected: ${c.customer_name}`);
+                          setActivePanel("sale");
+                        }}
+                      >
+                        <span>
+                          <strong>{c.customer_name}</strong>
+                          <small>{c.phone || c.email || c.customer_type || ""}</small>
+                        </span>
+                        <span>{c.price_level || "retail"}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      <strong>{selectedCustomer?.customer_name || "Walk-in Customer"}</strong>
+                      <p>
+                        Customer is only required for account sales or when you choose to capture one.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </>
             )}
