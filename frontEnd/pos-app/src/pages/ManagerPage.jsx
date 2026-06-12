@@ -739,6 +739,21 @@ export function ManagerPage() {
     });
   }
 
+  function openEditStaffModal(staff) {
+    setModal({
+      type: "edit_staff",
+      title: "Edit POS Staff Member",
+      staffId: staff.id,
+      fields: [
+        { key: "full_name", label: "Full Name", value: staff.full_name || "" },
+        { key: "phone", label: "Phone Number", value: staff.phone || "" },
+        { key: "role", label: "POS Role", value: staff.role || "cashier" },
+        { key: "access_code", label: "POS Access Code", value: staff.pos_access_code || "" },
+        { key: "pin", label: "New PIN (leave blank to keep old PIN)", value: "" },
+      ],
+    });
+  }
+
   function openShiftPatternModal() {
     setModal({
       type: "shift_template",
@@ -871,22 +886,6 @@ export function ManagerPage() {
       ],
     });
   }
-
-  function openLeaveModal() {
-    setModal({
-      type: "staff_leave",
-      title: "Add Leave / Off Day",
-      fields: [
-        { key: "employee_user_id", label: "Employee/User ID", value: "" },
-        { key: "leave_type", label: "Leave Type", value: "annual" },
-        { key: "start_date", label: "Start Date", value: new Date().toISOString().slice(0, 10) },
-        { key: "end_date", label: "End Date", value: new Date().toISOString().slice(0, 10) },
-        { key: "status", label: "Status", value: "approved" },
-        { key: "notes", label: "Notes", value: "" },
-      ],
-    });
-  }
-
   const visibleTabs = isRestaurantLike ? RESTAURANT_TABS : RETAIL_TABS;
 
   return (
