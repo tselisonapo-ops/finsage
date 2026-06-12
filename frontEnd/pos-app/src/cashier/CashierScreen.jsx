@@ -736,48 +736,6 @@ const [menuItems, setMenuItems] = useState([
                 </div>
               </>
             )}
-
-            {activePanel === "payment" && (
-              <>
-                <div className="section-title">
-                  <h2>Payment</h2>
-                  <span>Complete payment</span>
-                </div>
-
-                <div className="scan-card">
-                  <h3>Total Due: {money(totals.gross)}</h3>
-
-                  <div className="quick-actions">
-                    <button onClick={() => setSelectedPaymentMethod("cash")}>Cash</button>
-                    <button onClick={() => setSelectedPaymentMethod("card")}>Speedpoint / Card</button>
-                    <button onClick={() => setSelectedPaymentMethod("mobile_money")}>Mobile Money</button>
-                    <button onClick={() => setSelectedPaymentMethod("account")}>Account Sale</button>
-                    <button onClick={() => setSelectedPaymentMethod("split")}>Split Payment</button>
-                  </div>
-
-                  <p>
-                    Selected Payment: <strong>{selectedPaymentMethod || "None"}</strong>
-                  </p>
-
-                  <input
-                    className="scan-input"
-                    type="number"
-                    placeholder="Amount tendered"
-                    value={amountTendered}
-                    onChange={(e) => setAmountTendered(e.target.value)}
-                  />
-
-                  <button
-                    type="button"
-                    className="success"
-                    style={{ marginTop: 12 }}
-                    onClick={finalisePayment}
-                  >
-                    Finalise Payment
-                  </button>
-                </div>
-              </>
-            )}
           </div>
         </aside>
 
@@ -819,6 +777,53 @@ const [menuItems, setMenuItems] = useState([
             <div className="grand-total"><span>Total Due</span><strong>{money(totals.gross)}</strong></div>
           </div>
 
+          {activePanel === "payment" && (
+            <>
+              <div>
+                <span>Payment Method</span>
+                <strong>{selectedPaymentMethod || "Not selected"}</strong>
+              </div>
+
+              <div className="quick-actions">
+                <button onClick={() => setSelectedPaymentMethod("cash")}>Cash</button>
+                <button onClick={() => setSelectedPaymentMethod("card")}>Speedpoint / Card</button>
+                <button onClick={() => setSelectedPaymentMethod("mobile_money")}>Mobile Money</button>
+                <button onClick={() => setSelectedPaymentMethod("account")}>Account Sale</button>
+                <button onClick={() => setSelectedPaymentMethod("split")}>Split Payment</button>
+              </div>
+
+              <div>
+                <span>Amount Tendered</span>
+                <input
+                  className="scan-input"
+                  type="number"
+                  value={amountTendered}
+                  onChange={(e) => setAmountTendered(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <span>Change</span>
+                <strong>
+                  {money(
+                    selectedPaymentMethod === "cash"
+                      ? Math.max(Number(amountTendered || 0) - Number(totals.gross || 0), 0)
+                      : 0
+                  )}
+                </strong>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="success"
+                  onClick={finalisePayment}
+                >
+                  Finalise Sale
+                </button>
+              </div>
+            </>
+          )}
           <div className="payment-bar">
             <button className="soft">Print Quote/Bill</button>
               {canSell && (
