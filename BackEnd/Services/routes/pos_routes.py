@@ -1659,3 +1659,56 @@ def api_pos_staff_leave_detail(cid: int, leave_id: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_staff_leave_detail failed")
         return _err("Server error", 500, ex)
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shift-templates/<int:template_id>/delete", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_delete_shift_template(cid: int, template_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.pos_delete_shift_template(cid, template_id)
+        return jsonify({"ok": True, "template": row}), 200
+    except Exception as ex:
+        current_app.logger.exception("api_pos_delete_shift_template failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shift-schedule/<int:schedule_id>/delete", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_delete_shift_schedule(cid: int, schedule_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.pos_delete_shift_schedule(cid, schedule_id)
+        return jsonify({"ok": True, "schedule": row}), 200
+    except Exception as ex:
+        current_app.logger.exception("api_pos_delete_shift_schedule failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/staff-leave/<int:leave_id>/delete", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_delete_staff_leave(cid: int, leave_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.pos_delete_staff_leave(cid, leave_id)
+        return jsonify({"ok": True, "leave": row}), 200
+    except Exception as ex:
+        current_app.logger.exception("api_pos_delete_staff_leave failed")
+        return _err("Server error", 500, ex)

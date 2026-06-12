@@ -18506,6 +18506,8 @@ class DatabaseService:
             work_date DATE NOT NULL,
             schedule_status TEXT NOT NULL DEFAULT 'scheduled',
             notes TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            deleted_at TIMESTAMPTZ NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -18519,6 +18521,8 @@ class DatabaseService:
             status TEXT NOT NULL DEFAULT 'pending',
             approved_by INT NULL,
             notes TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            deleted_at TIMESTAMPTZ NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -36202,6 +36206,33 @@ class DatabaseService:
 
         return int(row["id"])
         
+    def pos_delete_shift_schedule(self, company_id: int, schedule_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_shift_schedule
+            SET is_active = FALSE,
+                deleted_at = NOW()
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(company_id),
+            int(schedule_id),
+        ))
+    def pos_delete_staff_leave(self, company_id: int, leave_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_staff_leave
+            SET is_active = FALSE,
+                deleted_at = NOW()
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(company_id),
+            int(leave_id),
+        ))
+
     def pos_create_order(
         self,
         company_id: int,
@@ -37476,7 +37507,7 @@ class DatabaseService:
     ) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        where = ["s.company_id = %s"]
+        where = ["s.company_id = %s", "COALESCE(s.is_active, TRUE) = TRUE"]
         params = [int(company_id)]
 
         if start_date:
@@ -37597,7 +37628,7 @@ class DatabaseService:
     ) -> list[dict]:
         schema = self.company_schema(company_id)
 
-        where = ["company_id = %s"]
+        where = ["company_id = %s", "COALESCE(is_active, TRUE) = TRUE"]
         params = [int(company_id)]
 
         if start_date:

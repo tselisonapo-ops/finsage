@@ -623,6 +623,46 @@ export function ManagerPage() {
 
       setMessage("Table section saved.");
     }
+
+    if (modal.type === "shift_template") {
+      await posApi.createShiftTemplate({
+        shift_name: values.shift_name,
+        start_time: values.start_time,
+        end_time: values.end_time,
+        pattern_type: values.pattern_type || "standard",
+        is_active: true,
+      });
+
+      setMessage("Shift pattern created.");
+      await loadShiftTemplates();
+    }
+
+    if (modal.type === "shift_schedule") {
+      await posApi.createShiftSchedule({
+        employee_user_id: Number(values.employee_user_id || 0),
+        shift_template_id: Number(values.shift_template_id || 0) || null,
+        work_date: values.work_date,
+        schedule_status: values.schedule_status || "scheduled",
+        notes: values.notes || "",
+      });
+
+      setMessage("Staff assigned to shift.");
+      await loadShiftSchedule();
+    }
+
+    if (modal.type === "staff_leave") {
+      await posApi.createStaffLeave({
+        employee_user_id: Number(values.employee_user_id || 0),
+        leave_type: values.leave_type || "annual",
+        start_date: values.start_date,
+        end_date: values.end_date,
+        status: values.status || "approved",
+        notes: values.notes || "",
+      });
+
+      setMessage("Leave / off day saved.");
+      await loadStaffLeave();
+    }
     setModal(null);
   }
 
@@ -714,6 +754,48 @@ export function ManagerPage() {
     });
   }
 
+  function openShiftPatternModal() {
+    setModal({
+      type: "shift_template",
+      title: "New Shift Pattern",
+      fields: [
+        { key: "shift_name", label: "Shift Name", value: "Morning Shift" },
+        { key: "start_time", label: "Start Time", value: "08:00" },
+        { key: "end_time", label: "End Time", value: "17:00" },
+        { key: "pattern_type", label: "Pattern Type", value: "standard" },
+      ],
+    });
+  }
+
+  function openAssignStaffModal() {
+    setModal({
+      type: "shift_schedule",
+      title: "Assign Staff to Shift",
+      fields: [
+        { key: "employee_user_id", label: "Employee/User ID", value: "" },
+        { key: "shift_template_id", label: "Shift Template ID", value: "" },
+        { key: "work_date", label: "Work Date", value: new Date().toISOString().slice(0, 10) },
+        { key: "schedule_status", label: "Status", value: "scheduled" },
+        { key: "notes", label: "Notes", value: "" },
+      ],
+    });
+  }
+
+  function openLeaveModal() {
+    setModal({
+      type: "staff_leave",
+      title: "Add Leave / Off Day",
+      fields: [
+        { key: "employee_user_id", label: "Employee/User ID", value: "" },
+        { key: "leave_type", label: "Leave Type", value: "annual" },
+        { key: "start_date", label: "Start Date", value: new Date().toISOString().slice(0, 10) },
+        { key: "end_date", label: "End Date", value: new Date().toISOString().slice(0, 10) },
+        { key: "status", label: "Status", value: "approved" },
+        { key: "notes", label: "Notes", value: "" },
+      ],
+    });
+  }
+
   const visibleTabs = isRestaurantLike ? RESTAURANT_TABS : RETAIL_TABS;
 
   return (
@@ -799,6 +881,9 @@ export function ManagerPage() {
                 ])
               }
               onCloseShift={openCloseShiftModal}
+              onNewShiftPattern={openShiftPatternModal}
+              onAssignStaff={openAssignStaffModal}
+              onAddLeave={openLeaveModal}
             />
           )}
 
@@ -1939,15 +2024,18 @@ function RestaurantSettingsModalTab({
   );
 }
 
-function ShiftsTab({
-  shifts = [],
-  shiftTemplates = [],
-  shiftSchedule = [],
-  staffLeave = [],
-  staffMembers = [],
-  onRefresh,
-  onCloseShift,
-}) {
+  function ShiftsTab({
+    shifts = [],
+    shiftTemplates = [],
+    shiftSchedule = [],
+    staffLeave = [],
+    staffMembers = [],
+    onRefresh,
+    onCloseShift,
+    onNewShiftPattern,
+    onAssignStaff,
+    onAddLeave,
+  }) {
   const employeeName = (employeeUserId) => {
     const staff = staffMembers.find(
       (x) =>
@@ -1971,8 +2059,13 @@ function ShiftsTab({
 
         <div className="workspace-actions">
           <button className="soft" onClick={onRefresh}>↻ Refresh</button>
-          <button className="scan-btn">+ New Shift Pattern</button>
-          <button className="scan-btn">+ Assign Staff</button>
+          <button className="scan-btn" onClick={onNewShiftPattern}>
+            + New Shift Pattern
+          </button>
+
+          <button className="scan-btn" onClick={onAssignStaff}>
+            + Assign Staff
+          </button>
         </div>
       </div>
 
@@ -2066,7 +2159,9 @@ function ShiftsTab({
             <p>Track annual leave, sick leave, unpaid leave and planned off days.</p>
           </div>
 
-          <button className="scan-btn">+ Add Leave / Off Day</button>
+          <button className="scan-btn" onClick={onAddLeave}>
+            + Add Leave / Off Day
+          </button>
         </div>
 
         <div className="report-table-wrap">
