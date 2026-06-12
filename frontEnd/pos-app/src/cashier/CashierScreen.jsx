@@ -406,40 +406,31 @@ const [menuItems, setMenuItems] = useState([
         </nav>
       </header>
 
-      <section className="status-strip">
+      <section className="status-strip compact">
         <div><span>POS Mode</span><strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong></div>
         <div><span>Inventory</span><strong>{usesInventory ? "Enabled" : "Service Only"}</strong></div>
         <div><span>Cashier</span><strong>{signedIn ? cashier?.name || cashier?.employee_code || "Signed In" : "Not Signed In"}</strong></div>
         <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
-      </section>
 
-      {signedIn && (
-        <section className="status-strip">
+        {signedIn && (
           <div>
             <span>Terminal</span>
-
             <select
-              className="scan-input"
+              className="scan-input compact-select"
               value={activeTerminal?.id || ""}
               onChange={(e) => {
-                const terminal = terminals.find(
-                  (x) => Number(x.id) === Number(e.target.value)
-                );
-
+                const terminal = terminals.find((x) => Number(x.id) === Number(e.target.value));
                 setActiveTerminal(terminal || null);
               }}
             >
               <option value="">Select Terminal</option>
-
               {terminals.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
+                <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {message && <div className="pos-message">{message}</div>}
 
@@ -778,21 +769,8 @@ const [menuItems, setMenuItems] = useState([
           </div>
 
           {activePanel === "payment" && (
-            <>
-              <div>
-                <span>Payment Method</span>
-                <strong>{selectedPaymentMethod || "Not selected"}</strong>
-              </div>
-
-              <div className="quick-actions">
-                <button onClick={() => setSelectedPaymentMethod("cash")}>Cash</button>
-                <button onClick={() => setSelectedPaymentMethod("card")}>Speedpoint / Card</button>
-                <button onClick={() => setSelectedPaymentMethod("mobile_money")}>Mobile Money</button>
-                <button onClick={() => setSelectedPaymentMethod("account")}>Account Sale</button>
-                <button onClick={() => setSelectedPaymentMethod("split")}>Split Payment</button>
-              </div>
-
-              <div>
+            <div className="payment-panel">
+              <div className="payment-line">
                 <span>Amount Tendered</span>
                 <input
                   className="scan-input"
@@ -802,7 +780,7 @@ const [menuItems, setMenuItems] = useState([
                 />
               </div>
 
-              <div>
+              <div className="payment-line change-line">
                 <span>Change</span>
                 <strong>
                   {money(
@@ -813,16 +791,18 @@ const [menuItems, setMenuItems] = useState([
                 </strong>
               </div>
 
-              <div style={{ marginTop: 12 }}>
-                <button
-                  type="button"
-                  className="success"
-                  onClick={finalisePayment}
-                >
-                  Finalise Sale
-                </button>
+              <div className="payment-method-title">
+                Pay with {selectedPaymentMethod || "..."}
               </div>
-            </>
+
+              <div className="quick-actions">
+                <button onClick={() => setSelectedPaymentMethod("cash")}>Cash</button>
+                <button onClick={() => setSelectedPaymentMethod("card")}>Speedpoint / Card</button>
+                <button onClick={() => setSelectedPaymentMethod("mobile_money")}>Mobile Money</button>
+                <button onClick={() => setSelectedPaymentMethod("account")}>Account Sale</button>
+                <button onClick={() => setSelectedPaymentMethod("split")}>Split Payment</button>
+              </div>
+            </div>
           )}
           <div className="payment-bar">
             <button className="soft">Print Quote/Bill</button>
@@ -864,15 +844,20 @@ const [menuItems, setMenuItems] = useState([
                   type="button"
                   className="success"
                   onClick={() => {
-                    console.log("PROCEED TO PAYOUT CLICKED", cart, totals);
+                    console.log("COMPLETE SALE CLICKED", cart, totals);
 
                     if (!cart.length) {
-                      setMessage("Add at least one item before proceeding to payout.");
+                      setMessage("Add at least one item before completing the sale.");
                       return;
                     }
 
-                    setActivePanel("payment");
-                    setMessage("Send this order to cashier/payout.");
+                    if (!selectedPaymentMethod) {
+                      setActivePanel("payment");
+                      setMessage("Choose payment method before completing the sale.");
+                      return;
+                    }
+
+                    finalisePayment();
                   }}
                 >
                   Proceed to Payout
