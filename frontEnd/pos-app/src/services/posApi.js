@@ -317,5 +317,4 @@ export const posApi = {
         is_active: false,
     });
     },
-
 };

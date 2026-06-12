@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 import { renderSlip, SLIP_TEMPLATE_OPTIONS } from "../utils/receiptTemplates.js";
+
+
 const RETAIL_TABS = [
   ["overview", "Overview"],
   ["sales", "Sales"],
@@ -87,6 +89,9 @@ export function ManagerPage() {
   const [barcodeLabels, setBarcodeLabels] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
 
+  const [shiftTemplates, setShiftTemplates] = useState([]);
+  const [shiftSchedule, setShiftSchedule] = useState([]);
+  const [staffLeave, setStaffLeave] = useState([]);
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
     [shifts]
@@ -105,6 +110,11 @@ export function ManagerPage() {
         await Promise.allSettled([
           loadTerminals(),
           loadShifts(),
+          loadShifts(),
+          loadShiftTemplates(),
+          loadShiftSchedule(),
+          loadStaffLeave(),
+          loadStaffMembers(),
           loadCustomers(),
           loadPriceLevels(),
           loadPromotions(),
@@ -181,6 +191,21 @@ export function ManagerPage() {
   async function loadMenuItems() {
     const res = await posApi.listMenuItems();
     setMenuItems(res.menu_items || res.items || []);
+  }
+
+  async function loadShiftTemplates() {
+    const res = await posApi.listShiftTemplates(true);
+    setShiftTemplates(res.templates || []);
+  }
+
+  async function loadShiftSchedule() {
+    const res = await posApi.listShiftSchedule();
+    setShiftSchedule(res.schedule || []);
+  }
+
+  async function loadStaffLeave() {
+    const res = await posApi.listStaffLeave();
+    setStaffLeave(res.leave || []);
   }
 
   async function deactivateStaffMember(staffId) {
@@ -760,7 +785,19 @@ export function ManagerPage() {
           {tab === "shifts" && (
             <ShiftsTab
               shifts={shifts}
-              onRefresh={loadShifts}
+              shiftTemplates={shiftTemplates}
+              shiftSchedule={shiftSchedule}
+              staffLeave={staffLeave}
+              staffMembers={staffMembers}
+              onRefresh={() =>
+                Promise.allSettled([
+                  loadShifts(),
+                  loadShiftTemplates(),
+                  loadShiftSchedule(),
+                  loadStaffLeave(),
+                  loadStaffMembers(),
+                ])
+              }
               onCloseShift={openCloseShiftModal}
             />
           )}
@@ -1902,39 +1939,201 @@ function RestaurantSettingsModalTab({
   );
 }
 
-function ShiftsTab({ shifts, onRefresh, onCloseShift }) {
+function ShiftsTab({
+  shifts = [],
+  shiftTemplates = [],
+  shiftSchedule = [],
+  staffLeave = [],
+  staffMembers = [],
+  onRefresh,
+  onCloseShift,
+}) {
+  const employeeName = (employeeUserId) => {
+    const staff = staffMembers.find(
+      (x) =>
+        Number(x.id) === Number(employeeUserId) ||
+        Number(x.user_id) === Number(employeeUserId) ||
+        Number(x.company_user_id) === Number(employeeUserId)
+    );
+
+    return staff?.full_name || staff?.name || `Employee #${employeeUserId}`;
+  };
+
+  const openCashupShifts = shifts.filter((s) => s.status === "open").length;
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
         <div>
           <h2>Shifts & Cash-up</h2>
-          <p>Review open shifts and close cashiers at end of day.</p>
+          <p>Set shift patterns, plan staff schedules, track off days, and close active cashier shifts.</p>
         </div>
-        <button className="scan-btn" onClick={onRefresh}>Refresh</button>
+
+        <div className="workspace-actions">
+          <button className="soft" onClick={onRefresh}>↻ Refresh</button>
+          <button className="scan-btn">+ New Shift Pattern</button>
+          <button className="scan-btn">+ Assign Staff</button>
+        </div>
       </div>
 
-      <div className="data-list">
-        {shifts.length ? (
-          shifts.map((s) => (
-            <div className="data-row" key={s.id}>
-              <div>
-                <strong>{s.terminal_name || "Terminal"} — Shift #{s.id}</strong>
-                <small>Cashier: {s.cashier_user_id || "-"} • Status: {s.status}</small>
-              </div>
-              <div>
-                <strong>{money(s.expected_cash || 0)}</strong>
-                {s.status === "open" && (
-                  <button onClick={() => onCloseShift(s.id)}>Close</button>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="empty-state">
-            <strong>No shifts loaded</strong>
-            <p>Click refresh.</p>
+      <section className="manager-grid">
+        <ManagerCard icon="🕒" title="Shift Patterns" value={shiftTemplates.length} text="Templates such as morning, day, afternoon and night shifts." />
+        <ManagerCard icon="📅" title="Scheduled Staff" value={shiftSchedule.length} text="Employees planned on the staff roster." />
+        <ManagerCard icon="🌴" title="Off / Leave Days" value={staffLeave.length} text="Approved off days, annual leave and sick leave." />
+        <ManagerCard icon="💵" title="Open Cash-up Shifts" value={openCashupShifts} text="Cashier shifts currently open." />
+      </section>
+
+      <div className="manager-workspace" style={{ marginTop: 18 }}>
+        <div className="workspace-head">
+          <div>
+            <h2>Shift Patterns</h2>
+            <p>Standard shift templates used when scheduling staff.</p>
           </div>
-        )}
+        </div>
+
+        <div className="data-list">
+          {shiftTemplates.length ? (
+            shiftTemplates.map((s) => (
+              <div className="data-row" key={s.id}>
+                <div>
+                  <strong>{s.shift_name || s.name || "Unnamed Shift"}</strong>
+                  <small>{s.pattern_type || s.pattern || "standard"}</small>
+                </div>
+
+                <strong>
+                  {s.start_time || "-"} - {s.end_time || "-"}
+                </strong>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state">
+              <strong>No shift patterns yet</strong>
+              <p>Create templates such as Morning, Day, Afternoon or Night shift.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="manager-workspace" style={{ marginTop: 18 }}>
+        <div className="workspace-head">
+          <div>
+            <h2>Staff Schedule</h2>
+            <p>Plan who works, who is off, and who is on leave.</p>
+          </div>
+        </div>
+
+        <div className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Date</th>
+                <th>Shift</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Status</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {shiftSchedule.length ? (
+                shiftSchedule.map((row) => (
+                  <tr key={row.id}>
+                    <td>{employeeName(row.employee_user_id)}</td>
+                    <td>{row.work_date || "-"}</td>
+                    <td>{row.shift_name || "Off"}</td>
+                    <td>{row.start_time || "-"}</td>
+                    <td>{row.end_time || "-"}</td>
+                    <td>{row.schedule_status || "-"}</td>
+                    <td>{row.notes || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="7">No staff schedule captured yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="manager-workspace" style={{ marginTop: 18 }}>
+        <div className="workspace-head">
+          <div>
+            <h2>Leave / Off Days</h2>
+            <p>Track annual leave, sick leave, unpaid leave and planned off days.</p>
+          </div>
+
+          <button className="scan-btn">+ Add Leave / Off Day</button>
+        </div>
+
+        <div className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Type</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {staffLeave.length ? (
+                staffLeave.map((row) => (
+                  <tr key={row.id}>
+                    <td>{employeeName(row.employee_user_id)}</td>
+                    <td>{row.leave_type || "-"}</td>
+                    <td>{row.start_date || "-"}</td>
+                    <td>{row.end_date || "-"}</td>
+                    <td>{row.status || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5">No leave or off days captured yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="manager-workspace" style={{ marginTop: 18 }}>
+        <div className="workspace-head">
+          <div>
+            <h2>Active Shifts & Cash-up</h2>
+            <p>Review open shifts and close cashiers at end of day.</p>
+          </div>
+        </div>
+
+        <div className="data-list">
+          {shifts.length ? (
+            shifts.map((s) => (
+              <div className="data-row" key={s.id}>
+                <div>
+                  <strong>{s.terminal_name || "Terminal"} — Shift #{s.id}</strong>
+                  <small>Cashier: {s.cashier_user_id || "-"} • Status: {s.status}</small>
+                </div>
+
+                <div>
+                  <strong>{money(s.expected_cash || 0)}</strong>
+                  {s.status === "open" && (
+                    <button onClick={() => onCloseShift(s.id)}>Close</button>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="empty-state">
+              <strong>No active shifts loaded</strong>
+              <p>Click refresh or start a cashier shift.</p>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

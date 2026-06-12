@@ -983,9 +983,24 @@ input:disabled {
 
 .receipt-payment-row {
   display: grid;
-  grid-template-columns: 160px 1fr;
+  grid-template-columns: 160px 180px;
   gap: 12px;
   align-items: center;
+  justify-content: end;
+}
+
+.receipt-payment-row input {
+  height: 42px;
+  padding: 8px 12px;
+  font-size: 16px;
+  text-align: right;
+}
+
+.change-row strong {
+  font-size: 22px;
+  color: #0f766e;
+  font-weight: 900;
+  text-align: right;
 }
 
 .receipt-payment-row label {
