@@ -900,6 +900,13 @@ export function ManagerPage() {
                   onClick={() => setSettingsView("cash_controls")}
                 />
 
+                <ManagerCard
+                  icon="💳"
+                  title="Payment Settings"
+                  value="Configure"
+                  text="Cash, speedpoint/card, mobile money, account sales and split payments."
+                  onClick={() => setSettingsView("payments")}
+                />
                 {isRestaurantLike && (
                   <>
                     <ManagerCard
@@ -961,6 +968,7 @@ export function ManagerPage() {
                       text="Customer-facing display, promotional screens and checkout display."
                       onClick={() => setSettingsView("display")}
                     />
+                
                   </>
                 )}
 
@@ -1068,6 +1076,23 @@ export function ManagerPage() {
                         { value: "disabled", label: "Disabled" },
                       ],
                     },
+                  ]}
+                />
+              )}
+
+              {settingsView === "payments" && (
+                <GenericPosSettingsTab
+                  title="Payment Settings"
+                  description="Choose which payment methods are available at checkout."
+                  saveLabel="Save Payment Settings"
+                  settings={receiptSettings}
+                  onSave={saveReceiptSettings}
+                  cards={[
+                    { icon: "💵", title: "Cash", key: "pay_cash_enabled", value: "Enabled", text: "Allow cash payments.", type: "select", options: [{ value: "enabled", label: "Enabled" }, { value: "disabled", label: "Disabled" }] },
+                    { icon: "💳", title: "Speedpoint / Card", key: "pay_card_enabled", value: "Enabled", text: "Allow card or speedpoint payments.", type: "select", options: [{ value: "enabled", label: "Enabled" }, { value: "disabled", label: "Disabled" }] },
+                    { icon: "📱", title: "Mobile Money", key: "pay_mobile_enabled", value: "Enabled", text: "Allow mobile money payments.", type: "select", options: [{ value: "enabled", label: "Enabled" }, { value: "disabled", label: "Disabled" }] },
+                    { icon: "👤", title: "Account Sale", key: "pay_account_enabled", value: "Disabled", text: "Allow customer account sales.", type: "select", options: [{ value: "enabled", label: "Enabled" }, { value: "disabled", label: "Disabled" }] },
+                    { icon: "🔀", title: "Split Payment", key: "pay_split_enabled", value: "Enabled", text: "Allow multiple payment methods on one sale.", type: "select", options: [{ value: "enabled", label: "Enabled" }, { value: "disabled", label: "Disabled" }] },
                   ]}
                 />
               )}

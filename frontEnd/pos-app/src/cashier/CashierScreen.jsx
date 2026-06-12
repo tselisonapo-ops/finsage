@@ -17,6 +17,11 @@ export function CashierPage() {
   const usesInventory = companyUsesInventory(company);
 
   const [signedIn, setSignedIn] = useState(false);
+  const [terminals, setTerminals] = useState([]);
+  const [activeTerminal, setActiveTerminal] = useState(null);
+
+  const [shifts, setShifts] = useState([]);
+  const [activeShift, setActiveShift] = useState(null);
   const [cart, setCart] = useState([]);
   const [message, setMessage] = useState("");
 
@@ -25,7 +30,8 @@ export function CashierPage() {
   const [pin, setPin] = useState("");
   const [cashier, setCashier] = useState(null);
   const [activePanel, setActivePanel] = useState("sale");
-
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
+  const [amountTendered, setAmountTendered] = useState("");
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -126,6 +132,15 @@ const [menuItems, setMenuItems] = useState([
         };
 
       setCashier(activeCashier);
+      const termRes = await posApi.listTerminals();
+      console.log("TERMINALS RESPONSE", termRes);
+      const terminals = termRes.terminals || [];
+
+      setTerminals(terminals);
+
+      if (terminals.length) {
+        setActiveTerminal(terminals[0]);
+      }
       setSignedIn(true);
       setShowSignin(false);
       setEmployeeCode("");
@@ -210,6 +225,88 @@ const [menuItems, setMenuItems] = useState([
     });
   }
 
+  async function finalisePayment() {
+    console.log("FINALISE SALE", cart, totals);
+
+    if (!cart.length) {
+      setMessage("No items to complete.");
+      return;
+    }
+
+    if (!selectedPaymentMethod) {
+      setMessage("Select a payment method first.");
+      return;
+    }
+
+    if (!activeTerminal) {
+      setMessage("Select a terminal first.");
+      return;
+    }
+
+    try {
+      const saleNo = `POS-${Date.now()}`;
+
+      const saleRes = await posApi.createSale({
+        sale_no: saleNo,
+        terminal_id: activeTerminal.id,
+        shift_id: activeShift?.id || 0,
+        cashier_user_id:
+          cashier?.company_user_id ||
+          cashier?.user_id ||
+          cashier?.id ||
+          0,
+        customer_name: selectedCustomer?.customer_name || "Walk-in Customer",
+      });
+
+      const saleId =
+        saleRes?.sale_id ||
+        saleRes?.data?.sale_id;
+
+      if (!saleId) {
+        throw new Error("Sale ID was not returned.");
+      }
+
+      for (const line of cart) {
+        await posApi.addSaleLine(saleId, {
+          item_id: line.id || line.item_id,
+          qty: Number(line.qty || 1),
+          unit_price: Number(
+            line.sales_price ||
+            line.unit_price ||
+            line.price ||
+            0
+          ),
+          discount_amount: Number(line.discount_amount || 0),
+        });
+      }
+
+      const gross = Number(totals.gross || totals.total || 0);
+      const tendered = Number(amountTendered || gross);
+
+      await posApi.recordPayment(saleId, {
+        payment_method: selectedPaymentMethod,
+        amount: gross,
+        received_amount: tendered,
+        change_amount:
+          selectedPaymentMethod === "cash"
+            ? Math.max(tendered - gross, 0)
+            : 0,
+      });
+
+      await posApi.completeSale(saleId);
+
+      setMessage(`Sale ${saleNo} completed successfully.`);
+
+      setCart([]);
+      setSelectedPaymentMethod("");
+      setAmountTendered("");
+      setActivePanel("sale");
+    } catch (err) {
+      console.error(err);
+      setMessage(err.message || "Failed to complete sale.");
+    }
+  }
+
   return (
     <main className="pos-page">
       <header className="pos-header">
@@ -271,6 +368,60 @@ const [menuItems, setMenuItems] = useState([
         <div><span>Cashier</span><strong>{signedIn ? cashier?.name || cashier?.employee_code || "Signed In" : "Not Signed In"}</strong></div>
         <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
       </section>
+
+      <section className="status-strip">
+        <div>
+          <span>POS Mode</span>
+          <strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong>
+        </div>
+
+        <div>
+          <span>Inventory</span>
+          <strong>{usesInventory ? "Enabled" : "Service Only"}</strong>
+        </div>
+
+        <div>
+          <span>Cashier</span>
+          <strong>
+            {signedIn
+              ? cashier?.name || cashier?.employee_code || "Signed In"
+              : "Not Signed In"}
+          </strong>
+        </div>
+
+        <div>
+          <span>Currency</span>
+          <strong>{getCurrency(company)}</strong>
+        </div>
+      </section>
+
+      {signedIn && (
+        <section className="status-strip">
+          <div>
+            <span>Terminal</span>
+
+            <select
+              className="scan-input"
+              value={activeTerminal?.id || ""}
+              onChange={(e) => {
+                const terminal = terminals.find(
+                  (x) => Number(x.id) === Number(e.target.value)
+                );
+
+                setActiveTerminal(terminal || null);
+              }}
+            >
+              <option value="">Select Terminal</option>
+
+              {terminals.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+      )}
 
       {message && <div className="pos-message">{message}</div>}
 
@@ -515,6 +666,48 @@ const [menuItems, setMenuItems] = useState([
                 <div className="empty-state">
                   <strong>Price check panel</strong>
                   <p>Scan or search item to check price.</p>
+                </div>
+              </>
+            )}
+
+            {activePanel === "payment" && (
+              <>
+                <div className="section-title">
+                  <h2>Payment</h2>
+                  <span>Complete payment</span>
+                </div>
+
+                <div className="scan-card">
+                  <h3>Total Due: {money(totals.gross)}</h3>
+
+                  <div className="quick-actions">
+                    <button onClick={() => setSelectedPaymentMethod("cash")}>Cash</button>
+                    <button onClick={() => setSelectedPaymentMethod("card")}>Speedpoint / Card</button>
+                    <button onClick={() => setSelectedPaymentMethod("mobile_money")}>Mobile Money</button>
+                    <button onClick={() => setSelectedPaymentMethod("account")}>Account Sale</button>
+                    <button onClick={() => setSelectedPaymentMethod("split")}>Split Payment</button>
+                  </div>
+
+                  <p>
+                    Selected Payment: <strong>{selectedPaymentMethod || "None"}</strong>
+                  </p>
+
+                  <input
+                    className="scan-input"
+                    type="number"
+                    placeholder="Amount tendered"
+                    value={amountTendered}
+                    onChange={(e) => setAmountTendered(e.target.value)}
+                  />
+
+                  <button
+                    type="button"
+                    className="success"
+                    style={{ marginTop: 12 }}
+                    onClick={finalisePayment}
+                  >
+                    Finalise Payment
+                  </button>
                 </div>
               </>
             )}
