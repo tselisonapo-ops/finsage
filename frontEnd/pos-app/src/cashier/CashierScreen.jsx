@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from "../config.js";import { money } from "../utils/currency.js";
 import { posApi } from "../services/posApi.js";
+import { OrderScreen } from "./OrderScreen.jsx";
 
 const fsToken =
   sessionStorage.getItem("fs_user_token") ||
@@ -390,8 +391,10 @@ const [menuItems, setMenuItems] = useState([
             </button>
           )}
 
-          {(mode === "restaurant" || mode === "club") && (
-            <a href="#/orders">Orders</a>
+          {isRestaurantLike && signedIn && (
+            <button onClick={() => setActivePanel("orders")}>
+              Orders
+            </button>
           )}
 
           {isFsUser && (
@@ -443,19 +446,33 @@ const [menuItems, setMenuItems] = useState([
       {canAccessPos && (
         <section className="pos-grid">
           <aside className="left-panel">
-            {mode === "restaurant" && (
-              <div className="scan-card">
-                <label>Order type</label>
-                <div className="quick-actions">
-                  <button onClick={() => (window.location.hash = "#/orders?type=table")}>Table Order</button>
-                  <button onClick={() => (window.location.hash = "#/orders?type=collection")}>Collection</button>
-                  <button onClick={() => (window.location.hash = "#/orders?type=delivery")}>Delivery</button>
-                  <button>Send to Kitchen</button>
-                  <button>Print Bill</button>
-                  <button>Close Table</button>
-                </div>
+            {isRestaurantLike && (
+              <div className="quick-actions">
+                <button onClick={() => setActivePanel("sale")}>
+                  Menu
+                </button>
+
+                <button onClick={() => setActivePanel("orders")}>
+                  Orders
+                </button>
+
+                <button onClick={() => setActivePanel("customer")}>
+                  Customers
+                </button>
+
+                {canSell && (
+                  <button onClick={() => setActivePanel("payment")}>
+                    Payments
+                  </button>
+                )}
+
+                {canSell && (
+                  <button onClick={() => setActivePanel("return")}>
+                    Returns
+                  </button>
+                )}
               </div>
-          )}
+            )}
 
           <div className="scan-card">
             <label>{usesInventory ? "Scan barcode or search product" : "Search service item"}</label>
@@ -523,6 +540,13 @@ const [menuItems, setMenuItems] = useState([
           </div>
 
           <div className="product-list">
+            {activePanel === "orders" && (
+              <OrderScreen
+                embedded={true}
+                canSell={canSell}
+                canOrder={canOrder}
+              />
+            )}
             {activePanel === "sale" && (
               <>
                 <div className="section-title">
@@ -806,63 +830,59 @@ const [menuItems, setMenuItems] = useState([
           )}
           <div className="payment-bar">
             <button className="soft">Print Quote/Bill</button>
-              {canSell && (
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    console.log("PAYMENT CLICKED");
-                    setActivePanel("payment");
-                  }}
-                >
-                  Payment
-                </button>
-              )}
 
-              {canSell && (
-                <button
-                  type="button"
-                  className="success"
-                  onClick={() => {
-                    console.log("COMPLETE SALE CLICKED", cart, totals);
+            {canSell && (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setActivePanel("payment")}
+              >
+                Pay with {selectedPaymentMethod || "..."}
+              </button>
+            )}
 
-                    if (!cart.length) {
-                      setMessage("Add at least one item before completing the sale.");
-                      return;
-                    }
+            {canSell && (
+              <button
+                type="button"
+                className="success"
+                onClick={() => {
+                  if (!cart.length) {
+                    setMessage("Add at least one item before completing the sale.");
+                    return;
+                  }
 
+                  if (!selectedPaymentMethod) {
                     setActivePanel("payment");
                     setMessage("Choose payment method before completing the sale.");
-                  }}
-                >
-                  Complete Sale
-                </button>
-              )}
+                    return;
+                  }
 
-              {!canSell && canOrder && (
-                <button
-                  type="button"
-                  className="success"
-                  onClick={() => {
-                    console.log("COMPLETE SALE CLICKED", cart, totals);
+                  finalisePayment();
+                }}
+              >
+                Complete Sale
+              </button>
+            )}
 
-                    if (!cart.length) {
-                      setMessage("Add at least one item before completing the sale.");
-                      return;
-                    }
+            {!canSell && canOrder && isRestaurantLike && (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  if (!cart.length) {
+                    setMessage("Add items before sending order to kitchen.");
+                    return;
+                  }
 
-                    if (!selectedPaymentMethod) {
-                      setActivePanel("payment");
-                      setMessage("Choose payment method before completing the sale.");
-                      return;
-                    }
+                  setMessage("Order sent to kitchen.");
+                  setCart([]);
+                  setActivePanel("sale");
+                }}
+              >
+                Send To Kitchen
+              </button>
+            )}
 
-                    finalisePayment();
-                  }}
-                >
-                  Proceed to Payout
-                </button>
-              )}
           </div>
         </section>
       </section>
