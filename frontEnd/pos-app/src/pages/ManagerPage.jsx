@@ -739,43 +739,134 @@ export function ManagerPage() {
     });
   }
 
-  function openEditStaffModal(staff) {
-    setModal({
-      type: "edit_staff",
-      title: "Edit POS Staff Member",
-      staffId: staff.id,
-      fields: [
-        { key: "full_name", label: "Full Name", value: staff.full_name || "" },
-        { key: "phone", label: "Phone Number", value: staff.phone || "" },
-        { key: "role", label: "POS Role", value: staff.role || "cashier" },
-        { key: "access_code", label: "POS Access Code", value: staff.pos_access_code || "" },
-        { key: "pin", label: "New PIN (leave blank to keep old PIN)", value: "" },
-      ],
-    });
-  }
-
   function openShiftPatternModal() {
     setModal({
       type: "shift_template",
       title: "New Shift Pattern",
       fields: [
-        { key: "shift_name", label: "Shift Name", value: "Morning Shift" },
-        { key: "start_time", label: "Start Time", value: "08:00" },
-        { key: "end_time", label: "End Time", value: "17:00" },
-        { key: "pattern_type", label: "Pattern Type", value: "standard" },
+        {
+          key: "shift_name",
+          label: "Shift Name",
+          value: "Morning Shift",
+          type: "datalist",
+          options: [
+            { value: "Morning Shift", label: "Morning Shift" },
+            { value: "Day Shift", label: "Day Shift" },
+            { value: "Afternoon Shift", label: "Afternoon Shift" },
+            { value: "Night Shift", label: "Night Shift" },
+          ],
+        },
+        { key: "start_time", label: "Start Time", value: "08:00", type: "time" },
+        { key: "end_time", label: "End Time", value: "17:00", type: "time" },
+        {
+          key: "pattern_type",
+          label: "Pattern Type",
+          value: "standard",
+          type: "datalist",
+          options: [
+            { value: "standard", label: "Standard" },
+            { value: "weekend", label: "Weekend" },
+            { value: "rotational", label: "Rotational" },
+            { value: "night", label: "Night" },
+          ],
+        },
       ],
     });
   }
-
   function openAssignStaffModal() {
     setModal({
       type: "shift_schedule",
       title: "Assign Staff to Shift",
       fields: [
-        { key: "employee_user_id", label: "Employee/User ID", value: "" },
-        { key: "shift_template_id", label: "Shift Template ID", value: "" },
-        { key: "work_date", label: "Work Date", value: new Date().toISOString().slice(0, 10) },
-        { key: "schedule_status", label: "Status", value: "scheduled" },
+        {
+          key: "employee_user_id",
+          label: "Employee",
+          value: "",
+          type: "select",
+          options: [
+            { value: "", label: "Select employee" },
+            ...staffMembers.map((s) => ({
+              value: String(s.id || s.user_id || s.company_user_id),
+              label: s.full_name || s.name || s.email || `Employee #${s.id}`,
+            })),
+          ],
+        },
+        {
+          key: "shift_template_id",
+          label: "Shift Template",
+          value: "",
+          type: "select",
+          options: [
+            { value: "", label: "Select shift template" },
+            ...shiftTemplates.map((s) => ({
+              value: String(s.id),
+              label: `${s.shift_name} (${s.start_time} - ${s.end_time})`,
+            })),
+          ],
+        },
+        { key: "work_date", label: "Work Date", value: new Date().toISOString().slice(0, 10), type: "date" },
+        {
+          key: "schedule_status",
+          label: "Status",
+          value: "scheduled",
+          type: "datalist",
+          options: [
+            { value: "scheduled", label: "Scheduled" },
+            { value: "off", label: "Off" },
+            { value: "leave", label: "Leave" },
+            { value: "sick", label: "Sick" },
+            { value: "worked", label: "Worked" },
+          ],
+        },
+        { key: "notes", label: "Notes", value: "" },
+      ],
+    });
+  }
+  function openLeaveModal() {
+    setModal({
+      type: "staff_leave",
+      title: "Add Leave / Off Day",
+      fields: [
+        {
+          key: "employee_user_id",
+          label: "Employee",
+          value: "",
+          type: "select",
+          options: [
+            { value: "", label: "Select employee" },
+            ...staffMembers.map((s) => ({
+              value: String(s.id || s.user_id || s.company_user_id),
+              label: s.full_name || s.name || s.email || `Employee #${s.id}`,
+            })),
+          ],
+        },
+        {
+          key: "leave_type",
+          label: "Leave Type",
+          value: "annual",
+          type: "datalist",
+          options: [
+            { value: "annual", label: "Annual Leave" },
+            { value: "sick", label: "Sick Leave" },
+            { value: "unpaid", label: "Unpaid Leave" },
+            { value: "off_day", label: "Off Day" },
+            { value: "family_responsibility", label: "Family Responsibility" },
+          ],
+        },
+        { key: "start_date", label: "Start Date", value: new Date().toISOString().slice(0, 10), type: "date" },
+        { key: "end_date", label: "End Date", value: new Date().toISOString().slice(0, 10), type: "date" },
+        {
+          key: "status",
+          label: "Status",
+          value: "approved",
+          type: "datalist",
+          options: [
+            { value: "pending", label: "Pending" },
+            { value: "approved", label: "Approved" },
+            { value: "declined", label: "Declined" },
+            { value: "cancelled", label: "Cancelled" },
+          ],
+        },
         { key: "notes", label: "Notes", value: "" },
       ],
     });
@@ -1586,6 +1677,13 @@ function FormModal({ modal, onClose, onSubmit }) {
     Object.fromEntries((modal.fields || []).map((f) => [f.key, f.value || ""]))
   );
 
+  function update(key, value) {
+    setValues((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
   return (
     <div className="modal-backdrop">
       <div className="modal-card">
@@ -1598,16 +1696,44 @@ function FormModal({ modal, onClose, onSubmit }) {
           {(modal.fields || []).map((field) => (
             <label key={field.key}>
               {field.label}
-              <input
-                className="scan-input"
-                value={values[field.key] || ""}
-                onChange={(e) =>
-                  setValues((prev) => ({
-                    ...prev,
-                    [field.key]: e.target.value,
-                  }))
-                }
-              />
+
+              {field.type === "select" ? (
+                <select
+                  className="scan-input"
+                  value={values[field.key] || ""}
+                  onChange={(e) => update(field.key, e.target.value)}
+                >
+                  {(field.options || []).map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              ) : field.type === "datalist" ? (
+                <>
+                  <input
+                    className="scan-input"
+                    list={`${field.key}-options`}
+                    value={values[field.key] || ""}
+                    onChange={(e) => update(field.key, e.target.value)}
+                  />
+
+                  <datalist id={`${field.key}-options`}>
+                    {(field.options || []).map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </datalist>
+                </>
+              ) : (
+                <input
+                  className="scan-input"
+                  type={field.type || "text"}
+                  value={values[field.key] || ""}
+                  onChange={(e) => update(field.key, e.target.value)}
+                />
+              )}
             </label>
           ))}
         </div>
