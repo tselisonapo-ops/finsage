@@ -18487,6 +18487,41 @@ class DatabaseService:
             notes TEXT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS {schema}.pos_shift_templates (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            shift_name TEXT NOT NULL,
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            pattern_type TEXT NOT NULL DEFAULT 'standard',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_shift_schedule (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            employee_user_id INT NOT NULL,
+            shift_template_id INT NULL REFERENCES {schema}.pos_shift_templates(id),
+            work_date DATE NOT NULL,
+            schedule_status TEXT NOT NULL DEFAULT 'scheduled',
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_staff_leave (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            employee_user_id INT NOT NULL,
+            leave_type TEXT NOT NULL DEFAULT 'annual',
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            approved_by INT NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
         CREATE TABLE IF NOT EXISTS {schema}.pos_sales (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -36133,7 +36168,7 @@ class DatabaseService:
         *,
         sale_no: str,
         terminal_id: int,
-        shift_id: int,
+        shift_id: int | None,
         cashier_user_id: int,
         customer_id: int | None = None,
         customer_name: str | None = None,
@@ -36141,6 +36176,8 @@ class DatabaseService:
         source_quote_id: int | None = None,
     ) -> int:
         schema = self.company_schema(company_id)
+
+        shift_id = None if not shift_id else int(shift_id)
 
         row = self.fetch_one(f"""
             INSERT INTO {schema}.pos_sales
@@ -36155,7 +36192,7 @@ class DatabaseService:
             int(company_id),
             sale_no,
             int(terminal_id),
-            int(shift_id),
+            shift_id,
             int(cashier_user_id),
             customer_id,
             customer_name,
@@ -37308,6 +37345,337 @@ class DatabaseService:
             AND access_scope = 'pos'
             RETURNING *
         """, tuple(params))
+
+    def pos_create_shift_template(
+        self,
+        company_id: int,
+        *,
+        shift_name: str,
+        start_time: str,
+        end_time: str,
+        pattern_type: str = "standard",
+        is_active: bool = True,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.pos_shift_templates
+            (company_id, shift_name, start_time, end_time, pattern_type, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (
+            int(company_id),
+            shift_name,
+            start_time,
+            end_time,
+            pattern_type or "standard",
+            bool(is_active),
+        ))
+
+
+    def pos_list_shift_templates(self, company_id: int, *, active_only: bool = False) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params = [int(company_id)]
+
+        if active_only:
+            where.append("is_active = TRUE")
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_shift_templates
+            WHERE {" AND ".join(where)}
+            ORDER BY start_time, shift_name
+        """, tuple(params))
+
+
+    def pos_update_shift_template(
+        self,
+        company_id: int,
+        template_id: int,
+        *,
+        shift_name: str,
+        start_time: str,
+        end_time: str,
+        pattern_type: str = "standard",
+        is_active: bool = True,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_shift_templates
+            SET shift_name = %s,
+                start_time = %s,
+                end_time = %s,
+                pattern_type = %s,
+                is_active = %s
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            shift_name,
+            start_time,
+            end_time,
+            pattern_type or "standard",
+            bool(is_active),
+            int(company_id),
+            int(template_id),
+        ))
+
+
+    def pos_delete_shift_template(self, company_id: int, template_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_shift_templates
+            SET is_active = FALSE
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(company_id),
+            int(template_id),
+        ))
+
+
+    def pos_create_shift_schedule(
+        self,
+        company_id: int,
+        *,
+        employee_user_id: int,
+        work_date: str,
+        shift_template_id: int | None = None,
+        schedule_status: str = "scheduled",
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        shift_template_id = None if not shift_template_id else int(shift_template_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.pos_shift_schedule
+            (company_id, employee_user_id, shift_template_id, work_date, schedule_status, notes)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (
+            int(company_id),
+            int(employee_user_id),
+            shift_template_id,
+            work_date,
+            schedule_status or "scheduled",
+            notes,
+        ))
+
+
+    def pos_list_shift_schedule(
+        self,
+        company_id: int,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        employee_user_id: int | None = None,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["s.company_id = %s"]
+        params = [int(company_id)]
+
+        if start_date:
+            where.append("s.work_date >= %s")
+            params.append(start_date)
+
+        if end_date:
+            where.append("s.work_date <= %s")
+            params.append(end_date)
+
+        if employee_user_id:
+            where.append("s.employee_user_id = %s")
+            params.append(int(employee_user_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                s.*,
+                t.shift_name,
+                t.start_time,
+                t.end_time
+            FROM {schema}.pos_shift_schedule s
+            LEFT JOIN {schema}.pos_shift_templates t
+                ON t.id = s.shift_template_id
+            WHERE {" AND ".join(where)}
+            ORDER BY s.work_date, s.employee_user_id
+        """, tuple(params))
+
+
+    def pos_update_shift_schedule(
+        self,
+        company_id: int,
+        schedule_id: int,
+        *,
+        employee_user_id: int,
+        work_date: str,
+        shift_template_id: int | None = None,
+        schedule_status: str = "scheduled",
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        shift_template_id = None if not shift_template_id else int(shift_template_id)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_shift_schedule
+            SET employee_user_id = %s,
+                shift_template_id = %s,
+                work_date = %s,
+                schedule_status = %s,
+                notes = %s
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(employee_user_id),
+            shift_template_id,
+            work_date,
+            schedule_status or "scheduled",
+            notes,
+            int(company_id),
+            int(schedule_id),
+        ))
+
+
+    def pos_delete_shift_schedule(self, company_id: int, schedule_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            DELETE FROM {schema}.pos_shift_schedule
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(company_id),
+            int(schedule_id),
+        ))
+
+
+    def pos_create_staff_leave(
+        self,
+        company_id: int,
+        *,
+        employee_user_id: int,
+        leave_type: str,
+        start_date: str,
+        end_date: str,
+        status: str = "pending",
+        approved_by: int | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        approved_by = None if not approved_by else int(approved_by)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.pos_staff_leave
+            (company_id, employee_user_id, leave_type, start_date, end_date, status, approved_by, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (
+            int(company_id),
+            int(employee_user_id),
+            leave_type or "annual",
+            start_date,
+            end_date,
+            status or "pending",
+            approved_by,
+            notes,
+        ))
+
+
+    def pos_list_staff_leave(
+        self,
+        company_id: int,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        employee_user_id: int | None = None,
+        status: str = "",
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params = [int(company_id)]
+
+        if start_date:
+            where.append("end_date >= %s")
+            params.append(start_date)
+
+        if end_date:
+            where.append("start_date <= %s")
+            params.append(end_date)
+
+        if employee_user_id:
+            where.append("employee_user_id = %s")
+            params.append(int(employee_user_id))
+
+        if status:
+            where.append("status = %s")
+            params.append(status)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.pos_staff_leave
+            WHERE {" AND ".join(where)}
+            ORDER BY start_date DESC
+        """, tuple(params))
+
+
+    def pos_update_staff_leave(
+        self,
+        company_id: int,
+        leave_id: int,
+        *,
+        employee_user_id: int,
+        leave_type: str,
+        start_date: str,
+        end_date: str,
+        status: str = "pending",
+        approved_by: int | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        approved_by = None if not approved_by else int(approved_by)
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_staff_leave
+            SET employee_user_id = %s,
+                leave_type = %s,
+                start_date = %s,
+                end_date = %s,
+                status = %s,
+                approved_by = %s,
+                notes = %s
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(employee_user_id),
+            leave_type or "annual",
+            start_date,
+            end_date,
+            status or "pending",
+            approved_by,
+            notes,
+            int(company_id),
+            int(leave_id),
+        ))
+
+
+    def pos_delete_staff_leave(self, company_id: int, leave_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            DELETE FROM {schema}.pos_staff_leave
+            WHERE company_id = %s AND id = %s
+            RETURNING *
+        """, (
+            int(company_id),
+            int(leave_id),
+        ))
 
     def fifo_consume(
         self,

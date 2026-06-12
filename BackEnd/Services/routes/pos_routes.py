@@ -1413,3 +1413,249 @@ def api_pos_packing_queue_status(cid: int, queue_id: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_packing_queue_status failed")
         return _err("Server error", 500, ex)
+    
+@pos_bp.route("/api/companies/<int:cid>/pos/shift-templates", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_shift_templates(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            active_only = str(request.args.get("active_only", "")).lower() in ("1", "true", "yes")
+            rows = db_service.pos_list_shift_templates(cid, active_only=active_only)
+            return jsonify({"ok": True, "templates": rows, "count": len(rows)}), 200
+
+        body = _body()
+
+        row = db_service.pos_create_shift_template(
+            cid,
+            shift_name=body.get("shift_name") or body.get("name") or "New Shift",
+            start_time=body.get("start_time") or "08:00",
+            end_time=body.get("end_time") or "17:00",
+            pattern_type=body.get("pattern_type") or "standard",
+            is_active=body.get("is_active", True),
+        )
+
+        return jsonify({"ok": True, "template": row}), 201
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_shift_templates failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shift-templates/<int:template_id>", methods=["PUT", "DELETE", "OPTIONS"])
+@require_auth
+def api_pos_shift_template_detail(cid: int, template_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "DELETE":
+            row = db_service.pos_delete_shift_template(cid, template_id)
+            return jsonify({"ok": True, "template": row}), 200
+
+        body = _body()
+
+        row = db_service.pos_update_shift_template(
+            cid,
+            template_id,
+            shift_name=body.get("shift_name") or body.get("name") or "Shift",
+            start_time=body.get("start_time") or "08:00",
+            end_time=body.get("end_time") or "17:00",
+            pattern_type=body.get("pattern_type") or "standard",
+            is_active=body.get("is_active", True),
+        )
+
+        return jsonify({"ok": True, "template": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_shift_template_detail failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shift-schedule", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_shift_schedule(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            rows = db_service.pos_list_shift_schedule(
+                cid,
+                start_date=request.args.get("start_date"),
+                end_date=request.args.get("end_date"),
+                employee_user_id=request.args.get("employee_user_id") or None,
+            )
+            return jsonify({"ok": True, "schedule": rows, "count": len(rows)}), 200
+
+        body = _body()
+
+        employee_user_id = int(body.get("employee_user_id") or body.get("cashier_user_id") or 0)
+        if employee_user_id <= 0:
+            return _err("employee_user_id is required", 400)
+
+        work_date = body.get("work_date")
+        if not work_date:
+            return _err("work_date is required", 400)
+
+        row = db_service.pos_create_shift_schedule(
+            cid,
+            employee_user_id=employee_user_id,
+            shift_template_id=body.get("shift_template_id") or None,
+            work_date=work_date,
+            schedule_status=body.get("schedule_status") or "scheduled",
+            notes=body.get("notes"),
+        )
+
+        return jsonify({"ok": True, "schedule": row}), 201
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_shift_schedule failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/shift-schedule/<int:schedule_id>", methods=["PUT", "DELETE", "OPTIONS"])
+@require_auth
+def api_pos_shift_schedule_detail(cid: int, schedule_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "DELETE":
+            row = db_service.pos_delete_shift_schedule(cid, schedule_id)
+            return jsonify({"ok": True, "schedule": row}), 200
+
+        body = _body()
+
+        employee_user_id = int(body.get("employee_user_id") or body.get("cashier_user_id") or 0)
+        if employee_user_id <= 0:
+            return _err("employee_user_id is required", 400)
+
+        work_date = body.get("work_date")
+        if not work_date:
+            return _err("work_date is required", 400)
+
+        row = db_service.pos_update_shift_schedule(
+            cid,
+            schedule_id,
+            employee_user_id=employee_user_id,
+            shift_template_id=body.get("shift_template_id") or None,
+            work_date=work_date,
+            schedule_status=body.get("schedule_status") or "scheduled",
+            notes=body.get("notes"),
+        )
+
+        return jsonify({"ok": True, "schedule": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_shift_schedule_detail failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/staff-leave", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_pos_staff_leave(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            rows = db_service.pos_list_staff_leave(
+                cid,
+                start_date=request.args.get("start_date"),
+                end_date=request.args.get("end_date"),
+                employee_user_id=request.args.get("employee_user_id") or None,
+                status=request.args.get("status", ""),
+            )
+            return jsonify({"ok": True, "leave": rows, "count": len(rows)}), 200
+
+        body = _body()
+
+        employee_user_id = int(body.get("employee_user_id") or body.get("cashier_user_id") or 0)
+        if employee_user_id <= 0:
+            return _err("employee_user_id is required", 400)
+
+        if not body.get("start_date") or not body.get("end_date"):
+            return _err("start_date and end_date are required", 400)
+
+        row = db_service.pos_create_staff_leave(
+            cid,
+            employee_user_id=employee_user_id,
+            leave_type=body.get("leave_type") or "annual",
+            start_date=body.get("start_date"),
+            end_date=body.get("end_date"),
+            status=body.get("status") or "pending",
+            approved_by=body.get("approved_by") or None,
+            notes=body.get("notes"),
+        )
+
+        return jsonify({"ok": True, "leave": row}), 201
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_staff_leave failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/staff-leave/<int:leave_id>", methods=["PUT", "DELETE", "OPTIONS"])
+@require_auth
+def api_pos_staff_leave_detail(cid: int, leave_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "DELETE":
+            row = db_service.pos_delete_staff_leave(cid, leave_id)
+            return jsonify({"ok": True, "leave": row}), 200
+
+        body = _body()
+
+        employee_user_id = int(body.get("employee_user_id") or body.get("cashier_user_id") or 0)
+        if employee_user_id <= 0:
+            return _err("employee_user_id is required", 400)
+
+        if not body.get("start_date") or not body.get("end_date"):
+            return _err("start_date and end_date are required", 400)
+
+        row = db_service.pos_update_staff_leave(
+            cid,
+            leave_id,
+            employee_user_id=employee_user_id,
+            leave_type=body.get("leave_type") or "annual",
+            start_date=body.get("start_date"),
+            end_date=body.get("end_date"),
+            status=body.get("status") or "pending",
+            approved_by=body.get("approved_by") or None,
+            notes=body.get("notes"),
+        )
+
+        return jsonify({"ok": True, "leave": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_staff_leave_detail failed")
+        return _err("Server error", 500, ex)
