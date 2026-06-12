@@ -317,4 +317,60 @@ export const posApi = {
         is_active: false,
     });
     },
+    // =========================
+    // SHIFT TEMPLATES / SCHEDULES / LEAVE
+    // =========================
+
+    listShiftTemplates(activeOnly = false) {
+        return getJson(`${base()}/shift-templates?active_only=${activeOnly ? "1" : "0"}`);
+    },
+
+    createShiftTemplate(payload) {
+        return postJson(`${base()}/shift-templates`, payload);
+    },
+
+    updateShiftTemplate(templateId, payload) {
+        return patchJson(`${base()}/shift-templates/${templateId}`, payload);
+    },
+
+    deleteShiftTemplate(templateId) {
+        return postJson(`${base()}/shift-templates/${templateId}/delete`, {});
+    },
+
+    listShiftSchedule(startDate = "", endDate = "", employeeUserId = "") {
+        return getJson(
+            `${base()}/shift-schedule?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&employee_user_id=${encodeURIComponent(employeeUserId)}`
+        );
+    },
+
+    createShiftSchedule(payload) {
+        return postJson(`${base()}/shift-schedule`, payload);
+    },
+
+    updateShiftSchedule(scheduleId, payload) {
+        return patchJson(`${base()}/shift-schedule/${scheduleId}`, payload);
+    },
+
+    deleteShiftSchedule(scheduleId) {
+        return postJson(`${base()}/shift-schedule/${scheduleId}/delete`, {});
+    },
+
+    listStaffLeave(startDate = "", endDate = "", employeeUserId = "", status = "") {
+        return getJson(
+            `${base()}/staff-leave?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&employee_user_id=${encodeURIComponent(employeeUserId)}&status=${encodeURIComponent(status)}`
+        );
+    },
+
+    createStaffLeave(payload) {
+        return postJson(`${base()}/staff-leave`, payload);
+    },
+
+    updateStaffLeave(leaveId, payload) {
+        return patchJson(`${base()}/staff-leave/${leaveId}`, payload);
+    },
+
+    deleteStaffLeave(leaveId) {
+        return postJson(`${base()}/staff-leave/${leaveId}/delete`, {});
+    },
+
 };
