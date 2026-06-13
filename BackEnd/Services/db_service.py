@@ -35856,6 +35856,22 @@ class DatabaseService:
             cur=cur,
         )
     
+    def _pos_resolve_vat_output_account(self, company_id: int) -> str:
+        vat_account = (self.get_control_account_code(company_id, "VAT_OUTPUT") or "").strip()
+
+        if not vat_account:
+            raise ValueError("VAT output account not configured (VAT_OUTPUT)")
+
+        vat_row = self.get_account_row_for_posting(company_id, vat_account)
+
+        if vat_row and vat_row[1]:
+            vat_account = (vat_row[1] or "").strip()
+
+        if not vat_account:
+            raise ValueError("VAT output account could not be resolved")
+
+        return vat_account
+
     def pos_complete_sale(self, company_id: int, sale_id: int, *, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
@@ -35985,6 +36001,9 @@ class DatabaseService:
                 required_roles=required_roles,
                 cur=cur,
             )
+
+            if vat:
+                accounts["vat_output"] = self._pos_resolve_vat_output_account(company_id)
 
             if is_account_sale:
                 if not sale.get("customer_id"):
