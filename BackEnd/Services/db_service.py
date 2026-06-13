@@ -36408,7 +36408,406 @@ class DatabaseService:
 
             conn.commit()
             return payment_id
-            
+
+    def _pos_report_sales_summary(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        row = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS today_sales,
+                COUNT(*)::int AS transactions,
+                COALESCE(SUM(CASE WHEN s.sale_type = 'account_sale' THEN s.gross_amount ELSE 0 END), 0)::numeric(18,2) AS account_sales
+            FROM {schema}.pos_sales s
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        returns = self.fetch_one(f"""
+            SELECT COALESCE(SUM(refund_amount), 0)::numeric(18,2) AS returns
+            FROM {schema}.pos_returns
+            WHERE company_id = %s
+            AND status = 'completed'
+            AND return_date::date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        payments = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(CASE WHEN lower(p.payment_method) = 'cash' THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS cash_payments,
+                COALESCE(SUM(CASE WHEN lower(p.payment_method) IN ('card', 'speedpoint') THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS card_payments
+            FROM {schema}.pos_payments p
+            JOIN {schema}.pos_sales s ON s.id = p.sale_id AND s.company_id = p.company_id
+            WHERE p.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        return {
+            "summary": {
+                "today_sales": float(row.get("today_sales") or 0),
+                "transactions": int(row.get("transactions") or 0),
+                "returns": float(returns.get("returns") or 0),
+                "cash_payments": float(payments.get("cash_payments") or 0),
+                "card_payments": float(payments.get("card_payments") or 0),
+                "account_sales": float(row.get("account_sales") or 0),
+            },
+            "rows": [],
+        }
+
+
+    def _pos_report_trading_summary(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        row = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS sales,
+                COALESCE(SUM(cost_amount), 0)::numeric(18,2) AS cost_of_items_sold
+            FROM {schema}.pos_sales
+            WHERE company_id = %s
+            AND status = 'completed'
+        """, (int(company_id),)) or {}
+
+        returns = self.fetch_one(f"""
+            SELECT COALESCE(SUM(refund_amount), 0)::numeric(18,2) AS returns
+            FROM {schema}.pos_returns
+            WHERE company_id = %s
+            AND status = 'completed'
+        """, (int(company_id),)) or {}
+
+        sales = float(row.get("sales") or 0)
+        returns_amount = float(returns.get("returns") or 0)
+        cost = float(row.get("cost_of_items_sold") or 0)
+        net_sales = round(sales - returns_amount, 2)
+
+        return {
+            "summary": {
+                "sales": round(sales, 2),
+                "returns": round(returns_amount, 2),
+                "net_sales": net_sales,
+                "cost_of_items_sold": round(cost, 2),
+                "trading_result": round(net_sales - cost, 2),
+            },
+            "rows": [],
+        }
+
+
+    def _pos_report_sold_items(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                l.description AS item,
+                COALESCE(l.sku, '') AS sku,
+                SUM(l.qty)::numeric(18,4) AS qty_sold,
+                AVG(l.unit_price)::numeric(18,2) AS unit_price,
+                SUM(l.gross_amount)::numeric(18,2) AS total_sales
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND (%s = '' OR l.description ILIKE %s OR COALESCE(l.sku,'') ILIKE %s)
+            GROUP BY l.description, l.sku
+            ORDER BY total_sales DESC
+        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+
+        return {
+            "summary": {},
+            "rows": [[r["item"], r["sku"], r["qty_sold"], r["unit_price"], r["total_sales"]] for r in rows],
+        }
+
+
+    def _pos_report_transactions(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                s.sale_no,
+                s.sale_date::text AS sale_date,
+                COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
+                COALESCE(s.customer_name, '-') AS customer,
+                s.gross_amount,
+                s.status
+            FROM {schema}.pos_sales s
+            LEFT JOIN public.company_users cu ON cu.company_id = s.company_id AND cu.user_id = s.cashier_user_id
+            LEFT JOIN public.users u ON u.id = s.cashier_user_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND (%s = '' OR s.sale_no ILIKE %s OR COALESCE(s.customer_name,'') ILIKE %s)
+            ORDER BY s.sale_date DESC
+            LIMIT 500
+        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+
+        return {
+            "summary": {},
+            "rows": [[r["sale_no"], r["sale_date"], r["cashier"], r["customer"], r["gross_amount"], r["status"]] for r in rows],
+        }
+
+
+    def _pos_report_payments(self, company_id: int, schema: str, method: str, q: str = "", start_date=None, end_date=None) -> dict:
+        if method == "card":
+            method_filter = "lower(p.payment_method) IN ('card', 'speedpoint')"
+        else:
+            method_filter = "lower(p.payment_method) = 'cash'"
+
+        rows = self.fetch_all(f"""
+            SELECT
+                s.sale_no,
+                p.created_at::text AS payment_date,
+                COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
+                COALESCE(t.name, '-') AS terminal,
+                COALESCE(p.reference, '-') AS reference,
+                COALESCE(p.received_amount, p.amount)::numeric(18,2) AS received,
+                COALESCE(p.change_amount, 0)::numeric(18,2) AS change_amount,
+                p.amount::numeric(18,2) AS amount,
+                s.status
+            FROM {schema}.pos_payments p
+            JOIN {schema}.pos_sales s ON s.id = p.sale_id AND s.company_id = p.company_id
+            LEFT JOIN {schema}.pos_terminals t ON t.id = s.terminal_id
+            LEFT JOIN public.company_users cu ON cu.company_id = s.company_id AND cu.user_id = s.cashier_user_id
+            LEFT JOIN public.users u ON u.id = s.cashier_user_id
+            WHERE p.company_id = %s
+            AND s.status = 'completed'
+            AND {method_filter}
+            AND (%s = '' OR s.sale_no ILIKE %s OR COALESCE(p.reference,'') ILIKE %s)
+            ORDER BY p.created_at DESC
+            LIMIT 500
+        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+
+        if method == "card":
+            return {
+                "summary": {},
+                "rows": [[r["sale_no"], r["payment_date"], r["terminal"], r["reference"], r["amount"], r["status"]] for r in rows],
+            }
+
+        return {
+            "summary": {},
+            "rows": [[r["sale_no"], r["payment_date"], r["cashier"], r["received"], r["change_amount"], r["amount"]] for r in rows],
+        }
+
+
+    def _pos_report_account_sales(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                COALESCE(s.customer_name, cp.customer_name, '-') AS customer,
+                s.sale_no,
+                s.business_date::text AS sale_date,
+                s.gross_amount,
+                COALESCE(cp.current_balance, 0)::numeric(18,2) AS balance,
+                COALESCE(cp.credit_limit, 0)::numeric(18,2) AS credit_limit
+            FROM {schema}.pos_sales s
+            LEFT JOIN {schema}.pos_customer_profiles cp ON cp.id = s.customer_account_id OR cp.id = s.customer_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.sale_type = 'account_sale'
+            AND (%s = '' OR s.sale_no ILIKE %s OR COALESCE(s.customer_name, cp.customer_name, '') ILIKE %s)
+            ORDER BY s.sale_date DESC
+            LIMIT 500
+        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+
+        return {
+            "summary": {},
+            "rows": [[r["customer"], r["sale_no"], r["sale_date"], r["gross_amount"], r["balance"], r["credit_limit"]] for r in rows],
+        }
+
+
+    def _pos_report_daily_sales(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                s.business_date::text AS business_date,
+                COALESCE(sh.id::text, '-') AS shift,
+                COALESCE(t.name, '-') AS terminal,
+                COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
+                SUM(s.gross_amount)::numeric(18,2) AS sales,
+                SUM(s.amount_paid)::numeric(18,2) AS payments
+            FROM {schema}.pos_sales s
+            LEFT JOIN {schema}.pos_shifts sh ON sh.id = s.shift_id
+            LEFT JOIN {schema}.pos_terminals t ON t.id = s.terminal_id
+            LEFT JOIN public.company_users cu ON cu.company_id = s.company_id AND cu.user_id = s.cashier_user_id
+            LEFT JOIN public.users u ON u.id = s.cashier_user_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            GROUP BY s.business_date, sh.id, t.name, cu.pos_display_name, u.email, s.cashier_user_id
+            ORDER BY s.business_date DESC
+            LIMIT 500
+        """, (int(company_id),)) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["business_date"], r["shift"], r["terminal"], r["cashier"], r["sales"], r["payments"]] for r in rows],
+        }
+
+
+    def _pos_report_sales_per_product(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                l.description AS product,
+                COALESCE(l.sku, '') AS sku,
+                SUM(l.qty)::numeric(18,4) AS qty_sold,
+                SUM(l.gross_amount)::numeric(18,2) AS sales,
+                SUM(l.cost_amount)::numeric(18,2) AS cost,
+                (SUM(l.gross_amount) - SUM(l.cost_amount))::numeric(18,2) AS gross_profit,
+                CASE WHEN SUM(l.gross_amount) = 0 THEN 0
+                    ELSE ROUND(((SUM(l.gross_amount) - SUM(l.cost_amount)) / SUM(l.gross_amount)) * 100, 2)
+                END AS margin
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND (%s = '' OR l.description ILIKE %s OR COALESCE(l.sku,'') ILIKE %s)
+            GROUP BY l.description, l.sku
+            ORDER BY sales DESC
+            LIMIT 500
+        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["product"], r["sku"], r["qty_sold"], r["sales"], r["cost"], r["gross_profit"], f'{r["margin"]}%'] for r in rows],
+        }
+
+
+    def _pos_report_sales_per_category(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                COALESCE(i.category, 'Uncategorised') AS category,
+                SUM(l.qty)::numeric(18,4) AS qty_sold,
+                SUM(l.gross_amount)::numeric(18,2) AS sales,
+                SUM(l.cost_amount)::numeric(18,2) AS cost,
+                (SUM(l.gross_amount) - SUM(l.cost_amount))::numeric(18,2) AS gross_profit,
+                CASE WHEN SUM(l.gross_amount) = 0 THEN 0
+                    ELSE ROUND(((SUM(l.gross_amount) - SUM(l.cost_amount)) / SUM(l.gross_amount)) * 100, 2)
+                END AS margin
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
+            LEFT JOIN {schema}.inventory_items i ON i.id = l.item_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            GROUP BY COALESCE(i.category, 'Uncategorised')
+            ORDER BY sales DESC
+            LIMIT 500
+        """, (int(company_id),)) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["category"], r["qty_sold"], r["sales"], r["cost"], r["gross_profit"], f'{r["margin"]}%'] for r in rows],
+        }
+
+
+    def _pos_report_cashier_performance(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
+                SUM(s.gross_amount)::numeric(18,2) AS sales,
+                SUM(s.discount_amount)::numeric(18,2) AS discounts,
+                0::numeric(18,2) AS returns,
+                COALESCE(SUM(sh.cash_difference), 0)::numeric(18,2) AS cash_variance
+            FROM {schema}.pos_sales s
+            LEFT JOIN {schema}.pos_shifts sh ON sh.id = s.shift_id
+            LEFT JOIN public.company_users cu ON cu.company_id = s.company_id AND cu.user_id = s.cashier_user_id
+            LEFT JOIN public.users u ON u.id = s.cashier_user_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            GROUP BY cu.pos_display_name, u.email, s.cashier_user_id
+            ORDER BY sales DESC
+            LIMIT 500
+        """, (int(company_id),)) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["cashier"], r["sales"], r["discounts"], r["returns"], r["cash_variance"]] for r in rows],
+        }
+
+
+    def _pos_report_customer_accounts(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                cp.customer_name,
+                cp.customer_type,
+                COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS account_sales,
+                cp.current_balance::numeric(18,2) AS balance,
+                cp.credit_limit::numeric(18,2) AS credit_limit
+            FROM {schema}.pos_customer_profiles cp
+            LEFT JOIN {schema}.pos_sales s
+            ON (s.customer_account_id = cp.id OR s.customer_id = cp.id)
+            AND s.status = 'completed'
+            AND s.sale_type = 'account_sale'
+            WHERE cp.company_id = %s
+            AND (%s = '' OR cp.customer_name ILIKE %s)
+            GROUP BY cp.customer_name, cp.customer_type, cp.current_balance, cp.credit_limit
+            ORDER BY account_sales DESC
+            LIMIT 500
+        """, (int(company_id), q or "", f"%{q}%")) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["customer_name"], r["customer_type"], r["account_sales"], r["balance"], r["credit_limit"]] for r in rows],
+        }
+
+
+    def _pos_report_discount_report(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                COALESCE(l.price_source, 'manual/line') AS promotion,
+                COALESCE(l.price_source, 'discount') AS type,
+                SUM(l.discount_amount)::numeric(18,2) AS discount,
+                COUNT(DISTINCT s.id)::int AS transactions,
+                SUM(l.gross_amount)::numeric(18,2) AS value
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND COALESCE(l.discount_amount, 0) <> 0
+            GROUP BY COALESCE(l.price_source, 'manual/line')
+            ORDER BY discount DESC
+            LIMIT 500
+        """, (int(company_id),)) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["promotion"], r["type"], r["discount"], r["transactions"], r["value"]] for r in rows],
+        }
+
+
+    def _pos_report_returns_report(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                r.return_date::date::text AS return_date,
+                COALESCE(s.sale_no, r.return_no) AS receipt,
+                COALESCE(rl.description, '-') AS item,
+                COALESCE(r.reason, '-') AS reason,
+                COALESCE(rl.gross_amount, r.refund_amount)::numeric(18,2) AS refund
+            FROM {schema}.pos_returns r
+            LEFT JOIN {schema}.pos_sales s ON s.id = r.original_sale_id
+            LEFT JOIN {schema}.pos_return_lines rl ON rl.return_id = r.id
+            WHERE r.company_id = %s
+            ORDER BY r.return_date DESC
+            LIMIT 500
+        """, (int(company_id),)) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["return_date"], r["receipt"], r["item"], r["reason"], r["refund"]] for r in rows],
+        }
+
+
+    def _pos_report_stock_movement(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        rows = self.fetch_all(f"""
+            SELECT
+                COALESCE(i.name, l.description) AS item,
+                COALESCE(i.sku, l.sku, '') AS sku,
+                0::numeric(18,4) AS opening,
+                SUM(l.qty)::numeric(18,4) AS sold,
+                COALESCE(SUM(il.qty_in - il.qty_out), 0)::numeric(18,4) AS closing,
+                SUM(l.gross_amount)::numeric(18,2) AS sales,
+                SUM(l.cost_amount)::numeric(18,2) AS cost
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
+            LEFT JOIN {schema}.inventory_items i ON i.id = l.item_id
+            LEFT JOIN {schema}.inventory_layers il ON il.item_id = l.item_id AND il.company_id = l.company_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            GROUP BY COALESCE(i.name, l.description), COALESCE(i.sku, l.sku, '')
+            ORDER BY sold DESC
+            LIMIT 500
+        """, (int(company_id),)) or []
+
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "rows": [[r["item"], r["sku"], r["opening"], r["sold"], r["closing"], r["sales"], r["cost"]] for r in rows],
+        }
+
+
     def pos_get_report(self, company_id: int, *, report_key: str, q: str = "", start_date=None, end_date=None) -> dict:
         schema = self.company_schema(company_id)
         key = (report_key or "").strip().lower()
