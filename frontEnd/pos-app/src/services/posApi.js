@@ -373,4 +373,18 @@ export const posApi = {
         return postJson(`${base()}/staff-leave/${leaveId}/delete`, {});
     },
 
+    listAttendance(startDate = "", endDate = "", employeeUserId = "", status = "") {
+    return getJson(
+        `${base()}/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&employee_user_id=${encodeURIComponent(employeeUserId)}&status=${encodeURIComponent(status)}`
+    );
+    },
+
+    clockIn(payload) {
+    return postJson(`${base()}/attendance/clock-in`, payload);
+    },
+
+    clockOut(payload) {
+    return postJson(`${base()}/attendance/clock-out`, payload);
+    },
+
 };

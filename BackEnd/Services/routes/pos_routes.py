@@ -1712,3 +1712,106 @@ def api_pos_delete_staff_leave(cid: int, leave_id: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_delete_staff_leave failed")
         return _err("Server error", 500, ex)
+    
+@pos_bp.route("/api/companies/<int:cid>/pos/attendance", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_list_attendance(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        rows = db_service.pos_list_staff_attendance(
+            cid,
+            start_date=request.args.get("start_date"),
+            end_date=request.args.get("end_date"),
+            employee_user_id=request.args.get("employee_user_id") or None,
+            status=request.args.get("status", ""),
+        )
+        return jsonify({"ok": True, "attendance": rows, "count": len(rows)}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_list_attendance failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/attendance/clock-in", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_clock_in(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    body = _body()
+    payload = getattr(request, "jwt_payload", {}) or {}
+
+    try:
+        employee_user_id = int(
+            body.get("employee_user_id")
+            or body.get("cashier_user_id")
+            or payload.get("company_user_id")
+            or payload.get("user_id")
+            or 0
+        )
+
+        if employee_user_id <= 0:
+            return _err("employee_user_id is required", 400)
+
+        row = db_service.pos_clock_in_staff(
+            cid,
+            employee_user_id=employee_user_id,
+            schedule_id=body.get("schedule_id") or None,
+            notes=body.get("notes"),
+        )
+
+        return jsonify({"ok": True, "attendance": row}), 201
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_clock_in failed")
+        return _err("Server error", 500, ex)
+
+
+@pos_bp.route("/api/companies/<int:cid>/pos/attendance/clock-out", methods=["POST", "OPTIONS"])
+@require_auth
+def api_pos_clock_out(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    body = _body()
+    payload = getattr(request, "jwt_payload", {}) or {}
+
+    try:
+        employee_user_id = int(
+            body.get("employee_user_id")
+            or body.get("cashier_user_id")
+            or payload.get("company_user_id")
+            or payload.get("user_id")
+            or 0
+        )
+
+        if employee_user_id <= 0:
+            return _err("employee_user_id is required", 400)
+
+        row = db_service.pos_clock_out_staff(
+            cid,
+            employee_user_id=employee_user_id,
+            attendance_id=body.get("attendance_id") or None,
+            notes=body.get("notes"),
+        )
+
+        return jsonify({"ok": True, "attendance": row}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_clock_out failed")
+        return _err("Server error", 500, ex)
+    

@@ -92,6 +92,8 @@ export function ManagerPage() {
   const [shiftTemplates, setShiftTemplates] = useState([]);
   const [shiftSchedule, setShiftSchedule] = useState([]);
   const [staffLeave, setStaffLeave] = useState([]);
+  const [attendanceLog, setAttendanceLog] = useState([]);
+
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
     [shifts]
@@ -141,6 +143,7 @@ export function ManagerPage() {
       if (activeTab === "orders") await loadOrders();
       if (activeTab === "labels") await loadBarcodeLabels();
       if (activeTab === "menu") await loadMenuItems();
+      if (activeTab === "attendance") await loadAttendance();
 
       if (activeTab === "tables") {
         await Promise.allSettled([
@@ -161,6 +164,11 @@ export function ManagerPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadAttendance() {
+    const res = await posApi.listAttendance();
+    setAttendanceLog(res.attendance || []);
   }
 
   async function loadTerminals() {
@@ -1051,8 +1059,13 @@ export function ManagerPage() {
             />
           )}
 
-          {tab === "attendance" && <AttendanceTab />}
-
+          {tab === "attendance" && (
+            <AttendanceTab
+              attendanceLog={attendanceLog}
+              onRefresh={loadAttendance}
+            />
+          )}
+          
           {tab === "settings" && (
             <section className="manager-workspace">
               <div className="workspace-head">

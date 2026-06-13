@@ -39,6 +39,9 @@ export function CashierPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customers, setCustomers] = useState([]);
+  const [attendance, setAttendance] = useState(null);
+  const [clockedIn, setClockedIn] = useState(false);
+
 useEffect(() => {
   restorePosSession();
 }, []);
@@ -94,6 +97,7 @@ const [menuItems, setMenuItems] = useState([
 
   const canAccessPos =
     signedIn &&
+    clockedIn &&
     ["cashier", "manager", "supervisor", "waiter", "waitress"].includes(posRole);
     
   const totals = useMemo(() => {
@@ -103,6 +107,67 @@ const [menuItems, setMenuItems] = useState([
     const gross = cart.reduce((s, x) => s + Number(x.gross_amount || 0), 0);
     return { subtotal, discount, vat, gross };
   }, [cart]);
+
+  async function clockIn() {
+    if (!signedIn || !cashier) {
+      setMessage("Sign in first before clocking in.");
+      return;
+    }
+
+    const employeeUserId =
+      cashier?.company_user_id ||
+      cashier?.user_id ||
+      cashier?.id ||
+      null;
+
+    if (!employeeUserId) {
+      setMessage("Could not identify employee for clock-in.");
+      return;
+    }
+
+    const res = await posApi.clockIn({
+      employee_user_id: employeeUserId,
+    });
+
+    setAttendance(res.attendance);
+    setClockedIn(true);
+
+    const attendanceId = localStorage.getItem("active_attendance_id");
+
+    if (attendanceId) {
+      setAttendance({ id: Number(attendanceId) });
+      setClockedIn(true);
+    }
+
+    if (res.attendance?.id) {
+      localStorage.setItem("active_attendance_id", String(res.attendance.id));
+    }
+
+    setMessage("Clocked in successfully.");
+  }
+
+  async function clockOut() {
+    if (!signedIn || !cashier) {
+      setMessage("Sign in first.");
+      return;
+    }
+
+    const employeeUserId =
+      cashier?.company_user_id ||
+      cashier?.user_id ||
+      cashier?.id ||
+      null;
+
+    const res = await posApi.clockOut({
+      employee_user_id: employeeUserId,
+      attendance_id: attendance?.id || null,
+    });
+
+    setAttendance(res.attendance);
+    setClockedIn(false);
+    localStorage.removeItem("active_attendance_id");
+    setMessage("Clocked out successfully.");
+  }
 
   async function signIn() {
     if (!employeeCode.trim() || !pin.trim()) {
@@ -154,11 +219,19 @@ const [menuItems, setMenuItems] = useState([
     }
   }
 
-  function signOut() {
+  async function signOut() {
+    if (clockedIn) {
+      setMessage("Clock out before signing out.");
+      return;
+    }
+
     localStorage.removeItem("pos_token");
+    localStorage.removeItem("active_attendance_id");
 
     setSignedIn(false);
     setCashier(null);
+    setAttendance(null);
+    setClockedIn(false);
     setCart([]);
     setMessage("Cashier signed out.");
   }
@@ -385,10 +458,16 @@ const [menuItems, setMenuItems] = useState([
 
         <nav className="header-actions">
           {signedIn ? (
-            <button onClick={signOut}>
-              Sign Out
-              {cashier?.name ? ` (${cashier.name})` : ""}
-            </button>
+            <>
+              <button onClick={signOut}>
+                Sign Out
+                {cashier?.name ? ` (${cashier.name})` : ""}
+              </button>
+
+              <button onClick={clockedIn ? clockOut : clockIn}>
+                {clockedIn ? "Clock Out" : "Clock In"}
+              </button>
+            </>
           ) : (
             <button onClick={() => setShowSignin(true)}>
               Cashier Sign In

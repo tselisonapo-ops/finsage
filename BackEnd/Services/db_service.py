@@ -19370,54 +19370,67 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_pos_packing_queue_status_idx
         ON {schema}.pos_packing_queue(company_id, status);
 
-    CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_headers (
-        id SERIAL PRIMARY KEY,
-        company_id INT NOT NULL DEFAULT {company_id},
+        CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_headers (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
 
-        menu_item_id INT NOT NULL
-            REFERENCES {schema}.inventory_items(id),
+            menu_item_id INT NOT NULL
+                REFERENCES {schema}.inventory_items(id),
 
-        recipe_name TEXT NOT NULL,
+            recipe_name TEXT NOT NULL,
 
-        yield_qty NUMERIC(18,4) NOT NULL DEFAULT 1,
-        yield_uom TEXT NULL,
+            yield_qty NUMERIC(18,4) NOT NULL DEFAULT 1,
+            yield_uom TEXT NULL,
 
-        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
-    CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_headers_item_idx
-    ON {schema}.pos_recipe_headers(company_id, menu_item_id, is_active);
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_headers_item_idx
+        ON {schema}.pos_recipe_headers(company_id, menu_item_id, is_active);
 
 
 
-    CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_lines (
-        id SERIAL PRIMARY KEY,
-        company_id INT NOT NULL DEFAULT {company_id},
+        CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
 
-        recipe_id INT NOT NULL
-            REFERENCES {schema}.pos_recipe_headers(id)
-            ON DELETE CASCADE,
+            recipe_id INT NOT NULL
+                REFERENCES {schema}.pos_recipe_headers(id)
+                ON DELETE CASCADE,
 
-        ingredient_item_id INT NOT NULL
-            REFERENCES {schema}.inventory_items(id),
+            ingredient_item_id INT NOT NULL
+                REFERENCES {schema}.inventory_items(id),
 
-        qty_required NUMERIC(18,6) NOT NULL DEFAULT 1,
-        uom TEXT NULL,
+            qty_required NUMERIC(18,6) NOT NULL DEFAULT 1,
+            uom TEXT NULL,
 
-        wastage_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            wastage_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
 
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
-    CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_recipe_idx
-    ON {schema}.pos_recipe_lines(company_id, recipe_id);
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_recipe_idx
+        ON {schema}.pos_recipe_lines(company_id, recipe_id);
 
-    CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_ingredient_idx
-    ON {schema}.pos_recipe_lines(company_id, ingredient_item_id);
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_ingredient_idx
+        ON {schema}.pos_recipe_lines(company_id, ingredient_item_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.pos_staff_attendance (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            employee_user_id INT NOT NULL,
+            schedule_id INT NULL REFERENCES {schema}.pos_shift_schedule(id),
+            clock_in_at TIMESTAMPTZ NULL,
+            clock_out_at TIMESTAMPTZ NULL,
+            status TEXT NOT NULL DEFAULT 'clocked_in',
+            late_minutes INT NOT NULL DEFAULT 0,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
         -- ==================================================
         -- BANK STATEMENTS
@@ -37621,6 +37634,152 @@ class DatabaseService:
             int(schedule_id),
         ))
 
+    def pos_clock_in_staff(
+        self,
+        company_id: int,
+        *,
+        employee_user_id: int,
+        schedule_id: int | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+        schedule_id = None if not schedule_id else int(schedule_id)
+
+        existing = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.pos_staff_attendance
+            WHERE company_id = %s
+            AND employee_user_id = %s
+            AND status = 'clocked_in'
+            ORDER BY clock_in_at DESC
+            LIMIT 1
+        """, (int(company_id), int(employee_user_id)))
+
+        if existing:
+            return existing
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.pos_staff_attendance
+            (company_id, employee_user_id, schedule_id, clock_in_at, status, notes)
+            VALUES (%s, %s, %s, NOW(), 'clocked_in', %s)
+            RETURNING
+                id,
+                company_id,
+                employee_user_id,
+                schedule_id,
+                clock_in_at::text AS clock_in_at,
+                clock_out_at::text AS clock_out_at,
+                status,
+                late_minutes,
+                notes,
+                created_at::text AS created_at
+        """, (
+            int(company_id),
+            int(employee_user_id),
+            schedule_id,
+            notes,
+        ))
+
+
+    def pos_clock_out_staff(
+        self,
+        company_id: int,
+        *,
+        employee_user_id: int,
+        attendance_id: int | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s", "employee_user_id = %s", "status = 'clocked_in'"]
+        params = [int(company_id), int(employee_user_id)]
+
+        if attendance_id:
+            where.append("id = %s")
+            params.append(int(attendance_id))
+
+        params.extend([notes, int(company_id), int(employee_user_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.pos_staff_attendance
+            SET clock_out_at = NOW(),
+                status = 'clocked_out',
+                notes = COALESCE(%s, notes)
+            WHERE id = (
+                SELECT id
+                FROM {schema}.pos_staff_attendance
+                WHERE {" AND ".join(where)}
+                ORDER BY clock_in_at DESC
+                LIMIT 1
+            )
+            RETURNING
+                id,
+                company_id,
+                employee_user_id,
+                schedule_id,
+                clock_in_at::text AS clock_in_at,
+                clock_out_at::text AS clock_out_at,
+                status,
+                late_minutes,
+                notes,
+                created_at::text AS created_at
+        """, tuple(params))
+
+
+    def pos_list_staff_attendance(
+        self,
+        company_id: int,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        employee_user_id: int | None = None,
+        status: str = "",
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        where = ["a.company_id = %s"]
+        params = [int(company_id)]
+
+        if start_date:
+            where.append("a.clock_in_at::date >= %s")
+            params.append(start_date)
+
+        if end_date:
+            where.append("a.clock_in_at::date <= %s")
+            params.append(end_date)
+
+        if employee_user_id:
+            where.append("a.employee_user_id = %s")
+            params.append(int(employee_user_id))
+
+        if status:
+            where.append("a.status = %s")
+            params.append(status)
+
+        return self.fetch_all(f"""
+            SELECT
+                a.id,
+                a.company_id,
+                a.employee_user_id,
+                a.schedule_id,
+                a.clock_in_at::text AS clock_in_at,
+                a.clock_out_at::text AS clock_out_at,
+                a.status,
+                a.late_minutes,
+                a.notes,
+                a.created_at::text AS created_at,
+                s.work_date::text AS work_date,
+                t.shift_name,
+                t.start_time::text AS start_time,
+                t.end_time::text AS end_time
+            FROM {schema}.pos_staff_attendance a
+            LEFT JOIN {schema}.pos_shift_schedule s
+                ON s.id = a.schedule_id
+            LEFT JOIN {schema}.pos_shift_templates t
+                ON t.id = s.shift_template_id
+            WHERE {" AND ".join(where)}
+            ORDER BY a.clock_in_at DESC
+        """, tuple(params))
 
     def pos_create_staff_leave(
         self,
