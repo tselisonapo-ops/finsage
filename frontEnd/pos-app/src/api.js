@@ -40,11 +40,23 @@ export async function apiFetch(path, options = {}) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok || data.ok === false) {
+    const msg = String(data.error || data.detail || "").toLowerCase();
+
+    if (
+      res.status === 403 &&
+      msg.includes("no access to this company")
+    ) {
+      localStorage.removeItem("pos_token");
+      localStorage.setItem("pos_auth_required", "1");
+
+      window.dispatchEvent(new Event("pos-auth-required"));
+    }
+
     throw new Error(data.error || data.detail || `Request failed: ${res.status}`);
   }
 
-  return data;
-}
+    return data;
+  }
 
 export function getJson(path, options = {}) {
   return apiFetch(path, options);

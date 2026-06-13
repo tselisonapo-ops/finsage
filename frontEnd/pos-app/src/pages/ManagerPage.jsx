@@ -1017,18 +1017,25 @@ export function ManagerPage() {
     window.location.href = "/signin.html";
   }
 
+  function goToCashierSignin() {
+    localStorage.setItem("pos_auth_required", "1");
+    window.location.href = "#/cashier";
+  }
+
   if ((!fsToken && !posToken) || !hasActiveCompany) {
     return (
       <main className="pos-page">
         <div className="pos-message">
-          Please sign in and select an active company before using POS Manager.
+          Please sign in to access POS Manager.
 
-          <button
-            className="scan-btn"
-            onClick={goToMainSignin}
-          >
-            Sign In
-          </button>
+          <div style={{ marginTop: "12px" }}>
+            <button
+              className="scan-btn"
+              onClick={goToCashierSignin}
+            >
+              POS Sign In
+            </button>
+          </div>
         </div>
       </main>
     );

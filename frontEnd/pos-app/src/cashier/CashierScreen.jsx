@@ -60,14 +60,23 @@ export function CashierPage() {
   });
 
   useEffect(() => {
-    if (isFsUser) {
-      setSignedIn(true);
-      setClockedIn(true);
-      loadTerminals();
+    function handlePosAuthRequired() {
+      setShowSignin(true);
+      setSignedIn(false);
+      setCashier(null);
+      setMessage("Please sign in with your POS access code for this company.");
     }
 
-    restorePosSession();
-    loadReceiptSettings();
+    window.addEventListener("pos-auth-required", handlePosAuthRequired);
+
+    if (localStorage.getItem("pos_auth_required") === "1") {
+      localStorage.removeItem("pos_auth_required");
+      handlePosAuthRequired();
+    }
+
+    return () => {
+      window.removeEventListener("pos-auth-required", handlePosAuthRequired);
+    };
   }, []);
 
   async function restorePosSession() {

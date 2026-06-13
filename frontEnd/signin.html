@@ -279,6 +279,18 @@
         );
       }
 
+      const intendedUrl = localStorage.getItem("fs:intended_url");
+
+      if (intendedUrl) {
+        localStorage.removeItem("fs:intended_url");
+
+        setTimeout(() => {
+          window.location.assign(intendedUrl);
+        }, 300);
+
+        return;
+      }
+
       const intended = consumeIntendedScreen();
       const targetBase = pickDashboardTarget(user);
       const target = intended
