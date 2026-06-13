@@ -5,7 +5,6 @@ import { posApi } from "../services/posApi.js";
 import { money } from "../utils/currency.js";
 import { renderSlip, SLIP_TEMPLATE_OPTIONS } from "../utils/receiptTemplates.js";
 
-
 const RETAIL_TABS = [
   ["overview", "Overview"],
   ["sales", "Sales"],
@@ -54,8 +53,62 @@ const RESTAURANT_TABS = [
   ["settings", "Settings"],
 ];
 
+const RETAIL_ROLE_OPTIONS = [
+  { value: "cashier", label: "Cashier" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "manager", label: "Manager" },
+  { value: "stock_controller", label: "Stock Controller" },
+];
+
+const RESTAURANT_ROLE_OPTIONS = [
+  { value: "waiter", label: "Waiter" },
+  { value: "cashier", label: "Cashier" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "manager", label: "Manager" },
+  { value: "kitchen", label: "Kitchen Staff" },
+  { value: "driver", label: "Driver" },
+];
+
+const RETAIL_SUPERVISOR_TABS = [
+  ["overview", "Overview"],
+  ["sales", "Sales"],
+  ["reports", "Reports"],
+  ["inventory", "Inventory"],
+  ["stock_count", "Stock Count"],
+  ["customers", "Customers"],
+  ["shifts", "Shifts & Cash-up"],
+  ["attendance", "Attendance"],
+];
+
+const RESTAURANT_SUPERVISOR_TABS = [
+  ["overview", "Overview"],
+  ["orders", "Orders"],
+  ["tables", "Tables"],
+  ["kitchen", "Kitchen"],
+  ["sales", "Sales"],
+  ["reports", "Reports"],
+  ["inventory", "Inventory"],
+  ["customers", "Customers"],
+  ["shifts", "Shifts & Cash-up"],
+  ["attendance", "Attendance"],
+];
+
 export function ManagerPage() {
   const company = getCompanyContext();
+
+  const fsToken =
+    sessionStorage.getItem("fs_user_token") ||
+    localStorage.getItem("fs_user_token") ||
+    "";
+
+  const posToken = localStorage.getItem("pos_token") || "";
+  const [managerEmployee, setManagerEmployee] = useState(null);
+
+  const hasActiveCompany =
+    !!company?.id ||
+    !!localStorage.getItem("active_company_id") ||
+    !!localStorage.getItem("company_id");
+
   const mode = getPosMode(company);
 
   const isRestaurantLike =
@@ -102,6 +155,22 @@ export function ManagerPage() {
   useEffect(() => {
     loadTabData(tab);
   }, [tab]);
+
+  useEffect(() => {
+    restoreManagerPosSession();
+  }, []);
+
+  async function restoreManagerPosSession() {
+    if (!posToken) return;
+
+    try {
+      const res = await posApi.posAuthMe();
+      setManagerEmployee(res.employee || res.cashier || null);
+    } catch {
+      localStorage.removeItem("pos_token");
+      setManagerEmployee(null);
+    }
+  }
 
   async function loadTabData(activeTab = tab) {
     setLoading(true);
@@ -517,6 +586,17 @@ export function ManagerPage() {
 
       const staff = res.staff || {};
 
+      const accessCode =
+        staff.pos_access_code ||
+        staff.access_code ||
+        res.pos_access_code ||
+        res.access_code ||
+        "-";
+
+      setMessage(`Staff member added. POS access code: ${accessCode}`);
+      await loadTabData("staff");
+    }
+
     if (modal.type === "edit_staff") {
       await posApi.updateStaffMember(modal.staffId, {
         full_name: values.full_name,
@@ -528,18 +608,6 @@ export function ManagerPage() {
 
       setMessage("Staff member updated.");
       await loadStaffMembers();
-    }
-
-      const accessCode =
-        staff.pos_access_code ||
-        staff.access_code ||
-        res.pos_access_code ||
-        res.access_code ||
-        "-";
-
-      setMessage(`Staff member added. POS access code: ${accessCode}`);
-
-      await loadTabData("staff");
     }
 
     if (modal.type === "cost_pool") {
@@ -675,6 +743,10 @@ export function ManagerPage() {
   }
 
   function openStaffModal() {
+    const roleOptions = isRestaurantLike
+      ? RESTAURANT_ROLE_OPTIONS
+      : RETAIL_ROLE_OPTIONS;
+
     setModal({
       type: "staff",
       title: "Add POS Staff Member",
@@ -682,7 +754,13 @@ export function ManagerPage() {
         { key: "full_name", label: "Full Name", value: "" },
         { key: "email", label: "Email Address", value: "" },
         { key: "phone", label: "Phone Number", value: "" },
-        { key: "role", label: "POS Role", value: "cashier" },
+        {
+          key: "role",
+          label: "POS Role",
+          value: isRestaurantLike ? "waiter" : "cashier",
+          type: "select",
+          options: roleOptions,
+        },
         { key: "pin", label: "Employee PIN", value: "" },
       ],
     });
@@ -755,7 +833,7 @@ export function ManagerPage() {
       fields: [
         { key: "full_name", label: "Full Name", value: staff.full_name || "" },
         { key: "phone", label: "Phone Number", value: staff.phone || "" },
-        { key: "role", label: "POS Role", value: staff.role || "cashier" },
+        { key: "role", label: "POS Role", value: staff.role || "cashier", type: "select", options: isRestaurantLike ? RESTAURANT_ROLE_OPTIONS : RETAIL_ROLE_OPTIONS,},        
         { key: "access_code", label: "POS Access Code", value: staff.pos_access_code || "" },
         { key: "pin", label: "New PIN (leave blank to keep old PIN)", value: "" },
       ],
@@ -894,7 +972,75 @@ export function ManagerPage() {
       ],
     });
   }
-  const visibleTabs = isRestaurantLike ? RESTAURANT_TABS : RETAIL_TABS;
+
+  const fsUser = JSON.parse(localStorage.getItem("fs_user") || "{}");
+
+  const managerRole = String(
+    managerEmployee?.pos_role ||
+    managerEmployee?.role ||
+    fsUser?.pos_role ||
+    fsUser?.role ||
+    fsUser?.system_role ||
+    ""
+  ).toLowerCase();
+
+  const isSupervisor = managerRole === "supervisor";
+  const isPosManager = managerRole === "manager";
+  const isMainAppSuperUser = !!fsToken;
+
+  const visibleTabs = isMainAppSuperUser || isPosManager
+    ? isRestaurantLike
+      ? RESTAURANT_TABS
+      : RETAIL_TABS
+    : isRestaurantLike
+      ? isSupervisor
+        ? RESTAURANT_SUPERVISOR_TABS
+        : []
+      : isSupervisor
+        ? RETAIL_SUPERVISOR_TABS
+        : [];
+
+  const allowedTabIds = visibleTabs.map(([id]) => id);
+
+  useEffect(() => {
+    if (allowedTabIds.length && !allowedTabIds.includes(tab)) {
+      setTab("overview");
+    }
+  }, [tab, allowedTabIds]);
+
+  function goToMainSignin() {
+    localStorage.setItem(
+      "fs:intended_url",
+      `${window.location.pathname}${window.location.hash || "#/manager"}`
+    );
+
+    window.location.href = "/signin.html";
+  }
+
+  if ((!fsToken && !posToken) || !hasActiveCompany) {
+    return (
+      <main className="pos-page">
+        <div className="pos-message">
+          Please sign in and select an active company before using POS Manager.
+
+          <button
+            className="scan-btn"
+            onClick={goToMainSignin}
+          >
+            Sign In
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!fsToken && posToken && !managerEmployee) {
+    return (
+      <main className="pos-page">
+        <div className="pos-message">Loading POS manager access...</div>
+      </main>
+    );
+  }
 
   return (
     <main className="pos-page">

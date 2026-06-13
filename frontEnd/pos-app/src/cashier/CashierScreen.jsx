@@ -14,6 +14,12 @@ const isFsUser = !!fsToken;
 
 export function CashierPage() {
   const company = getCompanyContext();
+
+  const hasActiveCompany =
+    !!company?.id ||
+    !!localStorage.getItem("active_company_id") ||
+    !!localStorage.getItem("company_id");
+
   const mode = getPosMode(company);
   const isRestaurantLike = mode === "restaurant" || mode === "club";
   const usesInventory = companyUsesInventory(company);
@@ -43,7 +49,7 @@ export function CashierPage() {
   const [attendance, setAttendance] = useState(null);
   const [clockedIn, setClockedIn] = useState(false);
   const [receiptSettings, setReceiptSettings] = useState({});
-
+  
   const [showCustomerModal, setShowCustomerModal] = useState(false);
 
   const [customerForm, setCustomerForm] = useState({
@@ -134,13 +140,14 @@ export function CashierPage() {
       (canSell || canOrder)
     );
 
-    const totals = useMemo(() => {
-      const subtotal = cart.reduce((s, x) => s + Number(x.qty || 0) * Number(x.unit_price || 0), 0);
-      const discount = cart.reduce((s, x) => s + Number(x.discount_amount || 0), 0);
-      const vat = cart.reduce((s, x) => s + Number(x.vat_amount || 0), 0);
-      const gross = cart.reduce((s, x) => s + Number(x.gross_amount || 0), 0);
-      return { subtotal, discount, vat, gross };
-    }, [cart]);
+  const totals = useMemo(() => {
+    const subtotal = cart.reduce((s, x) => s + Number(x.net_amount || 0), 0);
+    const discount = cart.reduce((s, x) => s + Number(x.discount_amount || 0), 0);
+    const vat = cart.reduce((s, x) => s + Number(x.vat_amount || 0), 0);
+    const gross = cart.reduce((s, x) => s + Number(x.gross_amount || 0), 0);
+
+    return { subtotal, discount, vat, gross };
+  }, [cart]);
 
   async function clockIn() {
     if (!signedIn || !cashier) {
@@ -320,17 +327,36 @@ export function CashierPage() {
     setReceiptSettings(res.receipt_settings || res.settings || res.data || res || {});
   }
 
-  const VAT_RATE = 0.15;
+  const VAT_RATE = Number(receiptSettings?.vat_rate || 15) / 100;
 
-  function calcLineAmounts(priceInclusive, qty = 1, discount = 0) {
-    const gross = Number(priceInclusive || 0) * Number(qty || 1);
-    const netBeforeDiscount = gross / (1 + VAT_RATE);
-    const vatBeforeDiscount = gross - netBeforeDiscount;
+  const pricingTaxMode =
+    receiptSettings?.pricing_tax_mode || "inclusive";
+
+  function calcLineAmounts(unitPrice, qty = 1, discount = 0) {
+    const price = Number(unitPrice || 0);
+    const quantity = Number(qty || 1);
+    const discountAmount = Number(discount || 0);
+
+    if (pricingTaxMode === "exclusive") {
+      const net = Math.max((price * quantity) - discountAmount, 0);
+      const vat = net * VAT_RATE;
+      const gross = net + vat;
+
+      return {
+        net_amount: net,
+        vat_amount: vat,
+        gross_amount: gross,
+      };
+    }
+
+    const gross = Math.max((price * quantity) - discountAmount, 0);
+    const net = gross / (1 + VAT_RATE);
+    const vat = gross - net;
 
     return {
-      net_amount: Math.max(netBeforeDiscount - Number(discount || 0), 0),
-      vat_amount: vatBeforeDiscount,
-      gross_amount: gross - Number(discount || 0),
+      net_amount: net,
+      vat_amount: vat,
+      gross_amount: gross,
     };
   }
 
@@ -344,16 +370,25 @@ export function CashierPage() {
       const existing = prev.find((x) => x.item_id === item.id);
 
       if (existing) {
-        return prev.map((x) =>
-          x.item_id === item.id
-            ? {
-                ...x,
-                qty: Number(x.qty || 0) + 1,
-                gross_amount:
-                  (Number(x.qty || 0) + 1) * Number(x.unit_price || 0),
-              }
-            : x
-        );
+        return prev.map((x) => {
+          if (x.item_id !== item.id) return x;
+
+          const qty = Number(x.qty || 0) + 1;
+
+          const amounts = calcLineAmounts(
+            Number(x.unit_price || 0),
+            qty,
+            Number(x.discount_amount || 0)
+          );
+
+          return {
+            ...x,
+            qty,
+            net_amount: amounts.net_amount,
+            vat_amount: amounts.vat_amount,
+            gross_amount: amounts.gross_amount,
+          };
+        });
       }
 
       const amounts = calcLineAmounts(item.price, 1, 0);
@@ -522,9 +557,11 @@ export function CashierPage() {
             : 0,
       });
 
-      printReceipt(saleNo);
-      
-      await posApi.completeSale(saleId);
+      const completeRes = await posApi.completeSale(saleId);
+
+      printReceipt(
+        completeRes?.sale_no || saleNo
+      );
 
       setMessage(`Sale ${saleNo} completed successfully.`);
 
@@ -562,6 +599,15 @@ export function CashierPage() {
     } catch (err) {
       setMessage(err.message || "Failed to create customer.");
     }
+  }
+
+  function goToMainSignin() {
+    localStorage.setItem(
+      "fs:intended_url",
+      `${window.location.pathname}${window.location.hash || "#/cashier"}`
+    );
+
+    window.location.href = "/signin.html";
   }
 
   return (
@@ -679,6 +725,20 @@ export function CashierPage() {
       {signedIn && !canAccessPos && (
         <div className="pos-message">
           Your role does not have access to this POS screen.
+        </div>
+      )}
+
+      {!isFsUser && !localStorage.getItem("pos_token") && (
+        <div className="pos-message">
+          Please sign in to continue.
+          <button onClick={goToMainSignin}>Sign in to FinSage</button>
+        </div>
+      )}
+
+      {!hasActiveCompany && (
+        <div className="pos-message">
+          No active company selected. Please sign in and select a company first.
+          <button onClick={goToMainSignin}>Sign in</button>
         </div>
       )}
 
@@ -1037,10 +1097,34 @@ export function CashierPage() {
           </div>
 
           <div className="summary-card">
-            <div><span>Subtotal</span><strong>{money(totals.subtotal)}</strong></div>
-            <div><span>Discount</span><strong>{money(totals.discount)}</strong></div>
-            <div><span>VAT</span><strong>{money(totals.vat)}</strong></div>
-            <div className="grand-total"><span>Total Due</span><strong>{money(totals.gross)}</strong></div>
+            <div>
+              <span>Subtotal</span>
+              <strong>{money(totals.subtotal)}</strong>
+            </div>
+
+            <div>
+              <span>Discount</span>
+              <strong>{money(totals.discount)}</strong>
+            </div>
+
+            <div>
+              <span>VAT</span>
+              <strong>{money(totals.vat)}</strong>
+            </div>
+
+            <div>
+              <span>VAT Mode</span>
+              <strong>
+                {pricingTaxMode === "exclusive"
+                  ? "VAT Exclusive"
+                  : "VAT Inclusive"}
+              </strong>
+            </div>
+
+            <div className="grand-total">
+              <span>Total Due</span>
+              <strong>{money(totals.gross)}</strong>
+            </div>
           </div>
 
           {activePanel === "payment" && (

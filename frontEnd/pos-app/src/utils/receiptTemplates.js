@@ -79,6 +79,15 @@ function brandingHeader(company = {}, branding = {}, settings = {}) {
   `;
 }
 
+function vatTreatmentLine(settings = {}) {
+  return line(
+    "VAT Treatment",
+    settings.pricing_tax_mode === "exclusive"
+      ? "VAT Added Separately"
+      : "VAT Included in Prices"
+  );
+}
+
 function receiptItems(items = [], compact = false) {
   return items.map((x) => {
     const desc = esc(x.description || x.name || "Item");
@@ -125,6 +134,8 @@ export function renderRetailClassicSlip({ company = {}, branding = {}, settings 
             <span>${esc(sale.sale_no || sale.invoice_no || "DRAFT")}</span>
           </div>
 
+          ${vatTreatmentLine(settings)}
+          
           <div class="divider"></div>
 
           ${line("Date", esc(sale.sale_date || sale.date || new Date().toLocaleString()))}
