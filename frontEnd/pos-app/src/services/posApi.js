@@ -387,4 +387,25 @@ export const posApi = {
     return postJson(`${base()}/attendance/clock-out`, payload);
     },
 
+    recordAccountPayment(saleId, payload) {
+        return postJson(
+            `${base()}/sales/${saleId}/account-payment`,
+            payload
+        );
+    },
+
+    createOrder(payload) {
+    return postJson(`${base()}/orders`, payload);
+    },
+
+    addOrderLine(orderId, payload) {
+    return postJson(`${base()}/orders/${orderId}/lines`, payload);
+    },
+
+    sendOrderToKitchen(orderId, payload = {}) {
+    return postJson(`${base()}/orders/${orderId}/status`, {
+        status: "sent_to_kitchen",
+        ...payload,
+    });
+    },
 };

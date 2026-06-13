@@ -13,6 +13,7 @@ export function OrderScreen({ embedded = false, canSell = false, canOrder = fals
 
   const [menuItems, setMenuItems] = useState([]);
   const [loadingMenu, setLoadingMenu] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState("");
 
   const total = useMemo(
     () => cart.reduce((sum, x) => sum + Number(x.qty || 0) * Number(x.price || 0), 0),
@@ -57,7 +58,7 @@ export function OrderScreen({ embedded = false, canSell = false, canOrder = fals
     setCart((prev) => prev.filter((x) => x.id !== id));
   }
 
-  function sendToKitchen() {
+  async function sendToKitchen() {
     if (!cart.length) {
       alert("Add items before sending order to kitchen.");
       return;
@@ -68,17 +69,109 @@ export function OrderScreen({ embedded = false, canSell = false, canOrder = fals
       return;
     }
 
-    setOrderStatus("started");
-    alert("Order sent to kitchen.");
+    if (orderType === "delivery") {
+      if (!customerName.trim()) {
+        alert("Customer name is required for delivery.");
+        return;
+      }
+
+      if (!deliveryAddress.trim()) {
+        alert("Delivery address is required.");
+        return;
+      }
+    }
+
+    try {
+      const orderRes = await posApi.createOrder({
+        order_no: `ORD-${Date.now()}`,
+        order_type: orderType,
+        order_status: "pending",
+        table_no: orderType === "table" ? tableNumber.trim() : null,
+        customer_name: customerName || "Walk-in Customer",
+        customer_phone: customerPhone || "",
+        delivery_address: deliveryAddress || "",
+        driver_name: driverName || "",
+        notes: "",
+      });
+      const orderId =
+        orderRes?.order_id ||
+        orderRes?.id ||
+        orderRes?.order?.id ||
+        orderRes?.data?.order_id;
+
+      if (!orderId) {
+        throw new Error("Order ID was not returned.");
+      }
+
+      for (const line of cart) {
+        await posApi.addOrderLine(orderId, {
+          item_id: line.id,
+          description: line.name,
+          qty: Number(line.qty || 1),
+          unit_price: Number(line.price || 0),
+          notes: "",
+        });
+      }
+
+      await posApi.sendOrderToKitchen(orderId);
+
+      setOrderStatus("sent_to_kitchen");
+      setCart([]);
+
+      alert("Order sent to kitchen.");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to send order to kitchen.");
+    }
   }
 
-  function saveOrder() {
+  async function saveOrder() {
     if (!cart.length) {
       alert("Add items before saving order.");
       return;
     }
 
-    alert("Order saved.");
+    try {
+      const orderRes = await posApi.createOrder({
+        order_type: orderType,
+        order_status: "draft",
+        order_no: `ORD-${Date.now()}`,
+        table_no: orderType === "table" ? tableNumber.trim() : null,
+        customer_name: customerName || "Walk-in Customer",
+        customer_phone: customerPhone || "",
+        delivery_address: deliveryAddress || "",
+        driver_name: driverName || "",
+        notes: "",
+      });
+
+      const orderId =
+        orderRes?.order_id ||
+        orderRes?.id ||
+        orderRes?.order?.id ||
+        orderRes?.data?.order_id;
+
+      if (!orderId) {
+        throw new Error("Order ID was not returned.");
+      }
+
+      for (const line of cart) {
+        await posApi.addOrderLine(orderId, {
+          item_id: line.id,
+          description: line.name,
+          qty: Number(line.qty || 1),
+          unit_price: Number(line.price || 0),
+          notes: "",
+        });
+      }
+
+      setOrderStatus("draft_saved");
+      setCart([]);
+
+      alert("Order saved.");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to save order.");
+    }
   }
 
   return (
@@ -130,12 +223,21 @@ export function OrderScreen({ embedded = false, canSell = false, canOrder = fals
           )}
 
           {orderType === "collection" && (
-            <input
-              className="scan-input"
-              placeholder="Customer Name"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-            />
+            <>
+              <input
+                className="scan-input"
+                placeholder="Customer Name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
+
+              <input
+                className="scan-input"
+                placeholder="Phone Number"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+              />
+            </>
           )}
 
           {orderType === "delivery" && (
@@ -146,6 +248,13 @@ export function OrderScreen({ embedded = false, canSell = false, canOrder = fals
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
               />
+
+            <input
+              className="scan-input"
+              placeholder="Phone Number"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+            />
 
               <input
                 className="scan-input"

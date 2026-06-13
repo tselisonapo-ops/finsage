@@ -1065,7 +1065,7 @@ export function ManagerPage() {
               onRefresh={loadAttendance}
             />
           )}
-          
+
           {tab === "settings" && (
             <section className="manager-workspace">
               <div className="workspace-head">
@@ -2742,7 +2742,178 @@ function StaffTab({
   );
 }
 
-function AttendanceTab() {
+function AttendanceTab({ attendanceLog = [], onRefresh }) {
+  const [attendanceView, setAttendanceView] = useState(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  function fmtDateTime(value) {
+    if (!value) return "-";
+    try {
+      return new Date(value).toLocaleString();
+    } catch {
+      return String(value);
+    }
+  }
+
+  function fmtDate(value) {
+    if (!value) return "-";
+    return String(value).slice(0, 10);
+  }
+
+  function employeeName(row) {
+    return (
+      row.employee_name ||
+      row.full_name ||
+      row.staff_name ||
+      row.cashier_name ||
+      row.employee_user_id ||
+      "-"
+    );
+  }
+
+  function hoursWorked(row) {
+    if (!row.clock_in_at) return "-";
+
+    const start = new Date(row.clock_in_at);
+    const end = row.clock_out_at ? new Date(row.clock_out_at) : new Date();
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "-";
+
+    const hours = (end - start) / 1000 / 60 / 60;
+    return `${Math.max(hours, 0).toFixed(2)} hrs`;
+  }
+
+  const clockedInRows = attendanceLog.filter((x) => !x.clock_out_at);
+  const lateRows = attendanceLog.filter((x) => Number(x.late_minutes || 0) > 0);
+  const openRows = attendanceLog.filter((x) => x.status === "clocked_in" || !x.clock_out_at);
+  const todayRows = attendanceLog.filter((x) => fmtDate(x.clock_in_at) === today);
+
+  const views = {
+    clocked_in: {
+      title: "Clocked In Staff",
+      description: "Employees currently on duty.",
+      columns: ["Employee", "Clock In", "Shift", "Status", "Hours"],
+      rows: clockedInRows.map((x) => [
+        employeeName(x),
+        fmtDateTime(x.clock_in_at),
+        x.shift_name || "-",
+        x.status || "clocked_in",
+        hoursWorked(x),
+      ]),
+    },
+
+    late: {
+      title: "Late Arrivals",
+      description: "Employees who arrived after scheduled shift start.",
+      columns: ["Employee", "Date", "Shift", "Clock In", "Minutes Late"],
+      rows: lateRows.map((x) => [
+        employeeName(x),
+        fmtDate(x.clock_in_at),
+        x.shift_name || "-",
+        fmtDateTime(x.clock_in_at),
+        Number(x.late_minutes || 0),
+      ]),
+    },
+
+    open: {
+      title: "Open Attendance",
+      description: "Clock-ins that do not yet have a clock-out.",
+      columns: ["Employee", "Clock In", "Shift", "Hours Worked", "Status"],
+      rows: openRows.map((x) => [
+        employeeName(x),
+        fmtDateTime(x.clock_in_at),
+        x.shift_name || "-",
+        hoursWorked(x),
+        x.status || "-",
+      ]),
+    },
+
+    log: {
+      title: "Attendance Log",
+      description: "Full clock-in and clock-out history.",
+      columns: ["Employee", "Date", "Clock In", "Clock Out", "Shift", "Hours", "Status"],
+      rows: attendanceLog.map((x) => [
+        employeeName(x),
+        fmtDate(x.clock_in_at),
+        fmtDateTime(x.clock_in_at),
+        fmtDateTime(x.clock_out_at),
+        x.shift_name || "-",
+        hoursWorked(x),
+        x.status || "-",
+      ]),
+    },
+
+    today: {
+      title: "Today Attendance",
+      description: "All attendance records captured today.",
+      columns: ["Employee", "Clock In", "Clock Out", "Shift", "Hours", "Status"],
+      rows: todayRows.map((x) => [
+        employeeName(x),
+        fmtDateTime(x.clock_in_at),
+        fmtDateTime(x.clock_out_at),
+        x.shift_name || "-",
+        hoursWorked(x),
+        x.status || "-",
+      ]),
+    },
+  };
+
+  const active = attendanceView ? views[attendanceView] : null;
+
+  if (active) {
+    return (
+      <section className="manager-workspace">
+        <div className="workspace-head">
+          <div>
+            <h2>{active.title}</h2>
+            <p>{active.description}</p>
+          </div>
+
+          <div className="workspace-actions">
+            <button className="soft" onClick={() => setAttendanceView(null)}>
+              ← Back
+            </button>
+
+            <button className="soft" onClick={onRefresh}>
+              ↻ Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                {active.columns.map((c) => (
+                  <th key={c}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {active.rows.length ? (
+                active.rows.map((row, idx) => (
+                  <tr key={idx}>
+                    {row.map((cell, cidx) => (
+                      <td key={cidx}>{cell}</td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={active.columns.length} style={{ textAlign: "center" }}>
+                    No attendance records found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -2750,14 +2921,52 @@ function AttendanceTab() {
           <h2>Staff Attendance</h2>
           <p>Clock-in, clock-out, shift attendance and late arrivals.</p>
         </div>
-        <button className="scan-btn">Clock In / Out</button>
+
+        <button className="scan-btn" onClick={onRefresh}>
+          ↻ Refresh
+        </button>
       </div>
 
       <section className="manager-grid">
-        <ManagerCard icon="🟢" title="Clocked In" value="0" text="Currently on duty." />
-        <ManagerCard icon="⏰" title="Late Arrivals" value="0" text="Arrived after shift start." />
-        <ManagerCard icon="🔄" title="Open Shifts" value="0" text="Linked POS shifts." />
-        <ManagerCard icon="📋" title="Attendance Log" value="View" text="Daily attendance history." />
+        <ManagerCard
+          icon="🟢"
+          title="Clocked In"
+          value={clockedInRows.length}
+          text="Currently on duty."
+          onClick={() => setAttendanceView("clocked_in")}
+        />
+
+        <ManagerCard
+          icon="⏰"
+          title="Late Arrivals"
+          value={lateRows.length}
+          text="Arrived after shift start."
+          onClick={() => setAttendanceView("late")}
+        />
+
+        <ManagerCard
+          icon="🔄"
+          title="Open Attendance"
+          value={openRows.length}
+          text="Clock-ins without clock-out."
+          onClick={() => setAttendanceView("open")}
+        />
+
+        <ManagerCard
+          icon="📋"
+          title="Attendance Log"
+          value={attendanceLog.length}
+          text="Daily attendance history."
+          onClick={() => setAttendanceView("log")}
+        />
+
+        <ManagerCard
+          icon="📅"
+          title="Today"
+          value={todayRows.length}
+          text="Attendance captured today."
+          onClick={() => setAttendanceView("today")}
+        />
       </section>
     </section>
   );

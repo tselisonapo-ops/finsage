@@ -7,6 +7,15 @@ export function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState("");
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+
+  const [customerForm, setCustomerForm] = useState({
+    customer_name: "",
+    phone: "",
+    email: "",
+    customer_type: "retail",
+    price_level: "retail",
+  });
 
   async function searchCustomers() {
     try {
@@ -18,24 +27,36 @@ export function CustomersPage() {
     }
   }
 
-  async function createCustomer() {
-    const customer_name = prompt("Customer name:");
-    if (!customer_name) return;
+  function openCustomerModal() {
+    setCustomerForm({
+      customer_name: "",
+      phone: "",
+      email: "",
+      customer_type: "retail",
+      price_level: "retail",
+    });
+    setShowCustomerModal(true);
+  }
 
-    const phone = prompt("Phone number:", "") || "";
-    const email = prompt("Email:", "") || "";
-    const customer_type =
-      prompt("Customer type: retail / wholesale / account", "retail") || "retail";
+  async function saveCustomer() {
+    if (!customerForm.customer_name.trim()) {
+      setMessage("Customer name is required.");
+      return;
+    }
 
     try {
       await posApi.createCustomer({
-        customer_name,
-        phone,
-        email,
-        customer_type,
-        price_level: customer_type === "wholesale" ? "wholesale" : "retail",
+        customer_name: customerForm.customer_name.trim(),
+        phone: customerForm.phone.trim(),
+        email: customerForm.email.trim(),
+        customer_type: customerForm.customer_type,
+        price_level:
+          customerForm.customer_type === "wholesale"
+            ? "wholesale"
+            : customerForm.price_level || "retail",
       });
 
+      setShowCustomerModal(false);
       setMessage("Customer created.");
       await searchCustomers();
     } catch (err) {
@@ -82,7 +103,7 @@ export function CustomersPage() {
           </div>
 
           <div className="quick-actions">
-            <button onClick={createCustomer}>New Customer</button>
+            <button onClick={openCustomerModal}>New Customer</button>
           </div>
 
           <div className="product-list">
@@ -157,6 +178,101 @@ export function CustomersPage() {
           )}
         </section>
       </section>
+
+      {showCustomerModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-head">
+              <h2>New Customer</h2>
+              <button onClick={() => setShowCustomerModal(false)}>×</button>
+            </div>
+
+            <div className="modal-body">
+              <label>Customer Name</label>
+              <input
+                className="scan-input"
+                value={customerForm.customer_name}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    customer_name: e.target.value,
+                  })
+                }
+              />
+
+              <label>Phone Number</label>
+              <input
+                className="scan-input"
+                value={customerForm.phone}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    phone: e.target.value,
+                  })
+                }
+              />
+
+              <label>Email</label>
+              <input
+                className="scan-input"
+                type="email"
+                value={customerForm.email}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    email: e.target.value,
+                  })
+                }
+              />
+
+              <label>Customer Type</label>
+              <select
+                className="scan-input"
+                value={customerForm.customer_type}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    customer_type: e.target.value,
+                    price_level:
+                      e.target.value === "wholesale"
+                        ? "wholesale"
+                        : customerForm.price_level,
+                  })
+                }
+              >
+                <option value="retail">Retail</option>
+                <option value="wholesale">Wholesale</option>
+                <option value="account">Account</option>
+              </select>
+
+              <label>Price Level</label>
+              <select
+                className="scan-input"
+                value={customerForm.price_level}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    price_level: e.target.value,
+                  })
+                }
+              >
+                <option value="retail">Retail</option>
+                <option value="wholesale">Wholesale</option>
+              </select>
+            </div>
+
+            <div className="modal-footer">
+              <button className="soft" onClick={() => setShowCustomerModal(false)}>
+                Cancel
+              </button>
+
+              <button className="success" onClick={saveCustomer}>
+                Save Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

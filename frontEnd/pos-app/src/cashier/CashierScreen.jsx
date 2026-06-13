@@ -43,6 +43,11 @@ export function CashierPage() {
   const [clockedIn, setClockedIn] = useState(false);
 
 useEffect(() => {
+  if (isFsUser) {
+    setSignedIn(true);
+    setClockedIn(true);
+  }
+
   restorePosSession();
 }, []);
 
@@ -53,12 +58,24 @@ async function restorePosSession() {
 
   try {
     const res = await posApi.posAuthMe();
+
     setCashier(res.employee);
     setSignedIn(true);
+
+    const attendanceId = localStorage.getItem("active_attendance_id");
+
+    if (attendanceId) {
+      setAttendance({ id: Number(attendanceId) });
+      setClockedIn(true);
+    }
   } catch {
     localStorage.removeItem("pos_token");
+    localStorage.removeItem("active_attendance_id");
+
     setCashier(null);
     setSignedIn(false);
+    setAttendance(null);
+    setClockedIn(false);
   }
 }
 
@@ -79,27 +96,31 @@ const [menuItems, setMenuItems] = useState([
   },
 ]);
 
-  const posRole = String(
-    cashier?.pos_role ||
-    cashier?.role ||
-    ""
-  ).toLowerCase();
+const posRole = String(
+  cashier?.pos_role ||
+  cashier?.role ||
+  ""
+).toLowerCase();
 
-  const canSell = ["cashier", "manager", "supervisor"].includes(posRole);
+const isPosSuperUser = isFsUser;
+const isWaiter = ["waiter", "waitress"].includes(posRole);
 
-  const canOrder = [
-    "waiter",
-    "waitress",
-    "cashier",
-    "manager",
-    "supervisor",
-  ].includes(posRole);
+const canSell =
+  isPosSuperUser ||
+  ["cashier", "manager", "supervisor"].includes(posRole);
 
-  const canAccessPos =
+const canOrder =
+  isPosSuperUser ||
+  ["waiter", "waitress", "cashier", "manager", "supervisor"].includes(posRole);
+
+const canAccessPos =
+  isPosSuperUser ||
+  (
     signedIn &&
     clockedIn &&
-    ["cashier", "manager", "supervisor", "waiter", "waitress"].includes(posRole);
-    
+    (canSell || canOrder)
+  );
+
   const totals = useMemo(() => {
     const subtotal = cart.reduce((s, x) => s + Number(x.qty || 0) * Number(x.unit_price || 0), 0);
     const discount = cart.reduce((s, x) => s + Number(x.discount_amount || 0), 0);
@@ -131,13 +152,6 @@ const [menuItems, setMenuItems] = useState([
 
     setAttendance(res.attendance);
     setClockedIn(true);
-
-    const attendanceId = localStorage.getItem("active_attendance_id");
-
-    if (attendanceId) {
-      setAttendance({ id: Number(attendanceId) });
-      setClockedIn(true);
-    }
 
     if (res.attendance?.id) {
       localStorage.setItem("active_attendance_id", String(res.attendance.id));
@@ -312,24 +326,7 @@ const [menuItems, setMenuItems] = useState([
   }
 
   async function createCustomerQuick() {
-    const customer_name = prompt("Customer name:");
-    if (!customer_name) return;
-
-    const phone = prompt("Phone number:", "") || "";
-    const email = prompt("Email:", "") || "";
-    const customer_type =
-      prompt("Customer type: retail / wholesale / account", "retail") || "retail";
-
-    await posApi.createCustomer({
-      customer_name,
-      phone,
-      email,
-      customer_type,
-      price_level: customer_type === "wholesale" ? "wholesale" : "retail",
-    });
-
-    setMessage("Customer created.");
-    await searchCustomers();
+    setMessage("Use customer search for retail/account customers. For restaurant collection or delivery, capture customer details on the order.");
   }
 
   async function finalisePayment() {
@@ -359,6 +356,11 @@ const [menuItems, setMenuItems] = useState([
     try {
       const saleNo = `POS-${Date.now()}`;
 
+      const saleType =
+        selectedPaymentMethod === "account"
+          ? "account_sale"
+          : "cash_sale";
+
       const salePayload = {
         sale_no: saleNo,
         terminal_id: activeTerminal.id,
@@ -368,8 +370,13 @@ const [menuItems, setMenuItems] = useState([
           cashier?.user_id ||
           cashier?.id ||
           null,
+
         customer_name: selectedCustomer?.customer_name || "Walk-in Customer",
         customer_id: selectedCustomer?.id || null,
+
+        sale_type: saleType,
+        posting_flow: "normal_pos",
+        source_order_id: null,
       };
 
       console.log("CREATE SALE PAYLOAD", salePayload);
@@ -425,6 +432,7 @@ const [menuItems, setMenuItems] = useState([
     }
   }
 
+
   return (
     <main className="pos-page">
       <header className="pos-header">
@@ -457,21 +465,23 @@ const [menuItems, setMenuItems] = useState([
         </div>
 
         <nav className="header-actions">
-          {signedIn ? (
-            <>
-              <button onClick={signOut}>
-                Sign Out
-                {cashier?.name ? ` (${cashier.name})` : ""}
-              </button>
+          {!isPosSuperUser && (
+            signedIn ? (
+              <>
+                <button onClick={signOut}>
+                  Sign Out
+                  {cashier?.name ? ` (${cashier.name})` : ""}
+                </button>
 
-              <button onClick={clockedIn ? clockOut : clockIn}>
-                {clockedIn ? "Clock Out" : "Clock In"}
+                <button onClick={clockedIn ? clockOut : clockIn}>
+                  {clockedIn ? "Clock Out" : "Clock In"}
+                </button>
+              </>
+            ) : (
+              <button onClick={() => setShowSignin(true)}>
+                Cashier Sign In
               </button>
-            </>
-          ) : (
-            <button onClick={() => setShowSignin(true)}>
-              Cashier Sign In
-            </button>
+            )
           )}
 
           {isRestaurantLike && signedIn && (
@@ -495,7 +505,22 @@ const [menuItems, setMenuItems] = useState([
       <section className="status-strip compact">
         <div><span>POS Mode</span><strong>{mode === "restaurant" ? "Restaurant" : "Retail"}</strong></div>
         <div><span>Inventory</span><strong>{usesInventory ? "Enabled" : "Service Only"}</strong></div>
-        <div><span>Cashier</span><strong>{signedIn ? cashier?.name || cashier?.employee_code || "Signed In" : "Not Signed In"}</strong></div>
+        <div>
+          <span>
+            {isWaiter ? "Waiter" : isPosSuperUser ? "Super User" : "Cashier"}
+          </span>
+          <strong>
+            {isPosSuperUser
+              ? fsUser?.first_name ||
+                fsUser?.email ||
+                "FinSage Super User"
+              : signedIn
+              ? cashier?.name ||
+                cashier?.employee_code ||
+                "Signed In"
+              : "Not Signed In"}
+          </strong>
+        </div>
         <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
 
         {signedIn && (
@@ -837,7 +862,8 @@ const [menuItems, setMenuItems] = useState([
           </div>
         </aside>
 
-        <section className="cart-panel">
+        {canSell && (
+          <section className="cart-panel">
           <div className="cart-header">
             <div>
               <h2>{mode === "restaurant" ? "Current Order" : "Current Sale"}</h2>
@@ -918,61 +944,181 @@ const [menuItems, setMenuItems] = useState([
           <div className="payment-bar">
             <button className="soft">Print Quote/Bill</button>
 
-            {canSell && (
-              <button
-                type="button"
-                className="primary"
-                onClick={() => setActivePanel("payment")}
-              >
-                Pay with {selectedPaymentMethod || "..."}
-              </button>
+          {canSell && (
+            <button
+              type="button"
+              className="primary"
+              onClick={() => setActivePanel("payment")}
+            >
+              Pay with {selectedPaymentMethod || "..."}
+            </button>
+          )}
+
+          {canSell && (
+            <button
+              type="button"
+              className="success"
+              onClick={() => {
+                if (!cart.length) {
+                  setMessage("Add at least one item before completing the sale.");
+                  return;
+                }
+
+                if (!selectedPaymentMethod) {
+                  setActivePanel("payment");
+                  setMessage("Choose payment method before completing the sale.");
+                  return;
+                }
+
+                finalisePayment();
+              }}
+            >
+              Complete Sale
+            </button>
             )}
-
-            {canSell && (
-              <button
-                type="button"
-                className="success"
-                onClick={() => {
-                  if (!cart.length) {
-                    setMessage("Add at least one item before completing the sale.");
-                    return;
-                  }
-
-                  if (!selectedPaymentMethod) {
-                    setActivePanel("payment");
-                    setMessage("Choose payment method before completing the sale.");
-                    return;
-                  }
-
-                  finalisePayment();
-                }}
-              >
-                Complete Sale
-              </button>
-            )}
-
-            {!canSell && canOrder && isRestaurantLike && (
-              <button
-                type="button"
-                className="primary"
-                onClick={() => {
-                  if (!cart.length) {
-                    setMessage("Add items before sending order to kitchen.");
-                    return;
-                  }
-
-                  setMessage("Order sent to kitchen.");
-                  setCart([]);
-                  setActivePanel("sale");
-                }}
-              >
-                Send To Kitchen
-              </button>
-            )}
-
           </div>
         </section>
-      </section>
+      )}
+
+      {!canSell && canOrder && isRestaurantLike && (
+        <section className="cart-panel">
+          <div className="cart-header">
+            <div>
+              <h2>Current Order</h2>
+              <p>Waiter order - no payment access</p>
+            </div>
+            <span className="badge">Order</span>
+          </div>
+
+          <div className="cart-table">
+            <div className="cart-head">
+              <span>Item</span>
+              <span>Qty</span>
+              <span>Price</span>
+              <span>Total</span>
+            </div>
+
+            {cart.length ? (
+              cart.map((line, idx) => (
+                <div className="cart-line" key={idx}>
+                  <span>
+                    <strong>{line.description}</strong>
+                  </span>
+                  <span>{line.qty}</span>
+                  <span>{money(line.unit_price)}</span>
+                  <span>{money(line.gross_amount)}</span>
+                </div>
+              ))
+            ) : (
+              <div className="cart-empty">No items added yet.</div>
+            )}
+          </div>
+
+          <div className="payment-bar">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                if (!cart.length) {
+                  setMessage("Add items before sending order to kitchen.");
+                  return;
+                }
+
+                setMessage("Order sent to kitchen.");
+                setCart([]);
+                setActivePanel("sale");
+              }}
+            >
+              Send To Kitchen
+            </button>
+          </div>
+        </section>
+          )}
+        </section>
+      )}
+
+      {showCustomerModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-head">
+              <h2>New Customer</h2>
+              <button onClick={() => setShowCustomerModal(false)}>
+                ×
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <label>Name</label>
+              <input
+                className="scan-input"
+                value={customerForm.customer_name}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    customer_name: e.target.value,
+                  })
+                }
+              />
+
+              <label>Phone</label>
+              <input
+                className="scan-input"
+                value={customerForm.phone}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    phone: e.target.value,
+                  })
+                }
+              />
+
+              <label>Email</label>
+              <input
+                className="scan-input"
+                value={customerForm.email}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    email: e.target.value,
+                  })
+                }
+              />
+
+              <label>Type</label>
+
+              <select
+                className="scan-input"
+                value={customerForm.customer_type}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    customer_type: e.target.value,
+                  })
+                }
+              >
+                <option value="retail">Retail</option>
+                <option value="account">Account</option>
+                <option value="wholesale">Wholesale</option>
+              </select>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="soft"
+                onClick={() => setShowCustomerModal(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="success"
+                onClick={saveCustomer}
+              >
+                Save Customer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showSignin && (
