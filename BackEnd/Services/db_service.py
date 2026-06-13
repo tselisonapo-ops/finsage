@@ -35843,10 +35843,18 @@ class DatabaseService:
                 LIMIT 1
             """, (int(company_id),), cur=cur)
 
-            return (bank_row.get("ledger_account_code") or "").strip() if bank_row else None
+            return (
+                (bank_row.get("ledger_account_code") or "").strip()
+                if bank_row
+                else None
+            )
 
-        return self._resolve_account_by_roles(company_id, ["cash", "cash_bank"], cur=cur)
-
+        return self._resolve_account_by_roles(
+            company_id,
+            ["cash", "cash_bank"],
+            cur=cur,
+        )
+    
     def pos_complete_sale(self, company_id: int, sale_id: int, *, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
