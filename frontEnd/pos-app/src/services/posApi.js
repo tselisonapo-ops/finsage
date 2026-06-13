@@ -80,27 +80,27 @@ export const posApi = {
     },
 
     listPriceLevels() {
-    return getJson(`${base()}/price-levels`);
+        return getJson(`${base()}/price-levels`);
     },
 
     generateBarcode(itemId) {
-    return postJson(`${base()}/barcodes/generate`, { item_id: itemId });
+        return postJson(`${base()}/barcodes/generate`, { item_id: itemId });
     },
 
     queueBarcodeLabel(payload) {
-    return postJson(`${base()}/barcodes/labels`, payload);
+        return postJson(`${base()}/barcodes/labels`, payload);
     },
 
     createPriceLevel(payload) {
-    return postJson(`${base()}/price-levels`, payload);
+        return postJson(`${base()}/price-levels`, payload);
     },
 
     createPromotion(payload) {
-    return postJson(`${base()}/promotions`, payload);
+        return postJson(`${base()}/promotions`, payload);
     },
 
     listPromotions(activeOnly = true) {
-    return getJson(`${base()}/promotions?active_only=${activeOnly ? "1" : "0"}`);
+        return getJson(`${base()}/promotions?active_only=${activeOnly ? "1" : "0"}`);
     },
 
     listRecipes() {
@@ -133,51 +133,51 @@ export const posApi = {
     },
 
     cashierSignin(payload) {
-    return postJson(`/api/pos/auth/signin`, payload);
+        return postJson(`/api/pos/auth/signin`, payload);
     },
 
     posMe() {
-    return getJson(`/api/pos/auth/me`, posHeaders());
+        return getJson(`/api/pos/auth/me`, posHeaders());
     },
 
     getReceiptSettings() {
-    return getJson(`${base()}/receipt-settings`);
+        return getJson(`${base()}/receipt-settings`);
     },
 
     saveReceiptSettings(payload) {
-    return postJson(`${base()}/receipt-settings`, payload);
+        return postJson(`${base()}/receipt-settings`, payload);
     },
 
     updateReceiptSettings(payload) {
-    return patchJson(`${base()}/receipt-settings`, payload);
+        return patchJson(`${base()}/receipt-settings`, payload);
     },
 
     listTableSections(activeOnly = true) {
-    return getJson(`${base()}/table-sections?active_only=${activeOnly ? "1" : "0"}`);
+        return getJson(`${base()}/table-sections?active_only=${activeOnly ? "1" : "0"}`);
     },
 
     createTableSection(payload) {
-    return postJson(`${base()}/table-sections`, payload);
+        return postJson(`${base()}/table-sections`, payload);
     },
 
     updateTableSection(sectionId, payload) {
-    return patchJson(`${base()}/table-sections/${sectionId}`, payload);
+        return patchJson(`${base()}/table-sections/${sectionId}`, payload);
     },
 
     listTables(activeOnly = true) {
-    return getJson(`${base()}/tables?active_only=${activeOnly ? "1" : "0"}`);
+        return getJson(`${base()}/tables?active_only=${activeOnly ? "1" : "0"}`);
     },
 
     createTable(payload) {
-    return postJson(`${base()}/tables`, payload);
+        return postJson(`${base()}/tables`, payload);
     },
 
     updateTable(tableId, payload) {
-    return patchJson(`${base()}/tables/${tableId}`, payload);
+        return patchJson(`${base()}/tables/${tableId}`, payload);
     },
 
     deleteTable(tableId) {
-    return postJson(`${base()}/tables/${tableId}/delete`, {});
+        return postJson(`${base()}/tables/${tableId}/delete`, {});
     },
 
     // =========================
@@ -185,25 +185,25 @@ export const posApi = {
     // =========================
 
     listRecipes() {
-    return getJson(`${base()}/recipes`);
+        return getJson(`${base()}/recipes`);
     },
 
     getRecipe(recipeId) {
-    return getJson(`${base()}/recipes/${recipeId}`);
+        return getJson(`${base()}/recipes/${recipeId}`);
     },
 
     createRecipe(payload) {
-    return postJson(`${base()}/recipes`, payload);
+        return postJson(`${base()}/recipes`, payload);
     },
 
     updateRecipe(recipeId, payload) {
-    return patchJson(`${base()}/recipes/${recipeId}`, payload);
+        return patchJson(`${base()}/recipes/${recipeId}`, payload);
     },
 
     deactivateRecipe(recipeId) {
-    return patchJson(`${base()}/recipes/${recipeId}`, {
-        is_active: false,
-    });
+        return patchJson(`${base()}/recipes/${recipeId}`, {
+            is_active: false,
+        });
     },
 
     // =========================
@@ -211,25 +211,25 @@ export const posApi = {
     // =========================
 
     listCostPools() {
-    return getJson(`${base()}/cost-pools`);
+        return getJson(`${base()}/cost-pools`);
     },
 
     getCostPool(poolId) {
-    return getJson(`${base()}/cost-pools/${poolId}`);
+        return getJson(`${base()}/cost-pools/${poolId}`);
     },
 
     createCostPool(payload) {
-    return postJson(`${base()}/cost-pools`, payload);
+        return postJson(`${base()}/cost-pools`, payload);
     },
 
     updateCostPool(poolId, payload) {
-    return patchJson(`${base()}/cost-pools/${poolId}`, payload);
+        return patchJson(`${base()}/cost-pools/${poolId}`, payload);
     },
 
     deactivateCostPool(poolId) {
-    return patchJson(`${base()}/cost-pools/${poolId}`, {
-        is_active: false,
-    });
+        return patchJson(`${base()}/cost-pools/${poolId}`, {
+            is_active: false,
+        });
     },
 
     // =========================
@@ -237,11 +237,11 @@ export const posApi = {
     // =========================
 
     listInventoryItems(q = "") {
-    return getJson(`${base()}/items/search?q=${encodeURIComponent(q)}&limit=100`);
+        return getJson(`${base()}/items/search?q=${encodeURIComponent(q)}&limit=100`);
     },
 
     getInventoryItemByBarcode(barcode) {
-    return getJson(`${base()}/items/barcode/${encodeURIComponent(barcode)}`);
+        return getJson(`${base()}/items/barcode/${encodeURIComponent(barcode)}`);
     },
 
     // =========================
@@ -249,29 +249,36 @@ export const posApi = {
     // =========================
 
     getPurchasingSummary() {
-    return getJson(`${base()}/purchasing/summary`);
+        return getJson(`${base()}/purchasing/summary`);
     },
 
+    getReport(reportKey, params = {}) {
+        const qs = new URLSearchParams(
+            Object.entries(params).filter(([, v]) => v !== "" && v != null)
+        ).toString();
+
+        return getJson(`${base()}/reports/${reportKey}${qs ? `?${qs}` : ""}`);
+    },
     // =========================
     // STAFF
     // =========================
 
     listStaffMembers() {
-    return getJson(`${base()}/staff`);
+        return getJson(`${base()}/staff`);
     },
 
     createStaffMember(payload) {
-    return postJson(`${base()}/staff`, payload);
+        return postJson(`${base()}/staff`, payload);
     },
 
     updateStaffMember(staffId, payload) {
-    return patchJson(`${base()}/staff/${staffId}`, payload);
+        return patchJson(`${base()}/staff/${staffId}`, payload);
     },
 
     deactivateStaffMember(staffId) {
-    return patchJson(`${base()}/staff/${staffId}`, {
-        is_active: false,
-    });
+        return patchJson(`${base()}/staff/${staffId}`, {
+            is_active: false,
+        });
     },
 
     // =========================
@@ -279,17 +286,17 @@ export const posApi = {
     // =========================
 
     listOrders(status = "", orderType = "") {
-    return getJson(
-        `${base()}/orders?status=${encodeURIComponent(status)}&order_type=${encodeURIComponent(orderType)}&limit=100`
-    );
+        return getJson(
+            `${base()}/orders?status=${encodeURIComponent(status)}&order_type=${encodeURIComponent(orderType)}&limit=100`
+        );
     },
 
     getOrder(orderId) {
-    return getJson(`${base()}/orders/${orderId}`);
+        return getJson(`${base()}/orders/${orderId}`);
     },
 
     updateOrderStatus(orderId, payload) {
-    return postJson(`${base()}/orders/${orderId}/status`, payload);
+        return postJson(`${base()}/orders/${orderId}/status`, payload);
     },
 
     // =========================
@@ -301,21 +308,21 @@ export const posApi = {
     },
 
     listMenuItems() {
-    return getJson(`${base()}/menu-items`);
+        return getJson(`${base()}/menu-items`);
     },
 
     createMenuItem(payload) {
-    return postJson(`${base()}/menu-items`, payload);
+        return postJson(`${base()}/menu-items`, payload);
     },
 
     updateMenuItem(itemId, payload) {
-    return patchJson(`${base()}/menu-items/${itemId}`, payload);
+        return patchJson(`${base()}/menu-items/${itemId}`, payload);
     },
 
     deactivateMenuItem(itemId) {
-    return patchJson(`${base()}/menu-items/${itemId}`, {
-        is_active: false,
-    });
+        return patchJson(`${base()}/menu-items/${itemId}`, {
+            is_active: false,
+        });
     },
     // =========================
     // SHIFT TEMPLATES / SCHEDULES / LEAVE
@@ -374,17 +381,17 @@ export const posApi = {
     },
 
     listAttendance(startDate = "", endDate = "", employeeUserId = "", status = "") {
-    return getJson(
-        `${base()}/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&employee_user_id=${encodeURIComponent(employeeUserId)}&status=${encodeURIComponent(status)}`
-    );
+        return getJson(
+            `${base()}/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&employee_user_id=${encodeURIComponent(employeeUserId)}&status=${encodeURIComponent(status)}`
+        );
     },
 
     clockIn(payload) {
-    return postJson(`${base()}/attendance/clock-in`, payload);
+        return postJson(`${base()}/attendance/clock-in`, payload);
     },
 
     clockOut(payload) {
-    return postJson(`${base()}/attendance/clock-out`, payload);
+        return postJson(`${base()}/attendance/clock-out`, payload);
     },
 
     recordAccountPayment(saleId, payload) {
@@ -395,17 +402,17 @@ export const posApi = {
     },
 
     createOrder(payload) {
-    return postJson(`${base()}/orders`, payload);
+        return postJson(`${base()}/orders`, payload);
     },
 
     addOrderLine(orderId, payload) {
-    return postJson(`${base()}/orders/${orderId}/lines`, payload);
+        return postJson(`${base()}/orders/${orderId}/lines`, payload);
     },
 
     sendOrderToKitchen(orderId, payload = {}) {
-    return postJson(`${base()}/orders/${orderId}/status`, {
-        status: "sent_to_kitchen",
-        ...payload,
-    });
+        return postJson(`${base()}/orders/${orderId}/status`, {
+            status: "sent_to_kitchen",
+            ...payload,
+        });
     },
 };

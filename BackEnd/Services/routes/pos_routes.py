@@ -301,7 +301,31 @@ def api_pos_complete_sale(cid: int, sale_id: int):
         current_app.logger.exception("api_pos_complete_sale failed")
         return _err("Server error", 500, ex)
 
+@pos_bp.route("/api/companies/<int:cid>/pos/reports/<path:report_key>", methods=["GET", "OPTIONS"])
+@require_auth
+def api_pos_report(cid: int, report_key: str):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
 
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
+
+    try:
+        data = db_service.pos_get_report(
+            cid,
+            report_key=report_key,
+            q=request.args.get("q", ""),
+            start_date=request.args.get("start_date"),
+            end_date=request.args.get("end_date"),
+        )
+
+        return jsonify({"ok": True, **data}), 200
+
+    except Exception as ex:
+        current_app.logger.exception("api_pos_report failed")
+        return _err("Server error", 500, ex)
+    
 @pos_bp.route("/api/companies/<int:cid>/pos/quotes", methods=["POST", "OPTIONS"])
 @require_auth
 def api_pos_create_quote(cid: int):

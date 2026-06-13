@@ -36409,6 +36409,57 @@ class DatabaseService:
             conn.commit()
             return payment_id
             
+    def pos_get_report(self, company_id: int, *, report_key: str, q: str = "", start_date=None, end_date=None) -> dict:
+        schema = self.company_schema(company_id)
+        key = (report_key or "").strip().lower()
+
+        if key == "sales-summary":
+            return self._pos_report_sales_summary(company_id, schema, q, start_date, end_date)
+
+        if key == "trading-summary":
+            return self._pos_report_trading_summary(company_id, schema, q, start_date, end_date)
+
+        if key == "daily-sales":
+            return self._pos_report_daily_sales(company_id, schema, q, start_date, end_date)
+
+        if key == "sales-per-product":
+            return self._pos_report_sales_per_product(company_id, schema, q, start_date, end_date)
+
+        if key == "sales-per-category":
+            return self._pos_report_sales_per_category(company_id, schema, q, start_date, end_date)
+
+        if key == "cashier-performance":
+            return self._pos_report_cashier_performance(company_id, schema, q, start_date, end_date)
+
+        if key == "customer-accounts":
+            return self._pos_report_customer_accounts(company_id, schema, q, start_date, end_date)
+
+        if key == "discount-report":
+            return self._pos_report_discount_report(company_id, schema, q, start_date, end_date)
+
+        if key == "returns-report":
+            return self._pos_report_returns_report(company_id, schema, q, start_date, end_date)
+
+        if key == "stock-movement":
+            return self._pos_report_stock_movement(company_id, schema, q, start_date, end_date)
+
+        if key == "sold-items":
+            return self._pos_report_sold_items(company_id, schema, q, start_date, end_date)
+
+        if key == "transactions":
+            return self._pos_report_transactions(company_id, schema, q, start_date, end_date)
+
+        if key == "cash-payments":
+            return self._pos_report_payments(company_id, schema, "cash", q, start_date, end_date)
+
+        if key == "card-payments":
+            return self._pos_report_payments(company_id, schema, "card", q, start_date, end_date)
+
+        if key == "account-sales":
+            return self._pos_report_account_sales(company_id, schema, q, start_date, end_date)
+
+        raise ValueError(f"Unknown POS report: {report_key}")
+
     def pos_delete_staff_leave(self, company_id: int, leave_id: int) -> dict:
         schema = self.company_schema(company_id)
 

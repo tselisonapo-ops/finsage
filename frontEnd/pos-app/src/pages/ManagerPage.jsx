@@ -1958,43 +1958,105 @@ function ManagerCard({ icon = "📊", title, value, text, onClick }) {
   );
 }
 
+const SALES_REPORT_KEYS = {
+  total_sales: "sold-items",
+  transactions: "transactions",
+  returns: "returns-report",
+  cash_payments: "cash-payments",
+  card_payments: "card-payments",
+  account_sales: "account-sales",
+
+  daily_sales: "daily-sales",
+  sales_product: "sales-per-product",
+  sales_category: "sales-per-category",
+  cashier_performance: "cashier-performance",
+  customer_accounts: "customer-accounts",
+  discount_report: "discount-report",
+  returns_report: "returns-report",
+  stock_movement: "stock-movement",
+};
+
 function SalesTab() {
   const [salesView, setSalesView] = useState(null);
+  const [summary, setSummary] = useState({});
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const views = {
     total_sales: {
       title: "Total Sales - Sold Items",
       columns: ["Item", "SKU", "Qty Sold", "Unit Price", "Total Sales"],
-      rows: [["No sold items yet", "-", "0", "0.00", "0.00"]],
+      fallback: [["No sold items yet", "-", "0", "0.00", "0.00"]],
     },
     transactions: {
       title: "POS Transactions",
       columns: ["Receipt No", "Date", "Cashier", "Customer", "Amount", "Status"],
-      rows: [["No transactions yet", "-", "-", "-", "0.00", "-"]],
+      fallback: [["No transactions yet", "-", "-", "-", "0.00", "-"]],
     },
     returns: {
       title: "Returns Report",
       columns: ["Return No", "Item", "Qty", "Reason", "Refund Amount", "Approval Status"],
-      rows: [["No returns yet", "-", "0", "-", "0.00", "-"]],
+      fallback: [["No returns yet", "-", "0", "-", "0.00", "-"]],
     },
     cash_payments: {
       title: "Cash Payments",
       columns: ["Receipt No", "Date", "Cashier", "Received", "Change", "Net Cash"],
-      rows: [["No cash payments yet", "-", "-", "0.00", "0.00", "0.00"]],
+      fallback: [["No cash payments yet", "-", "-", "0.00", "0.00", "0.00"]],
     },
     card_payments: {
       title: "Card Payments",
       columns: ["Receipt No", "Date", "Terminal", "Reference", "Amount", "Status"],
-      rows: [["No card payments yet", "-", "-", "-", "0.00", "-"]],
+      fallback: [["No card payments yet", "-", "-", "-", "0.00", "-"]],
     },
     account_sales: {
       title: "Account Sales",
       columns: ["Customer", "Receipt No", "Date", "Sale Amount", "Balance", "Credit Limit"],
-      rows: [["No account sales yet", "-", "-", "0.00", "0.00", "0.00"]],
+      fallback: [["No account sales yet", "-", "-", "0.00", "0.00", "0.00"]],
     },
   };
 
   const active = salesView ? views[salesView] : null;
+  const displayRows = rows.length ? rows : active?.fallback || [];
+
+  async function loadSummary() {
+    try {
+      const res = await posApi.getReport("sales-summary");
+      setSummary(res.summary || {});
+    } catch (err) {
+      console.error("Failed to load POS sales summary", err);
+      setSummary({});
+    }
+  }
+
+  async function loadSalesView(viewKey) {
+    if (!viewKey) return;
+
+    setLoading(true);
+
+    try {
+      const reportKey = SALES_REPORT_KEYS[viewKey];
+      const res = await posApi.getReport(reportKey);
+      setRows(res.rows || []);
+    } catch (err) {
+      console.error("Failed to load POS sales view", err);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSummary();
+  }, []);
+
+  useEffect(() => {
+    if (salesView) {
+      loadSalesView(salesView);
+    } else {
+      setRows([]);
+      loadSummary();
+    }
+  }, [salesView]);
 
   if (active) {
     return (
@@ -2012,19 +2074,21 @@ function SalesTab() {
 
             <button
               className="refresh-btn"
-              onClick={() => exportReportToExcel(active.title, active.columns, active.rows)}
+              onClick={() => exportReportToExcel(active.title, active.columns, displayRows)}
             >
               Export Excel
             </button>
 
             <button
               className="scan-btn"
-              onClick={() => printReport(active.title, active.columns, active.rows)}
+              onClick={() => printReport(active.title, active.columns, displayRows)}
             >
               Print
             </button>
           </div>
         </div>
+
+        {loading && <div className="pos-message">Loading report...</div>}
 
         <div className="report-table-wrap">
           <table className="report-table">
@@ -2037,7 +2101,7 @@ function SalesTab() {
             </thead>
 
             <tbody>
-              {active.rows.map((row, idx) => (
+              {displayRows.map((row, idx) => (
                 <tr key={idx}>
                   {row.map((cell, cidx) => (
                     <td key={cidx}>{cell}</td>
@@ -2051,6 +2115,15 @@ function SalesTab() {
     );
   }
 
+  const exportRows = [
+    ["Today Sales", money(summary.today_sales || 0), "Total POS sales captured today."],
+    ["Transactions", String(summary.transactions || 0), "Number of completed sales."],
+    ["Returns", money(summary.returns || 0), "Refunds and reversed sales."],
+    ["Cash Payments", money(summary.cash_payments || 0), "Cash received through POS."],
+    ["Card Payments", money(summary.card_payments || 0), "Card payments processed."],
+    ["Account Sales", money(summary.account_sales || 0), "Sales posted to customer accounts."],
+  ];
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -2062,32 +2135,14 @@ function SalesTab() {
         <div className="workspace-actions">
           <button
             className="refresh-btn"
-            onClick={() =>
-              exportReportToExcel("POS Sales Summary", ["Metric", "Amount", "Description"], [
-                ["Today Sales", "0.00", "Total POS sales captured today."],
-                ["Transactions", "0", "Number of completed sales."],
-                ["Returns", "0.00", "Refunds and reversed sales."],
-                ["Cash Payments", "0.00", "Cash received through POS."],
-                ["Card Payments", "0.00", "Card payments processed."],
-                ["Account Sales", "0.00", "Sales posted to customer accounts."],
-              ])
-            }
+            onClick={() => exportReportToExcel("POS Sales Summary", ["Metric", "Amount", "Description"], exportRows)}
           >
             Export Excel
           </button>
 
           <button
             className="scan-btn"
-            onClick={() =>
-              printReport("POS Sales Summary", ["Metric", "Amount", "Description"], [
-                ["Today Sales", "0.00", "Total POS sales captured today."],
-                ["Transactions", "0", "Number of completed sales."],
-                ["Returns", "0.00", "Refunds and reversed sales."],
-                ["Cash Payments", "0.00", "Cash received through POS."],
-                ["Card Payments", "0.00", "Card payments processed."],
-                ["Account Sales", "0.00", "Sales posted to customer accounts."],
-              ])
-            }
+            onClick={() => printReport("POS Sales Summary", ["Metric", "Amount", "Description"], exportRows)}
           >
             Print
           </button>
@@ -2095,53 +2150,12 @@ function SalesTab() {
       </div>
 
       <section className="manager-grid">
-        <ManagerCard
-          icon="💰"
-          title="Today Sales"
-          value="0.00"
-          text="Click to view sold items and quantities."
-          onClick={() => setSalesView("total_sales")}
-        />
-
-        <ManagerCard
-          icon="🧾"
-          title="Transactions"
-          value="0"
-          text="Click to view completed POS transactions."
-          onClick={() => setSalesView("transactions")}
-        />
-
-        <ManagerCard
-          icon="↩️"
-          title="Returns"
-          value="0.00"
-          text="Click to view return requests and refunds."
-          onClick={() => setSalesView("returns")}
-        />
-
-        <ManagerCard
-          icon="💵"
-          title="Cash Payments"
-          value="0.00"
-          text="Click to view cash received."
-          onClick={() => setSalesView("cash_payments")}
-        />
-
-        <ManagerCard
-          icon="💳"
-          title="Card Payments"
-          value="0.00"
-          text="Click to view card payments."
-          onClick={() => setSalesView("card_payments")}
-        />
-
-        <ManagerCard
-          icon="👤"
-          title="Account Sales"
-          value="0.00"
-          text="Click to view customer account sales."
-          onClick={() => setSalesView("account_sales")}
-        />
+        <ManagerCard icon="💰" title="Today Sales" value={money(summary.today_sales || 0)} text="Click to view sold items and quantities." onClick={() => setSalesView("total_sales")} />
+        <ManagerCard icon="🧾" title="Transactions" value={String(summary.transactions || 0)} text="Click to view completed POS transactions." onClick={() => setSalesView("transactions")} />
+        <ManagerCard icon="↩️" title="Returns" value={money(summary.returns || 0)} text="Click to view return requests and refunds." onClick={() => setSalesView("returns")} />
+        <ManagerCard icon="💵" title="Cash Payments" value={money(summary.cash_payments || 0)} text="Click to view cash received." onClick={() => setSalesView("cash_payments")} />
+        <ManagerCard icon="💳" title="Card Payments" value={money(summary.card_payments || 0)} text="Click to view card payments." onClick={() => setSalesView("card_payments")} />
+        <ManagerCard icon="👤" title="Account Sales" value={money(summary.account_sales || 0)} text="Click to view customer account sales." onClick={() => setSalesView("account_sales")} />
       </section>
     </section>
   );
@@ -2554,6 +2568,9 @@ function TerminalsTab({ terminals, onCreate }) {
 }
 
 function ReportsTab({ reportView, setReportView }) {
+  const [summary, setSummary] = useState({});
+  const [loading, setLoading] = useState(false);
+
   const reports = [
     ["daily_sales", "📅", "Daily Sales", "Sales by day, shift, terminal and cashier."],
     ["sales_product", "📦", "Sales Per Product", "Top products, slow movers, quantity sold and revenue."],
@@ -2565,6 +2582,26 @@ function ReportsTab({ reportView, setReportView }) {
     ["stock_movement", "📉", "Stock Movement", "Items sold, stock reduced and negative stock warnings."],
   ];
 
+  async function loadTradingSummary() {
+    setLoading(true);
+
+    try {
+      const res = await posApi.getReport("trading-summary");
+      setSummary(res.summary || {});
+    } catch (err) {
+      console.error("Failed to load POS trading summary", err);
+      setSummary({});
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!reportView) {
+      loadTradingSummary();
+    }
+  }, [reportView]);
+
   if (reportView) {
     return (
       <ReportGridScreen
@@ -2574,6 +2611,14 @@ function ReportsTab({ reportView, setReportView }) {
     );
   }
 
+  const exportRows = [
+    ["Sales", money(summary.sales || 0), "Gross POS sales for the selected period."],
+    ["Returns", money(summary.returns || 0), "Refunds and reversed POS transactions."],
+    ["Net Sales", money(summary.net_sales || 0), "Sales after returns and reversals."],
+    ["Cost of Items Sold", money(summary.cost_of_items_sold || 0), "Inventory cost linked to POS sales."],
+    ["Trading Result", money(summary.trading_result || 0), "Net sales less cost of items sold."],
+  ];
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -2581,7 +2626,37 @@ function ReportsTab({ reportView, setReportView }) {
           <h2>POS Reports</h2>
           <p>Sales, products, cashiers, customers, discounts and margin analysis.</p>
         </div>
+
+        <div className="workspace-actions">
+          <button
+            className="refresh-btn"
+            onClick={() =>
+              exportReportToExcel(
+                "POS Mini Trading Summary",
+                ["Metric", "Amount", "Description"],
+                exportRows
+              )
+            }
+          >
+            Export Excel
+          </button>
+
+          <button
+            className="scan-btn"
+            onClick={() =>
+              printReport(
+                "POS Mini Trading Summary",
+                ["Metric", "Amount", "Description"],
+                exportRows
+              )
+            }
+          >
+            Print
+          </button>
+        </div>
       </div>
+
+      {loading && <div className="pos-message">Loading reports...</div>}
 
       <section className="manager-grid">
         {reports.map(([id, icon, title, text]) => (
@@ -2605,11 +2680,40 @@ function ReportsTab({ reportView, setReportView }) {
         </div>
 
         <section className="manager-grid">
-          <ManagerCard icon="💰" title="Sales" value="0.00" text="Gross POS sales for the selected period." />
-          <ManagerCard icon="↩️" title="Returns" value="0.00" text="Refunds and reversed POS transactions." />
-          <ManagerCard icon="🧾" title="Net Sales" value="0.00" text="Sales after returns and reversals." />
-          <ManagerCard icon="📦" title="Cost of Items Sold" value="0.00" text="Inventory cost linked to POS sales." />
-          <ManagerCard icon="📊" title="Trading Result" value="0.00" text="Net sales less cost of items sold." />
+          <ManagerCard
+            icon="💰"
+            title="Sales"
+            value={money(summary.sales || 0)}
+            text="Gross POS sales for the selected period."
+          />
+
+          <ManagerCard
+            icon="↩️"
+            title="Returns"
+            value={money(summary.returns || 0)}
+            text="Refunds and reversed POS transactions."
+          />
+
+          <ManagerCard
+            icon="🧾"
+            title="Net Sales"
+            value={money(summary.net_sales || 0)}
+            text="Sales after returns and reversals."
+          />
+
+          <ManagerCard
+            icon="📦"
+            title="Cost of Items Sold"
+            value={money(summary.cost_of_items_sold || 0)}
+            text="Inventory cost linked to POS sales."
+          />
+
+          <ManagerCard
+            icon="📊"
+            title="Trading Result"
+            value={money(summary.trading_result || 0)}
+            text="Net sales less cost of items sold."
+          />
         </section>
       </div>
     </section>
@@ -2617,6 +2721,13 @@ function ReportsTab({ reportView, setReportView }) {
 }
 
 function ReportGridScreen({ reportView, onBack }) {
+  const [q, setQ] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState({});
+  const [loading, setLoading] = useState(false);
+
   const titles = {
     daily_sales: "Daily Sales Report",
     sales_product: "Sales Per Product",
@@ -2639,7 +2750,7 @@ function ReportGridScreen({ reportView, onBack }) {
     stock_movement: ["Item", "SKU", "Opening", "Sold", "Closing", "Sales", "Cost"],
   };
 
-  const sampleRows = {
+  const fallbackRows = {
     daily_sales: [["-", "-", "-", "-", "0.00", "0.00"]],
     sales_product: [["No products sold yet", "-", "0", "0.00", "0.00", "0.00", "0.00%"]],
     sales_category: [["No categories yet", "0", "0.00", "0.00", "0.00", "0.00%"]],
@@ -2650,57 +2761,112 @@ function ReportGridScreen({ reportView, onBack }) {
     stock_movement: [["No stock movement yet", "-", "0", "0", "0", "0.00", "0.00"]],
   };
 
+  const title = titles[reportView] || "POS Report";
+  const reportColumns = columns[reportView] || [];
+  const displayRows = rows.length ? rows : fallbackRows[reportView] || [];
+
+  async function loadReport() {
+    setLoading(true);
+
+    try {
+      const reportKey = SALES_REPORT_KEYS[reportView];
+
+      const res = await posApi.getReport(reportKey, {
+        q,
+        start_date: startDate,
+        end_date: endDate,
+      });
+
+      setRows(res.rows || []);
+      setSummary(res.summary || {});
+    } catch (err) {
+      console.error("Failed to load POS report", err);
+      setRows([]);
+      setSummary({});
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadReport();
+  }, [reportView]);
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
         <div>
-          <h2>{titles[reportView] || "POS Report"}</h2>
+          <h2>{title}</h2>
           <p>Detailed report grid for review, filtering and export.</p>
         </div>
+
         <button className="scan-btn" onClick={onBack}>
           Back to Reports
         </button>
       </div>
 
       <section className="report-toolbar">
-        <input className="scan-input" placeholder="Search item, cashier, customer..." />
-        <input className="scan-input" type="date" />
-        <input className="scan-input" type="date" />
-        <button className="scan-btn">Apply</button>
+        <input
+          className="scan-input"
+          placeholder="Search item, cashier, customer..."
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+
+        <input
+          className="scan-input"
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+        />
+
+        <input
+          className="scan-input"
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
+
+        <button className="scan-btn" onClick={loadReport}>
+          Apply
+        </button>
+
         <button
           className="scan-btn"
-          onClick={() => exportReportToExcel(titles[reportView], columns[reportView], sampleRows[reportView])}
+          onClick={() => exportReportToExcel(title, reportColumns, displayRows)}
         >
           Export Excel
         </button>
 
         <button
           className="scan-btn"
-          onClick={() => printReport(titles[reportView], columns[reportView], sampleRows[reportView])}
+          onClick={() => printReport(title, reportColumns, displayRows)}
         >
           Print
         </button>
       </section>
 
+      {loading && <div className="pos-message">Loading report...</div>}
+
       <section className="manager-grid">
-        <ManagerCard icon="💰" title="Total Sales" value="0.00" text="Revenue from selected POS sales." />
-        <ManagerCard icon="📦" title="Total Cost" value="0.00" text="Cost of items sold for those sales." />
-        <ManagerCard icon="📊" title="Gross Profit" value="0.00" text="Sales less cost of items sold." />
-        <ManagerCard icon="📈" title="Margin" value="0.00%" text="Gross profit as percentage of sales." />
+        <ManagerCard icon="💰" title="Total Sales" value={money(summary.total_sales || 0)} text="Revenue from selected POS sales." />
+        <ManagerCard icon="📦" title="Total Cost" value={money(summary.total_cost || 0)} text="Cost of items sold for those sales." />
+        <ManagerCard icon="📊" title="Gross Profit" value={money(summary.gross_profit || 0)} text="Sales less cost of items sold." />
+        <ManagerCard icon="📈" title="Margin" value={`${Number(summary.margin || 0).toFixed(2)}%`} text="Gross profit as percentage of sales." />
       </section>
 
       <div className="report-table-wrap">
         <table className="report-table">
           <thead>
             <tr>
-              {(columns[reportView] || []).map((c) => (
+              {reportColumns.map((c) => (
                 <th key={c}>{c}</th>
               ))}
             </tr>
           </thead>
 
           <tbody>
-            {(sampleRows[reportView] || []).map((row, idx) => (
+            {displayRows.map((row, idx) => (
               <tr key={idx}>
                 {row.map((cell, cidx) => (
                   <td key={cidx}>{cell}</td>
