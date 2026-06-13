@@ -55,6 +55,8 @@ useEffect(() => {
   if (isFsUser) {
     setSignedIn(true);
     setClockedIn(true);
+
+    loadTerminals(); // <-- ADD THIS
   }
 
   restorePosSession();
@@ -289,6 +291,25 @@ const canAccessPos =
       setMessage(err.message || "Product search failed.");
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function loadTerminals() {
+    try {
+      const termRes = await posApi.listTerminals();
+
+      const list =
+        termRes?.terminals ||
+        termRes?.data?.terminals ||
+        [];
+
+      setTerminals(list);
+
+      if (list.length) {
+        setActiveTerminal(list[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load terminals", err);
     }
   }
 
