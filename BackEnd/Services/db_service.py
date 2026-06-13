@@ -37482,7 +37482,6 @@ class DatabaseService:
             int(template_id),
         ))
 
-
     def pos_create_shift_schedule(
         self,
         company_id: int,
@@ -37499,9 +37498,26 @@ class DatabaseService:
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.pos_shift_schedule
-            (company_id, employee_user_id, shift_template_id, work_date, schedule_status, notes)
+            (
+                company_id,
+                employee_user_id,
+                shift_template_id,
+                work_date,
+                schedule_status,
+                notes
+            )
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING *
+            RETURNING
+                id,
+                company_id,
+                employee_user_id,
+                shift_template_id,
+                work_date::text AS work_date,
+                schedule_status,
+                notes,
+                is_active,
+                deleted_at,
+                created_at
         """, (
             int(company_id),
             int(employee_user_id),
@@ -37510,7 +37526,6 @@ class DatabaseService:
             schedule_status or "scheduled",
             notes,
         ))
-
 
     def pos_list_shift_schedule(
         self,
@@ -37541,15 +37556,14 @@ class DatabaseService:
             SELECT
                 s.*,
                 t.shift_name,
-                t.start_time,
-                t.end_time
+                t.start_time::text AS start_time,
+                t.end_time::text AS end_time
             FROM {schema}.pos_shift_schedule s
             LEFT JOIN {schema}.pos_shift_templates t
                 ON t.id = s.shift_template_id
             WHERE {" AND ".join(where)}
             ORDER BY s.work_date, s.employee_user_id
         """, tuple(params))
-
 
     def pos_update_shift_schedule(
         self,
@@ -37574,7 +37588,17 @@ class DatabaseService:
                 schedule_status = %s,
                 notes = %s
             WHERE company_id = %s AND id = %s
-            RETURNING *
+            RETURNING
+                id,
+                company_id,
+                employee_user_id,
+                shift_template_id,
+                work_date::text AS work_date,
+                schedule_status,
+                notes,
+                is_active,
+                deleted_at,
+                created_at
         """, (
             int(employee_user_id),
             shift_template_id,
@@ -37584,7 +37608,6 @@ class DatabaseService:
             int(company_id),
             int(schedule_id),
         ))
-
 
     def pos_delete_shift_schedule(self, company_id: int, schedule_id: int) -> dict:
         schema = self.company_schema(company_id)
