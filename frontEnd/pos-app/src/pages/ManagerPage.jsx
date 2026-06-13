@@ -1916,28 +1916,281 @@ function FormModal({ modal, onClose, onSubmit }) {
   );
 }
 
-function OverviewTab({ isRestaurantLike, openShifts, terminals, customers, priceLevels, promotions }) {
-  if (isRestaurantLike) {
-    return (
-      <section className="manager-grid">
-        <ManagerCard icon="💰" title="Sales Today" value="0.00" text="Restaurant sales captured today." />
-        <ManagerCard icon="🍽️" title="Open Orders" value="0" text="Active table, collection and delivery orders." />
-        <ManagerCard icon="🪑" title="Occupied Tables" value="0" text="Tables currently in use." />
-        <ManagerCard icon="👨‍🍳" title="Kitchen Queue" value="0" text="Orders waiting or preparing in kitchen." />
-        <ManagerCard icon="🧑‍🍽️" title="Active Waiters" value="0" text="Waiters currently on duty." />
-        <ManagerCard icon="🧾" title="Average Ticket" value="0.00" text="Average spend per restaurant order." />
-      </section>
-    );
+function OverviewTab({ isRestaurantLike, openShifts, terminals, customers }) {
+  const [overview, setOverview] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  async function loadOverview() {
+    setLoading(true);
+
+    try {
+      const res = await posApi.getOverviewDashboard();
+      setOverview(res.overview || res || {});
+    } catch (err) {
+      console.error("Failed to load POS overview", err);
+      setOverview({});
+    } finally {
+      setLoading(false);
+    }
   }
 
+  useEffect(() => {
+    loadOverview();
+  }, []);
+
+  const salesToday = Number(overview.sales_today || 0);
+  const costToday = Number(overview.cost_today || 0);
+  const grossProfit = salesToday - costToday;
+
+  const hourlySales = overview.hourly_sales || [];
+  const paymentMix = overview.payment_mix || [];
+  const topProducts = overview.top_products || [];
+  const stockMovement = overview.stock_movement || [];
+  const recentTransactions = overview.recent_transactions || [];
+
+  const maxHourlySales = Math.max(...hourlySales.map((x) => Number(x.sales || 0)), 1);
+  const maxPayment = Math.max(...paymentMix.map((x) => Number(x.amount || 0)), 1);
+  const maxProductSales = Math.max(...topProducts.map((x) => Number(x.sales || 0)), 1);
+  const maxStockSold = Math.max(...stockMovement.map((x) => Number(x.sold || 0)), 1);
+
   return (
-    <section className="manager-grid">
-      <ManagerCard icon="💰" title="Sales Today" value="0.00" text="Retail sales captured today." />
-      <ManagerCard icon="🧾" title="Transactions" value="0" text="Number of completed sales today." />
-      <ManagerCard icon="👥" title="Customers Served" value={customers.length} text="Customers served or captured." />
-      <ManagerCard icon="📦" title="Top Selling Item" value="-" text="Best performing item today." />
-      <ManagerCard icon="🟢" title="Open Shifts" value={openShifts} text="Cashiers currently active." />
-      <ManagerCard icon="📊" title="Gross Margin" value="0.00%" text="Sales margin from POS activity." />
+    <section className="manager-workspace">
+      <div className="workspace-head">
+        <div>
+          <h2>Overview</h2>
+          <p>Live POS dashboard for sales, payments, inventory movement and cashier activity.</p>
+        </div>
+
+        <div className="workspace-actions">
+          <button className="refresh-btn" onClick={loadOverview}>
+            ↻ Refresh
+          </button>
+        </div>
+      </div>
+
+      {loading && <div className="pos-message">Loading overview...</div>}
+
+      <section className="manager-grid">
+        <ManagerCard icon="💰" title="Sales Today" value={money(salesToday)} text={isRestaurantLike ? "Restaurant sales captured today." : "Retail sales captured today."} />
+        <ManagerCard icon="🧾" title="Transactions" value={overview.transactions || 0} text="Number of completed sales today." />
+        <ManagerCard icon="👥" title="Customers Served" value={overview.customers_served || 0} text="Customers served or captured today." />
+        <ManagerCard icon="📦" title="Top Selling Item" value={overview.top_selling_item || "-"} text="Best performing item today." />
+        <ManagerCard icon="🟢" title="Open Shifts" value={overview.open_shifts ?? openShifts} text="Cashiers currently active." />
+        <ManagerCard icon="📊" title="Gross Margin" value={`${Number(overview.gross_margin || 0).toFixed(2)}%`} text="Sales margin from POS activity." />
+      </section>
+
+      <section className="manager-grid" style={{ marginTop: 18 }}>
+        <ManagerCard icon="💵" title="Cash Payments" value={money(overview.cash_payments || 0)} text="Cash received today." />
+        <ManagerCard icon="💳" title="Card Payments" value={money(overview.card_payments || 0)} text="Card or speedpoint payments today." />
+        <ManagerCard icon="👤" title="Account Sales" value={money(overview.account_sales || 0)} text="Sales posted to customer accounts." />
+        <ManagerCard icon="↩️" title="Returns" value={money(overview.returns || 0)} text="Refunds or reversed sales today." />
+        <ManagerCard icon="📦" title="Cost of Sales" value={money(costToday)} text="Inventory cost linked to today’s sales." />
+        <ManagerCard icon="📈" title="Gross Profit" value={money(grossProfit)} text="Sales less cost of items sold." />
+      </section>
+
+      <section className="overview-dashboard-grid" style={{ marginTop: 18 }}>
+        <div className="manager-panel wide-panel">
+          <div className="workspace-head compact-head">
+            <div>
+              <h2>Sales Trend Today</h2>
+              <p>Hourly completed POS sales.</p>
+            </div>
+          </div>
+
+          <div className="bar-chart">
+            {hourlySales.length ? (
+              hourlySales.map((x, idx) => {
+                const height = Math.max((Number(x.sales || 0) / maxHourlySales) * 100, 4);
+
+                return (
+                  <div className="bar-item" key={idx}>
+                    <div className="bar-track">
+                      <div className="bar-fill" style={{ height: `${height}%` }} />
+                    </div>
+                    <span>{x.hour}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty-state">No hourly sales yet</div>
+            )}
+          </div>
+        </div>
+
+        <div className="manager-panel">
+          <div className="workspace-head compact-head">
+            <div>
+              <h2>Payment Mix</h2>
+              <p>Cash, card and account split.</p>
+            </div>
+          </div>
+
+          <div className="payment-bars">
+            {paymentMix.length ? (
+              paymentMix.map((x, idx) => {
+                const width = Math.max((Number(x.amount || 0) / maxPayment) * 100, 3);
+
+                return (
+                  <div className="progress-row" key={idx}>
+                    <div className="progress-label">
+                      <span>{x.method}</span>
+                      <strong>{money(x.amount || 0)}</strong>
+                    </div>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${width}%` }} />
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty-state">No payment activity yet</div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="overview-dashboard-grid" style={{ marginTop: 18 }}>
+        <div className="manager-panel">
+          <div className="workspace-head compact-head">
+            <div>
+              <h2>Top Products</h2>
+              <p>Best sellers by value today.</p>
+            </div>
+          </div>
+
+          <div className="ranking-list">
+            {topProducts.length ? (
+              topProducts.map((x, idx) => {
+                const width = Math.max((Number(x.sales || 0) / maxProductSales) * 100, 3);
+
+                return (
+                  <div className="rank-row" key={idx}>
+                    <div className="rank-main">
+                      <strong>{idx + 1}. {x.item}</strong>
+                      <span>{Number(x.qty || 0)} sold • {money(x.sales || 0)}</span>
+                    </div>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${width}%` }} />
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty-state">No products sold yet</div>
+            )}
+          </div>
+        </div>
+
+        <div className="manager-panel">
+          <div className="workspace-head compact-head">
+            <div>
+              <h2>Inventory Movement</h2>
+              <p>Fast moving items from today’s sales.</p>
+            </div>
+          </div>
+
+          <div className="ranking-list">
+            {stockMovement.length ? (
+              stockMovement.map((x, idx) => {
+                const width = Math.max((Number(x.sold || 0) / maxStockSold) * 100, 3);
+
+                return (
+                  <div className="rank-row" key={idx}>
+                    <div className="rank-main">
+                      <strong>{x.item}</strong>
+                      <span>Sold: {Number(x.sold || 0)} • Closing: {Number(x.closing || 0)}</span>
+                    </div>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${width}%` }} />
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty-state">No stock movement yet</div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="overview-dashboard-grid" style={{ marginTop: 18 }}>
+        <div className="manager-panel">
+          <div className="workspace-head compact-head">
+            <div>
+              <h2>Today’s Activity</h2>
+              <p>Operational position.</p>
+            </div>
+          </div>
+
+          <div className="mini-list">
+            <div><span>Active terminals</span><strong>{terminals?.filter((x) => x.is_active).length || 0}</strong></div>
+            <div><span>Open shifts</span><strong>{overview.open_shifts ?? openShifts}</strong></div>
+            <div><span>Customers captured</span><strong>{customers?.length || 0}</strong></div>
+            <div><span>Average sale</span><strong>{money(overview.average_ticket || 0)}</strong></div>
+          </div>
+        </div>
+
+        <div className="manager-panel">
+          <div className="workspace-head compact-head">
+            <div>
+              <h2>Attention Needed</h2>
+              <p>Manager action points.</p>
+            </div>
+          </div>
+
+          <div className="mini-list">
+            <div><span>Returns pending</span><strong>{overview.pending_returns || 0}</strong></div>
+            <div><span>Discount approvals</span><strong>{overview.pending_discounts || 0}</strong></div>
+            <div><span>Low stock items</span><strong>{overview.low_stock_items || 0}</strong></div>
+            <div><span>Cash variance</span><strong>{money(overview.cash_variance || 0)}</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="manager-workspace" style={{ marginTop: 18 }}>
+        <div className="workspace-head">
+          <div>
+            <h2>Recent Transactions</h2>
+            <p>Latest completed POS sales.</p>
+          </div>
+        </div>
+
+        <div className="report-table-wrap">
+          <table className="report-table">
+            <thead>
+              <tr>
+                <th>Receipt</th>
+                <th>Time</th>
+                <th>Cashier</th>
+                <th>Customer</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {recentTransactions.length ? (
+                recentTransactions.map((r, idx) => (
+                  <tr key={idx}>
+                    <td>{r.sale_no}</td>
+                    <td>{r.time}</td>
+                    <td>{r.cashier}</td>
+                    <td>{r.customer}</td>
+                    <td>{money(r.amount || 0)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td>No transactions yet</td>
+                  <td>-</td>
+                  <td>-</td>
+                  <td>-</td>
+                  <td>0.00</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   );
 }

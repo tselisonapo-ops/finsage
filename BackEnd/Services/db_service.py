@@ -36807,6 +36807,285 @@ class DatabaseService:
             "rows": [[r["item"], r["sku"], r["opening"], r["sold"], r["closing"], r["sales"], r["cost"]] for r in rows],
         }
 
+    def pos_dashboard_overview(self, company_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        sales = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS sales_today,
+                COUNT(*)::int AS transactions,
+                COUNT(DISTINCT COALESCE(customer_id, customer_account_id))::int AS customers_served,
+                COALESCE(SUM(cost_amount), 0)::numeric(18,2) AS cost_today,
+                CASE
+                    WHEN COUNT(*) = 0 THEN 0
+                    ELSE ROUND(COALESCE(SUM(gross_amount), 0) / COUNT(*), 2)
+                END::numeric(18,2) AS average_ticket
+            FROM {schema}.pos_sales
+            WHERE company_id = %s
+            AND status = 'completed'
+            AND business_date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        payments = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(CASE WHEN lower(payment_method) = 'cash' THEN amount ELSE 0 END), 0)::numeric(18,2) AS cash_payments,
+                COALESCE(SUM(CASE WHEN lower(payment_method) IN ('card', 'speedpoint') THEN amount ELSE 0 END), 0)::numeric(18,2) AS card_payments,
+                COALESCE(SUM(CASE WHEN lower(payment_method) IN ('account', 'credit') THEN amount ELSE 0 END), 0)::numeric(18,2) AS account_payments
+            FROM {schema}.pos_payments p
+            JOIN {schema}.pos_sales s
+            ON s.id = p.sale_id
+            AND s.company_id = p.company_id
+            WHERE p.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        account_sales = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS account_sales
+            FROM {schema}.pos_sales
+            WHERE company_id = %s
+            AND status = 'completed'
+            AND sale_type = 'account_sale'
+            AND business_date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        returns = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(refund_amount), 0)::numeric(18,2) AS returns,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(approval_status, '') IN ('pending', 'pending_approval')
+                )::int AS pending_returns
+            FROM {schema}.pos_returns
+            WHERE company_id = %s
+            AND return_date::date = CURRENT_DATE
+        """, (int(company_id),)) or {}
+
+        top_item = self.fetch_one(f"""
+            SELECT
+                l.description AS item_name,
+                SUM(l.qty)::numeric(18,4) AS qty_sold,
+                SUM(l.gross_amount)::numeric(18,2) AS sales
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s
+            ON s.id = l.sale_id
+            AND s.company_id = l.company_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+            GROUP BY l.description
+            ORDER BY SUM(l.qty) DESC, SUM(l.gross_amount) DESC
+            LIMIT 1
+        """, (int(company_id),)) or {}
+
+        shifts = self.fetch_one(f"""
+            SELECT
+                COUNT(*)::int AS open_shifts,
+                COALESCE(SUM(COALESCE(cash_difference, 0)), 0)::numeric(18,2) AS cash_variance
+            FROM {schema}.pos_shifts
+            WHERE company_id = %s
+            AND status = 'open'
+        """, (int(company_id),)) or {}
+
+        pending_discounts = self.fetch_one(f"""
+            SELECT COUNT(*)::int AS pending_discounts
+            FROM {schema}.pos_discount_approvals
+            WHERE company_id = %s
+            AND status = 'pending'
+        """, (int(company_id),)) or {}
+
+        low_stock = self.fetch_one(f"""
+            SELECT COUNT(*)::int AS low_stock_items
+            FROM (
+                SELECT
+                    i.id,
+                    i.reorder_level,
+                    COALESCE(SUM(l.qty_in - l.qty_out), 0) AS qty_on_hand
+                FROM {schema}.inventory_items i
+                LEFT JOIN {schema}.inventory_layers l
+                ON l.company_id = i.company_id
+                AND l.item_id = i.id
+                WHERE i.company_id = %s
+                AND COALESCE(i.track_stock, TRUE) = TRUE
+                AND COALESCE(i.is_active, TRUE) = TRUE
+                GROUP BY i.id, i.reorder_level
+                HAVING COALESCE(SUM(l.qty_in - l.qty_out), 0) <= COALESCE(i.reorder_level, 0)
+            ) x
+        """, (int(company_id),)) or {}
+
+        hourly_sales_rows = self.fetch_all(f"""
+            SELECT
+                TO_CHAR(date_trunc('hour', s.sale_date), 'HH24:00') AS hour,
+                COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS sales,
+                COUNT(*)::int AS transactions
+            FROM {schema}.pos_sales s
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+            GROUP BY date_trunc('hour', s.sale_date)
+            ORDER BY date_trunc('hour', s.sale_date)
+        """, (int(company_id),)) or []
+
+        payment_mix_rows = self.fetch_all(f"""
+            SELECT
+                CASE
+                    WHEN lower(p.payment_method) IN ('card', 'speedpoint') THEN 'Card'
+                    WHEN lower(p.payment_method) = 'cash' THEN 'Cash'
+                    WHEN lower(p.payment_method) IN ('account', 'credit') THEN 'Account'
+                    WHEN lower(p.payment_method) IN ('mobile_money', 'mobile money') THEN 'Mobile Money'
+                    ELSE INITCAP(p.payment_method)
+                END AS method,
+                COALESCE(SUM(p.amount), 0)::numeric(18,2) AS amount
+            FROM {schema}.pos_payments p
+            JOIN {schema}.pos_sales s
+            ON s.id = p.sale_id
+            AND s.company_id = p.company_id
+            WHERE p.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+            GROUP BY
+                CASE
+                    WHEN lower(p.payment_method) IN ('card', 'speedpoint') THEN 'Card'
+                    WHEN lower(p.payment_method) = 'cash' THEN 'Cash'
+                    WHEN lower(p.payment_method) IN ('account', 'credit') THEN 'Account'
+                    WHEN lower(p.payment_method) IN ('mobile_money', 'mobile money') THEN 'Mobile Money'
+                    ELSE INITCAP(p.payment_method)
+                END
+            ORDER BY amount DESC
+        """, (int(company_id),)) or []
+
+        top_products_rows = self.fetch_all(f"""
+            SELECT
+                l.description AS item,
+                SUM(l.qty)::numeric(18,4) AS qty,
+                SUM(l.gross_amount)::numeric(18,2) AS sales
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s
+            ON s.id = l.sale_id
+            AND s.company_id = l.company_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+            GROUP BY l.description
+            ORDER BY SUM(l.gross_amount) DESC, SUM(l.qty) DESC
+            LIMIT 8
+        """, (int(company_id),)) or []
+
+        stock_movement_rows = self.fetch_all(f"""
+            SELECT
+                COALESCE(i.name, l.description) AS item,
+                COALESCE(i.sku, l.sku, '') AS sku,
+                SUM(l.qty)::numeric(18,4) AS sold,
+                COALESCE(SUM(il.qty_in - il.qty_out), 0)::numeric(18,4) AS closing
+            FROM {schema}.pos_sale_lines l
+            JOIN {schema}.pos_sales s
+            ON s.id = l.sale_id
+            AND s.company_id = l.company_id
+            LEFT JOIN {schema}.inventory_items i
+            ON i.id = l.item_id
+            AND i.company_id = l.company_id
+            LEFT JOIN {schema}.inventory_layers il
+            ON il.company_id = l.company_id
+            AND il.item_id = l.item_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+            GROUP BY COALESCE(i.name, l.description), COALESCE(i.sku, l.sku, '')
+            ORDER BY SUM(l.qty) DESC
+            LIMIT 8
+        """, (int(company_id),)) or []
+
+        recent_rows = self.fetch_all(f"""
+            SELECT
+                s.sale_no,
+                TO_CHAR(s.sale_date, 'HH24:MI') AS time,
+                COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
+                COALESCE(s.customer_name, '-') AS customer,
+                s.gross_amount::numeric(18,2) AS amount
+            FROM {schema}.pos_sales s
+            LEFT JOIN public.company_users cu
+            ON cu.company_id = s.company_id
+            AND cu.user_id = s.cashier_user_id
+            LEFT JOIN public.users u
+            ON u.id = s.cashier_user_id
+            WHERE s.company_id = %s
+            AND s.status = 'completed'
+            AND s.business_date = CURRENT_DATE
+            ORDER BY s.sale_date DESC
+            LIMIT 10
+        """, (int(company_id),)) or []
+
+        sales_today = float(sales.get("sales_today") or 0)
+        cost_today = float(sales.get("cost_today") or 0)
+
+        gross_margin = 0.0
+        if sales_today > 0:
+            gross_margin = round(((sales_today - cost_today) / sales_today) * 100, 2)
+
+        return {
+            "overview": {
+                "sales_today": round(sales_today, 2),
+                "transactions": int(sales.get("transactions") or 0),
+                "customers_served": int(sales.get("customers_served") or 0),
+                "top_selling_item": top_item.get("item_name") or "-",
+                "open_shifts": int(shifts.get("open_shifts") or 0),
+                "gross_margin": gross_margin,
+                "cost_today": round(cost_today, 2),
+                "gross_profit": round(sales_today - cost_today, 2),
+                "average_ticket": float(sales.get("average_ticket") or 0),
+                "cash_payments": float(payments.get("cash_payments") or 0),
+                "card_payments": float(payments.get("card_payments") or 0),
+                "account_payments": float(payments.get("account_payments") or 0),
+                "account_sales": float(account_sales.get("account_sales") or 0),
+                "returns": float(returns.get("returns") or 0),
+                "pending_returns": int(returns.get("pending_returns") or 0),
+                "pending_discounts": int(pending_discounts.get("pending_discounts") or 0),
+                "low_stock_items": int(low_stock.get("low_stock_items") or 0),
+                "cash_variance": float(shifts.get("cash_variance") or 0),
+                "hourly_sales": [
+                    {
+                        "hour": r.get("hour"),
+                        "sales": float(r.get("sales") or 0),
+                        "transactions": int(r.get("transactions") or 0),
+                    }
+                    for r in hourly_sales_rows
+                ],
+                "payment_mix": [
+                    {
+                        "method": r.get("method") or "-",
+                        "amount": float(r.get("amount") or 0),
+                    }
+                    for r in payment_mix_rows
+                ],
+                "top_products": [
+                    {
+                        "item": r.get("item") or "-",
+                        "qty": float(r.get("qty") or 0),
+                        "sales": float(r.get("sales") or 0),
+                    }
+                    for r in top_products_rows
+                ],
+                "stock_movement": [
+                    {
+                        "item": r.get("item") or "-",
+                        "sku": r.get("sku") or "",
+                        "sold": float(r.get("sold") or 0),
+                        "closing": float(r.get("closing") or 0),
+                    }
+                    for r in stock_movement_rows
+                ],
+                "recent_transactions": [
+                    {
+                        "sale_no": r.get("sale_no") or "-",
+                        "time": r.get("time") or "-",
+                        "cashier": r.get("cashier") or "-",
+                        "customer": r.get("customer") or "-",
+                        "amount": float(r.get("amount") or 0),
+                    }
+                    for r in recent_rows
+                ],
+            }
+        }
 
     def pos_get_report(self, company_id: int, *, report_key: str, q: str = "", start_date=None, end_date=None) -> dict:
         schema = self.company_schema(company_id)

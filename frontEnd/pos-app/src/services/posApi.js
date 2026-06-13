@@ -259,6 +259,11 @@ export const posApi = {
 
         return getJson(`${base()}/reports/${reportKey}${qs ? `?${qs}` : ""}`);
     },
+
+    getOverviewDashboard() {
+        return getJson(`${base()}/dashboard/overview`);
+    },
+
     // =========================
     // STAFF
     // =========================

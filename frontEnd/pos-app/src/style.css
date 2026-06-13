@@ -1032,3 +1032,145 @@ input:disabled {
   color: #0f766e;
   line-height: 1;
 }
+
+.overview-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+}
+
+.manager-panel {
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.wide-panel {
+  min-height: 280px;
+}
+
+.compact-head {
+  margin-bottom: 12px;
+}
+
+.bar-chart {
+  height: 220px;
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.bar-item {
+  flex: 1;
+  min-width: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.bar-track {
+  width: 100%;
+  height: 180px;
+  border-radius: 12px;
+  background: #e6f5f3;
+  display: flex;
+  align-items: end;
+  overflow: hidden;
+}
+
+.bar-fill {
+  width: 100%;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, #14b8a6, #0f766e);
+}
+
+.payment-bars,
+.ranking-list {
+  display: grid;
+  gap: 14px;
+}
+
+.progress-row,
+.rank-row {
+  display: grid;
+  gap: 7px;
+}
+
+.progress-label,
+.rank-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rank-main {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.progress-label span,
+.rank-main span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.progress-label strong,
+.rank-main strong {
+  color: #020617;
+  font-size: 14px;
+}
+
+.progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #e6f5f3;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+
+.mini-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mini-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 8px 0;
+}
+
+.mini-list div:last-child {
+  border-bottom: none;
+}
+
+.mini-list span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.mini-list strong {
+  color: #020617;
+  font-size: 16px;
+}
+
+.empty-state {
+  color: #64748b;
+  font-size: 13px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
