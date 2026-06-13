@@ -36796,25 +36796,21 @@ class DatabaseService:
                 (
                     company_id,
                     item_id,
-                    inventory_layer_id,
-                    qty_allocated,
+                    layer_id,
+                    qty,
                     unit_cost,
-                    cost_amount,
                     source,
-                    source_id,
-                    source_line_id
+                    source_id
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
             """, (
                 int(company_id),
                 int(item_id),
                 int(layer["id"]),
                 float(take_qty),
                 float(unit_cost),
-                float(cost_amount),
                 source,
                 int(source_id) if source_id else None,
-                int(source_line_id) if source_line_id else None,
             ))
 
             total_cost += take_qty * unit_cost
