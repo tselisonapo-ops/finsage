@@ -35824,7 +35824,7 @@ class DatabaseService:
             FROM {schema}.pos_payments
             WHERE company_id = %s
             AND sale_id = %s
-            ORDER BY id
+            ORDER BY id DESC
             LIMIT 1
         """, (int(company_id), int(sale_id)), cur=cur)
 
@@ -35835,7 +35835,11 @@ class DatabaseService:
                 SELECT ledger_account_code
                 FROM {schema}.company_bank_accounts
                 WHERE company_id = %s
-                AND COALESCE(is_default, FALSE) = TRUE
+                AND is_active = TRUE
+                AND ledger_account_code IS NOT NULL
+                ORDER BY
+                    is_default_receipts DESC,
+                    id
                 LIMIT 1
             """, (int(company_id),), cur=cur)
 
