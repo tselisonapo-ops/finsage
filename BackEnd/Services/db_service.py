@@ -17973,9 +17973,13 @@ class DatabaseService:
             unit_cost NUMERIC(18,6) NOT NULL,
             source TEXT NOT NULL,
             source_id INT NOT NULL,
+            source_line_id BIGINT NULL,
             posted_journal_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.inventory_fifo_allocations
+        ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(18,2);
 
         CREATE INDEX IF NOT EXISTS {schema}_fifo_alloc_source_idx
         ON {schema}.inventory_fifo_allocations(company_id, source, source_id);
@@ -17983,26 +17987,21 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_fifo_alloc_item_idx
         ON {schema}.inventory_fifo_allocations(company_id, item_id);
 
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname = '{schema}'
-            AND indexname  = '{schema}_fifo_alloc_source_uniq'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX %I
-            ON %I.inventory_fifo_allocations(company_id, source, source_id)
-            WHERE source IS NOT NULL AND source_id IS NOT NULL',
-            '{schema}_fifo_alloc_source_uniq',
-            '{schema}'
-            );
-        END IF;
-        END $$;
+        DROP INDEX IF EXISTS {schema}.{schema}_fifo_alloc_source_uniq;
 
-        -- Optional: PPV control in settings (public table)
-        ALTER TABLE public.company_account_settings
-        ADD COLUMN IF NOT EXISTS ppv_control_code TEXT;
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_fifo_alloc_source_line_layer_uniq
+        ON {schema}.inventory_fifo_allocations
+        (
+            company_id,
+            source,
+            source_id,
+            source_line_id,
+            item_id,
+            layer_id
+        )
+        WHERE source IS NOT NULL
+        AND source_id IS NOT NULL
+        AND source_line_id IS NOT NULL;
 
         -- ============================================================
         -- PROJECT MANAGEMENT / JOB COSTING
@@ -36805,6 +36804,8 @@ class DatabaseService:
                 AND id=%s
             """, (take_qty, int(company_id), int(layer["id"])))
 
+            cost_amount = round(take_qty * unit_cost, 2)
+
             cur.execute(f"""
                 INSERT INTO {schema}.inventory_fifo_allocations
                 (
@@ -36813,21 +36814,25 @@ class DatabaseService:
                     layer_id,
                     qty,
                     unit_cost,
+                    cost_amount,
                     source,
-                    source_id
+                    source_id,
+                    source_line_id
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 int(company_id),
                 int(item_id),
                 int(layer["id"]),
                 float(take_qty),
                 float(unit_cost),
+                float(cost_amount),
                 source,
                 int(source_id) if source_id else None,
+                int(source_line_id) if source_line_id else None,
             ))
 
-            total_cost += take_qty * unit_cost
+            total_cost += cost_amount
             remaining -= take_qty
 
         if remaining > 0.0001:
