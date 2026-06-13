@@ -42,6 +42,15 @@ export function CashierPage() {
   const [attendance, setAttendance] = useState(null);
   const [clockedIn, setClockedIn] = useState(false);
 
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+
+  const [customerForm, setCustomerForm] = useState({
+    customer_name: "",
+    phone: "",
+    email: "",
+    customer_type: "retail",
+  });
+
 useEffect(() => {
   if (isFsUser) {
     setSignedIn(true);
@@ -258,6 +267,12 @@ const canAccessPos =
       return;
     }
 
+    if (isRestaurantLike) {
+      setMessage("Use the menu grid for restaurant items.");
+      setSearchResults([]);
+      return;
+    }
+
     try {
       setSearching(true);
       setMessage("");
@@ -325,8 +340,22 @@ const canAccessPos =
     }
   }
 
-  async function createCustomerQuick() {
-    setMessage("Use customer search for retail/account customers. For restaurant collection or delivery, capture customer details on the order.");
+  function createCustomerQuick() {
+    if (isRestaurantLike) {
+      setMessage(
+        "For restaurant collection or delivery, capture customer name, phone and address on the order."
+      );
+      return;
+    }
+
+    setCustomerForm({
+      customer_name: "",
+      phone: "",
+      email: "",
+      customer_type: "retail",
+    });
+
+    setShowCustomerModal(true);
   }
 
   async function finalisePayment() {
@@ -432,6 +461,31 @@ const canAccessPos =
     }
   }
 
+  async function saveCustomer() {
+    if (!customerForm.customer_name.trim()) {
+      setMessage("Customer name is required.");
+      return;
+    }
+
+    try {
+      await posApi.createCustomer({
+        customer_name: customerForm.customer_name.trim(),
+        phone: customerForm.phone.trim(),
+        email: customerForm.email.trim(),
+        customer_type: customerForm.customer_type,
+        price_level:
+          customerForm.customer_type === "wholesale"
+            ? "wholesale"
+            : "retail",
+      });
+
+      setShowCustomerModal(false);
+      setMessage("Customer created.");
+      await searchCustomers();
+    } catch (err) {
+      setMessage(err.message || "Failed to create customer.");
+    }
+  }
 
   return (
     <main className="pos-page">
@@ -582,29 +636,40 @@ const canAccessPos =
               </div>
             )}
 
-          <div className="scan-card">
-            <label>{usesInventory ? "Scan barcode or search product" : "Search service item"}</label>
-            <div className="scan-row">
-              <input
-                className="scan-input"
-                placeholder={usesInventory ? "Scan barcode, SKU or product name..." : "Search service..."}
-                disabled={!signedIn}
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") searchProducts();
-                }}
-              />
+            {!isRestaurantLike && (
+              <div className="scan-card">
+                <label>
+                  {usesInventory
+                    ? "Scan barcode or search product"
+                    : "Search service item"}
+                </label>
 
-              <button
-                className="scan-btn"
-                disabled={!signedIn || searching}
-                onClick={searchProducts}
-              >
-                {searching ? "..." : "Search"}
-              </button>
-            </div>
-          </div>
+                <div className="scan-row">
+                  <input
+                    className="scan-input"
+                    placeholder={
+                      usesInventory
+                        ? "Scan barcode, SKU or product name..."
+                        : "Search service..."
+                    }
+                    disabled={!signedIn}
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") searchProducts();
+                    }}
+                  />
+
+                  <button
+                    className="scan-btn"
+                    disabled={!signedIn || searching}
+                    onClick={searchProducts}
+                  >
+                    {searching ? "..." : "Search"}
+                  </button>
+                </div>
+              </div>
+            )}
 
           <div className="quick-actions">
             {canSell && (
