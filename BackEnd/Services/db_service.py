@@ -6211,6 +6211,8 @@ class DatabaseService:
                         ''opening_balance'',
                         ''vat_filing'',
                         ''vat_filing_payment'',
+                        ''pos_sale'',
+                        ''pos_payment'',
                         ''pos_return'',
                         ''year_end''
                     ]::text[])

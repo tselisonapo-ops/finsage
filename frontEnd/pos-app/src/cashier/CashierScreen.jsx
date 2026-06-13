@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from "../config.js";import { money } from "../utils/currency.js";
 import { posApi } from "../services/posApi.js";
 import { OrderScreen } from "./OrderScreen.jsx";
+import { renderSlip, printHtml } from "../utils/receiptTemplates.js";
 
 const fsToken =
   sessionStorage.getItem("fs_user_token") ||
@@ -41,6 +42,7 @@ export function CashierPage() {
   const [customers, setCustomers] = useState([]);
   const [attendance, setAttendance] = useState(null);
   const [clockedIn, setClockedIn] = useState(false);
+  const [receiptSettings, setReceiptSettings] = useState({});
 
   const [showCustomerModal, setShowCustomerModal] = useState(false);
 
@@ -51,94 +53,94 @@ export function CashierPage() {
     customer_type: "retail",
   });
 
-useEffect(() => {
-  if (isFsUser) {
-    setSignedIn(true);
-    setClockedIn(true);
-
-    loadTerminals(); // <-- ADD THIS
-  }
-
-  restorePosSession();
-}, []);
-
-async function restorePosSession() {
-  const token = localStorage.getItem("pos_token");
-
-  if (!token) return;
-
-  try {
-    const res = await posApi.posAuthMe();
-
-    setCashier(res.employee);
-    setSignedIn(true);
-
-    const attendanceId = localStorage.getItem("active_attendance_id");
-
-    if (attendanceId) {
-      setAttendance({ id: Number(attendanceId) });
+  useEffect(() => {
+    if (isFsUser) {
+      setSignedIn(true);
       setClockedIn(true);
+      loadTerminals();
     }
-  } catch {
-    localStorage.removeItem("pos_token");
-    localStorage.removeItem("active_attendance_id");
 
-    setCashier(null);
-    setSignedIn(false);
-    setAttendance(null);
-    setClockedIn(false);
+    restorePosSession();
+    loadReceiptSettings();
+  }, []);
+
+  async function restorePosSession() {
+    const token = localStorage.getItem("pos_token");
+
+    if (!token) return;
+
+    try {
+      const res = await posApi.posAuthMe();
+
+      setCashier(res.employee);
+      setSignedIn(true);
+
+      const attendanceId = localStorage.getItem("active_attendance_id");
+
+      if (attendanceId) {
+        setAttendance({ id: Number(attendanceId) });
+        setClockedIn(true);
+      }
+    } catch {
+      localStorage.removeItem("pos_token");
+      localStorage.removeItem("active_attendance_id");
+
+      setCashier(null);
+      setSignedIn(false);
+      setAttendance(null);
+      setClockedIn(false);
+    }
   }
-}
 
-const [menuItems, setMenuItems] = useState([
-  {
-    id: 1,
-    name: "Bunny Chow",
-    price: 65,
-    image_url: "",
-    category: "Meals",
-  },
-  {
-    id: 2,
-    name: "Chicken & Chips",
-    price: 55,
-    image_url: "",
-    category: "Meals",
-  },
-]);
+  const [menuItems, setMenuItems] = useState([
+    {
+      id: 1,
+      name: "Bunny Chow",
+      price: 65,
+      image_url: "",
+      category: "Meals",
+    },
+    {
+      id: 2,
+      name: "Chicken & Chips",
+      price: 55,
+      image_url: "",
+      category: "Meals",
+    },
+  ]);
 
-const posRole = String(
-  cashier?.pos_role ||
-  cashier?.role ||
-  ""
-).toLowerCase();
+  const posRole = String(
+    cashier?.pos_role ||
+    cashier?.role ||
+    ""
+  ).toLowerCase();
 
-const isPosSuperUser = isFsUser;
-const isWaiter = ["waiter", "waitress"].includes(posRole);
+  const isPosSuperUser = isFsUser;
+  const isWaiter = ["waiter", "waitress"].includes(posRole);
 
-const canSell =
-  isPosSuperUser ||
-  ["cashier", "manager", "supervisor"].includes(posRole);
+  const canSell =
+    isPosSuperUser ||
+    ["cashier", "manager", "supervisor"].includes(posRole);
 
-const canOrder =
-  isPosSuperUser ||
-  ["waiter", "waitress", "cashier", "manager", "supervisor"].includes(posRole);
+  const canOrder =
+    isPosSuperUser ||
+    ["waiter", "waitress", "cashier", "manager", "supervisor"].includes(posRole);
 
-const canAccessPos =
-  isPosSuperUser ||
-  (
-    signedIn &&
-    clockedIn &&
-    (canSell || canOrder)
-  );
+  const canAccessPos =
+    isPosSuperUser ||
+    (
+      signedIn &&
+      clockedIn &&
+      (canSell || canOrder)
+    );
 
-  const totals = useMemo(() => {
-    const subtotal = cart.reduce((s, x) => s + Number(x.qty || 0) * Number(x.unit_price || 0), 0);
-    const discount = cart.reduce((s, x) => s + Number(x.discount_amount || 0), 0);
-    const vat = cart.reduce((s, x) => s + Number(x.vat_amount || 0), 0);
-    const gross = cart.reduce((s, x) => s + Number(x.gross_amount || 0), 0);
-    return { subtotal, discount, vat, gross };
-  }, [cart]);
+    const totals = useMemo(() => {
+      const subtotal = cart.reduce((s, x) => s + Number(x.qty || 0) * Number(x.unit_price || 0), 0);
+      const discount = cart.reduce((s, x) => s + Number(x.discount_amount || 0), 0);
+      const vat = cart.reduce((s, x) => s + Number(x.vat_amount || 0), 0);
+      const gross = cart.reduce((s, x) => s + Number(x.gross_amount || 0), 0);
+      return { subtotal, discount, vat, gross };
+    }, [cart]);
 
   async function clockIn() {
     if (!signedIn || !cashier) {
@@ -313,6 +315,25 @@ const canAccessPos =
     }
   }
 
+  async function loadReceiptSettings() {
+    const res = await posApi.getReceiptSettings();
+    setReceiptSettings(res.receipt_settings || res.settings || res.data || res || {});
+  }
+
+  const VAT_RATE = 0.15;
+
+  function calcLineAmounts(priceInclusive, qty = 1, discount = 0) {
+    const gross = Number(priceInclusive || 0) * Number(qty || 1);
+    const netBeforeDiscount = gross / (1 + VAT_RATE);
+    const vatBeforeDiscount = gross - netBeforeDiscount;
+
+    return {
+      net_amount: Math.max(netBeforeDiscount - Number(discount || 0), 0),
+      vat_amount: vatBeforeDiscount,
+      gross_amount: gross - Number(discount || 0),
+    };
+  }
+
   function addMenuItemToCart(item) {
     if (!canOrder && !canSell) {
       setMessage("You do not have permission to add items.");
@@ -335,6 +356,8 @@ const canAccessPos =
         );
       }
 
+      const amounts = calcLineAmounts(item.price, 1, 0);
+
       return [
         ...prev,
         {
@@ -342,9 +365,10 @@ const canAccessPos =
           description: item.name,
           qty: 1,
           unit_price: Number(item.price || 0),
-          vat_amount: 0,
           discount_amount: 0,
-          gross_amount: Number(item.price || 0),
+          vat_amount: amounts.vat_amount,
+          net_amount: amounts.net_amount,
+          gross_amount: amounts.gross_amount,
           image_url: item.image_url,
         },
       ];
@@ -359,6 +383,38 @@ const canAccessPos =
     } catch (err) {
       setMessage(err.message || "Failed to search customers.");
     }
+  }
+
+  function printReceipt(saleNo) {
+    const html = renderSlip({
+      company,
+      branding: receiptSettings,
+      settings: receiptSettings,
+      sale: {
+        sale_no: saleNo,
+        sale_date: new Date().toLocaleString(),
+        cashier_name:
+          cashier?.name ||
+          cashier?.full_name ||
+          cashier?.employee_code ||
+          "Cashier",
+        terminal_code: activeTerminal?.terminal_code || activeTerminal?.name || "-",
+        customer_name: selectedCustomer?.customer_name || "Walk-in Customer",
+        lines: cart,
+        subtotal: totals.subtotal,
+        discount_amount: totals.discount,
+        vat_amount: totals.vat,
+        gross_amount: totals.gross,
+        amount_paid: Number(amountTendered || totals.gross || 0),
+        change_amount:
+          selectedPaymentMethod === "cash"
+            ? Math.max(Number(amountTendered || 0) - Number(totals.gross || 0), 0)
+            : 0,
+        payment_method: selectedPaymentMethod,
+      },
+    });
+
+    printHtml(html);
   }
 
   function createCustomerQuick() {
@@ -443,15 +499,13 @@ const canAccessPos =
 
       for (const line of cart) {
         await posApi.addSaleLine(saleId, {
-          item_id: line.id || line.item_id,
+          item_id: line.item_id || line.id,
           qty: Number(line.qty || 1),
-          unit_price: Number(
-            line.sales_price ||
-            line.unit_price ||
-            line.price ||
-            0
-          ),
+          unit_price: Number(line.unit_price || line.price || 0),
           discount_amount: Number(line.discount_amount || 0),
+          net_amount: Number(line.net_amount || 0),
+          vat_amount: Number(line.vat_amount || 0),
+          gross_amount: Number(line.gross_amount || 0),
         });
       }
 
@@ -468,6 +522,8 @@ const canAccessPos =
             : 0,
       });
 
+      printReceipt(saleNo);
+      
       await posApi.completeSale(saleId);
 
       setMessage(`Sale ${saleNo} completed successfully.`);
