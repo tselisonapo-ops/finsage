@@ -18561,6 +18561,12 @@ class DatabaseService:
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_sales_no_uniq
         ON {schema}.pos_sales(company_id, lower(trim(sale_no)));
 
+        ALTER TABLE {schema}.pos_sales
+        ADD COLUMN IF NOT EXISTS source_order_id INT NULL;
+
+        ALTER TABLE {schema}.pos_sales
+        ADD COLUMN IF NOT EXISTS posting_flow TEXT NOT NULL DEFAULT 'normal_pos';
+
         CREATE TABLE IF NOT EXISTS {schema}.pos_sale_lines (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -18600,6 +18606,9 @@ class DatabaseService:
             change_amount NUMERIC(18,2) NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.pos_payments
+        ADD COLUMN IF NOT EXISTS posted_journal_id INT NULL;
 
         CREATE TABLE IF NOT EXISTS {schema}.pos_cash_movements (
             id SERIAL PRIMARY KEY,
@@ -35764,17 +35773,22 @@ class DatabaseService:
 
         return (row.get("code") or "").strip() if row else None
 
-    def _pos_resolve_gl_accounts(self, company_id: int, *, item_type: str = "", cur=None) -> dict:
+    def _pos_resolve_gl_accounts(
+        self,
+        company_id: int,
+        *,
+        item_type: str = "",
+        required_roles: list[str] | None = None,
+        cur=None,
+    ) -> dict:
         item_type = (item_type or "").lower()
 
         if item_type in {"menu", "recipe", "food"}:
             inventory_roles = ["inventory_food", "inventory_raw_materials", "inventory"]
             cogs_roles = ["cogs_food", "direct_materials_cost", "cogs"]
-            sales_roles = ["contract_revenue", "CONTRACT_REVENUE"]
         elif item_type in {"bar", "beverage", "drink"}:
             inventory_roles = ["inventory_beverage", "inventory"]
             cogs_roles = ["cogs_beverage", "cogs"]
-            sales_roles = ["contract_revenue", "CONTRACT_REVENUE"]
         else:
             inventory_roles = [
                 "inventory",
@@ -35783,10 +35797,9 @@ class DatabaseService:
                 "inventory_spares_consumables",
             ]
             cogs_roles = ["cogs", "direct_materials_cost"]
-            sales_roles = ["contract_revenue", "CONTRACT_REVENUE"]
 
         accounts = {
-            "sales": self._resolve_account_by_roles(company_id, sales_roles, cur=cur),
+            "sales": self._resolve_account_by_roles(company_id, ["contract_revenue", "CONTRACT_REVENUE"], cur=cur),
             "sales_returns": self._resolve_account_by_roles(company_id, ["sales_returns"], cur=cur),
             "sales_discounts": self._resolve_account_by_roles(company_id, ["sales_discounts"], cur=cur),
             "vat_output": self._resolve_account_by_roles(company_id, ["vat_output"], cur=cur),
@@ -35796,9 +35809,10 @@ class DatabaseService:
             "cash_bank": self._resolve_account_by_roles(company_id, ["cash_bank", "cash"], cur=cur),
         }
 
-        missing = [k for k, v in accounts.items() if not v and k not in {"vat_output", "sales_returns", "sales_discounts"}]
-        if missing:
-            raise ValueError(f"Missing POS GL account roles: {', '.join(missing)}")
+        if required_roles:
+            missing = [k for k in required_roles if not accounts.get(k)]
+            if missing:
+                raise ValueError(f"Missing POS GL account roles: {', '.join(missing)}")
 
         return accounts
 
@@ -35882,7 +35896,16 @@ class DatabaseService:
             vat = sum(float(l.get("vat_amount") or 0) for l in lines)
             gross = sum(float(l.get("gross_amount") or 0) for l in lines)
 
-            if paid + 0.01 < gross and (sale.get("sale_type") or "") != "account_sale":
+            sale_type = (sale.get("sale_type") or "cash_sale").lower()
+
+            allow_unpaid = sale_type in {
+                "account_sale",
+                "restaurant_table",
+                "restaurant_delivery",
+                "restaurant_collection",
+            }
+
+            if paid + 0.01 < gross and not allow_unpaid:
                 raise ValueError("Payment is less than sale total")
 
             # 1) Consume inventory / recipe ingredients and update line costs
@@ -35926,22 +35949,44 @@ class DatabaseService:
             total_cost = round(total_cost, 2)
 
             # 2) Resolve GL accounts
+            sale_type = (sale.get("sale_type") or "cash_sale").lower()
+            posting_flow = (sale.get("posting_flow") or "normal_pos").lower()
+
+            is_account_sale = sale_type == "account_sale"
+            is_restaurant_unpaid = sale_type in {
+                "restaurant_table",
+                "restaurant_delivery",
+                "restaurant_collection",
+            } and paid + 0.01 < gross
+
+            required_roles = ["sales"]
+
+            if is_account_sale or is_restaurant_unpaid:
+                required_roles.append("receivable")
+            else:
+                required_roles.append("cash_bank")
+
             accounts = self._pos_resolve_gl_accounts(
                 company_id,
                 item_type="pos",
+                required_roles=required_roles,
                 cur=cur,
             )
 
-            payment_account = None
+            if is_account_sale:
+                if not sale.get("customer_id"):
+                    raise ValueError("Customer is required for account sale")
+                payment_account = accounts["receivable"]
 
-            if (sale.get("sale_type") or "") == "account_sale":
-                payment_account = accounts.get("receivable")
+            elif is_restaurant_unpaid:
+                payment_account = accounts["receivable"]
+
             else:
                 payment_account = self._resolve_pos_payment_account(
                     company_id,
                     sale_id=int(sale_id),
                     cur=cur,
-                )
+                ) or accounts["cash_bank"]
 
             if not payment_account:
                 raise ValueError("POS payment/bank/cash posting account could not be resolved")
@@ -36058,81 +36103,39 @@ class DatabaseService:
             }
 
     def pos_record_payment(
-            self,
-            company_id: int,
-            *,
-            sale_id: int,
-            shift_id: int | None,
-            payment_method: str,
-            amount: float,
-            reference: str | None = None,
-            received_amount: float | None = None,
-            change_amount: float | None = None,
-        ) -> int:
-            schema = self.company_schema(company_id)
-            payment_method = (payment_method or "").strip().lower()
-            amount = float(amount or 0)
+        self,
+        company_id: int,
+        *,
+        sale_id: int,
+        shift_id: int | None,
+        payment_method: str,
+        amount: float,
+        reference: str | None = None,
+        received_amount: float | None = None,
+        change_amount: float | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
 
-            with self._conn_cursor() as (conn, cur):
-                row = self.fetch_one(f"""
-                    INSERT INTO {schema}.pos_payments
-                    (
-                        company_id, sale_id, shift_id, payment_method,
-                        amount, reference, received_amount, change_amount
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                    RETURNING id
-                """, (
-                    int(company_id),
-                    int(sale_id),
-                    shift_id,
-                    payment_method,
-                    amount,
-                    reference,
-                    received_amount,
-                    change_amount,
-                ), cur=cur)
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.pos_payments
+            (
+                company_id, sale_id, shift_id, payment_method,
+                amount, reference, received_amount, change_amount
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            int(company_id),
+            int(sale_id),
+            shift_id,
+            (payment_method or "").strip().lower(),
+            float(amount or 0),
+            reference,
+            received_amount,
+            change_amount,
+        ))
 
-                payment_id = int(row["id"])
-
-                if payment_method != "account" and amount > 0:
-                    accounts = self._pos_resolve_gl_accounts(company_id, cur=cur)
-
-                    journal_id = self.post_journal(
-                        company_id,
-                        {
-                            "date": date.today().isoformat(),
-                            "ref": f"POS-PAY-{payment_id}",
-                            "description": f"POS payment for sale {sale_id}",
-                            "source": "pos_payment",
-                            "source_id": payment_id,
-                            "gross_amount": amount,
-                            "lines": [
-                                {
-                                    "account": accounts["cash_bank"],
-                                    "debit": amount,
-                                    "credit": 0,
-                                    "description": f"POS {payment_method} payment",
-                                },
-                                {
-                                    "account": accounts["receivable"],
-                                    "debit": 0,
-                                    "credit": amount,
-                                    "description": f"Clear POS receivable for sale {sale_id}",
-                                },
-                            ],
-                        },
-                        cur=cur,
-                    )
-
-                    cur.execute(f"""
-                        UPDATE {schema}.pos_payments
-                        SET posted_journal_id=%s
-                        WHERE company_id=%s AND id=%s
-                    """, (int(journal_id), int(company_id), int(payment_id)))
-
-                conn.commit()
-                return payment_id
+        return int(row["id"])
 
     def pos_add_sale_line(self, company_id: int, sale_id: int, line: dict) -> int:
         schema = self.company_schema(company_id)
@@ -36191,19 +36194,24 @@ class DatabaseService:
         customer_name: str | None = None,
         customer_account_id: int | None = None,
         source_quote_id: int | None = None,
+        source_order_id: int | None = None,
+        sale_type: str = "cash_sale",
+        posting_flow: str = "normal_pos",
     ) -> int:
         schema = self.company_schema(company_id)
 
         shift_id = None if not shift_id else int(shift_id)
+        source_order_id = None if not source_order_id else int(source_order_id)
 
         row = self.fetch_one(f"""
             INSERT INTO {schema}.pos_sales
             (
                 company_id, sale_no, terminal_id, shift_id, cashier_user_id,
                 customer_id, customer_name, customer_account_id,
-                source_quote_id, status
+                source_quote_id, source_order_id,
+                sale_type, posting_flow, status
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
             RETURNING id
         """, (
             int(company_id),
@@ -36215,10 +36223,13 @@ class DatabaseService:
             customer_name,
             customer_account_id,
             source_quote_id,
+            source_order_id,
+            sale_type or "cash_sale",
+            posting_flow or "normal_pos",
         ))
 
         return int(row["id"])
-        
+
     def pos_delete_shift_schedule(self, company_id: int, schedule_id: int) -> dict:
         schema = self.company_schema(company_id)
 
@@ -36232,6 +36243,140 @@ class DatabaseService:
             int(company_id),
             int(schedule_id),
         ))
+    
+    def pos_record_account_payment(
+        self,
+        company_id: int,
+        *,
+        sale_id: int,
+        payment_method: str,
+        amount: float,
+        shift_id: int | None = None,
+        reference: str | None = None,
+        received_amount: float | None = None,
+        change_amount: float | None = None,
+        created_by_user_id: int | None = None,
+    ) -> int:
+        schema = self.company_schema(company_id)
+        payment_method = (payment_method or "").strip().lower()
+        amount = float(amount or 0)
+
+        if amount <= 0:
+            raise ValueError("Payment amount must be greater than zero")
+
+        with self._conn_cursor() as (conn, cur):
+            sale = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.pos_sales
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (int(company_id), int(sale_id)), cur=cur)
+
+            if not sale:
+                raise ValueError("POS sale not found")
+
+            gross = float(sale.get("gross_amount") or 0)
+            paid_before = float(sale.get("amount_paid") or 0)
+            balance = max(gross - paid_before, 0)
+
+            if balance <= 0:
+                raise ValueError("Sale is already fully paid")
+
+            pay_amount = min(amount, balance)
+
+            accounts = self._pos_resolve_gl_accounts(
+                company_id,
+                required_roles=["cash_bank", "receivable"],
+                cur=cur,
+            )
+
+            payment_account = self._resolve_pos_payment_account(
+                company_id,
+                sale_id=int(sale_id),
+                cur=cur,
+            ) or accounts["cash_bank"]
+
+            row = self.fetch_one(f"""
+                INSERT INTO {schema}.pos_payments
+                (
+                    company_id, sale_id, shift_id, payment_method,
+                    amount, reference, received_amount, change_amount
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                int(company_id),
+                int(sale_id),
+                shift_id,
+                payment_method,
+                pay_amount,
+                reference,
+                received_amount,
+                change_amount,
+            ), cur=cur)
+
+            payment_id = int(row["id"])
+
+            journal_id = self.post_journal(
+                company_id,
+                {
+                    "date": date.today().isoformat(),
+                    "ref": f"POS-SETTLE-{payment_id}",
+                    "description": f"POS account payment for sale {sale.get('sale_no') or sale_id}",
+                    "source": "pos_account_payment",
+                    "source_id": payment_id,
+                    "gross_amount": pay_amount,
+                    "module_name": "pos",
+                    "event_type": "settlement",
+                    "source_table": "pos_payments",
+                    "created_by_user_id": created_by_user_id,
+                    "updated_by_user_id": created_by_user_id,
+                    "prepared_by_user_id": created_by_user_id,
+                    "lines": [
+                        {
+                            "account_code": payment_account,
+                            "debit": pay_amount,
+                            "credit": 0,
+                            "memo": f"Receive POS account payment {sale.get('sale_no') or sale_id}",
+                        },
+                        {
+                            "account_code": accounts["receivable"],
+                            "debit": 0,
+                            "credit": pay_amount,
+                            "memo": f"Clear POS receivable {sale.get('sale_no') or sale_id}",
+                        },
+                    ],
+                },
+                cur=cur,
+            )
+
+            new_paid = paid_before + pay_amount
+            new_status = "completed" if new_paid + 0.01 >= gross else "part_paid"
+
+            cur.execute(f"""
+                UPDATE {schema}.pos_payments
+                SET posted_journal_id = %s
+                WHERE company_id = %s
+                AND id = %s
+            """, (int(journal_id), int(company_id), int(payment_id)))
+
+            cur.execute(f"""
+                UPDATE {schema}.pos_sales
+                SET amount_paid = %s,
+                    status = %s
+                WHERE company_id = %s
+                AND id = %s
+            """, (
+                new_paid,
+                new_status,
+                int(company_id),
+                int(sale_id),
+            ))
+
+            conn.commit()
+            return payment_id
+            
     def pos_delete_staff_leave(self, company_id: int, leave_id: int) -> dict:
         schema = self.company_schema(company_id)
 

@@ -140,16 +140,37 @@ def api_pos_create_sale(cid: int):
         if not sale_no:
             return _err("sale_no is required", 400)
 
+        terminal_id = int(body.get("terminal_id") or 0)
+        if terminal_id <= 0:
+            return _err("terminal_id is required", 400)
+
+        cashier_user_id = int(
+            body.get("cashier_user_id")
+            or _user_id(payload)
+            or 0
+        )
+        if cashier_user_id <= 0:
+            return _err("cashier_user_id is required", 400)
+
+        sale_type = (body.get("sale_type") or "cash_sale").strip().lower()
+        posting_flow = (body.get("posting_flow") or "normal_pos").strip().lower()
+
+        if sale_type == "account_sale" and not body.get("customer_id"):
+            return _err("customer_id is required for account sale", 400)
+
         sale_id = db_service.pos_create_sale_draft(
             cid,
             sale_no=sale_no,
-            terminal_id=int(body.get("terminal_id") or 0),
-            shift_id=int(body.get("shift_id") or 0),
-            cashier_user_id=int(body.get("cashier_user_id") or _user_id(payload) or 0),
+            terminal_id=terminal_id,
+            shift_id=body.get("shift_id") or None,
+            cashier_user_id=cashier_user_id,
             customer_id=body.get("customer_id"),
             customer_name=body.get("customer_name"),
             customer_account_id=body.get("customer_account_id"),
             source_quote_id=body.get("source_quote_id"),
+            source_order_id=body.get("source_order_id") or None,
+            sale_type=sale_type,
+            posting_flow=posting_flow,
         )
 
         return _ok({"sale_id": int(sale_id)}, 201)
@@ -157,8 +178,54 @@ def api_pos_create_sale(cid: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_create_sale failed")
         return _err("Server error", 500, ex)
+    
+@pos_bp.route(
+    "/api/companies/<int:cid>/pos/sales/<int:sale_id>/account-payment",
+    methods=["POST", "OPTIONS"]
+)
+@require_auth
+def api_pos_record_account_payment(cid: int, sale_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
 
+    deny = _authorise_company(cid)
+    if deny:
+        return deny
 
+    body = _body()
+
+    try:
+        payment_method = (body.get("payment_method") or "").strip().lower()
+
+        if not payment_method:
+            return _err("payment_method is required", 400)
+
+        payment_id = db_service.pos_record_account_payment(
+            cid,
+            sale_id=sale_id,
+            shift_id=body.get("shift_id"),
+            payment_method=payment_method,
+            amount=float(body.get("amount") or 0),
+            reference=body.get("reference"),
+            received_amount=body.get("received_amount"),
+            change_amount=body.get("change_amount"),
+            created_by_user_id=_user_id(),
+        )
+
+        return _ok(
+            {
+                "payment_id": int(payment_id),
+                "message": "Account payment recorded successfully",
+            },
+            201,
+        )
+
+    except Exception as ex:
+        current_app.logger.exception(
+            "api_pos_record_account_payment failed"
+        )
+        return _err("Server error", 500, ex)
+    
 @pos_bp.route("/api/companies/<int:cid>/pos/sales/<int:sale_id>/lines", methods=["POST", "OPTIONS"])
 @require_auth
 def api_pos_add_sale_line(cid: int, sale_id: int):
