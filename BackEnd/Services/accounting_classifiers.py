@@ -1347,10 +1347,13 @@ def _coa_role_from_text(
         ):
             return "equity_regulatory_reserve"
 
-        if has_any(
-            "revaluation reserve",
-            "foreign currency translation reserve"
-        ):
+        if has_any("revaluation reserve"):
+            return "equity_revaluation_reserve"
+
+        if has_any("foreign currency translation reserve"):
+            return "equity_fx_translation_reserve"
+
+        if has_any("oci reserve", "other comprehensive income reserve"):
             return "equity_oci_reserve"
 
         if has_any(

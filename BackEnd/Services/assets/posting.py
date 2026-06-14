@@ -668,8 +668,15 @@ def _preview_hfs(asset_row: dict, payload: dict, policy: dict, ca_before: float,
         "warnings": warnings,
     }
 
-def _preview_revaluation(asset_row: dict, payload: dict, policy: dict, ca_before: float, cur=None) -> dict:
+def _preview_revaluation(
+    asset_row: dict,
+    payload: dict,
+    policy: dict,
+    ca_before: float,
+    cur=None,
+) -> dict:
     company_id = int(asset_row.get("company_id") or 0)
+    schema = company_schema(company_id)
     meta = payload.get("meta_json") or {}
 
     fair_value = D(meta.get("fair_value") or meta.get("new_carrying_amount") or 0)
@@ -681,17 +688,54 @@ def _preview_revaluation(asset_row: dict, payload: dict, policy: dict, ca_before
 
     asset_acct = _pick_asset_code(asset_row, "asset_account_code", policy)
 
-    # accounts (prefer asset row mappings; fallback to policy.posting.*)
-    reserve_acct = (asset_row.get("revaluation_reserve_account_code") or "").strip() or ((policy.get("posting") or {}).get("revaluation_reserve") or "").strip()
-    gain_acct    = (asset_row.get("revaluation_surplus_to_pnl_account_code") or "").strip() or ((policy.get("posting") or {}).get("revaluation_surplus_pnl") or "").strip()
-    loss_acct    = (asset_row.get("revaluation_deficit_pnl_account_code") or "").strip() or ((policy.get("posting") or {}).get("revaluation_deficit_pnl") or "").strip()
+    posting_policy = policy.get("posting") or {}
+
+    reserve_acct = (
+        (asset_row.get("revaluation_reserve_account_code") or "").strip()
+        or (posting_policy.get("revaluation_reserve") or "").strip()
+        or _account_by_role(
+            cur,
+            schema,
+            company_id,
+            "equity_revaluation_reserve",
+            "equity_oci_reserve",
+        )
+    )
+
+    gain_acct = (
+        (asset_row.get("revaluation_surplus_to_pnl_account_code") or "").strip()
+        or (posting_policy.get("revaluation_surplus_pnl") or "").strip()
+        or _account_by_role(
+            cur,
+            schema,
+            company_id,
+            "revaluation_surplus_pnl",
+            "revaluation_gain_pnl",
+        )
+    )
+
+    loss_acct = (
+        (asset_row.get("revaluation_deficit_pnl_account_code") or "").strip()
+        or (posting_policy.get("revaluation_deficit_pnl") or "").strip()
+        or _account_by_role(
+            cur,
+            schema,
+            company_id,
+            "revaluation_deficit_pnl",
+            "revaluation_loss_pnl",
+        )
+    )
 
     lines = []
     warnings = []
 
     if delta == 0:
         warnings.append("Fair value equals current carrying amount; no journal impact.")
-        impact = {"carrying_amount_before": money(ca0), "carrying_amount_after": money(ca0), "delta": 0.0}
+        impact = {
+            "carrying_amount_before": money(ca0),
+            "carrying_amount_after": money(ca0),
+            "delta": 0.0,
+        }
         return {
             "header": _preview_header(payload, memo="SM preview: revaluation"),
             "lines": [],
@@ -699,25 +743,58 @@ def _preview_revaluation(asset_row: dict, payload: dict, policy: dict, ca_before
             "warnings": warnings,
         }
 
-    # asset movement
     if delta > 0:
-        lines.append({"account_code": asset_acct, "debit": money(delta), "credit": 0.0, "memo": "Increase carrying amount"})
-        # default: OCI reserve (preferred)
+        lines.append({
+            "account_code": asset_acct,
+            "debit": money(delta),
+            "credit": 0.0,
+            "memo": "Increase carrying amount",
+        })
+
         if reserve_acct:
-            lines.append({"account_code": reserve_acct, "debit": 0.0, "credit": money(delta), "memo": "OCI revaluation surplus"})
+            lines.append({
+                "account_code": reserve_acct,
+                "debit": 0.0,
+                "credit": money(delta),
+                "memo": "OCI revaluation surplus",
+            })
         elif gain_acct:
             warnings.append("No revaluation reserve account found; routing surplus to P/L gain.")
-            lines.append({"account_code": gain_acct, "debit": 0.0, "credit": money(delta), "memo": "Revaluation gain (P/L)"})
+            lines.append({
+                "account_code": gain_acct,
+                "debit": 0.0,
+                "credit": money(delta),
+                "memo": "Revaluation gain (P/L)",
+            })
         else:
-            raise ValueError("Missing revaluation reserve mapping (asset.revaluation_reserve_account_code or policy.posting.revaluation_reserve)")
+            raise ValueError(
+                "Missing revaluation reserve mapping. Expected asset mapping, "
+                "policy.posting.revaluation_reserve, or COA role "
+                "'equity_revaluation_reserve'."
+            )
 
     else:
         loss_amt = -delta
-        lines.append({"account_code": asset_acct, "debit": 0.0, "credit": money(loss_amt), "memo": "Decrease carrying amount"})
+        lines.append({
+            "account_code": asset_acct,
+            "debit": 0.0,
+            "credit": money(loss_amt),
+            "memo": "Decrease carrying amount",
+        })
+
         if loss_acct:
-            lines.append({"account_code": loss_acct, "debit": money(loss_amt), "credit": 0.0, "memo": "Revaluation deficit (P/L)"})
+            lines.append({
+                "account_code": loss_acct,
+                "debit": money(loss_amt),
+                "credit": 0.0,
+                "memo": "Revaluation deficit (P/L)",
+            })
         else:
-            raise ValueError("Missing revaluation deficit mapping (asset.revaluation_deficit_pnl_account_code or policy.posting.revaluation_deficit_pnl)")
+            raise ValueError(
+                "Missing revaluation deficit mapping. Expected asset mapping, "
+                "policy.posting.revaluation_deficit_pnl, or COA role "
+                "'revaluation_deficit_pnl'."
+            )
 
     impact = {
         "carrying_amount_before": money(ca0),
@@ -727,7 +804,7 @@ def _preview_revaluation(asset_row: dict, payload: dict, policy: dict, ca_before
 
     return {
         "header": _preview_header(payload, memo="SM preview: revaluation"),
-        "lines": _attach_account_names(lines, company_schema(company_id), cur=cur),
+        "lines": _attach_account_names(lines, schema, cur=cur) if cur else lines,
         "impact": impact,
         "warnings": warnings,
     }
@@ -1127,6 +1204,29 @@ def post_subsequent_measurement(
     """), (jid, jid, company_id, sm_id))
 
     return int(jid or 0)
+
+def _account_by_role(cur, schema: str, company_id: int, *roles: str) -> str | None:
+    if not cur or not schema or not roles:
+        return None
+
+    cur.execute(_q(schema, """
+        SELECT code
+        FROM {schema}.coa
+        WHERE company_id = %s
+          AND posting IS TRUE
+          AND role = ANY(%s)
+        ORDER BY
+          CASE role
+            WHEN 'equity_revaluation_reserve' THEN 1
+            WHEN 'equity_oci_reserve' THEN 2
+            ELSE 9
+          END,
+          code
+        LIMIT 1
+    """), (int(company_id), list(roles)))
+
+    row = fetchone(cur)
+    return row.get("code") if row else None
 
 def post_sm_add_cost(
     cur,
