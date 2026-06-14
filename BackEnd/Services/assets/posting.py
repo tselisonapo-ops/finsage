@@ -479,6 +479,34 @@ def assert_sm_eligible(company_id: int, asset_row: dict, event_type: str, amount
     if et == "add_cost":
         assert_capitalization_allowed(float(amount or 0.0), et, policy)
 
+def _asset_carrying_amount(asset_row: dict) -> float:
+    for k in ("carrying_amount", "nbv", "carrying_value"):
+        v = asset_row.get(k)
+        if v is not None and str(v).strip() != "":
+            return float(v or 0)
+
+    cost = D(
+        asset_row.get("cost")
+        or asset_row.get("opening_cost")
+        or asset_row.get("gross_carrying_amount")
+        or 0
+    )
+
+    accum_dep = D(
+        asset_row.get("accumulated_depreciation")
+        or asset_row.get("acc_dep")
+        or asset_row.get("opening_accum_dep")
+        or 0
+    )
+
+    impairment = D(
+        asset_row.get("accumulated_impairment")
+        or asset_row.get("opening_impairment")
+        or 0
+    )
+
+    return float(cost - accum_dep - impairment)
+
 def build_sm_preview(
     *,
     company_id: int,
@@ -491,7 +519,7 @@ def build_sm_preview(
 ) -> dict:
     et = (payload.get("event_type") or "").strip().lower()
 
-    ca_before = float(asset_row.get("carrying_amount") or asset_row.get("nbv") or 0.0)
+    ca_before = _asset_carrying_amount(asset_row)
 
     warnings: list[str] = []
 
