@@ -19113,6 +19113,15 @@ class DatabaseService:
         ALTER TABLE {schema}.pos_receipt_settings
         ADD COLUMN IF NOT EXISTS instagram_handle TEXT DEFAULT '';
 
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS pricing_tax_mode TEXT DEFAULT 'inclusive';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS receipt_tax_display TEXT DEFAULT 'vat_line';
+
+        ALTER TABLE {schema}.pos_receipt_settings
+        ADD COLUMN IF NOT EXISTS tax_invoice_wording TEXT DEFAULT 'Tax Invoice / Receipt';
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_receipt_settings_company_uniq
         ON {schema}.pos_receipt_settings(company_id)
         WHERE is_active = TRUE;
@@ -38029,19 +38038,49 @@ class DatabaseService:
         """, (int(company_id),))
 
         if row:
+            row.setdefault("pricing_tax_mode", "inclusive")
+            row.setdefault("receipt_tax_display", "vat_line")
+            row.setdefault("tax_invoice_wording", row.get("receipt_title", "Tax Invoice / Receipt"))
+
+            row.setdefault("slip_template", "classic")
+            row.setdefault("order_template", "restaurant_order")
+            row.setdefault("kitchen_ticket_template", "kitchen_ticket")
+
             return row
 
         return {
             "company_id": int(company_id),
+
             "receipt_title": "Tax Invoice / Receipt",
             "footer_message": "Thank you for your business.",
             "returns_policy": "Returns accepted within 7 days with original receipt. Items must be unused and in original condition.",
             "refund_policy": "Refunds are issued via the original payment method. Management reserves the right to refuse non-compliant returns.",
             "vat_note": "This document is not a tax invoice unless VAT details are displayed.",
+
             "show_vat_no": True,
             "show_cashier_name": True,
             "show_customer_name": True,
             "is_active": True,
+
+            # Tax
+            "pricing_tax_mode": "inclusive",
+            "receipt_tax_display": "vat_line",
+            "tax_invoice_wording": "Tax Invoice / Receipt",
+
+            # Templates
+            "slip_template": "classic",
+            "order_template": "restaurant_order",
+            "kitchen_ticket_template": "kitchen_ticket",
+
+            # Branding
+            "show_logo": True,
+            "logo_position": "top_center",
+            "company_motto": "",
+            "show_motto": True,
+            "show_socials": False,
+            "whatsapp_number": "",
+            "facebook_handle": "",
+            "instagram_handle": "",
         }
 
     def pos_save_receipt_settings(self, company_id: int, data: dict) -> dict:
@@ -38059,9 +38098,15 @@ class DatabaseService:
                 show_vat_no,
                 show_cashier_name,
                 show_customer_name,
+                pricing_tax_mode,
+                receipt_tax_display,
+                tax_invoice_wording,
+                slip_template,
+                order_template,
+                kitchen_ticket_template,
                 is_active
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
             ON CONFLICT (company_id)
             WHERE is_active = TRUE
             DO UPDATE SET
@@ -38073,11 +38118,19 @@ class DatabaseService:
                 show_vat_no = EXCLUDED.show_vat_no,
                 show_cashier_name = EXCLUDED.show_cashier_name,
                 show_customer_name = EXCLUDED.show_customer_name,
+                pricing_tax_mode = EXCLUDED.pricing_tax_mode,
+                receipt_tax_display = EXCLUDED.receipt_tax_display,
+                tax_invoice_wording = EXCLUDED.tax_invoice_wording,
+                slip_template = EXCLUDED.slip_template,
+                order_template = EXCLUDED.order_template,
+                kitchen_ticket_template = EXCLUDED.kitchen_ticket_template,
                 updated_at = NOW()
             RETURNING *
         """, (
             int(company_id),
-            data.get("receipt_title"),
+            data.get("tax_invoice_wording")
+                or data.get("receipt_title")
+                or "Tax Invoice / Receipt",
             data.get("footer_message"),
             data.get("returns_policy"),
             data.get("refund_policy"),
@@ -38085,6 +38138,15 @@ class DatabaseService:
             bool(data.get("show_vat_no", True)),
             bool(data.get("show_cashier_name", True)),
             bool(data.get("show_customer_name", True)),
+            data.get("pricing_tax_mode", "inclusive"),
+            data.get("receipt_tax_display", "vat_line"),
+            data.get(
+                "tax_invoice_wording",
+                data.get("receipt_title", "Tax Invoice / Receipt"),
+            ),
+            data.get("slip_template", "classic"),
+            data.get("order_template", "restaurant_order"),
+            data.get("kitchen_ticket_template", "kitchen_ticket"),
         ))
 
         return row
@@ -38101,6 +38163,41 @@ class DatabaseService:
             "show_vat_no": data.get("show_vat_no", existing.get("show_vat_no", True)),
             "show_cashier_name": data.get("show_cashier_name", existing.get("show_cashier_name", True)),
             "show_customer_name": data.get("show_customer_name", existing.get("show_customer_name", True)),
+
+            # Receipt templates
+            "slip_template": data.get(
+                "slip_template",
+                existing.get("slip_template", "classic"),
+            ),
+
+            "order_template": data.get(
+                "order_template",
+                existing.get("order_template", "restaurant_order"),
+            ),
+
+            "kitchen_ticket_template": data.get(
+                "kitchen_ticket_template",
+                existing.get("kitchen_ticket_template", "kitchen_ticket"),
+            ),
+
+            # Tax settings
+            "pricing_tax_mode": data.get(
+                "pricing_tax_mode",
+                existing.get("pricing_tax_mode", "inclusive"),
+            ),
+
+            "receipt_tax_display": data.get(
+                "receipt_tax_display",
+                existing.get("receipt_tax_display", "vat_line"),
+            ),
+
+            "tax_invoice_wording": data.get(
+                "tax_invoice_wording",
+                existing.get(
+                    "tax_invoice_wording",
+                    existing.get("receipt_title", "Tax Invoice / Receipt"),
+                ),
+            ),
         }
 
         return self.pos_save_receipt_settings(company_id, merged)
