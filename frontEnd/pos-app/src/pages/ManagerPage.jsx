@@ -93,6 +93,27 @@ const RESTAURANT_SUPERVISOR_TABS = [
   ["attendance", "Attendance"],
 ];
 
+const POS_PERIOD_OPTIONS = [
+  { value: "today", label: "Today" },
+  { value: "hour", label: "This Hour" },
+  { value: "week", label: "This Week" },
+  { value: "month", label: "This Month" },
+  { value: "quarter", label: "This Quarter" },
+  { value: "last_6_months", label: "Last 6 Months" },
+  { value: "previous_year", label: "Previous Year" },
+  { value: "range", label: "Custom Range" },
+];
+
+function defaultPosDateFilter() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  return {
+    period: "today",
+    start_date: today,
+    end_date: today,
+  };
+}
+
 export function ManagerPage() {
   const company = getCompanyContext();
 
@@ -146,7 +167,8 @@ export function ManagerPage() {
   const [shiftSchedule, setShiftSchedule] = useState([]);
   const [staffLeave, setStaffLeave] = useState([]);
   const [attendanceLog, setAttendanceLog] = useState([]);
-
+  const [posDateFilter, setPosDateFilter] = useState(defaultPosDateFilter());
+  
   const openShifts = useMemo(
     () => shifts.filter((x) => x.status === "open").length,
     [shifts]
@@ -1095,15 +1117,24 @@ export function ManagerPage() {
               customers={customers}
               priceLevels={priceLevels}
               promotions={promotions}
+              dateFilter={posDateFilter}
+              setDateFilter={setPosDateFilter}
             />
           )}
 
-          {tab === "sales" && <SalesTab />}
+          {tab === "sales" && (
+            <SalesTab
+              dateFilter={posDateFilter}
+              setDateFilter={setPosDateFilter}
+            />
+          )}
 
           {tab === "reports" && (
             <ReportsTab
               reportView={reportView}
               setReportView={setReportView}
+              dateFilter={posDateFilter}
+              setDateFilter={setPosDateFilter}
             />
           )}
 
@@ -1916,7 +1947,56 @@ function FormModal({ modal, onClose, onSubmit }) {
   );
 }
 
-function OverviewTab({ isRestaurantLike, openShifts, terminals, customers }) {
+function PosDateFilter({ value, onChange, onApply }) {
+  return (
+    <div className="pos-filter-bar">
+      <select
+        className="scan-input"
+        value={value.period}
+        onChange={(e) =>
+          onChange({
+            ...value,
+            period: e.target.value,
+          })
+        }
+      >
+        {POS_PERIOD_OPTIONS.map((x) => (
+          <option key={x.value} value={x.value}>
+            {x.label}
+          </option>
+        ))}
+      </select>
+
+      {value.period === "range" && (
+        <>
+          <input
+            className="scan-input"
+            type="date"
+            value={value.start_date || ""}
+            onChange={(e) =>
+              onChange({ ...value, start_date: e.target.value })
+            }
+          />
+
+          <input
+            className="scan-input"
+            type="date"
+            value={value.end_date || ""}
+            onChange={(e) =>
+              onChange({ ...value, end_date: e.target.value })
+            }
+          />
+        </>
+      )}
+
+      <button className="refresh-btn" onClick={onApply}>
+        Apply
+      </button>
+    </div>
+  );
+}
+
+function OverviewTab({ isRestaurantLike, openShifts, terminals, customers, dateFilter, setDateFilter }) {
   const [overview, setOverview] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -1924,7 +2004,7 @@ function OverviewTab({ isRestaurantLike, openShifts, terminals, customers }) {
     setLoading(true);
 
     try {
-      const res = await posApi.getOverviewDashboard();
+      const res = await posApi.getOverviewDashboard(dateFilter);
       setOverview(res.overview || res || {});
     } catch (err) {
       console.error("Failed to load POS overview", err);
@@ -1936,7 +2016,7 @@ function OverviewTab({ isRestaurantLike, openShifts, terminals, customers }) {
 
   useEffect(() => {
     loadOverview();
-  }, []);
+  }, [dateFilter]);
 
   const salesToday = Number(overview.sales_today || 0);
   const costToday = Number(overview.cost_today || 0);
@@ -1960,6 +2040,12 @@ function OverviewTab({ isRestaurantLike, openShifts, terminals, customers }) {
           <h2>Overview</h2>
           <p>Live POS dashboard for sales, payments, inventory movement and cashier activity.</p>
         </div>
+
+        <PosDateFilter
+          value={dateFilter}
+          onChange={setDateFilter}
+          onApply={loadOverview}
+        />
 
         <div className="workspace-actions">
           <button className="refresh-btn" onClick={loadOverview}>
@@ -2229,7 +2315,7 @@ const SALES_REPORT_KEYS = {
   stock_movement: "stock-movement",
 };
 
-function SalesTab() {
+function SalesTab({ dateFilter, setDateFilter }) {
   const [salesView, setSalesView] = useState(null);
   const [summary, setSummary] = useState({});
   const [rows, setRows] = useState([]);
@@ -2273,7 +2359,7 @@ function SalesTab() {
 
   async function loadSummary() {
     try {
-      const res = await posApi.getReport("sales-summary");
+      const res = await posApi.getReport("sales-summary", dateFilter);
       setSummary(res.summary || {});
     } catch (err) {
       console.error("Failed to load POS sales summary", err);
@@ -2281,14 +2367,16 @@ function SalesTab() {
     }
   }
 
-  async function loadSalesView(viewKey) {
+  async function loadSalesView(viewKey = salesView) {
     if (!viewKey) return;
 
     setLoading(true);
 
     try {
       const reportKey = SALES_REPORT_KEYS[viewKey];
-      const res = await posApi.getReport(reportKey);
+
+      const res = await posApi.getReport(reportKey, dateFilter);
+
       setRows(res.rows || []);
     } catch (err) {
       console.error("Failed to load POS sales view", err);
@@ -2300,81 +2388,19 @@ function SalesTab() {
 
   useEffect(() => {
     loadSummary();
-  }, []);
 
-  useEffect(() => {
     if (salesView) {
       loadSalesView(salesView);
-    } else {
-      setRows([]);
-      loadSummary();
     }
-  }, [salesView]);
-
-  if (active) {
-    return (
-      <section className="manager-workspace">
-        <div className="workspace-head">
-          <div>
-            <h2>{active.title}</h2>
-            <p>Detailed listing behind the selected sales KPI.</p>
-          </div>
-
-          <div className="workspace-actions">
-            <button className="refresh-btn" onClick={() => setSalesView(null)}>
-              ← Back
-            </button>
-
-            <button
-              className="refresh-btn"
-              onClick={() => exportReportToExcel(active.title, active.columns, displayRows)}
-            >
-              Export Excel
-            </button>
-
-            <button
-              className="scan-btn"
-              onClick={() => printReport(active.title, active.columns, displayRows)}
-            >
-              Print
-            </button>
-          </div>
-        </div>
-
-        {loading && <div className="pos-message">Loading report...</div>}
-
-        <div className="report-table-wrap">
-          <table className="report-table">
-            <thead>
-              <tr>
-                {active.columns.map((c) => (
-                  <th key={c}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {displayRows.map((row, idx) => (
-                <tr key={idx}>
-                  {row.map((cell, cidx) => (
-                    <td key={cidx}>{cell}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    );
-  }
+  }, [dateFilter, salesView]);
 
   const exportRows = [
-    ["Today Sales", money(summary.today_sales || 0), "Total POS sales captured today."],
-    ["Transactions", String(summary.transactions || 0), "Number of completed sales."],
-    ["Returns", money(summary.returns || 0), "Refunds and reversed sales."],
-    ["Cash Payments", money(summary.cash_payments || 0), "Cash received through POS."],
-    ["Card Payments", money(summary.card_payments || 0), "Card payments processed."],
-    ["Account Sales", money(summary.account_sales || 0), "Sales posted to customer accounts."],
+    ["Total Sales", money(summary.today_sales || 0), "Sales for selected period"],
+    ["Transactions", String(summary.transactions || 0), "Completed POS transactions"],
+    ["Returns", money(summary.returns || 0), "Returns/refunds for selected period"],
+    ["Cash Payments", money(summary.cash_payments || 0), "Cash received"],
+    ["Card Payments", money(summary.card_payments || 0), "Card/speedpoint received"],
+    ["Account Sales", money(summary.account_sales || 0), "Customer account sales"],
   ];
 
   return (
@@ -2382,34 +2408,90 @@ function SalesTab() {
       <div className="workspace-head">
         <div>
           <h2>Sales</h2>
-          <p>Daily sales, transactions, payments, returns and cashier activity.</p>
+          <p>Sales, transactions, payments, returns and cashier activity.</p>
         </div>
 
         <div className="workspace-actions">
-          <button
-            className="refresh-btn"
-            onClick={() => exportReportToExcel("POS Sales Summary", ["Metric", "Amount", "Description"], exportRows)}
-          >
-            Export Excel
-          </button>
+          <PosDateFilter
+            value={dateFilter}
+            onChange={setDateFilter}
+            onApply={() => {
+              loadSummary();
+              if (salesView) loadSalesView(salesView);
+            }}
+          />
 
           <button
-            className="scan-btn"
-            onClick={() => printReport("POS Sales Summary", ["Metric", "Amount", "Description"], exportRows)}
+            className="refresh-btn"
+            onClick={() => {
+              loadSummary();
+              if (salesView) loadSalesView(salesView);
+            }}
           >
-            Print
+            ↻ Refresh
           </button>
         </div>
       </div>
 
+      {loading && <div className="pos-message">Loading sales...</div>}
+
       <section className="manager-grid">
-        <ManagerCard icon="💰" title="Today Sales" value={money(summary.today_sales || 0)} text="Click to view sold items and quantities." onClick={() => setSalesView("total_sales")} />
+        <ManagerCard icon="💰" title="Sales" value={money(summary.today_sales || summary.total_sales || 0)} text="Click to view sold items and quantities." onClick={() => setSalesView("total_sales")} />
         <ManagerCard icon="🧾" title="Transactions" value={String(summary.transactions || 0)} text="Click to view completed POS transactions." onClick={() => setSalesView("transactions")} />
         <ManagerCard icon="↩️" title="Returns" value={money(summary.returns || 0)} text="Click to view return requests and refunds." onClick={() => setSalesView("returns")} />
         <ManagerCard icon="💵" title="Cash Payments" value={money(summary.cash_payments || 0)} text="Click to view cash received." onClick={() => setSalesView("cash_payments")} />
         <ManagerCard icon="💳" title="Card Payments" value={money(summary.card_payments || 0)} text="Click to view card payments." onClick={() => setSalesView("card_payments")} />
         <ManagerCard icon="👤" title="Account Sales" value={money(summary.account_sales || 0)} text="Click to view customer account sales." onClick={() => setSalesView("account_sales")} />
       </section>
+
+      {active && (
+        <section className="manager-workspace" style={{ marginTop: 18 }}>
+          <div className="workspace-head">
+            <div>
+              <h2>{active.title}</h2>
+              <p>Filtered by selected period.</p>
+            </div>
+
+            <div className="workspace-actions">
+              <button
+                className="scan-btn"
+                onClick={() => exportReportToExcel(active.title, active.columns, displayRows)}
+              >
+                Export Excel
+              </button>
+
+              <button
+                className="scan-btn"
+                onClick={() => printReport(active.title, active.columns, displayRows)}
+              >
+                Print
+              </button>
+            </div>
+          </div>
+
+          <div className="report-table-wrap">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  {active.columns.map((c) => (
+                    <th key={c}>{c}</th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {displayRows.map((row, idx) => (
+                  <tr key={idx}>
+                    {row.map((cell, cidx) => (
+                      <td key={cidx}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </section>
   );
 }
@@ -2820,7 +2902,7 @@ function TerminalsTab({ terminals, onCreate }) {
   );
 }
 
-function ReportsTab({ reportView, setReportView }) {
+function ReportsTab({ reportView, setReportView, dateFilter, setDateFilter }) {
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -2839,7 +2921,7 @@ function ReportsTab({ reportView, setReportView }) {
     setLoading(true);
 
     try {
-      const res = await posApi.getReport("trading-summary");
+      const res = await posApi.getReport("trading-summary", dateFilter);
       setSummary(res.summary || {});
     } catch (err) {
       console.error("Failed to load POS trading summary", err);
@@ -2879,6 +2961,12 @@ function ReportsTab({ reportView, setReportView }) {
           <h2>POS Reports</h2>
           <p>Sales, products, cashiers, customers, discounts and margin analysis.</p>
         </div>
+
+        <ReportGridScreen
+          reportView={reportView}
+          dateFilter={dateFilter}
+          onBack={() => setReportView(null)}
+        />
 
         <div className="workspace-actions">
           <button

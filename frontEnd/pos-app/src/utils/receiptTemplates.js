@@ -71,8 +71,28 @@ function brandingHeader(company = {}, branding = {}, settings = {}) {
       <div class="muted">${esc(branding.address || company.physical_address || "")}</div>
       <div class="muted">${esc(branding.contact_phone || company.company_phone || "")}</div>
       ${
-        company.vat || branding.vat_no
-          ? `<div class="muted">VAT: ${esc(company.vat || branding.vat_no)}</div>`
+        settings.show_vat_no &&
+        (
+          company.is_vat_registered === true ||
+          company.vat_registered === true ||
+          company.tax_registered === true ||
+          company.vat_no ||
+          company.vat_number ||
+          company.vat ||
+          branding.vat_no
+        ) &&
+        (
+          company.vat_no ||
+          company.vat_number ||
+          company.vat ||
+          branding.vat_no
+        )
+          ? `<div class="muted">VAT No: ${esc(
+              company.vat_no ||
+              company.vat_number ||
+              company.vat ||
+              branding.vat_no
+            )}</div>`
           : ""
       }
     </div>
@@ -131,7 +151,7 @@ export function renderRetailClassicSlip({ company = {}, branding = {}, settings 
 
           <div class="center">
             <strong>TAX INVOICE / RECEIPT</strong><br/>
-            <span>${esc(sale.sale_no || sale.invoice_no || "DRAFT")}</span>
+            <span>Tax Invoice No: ${esc(sale.invoice_no || sale.sale_no || "DRAFT")}</span>
           </div>
 
           ${vatTreatmentLine(settings)}
@@ -182,7 +202,7 @@ export function renderRetailCompactSlip({ company = {}, branding = {}, settings 
           <div class="center">
             <strong>${esc(company.name || "Company")}</strong><br/>
             ${company.vat ? `<span class="muted">VAT: ${esc(company.vat)}</span><br/>` : ""}
-            <span>${esc(sale.sale_no || sale.invoice_no || "DRAFT")}</span>
+            <span>Tax Invoice No: ${esc(sale.invoice_no || sale.sale_no || "DRAFT")}</span>
           </div>
 
           <div class="divider"></div>
@@ -220,7 +240,7 @@ export function renderRetailModernSlip({ company = {}, branding = {}, settings =
 
           <div class="center">
             <span class="badge">RETAIL TAX INVOICE</span>
-            <h3>${esc(sale.sale_no || sale.invoice_no || "DRAFT")}</h3>
+            <h3>Tax Invoice No: ${esc(sale.invoice_no || sale.sale_no || "DRAFT")}</h3>
           </div>
 
           <div class="boxed">

@@ -35872,6 +35872,27 @@ class DatabaseService:
 
         return vat_account
 
+    def _resolve_pos_payment_account_by_method(self, company_id: int, method: str, *, cur=None) -> str | None:
+        method = (method or "").strip().lower()
+
+        role_by_method = {
+            "cash": "cash_bank",
+            "card": "cash_bank",
+            "speedpoint": "cash_bank",
+            "mobile_money": "cash_bank",
+        }
+
+        role = role_by_method.get(method, "cash_bank")
+
+        accounts = self._pos_resolve_gl_accounts(
+            company_id,
+            item_type="pos",
+            required_roles=[role],
+            cur=cur,
+        )
+
+        return accounts.get(role)
+
     def pos_complete_sale(self, company_id: int, sale_id: int, *, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
 
@@ -36014,14 +36035,46 @@ class DatabaseService:
                 payment_account = accounts["receivable"]
 
             else:
-                payment_account = self._resolve_pos_payment_account(
-                    company_id,
-                    sale_id=int(sale_id),
-                    cur=cur,
-                ) or accounts["cash_bank"]
+                cur.execute(f"""
+                    SELECT
+                        payment_method,
+                        COALESCE(SUM(amount), 0)::numeric(18,2) AS amount
+                    FROM {schema}.pos_payments
+                    WHERE company_id = %s
+                    AND sale_id = %s
+                    GROUP BY payment_method
+                    ORDER BY payment_method
+                """, (int(company_id), int(sale_id)))
 
-            if not payment_account:
-                raise ValueError("POS payment/bank/cash posting account could not be resolved")
+                payment_rows = cur.fetchall() or []
+
+                payment_entry_lines = []
+
+                for p in payment_rows:
+                    method = (p.get("payment_method") or "").strip().lower()
+                    amount = float(p.get("amount") or 0)
+
+                    if amount <= 0:
+                        continue
+
+                    account_code = self._resolve_pos_payment_account_by_method(
+                        company_id,
+                        method,
+                        cur=cur,
+                    ) or accounts["cash_bank"]
+
+                    if not account_code:
+                        raise ValueError(f"POS payment account could not be resolved for {method}")
+
+                    payment_entry_lines.append({
+                        "account_code": account_code,
+                        "debit": amount,
+                        "credit": 0.0,
+                        "memo": f"POS {method} payment {sale.get('sale_no')}",
+                    })
+
+                if not payment_entry_lines:
+                    raise ValueError("No POS payment lines found")
 
             if not accounts.get("sales"):
                 raise ValueError("POS sales revenue account could not be resolved")
@@ -36036,13 +36089,18 @@ class DatabaseService:
                     raise ValueError("Inventory account could not be resolved")
 
             # 3) Build and post journal
+            if is_account_sale or is_restaurant_unpaid:
+                payment_entry_lines = [
+                    {
+                        "account_code": payment_account,
+                        "debit": gross,
+                        "credit": 0.0,
+                        "memo": f"POS sale {sale.get('sale_no')}",
+                    }
+                ]
+
             entry_lines = [
-                {
-                    "account_code": payment_account,
-                    "debit": gross,
-                    "credit": 0.0,
-                    "memo": f"POS sale {sale.get('sale_no')}",
-                },
+                *payment_entry_lines,
                 {
                     "account_code": accounts["sales"],
                     "debit": 0.0,
@@ -36214,11 +36272,29 @@ class DatabaseService:
 
         return int(inserted["id"])
 
+    def pos_next_sale_no(self, company_id: int, *, cur=None) -> str:
+        schema = self.company_schema(company_id)
+        year = date.today().year
+
+        row = self.fetch_one(f"""
+            SELECT COALESCE(MAX(
+                NULLIF(REGEXP_REPLACE(sale_no, '^POS-{year}-', ''), '')::int
+            ), 0) + 1 AS next_no
+            FROM {schema}.pos_sales
+            WHERE company_id = %s
+            AND sale_no LIKE %s
+        """, (
+            int(company_id),
+            f"POS-{year}-%",
+        ), cur=cur)
+
+        return f"POS-{year}-{int(row['next_no']):04d}"
+
     def pos_create_sale_draft(
         self,
         company_id: int,
         *,
-        sale_no: str,
+        sale_no: str | None = None,
         terminal_id: int,
         shift_id: int | None,
         cashier_user_id: int,
@@ -36234,6 +36310,9 @@ class DatabaseService:
 
         shift_id = None if not shift_id else int(shift_id)
         source_order_id = None if not source_order_id else int(source_order_id)
+
+        if not sale_no:
+            sale_no = self.pos_next_sale_no(company_id, cur=None)
 
         row = self.fetch_one(f"""
             INSERT INTO {schema}.pos_sales
@@ -36323,12 +36402,21 @@ class DatabaseService:
                 cur=cur,
             )
 
-            payment_account = self._resolve_pos_payment_account(
+            accounts = self._pos_resolve_gl_accounts(
                 company_id,
-                sale_id=int(sale_id),
+                required_roles=["cash_bank", "receivable"],
+                cur=cur,
+            )
+
+            payment_account = self._resolve_pos_payment_account_by_method(
+                company_id,
+                payment_method,
                 cur=cur,
             ) or accounts["cash_bank"]
 
+            if not payment_account:
+                raise ValueError(f"POS payment account could not be resolved for {payment_method}")
+                
             row = self.fetch_one(f"""
                 INSERT INTO {schema}.pos_payments
                 (

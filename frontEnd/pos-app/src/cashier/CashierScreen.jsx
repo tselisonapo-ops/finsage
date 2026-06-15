@@ -59,6 +59,11 @@ export function CashierPage() {
     customer_type: "retail",
   });
 
+  const [splitPayments, setSplitPayments] = useState([
+    { payment_method: "cash", amount: "" },
+    { payment_method: "card", amount: "" },
+  ]);
+
   useEffect(() => {
     function handlePosAuthRequired() {
       setShowSignin(true);
@@ -279,8 +284,8 @@ export function CashierPage() {
     setMessage("Cashier signed out.");
   }
 
-  async function searchProducts() {
-    const q = searchText.trim();
+  async function searchProducts(value = searchText) {
+    const q = String(value || "").trim();
 
     if (!q) {
       setMessage("Enter barcode, SKU or product name.");
@@ -479,6 +484,92 @@ export function CashierPage() {
     setShowCustomerModal(true);
   }
 
+  function startNewSale() {
+    setCart([]);
+    setSelectedCustomer(null);
+    setSelectedPaymentMethod("");
+    setAmountTendered("");
+    setSplitPayments([
+      { payment_method: "cash", amount: "" },
+      { payment_method: "card", amount: "" },
+    ]);
+    setSearchText("");
+    setSearchResults([]);
+    setActivePanel("sale");
+    setMessage("New sale started.");
+  }
+
+  function splitTotal() {
+    return splitPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  }
+
+  function updateSplitPayment(index, field, value) {
+    setSplitPayments((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, [field]: value } : p))
+    );
+  }
+
+  function addSplitPaymentRow() {
+    setSplitPayments((prev) => [
+      ...prev,
+      { payment_method: "cash", amount: "" },
+    ]);
+  }
+
+  function removeSplitPaymentRow(index) {
+    setSplitPayments((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function getCartLineForItem(itemId) {
+    return cart.find((line) => Number(line.item_id) === Number(itemId));
+  }
+
+  function recalcCartLine(line, overrides = {}) {
+    const updated = { ...line, ...overrides };
+
+    const amounts = calcLineAmounts(
+      Number(updated.unit_price || 0),
+      Number(updated.qty || 1),
+      Number(updated.discount_amount || 0)
+    );
+
+    return {
+      ...updated,
+      net_amount: amounts.net_amount,
+      vat_amount: amounts.vat_amount,
+      gross_amount: amounts.gross_amount,
+    };
+  }
+
+  function updateCartItem(itemId, overrides = {}) {
+    setCart((prev) =>
+      prev.map((line) =>
+        Number(line.item_id) === Number(itemId)
+          ? recalcCartLine(line, overrides)
+          : line
+      )
+    );
+  }
+
+  function reduceCartItem(itemId) {
+    const existing = getCartLineForItem(itemId);
+
+    if (!existing) return;
+
+    const qty = Number(existing.qty || 1) - 1;
+
+    if (qty <= 0) {
+      setCart((prev) => prev.filter((line) => Number(line.item_id) !== Number(itemId)));
+      return;
+    }
+
+    updateCartItem(itemId, { qty });
+  }
+
+  function removeCartItem(itemId) {
+    setCart((prev) => prev.filter((line) => Number(line.item_id) !== Number(itemId)));
+  }
+
   async function finalisePayment() {
     console.log("FINALISE SALE", cart, totals);
 
@@ -504,7 +595,6 @@ export function CashierPage() {
     }
 
     try {
-      const saleNo = `POS-${Date.now()}`;
 
       const saleType =
         selectedPaymentMethod === "account"
@@ -512,7 +602,7 @@ export function CashierPage() {
           : "cash_sale";
 
       const salePayload = {
-        sale_no: saleNo,
+        sale_no: null,
         terminal_id: activeTerminal.id,
         shift_id: activeShift?.id || null,
         cashier_user_id:
@@ -556,15 +646,41 @@ export function CashierPage() {
       const gross = Number(totals.gross || totals.total || 0);
       const tendered = Number(amountTendered || gross);
 
-      await posApi.recordPayment(saleId, {
-        payment_method: selectedPaymentMethod,
-        amount: gross,
-        received_amount: tendered,
-        change_amount:
-          selectedPaymentMethod === "cash"
-            ? Math.max(tendered - gross, 0)
-            : 0,
-      });
+      if (selectedPaymentMethod === "split") {
+        const totalPaid = splitTotal();
+        const gross = Number(totals.gross || 0);
+
+        if (Math.abs(totalPaid - gross) > 0.01) {
+          setMessage("Split payment total must match the total due.");
+          return;
+        }
+
+        for (const p of splitPayments) {
+          const amount = Number(p.amount || 0);
+
+          if (amount > 0) {
+            await posApi.recordPayment(saleId, {
+              payment_method: p.payment_method,
+              amount,
+              received_amount: amount,
+              change_amount: 0,
+            });
+          }
+        }
+      } else {
+        const gross = Number(totals.gross || totals.total || 0);
+        const tendered = Number(amountTendered || gross);
+
+        await posApi.recordPayment(saleId, {
+          payment_method: selectedPaymentMethod,
+          amount: gross,
+          received_amount: tendered,
+          change_amount:
+            selectedPaymentMethod === "cash"
+              ? Math.max(tendered - gross, 0)
+              : 0,
+        });
+      }
 
       const completeRes = await posApi.completeSale(saleId);
 
@@ -574,9 +690,19 @@ export function CashierPage() {
 
       setMessage(`Sale ${saleNo} completed successfully.`);
 
+      // Reset sale
       setCart([]);
+      setSelectedCustomer(null);
       setSelectedPaymentMethod("");
       setAmountTendered("");
+
+      setSplitPayments([
+        { payment_method: "cash", amount: "" },
+        { payment_method: "card", amount: "" },
+      ]);
+
+      setSearchText("");
+      setSearchResults([]);
       setActivePanel("sale");
     } catch (err) {
       console.error(err);
@@ -790,7 +916,7 @@ export function CashierPage() {
                     : "Search service item"}
                 </label>
 
-                <div className="scan-row">
+                <div className="scan-row autocomplete-wrap">
                   <input
                     className="scan-input"
                     placeholder={
@@ -798,21 +924,96 @@ export function CashierPage() {
                         ? "Scan barcode, SKU or product name..."
                         : "Search service..."
                     }
-                    disabled={!signedIn}
+                    disabled={!canAccessPos}
                     value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
+                    onChange={async (e) => {
+                      const value = e.target.value;
+                      setSearchText(value);
+
+                      if (value.trim().length >= 2) {
+                        await searchProducts(value);
+                      } else {
+                        setSearchResults([]);
+                      }
+                    }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") searchProducts();
+                      if (e.key === "Enter") {
+                        if (searchResults.length === 1) {
+                          const item = searchResults[0];
+
+                          addMenuItemToCart({
+                            id: item.id,
+                            name: item.name || item.item_name || item.description,
+                            price:
+                              item.selling_price ||
+                              item.sales_price ||
+                              item.unit_price ||
+                              item.price ||
+                              0,
+                            image_url: item.image_url || "",
+                            category: item.category || item.sku || "",
+                          });
+
+                          setSearchText("");
+                          setSearchResults([]);
+                        } else {
+                          searchProducts(searchText);
+                        }
+                      }
                     }}
                   />
 
                   <button
                     className="scan-btn"
-                    disabled={!signedIn || searching}
-                    onClick={searchProducts}
+                    disabled={!canAccessPos || searching}
+                    onClick={() => searchProducts(searchText)}
                   >
                     {searching ? "..." : "Search"}
                   </button>
+
+                  {searchResults.length > 0 && (
+                    <div className="autocomplete-dropdown">
+                      {searchResults.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          className="autocomplete-option"
+                          onClick={() => {
+                            addMenuItemToCart({
+                              id: item.id,
+                              name: item.name || item.item_name || item.description,
+                              price:
+                                item.selling_price ||
+                                item.sales_price ||
+                                item.unit_price ||
+                                item.price ||
+                                0,
+                              image_url: item.image_url || "",
+                              category: item.category || item.sku || "",
+                            });
+
+                            setSearchText("");
+                            setSearchResults([]);
+                          }}
+                        >
+                          <span>
+                            <strong>{item.name || item.item_name || item.description}</strong>
+                            <small>{item.sku || item.barcode || ""}</small>
+                          </span>
+
+                          <b>
+                            {money(
+                              item.selling_price ||
+                              item.sales_price ||
+                              item.unit_price ||
+                              item.price ||
+                              0
+                            )}
+                          </b>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -901,45 +1102,110 @@ export function CashierPage() {
                 ) : (
                   <>
                     {searchResults.length ? (
-                      <div className="menu-grid">
-                        {searchResults.map((item) => (
-                          <button
-                            key={item.id}
-                            className="menu-item-card"
-                            onClick={() =>
-                              addMenuItemToCart({
-                                id: item.id,
-                                name: item.name || item.item_name || item.description,
-                                price:
-                                  item.selling_price ||
-                                  item.unit_price ||
-                                  item.price ||
-                                  0,
-                                image_url: item.image_url || "",
-                                category: item.category || item.sku || "",
-                              })
-                            }
-                          >
-                            <div className="menu-info">
-                              <strong>
-                                {item.name || item.item_name || item.description}
-                              </strong>
+                      <div className="menu-grid product-edit-grid">
+                        {searchResults.map((item) => {
+                          const itemId = item.id;
+                          const itemName = item.name || item.item_name || item.description;
+                          const itemPrice =
+                            item.selling_price ||
+                            item.unit_price ||
+                            item.price ||
+                            0;
 
-                              <small>
-                                {item.sku || item.barcode || ""}
-                              </small>
+                          const cartLine = getCartLineForItem(itemId);
 
-                              <b>
-                                {money(
-                                  item.selling_price ||
-                                  item.unit_price ||
-                                  item.price ||
-                                  0
-                                )}
-                              </b>
+                          return (
+                            <div key={item.id} className="menu-item-card product-edit-card">
+                              <button
+                                type="button"
+                                className="product-main-btn"
+                                onClick={() =>
+                                  addMenuItemToCart({
+                                    id: itemId,
+                                    name: itemName,
+                                    price: itemPrice,
+                                    image_url: item.image_url || "",
+                                    category: item.category || item.sku || "",
+                                  })
+                                }
+                              >
+                                <div className="menu-info">
+                                  <strong>{itemName}</strong>
+                                  <small>{item.sku || item.barcode || ""}</small>
+                                  <b>{money(itemPrice)}</b>
+                                </div>
+                              </button>
+
+                              {cartLine && (
+                                <div className="product-cart-controls">
+                                  <div className="qty-controls">
+                                    <button type="button" onClick={() => reduceCartItem(itemId)}>
+                                      -
+                                    </button>
+
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={cartLine.qty}
+                                      onChange={(e) =>
+                                        updateCartItem(itemId, {
+                                          qty: Math.max(Number(e.target.value || 1), 1),
+                                        })
+                                      }
+                                    />
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateCartItem(itemId, {
+                                          qty: Number(cartLine.qty || 1) + 1,
+                                        })
+                                      }
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+
+                                  <label>
+                                    Selling Price
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={cartLine.unit_price}
+                                      onChange={(e) =>
+                                        updateCartItem(itemId, {
+                                          unit_price: Math.max(Number(e.target.value || 0), 0),
+                                        })
+                                      }
+                                    />
+                                  </label>
+
+                                  <label>
+                                    Discount
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={cartLine.discount_amount || 0}
+                                      onChange={(e) =>
+                                        updateCartItem(itemId, {
+                                          discount_amount: Math.max(Number(e.target.value || 0), 0),
+                                        })
+                                      }
+                                    />
+                                  </label>
+
+                                  <button
+                                    type="button"
+                                    className="remove-line-btn"
+                                    onClick={() => removeCartItem(itemId)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                          </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="empty-state">
@@ -1172,8 +1438,55 @@ export function CashierPage() {
                 <button onClick={() => setSelectedPaymentMethod("card")}>Speedpoint / Card</button>
                 <button onClick={() => setSelectedPaymentMethod("mobile_money")}>Mobile Money</button>
                 <button onClick={() => setSelectedPaymentMethod("account")}>Account Sale</button>
-                <button onClick={() => setSelectedPaymentMethod("split")}>Split Payment</button>
+                <button onClick={() => {setSelectedPaymentMethod("split");setActivePanel("payment");}}>Split Payment</button>
               </div>
+
+                {selectedPaymentMethod === "split" && (
+                  <div className="split-payment-box">
+                    <h3>Split Payment</h3>
+
+                    {splitPayments.map((p, index) => (
+                      <div className="receipt-payment-row" key={index}>
+                        <select
+                          className="scan-input"
+                          value={p.payment_method}
+                          onChange={(e) =>
+                            updateSplitPayment(index, "payment_method", e.target.value)
+                          }
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="card">Speedpoint / Card</option>
+                          <option value="mobile_money">Mobile Money</option>
+                        </select>
+
+                        <input
+                          className="scan-input"
+                          type="number"
+                          placeholder="Amount"
+                          value={p.amount}
+                          onChange={(e) =>
+                            updateSplitPayment(index, "amount", e.target.value)
+                          }
+                        />
+
+                        {splitPayments.length > 1 && (
+                          <button type="button" onClick={() => removeSplitPaymentRow(index)}>
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button type="button" onClick={addSplitPaymentRow}>
+                      Add Payment
+                    </button>
+
+                    <p>
+                      Paid: {money(splitTotal())} / Balance:{" "}
+                      {money(Math.max(Number(totals.gross || 0) - splitTotal(), 0))}
+                    </p>
+                  </div>
+                )}
             </div>
           )}
           <div className="payment-bar">
