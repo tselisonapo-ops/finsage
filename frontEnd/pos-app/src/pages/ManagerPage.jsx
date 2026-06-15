@@ -93,13 +93,21 @@ const RESTAURANT_SUPERVISOR_TABS = [
   ["attendance", "Attendance"],
 ];
 
-const POS_PERIOD_OPTIONS = [
-  { value: "hour", label: "Today by Hour" },
-  { value: "day", label: "This Week by Day" },
-  { value: "week", label: "This Year by Week" },
-  { value: "month", label: "This Year by Month" },
-  { value: "quarter", label: "This Year by Quarter" },
-  { value: "last_6_months", label: "Rolling Last 6 Months" },
+const POS_DRIVER_OPTIONS = [
+  { value: "hour", label: "Hours" },
+  { value: "day", label: "Days" },
+  { value: "week", label: "Weeks" },
+  { value: "month", label: "Months" },
+  { value: "quarter", label: "Quarters" },
+];
+
+const POS_FILTER_OPTIONS = [
+  { value: "today", label: "Today" },
+  { value: "this_week", label: "This Week" },
+  { value: "this_month", label: "This Month" },
+  { value: "this_quarter", label: "This Quarter" },
+  { value: "current_year", label: "Current Year" },
+  { value: "last_6_months", label: "Last 6 Months" },
   { value: "previous_quarter", label: "Previous Quarter" },
   { value: "previous_year", label: "Previous Year" },
   { value: "range", label: "Custom Range" },
@@ -109,7 +117,8 @@ function defaultPosDateFilter() {
   const today = new Date().toISOString().slice(0, 10);
 
   return {
-    period: "hour",
+    group_by: "hour",
+    period: "today",
     start_date: today,
     end_date: today,
   };
@@ -1953,7 +1962,24 @@ function PosDateFilter({ value, onChange, onApply }) {
     <div className="pos-filter-bar">
       <select
         className="scan-input"
-        value={value.period}
+        value={value.group_by || "hour"}
+        onChange={(e) =>
+          onChange({
+            ...value,
+            group_by: e.target.value,
+          })
+        }
+      >
+        {POS_DRIVER_OPTIONS.map((x) => (
+          <option key={x.value} value={x.value}>
+            {x.label}
+          </option>
+        ))}
+      </select>
+
+      <select
+        className="scan-input"
+        value={value.period || "today"}
         onChange={(e) =>
           onChange({
             ...value,
@@ -1961,7 +1987,7 @@ function PosDateFilter({ value, onChange, onApply }) {
           })
         }
       >
-        {POS_PERIOD_OPTIONS.map((x) => (
+        {POS_FILTER_OPTIONS.map((x) => (
           <option key={x.value} value={x.value}>
             {x.label}
           </option>
