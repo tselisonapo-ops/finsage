@@ -1461,3 +1461,38 @@ textarea {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+.report-main-head {
+  align-items: flex-start;
+}
+
+.report-header-tools {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.report-header-tools .pos-filter-bar {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 160px 190px auto;
+  gap: 8px;
+}
+
+@media (max-width: 767px) {
+  .report-header-tools {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .report-header-tools .pos-filter-bar {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .report-header-tools .scan-btn {
+    width: 100%;
+  }
+}

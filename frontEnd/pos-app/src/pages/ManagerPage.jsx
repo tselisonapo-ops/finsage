@@ -3194,15 +3194,23 @@ function ReportGridScreen({ reportView, dateFilter, setDateFilter, onBack }) {
 
   return (
     <section className="manager-workspace">
-      <div className="workspace-head">
+      <div className="workspace-head report-main-head">
         <div>
           <h2>{title}</h2>
           <p>Detailed report grid for review, filtering and export.</p>
         </div>
 
-        <button className="scan-btn" onClick={onBack}>
-          Back to Reports
-        </button>
+        <div className="report-header-tools">
+          <PosDateFilter
+            value={dateFilter}
+            onChange={setDateFilter}
+            onApply={loadReport}
+          />
+
+          <button className="scan-btn" onClick={onBack}>
+            Back to Reports
+          </button>
+        </div>
       </div>
 
       <section className="pos-filter-bar">
@@ -3211,12 +3219,6 @@ function ReportGridScreen({ reportView, dateFilter, setDateFilter, onBack }) {
           placeholder="Search item, cashier, customer..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
-        />
-
-        <PosDateFilter
-          value={dateFilter}
-          onChange={setDateFilter}
-          onApply={loadReport}
         />
 
         <button className="scan-btn" onClick={loadReport}>
