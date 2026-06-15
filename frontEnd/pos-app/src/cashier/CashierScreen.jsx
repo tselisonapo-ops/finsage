@@ -841,7 +841,7 @@ export function CashierPage() {
         </div>
         <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
 
-      {signedIn && (
+      {(signedIn || isPosSuperUser) && (
         <div>
           <span>Terminal</span>
             <select

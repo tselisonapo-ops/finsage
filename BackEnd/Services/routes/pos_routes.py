@@ -252,10 +252,8 @@ def api_pos_create_sale(cid: int):
     payload = getattr(request, "jwt_payload", {}) or {}
 
     try:
-        sale_no = (body.get("sale_no") or "").strip()
-        if not sale_no:
-            return _err("sale_no is required", 400)
-
+        sale_no = (body.get("sale_no") or "").strip() or None
+        
         terminal_id = int(body.get("terminal_id") or 0)
         if terminal_id <= 0:
             return _err("terminal_id is required", 400)
