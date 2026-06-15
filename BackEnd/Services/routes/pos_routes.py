@@ -7,10 +7,69 @@ from flask import Blueprint, jsonify, request, g, current_app, make_response
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth, _corsify
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
-
+from datetime import timedelta, date
+from dateutil.relativedelta import relativedelta
 
 pos_bp = Blueprint("pos_bp", __name__)
 
+def resolve_pos_period(period: str, start_date=None, end_date=None):
+    today = date.today()
+    period = (period or "hour").lower()
+
+    if period == "hour":
+        return today, today, "hour"
+
+    if period == "day":
+        start = today - timedelta(days=today.weekday())
+        end = start + timedelta(days=6)
+        return start, end, "day"
+
+    if period == "week":
+        start = date(today.year, 1, 1)
+        end = date(today.year, 12, 31)
+        return start, end, "week"
+
+    if period == "month":
+        start = date(today.year, 1, 1)
+        end = date(today.year, 12, 31)
+        return start, end, "month"
+
+    if period == "quarter":
+        start = date(today.year, 1, 1)
+        end = date(today.year, 12, 31)
+        return start, end, "quarter"
+
+    if period == "last_6_months":
+        first_this_month = date(today.year, today.month, 1)
+        start = first_this_month - relativedelta(months=5)
+        end = today
+        return start, end, "month"
+
+    if period == "previous_quarter":
+        current_q = ((today.month - 1) // 3) + 1
+        prev_q = current_q - 1
+
+        year = today.year
+        if prev_q == 0:
+          prev_q = 4
+          year -= 1
+
+        start_month = ((prev_q - 1) * 3) + 1
+        start = date(year, start_month, 1)
+        end = start + relativedelta(months=3) - timedelta(days=1)
+        return start, end, "month"
+
+    if period == "previous_year":
+        start = date(today.year - 1, 1, 1)
+        end = date(today.year - 1, 12, 31)
+        return start, end, "month"
+
+    if period == "range":
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+        return start, end, "day"
+
+    return today, today, "hour"
 
 def _body() -> dict:
     return request.get_json(silent=True) or {}
@@ -312,12 +371,19 @@ def api_pos_report(cid: int, report_key: str):
         return deny
 
     try:
+        start_date, end_date, group_by = resolve_pos_period(
+            request.args.get("period"),
+            request.args.get("start_date"),
+            request.args.get("end_date"),
+        )
+
         data = db_service.pos_get_report(
             cid,
             report_key=report_key,
             q=request.args.get("q", ""),
-            start_date=request.args.get("start_date"),
-            end_date=request.args.get("end_date"),
+            start_date=start_date,
+            end_date=end_date,
+            group_by=group_by,
         )
 
         return jsonify({"ok": True, **data}), 200
@@ -337,7 +403,19 @@ def api_pos_dashboard_overview(cid: int):
         return deny
 
     try:
-        data = db_service.pos_dashboard_overview(cid)
+        start_date, end_date, group_by = resolve_pos_period(
+            request.args.get("period"),
+            request.args.get("start_date"),
+            request.args.get("end_date"),
+        )
+
+        data = db_service.pos_dashboard_overview(
+            cid,
+            start_date=start_date,
+            end_date=end_date,
+            group_by=group_by,
+        )
+
         return jsonify({"ok": True, **data}), 200
 
     except Exception as ex:

@@ -94,12 +94,13 @@ const RESTAURANT_SUPERVISOR_TABS = [
 ];
 
 const POS_PERIOD_OPTIONS = [
-  { value: "today", label: "Today" },
-  { value: "hour", label: "This Hour" },
-  { value: "week", label: "This Week" },
-  { value: "month", label: "This Month" },
-  { value: "quarter", label: "This Quarter" },
-  { value: "last_6_months", label: "Last 6 Months" },
+  { value: "hour", label: "Today by Hour" },
+  { value: "day", label: "This Week by Day" },
+  { value: "week", label: "This Year by Week" },
+  { value: "month", label: "This Year by Month" },
+  { value: "quarter", label: "This Year by Quarter" },
+  { value: "last_6_months", label: "Rolling Last 6 Months" },
+  { value: "previous_quarter", label: "Previous Quarter" },
   { value: "previous_year", label: "Previous Year" },
   { value: "range", label: "Custom Range" },
 ];
@@ -108,7 +109,7 @@ function defaultPosDateFilter() {
   const today = new Date().toISOString().slice(0, 10);
 
   return {
-    period: "today",
+    period: "hour",
     start_date: today,
     end_date: today,
   };
@@ -2954,6 +2955,17 @@ function ReportsTab({ reportView, setReportView, dateFilter, setDateFilter }) {
     ["Trading Result", money(summary.trading_result || 0), "Net sales less cost of items sold."],
   ];
 
+  if (reportView) {
+    return (
+      <ReportGridScreen
+        reportView={reportView}
+        dateFilter={dateFilter}
+        setDateFilter={setDateFilter}
+        onBack={() => setReportView(null)}
+      />
+    );
+  }
+
   return (
     <section className="manager-workspace">
       <div className="workspace-head">
@@ -2961,12 +2973,6 @@ function ReportsTab({ reportView, setReportView, dateFilter, setDateFilter }) {
           <h2>POS Reports</h2>
           <p>Sales, products, cashiers, customers, discounts and margin analysis.</p>
         </div>
-
-        <ReportGridScreen
-          reportView={reportView}
-          dateFilter={dateFilter}
-          onBack={() => setReportView(null)}
-        />
 
         <div className="workspace-actions">
           <button
@@ -3061,10 +3067,8 @@ function ReportsTab({ reportView, setReportView, dateFilter, setDateFilter }) {
   );
 }
 
-function ReportGridScreen({ reportView, onBack }) {
+function ReportGridScreen({ reportView, dateFilter, setDateFilter, onBack }) {
   const [q, setQ] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(false);
@@ -3146,7 +3150,7 @@ function ReportGridScreen({ reportView, onBack }) {
         </button>
       </div>
 
-      <section className="report-toolbar">
+      <section className="pos-filter-bar">
         <input
           className="scan-input"
           placeholder="Search item, cashier, customer..."
@@ -3154,18 +3158,10 @@ function ReportGridScreen({ reportView, onBack }) {
           onChange={(e) => setQ(e.target.value)}
         />
 
-        <input
-          className="scan-input"
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-
-        <input
-          className="scan-input"
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
+        <PosDateFilter
+          value={dateFilter}
+          onChange={setDateFilter}
+          onApply={loadReport}
         />
 
         <button className="scan-btn" onClick={loadReport}>
@@ -3186,7 +3182,6 @@ function ReportGridScreen({ reportView, onBack }) {
           Print
         </button>
       </section>
-
       {loading && <div className="pos-message">Loading report...</div>}
 
       <section className="manager-grid">

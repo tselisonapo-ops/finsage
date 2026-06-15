@@ -36497,7 +36497,56 @@ class DatabaseService:
             conn.commit()
             return payment_id
 
-    def _pos_report_sales_summary(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+    def _pos_date_filter(self):
+        return """
+            BETWEEN %s AND %s
+        """
+
+    def _pos_grouping(self, group_by: str):
+        group_by = (group_by or "hour").lower()
+
+        mapping = {
+            "hour": (
+                "date_trunc('hour', s.sale_date)",
+                "HH24:00",
+            ),
+            "day": (
+                "date_trunc('day', s.sale_date)",
+                "Dy DD",
+            ),
+            "week": (
+                "date_trunc('week', s.sale_date)",
+                'IYYY-"W"IW',
+            ),
+            "month": (
+                "date_trunc('month', s.sale_date)",
+                "Mon YYYY",
+            ),
+            "quarter": (
+                "date_trunc('quarter', s.sale_date)",
+                '"Q"Q YYYY',
+            ),
+        }
+
+        return mapping.get(
+            group_by,
+            (
+                "date_trunc('hour', s.sale_date)",
+                "HH24:00",
+            ),
+        )
+
+    def _pos_report_sales_summary(
+        self,
+        company_id: int,
+        schema: str,
+        q: str = "",
+        start_date=None,
+        end_date=None,
+    ) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         row = self.fetch_one(f"""
             SELECT
                 COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS today_sales,
@@ -36506,27 +36555,41 @@ class DatabaseService:
             FROM {schema}.pos_sales s
             WHERE s.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND s.business_date BETWEEN %s AND %s
+        """, (
+            int(company_id),
+            start_date,
+            end_date,
+        )) or {}
 
         returns = self.fetch_one(f"""
             SELECT COALESCE(SUM(refund_amount), 0)::numeric(18,2) AS returns
             FROM {schema}.pos_returns
             WHERE company_id = %s
             AND status = 'completed'
-            AND return_date::date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND return_date::date BETWEEN %s AND %s
+        """, (
+            int(company_id),
+            start_date,
+            end_date,
+        )) or {}
 
         payments = self.fetch_one(f"""
             SELECT
                 COALESCE(SUM(CASE WHEN lower(p.payment_method) = 'cash' THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS cash_payments,
                 COALESCE(SUM(CASE WHEN lower(p.payment_method) IN ('card', 'speedpoint') THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS card_payments
             FROM {schema}.pos_payments p
-            JOIN {schema}.pos_sales s ON s.id = p.sale_id AND s.company_id = p.company_id
+            JOIN {schema}.pos_sales s
+            ON s.id = p.sale_id
+            AND s.company_id = p.company_id
             WHERE p.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND s.business_date BETWEEN %s AND %s
+        """, (
+            int(company_id),
+            start_date,
+            end_date,
+        )) or {}
 
         return {
             "summary": {
@@ -36540,8 +36603,10 @@ class DatabaseService:
             "rows": [],
         }
 
-
     def _pos_report_trading_summary(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         row = self.fetch_one(f"""
             SELECT
                 COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS sales,
@@ -36549,14 +36614,16 @@ class DatabaseService:
             FROM {schema}.pos_sales
             WHERE company_id = %s
             AND status = 'completed'
-        """, (int(company_id),)) or {}
+            AND business_date BETWEEN %s AND %s
+        """, (int(company_id), start_date, end_date)) or {}
 
         returns = self.fetch_one(f"""
             SELECT COALESCE(SUM(refund_amount), 0)::numeric(18,2) AS returns
             FROM {schema}.pos_returns
             WHERE company_id = %s
             AND status = 'completed'
-        """, (int(company_id),)) or {}
+            AND return_date::date BETWEEN %s AND %s
+        """, (int(company_id), start_date, end_date)) or {}
 
         sales = float(row.get("sales") or 0)
         returns_amount = float(returns.get("returns") or 0)
@@ -36576,6 +36643,9 @@ class DatabaseService:
 
 
     def _pos_report_sold_items(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 l.description AS item,
@@ -36587,10 +36657,11 @@ class DatabaseService:
             JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             AND (%s = '' OR l.description ILIKE %s OR COALESCE(l.sku,'') ILIKE %s)
             GROUP BY l.description, l.sku
             ORDER BY total_sales DESC
-        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+        """, (int(company_id), start_date, end_date, q or "", f"%{q}%", f"%{q}%")) or []
 
         return {
             "summary": {},
@@ -36599,6 +36670,9 @@ class DatabaseService:
 
 
     def _pos_report_transactions(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 s.sale_no,
@@ -36612,22 +36686,22 @@ class DatabaseService:
             LEFT JOIN public.users u ON u.id = s.cashier_user_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             AND (%s = '' OR s.sale_no ILIKE %s OR COALESCE(s.customer_name,'') ILIKE %s)
             ORDER BY s.sale_date DESC
             LIMIT 500
-        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+        """, (int(company_id), start_date, end_date, q or "", f"%{q}%", f"%{q}%")) or []
 
         return {
             "summary": {},
             "rows": [[r["sale_no"], r["sale_date"], r["cashier"], r["customer"], r["gross_amount"], r["status"]] for r in rows],
         }
 
-
     def _pos_report_payments(self, company_id: int, schema: str, method: str, q: str = "", start_date=None, end_date=None) -> dict:
-        if method == "card":
-            method_filter = "lower(p.payment_method) IN ('card', 'speedpoint')"
-        else:
-            method_filter = "lower(p.payment_method) = 'cash'"
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
+        method_filter = "lower(p.payment_method) IN ('card', 'speedpoint')" if method == "card" else "lower(p.payment_method) = 'cash'"
 
         rows = self.fetch_all(f"""
             SELECT
@@ -36647,25 +36721,22 @@ class DatabaseService:
             LEFT JOIN public.users u ON u.id = s.cashier_user_id
             WHERE p.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             AND {method_filter}
             AND (%s = '' OR s.sale_no ILIKE %s OR COALESCE(p.reference,'') ILIKE %s)
             ORDER BY p.created_at DESC
             LIMIT 500
-        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+        """, (int(company_id), start_date, end_date, q or "", f"%{q}%", f"%{q}%")) or []
 
         if method == "card":
-            return {
-                "summary": {},
-                "rows": [[r["sale_no"], r["payment_date"], r["terminal"], r["reference"], r["amount"], r["status"]] for r in rows],
-            }
+            return {"summary": {}, "rows": [[r["sale_no"], r["payment_date"], r["terminal"], r["reference"], r["amount"], r["status"]] for r in rows]}
 
-        return {
-            "summary": {},
-            "rows": [[r["sale_no"], r["payment_date"], r["cashier"], r["received"], r["change_amount"], r["amount"]] for r in rows],
-        }
-
+        return {"summary": {}, "rows": [[r["sale_no"], r["payment_date"], r["cashier"], r["received"], r["change_amount"], r["amount"]] for r in rows]}
 
     def _pos_report_account_sales(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 COALESCE(s.customer_name, cp.customer_name, '-') AS customer,
@@ -36679,18 +36750,21 @@ class DatabaseService:
             WHERE s.company_id = %s
             AND s.status = 'completed'
             AND s.sale_type = 'account_sale'
+            AND s.business_date BETWEEN %s AND %s
             AND (%s = '' OR s.sale_no ILIKE %s OR COALESCE(s.customer_name, cp.customer_name, '') ILIKE %s)
             ORDER BY s.sale_date DESC
             LIMIT 500
-        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+        """, (int(company_id), start_date, end_date, q or "", f"%{q}%", f"%{q}%")) or []
 
         return {
             "summary": {},
             "rows": [[r["customer"], r["sale_no"], r["sale_date"], r["gross_amount"], r["balance"], r["credit_limit"]] for r in rows],
         }
 
-
     def _pos_report_daily_sales(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 s.business_date::text AS business_date,
@@ -36706,18 +36780,22 @@ class DatabaseService:
             LEFT JOIN public.users u ON u.id = s.cashier_user_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             GROUP BY s.business_date, sh.id, t.name, cu.pos_display_name, u.email, s.cashier_user_id
             ORDER BY s.business_date DESC
             LIMIT 500
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["business_date"], r["shift"], r["terminal"], r["cashier"], r["sales"], r["payments"]] for r in rows],
         }
 
 
     def _pos_report_sales_per_product(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 l.description AS product,
@@ -36733,19 +36811,22 @@ class DatabaseService:
             JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             AND (%s = '' OR l.description ILIKE %s OR COALESCE(l.sku,'') ILIKE %s)
             GROUP BY l.description, l.sku
             ORDER BY sales DESC
             LIMIT 500
-        """, (int(company_id), q or "", f"%{q}%", f"%{q}%")) or []
+        """, (int(company_id), start_date, end_date, q or "", f"%{q}%", f"%{q}%")) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["product"], r["sku"], r["qty_sold"], r["sales"], r["cost"], r["gross_profit"], f'{r["margin"]}%'] for r in rows],
         }
 
-
     def _pos_report_sales_per_category(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 COALESCE(i.category, 'Uncategorised') AS category,
@@ -36761,18 +36842,21 @@ class DatabaseService:
             LEFT JOIN {schema}.inventory_items i ON i.id = l.item_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             GROUP BY COALESCE(i.category, 'Uncategorised')
             ORDER BY sales DESC
             LIMIT 500
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["category"], r["qty_sold"], r["sales"], r["cost"], r["gross_profit"], f'{r["margin"]}%'] for r in rows],
         }
 
-
     def _pos_report_cashier_performance(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
@@ -36786,18 +36870,21 @@ class DatabaseService:
             LEFT JOIN public.users u ON u.id = s.cashier_user_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             GROUP BY cu.pos_display_name, u.email, s.cashier_user_id
             ORDER BY sales DESC
             LIMIT 500
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["cashier"], r["sales"], r["discounts"], r["returns"], r["cash_variance"]] for r in rows],
         }
 
-
     def _pos_report_customer_accounts(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 cp.customer_name,
@@ -36810,20 +36897,23 @@ class DatabaseService:
             ON (s.customer_account_id = cp.id OR s.customer_id = cp.id)
             AND s.status = 'completed'
             AND s.sale_type = 'account_sale'
+            AND s.business_date BETWEEN %s AND %s
             WHERE cp.company_id = %s
             AND (%s = '' OR cp.customer_name ILIKE %s)
             GROUP BY cp.customer_name, cp.customer_type, cp.current_balance, cp.credit_limit
             ORDER BY account_sales DESC
             LIMIT 500
-        """, (int(company_id), q or "", f"%{q}%")) or []
+        """, (start_date, end_date, int(company_id), q or "", f"%{q}%")) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["customer_name"], r["customer_type"], r["account_sales"], r["balance"], r["credit_limit"]] for r in rows],
         }
 
-
     def _pos_report_discount_report(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 COALESCE(l.price_source, 'manual/line') AS promotion,
@@ -36835,19 +36925,22 @@ class DatabaseService:
             JOIN {schema}.pos_sales s ON s.id = l.sale_id AND s.company_id = l.company_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             AND COALESCE(l.discount_amount, 0) <> 0
             GROUP BY COALESCE(l.price_source, 'manual/line')
             ORDER BY discount DESC
             LIMIT 500
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["promotion"], r["type"], r["discount"], r["transactions"], r["value"]] for r in rows],
         }
 
-
     def _pos_report_returns_report(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 r.return_date::date::text AS return_date,
@@ -36859,17 +36952,20 @@ class DatabaseService:
             LEFT JOIN {schema}.pos_sales s ON s.id = r.original_sale_id
             LEFT JOIN {schema}.pos_return_lines rl ON rl.return_id = r.id
             WHERE r.company_id = %s
+            AND r.return_date::date BETWEEN %s AND %s
             ORDER BY r.return_date DESC
             LIMIT 500
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["return_date"], r["receipt"], r["item"], r["reason"], r["refund"]] for r in rows],
         }
 
-
     def _pos_report_stock_movement(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
         rows = self.fetch_all(f"""
             SELECT
                 COALESCE(i.name, l.description) AS item,
@@ -36885,18 +36981,31 @@ class DatabaseService:
             LEFT JOIN {schema}.inventory_layers il ON il.item_id = l.item_id AND il.company_id = l.company_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
+            AND s.business_date BETWEEN %s AND %s
             GROUP BY COALESCE(i.name, l.description), COALESCE(i.sku, l.sku, '')
             ORDER BY sold DESC
             LIMIT 500
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         return {
-            "summary": self._pos_report_trading_summary(company_id, schema).get("summary", {}),
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
             "rows": [[r["item"], r["sku"], r["opening"], r["sold"], r["closing"], r["sales"], r["cost"]] for r in rows],
         }
 
-    def pos_dashboard_overview(self, company_id: int) -> dict:
+    def pos_dashboard_overview(
+        self,
+        company_id: int,
+        *,
+        start_date=None,
+        end_date=None,
+        group_by="hour",
+    ) -> dict:
         schema = self.company_schema(company_id)
+
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
+
+        bucket_expr, bucket_fmt = self._pos_grouping(group_by)
 
         sales = self.fetch_one(f"""
             SELECT
@@ -36911,32 +37020,31 @@ class DatabaseService:
             FROM {schema}.pos_sales
             WHERE company_id = %s
             AND status = 'completed'
-            AND business_date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND business_date BETWEEN %s AND %s
+        """, (int(company_id), start_date, end_date)) or {}
 
         payments = self.fetch_one(f"""
             SELECT
-                COALESCE(SUM(CASE WHEN lower(payment_method) = 'cash' THEN amount ELSE 0 END), 0)::numeric(18,2) AS cash_payments,
-                COALESCE(SUM(CASE WHEN lower(payment_method) IN ('card', 'speedpoint') THEN amount ELSE 0 END), 0)::numeric(18,2) AS card_payments,
-                COALESCE(SUM(CASE WHEN lower(payment_method) IN ('account', 'credit') THEN amount ELSE 0 END), 0)::numeric(18,2) AS account_payments
+                COALESCE(SUM(CASE WHEN lower(p.payment_method) = 'cash' THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS cash_payments,
+                COALESCE(SUM(CASE WHEN lower(p.payment_method) IN ('card', 'speedpoint') THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS card_payments,
+                COALESCE(SUM(CASE WHEN lower(p.payment_method) IN ('account', 'credit') THEN p.amount ELSE 0 END), 0)::numeric(18,2) AS account_payments
             FROM {schema}.pos_payments p
             JOIN {schema}.pos_sales s
             ON s.id = p.sale_id
             AND s.company_id = p.company_id
             WHERE p.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND s.business_date BETWEEN %s AND %s
+        """, (int(company_id), start_date, end_date)) or {}
 
         account_sales = self.fetch_one(f"""
-            SELECT
-                COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS account_sales
+            SELECT COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS account_sales
             FROM {schema}.pos_sales
             WHERE company_id = %s
             AND status = 'completed'
             AND sale_type = 'account_sale'
-            AND business_date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND business_date BETWEEN %s AND %s
+        """, (int(company_id), start_date, end_date)) or {}
 
         returns = self.fetch_one(f"""
             SELECT
@@ -36946,8 +37054,8 @@ class DatabaseService:
                 )::int AS pending_returns
             FROM {schema}.pos_returns
             WHERE company_id = %s
-            AND return_date::date = CURRENT_DATE
-        """, (int(company_id),)) or {}
+            AND return_date::date BETWEEN %s AND %s
+        """, (int(company_id), start_date, end_date)) or {}
 
         top_item = self.fetch_one(f"""
             SELECT
@@ -36960,11 +37068,11 @@ class DatabaseService:
             AND s.company_id = l.company_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
+            AND s.business_date BETWEEN %s AND %s
             GROUP BY l.description
             ORDER BY SUM(l.qty) DESC, SUM(l.gross_amount) DESC
             LIMIT 1
-        """, (int(company_id),)) or {}
+        """, (int(company_id), start_date, end_date)) or {}
 
         shifts = self.fetch_one(f"""
             SELECT
@@ -37001,18 +37109,18 @@ class DatabaseService:
             ) x
         """, (int(company_id),)) or {}
 
-        hourly_sales_rows = self.fetch_all(f"""
+        sales_trend_rows = self.fetch_all(f"""
             SELECT
-                TO_CHAR(date_trunc('hour', s.sale_date), 'HH24:00') AS hour,
+                TO_CHAR({bucket_expr}, '{bucket_fmt}') AS bucket,
                 COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS sales,
                 COUNT(*)::int AS transactions
             FROM {schema}.pos_sales s
             WHERE s.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
-            GROUP BY date_trunc('hour', s.sale_date)
-            ORDER BY date_trunc('hour', s.sale_date)
-        """, (int(company_id),)) or []
+            AND s.business_date BETWEEN %s AND %s
+            GROUP BY {bucket_expr}
+            ORDER BY {bucket_expr}
+        """, (int(company_id), start_date, end_date)) or []
 
         payment_mix_rows = self.fetch_all(f"""
             SELECT
@@ -37030,17 +37138,10 @@ class DatabaseService:
             AND s.company_id = p.company_id
             WHERE p.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
-            GROUP BY
-                CASE
-                    WHEN lower(p.payment_method) IN ('card', 'speedpoint') THEN 'Card'
-                    WHEN lower(p.payment_method) = 'cash' THEN 'Cash'
-                    WHEN lower(p.payment_method) IN ('account', 'credit') THEN 'Account'
-                    WHEN lower(p.payment_method) IN ('mobile_money', 'mobile money') THEN 'Mobile Money'
-                    ELSE INITCAP(p.payment_method)
-                END
+            AND s.business_date BETWEEN %s AND %s
+            GROUP BY method
             ORDER BY amount DESC
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         top_products_rows = self.fetch_all(f"""
             SELECT
@@ -37053,40 +37154,16 @@ class DatabaseService:
             AND s.company_id = l.company_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
+            AND s.business_date BETWEEN %s AND %s
             GROUP BY l.description
             ORDER BY SUM(l.gross_amount) DESC, SUM(l.qty) DESC
             LIMIT 8
-        """, (int(company_id),)) or []
-
-        stock_movement_rows = self.fetch_all(f"""
-            SELECT
-                COALESCE(i.name, l.description) AS item,
-                COALESCE(i.sku, l.sku, '') AS sku,
-                SUM(l.qty)::numeric(18,4) AS sold,
-                COALESCE(SUM(il.qty_in - il.qty_out), 0)::numeric(18,4) AS closing
-            FROM {schema}.pos_sale_lines l
-            JOIN {schema}.pos_sales s
-            ON s.id = l.sale_id
-            AND s.company_id = l.company_id
-            LEFT JOIN {schema}.inventory_items i
-            ON i.id = l.item_id
-            AND i.company_id = l.company_id
-            LEFT JOIN {schema}.inventory_layers il
-            ON il.company_id = l.company_id
-            AND il.item_id = l.item_id
-            WHERE s.company_id = %s
-            AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
-            GROUP BY COALESCE(i.name, l.description), COALESCE(i.sku, l.sku, '')
-            ORDER BY SUM(l.qty) DESC
-            LIMIT 8
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
         recent_rows = self.fetch_all(f"""
             SELECT
                 s.sale_no,
-                TO_CHAR(s.sale_date, 'HH24:MI') AS time,
+                TO_CHAR(s.sale_date, 'YYYY-MM-DD HH24:MI') AS time,
                 COALESCE(cu.pos_display_name, u.email, s.cashier_user_id::text, '-') AS cashier,
                 COALESCE(s.customer_name, '-') AS customer,
                 s.gross_amount::numeric(18,2) AS amount
@@ -37098,28 +37175,26 @@ class DatabaseService:
             ON u.id = s.cashier_user_id
             WHERE s.company_id = %s
             AND s.status = 'completed'
-            AND s.business_date = CURRENT_DATE
+            AND s.business_date BETWEEN %s AND %s
             ORDER BY s.sale_date DESC
             LIMIT 10
-        """, (int(company_id),)) or []
+        """, (int(company_id), start_date, end_date)) or []
 
-        sales_today = float(sales.get("sales_today") or 0)
-        cost_today = float(sales.get("cost_today") or 0)
+        sales_total = float(sales.get("sales_today") or 0)
+        cost_total = float(sales.get("cost_today") or 0)
 
-        gross_margin = 0.0
-        if sales_today > 0:
-            gross_margin = round(((sales_today - cost_today) / sales_today) * 100, 2)
+        gross_margin = round(((sales_total - cost_total) / sales_total) * 100, 2) if sales_total > 0 else 0.0
 
         return {
             "overview": {
-                "sales_today": round(sales_today, 2),
+                "sales_today": round(sales_total, 2),
                 "transactions": int(sales.get("transactions") or 0),
                 "customers_served": int(sales.get("customers_served") or 0),
                 "top_selling_item": top_item.get("item_name") or "-",
                 "open_shifts": int(shifts.get("open_shifts") or 0),
                 "gross_margin": gross_margin,
-                "cost_today": round(cost_today, 2),
-                "gross_profit": round(sales_today - cost_today, 2),
+                "cost_today": round(cost_total, 2),
+                "gross_profit": round(sales_total - cost_total, 2),
                 "average_ticket": float(sales.get("average_ticket") or 0),
                 "cash_payments": float(payments.get("cash_payments") or 0),
                 "card_payments": float(payments.get("card_payments") or 0),
@@ -37130,14 +37205,27 @@ class DatabaseService:
                 "pending_discounts": int(pending_discounts.get("pending_discounts") or 0),
                 "low_stock_items": int(low_stock.get("low_stock_items") or 0),
                 "cash_variance": float(shifts.get("cash_variance") or 0),
-                "hourly_sales": [
+
+                "sales_trend": [
                     {
-                        "hour": r.get("hour"),
+                        "bucket": r.get("bucket"),
                         "sales": float(r.get("sales") or 0),
                         "transactions": int(r.get("transactions") or 0),
                     }
-                    for r in hourly_sales_rows
+                    for r in sales_trend_rows
                 ],
+
+                # keep old frontend name working
+                "hourly_sales": [
+                    {
+                        "hour": r.get("bucket"),
+                        "bucket": r.get("bucket"),
+                        "sales": float(r.get("sales") or 0),
+                        "transactions": int(r.get("transactions") or 0),
+                    }
+                    for r in sales_trend_rows
+                ],
+
                 "payment_mix": [
                     {
                         "method": r.get("method") or "-",
@@ -37145,6 +37233,7 @@ class DatabaseService:
                     }
                     for r in payment_mix_rows
                 ],
+
                 "top_products": [
                     {
                         "item": r.get("item") or "-",
@@ -37153,15 +37242,7 @@ class DatabaseService:
                     }
                     for r in top_products_rows
                 ],
-                "stock_movement": [
-                    {
-                        "item": r.get("item") or "-",
-                        "sku": r.get("sku") or "",
-                        "sold": float(r.get("sold") or 0),
-                        "closing": float(r.get("closing") or 0),
-                    }
-                    for r in stock_movement_rows
-                ],
+
                 "recent_transactions": [
                     {
                         "sale_no": r.get("sale_no") or "-",
@@ -37175,9 +37256,21 @@ class DatabaseService:
             }
         }
 
-    def pos_get_report(self, company_id: int, *, report_key: str, q: str = "", start_date=None, end_date=None) -> dict:
+    def pos_get_report(
+        self,
+        company_id: int,
+        *,
+        report_key: str,
+        q: str = "",
+        start_date=None,
+        end_date=None,
+        group_by="day",
+    ) -> dict:
         schema = self.company_schema(company_id)
         key = (report_key or "").strip().lower()
+
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
 
         if key == "sales-summary":
             return self._pos_report_sales_summary(company_id, schema, q, start_date, end_date)

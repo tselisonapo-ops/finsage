@@ -14,6 +14,19 @@ function posHeaders() {
     : {};
 }
 
+function buildPosQuery(params = {}) {
+  const qs = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      qs.set(key, String(value));
+    }
+  });
+
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
 export const posApi = {
     searchItems(q = "", limit = 20) {
         return getJson(`${base()}/items/search?q=${encodeURIComponent(q)}&limit=${limit}`);
@@ -260,8 +273,14 @@ export const posApi = {
         return getJson(`${base()}/reports/${reportKey}${qs ? `?${qs}` : ""}`);
     },
 
-    getOverviewDashboard() {
-        return getJson(`${base()}/dashboard/overview`);
+    getOverviewDashboard(params = {}) {
+        const qs = new URLSearchParams(
+            Object.entries(params).filter(([, v]) => v !== "" && v != null)
+        ).toString();
+
+        return getJson(
+            `${base()}/dashboard/overview${qs ? `?${qs}` : ""}`
+        );
     },
 
     // =========================
