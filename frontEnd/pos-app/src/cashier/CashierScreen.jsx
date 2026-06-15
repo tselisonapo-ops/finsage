@@ -341,6 +341,12 @@ export function CashierPage() {
     setReceiptSettings(res.receipt_settings || res.settings || res.data || res || {});
   }
 
+  useEffect(() => {
+    if (isPosSuperUser || signedIn) {
+      loadTerminals();
+    }
+  }, [isPosSuperUser, signedIn]);
+
   const VAT_RATE = Number(receiptSettings?.vat_rate || 15) / 100;
 
   const pricingTaxMode =
@@ -835,9 +841,9 @@ export function CashierPage() {
         </div>
         <div><span>Currency</span><strong>{getCurrency(company)}</strong></div>
 
-        {signedIn && (
-          <div>
-            <span>Terminal</span>
+      {signedIn && (
+        <div>
+          <span>Terminal</span>
             <select
               className="scan-input compact-select"
               value={activeTerminal?.id || ""}
