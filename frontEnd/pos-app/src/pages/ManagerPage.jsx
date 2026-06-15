@@ -370,6 +370,7 @@ export function ManagerPage() {
 
   async function saveReceiptSettings(payload) {
     const res = await posApi.saveReceiptSettings(payload);
+    console.log("SAVE RESPONSE", res);
     setReceiptSettings(res.receipt_settings || res.settings || res.data || res || payload);
     setMessage("Receipt settings saved.");
   }
@@ -386,6 +387,7 @@ export function ManagerPage() {
 
   async function loadReceiptSettings() {
     const res = await posApi.getReceiptSettings();
+    console.log("LOAD RESPONSE", res);
     setReceiptSettings(res.receipt_settings || res.settings || res.data || res || {});
   }
 
