@@ -35912,6 +35912,7 @@ class DatabaseService:
             if sale["status"] == "completed":
                 return {
                     "sale_id": int(sale_id),
+                    "sale_no": sale.get("sale_no"),
                     "status": "completed",
                     "invoice_id": sale.get("source_invoice_id"),
                     "journal_id": sale.get("posted_journal_id"),
@@ -36184,6 +36185,7 @@ class DatabaseService:
 
             return {
                 "sale_id": int(sale_id),
+                "sale_no": sale.get("sale_no"),
                 "status": "completed",
                 "invoice_id": invoice_id,
                 "journal_id": int(journal_id),

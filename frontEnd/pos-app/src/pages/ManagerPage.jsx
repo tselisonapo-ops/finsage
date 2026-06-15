@@ -1477,7 +1477,7 @@ export function ManagerPage() {
                       icon: "🧮",
                       title: "Pricing Tax Mode",
                       key: "pricing_tax_mode",
-                      value: "VAT Inclusive",
+                      value: "inclusive",
                       text: "Choose whether selling prices include VAT or VAT is added separately.",
                       type: "select",
                       options: [
@@ -4306,6 +4306,20 @@ function GenericPosSettingsTab({
 
   const active = cards.find((x) => x.key === activeCard);
 
+  function getDisplayValue(card) {
+    const rawValue = form?.[card.key] ?? card.defaultValue ?? card.value;
+
+    if (card.type === "select") {
+      const option = (card.options || []).find(
+        (opt) => String(opt.value) === String(rawValue)
+      );
+
+      return option?.label || rawValue || "Not Set";
+    }
+
+    return rawValue || "Not Set";
+  }
+
   return (
     <section className="manager-workspace" style={{ marginTop: 18 }}>
       <div className="workspace-head">
@@ -4325,7 +4339,7 @@ function GenericPosSettingsTab({
             key={card.key}
             icon={card.icon}
             title={card.title}
-            value={card.displayValue || form?.[card.key] || card.value || "Not Set"}
+            value={getDisplayValue(card)}
             text={card.text}
             onClick={() => setActiveCard(card.key)}
           />
