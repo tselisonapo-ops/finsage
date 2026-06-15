@@ -99,26 +99,69 @@ const POS_DRIVER_OPTIONS = [
   { value: "week", label: "Weeks" },
   { value: "month", label: "Months" },
   { value: "quarter", label: "Quarters" },
+  { value: "range", label: "Custom Range" }
 ];
 
-const POS_FILTER_OPTIONS = [
-  { value: "today", label: "Today" },
-  { value: "this_week", label: "This Week" },
-  { value: "this_month", label: "This Month" },
-  { value: "this_quarter", label: "This Quarter" },
-  { value: "current_year", label: "Current Year" },
-  { value: "last_6_months", label: "Last 6 Months" },
-  { value: "previous_quarter", label: "Previous Quarter" },
-  { value: "previous_year", label: "Previous Year" },
-  { value: "range", label: "Custom Range" },
-];
+function buildPeriodOptions(groupBy) {
+  const now = new Date();
+
+  if (groupBy === "hour") {
+    return Array.from({ length: 24 }, (_, h) => ({
+      value: String(h),
+      label: `${String(h).padStart(2, "0")}:00 - ${String(h + 1).padStart(2, "0")}:00`,
+    }));
+  }
+
+  if (groupBy === "day") {
+    return [
+      { value: "0", label: "Monday" },
+      { value: "1", label: "Tuesday" },
+      { value: "2", label: "Wednesday" },
+      { value: "3", label: "Thursday" },
+      { value: "4", label: "Friday" },
+      { value: "5", label: "Saturday" },
+      { value: "6", label: "Sunday" },
+    ];
+  }
+
+  if (groupBy === "week") {
+    return [
+      { value: "0", label: "Week 1" },
+      { value: "1", label: "Week 2" },
+      { value: "2", label: "Week 3" },
+      { value: "3", label: "Week 4" },
+    ];
+  }
+
+  if (groupBy === "month") {
+    return [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ].map((m, i) => ({
+      value: String(i + 1),
+      label: m,
+    }));
+  }
+
+  if (groupBy === "quarter") {
+    return [
+      { value: "1", label: "Quarter 1" },
+      { value: "2", label: "Quarter 2" },
+      { value: "3", label: "Quarter 3" },
+      { value: "4", label: "Quarter 4" },
+    ];
+  }
+
+  return [];
+}
 
 function defaultPosDateFilter() {
   const today = new Date().toISOString().slice(0, 10);
+  const hour = new Date().getHours();
 
   return {
     group_by: "hour",
-    period: "today",
+    period_value: String(hour),
     start_date: today,
     end_date: today,
   };
@@ -1958,17 +2001,24 @@ function FormModal({ modal, onClose, onSubmit }) {
 }
 
 function PosDateFilter({ value, onChange, onApply }) {
+  const periodOptions = buildPeriodOptions(value.group_by || "hour");
+
+  function handleGroupChange(group_by) {
+    const options = buildPeriodOptions(group_by);
+
+    onChange({
+      ...value,
+      group_by,
+      period_value: options[0]?.value || "",
+    });
+  }
+
   return (
     <div className="pos-filter-bar">
       <select
         className="scan-input"
         value={value.group_by || "hour"}
-        onChange={(e) =>
-          onChange({
-            ...value,
-            group_by: e.target.value,
-          })
-        }
+        onChange={(e) => handleGroupChange(e.target.value)}
       >
         {POS_DRIVER_OPTIONS.map((x) => (
           <option key={x.value} value={x.value}>
@@ -1979,42 +2029,20 @@ function PosDateFilter({ value, onChange, onApply }) {
 
       <select
         className="scan-input"
-        value={value.period || "today"}
+        value={value.period_value || ""}
         onChange={(e) =>
           onChange({
             ...value,
-            period: e.target.value,
+            period_value: e.target.value,
           })
         }
       >
-        {POS_FILTER_OPTIONS.map((x) => (
+        {periodOptions.map((x) => (
           <option key={x.value} value={x.value}>
             {x.label}
           </option>
         ))}
       </select>
-
-      {value.period === "range" && (
-        <>
-          <input
-            className="scan-input"
-            type="date"
-            value={value.start_date || ""}
-            onChange={(e) =>
-              onChange({ ...value, start_date: e.target.value })
-            }
-          />
-
-          <input
-            className="scan-input"
-            type="date"
-            value={value.end_date || ""}
-            onChange={(e) =>
-              onChange({ ...value, end_date: e.target.value })
-            }
-          />
-        </>
-      )}
 
       <button className="refresh-btn" onClick={onApply}>
         Apply

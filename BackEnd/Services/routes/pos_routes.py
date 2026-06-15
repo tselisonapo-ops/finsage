@@ -7,69 +7,126 @@ from flask import Blueprint, jsonify, request, g, current_app, make_response
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth, _corsify
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
-from datetime import timedelta, date
+from datetime import date, datetime, time, timedelta
 from dateutil.relativedelta import relativedelta
 
 pos_bp = Blueprint("pos_bp", __name__)
 
-def resolve_pos_period(period: str, start_date=None, end_date=None):
+def resolve_pos_period(group_by: str = "hour", period_value=None, start_date=None, end_date=None):
     today = date.today()
-    period = (period or "hour").lower()
+    now = datetime.now()
 
-    if period == "hour":
-        return today, today, "hour"
+    group_by = (group_by or "hour").lower()
+    period_value = str(period_value or "").strip()
 
-    if period == "day":
-        start = today - timedelta(days=today.weekday())
-        end = start + timedelta(days=6)
-        return start, end, "day"
+    if group_by == "hour":
+        hour = int(period_value) if period_value != "" else now.hour
+        start_dt = datetime.combine(today, time(hour, 0, 0))
+        end_dt = start_dt + timedelta(hours=1)
+        return today, today, start_dt, end_dt, "hour"
 
-    if period == "week":
-        start = date(today.year, 1, 1)
-        end = date(today.year, 12, 31)
-        return start, end, "week"
+    if group_by == "day":
+        weekday = int(period_value) if period_value != "" else today.weekday()
+        week_start = today - timedelta(days=today.weekday())
+        selected_day = week_start + timedelta(days=weekday)
+        return selected_day, selected_day, None, None, "day"
 
-    if period == "month":
-        start = date(today.year, 1, 1)
-        end = date(today.year, 12, 31)
-        return start, end, "month"
+    if group_by == "week":
+        week_index = int(period_value) if period_value != "" else 0
+        month_start = date(today.year, today.month, 1)
 
-    if period == "quarter":
-        start = date(today.year, 1, 1)
-        end = date(today.year, 12, 31)
-        return start, end, "quarter"
+        start = month_start + timedelta(days=week_index * 7)
 
-    if period == "last_6_months":
-        first_this_month = date(today.year, today.month, 1)
-        start = first_this_month - relativedelta(months=5)
-        end = today
-        return start, end, "month"
+        end = min(
+            start + timedelta(days=6),
+            month_start + relativedelta(months=1) - timedelta(days=1)
+        )
 
-    if period == "previous_quarter":
-        current_q = ((today.month - 1) // 3) + 1
-        prev_q = current_q - 1
+        return start, end, None, None, "week"
 
-        year = today.year
-        if prev_q == 0:
-          prev_q = 4
-          year -= 1
+    if group_by == "month":
+        month = int(period_value) if period_value != "" else today.month
 
-        start_month = ((prev_q - 1) * 3) + 1
-        start = date(year, start_month, 1)
+        start = date(today.year, month, 1)
+        end = start + relativedelta(months=1) - timedelta(days=1)
+
+        return start, end, None, None, "month"
+
+    if group_by == "quarter":
+        quarter = int(period_value) if period_value != "" else ((today.month - 1) // 3) + 1
+
+        start_month = ((quarter - 1) * 3) + 1
+
+        start = date(today.year, start_month, 1)
         end = start + relativedelta(months=3) - timedelta(days=1)
-        return start, end, "month"
 
-    if period == "previous_year":
-        start = date(today.year - 1, 1, 1)
-        end = date(today.year - 1, 12, 31)
-        return start, end, "month"
+        return start, end, None, None, "quarter"
 
-    if period == "range":
+    if group_by == "range":
+        start = (
+            date.fromisoformat(start_date)
+            if start_date
+            else today
+        )
+
+        end = (
+            date.fromisoformat(end_date)
+            if end_date
+            else today
+        )
+
+        return start, end, None, None, "day"
+
+    # fallback
+    return today, today, None, None, "day"
+
+def resolve_pos_period(group_by: str = "hour", period_value=None, start_date=None, end_date=None):
+    today = date.today()
+    now = datetime.now()
+
+    group_by = (group_by or "hour").lower()
+    period_value = str(period_value or "").strip()
+
+    if group_by == "hour":
+        hour = int(period_value) if period_value != "" else now.hour
+        start_dt = datetime.combine(today, time(hour, 0, 0))
+        end_dt = start_dt + timedelta(hours=1)
+        return today, today, start_dt, end_dt, "hour"
+
+    if group_by == "day":
+        # 0 = Monday, 6 = Sunday
+        weekday = int(period_value) if period_value != "" else today.weekday()
+        week_start = today - timedelta(days=today.weekday())
+        selected_day = week_start + timedelta(days=weekday)
+        return selected_day, selected_day, None, None, "day"
+
+    if group_by == "week":
+        # 0 = week 1 of current month
+        week_index = int(period_value) if period_value != "" else 0
+        month_start = date(today.year, today.month, 1)
+        start = month_start + timedelta(days=week_index * 7)
+        end = min(start + timedelta(days=6), month_start + relativedelta(months=1) - timedelta(days=1))
+        return start, end, None, None, "week"
+
+    if group_by == "month":
+        month = int(period_value) if period_value != "" else today.month
+        start = date(today.year, month, 1)
+        end = start + relativedelta(months=1) - timedelta(days=1)
+        return start, end, None, None, "month"
+
+    if group_by == "quarter":
+        quarter = int(period_value) if period_value != "" else ((today.month - 1) // 3) + 1
+        start_month = ((quarter - 1) * 3) + 1
+        start = date(today.year, start_month, 1)
+        end = start + relativedelta(months=3) - timedelta(days=1)
+        return start, end, None, None, "quarter"
+
+    if group_by == "range":
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
-        return start, end, "day"
+        return start, end, None, None, "day"
 
-    return today, today, "hour"
+    return today, today, None, None, "day"
 
 def _body() -> dict:
     return request.get_json(silent=True) or {}
@@ -371,8 +428,9 @@ def api_pos_report(cid: int, report_key: str):
         return deny
 
     try:
-        start_date, end_date, group_by = resolve_pos_period(
-            request.args.get("period"),
+        start_date, end_date, start_dt, end_dt, group_by = resolve_pos_period(
+            request.args.get("group_by"),
+            request.args.get("period_value"),
             request.args.get("start_date"),
             request.args.get("end_date"),
         )
@@ -383,6 +441,8 @@ def api_pos_report(cid: int, report_key: str):
             q=request.args.get("q", ""),
             start_date=start_date,
             end_date=end_date,
+            start_dt=start_dt,
+            end_dt=end_dt,
             group_by=group_by,
         )
 
@@ -391,7 +451,7 @@ def api_pos_report(cid: int, report_key: str):
     except Exception as ex:
         current_app.logger.exception("api_pos_report failed")
         return _err("Server error", 500, ex)
-    
+
 @pos_bp.route("/api/companies/<int:cid>/pos/dashboard/overview", methods=["GET", "OPTIONS"])
 @require_auth
 def api_pos_dashboard_overview(cid: int):
@@ -403,8 +463,9 @@ def api_pos_dashboard_overview(cid: int):
         return deny
 
     try:
-        start_date, end_date, group_by = resolve_pos_period(
-            request.args.get("period"),
+        start_date, end_date, start_dt, end_dt, group_by = resolve_pos_period(
+            request.args.get("group_by"),
+            request.args.get("period_value"),
             request.args.get("start_date"),
             request.args.get("end_date"),
         )
@@ -413,6 +474,8 @@ def api_pos_dashboard_overview(cid: int):
             cid,
             start_date=start_date,
             end_date=end_date,
+            start_dt=start_dt,
+            end_dt=end_dt,
             group_by=group_by,
         )
 
@@ -421,7 +484,7 @@ def api_pos_dashboard_overview(cid: int):
     except Exception as ex:
         current_app.logger.exception("api_pos_dashboard_overview failed")
         return _err("Server error", 500, ex)
-    
+      
 @pos_bp.route("/api/companies/<int:cid>/pos/quotes", methods=["POST", "OPTIONS"])
 @require_auth
 def api_pos_create_quote(cid: int):

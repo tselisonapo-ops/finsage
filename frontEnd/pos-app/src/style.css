@@ -1273,3 +1273,191 @@ input:disabled {
   padding: 7px 10px;
   cursor: pointer;
 }
+
+/* ===== PHONE COMPATIBILITY FIX ===== */
+
+html,
+body,
+#app {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
+.left-panel,
+.cart-panel,
+.manager-content,
+.manager-workspace {
+  min-width: 0;
+}
+
+/* Phone portrait */
+@media (max-width: 767px) {
+  .pos-page {
+    padding: 10px;
+  }
+
+  .pos-header {
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .pos-header h1 {
+    font-size: 22px;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .header-actions a,
+  .header-actions button {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 42px;
+    text-align: center;
+  }
+
+  .status-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .status-strip.compact > div {
+    min-height: auto;
+  }
+
+  .pos-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scan-row {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-actions,
+  .payment-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cart-table {
+    overflow-x: auto;
+  }
+
+  .cart-head,
+  .cart-line {
+    min-width: 560px;
+  }
+
+  .receipt-payment-row {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .manager-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-sidebar {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    border-radius: 16px;
+  }
+
+  .manager-sidebar button {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  .workspace-head,
+  .data-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .report-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-dashboard-grid,
+  .manager-grid,
+  .menu-grid,
+  .order-menu-grid,
+  .menu-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-card {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+  }
+}
+
+/* Phone landscape */
+@media (min-width: 768px) and (max-width: 950px) and (orientation: landscape) {
+  .pos-page {
+    padding: 10px;
+  }
+
+  .pos-header {
+    padding: 16px;
+  }
+
+  .pos-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .cart-panel {
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+  }
+
+  .status-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .manager-shell {
+    grid-template-columns: 180px 1fr;
+  }
+
+  .manager-sidebar {
+    position: sticky;
+    top: 10px;
+  }
+
+  .manager-grid,
+  .overview-dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .payment-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Tablet / narrow laptop */
+@media (min-width: 768px) and (max-width: 1100px) {
+  .pos-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-shell {
+    grid-template-columns: 200px 1fr;
+  }
+
+  .status-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
