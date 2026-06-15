@@ -342,8 +342,19 @@ export function CashierPage() {
   }
 
   useEffect(() => {
+    async function loadPosSetup() {
+      try {
+        await Promise.all([
+          loadTerminals(),
+          loadReceiptSettings(),
+        ]);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     if (isPosSuperUser || signedIn) {
-      loadTerminals();
+      loadPosSetup();
     }
   }, [isPosSuperUser, signedIn]);
 
