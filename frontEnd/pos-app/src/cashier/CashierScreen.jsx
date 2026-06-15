@@ -690,11 +690,14 @@ export function CashierPage() {
 
       const completeRes = await posApi.completeSale(saleId);
 
-      printReceipt(
-        completeRes?.sale_no || saleNo
-      );
+      const completedSaleNo =
+        completeRes?.sale_no ||
+        completeRes?.data?.sale_no ||
+        `SALE-${saleId}`;
 
-      setMessage(`Sale ${saleNo} completed successfully.`);
+      printReceipt(completedSaleNo);
+
+      setMessage(`Sale ${completedSaleNo} completed successfully.`);
 
       // Reset sale
       setCart([]);
