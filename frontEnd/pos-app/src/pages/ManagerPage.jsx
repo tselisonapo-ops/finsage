@@ -2991,16 +2991,7 @@ function ReportsTab({ reportView, setReportView, dateFilter, setDateFilter }) {
     if (!reportView) {
       loadTradingSummary();
     }
-  }, [reportView]);
-
-  if (reportView) {
-    return (
-      <ReportGridScreen
-        reportView={reportView}
-        onBack={() => setReportView(null)}
-      />
-    );
-  }
+  }, [reportView, dateFilter]);
 
   const exportRows = [
     ["Sales", money(summary.sales || 0), "Gross POS sales for the selected period."],
@@ -3023,13 +3014,19 @@ function ReportsTab({ reportView, setReportView, dateFilter, setDateFilter }) {
 
   return (
     <section className="manager-workspace">
-      <div className="workspace-head">
+      <div className="workspace-head report-main-head">
         <div>
           <h2>POS Reports</h2>
           <p>Sales, products, cashiers, customers, discounts and margin analysis.</p>
         </div>
 
-        <div className="workspace-actions">
+        <div className="report-header-tools">
+          <PosDateFilter
+            value={dateFilter}
+            onChange={setDateFilter}
+            onApply={loadTradingSummary}
+          />
+
           <button
             className="refresh-btn"
             onClick={() =>
@@ -3173,8 +3170,7 @@ function ReportGridScreen({ reportView, dateFilter, setDateFilter, onBack }) {
 
       const res = await posApi.getReport(reportKey, {
         q,
-        start_date: startDate,
-        end_date: endDate,
+        ...(dateFilter || defaultPosDateFilter()),
       });
 
       setRows(res.rows || []);
@@ -3190,7 +3186,7 @@ function ReportGridScreen({ reportView, dateFilter, setDateFilter, onBack }) {
 
   useEffect(() => {
     loadReport();
-  }, [reportView]);
+  }, [reportView, dateFilter]);
 
   return (
     <section className="manager-workspace">
