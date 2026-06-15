@@ -2001,13 +2001,14 @@ function FormModal({ modal, onClose, onSubmit }) {
 }
 
 function PosDateFilter({ value, onChange, onApply }) {
-  const periodOptions = buildPeriodOptions(value.group_by || "hour");
+  const safeValue = value || defaultPosDateFilter();
+  const periodOptions = buildPeriodOptions(safeValue.group_by || "hour");
 
   function handleGroupChange(group_by) {
     const options = buildPeriodOptions(group_by);
 
     onChange({
-      ...value,
+      ...safeValue,
       group_by,
       period_value: options[0]?.value || "",
     });
@@ -2017,7 +2018,7 @@ function PosDateFilter({ value, onChange, onApply }) {
     <div className="pos-filter-bar">
       <select
         className="scan-input"
-        value={value.group_by || "hour"}
+        value={safeValue.group_by || "hour"}
         onChange={(e) => handleGroupChange(e.target.value)}
       >
         {POS_DRIVER_OPTIONS.map((x) => (
@@ -2029,10 +2030,10 @@ function PosDateFilter({ value, onChange, onApply }) {
 
       <select
         className="scan-input"
-        value={value.period_value || ""}
+        value={safeValue.period_value || ""}
         onChange={(e) =>
           onChange({
-            ...value,
+            ...safeValue,
             period_value: e.target.value,
           })
         }
@@ -2077,11 +2078,11 @@ function OverviewTab({ isRestaurantLike, openShifts, terminals, customers, dateF
   const costToday = Number(overview.cost_today || 0);
   const grossProfit = salesToday - costToday;
 
-  const hourlySales = overview.hourly_sales || [];
-  const paymentMix = overview.payment_mix || [];
-  const topProducts = overview.top_products || [];
-  const stockMovement = overview.stock_movement || [];
-  const recentTransactions = overview.recent_transactions || [];
+  const hourlySales = overview?.hourly_sales || [];
+  const paymentMix = overview?.payment_mix || [];
+  const topProducts = overview?.top_products || [];
+  const stockMovement = overview?.stock_movement || [];
+  const recentTransactions = overview?.recent_transactions || [];
 
   const maxHourlySales = Math.max(...hourlySales.map((x) => Number(x.sales || 0)), 1);
   const maxPayment = Math.max(...paymentMix.map((x) => Number(x.amount || 0)), 1);

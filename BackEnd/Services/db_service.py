@@ -37039,13 +37039,23 @@ class DatabaseService:
         *,
         start_date=None,
         end_date=None,
+        start_dt=None,
+        end_dt=None,
         group_by="hour",
     ) -> dict:
         schema = self.company_schema(company_id)
 
         start_date = start_date or date.today()
         end_date = end_date or date.today()
+        start_dt = start_dt or datetime.combine(
+            start_date,
+            datetime.min.time()
+        )
 
+        end_dt = end_dt or datetime.combine(
+            end_date,
+            datetime.max.time()
+        )
         bucket_expr, bucket_fmt = self._pos_grouping(group_by)
 
         sales = self.fetch_one(f"""
@@ -37061,8 +37071,8 @@ class DatabaseService:
             FROM {schema}.pos_sales
             WHERE company_id = %s
             AND status = 'completed'
-            AND business_date BETWEEN %s AND %s
-        """, (int(company_id), start_date, end_date)) or {}
+            AND sale_date BETWEEN %s AND %s
+        """, (int(company_id), start_dt, end_dt)) or {}
 
         payments = self.fetch_one(f"""
             SELECT
@@ -37076,7 +37086,7 @@ class DatabaseService:
             WHERE p.company_id = %s
             AND s.status = 'completed'
             AND s.business_date BETWEEN %s AND %s
-        """, (int(company_id), start_date, end_date)) or {}
+        """, (int(company_id), start_dt, end_dt)) or {}
 
         account_sales = self.fetch_one(f"""
             SELECT COALESCE(SUM(gross_amount), 0)::numeric(18,2) AS account_sales
@@ -37084,8 +37094,8 @@ class DatabaseService:
             WHERE company_id = %s
             AND status = 'completed'
             AND sale_type = 'account_sale'
-            AND business_date BETWEEN %s AND %s
-        """, (int(company_id), start_date, end_date)) or {}
+            AND sale_date BETWEEN %s AND %s
+        """, (int(company_id), start_dt, end_dt)) or {}
 
         returns = self.fetch_one(f"""
             SELECT
@@ -37096,7 +37106,7 @@ class DatabaseService:
             FROM {schema}.pos_returns
             WHERE company_id = %s
             AND return_date::date BETWEEN %s AND %s
-        """, (int(company_id), start_date, end_date)) or {}
+        """, (int(company_id), start_dt, end_dt)) or {}
 
         top_item = self.fetch_one(f"""
             SELECT
@@ -37113,7 +37123,7 @@ class DatabaseService:
             GROUP BY l.description
             ORDER BY SUM(l.qty) DESC, SUM(l.gross_amount) DESC
             LIMIT 1
-        """, (int(company_id), start_date, end_date)) or {}
+        """, (int(company_id), start_dt, end_dt)) or {}
 
         shifts = self.fetch_one(f"""
             SELECT
@@ -37161,7 +37171,7 @@ class DatabaseService:
             AND s.business_date BETWEEN %s AND %s
             GROUP BY {bucket_expr}
             ORDER BY {bucket_expr}
-        """, (int(company_id), start_date, end_date)) or []
+        """, (int(company_id), start_dt, end_dt)) or []
 
         payment_mix_rows = self.fetch_all(f"""
             SELECT
@@ -37182,7 +37192,7 @@ class DatabaseService:
             AND s.business_date BETWEEN %s AND %s
             GROUP BY method
             ORDER BY amount DESC
-        """, (int(company_id), start_date, end_date)) or []
+        """, (int(company_id), start_dt, end_dt)) or []
 
         top_products_rows = self.fetch_all(f"""
             SELECT
@@ -37199,7 +37209,7 @@ class DatabaseService:
             GROUP BY l.description
             ORDER BY SUM(l.gross_amount) DESC, SUM(l.qty) DESC
             LIMIT 8
-        """, (int(company_id), start_date, end_date)) or []
+        """, (int(company_id), start_dt, end_dt)) or []
 
         recent_rows = self.fetch_all(f"""
             SELECT
@@ -37219,7 +37229,7 @@ class DatabaseService:
             AND s.business_date BETWEEN %s AND %s
             ORDER BY s.sale_date DESC
             LIMIT 10
-        """, (int(company_id), start_date, end_date)) or []
+        """, (int(company_id), start_dt, end_dt)) or []
 
         sales_total = float(sales.get("sales_today") or 0)
         cost_total = float(sales.get("cost_today") or 0)
