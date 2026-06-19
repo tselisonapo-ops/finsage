@@ -7,7 +7,6 @@ from BackEnd.Services.company_context import get_company_context
 from BackEnd.Services.industry_profiles import get_industry_profile
 from BackEnd.Services import accounting_classifiers as ac
 from . import reporting_helpers as rh
-from . import reporting_helpers as rh  # ✅ same folder import
 
 
 def get_pnl_full_v2(
@@ -25,6 +24,9 @@ def get_pnl_full_v2(
     # ✅ NEW: allow caller-supplied priors (resolved by resolver)
     prior_from: Optional[date] = None,
     prior_to: Optional[date] = None,
+
+    comparison_ranges: Optional[List[Tuple[date, date]]] = None,
+    comparison_years: int = 1,
 
     # ✅ swallow any future kwargs safely
     **_unused: Any,
@@ -68,7 +70,7 @@ def get_pnl_full_v2(
         basis = "external"
 
     compare = (compare or "none").lower()
-    if compare not in ("none", "prior_period", "prior_year"):
+    if compare not in ("none", "prior_period", "prior_year", "multi_year"):
         compare = "none"
 
     detail = (detail or "summary").lower()
@@ -116,41 +118,63 @@ def get_pnl_full_v2(
     inventory_method = "perpetual" if basis == "external" else "periodic"
 
     # -----------------------------
-    # TB (current + prior)
+    # TB rows for current + comparisons
     # -----------------------------
     cur_rows = self.get_pnl_trial_balance_movement(company_id, date_from, date_to) or []
 
-    # ✅ PRIOR resolution:
-    # 1) Use passed-in priors if provided AND compare != none
-    # 2) Otherwise fall back to legacy build_compare_range
-    pri_from = pri_to = None
-    if compare != "none":
-        if prior_from and prior_to:
-            pri_from, pri_to = prior_from, prior_to
-        else:
-            pri_from, pri_to = rh.build_compare_range(date_from, date_to, compare)
+    if comparison_ranges is None:
+        comparison_ranges = []
 
-    if pri_from and pri_to:
-        pri_rows = self.get_pnl_trial_balance_movement(company_id, pri_from, pri_to) or []
-    else:
-        pri_rows = []
+        if compare == "multi_year":
+            try:
+                comparison_years = int(comparison_years or 1)
+            except Exception:
+                comparison_years = 1
 
-    has_prior = bool(compare != "none" and pri_from and pri_to and pri_rows)
+            comparison_years = max(1, min(comparison_years, 10))
+
+            for i in range(1, comparison_years):
+                comparison_ranges.append((
+                    rh.shift_year(date_from, i),
+                    rh.shift_year(date_to, i),
+                ))
+
+        elif compare != "none":
+            if prior_from and prior_to:
+                comparison_ranges.append((prior_from, prior_to))
+            else:
+                pf, pt = rh.build_compare_range(date_from, date_to, compare)
+                if pf and pt:
+                    comparison_ranges.append((pf, pt))
+
+    comparison_rows_by_key: Dict[str, List[Dict[str, Any]]] = {}
+    comparison_labels_by_key: Dict[str, str] = {}
+
+    for idx, (pf, pt) in enumerate(comparison_ranges, start=1):
+        key = "pri" if idx == 1 else f"p{idx}"
+        comparison_rows_by_key[key] = self.get_pnl_trial_balance_movement(company_id, pf, pt) or []
+        comparison_labels_by_key[key] = rh.label_period(pf, pt)
+
+    has_prior = len(comparison_ranges) > 0
+
+    pri_from, pri_to = comparison_ranges[0] if has_prior else (None, None)
+    pri_rows = comparison_rows_by_key.get("pri", []) if has_prior else []
 
     cur_label = rh.label_period(date_from, date_to)
-    pri_label = rh.label_period(pri_from, pri_to) if has_prior else ""
+    pri_label = comparison_labels_by_key.get("pri", "") if has_prior else ""
 
     # -----------------------------
     # Columns (IAS 1: cur/pri(/delta))
     # -----------------------------
-    columns = rh.make_columns(
-        cols_mode,
-        compare if has_prior else "none",
-        clean_labels=True,
-        cur_label=cur_label,
-        pri_label=pri_label,
-    )
-    want_delta = rh.has_delta(columns)
+    columns = [{"key": "cur", "label": "Current"}]
+
+    if has_prior:
+        columns.append({"key": "pri", "label": "Prior"})
+
+        for idx in range(2, len(comparison_ranges) + 1):
+            columns.append({"key": f"p{idx}", "label": f"Prior {idx}"})
+
+        columns.append({"key": "delta", "label": "Δ"})
 
     # -----------------------------
     # Helpers
@@ -177,17 +201,6 @@ def get_pnl_full_v2(
         if any(k in text for k in ("income", "interest received", "other income", "gain")):
             return cr - dr
         return -(dr - cr)
-
-    def _vals(cur_amt: float, pri_amt: Optional[float]) -> Dict[str, float]:
-        v = {"cur": float(cur_amt)}
-
-        if cols_mode in (1, 3) and has_prior and pri_amt is not None:
-            v["pri"] = float(pri_amt)
-
-        if cols_mode == 1 and has_prior and pri_amt is not None:
-            v["delta"] = v["cur"] - v["pri"]
-
-        return v
 
     def _emit(code: str, name: str, values: Dict[str, float],
               meta: Optional[dict] = None) -> Dict[str, Any]:
@@ -240,7 +253,6 @@ def get_pnl_full_v2(
     # Groups + prior mapping
     # -----------------------------
     cur_tax_rows = [r for r in cur_rows if _is_tax(r)]
-    pri_tax_rows = [r for r in pri_rows if _is_tax(r)] if has_prior else []
 
     cur_g = _group_rows(_without_tax(cur_rows))
 
@@ -269,7 +281,34 @@ def get_pnl_full_v2(
             pri_g["cogs"] = [r for r in pri_g["cogs"] if keep_cogs_row(r)]
             
 
-    pri_by_code: Dict[str, Dict[str, Any]] = {_row_key(r): r for r in pri_rows} if has_prior else {}
+    # -----------------------------
+    # Prior maps for all comparison periods
+    # -----------------------------
+    comparison_by_code: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    for key, rows_for_key in comparison_rows_by_key.items():
+        comparison_by_code[key] = {
+            _row_key(r): r
+            for r in (rows_for_key or [])
+        }
+
+    def _vals_multi(cur_amt: float, comparison_amounts: Optional[Dict[str, float]] = None) -> Dict[str, float]:
+        v = {"cur": float(cur_amt)}
+
+        comparison_amounts = comparison_amounts or {}
+
+        if has_prior:
+            pri_amt = float(comparison_amounts.get("pri", 0.0))
+            v["pri"] = pri_amt
+
+            for idx in range(2, len(comparison_ranges) + 1):
+                key = f"p{idx}"
+                v[key] = float(comparison_amounts.get(key, 0.0))
+
+            v["delta"] = float(v["cur"] - v["pri"])
+
+        return v
+
 
     def _line_amounts_from_rows(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], float]:
         ranked = sorted(rows, key=lambda r: abs(_pnl_contrib(r)), reverse=True)
@@ -282,24 +321,37 @@ def get_pnl_full_v2(
             show = ranked
 
         lines: List[Dict[str, Any]] = []
+
         for r in show:
             code = _row_key(r)
             name = r.get("name") or code
 
             # ✅ Perpetual external view: rename purchases-like COS lines for display
             if show_cogs and inventory_method == "perpetual":
-                if (code.startswith("PL_COS_") and (name or "").strip().lower() in ("purchases", "purchase", "inventory purchases")):
+                if (
+                    code.startswith("PL_COS_")
+                    and (name or "").strip().lower() in ("purchases", "purchase", "inventory purchases")
+                ):
                     name = "Cost of sales"
-                    
+
             cur_amt = _pnl_contrib(r)
 
-            pri_amt = None
-            if has_prior and code in pri_by_code:
-                pri_amt = _pnl_contrib(pri_by_code[code])
+            comparison_amounts: Dict[str, float] = {}
 
-            v = _vals(cur_amt, pri_amt)
+            if has_prior:
+                for key, by_code in comparison_by_code.items():
+                    comparison_row = by_code.get(code)
+                    comparison_amounts[key] = (
+                        _pnl_contrib(comparison_row)
+                        if comparison_row
+                        else 0.0
+                    )
+
+            v = _vals_multi(cur_amt, comparison_amounts)
+
             if not rh.line_has_amount({"values": v}):
                 continue
+
             lines.append(_emit(code, name, v, meta={
                 "section": r.get("section"),
                 "category": r.get("category")
@@ -307,6 +359,7 @@ def get_pnl_full_v2(
 
         total = float(sum(_pnl_contrib(r) for r in rows))
         return lines, total
+
 
     # -----------------------------
     # Labels / totals
@@ -319,34 +372,114 @@ def get_pnl_full_v2(
     exp_lines, exp_total   = _line_amounts_from_rows(cur_g["expense"])
     oth_lines, oth_total   = _line_amounts_from_rows(cur_g["other"])
 
-    rev_total_pri  = float(sum(_pnl_contrib(r) for r in pri_g["revenue"])) if has_prior else 0.0
-    cogs_total_pri = float(sum(_pnl_contrib(r) for r in pri_g["cogs"])) if has_prior else 0.0
-    exp_total_pri  = float(sum(_pnl_contrib(r) for r in pri_g["expense"])) if has_prior else 0.0
-    oth_total_pri  = float(sum(_pnl_contrib(r) for r in pri_g["other"])) if has_prior else 0.0
+
+    def _total_for_group(key: str, group_name: str) -> float:
+        rows_for_key = comparison_rows_by_key.get(key, []) or []
+        rows_for_key = [r for r in rows_for_key if _is_pnl_row(r)]
+
+        tax_filtered = _without_tax(rows_for_key)
+        grouped = _group_rows(tax_filtered)
+
+        return float(sum(_pnl_contrib(r) for r in grouped.get(group_name, [])))
+
+
+    def _tax_total_for_key(key: str) -> float:
+        rows_for_key = comparison_rows_by_key.get(key, []) or []
+        rows_for_key = [r for r in rows_for_key if _is_pnl_row(r)]
+        return float(sum(_pnl_contrib(r) for r in rows_for_key if _is_tax(r)))
+
+
+    rev_totals_cmp: Dict[str, float] = {}
+    cogs_totals_cmp: Dict[str, float] = {}
+    exp_totals_cmp: Dict[str, float] = {}
+    oth_totals_cmp: Dict[str, float] = {}
+    tax_totals_cmp: Dict[str, float] = {}
+
+    if has_prior:
+        for idx in range(1, len(comparison_ranges) + 1):
+            key = "pri" if idx == 1 else f"p{idx}"
+
+            rev_totals_cmp[key] = _total_for_group(key, "revenue")
+            cogs_totals_cmp[key] = _total_for_group(key, "cogs")
+            exp_totals_cmp[key] = _total_for_group(key, "expense")
+            oth_totals_cmp[key] = _total_for_group(key, "other")
+            tax_totals_cmp[key] = _tax_total_for_key(key)
 
     tax_cur = float(sum(_pnl_contrib(r) for r in cur_tax_rows))
-    tax_pri = float(sum(_pnl_contrib(r) for r in pri_tax_rows)) if has_prior else 0.0
+
+    def _calc_comparison_totals() -> Dict[str, Dict[str, float]]:
+        out: Dict[str, Dict[str, float]] = {}
+
+        if not has_prior:
+            return out
+
+        for idx in range(1, len(comparison_ranges) + 1):
+            k = "pri" if idx == 1 else f"p{idx}"
+
+            rev = rev_totals_cmp.get(k, 0.0)
+            cogs = cogs_totals_cmp.get(k, 0.0)
+            exp = exp_totals_cmp.get(k, 0.0)
+            oth = oth_totals_cmp.get(k, 0.0)
+            tax = tax_totals_cmp.get(k, 0.0)
+
+            gross = rev + (cogs if show_cogs else 0.0)
+            op_profit = gross + exp
+            pbt = op_profit + oth
+            net = pbt + tax
+
+            out[k] = {
+                "revenue": rev,
+                "cogs": cogs,
+                "gross_profit": gross,
+                "operating_expenses": exp,
+                "operating_profit": op_profit,
+                "other": oth,
+                "profit_before_tax": pbt,
+                "tax": tax,
+                "net": net,
+            }
+
+        return out
+
+
+    cmp_totals = _calc_comparison_totals()
 
     gross_cur = rev_total + (cogs_total if show_cogs else 0.0)
-    gross_pri = rev_total_pri + (cogs_total_pri if show_cogs else 0.0)
-
     op_profit_cur = gross_cur + exp_total
-    op_profit_pri = gross_pri + exp_total_pri
-
     pbt_cur = op_profit_cur + oth_total
-    pbt_pri = op_profit_pri + oth_total_pri
-
     net_cur = pbt_cur + tax_cur
-    net_pri = pbt_pri + tax_pri
+
+    net_pri = cmp_totals.get("pri", {}).get("net", 0.0)
+
+
+    def _comparison_amounts_for(total_key: str) -> Dict[str, float]:
+        out: Dict[str, float] = {}
+
+        if not has_prior:
+            return out
+
+        for idx in range(1, len(comparison_ranges) + 1):
+            k = "pri" if idx == 1 else f"p{idx}"
+            out[k] = float(cmp_totals.get(k, {}).get(total_key, 0.0))
+
+        return out
+
 
     # -----------------------------
     # Sections (IAS 1 style)
     # -----------------------------
     out_sections: List[Dict[str, Any]] = []
 
-    def _section(key: str, label: str, lines: List[Dict[str, Any]],
-                 total_cur: float, total_pri: float = 0.0):
-        totals = _vals(total_cur, total_pri if has_prior else None)
+
+    def _section(
+        key: str,
+        label: str,
+        lines: List[Dict[str, Any]],
+        total_cur: float,
+        comparison_amounts: Optional[Dict[str, float]] = None,
+    ):
+        totals = _vals_multi(total_cur, comparison_amounts if has_prior else None)
+
         out_sections.append({
             "key": key,
             "label": label,
@@ -354,25 +487,104 @@ def get_pnl_full_v2(
             "totals": totals,
         })
 
-    _section("revenue", "Revenue", rev_lines, rev_total, rev_total_pri)
+
+    _section(
+        "revenue",
+        "Revenue",
+        rev_lines,
+        rev_total,
+        rev_totals_cmp,
+    )
 
     if show_cogs:
-        _section("cogs", cogs_label, cogs_lines, cogs_total, cogs_total_pri)
-        _section("gross_profit", org_labels["gross_profit"], [], gross_cur, gross_pri)
+        _section(
+            "cogs",
+            cogs_label,
+            cogs_lines,
+            cogs_total,
+            cogs_totals_cmp,
+        )
+
+        _section(
+            "gross_profit",
+            org_labels["gross_profit"],
+            [],
+            gross_cur,
+            _comparison_amounts_for("gross_profit"),
+        )
     else:
-        _section("gross_profit", org_labels["total_income"], [], rev_total, rev_total_pri)
+        _section(
+            "gross_profit",
+            org_labels["total_income"],
+            [],
+            rev_total,
+            rev_totals_cmp,
+        )
 
-    _section("operating_expenses", "Operating expenses", exp_lines, exp_total, exp_total_pri)
-    _section("operating_profit", org_labels["operating_income"], [], op_profit_cur, op_profit_pri)
-    _section("other", "Other income/(expense)", oth_lines, oth_total, oth_total_pri)
+    _section(
+        "operating_expenses",
+        "Operating expenses",
+        exp_lines,
+        exp_total,
+        exp_totals_cmp,
+    )
 
-    _section("profit_before_tax", org_labels["profit_before_tax"], [], pbt_cur, pbt_pri)
+    _section(
+        "operating_profit",
+        org_labels["operating_income"],
+        [],
+        op_profit_cur,
+        _comparison_amounts_for("operating_profit"),
+    )
 
-    net_values = _vals(net_cur, net_pri if has_prior else None)
+    _section(
+        "other",
+        "Other income/(expense)",
+        oth_lines,
+        oth_total,
+        oth_totals_cmp,
+    )
 
-    if abs(tax_cur) > 1e-9 or (has_prior and abs(tax_pri) > 1e-9):
+    _section(
+        "profit_before_tax",
+        org_labels["profit_before_tax"],
+        [],
+        pbt_cur,
+        _comparison_amounts_for("profit_before_tax"),
+    )
+
+    net_values = _vals_multi(net_cur, _comparison_amounts_for("net"))
+
+    if abs(tax_cur) > 1e-9 or any(abs(v or 0.0) > 1e-9 for v in tax_totals_cmp.values()):
         tax_lines, _ = _line_amounts_from_rows(cur_tax_rows)
-        _section("tax", org_labels["tax"], tax_lines, tax_cur, tax_pri)
+
+        _section(
+            "tax",
+            org_labels["tax"],
+            tax_lines,
+            tax_cur,
+            tax_totals_cmp,
+        )
+
+
+    comparison_periods = []
+    if has_prior:
+        for idx, (pf, pt) in enumerate(comparison_ranges, start=1):
+            k = "pri" if idx == 1 else f"p{idx}"
+            comparison_periods.append({
+                "key": k,
+                "from": pf.isoformat(),
+                "to": pt.isoformat(),
+                "label": comparison_labels_by_key.get(k, rh.label_period(pf, pt)),
+            })
+
+    labels = {"cur": cur_label}
+    if has_prior:
+        labels["pri"] = pri_label
+        for idx in range(2, len(comparison_ranges) + 1):
+            k = f"p{idx}"
+            labels[k] = comparison_labels_by_key.get(k, "")
+
 
     # -----------------------------
     # Base stmt
@@ -386,16 +598,16 @@ def get_pnl_full_v2(
             "statement_title": org_labels["statement_title"],
             "organization_type": organization_type,
             "template": template,
-            "basis": "external",
+            "basis": basis,
             "detail": mode,
             "compare": compare if has_prior else "none",
             "cols_mode": cols_mode,
-            "basis": basis,
             "layout": "multi_tier_pnl",
             "industry_profile": prof,
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
             "prior_period": {"from": pri_from.isoformat(), "to": pri_to.isoformat()} if has_prior else None,
-            "labels": {"cur": cur_label, "pri": pri_label} if has_prior else {"cur": cur_label},
+            "comparison_periods": comparison_periods,
+            "labels": labels,
         },
         "columns": columns,
         "sections": out_sections,

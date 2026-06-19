@@ -17,18 +17,26 @@ def _norm_preview_columns(preview_columns: Any) -> int:
 
 def _norm_compare(compare_mode: Optional[str]) -> str:
     cm = (compare_mode or "none").lower().strip()
-    return cm if cm in ("none", "prior_period", "prior_year") else "none"
+    return cm if cm in ("none", "prior_period", "prior_year", "multi_year") else "none"
 
-def _resolve_cf_columns(*, basis: str, cols_mode: int, preview_columns: int,
-                        compare_mode: str, prior_from: Optional[date], prior_to: Optional[date]):
+def _resolve_cf_columns(
+    *,
+    basis: str,
+    cols_mode: int,
+    preview_columns: int,
+    compare_mode: str,
+    prior_from: Optional[date],
+    prior_to: Optional[date],
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    comparison_years: int = 1,
+):
     is_mgmt = (str(basis or "external").lower() in ("management", "internal"))
     cols_mode = int(cols_mode or 1)
 
-    # management worksheet layouts
     is_ws_2 = is_mgmt and cols_mode == 2
     is_ws_3 = is_mgmt and cols_mode == 3
 
-    # worksheet never compares
     if is_ws_2 or is_ws_3:
         return {
             "is_ws_2": is_ws_2,
@@ -37,35 +45,57 @@ def _resolve_cf_columns(*, basis: str, cols_mode: int, preview_columns: int,
             "compare_mode": "none",
             "prior_from": None,
             "prior_to": None,
+            "comparison_ranges": [],
             "columns": (
                 [{"key": "brk", "label": "Breakdown"}, {"key": "tot", "label": "Total"}] +
                 ([{"key": "var", "label": "Variance"}] if is_ws_3 else [])
             ),
         }
 
-    # preview=2 forces no compare
     if preview_columns == 2:
         compare_mode = "none"
         prior_from = None
         prior_to = None
 
-    has_prior = bool(
-        preview_columns == 1
-        and prior_from and prior_to
-        and compare_mode in ("prior_year", "prior_period")
-    )
+    comparison_ranges = []
+
+    if preview_columns == 1 and compare_mode == "multi_year" and date_from and date_to:
+        try:
+            comparison_years = int(comparison_years or 1)
+        except Exception:
+            comparison_years = 1
+
+        comparison_years = max(1, min(comparison_years, 10))
+
+        for i in range(1, comparison_years):
+            comparison_ranges.append((
+                rh.shift_year(date_from, i),
+                rh.shift_year(date_to, i),
+            ))
+
+    elif preview_columns == 1 and compare_mode in ("prior_year", "prior_period") and prior_from and prior_to:
+        comparison_ranges.append((prior_from, prior_to))
+
+    has_prior = bool(comparison_ranges)
 
     columns = [{"key": "cur", "label": "Current"}]
+
     if has_prior:
-        columns += [{"key": "pri", "label": "Prior"}, {"key": "delta", "label": "Δ"}]
+        columns.append({"key": "pri", "label": "Prior"})
+
+        for idx in range(2, len(comparison_ranges) + 1):
+            columns.append({"key": f"p{idx}", "label": f"Prior {idx}"})
+
+        columns.append({"key": "delta", "label": "Δ"})
 
     return {
         "is_ws_2": False,
         "is_ws_3": False,
         "has_prior": has_prior,
-        "compare_mode": compare_mode,
-        "prior_from": prior_from,
-        "prior_to": prior_to,
+        "compare_mode": compare_mode if has_prior else "none",
+        "prior_from": comparison_ranges[0][0] if has_prior else None,
+        "prior_to": comparison_ranges[0][1] if has_prior else None,
+        "comparison_ranges": comparison_ranges,
         "columns": columns,
     }
 
@@ -147,6 +177,7 @@ def build_cashflow_full_v2(
     template: str = "ifrs",
     basis: str = "external",
     compare_mode: str = "none",
+    comparison_years: int = 1,
     prior_from: Optional[date] = None,
     prior_to: Optional[date] = None,
     preview_columns: int = 2,  # 2 = inflow/outflow UI, 1 = compare-capable
@@ -171,6 +202,9 @@ def build_cashflow_full_v2(
         compare_mode=compare_mode,
         prior_from=prior_from,
         prior_to=prior_to,
+        date_from=date_from,
+        date_to=date_to,
+        comparison_years=comparison_years,
     )
 
     is_ws_2 = cfg["is_ws_2"]
@@ -180,15 +214,27 @@ def build_cashflow_full_v2(
     prior_from = cfg["prior_from"]
     prior_to = cfg["prior_to"]
     columns = cfg["columns"]
-    
-    def _val(cur_amt: float, pri_amt: float = 0.0) -> Dict[str, float]:
+    comparison_ranges = cfg.get("comparison_ranges") or []
+
+    def _val(cur_amt: float, comparison_amounts: Optional[List[float]] = None) -> Dict[str, float]:
         if is_ws_2:
             return {"brk": 0.0, "tot": float(cur_amt)}
+
         if is_ws_3:
-            return {"brk": 0.0, "tot": float(cur_amt), "var": float(cur_amt)}  # var can be used later
-        if not has_prior:
-            return {"cur": float(cur_amt)}
-        return {"cur": float(cur_amt), "pri": float(pri_amt), "delta": float(cur_amt - pri_amt)}
+            return {"brk": 0.0, "tot": float(cur_amt), "var": float(cur_amt)}
+
+        out = {"cur": float(cur_amt)}
+        comparison_amounts = comparison_amounts or []
+
+        if comparison_amounts:
+            out["pri"] = float(comparison_amounts[0])
+
+            for idx, amt in enumerate(comparison_amounts[1:], start=2):
+                out[f"p{idx}"] = float(amt)
+
+            out["delta"] = float(out["cur"] - out["pri"])
+
+        return out
 
     def _calc_period_cf(df: date, dt: date) -> Dict[str, Any]:
         journals = get_journals_period_fn(company_id, df, dt)
@@ -260,49 +306,104 @@ def build_cashflow_full_v2(
     cash_open_cur = cash_position_from_tb_fn(tb_open_cur)
     cash_close_cur = cash_position_from_tb_fn(tb_close_cur)
 
-    cash_open_pri = cash_close_pri = None
-    if has_prior:
-        open_as_of_pri = prior_from - timedelta(days=1)
-        close_as_of_pri = prior_to
-        tb_open_pri = tb_as_of_fn(company_id, open_as_of_pri)
-        tb_close_pri = tb_as_of_fn(company_id, close_as_of_pri)
-        cash_open_pri = cash_position_from_tb_fn(tb_open_pri)
-        cash_close_pri = cash_position_from_tb_fn(tb_close_pri)
-
     cur = _calc_period_cf(date_from, date_to)
-    pri = _calc_period_cf(prior_from, prior_to) if has_prior else None
+
+    comparison_results = []
+    comparison_cash_positions = []
+
+    for pf, pt in comparison_ranges:
+        comparison_results.append(_calc_period_cf(pf, pt))
+
+        tb_open_cmp = tb_as_of_fn(company_id, pf - timedelta(days=1))
+        tb_close_cmp = tb_as_of_fn(company_id, pt)
+
+        comparison_cash_positions.append({
+            "opening": cash_position_from_tb_fn(tb_open_cmp),
+            "closing": cash_position_from_tb_fn(tb_close_cmp),
+        })
 
     def _section_block(key: str, label: str) -> Dict[str, Any]:
         cur_amt = float(cur["totals"].get(key) or 0.0)
-        pri_amt = float(pri["totals"].get(key) or 0.0) if has_prior and pri else 0.0
+
+        comparison_amounts = [
+            float(r["totals"].get(key) or 0.0)
+            for r in comparison_results
+        ]
+
+        detail = {
+            "cur": rh.filter_zero_lines(
+                _aggregate_cf_detail_lines(cur["lines"].get(key, []))
+            )
+        }
+
+        for idx, r in enumerate(comparison_results, start=1):
+            dkey = "pri" if idx == 1 else f"p{idx}"
+            detail[dkey] = rh.filter_zero_lines(
+                _aggregate_cf_detail_lines(r["lines"].get(key, []))
+            )
+
         return {
             "key": key,
             "label": label,
             "lines": [{
                 "code": "DETAIL",
                 "name": "Details",
-                "values": _val(cur_amt, pri_amt),
-                    "detail": {
-                    "cur": rh.filter_zero_lines(_aggregate_cf_detail_lines(cur["lines"].get(key, []))),
-                    "pri": rh.filter_zero_lines(_aggregate_cf_detail_lines(pri["lines"].get(key, []))) if has_prior and pri else [],
-                    }
+                "values": _val(cur_amt, comparison_amounts),
+                "detail": detail,
             }],
-            "totals": _val(cur_amt, pri_amt),
+            "totals": _val(cur_amt, comparison_amounts),
         }
+
 
     operating = _section_block("operating", "Net cash from operating activities")
     investing = _section_block("investing", "Net cash from investing activities")
     financing = _section_block("financing", "Net cash from financing activities")
 
-    net_cur = float(cur["totals"]["operating"]) + float(cur["totals"]["investing"]) + float(cur["totals"]["financing"])
-    net_pri = 0.0
-    if has_prior and pri:
-        net_pri = float(pri["totals"]["operating"]) + float(pri["totals"]["investing"]) + float(pri["totals"]["financing"])
+    net_cur = (
+        float(cur["totals"]["operating"]) +
+        float(cur["totals"]["investing"]) +
+        float(cur["totals"]["financing"])
+    )
+
+    net_comparisons = [
+        float(r["totals"]["operating"]) +
+        float(r["totals"]["investing"]) +
+        float(r["totals"]["financing"])
+        for r in comparison_results
+    ]
 
     delta_cash_cur = float(cash_close_cur["position"]) - float(cash_open_cur["position"])
-    delta_cash_pri = 0.0
-    if has_prior and cash_open_pri and cash_close_pri:
-        delta_cash_pri = float(cash_close_pri["position"]) - float(cash_open_pri["position"])
+
+    delta_cash_comparisons = [
+        float(pos["closing"]["position"]) - float(pos["opening"]["position"])
+        for pos in comparison_cash_positions
+    ]
+
+    opening_cash_comparisons = [
+        float(pos["opening"]["position"])
+        for pos in comparison_cash_positions
+    ]
+
+    closing_cash_comparisons = [
+        float(pos["closing"]["position"])
+        for pos in comparison_cash_positions
+    ]
+
+    reconciliation_gap_cur = delta_cash_cur - net_cur
+
+    reconciliation_gap_comparisons = [
+        float(delta_cash_comparisons[i]) - float(net_comparisons[i])
+        for i in range(len(net_comparisons))
+    ]
+
+    comparison_periods = []
+    for idx, (pf, pt) in enumerate(comparison_ranges, start=1):
+        key = "pri" if idx == 1 else f"p{idx}"
+        comparison_periods.append({
+            "key": key,
+            "from": pf.isoformat(),
+            "to": pt.isoformat(),
+        })
 
     ctx = get_company_context_fn(company_id) or {}
 
@@ -314,43 +415,59 @@ def build_cashflow_full_v2(
             "statement": "cf",
             "template": template,
             "basis": basis,
-            "compare": compare_mode,  # ✅ normalized
+            "compare": compare_mode,
             "method": "direct",
             "preview_columns": preview_columns,
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
-            "prior_period": {"from": prior_from.isoformat(), "to": prior_to.isoformat()} if has_prior else None,
+            "prior_period": {
+                "from": prior_from.isoformat(),
+                "to": prior_to.isoformat()
+            } if has_prior else None,
+            "comparison_periods": comparison_periods,
         },
         "columns": columns,
         "sections": [operating, investing, financing],
-        "net_change": {"label": "Net change in cash and cash equivalents", "values": _val(net_cur, net_pri)},
+        "net_change": {
+            "label": "Net change in cash and cash equivalents",
+            "values": _val(net_cur, net_comparisons),
+        },
         "cash_position": {
             "opening": {
                 "label": "Cash & cash equivalents (opening)",
                 "values": _val(
                     float(cash_open_cur["position"]),
-                    float(cash_open_pri["position"]) if has_prior and cash_open_pri else 0.0
+                    opening_cash_comparisons,
                 ),
                 "breakdown": {
-                    "cur": {"cash": cash_open_cur["cash_positive"], "overdraft": cash_open_cur["overdraft"]},
-                    "pri": {"cash": cash_open_pri["cash_positive"], "overdraft": cash_open_pri["overdraft"]} if has_prior and cash_open_pri else None,
+                    "cur": {
+                        "cash": cash_open_cur["cash_positive"],
+                        "overdraft": cash_open_cur["overdraft"],
+                    },
                 },
             },
             "closing": {
                 "label": "Cash & cash equivalents (closing)",
                 "values": _val(
                     float(cash_close_cur["position"]),
-                    float(cash_close_pri["position"]) if has_prior and cash_close_pri else 0.0
+                    closing_cash_comparisons,
                 ),
                 "breakdown": {
-                    "cur": {"cash": cash_close_cur["cash_positive"], "overdraft": cash_close_cur["overdraft"]},
-                    "pri": {"cash": cash_close_pri["cash_positive"], "overdraft": cash_close_pri["overdraft"]} if has_prior and cash_close_pri else None,
+                    "cur": {
+                        "cash": cash_close_cur["cash_positive"],
+                        "overdraft": cash_close_cur["overdraft"],
+                    },
                 },
             },
-            "delta_from_tb": {"label": "Net change per TB (closing - opening)", "values": _val(delta_cash_cur, delta_cash_pri)},
-            "reconciliation_gap": {"label": "Reconciliation gap (TB delta - cashflow net change)", "values": _val(delta_cash_cur - net_cur, delta_cash_pri - net_pri)},
+            "delta_from_tb": {
+                "label": "Net change per TB (closing - opening)",
+                "values": _val(delta_cash_cur, delta_cash_comparisons),
+            },
+            "reconciliation_gap": {
+                "label": "Reconciliation gap (TB delta - cashflow net change)",
+                "values": _val(reconciliation_gap_cur, reconciliation_gap_comparisons),
+            },
         },
     }
-
 
 def build_cashflow_indirect_v2(
     *,
@@ -364,6 +481,7 @@ def build_cashflow_indirect_v2(
     template: str = "ifrs",
     basis: str = "external",
     compare_mode: str = "none",
+    comparison_years: int = 1,
     prior_from: Optional[date] = None,
     prior_to: Optional[date] = None,
     preview_columns: int = 1,
@@ -388,6 +506,9 @@ def build_cashflow_indirect_v2(
         compare_mode=compare_mode,
         prior_from=prior_from,
         prior_to=prior_to,
+        date_from=date_from,
+        date_to=date_to,
+        comparison_years=comparison_years,
     )
 
     is_ws_2 = cfg["is_ws_2"]
@@ -397,10 +518,11 @@ def build_cashflow_indirect_v2(
     prior_from = cfg["prior_from"]
     prior_to = cfg["prior_to"]
     columns = cfg["columns"]
+    comparison_ranges = cfg.get("comparison_ranges") or []
 
     def _val(
         cur_amt: float = 0.0,
-        pri_amt: float = 0.0,
+        comparison_amounts: Optional[List[float]] = None,
         brk_amt: Optional[float] = None,
         *,
         ws_show_total: bool = False,
@@ -411,15 +533,26 @@ def build_cashflow_indirect_v2(
                 "brk": float(brk_amt if ws_show_breakdown else 0.0),
                 "tot": float(cur_amt if ws_show_total else 0.0),
             }
+
         if is_ws_3:
             return {
                 "brk": float(brk_amt if ws_show_breakdown else 0.0),
                 "tot": float(cur_amt if ws_show_total else 0.0),
                 "var": 0.0,
             }
-        if not has_prior:
-            return {"cur": float(cur_amt)}
-        return {"cur": float(cur_amt), "pri": float(pri_amt), "delta": float(cur_amt - pri_amt)}
+
+        out = {"cur": float(cur_amt)}
+        comparison_amounts = comparison_amounts or []
+
+        if comparison_amounts:
+            out["pri"] = float(comparison_amounts[0])
+
+            for idx, amt in enumerate(comparison_amounts[1:], start=2):
+                out[f"p{idx}"] = float(amt)
+
+            out["delta"] = float(out["cur"] - out["pri"])
+
+        return out
 
     def _tb_map(as_of: date) -> Dict[str, Dict[str, Any]]:
         rows = get_trial_balance_asof_fn(company_id, None, as_of) or []
@@ -849,21 +982,18 @@ def build_cashflow_indirect_v2(
     op_cur = _operating_indirect(date_from, date_to)
     jf_cur = _cash_journal_sections(date_from, date_to)
 
-    # Prior
-    op_pri = None
-    jf_pri = None
-    if has_prior:
-        op_pri = _operating_indirect(prior_from, prior_to)
-        jf_pri = _cash_journal_sections(prior_from, prior_to)
+    # Comparisons
+    op_comparisons = []
+    jf_comparisons = []
 
-    # Fill PRI values into operating lines when comparing
-    if has_prior and op_pri:
-        pri_by_code = {ln.get("code"): float((ln.get("values") or {}).get("cur") or 0.0) for ln in (op_pri.get("lines") or [])}
-        for ln in op_cur["lines"]:
-            code = ln.get("code")
-            cur_v = float((ln.get("values") or {}).get("cur") or 0.0)
-            pri_v = float(pri_by_code.get(code) or 0.0)
-            ln["values"] = _val(cur_v, pri_v)
+    for pf, pt in comparison_ranges:
+        op_comparisons.append(_operating_indirect(pf, pt))
+        jf_comparisons.append(_cash_journal_sections(pf, pt))
+
+    operating_comparison_totals = [
+        float(op.get("total") or 0.0)
+        for op in op_comparisons
+    ]
 
     operating = {
         "key": "operating",
@@ -871,7 +1001,7 @@ def build_cashflow_indirect_v2(
         "lines": op_cur["lines"],
         "totals": _val(
             float(op_cur["total"]),
-            float(op_pri["total"]) if has_prior and op_pri else 0.0,
+            operating_comparison_totals,
             0.0,
             ws_show_total=True if (is_ws_2 or is_ws_3) else False,
             ws_show_breakdown=False,
@@ -881,8 +1011,15 @@ def build_cashflow_indirect_v2(
     investing_total_cur = float(jf_cur["totals"]["investing"])
     financing_total_cur = float(jf_cur["totals"]["financing"])
 
-    investing_total_pri = float(jf_pri["totals"]["investing"]) if has_prior and jf_pri else 0.0
-    financing_total_pri = float(jf_pri["totals"]["financing"]) if has_prior and jf_pri else 0.0
+    investing_comparison_totals = [
+        float(jf["totals"]["investing"])
+        for jf in jf_comparisons
+    ]
+
+    financing_comparison_totals = [
+        float(jf["totals"]["financing"])
+        for jf in jf_comparisons
+    ]
 
     investing_lines = []
     for row in _aggregate_cf_detail_lines(jf_cur["lines"]["investing"]):
@@ -893,7 +1030,7 @@ def build_cashflow_indirect_v2(
             "row_type": "breakdown" if (is_ws_2 or is_ws_3) else "normal",
             "values": _val(
                 0.0 if (is_ws_2 or is_ws_3) else cur_amt,
-                0.0,
+                [],
                 cur_amt,
                 ws_show_total=False,
                 ws_show_breakdown=True if (is_ws_2 or is_ws_3) else False,
@@ -906,7 +1043,7 @@ def build_cashflow_indirect_v2(
         "lines": investing_lines,
         "totals": _val(
             investing_total_cur,
-            investing_total_pri,
+            investing_comparison_totals,
             0.0,
             ws_show_total=True if (is_ws_2 or is_ws_3) else False,
             ws_show_breakdown=False,
@@ -922,7 +1059,7 @@ def build_cashflow_indirect_v2(
             "row_type": "breakdown" if (is_ws_2 or is_ws_3) else "normal",
             "values": _val(
                 0.0 if (is_ws_2 or is_ws_3) else cur_amt,
-                0.0,
+                [],
                 cur_amt,
                 ws_show_total=False,
                 ws_show_breakdown=True if (is_ws_2 or is_ws_3) else False,
@@ -935,7 +1072,7 @@ def build_cashflow_indirect_v2(
         "lines": financing_lines,
         "totals": _val(
             financing_total_cur,
-            financing_total_pri,
+            financing_comparison_totals,
             0.0,
             ws_show_total=True if (is_ws_2 or is_ws_3) else False,
             ws_show_breakdown=False,
@@ -943,29 +1080,53 @@ def build_cashflow_indirect_v2(
     }
 
     net_cur = float(op_cur["total"]) + investing_total_cur + financing_total_cur
-    net_pri = (float(op_pri["total"]) + investing_total_pri + financing_total_pri) if has_prior and op_pri else 0.0
 
-    # Opening and closing cash balances from TB snapshots
+    net_comparisons = [
+        operating_comparison_totals[i]
+        + investing_comparison_totals[i]
+        + financing_comparison_totals[i]
+        for i in range(len(comparison_ranges))
+    ]
+
     tb_open_rows = get_trial_balance_asof_fn(company_id, None, date_from - timedelta(days=1)) or []
     tb_close_rows = get_trial_balance_asof_fn(company_id, None, date_to) or []
 
     opening_cash = float(ac.cash_position_amount(tb_open_rows))
     closing_cash = float(ac.cash_position_amount(tb_close_rows))
 
-    ctx = get_company_context_fn(company_id) or {}
+    opening_cash_comparisons = []
+    closing_cash_comparisons = []
+    delta_cash_comparisons = []
 
-    # --- ADD THIS BLOCK HERE (just before return) ---
-    delta_cash_pri = 0.0
-    if has_prior:
-        tb_open_rows_pri = get_trial_balance_asof_fn(company_id, None, prior_from - timedelta(days=1)) or []
-        tb_close_rows_pri = get_trial_balance_asof_fn(company_id, None, prior_to) or []
-        opening_cash_pri = float(ac.cash_position_amount(tb_open_rows_pri))
-        closing_cash_pri = float(ac.cash_position_amount(tb_close_rows_pri))
-        delta_cash_pri = closing_cash_pri - opening_cash_pri
+    for pf, pt in comparison_ranges:
+        tb_open_cmp = get_trial_balance_asof_fn(company_id, None, pf - timedelta(days=1)) or []
+        tb_close_cmp = get_trial_balance_asof_fn(company_id, None, pt) or []
+
+        opening_cmp = float(ac.cash_position_amount(tb_open_cmp))
+        closing_cmp = float(ac.cash_position_amount(tb_close_cmp))
+
+        opening_cash_comparisons.append(opening_cmp)
+        closing_cash_comparisons.append(closing_cmp)
+        delta_cash_comparisons.append(closing_cmp - opening_cmp)
 
     delta_cash = closing_cash - opening_cash
     reconciliation_gap = delta_cash - net_cur
-    reconciliation_gap_pri = delta_cash_pri - net_pri
+
+    reconciliation_gap_comparisons = [
+        float(delta_cash_comparisons[i]) - float(net_comparisons[i])
+        for i in range(len(net_comparisons))
+    ]
+
+    comparison_periods = []
+    for idx, (pf, pt) in enumerate(comparison_ranges, start=1):
+        key = "pri" if idx == 1 else f"p{idx}"
+        comparison_periods.append({
+            "key": key,
+            "from": pf.isoformat(),
+            "to": pt.isoformat(),
+        })
+
+    ctx = get_company_context_fn(company_id) or {}
 
     return {
         "meta": {
@@ -976,6 +1137,7 @@ def build_cashflow_indirect_v2(
             "template": template,
             "basis": basis,
             "compare": compare_mode,
+            "comparison_periods": comparison_periods,
             "method": "indirect",
             "preview_columns": preview_columns,
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
@@ -987,7 +1149,7 @@ def build_cashflow_indirect_v2(
             "label": "Opening cash and cash equivalents",
             "values": _val(
                 opening_cash,
-                0.0,
+                opening_cash_comparisons,
                 0.0,
                 ws_show_total=True if (is_ws_2 or is_ws_3) else False,
                 ws_show_breakdown=False,
@@ -997,7 +1159,7 @@ def build_cashflow_indirect_v2(
             "label": "Closing cash and cash equivalents",
             "values": _val(
                 closing_cash,
-                0.0,
+                closing_cash_comparisons,
                 0.0,
                 ws_show_total=True if (is_ws_2 or is_ws_3) else False,
                 ws_show_breakdown=False,
@@ -1007,7 +1169,7 @@ def build_cashflow_indirect_v2(
             "label": "Net change in cash and cash equivalents",
             "values": _val(
                 net_cur,
-                net_pri,
+                net_comparisons,
                 0.0,
                 ws_show_total=True if (is_ws_2 or is_ws_3) else False,
                 ws_show_breakdown=False,
@@ -1016,11 +1178,11 @@ def build_cashflow_indirect_v2(
         "reconciliation": {
             "delta_from_tb": {
                 "label": "Net change per TB (closing - opening)",
-                "values": _val(delta_cash, delta_cash_pri, 0.0)
+                "values": _val(delta_cash, delta_cash_comparisons, 0.0)
             },
             "gap": {
                 "label": "Reconciliation gap (TB delta - cashflow net change)",
-                "values": _val(reconciliation_gap, reconciliation_gap_pri, 0.0)
+                "values": _val(reconciliation_gap, reconciliation_gap_comparisons, 0.0)
             },
         },
     }

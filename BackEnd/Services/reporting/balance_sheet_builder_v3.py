@@ -416,13 +416,14 @@ def build_balance_sheet_v3(
     *,
     company_id: int,
     as_of: date,
-    prior_as_of: Optional[date],
-    get_company_context_fn,
-    get_trial_balance_fn,
-    get_pnl_full_fn=None,                 # optional
+    prior_as_of: Optional[date] = None,
+    comparison_as_of_dates: Optional[List[date]] = None,
+    get_company_context_fn=None,
+    get_trial_balance_fn=None,
+    get_pnl_full_fn=None,
     include_net_profit_line: bool = False,
-    view: str = "external",               # external | internal
-    basis: str = "external",              # meta only
+    view: str = "external",
+    basis: str = "external",
 ) -> Dict[str, Any]:
 
     ctx = get_company_context_fn(company_id) or {}
@@ -456,89 +457,164 @@ def build_balance_sheet_v3(
     if view not in ("external", "internal"):
         view = "external"
 
-    # -------------------------
-    # TB rows (fetch first)
-    # -------------------------
-    cur_rows = get_trial_balance_fn(company_id, None, as_of) or []
+    # --------------------------------------------------
+    # Comparison date setup
+    # --------------------------------------------------
+    if comparison_as_of_dates:
+        comparison_as_of_dates = [
+            d for d in comparison_as_of_dates
+            if d is not None
+        ]
+    else:
+        comparison_as_of_dates = [as_of]
+        if prior_as_of:
+            comparison_as_of_dates.append(prior_as_of)
 
-    pri_rows = []
-    if prior_as_of:
-        pri_rows = get_trial_balance_fn(company_id, None, prior_as_of) or []
+    # remove duplicates while keeping order
+    seen_dates = set()
+    clean_dates = []
+    for d in comparison_as_of_dates:
+        key = d.isoformat() if hasattr(d, "isoformat") else str(d)
+        if key not in seen_dates:
+            seen_dates.add(key)
+            clean_dates.append(d)
 
-    # Normalise cash/overdraft split
-    cur_rows = split_cash_and_overdraft(cur_rows)
-    if pri_rows:
-        pri_rows = split_cash_and_overdraft(pri_rows)
+    comparison_as_of_dates = clean_dates or [as_of]
 
-    # ✅ Decide has_prior based on actual prior data
-    has_prior = bool(prior_as_of and pri_rows)
+    # make sure current as_of is first
+    if comparison_as_of_dates[0] != as_of:
+        comparison_as_of_dates = [as_of] + [
+            d for d in comparison_as_of_dates if d != as_of
+        ]
 
-    # -------------------------
-    # Columns (build AFTER has_prior)
-    # -------------------------
+    has_prior = len(comparison_as_of_dates) > 1
+    effective_prior_as_of = comparison_as_of_dates[1] if has_prior else None
+
+    # --------------------------------------------------
+    # TB rows for all selected dates
+    # --------------------------------------------------
+    tb_rows_by_key: Dict[str, List[Dict[str, Any]]] = {}
+    tb_maps_by_key: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    period_keys: List[str] = []
+
+    for idx, d_to in enumerate(comparison_as_of_dates):
+        key = "cur" if idx == 0 else f"p{idx}"
+        period_keys.append(key)
+
+        rows = get_trial_balance_fn(company_id, None, d_to) or []
+        rows = split_cash_and_overdraft(rows)
+
+        tb_rows_by_key[key] = rows
+        tb_maps_by_key[key] = _tb_maps(rows)
+
+    cur_rows = tb_rows_by_key.get("cur", [])
+    cur_by = tb_maps_by_key.get("cur", {})
+
+    pri_rows = tb_rows_by_key.get("p1", []) if has_prior else []
+    pri_by = tb_maps_by_key.get("p1", {}) if has_prior else {}
+
+    # --------------------------------------------------
+    # Columns
+    # Important:
+    # keep cur/pri/delta for existing renderer compatibility.
+    # Additional years can be exposed later as p2, p3, p4...
+    # --------------------------------------------------
     if view == "external":
-        columns = [{"key": "cur", "label": "Amount"}]
+        columns = [{"key": "cur", "label": str(comparison_as_of_dates[0].year)}]
+
         if has_prior:
-            columns += [{"key": "pri", "label": "Prior"}, {"key": "delta", "label": "Δ"}]
+            columns.append({
+                "key": "pri",
+                "label": str(effective_prior_as_of.year),
+            })
+            columns.append({"key": "delta", "label": "Δ"})
+
+        for idx, d in enumerate(comparison_as_of_dates[2:], start=2):
+            columns.insert(-1 if has_prior else len(columns), {
+                "key": f"p{idx}",
+                "label": str(d.year),
+            })
+
     else:
         columns = [
             {"key": "noncur", "label": "Non-current"},
             {"key": "cur", "label": "Current"},
             {"key": "total", "label": "Total"},
         ]
+
         if has_prior:
-            columns += [{"key": "pri_total", "label": "Prior (Total)"}, {"key": "delta", "label": "Δ"}]
+            columns.append({
+                "key": "pri_total",
+                "label": f"{effective_prior_as_of.year} Total",
+            })
 
-    # maps
-    cur_by = _tb_maps(cur_rows)
-    pri_by = _tb_maps(pri_rows) if has_prior else {}
+            for idx, d in enumerate(comparison_as_of_dates[2:], start=2):
+                columns.append({
+                    "key": f"p{idx}_total",
+                    "label": f"{d.year} Total",
+                })
 
-    if has_prior:
-        # ✅ only keep prior if there is any meaningful delta
-        tol = 1e-9
-        def _net(m):
-            return sum(float((r or {}).get("closing_balance") or 0.0) for r in m.values())
+            columns.append({"key": "delta", "label": "Δ"})
 
-        if abs(_net(cur_by) - _net(pri_by)) < tol:
-            has_prior = False
-            pri_by = {}
-            all_codes = set(cur_by.keys())
-            # rebuild columns (since has_prior changed)
-            if view == "external":
-                columns = [{"key": "cur", "label": "Amount"}]
-            else:
-                columns = [
-                    {"key": "noncur", "label": "Non-current"},
-                    {"key": "cur", "label": "Current"},
-                    {"key": "total", "label": "Total"},
-                ]
-
-    all_codes = set(cur_by.keys()) | set(pri_by.keys())
+    # --------------------------------------------------
+    # All account codes across all selected periods
+    # --------------------------------------------------
+    all_codes = set()
+    for m in tb_maps_by_key.values():
+        all_codes |= set(m.keys())
 
     def _vals_external(code: str, kind: str) -> Dict[str, float]:
         cur_amt = _bs_signed_amount(kind, cur_by.get(code, {}) or {})
-        if not has_prior:
-            return {"cur": float(cur_amt)}
-        pri_amt = _bs_signed_amount(kind, pri_by.get(code, {}) or {})
-        return {"cur": float(cur_amt), "pri": float(pri_amt), "delta": float(cur_amt - pri_amt)}
+
+        out = {"cur": float(cur_amt)}
+
+        if has_prior:
+            pri_amt = _bs_signed_amount(kind, pri_by.get(code, {}) or {})
+            out["pri"] = float(pri_amt)
+
+            # additional comparison years: p2, p3, p4...
+            for idx in range(2, len(comparison_as_of_dates)):
+                key = f"p{idx}"
+                m = tb_maps_by_key.get(key, {})
+                amt = _bs_signed_amount(kind, m.get(code, {}) or {})
+                out[key] = float(amt)
+
+            # delta remains current year minus first prior year
+            out["delta"] = float(cur_amt - pri_amt)
+
+        return out
 
     def _vals_internal(code: str, kind: str, row_any: Dict[str, Any]) -> Dict[str, float]:
         cur_amt = _bs_signed_amount(kind, cur_by.get(code, {}) or {})
-        pri_amt = _bs_signed_amount(kind, pri_by.get(code, {}) or {}) if has_prior else 0.0
 
         bucket_is_cur = _is_current_bucket(row_any, kind)
         if bucket_is_cur is None:
-            # safe fallback: treat unknown assets/liabs as non-current
             bucket_is_cur = False
 
         noncur = float(cur_amt) if not bucket_is_cur else 0.0
         cur = float(cur_amt) if bucket_is_cur else 0.0
         total = noncur + cur
 
-        out = {"noncur": noncur, "cur": cur, "total": total}
+        out = {
+            "noncur": float(noncur),
+            "cur": float(cur),
+            "total": float(total),
+        }
+
         if has_prior:
+            pri_amt = _bs_signed_amount(kind, pri_by.get(code, {}) or {})
             out["pri_total"] = float(pri_amt)
+
+            for idx in range(2, len(comparison_as_of_dates)):
+                key = f"p{idx}"
+                total_key = f"{key}_total"
+                m = tb_maps_by_key.get(key, {})
+                amt = _bs_signed_amount(kind, m.get(code, {}) or {})
+                out[total_key] = float(amt)
+
             out["delta"] = float(total - pri_amt)
+
         return out
 
     def _make_line(code: str, name: str, values: Dict[str, float], row_any: Dict[str, Any], *, is_contra: bool) -> Dict[str, Any]:
@@ -878,20 +954,36 @@ def build_balance_sheet_v3(
 
     def _sum(lines: List[Dict[str, Any]]) -> Dict[str, float]:
         if view == "external":
-            cur = sum(_getv(ln, "cur") for ln in lines)
-            if not has_prior:
-                return {"cur": float(cur)}
-            pri = sum(_getv(ln, "pri") for ln in lines)
-            return {"cur": float(cur), "pri": float(pri), "delta": float(cur - pri)}
+            out = {
+                "cur": float(sum(_getv(ln, "cur") for ln in lines))
+            }
 
-        noncur = sum(_getv(ln, "noncur") for ln in lines)
-        cur = sum(_getv(ln, "cur") for ln in lines)
-        total = sum(_getv(ln, "total") for ln in lines)
-        out = {"noncur": float(noncur), "cur": float(cur), "total": float(total)}
+            if has_prior:
+                out["pri"] = float(sum(_getv(ln, "pri") for ln in lines))
+
+                for idx in range(2, len(comparison_as_of_dates)):
+                    key = f"p{idx}"
+                    out[key] = float(sum(_getv(ln, key) for ln in lines))
+
+                out["delta"] = float(out["cur"] - out["pri"])
+
+            return out
+
+        out = {
+            "noncur": float(sum(_getv(ln, "noncur") for ln in lines)),
+            "cur": float(sum(_getv(ln, "cur") for ln in lines)),
+            "total": float(sum(_getv(ln, "total") for ln in lines)),
+        }
+
         if has_prior:
-            pri_total = sum(_getv(ln, "pri_total") for ln in lines)
-            out["pri_total"] = float(pri_total)
-            out["delta"] = float(total - pri_total)
+            out["pri_total"] = float(sum(_getv(ln, "pri_total") for ln in lines))
+
+            for idx in range(2, len(comparison_as_of_dates)):
+                key = f"p{idx}_total"
+                out[key] = float(sum(_getv(ln, key) for ln in lines))
+
+            out["delta"] = float(out["total"] - out["pri_total"])
+
         return out
 
     def _sum_vals(a: Dict[str, float], b: Dict[str, float]) -> Dict[str, float]:
@@ -933,7 +1025,7 @@ def build_balance_sheet_v3(
 
     diff = _sub_vals(tot_assets, tot_eql)
 
-    effective_prior_as_of = prior_as_of if has_prior else None
+    effective_prior_as_of = comparison_as_of_dates[1] if has_prior else None
 
     nca_col_labels = None
     if view == "internal":

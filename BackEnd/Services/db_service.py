@@ -26380,6 +26380,7 @@ class DatabaseService:
         detail: str = "summary",
         prior_from: Optional[date] = None,
         prior_to: Optional[date] = None,
+        comparison_years: int = 1,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
@@ -26404,6 +26405,14 @@ class DatabaseService:
 
         basis_norm = (basis or "external").lower().strip()
 
+        if "comparison_years" in kwargs:
+            try:
+                comparison_years = int(kwargs.pop("comparison_years") or comparison_years)
+            except Exception:
+                comparison_years = 1
+
+        comparison_years = max(1, min(int(comparison_years or 1), 10))
+
         # -------- MANAGEMENT / INTERNAL (classic + Hunter) --------
         if basis_norm == "management":
             prof = ctx.get("industry_profile") or get_industry_profile(
@@ -26425,8 +26434,17 @@ class DatabaseService:
 
         # -------- EXTERNAL / IAS 1 --------
         kwargs_for_compare = {}
-        if compare != "none":
-            kwargs_for_compare = {"prior_from": prior_from, "prior_to": prior_to}
+
+        if compare == "multi_year":
+            kwargs_for_compare = {
+                "comparison_years": comparison_years,
+            }
+        elif compare != "none":
+            kwargs_for_compare = {
+                "prior_from": prior_from,
+                "prior_to": prior_to,
+                "comparison_years": comparison_years,
+            }
 
         return get_pnl_full_v2(
             self,
@@ -26441,7 +26459,6 @@ class DatabaseService:
             ctx=ctx,
             **kwargs_for_compare,
         )
-
 
     # ✅ Legacy shim for older code paths
     def get_pnl_full(
@@ -26482,6 +26499,7 @@ class DatabaseService:
         prior_from: Optional[date] = None,
         prior_to: Optional[date] = None,
         preview_columns: int = 2,
+        comparison_years: int = 1,
         cols_mode: int = 1,
     ) -> Dict[str, Any]:
 
@@ -26545,6 +26563,7 @@ class DatabaseService:
                 prior_to=prior_to,
                 preview_columns=preview_columns,
                 cols_mode=cols_mode,
+                comparison_years=comparison_years,
             )
 
         return build_cashflow_full_v2(
@@ -26562,6 +26581,7 @@ class DatabaseService:
             prior_to=prior_to,
             preview_columns=preview_columns,
             cols_mode=cols_mode,
+            comparison_years=comparison_years,
         )
 
 
@@ -26577,6 +26597,7 @@ class DatabaseService:
         prior_from: Optional[date] = None,
         prior_to: Optional[date] = None,
         preview_columns: int = 2,
+        comparison_years: int = 1,
         cols_mode: int = 1,
     ) -> Dict[str, Any]:
 
@@ -26683,6 +26704,7 @@ class DatabaseService:
             prior_to=prior_to,
             preview_columns=preview_columns,
             cols_mode=cols_mode,
+            comparison_years=comparison_years,
         )
 
     def _closing_balance_from_tb_row(self, r: Dict[str, Any]) -> float:
@@ -26750,6 +26772,7 @@ class DatabaseService:
         cols_mode: int = 1,
         prior_from: Optional[date] = None,
         prior_to: Optional[date] = None,
+        comparison_ranges: Optional[List[Tuple[date, date]]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         ctx = get_company_context(self, company_id) or {}
@@ -26759,17 +26782,20 @@ class DatabaseService:
             prior_from = kwargs.pop("prior_from", None)
         if prior_to is None and "prior_to" in kwargs:
             prior_to = kwargs.pop("prior_to", None)
+        if comparison_ranges is None and "comparison_ranges" in kwargs:
+            comparison_ranges = kwargs.pop("comparison_ranges", None)
 
         basis_norm = (basis or "external").lower().strip()
         compare_norm = (compare or "none").lower().strip()
 
-        if compare_norm not in ("none", "prior_period", "prior_year"):
+        if compare_norm not in ("none", "prior_period", "prior_year", "multi_year"):
             compare_norm = "none"
 
         try:
             cols_mode = int(cols_mode or 1)
         except Exception:
             cols_mode = 1
+
         if cols_mode not in (1, 2, 3):
             cols_mode = 1
 
@@ -26777,30 +26803,32 @@ class DatabaseService:
             compare_norm = "none"
             prior_from = None
             prior_to = None
+            comparison_ranges = []
 
-        # ----------------------------
-        # Company meta
-        # ----------------------------
+        comparison_ranges = comparison_ranges or []
+
+        if not comparison_ranges and compare_norm in ("prior_period", "prior_year") and prior_from and prior_to:
+            comparison_ranges = [(prior_from, prior_to)]
+
         company_name = (
             ctx.get("company_name")
             or ctx.get("name")
             or f"Company {company_id}"
         )
+
         currency = (
             ctx.get("currency")
             or ctx.get("base_currency")
             or "ZAR"
         )
 
-        # ----------------------------
-        # Opening balances
-        # As at the day before date_from
-        # ----------------------------
-        opening_as_of = date_from - timedelta(days=1)
-        opening_tb = self.get_trial_balance_as_of(company_id, opening_as_of) or []
-        closing_tb = self.get_trial_balance_as_of(company_id, date_to) or []
-        coa_rows = self.get_company_coa(company_id) or []
+        organization_type = (
+            ctx.get("organization_type")
+            or ctx.get("organisation_type")
+            or "private_company"
+        )
 
+        coa_rows = self.get_company_coa(company_id) or []
         coa_map = {
             str(a.get("code") or "").strip(): a
             for a in coa_rows
@@ -26824,74 +26852,116 @@ class DatabaseService:
                 })
             return out
 
-        opening_equity_accounts = _tb_to_equity_accounts(opening_tb)
-        closing_equity_accounts = _tb_to_equity_accounts(closing_tb)
+        def _build_one_socie(df: date, dt: date, key: str = "cur") -> Dict[str, Any]:
+            opening_as_of = df - timedelta(days=1)
 
-        # ----------------------------
-        # Equity movement journals in period
-        # ----------------------------
-        journals = self.get_journals_with_lines_for_period(company_id, date_from, date_to) or []
+            opening_tb = self.get_trial_balance_as_of(company_id, opening_as_of) or []
+            closing_tb = self.get_trial_balance_as_of(company_id, dt) or []
 
-        movement_journal_lines = []
-        for j in journals:
-            jdate = j.get("date")
-            for ln in (j.get("journal_lines") or []):
-                code = str(
-                    ln.get("account_code")
-                    or ln.get("code")
-                    or ln.get("account")
-                    or ""
-                ).strip()
-                if not code.startswith("BS_EQ_"):
-                    continue
+            opening_equity_accounts = _tb_to_equity_accounts(opening_tb)
+            closing_equity_accounts = _tb_to_equity_accounts(closing_tb)
 
-                coa = coa_map.get(code, {})
-                movement_journal_lines.append({
-                    "account_code": code,
-                    "name": coa.get("name") or "",
-                    "role": coa.get("role") or "",
-                    "category": coa.get("category") or "",
-                    "date": jdate,
-                    "debit": float(ln.get("debit") or 0.0),
-                    "credit": float(ln.get("credit") or 0.0),
-                })
+            journals = self.get_journals_with_lines_for_period(company_id, df, dt) or []
 
-        # ----------------------------
-        # Profit for period
-        # ----------------------------
-        profit_for_period = 0.0
-        try:
-            pnl = self.get_income_statement_v2(
-                company_id=company_id,
-                date_from=date_from,
-                date_to=date_to,
-                template=template,
-                basis="external",
-                compare="none",
-                cols_mode=1,
-                detail="summary",
-            ) or {}
+            movement_journal_lines = []
+            for j in journals:
+                jdate = j.get("date")
+                for ln in (j.get("journal_lines") or []):
+                    code = str(
+                        ln.get("account_code")
+                        or ln.get("code")
+                        or ln.get("account")
+                        or ""
+                    ).strip()
 
-            profit_for_period = float(
-                ((pnl.get("net_result") or {}).get("values") or {}).get("cur")
-                or ((pnl.get("net_result") or {}).get("amount"))
-                or 0.0
-            )
-        except Exception:
+                    if not code.startswith("BS_EQ_"):
+                        continue
+
+                    coa = coa_map.get(code, {})
+                    movement_journal_lines.append({
+                        "account_code": code,
+                        "name": coa.get("name") or "",
+                        "role": coa.get("role") or "",
+                        "category": coa.get("category") or "",
+                        "date": jdate,
+                        "debit": float(ln.get("debit") or 0.0),
+                        "credit": float(ln.get("credit") or 0.0),
+                    })
+
             profit_for_period = 0.0
+            try:
+                pnl = self.get_income_statement_v2(
+                    company_id=company_id,
+                    date_from=df,
+                    date_to=dt,
+                    template=template,
+                    basis="external",
+                    compare="none",
+                    cols_mode=1,
+                    detail="summary",
+                ) or {}
 
-        return build_statement_of_changes_in_equity(
-            company_id=company_id,
-            company_name=company_name,
-            currency=currency,
-            period_from=date_from.isoformat(),
-            period_to=date_to.isoformat(),
-            opening_equity_accounts=opening_equity_accounts,
-            closing_equity_accounts=closing_equity_accounts,
-            movement_journal_lines=movement_journal_lines,
-            profit_for_period=profit_for_period,
-            include_unclosed_profit=True,
-        )
+                profit_for_period = float(
+                    ((pnl.get("net_result") or {}).get("values") or {}).get("cur")
+                    or ((pnl.get("net_result") or {}).get("amount"))
+                    or 0.0
+                )
+            except Exception:
+                profit_for_period = 0.0
+
+            one = build_statement_of_changes_in_equity(
+                company_id=company_id,
+                company_name=company_name,
+                currency=currency,
+                organization_type=organization_type,
+                period_from=df.isoformat(),
+                period_to=dt.isoformat(),
+                opening_equity_accounts=opening_equity_accounts,
+                closing_equity_accounts=closing_equity_accounts,
+                movement_journal_lines=movement_journal_lines,
+                profit_for_period=profit_for_period,
+                include_unclosed_profit=True,
+            )
+
+            one.setdefault("meta", {})
+            one["meta"].update({
+                "key": key,
+                "period": {"from": df.isoformat(), "to": dt.isoformat()},
+            })
+
+            return one
+
+        current_stmt = _build_one_socie(date_from, date_to, "cur")
+
+        comparison_statements = []
+        for idx, (pf, pt) in enumerate(comparison_ranges, start=1):
+            key = "pri" if idx == 1 else f"p{idx}"
+            comparison_statements.append(_build_one_socie(pf, pt, key))
+
+        current_stmt.setdefault("meta", {})
+        current_stmt["meta"].update({
+            "company_id": company_id,
+            "company_name": company_name,
+            "currency": currency,
+            "statement": "socie",
+            "template": template,
+            "basis": basis_norm,
+            "compare": compare_norm if comparison_statements else "none",
+            "cols_mode": cols_mode,
+            "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
+            "comparison_periods": [
+                {
+                    "key": s.get("meta", {}).get("key"),
+                    "from": s.get("meta", {}).get("period", {}).get("from"),
+                    "to": s.get("meta", {}).get("period", {}).get("to"),
+                }
+                for s in comparison_statements
+            ],
+        })
+
+        current_stmt["comparison_statements"] = comparison_statements
+
+        return current_stmt
 
     def _tb_as_of(self, company_id: int, as_of: date) -> List[Dict[str, Any]]:
         """

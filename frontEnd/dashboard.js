@@ -926,6 +926,7 @@ const ENDPOINTS = {
       template,
       basis,
       compare,
+      comparison_years,
       cols,
       cols_mode,
       detail,
@@ -940,6 +941,9 @@ const ENDPOINTS = {
     if (template) params.append("template", template);
     if (basis) params.append("basis", basis);
     if (compare) params.append("compare", compare);
+    if (comparison_years != null) {
+      params.append("comparison_years", String(comparison_years));
+    }
     if (cols_mode != null) params.append("cols_mode", String(cols_mode));
     else if (cols) params.append("cols", cols);
     if (detail) params.append("detail", detail);
@@ -958,6 +962,7 @@ const ENDPOINTS = {
       basis,
       view,
       compare,
+      comparison_years,
       cols,
       cols_mode,
       detail,
@@ -975,6 +980,9 @@ const ENDPOINTS = {
 
     params.set("include_np", "1");
     if (cols_mode != null) params.append("cols_mode", String(cols_mode));
+    if (comparison_years != null) {
+      params.append("comparison_years", String(comparison_years));
+    }
     else if (cols) params.append("cols", cols);
 
     const qs = params.toString();
@@ -990,6 +998,7 @@ const ENDPOINTS = {
       template,
       basis,
       compare,
+      comparison_years,
       cols,
       cols_mode,
       detail,
@@ -1004,7 +1013,9 @@ const ENDPOINTS = {
     if (basis) params.append("basis", basis);
     if (compare) params.append("compare", compare);
     if (detail) params.append("detail", detail);
-
+    if (comparison_years != null) {
+      params.append("comparison_years", String(comparison_years));
+    }
     if (cols_mode != null) params.append("cols_mode", String(cols_mode));
     else if (cols) params.append("cols", cols);
 
@@ -2474,6 +2485,7 @@ const ENDPOINTS = {
 
     cashflow: (companyId, from, to, extra = {}) => {
       const params = new URLSearchParams();
+
       if (from) params.append("from", from);
       if (to) params.append("to", to);
       if (extra.preset) params.append("preset", extra.preset);
@@ -2484,13 +2496,21 @@ const ENDPOINTS = {
       if (extra.compare) params.append("compare", extra.compare);
       if (extra.method) params.append("method", extra.method);
 
-      if (extra.preview_columns != null) params.append("preview_columns", String(extra.preview_columns));
+      if (extra.comparison_years != null) {
+        params.append("comparison_years", String(extra.comparison_years));
+      }
 
-      // ✅ ADD THIS
-      if (extra.cols_mode != null) params.append("cols_mode", String(extra.cols_mode));
+      if (extra.preview_columns != null) {
+        params.append("preview_columns", String(extra.preview_columns));
+      }
+
+      if (extra.cols_mode != null) {
+        params.append("cols_mode", String(extra.cols_mode));
+      }
 
       const qs = params.toString();
-      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/cashflow` + (qs ? `?${qs}` : "");
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/cashflow${qs ? `?${qs}` : ""}`;
     },
   },
 
@@ -20423,9 +20443,6 @@ async function renderCashFlow(periodKey = CURRENT_PERIOD_KEY) {
   }
 }
 
-
-
-
 function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
   const meta = stmt?.meta || {};
   const company  = meta.company_name || "Company";
@@ -20436,12 +20453,11 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
   const fmtAmt = (x) => fmtBracket(Number(x || 0));
 
   // compare columns from payload (if compare is enabled, backend should send 2 cols)
-  const cols = Array.isArray(stmt?.columns) ? stmt.columns : [{ key: "cur", label: "Current" }];
-  const colA = cols[0] || { key: "cur", label: "Current" };
-  const colB = cols[1] || null;
+  const cols = Array.isArray(stmt?.columns)
+    ? stmt.columns
+    : [{ key: "cur", label: "Current" }];
 
-  const hasCompare = !!colB; // ✅ compare ON when 2 columns exist
-
+  const hasCompare = cols.length > 1;
   const sections = Array.isArray(stmt?.sections) ? stmt.sections : [];
   const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
   const op  = byKey.operating || {};
@@ -20458,7 +20474,7 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
   function sectionHeader(title) {
     return `
       <tr>
-        <td colspan="${hasCompare ? 3 : 2}"
+        <td colspan="${1 + cols.length}"
             class="pt-3 pb-1 font-semibold text-slate-800 uppercase text-[11px]">
           ${esc(title)}
         </td>
@@ -20467,69 +20483,68 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
   }
 
   // ✅ DETAIL ROWS: show CURRENT only; prior column blank (exactly what you asked)
-  function detailRow(name, amtCur) {
+  function detailRow(name, values = {}) {
     return `
       <tr class="border-b border-slate-100">
         <td class="py-[2px] pr-3">${esc(name)}</td>
-        <td class="py-[2px] text-right tabular-nums">${amtCur != null ? fmtAmt(amtCur) : ""}</td>
-        ${hasCompare ? `<td class="py-[2px] text-right tabular-nums"></td>` : ""}
+        ${cols.map(c => `
+          <td class="py-[2px] text-right tabular-nums">
+            ${values?.[c.key] != null ? fmtAmt(values[c.key]) : ""}
+          </td>
+        `).join("")}
       </tr>
     `;
   }
 
   // ✅ TOTAL/SUBTOTAL ROWS: show BOTH current & prior when compare exists
-  function totalRow(label, a, b, { double = false } = {}) {
+  function totalRow(label, values = {}, { double = false } = {}) {
     const cls = double
       ? "font-semibold border-t-2 border-slate-400"
       : "font-semibold border-t border-slate-300";
+
     return `
       <tr class="${cls}">
         <td class="py-2 pr-3">${esc(label)}</td>
-        <td class="py-2 text-right tabular-nums">${fmtAmt(a)}</td>
-        ${hasCompare ? `<td class="py-2 text-right tabular-nums">${fmtAmt(b)}</td>` : ""}
+        ${cols.map(c => `
+          <td class="py-2 text-right tabular-nums">
+            ${fmtAmt(Number(values?.[c.key] ?? 0))}
+          </td>
+        `).join("")}
       </tr>
     `;
   }
 
-  const opDetails  = detailList(op,  colA.key);
-  const invDetails = detailList(inv, colA.key);
-  const finDetails = detailList(fin, colA.key);
+  const currentKey = cols[0]?.key || "cur";
 
+  const opDetails  = detailList(op, currentKey);
+  const invDetails = detailList(inv, currentKey);
+  const finDetails = detailList(fin, currentKey);
   const opRows = opDetails.length
     ? opDetails.slice(0, 40).map(d =>
-        detailRow(d.account_name || d.description || d.ref || "", d.amount)
+        detailRow(
+          d.account_name || d.description || d.ref || "",
+          { cur: d.amount }
+        )
       ).join("")
-    : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
+    : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
 
   const invRows = invDetails.length
     ? invDetails.slice(0, 40).map(d =>
-        detailRow(d.account_name || d.description || d.ref || "", d.amount)
+       detailRow(
+          d.account_name || d.description || d.ref || "",
+          { cur: d.amount }
+        )
       ).join("")
     : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No investing activity.</td></tr>`;
 
   const finRows = finDetails.length
     ? finDetails.slice(0, 40).map(d =>
-        detailRow(d.account_name || d.description || d.ref || "", d.amount)
+        detailRow(
+          d.account_name || d.description || d.ref || "",
+          { cur: d.amount }
+        )
       ).join("")
     : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No financing activity.</td></tr>`;
-
-  // totals per column key
-  const opTotA  = Number(op?.totals?.[colA.key] ?? 0);
-  const invTotA = Number(inv?.totals?.[colA.key] ?? 0);
-  const finTotA = Number(fin?.totals?.[colA.key] ?? 0);
-
-  const opTotB  = hasCompare ? Number(op?.totals?.[colB.key] ?? 0) : 0;
-  const invTotB = hasCompare ? Number(inv?.totals?.[colB.key] ?? 0) : 0;
-  const finTotB = hasCompare ? Number(fin?.totals?.[colB.key] ?? 0) : 0;
-
-  const netA = Number(stmt?.net_change?.values?.[colA.key] ?? 0);
-  const netB = hasCompare ? Number(stmt?.net_change?.values?.[colB.key] ?? 0) : 0;
-
-  const openA = Number(stmt?.opening_balance?.values?.[colA.key] ?? 0);
-  const openB = hasCompare ? Number(stmt?.opening_balance?.values?.[colB.key] ?? 0) : 0;
-
-  const closeA = Number(stmt?.closing_balance?.values?.[colA.key] ?? 0);
-  const closeB = hasCompare ? Number(stmt?.closing_balance?.values?.[colB.key] ?? 0) : 0;
 
   return `
     <div class="w-full flex justify-center print:block">
@@ -20549,36 +20564,50 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
             <thead class="bg-slate-50 text-slate-600 print:bg-white">
               <tr>
                 <th class="text-left py-2 px-2">Description</th>
-                <th class="text-right py-2 px-2">${esc(colA.label || colA.key)}</th>
-                ${hasCompare ? `<th class="text-right py-2 px-2">${esc(colB.label || colB.key)}</th>` : ""}
+                ${cols.map(c => `
+                  <th class="text-right py-2 px-2">
+                    ${esc(c.label || c.key)}
+                  </th>
+                `).join("")}
               </tr>
             </thead>
-            <tbody>
-              ${sectionHeader("Cash flows from operating activities")}
-              ${opRows}
-              ${totalRow(op?.label || "Net cash from operating activities", opTotA, opTotB)}
+              <tbody>
+                ${sectionHeader("Cash flows from operating activities")}
+                ${opRows}
+                ${totalRow(op?.label || "Net cash from operating activities", op?.totals)}
 
-              <tr><td colspan="${hasCompare ? 3 : 2}" class="py-2"></td></tr>
+                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              ${sectionHeader("Cash flows from investing activities")}
-              ${invRows}
-              ${totalRow(inv?.label || "Net cash from investing activities", invTotA, invTotB)}
+                ${sectionHeader("Cash flows from investing activities")}
+                ${invRows}
+                ${totalRow(inv?.label || "Net cash from investing activities", inv?.totals)}
 
-              <tr><td colspan="${hasCompare ? 3 : 2}" class="py-2"></td></tr>
+                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              ${sectionHeader("Cash flows from financing activities")}
-              ${finRows}
-              ${totalRow(fin?.label || "Net cash from financing activities", finTotA, finTotB)}
+                ${sectionHeader("Cash flows from financing activities")}
+                ${finRows}
+                ${totalRow(fin?.label || "Net cash from financing activities", fin?.totals)}
 
-              <tr><td colspan="${hasCompare ? 3 : 2}" class="py-2"></td></tr>
+                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              ${totalRow(stmt?.net_change?.label || "Net change in cash and cash equivalents", netA, netB, { double: true })}
+                ${totalRow(
+                  stmt?.net_change?.label || "Net change in cash and cash equivalents",
+                  stmt?.net_change?.values,
+                  { double: true }
+                )}
 
-              <tr><td colspan="${hasCompare ? 3 : 2}" class="py-2"></td></tr>
+                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-              ${totalRow(stmt?.opening_balance?.label || "Opening cash and cash equivalents", openA, openB)}
-              ${totalRow(stmt?.closing_balance?.label || "Closing cash and cash equivalents", closeA, closeB)}
-            </tbody>
+                ${totalRow(
+                  stmt?.opening_balance?.label || "Opening cash and cash equivalents",
+                  stmt?.opening_balance?.values
+                )}
+
+                ${totalRow(
+                  stmt?.closing_balance?.label || "Closing cash and cash equivalents",
+                  stmt?.closing_balance?.values
+                )}
+              </tbody>
           </table>
         </div>
       </div>
@@ -20818,8 +20847,6 @@ function renderCashFlowIndirectFullHtml(stmt, { periodLabel = "" } = {}) {
     </div>
   `;
 }
-
-
 
 function renderCashFlowIndirect2ColHtml(stmt, { periodLabel = "" } = {}) {
   const meta = stmt?.meta || {};
@@ -21470,6 +21497,7 @@ function bindReportsScreen() {
   const basisSel    = document.getElementById("stmtBasis");
   const compareSel  = document.getElementById("stmtCompare");
   const colsModeSel = document.getElementById("stmtColsMode");
+  const comparisonYearsSel = document.getElementById("stmtComparisonYears");
   const colsSel     = document.getElementById("stmtCols");
   const detailSel   = document.getElementById("stmtDetail");
 
@@ -21494,6 +21522,18 @@ function bindReportsScreen() {
   // ----------------------------
   // Helpers
   // ----------------------------
+  function updateComparisonYearsVisibility() {
+    const compareSel = document.getElementById("stmtCompare");
+    const yearsSel = document.getElementById("stmtComparisonYears");
+
+    if (!yearsSel) return;
+
+    yearsSel.style.display =
+      compareSel?.value === "multi_year"
+        ? ""
+        : "none";
+  }
+
   function normalizeColsMode() {
     const v = Number(colsModeSel?.value ?? colsSel?.value ?? 1);
     return [1, 2, 3].includes(v) ? v : 1;
@@ -21627,12 +21667,14 @@ function bindReportsScreen() {
 
     const basis   = (basisSel?.value || "external");
     const compare = (compareSel?.value || "none");
+    const comparisonYearsSel = document.getElementById("stmtComparisonYears");
 
     const opts = {
       preset:   presetKey,
       template: (templateSel?.value || "ifrs"),
       basis,
       compare,
+      comparison_years: Number(comparisonYearsSel?.value || 2),
       detail:   (detailSel?.value || "summary"),
       format:   (formatSel?.value || "json"),
     };
@@ -21858,6 +21900,7 @@ function bindReportsScreen() {
 
   updateStmtViewerMethodVisibility();
   updateDetailControlsForBasis(); // on load
+  updateComparisonYearsVisibility();
 
   typeSel?.addEventListener("change", () => {
     updateDetailControlsForBasis();
@@ -21886,6 +21929,11 @@ function bindReportsScreen() {
 
   compareSel?.addEventListener("change", () => {
     updateDetailControlsForBasis();
+    updateComparisonYearsVisibility();
+    rerender();
+  });
+
+  comparisonYearsSel?.addEventListener("change", () => {
     rerender();
   });
 
@@ -22070,189 +22118,6 @@ function pnlColLabel(c, cols) {
   }
 
   return c?.label || c?.key || "Amount";
-}
-
-function renderPnLClassicHtml(stmt) {
-  const meta = stmt?.meta || {};
-  const cols = Array.isArray(stmt?.columns) && stmt.columns.length
-    ? stmt.columns
-    : [{ key: "cur", label: "Amount" }];
-
-  const company = meta.company_name || "Company";
-  const title =
-    meta.statement_title ||
-    (meta.template === "npo"
-      ? "Statement of Financial Performance"
-      : "Income Statement");
-  const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
-
-  const th = cols
-    .map(c => `<th class="text-right py-2 px-2">${esc("Amount")}</th>`)
-    .join("");
-
-  function rowCells(values, { bold = false, underline = false } = {}) {
-    return cols.map(c => {
-      const raw = (values && values[c.key]) ?? 0;
-      const v = Number(raw) || 0;
-      const cls = bold ? "font-semibold" : "";
-      const inner = underline
-        ? `<div class="inline-block border-b border-slate-400 pb-[1px]">${fmtBracket(v)}</div>`
-        : `${fmtBracket(v)}`;
-      return `<td class="text-right py-2 px-2 tabular-nums ${cls}">${inner}</td>`;
-    }).join("");
-  }
-
-  let rows = "";
-  const blocks = Array.isArray(stmt.blocks) ? stmt.blocks : [];
-
-  for (const b of blocks) {
-    const lines = Array.isArray(b.lines) ? b.lines : [];
-    const isSingle = !!b.values && lines.length === 0;
-
-    // ✅ UPDATED: render ANY single-value block (e.g., Gross profit)
-    if (isSingle) {
-      rows += `
-        <tr class="border-b border-slate-100">
-          <td class="py-2 px-2 font-semibold text-slate-800">${esc(b.label || b.title || "")}</td>
-          ${rowCells(b.values || {}, { bold: true, underline: true })}
-        </tr>
-      `;
-      continue;
-    }
-
-    rows += `
-      <tr>
-        <td class="pt-4 pb-2 px-2 font-semibold text-slate-800" colspan="${1 + cols.length}">
-          ${esc(b.label || b.title || "")}
-        </td>
-      </tr>
-    `;
-
-    for (const ln of lines) {
-      const name = ln.name || ln.label || "";
-      const indent = Math.max(0, Math.min(Number(ln.indent || 0), 10));
-      const padPx = indent * 14;
-
-      if (ln.is_subtotal) {
-        rows += `
-          <tr>
-            <td class="py-2 px-2 font-semibold text-slate-800">${esc(name)}</td>
-            ${rowCells(ln.values || {}, { bold: true, underline: true })}
-          </tr>
-        `;
-        continue;
-      }
-
-      const lessCls = ln.is_less_line ? "text-slate-600 italic" : "text-slate-800";
-      rows += `
-        <tr class="border-b border-slate-100">
-          <td class="py-2 px-2 ${lessCls}" style="padding-left:${padPx}px">${esc(name)}</td>
-          ${rowCells(ln.values || {})}
-        </tr>
-      `;
-    }
-
-    if (b.totals) {
-      rows += `
-        <tr>
-          <td class="py-2 px-2 font-semibold text-slate-900">${esc((b.label || "Total") + " total")}</td>
-          ${rowCells(b.totals, { bold: true, underline: true })}
-        </tr>
-      `;
-    }
-  }
-
-  if (stmt?.net_result?.values) {
-    rows += `
-      <tr><td class="pt-4" colspan="${1 + cols.length}"></td></tr>
-      <tr>
-        <td class="py-2 px-2 font-bold text-slate-900">${esc(stmt.net_result.label || "Net income")}</td>
-        ${rowCells(stmt.net_result.values, { bold: true, underline: true })}
-      </tr>
-    `;
-  }
-
-  const isIFRS = String(meta.template || "").toLowerCase() === "ifrs";
-
-  function strongRow(label, values) {
-    return `
-      <tr>
-        <td class="py-2 px-2 font-semibold text-slate-900">${esc(label)}</td>
-        ${rowCells(values || {}, { bold: true, underline: true })}
-      </tr>
-    `;
-  }
-
-  function findBlock(key) {
-    return blocks.find(b => String(b?.key || "").toLowerCase() === key);
-  }
-
-  if (isIFRS) {
-    const ociBlock = findBlock("oci");
-    const tciBlock = findBlock("tci");
-
-    const ociLabel =
-      ociBlock?.label ||
-      stmt?.oci?.label ||
-      "Other Comprehensive Income";
-
-    const ociTotals =
-      ociBlock?.totals ||
-      stmt?.oci?.total?.values ||
-      (() => {
-        const z = {};
-        for (const c of cols) z[c.key] = 0;
-        return z;
-      })();
-
-    const tciLabel =
-      tciBlock?.label ||
-      stmt?.total_comprehensive_income?.label ||
-      "Total Comprehensive Income";
-
-    const tciLine = Array.isArray(tciBlock?.lines) ? tciBlock.lines.find(x => x?.values) : null;
-
-    const tciValues =
-      tciLine?.values ||
-      stmt?.total_comprehensive_income?.values ||
-      stmt?.net_result?.values ||
-      ociTotals;
-
-    rows += `<tr><td class="pt-3" colspan="${1 + cols.length}"></td></tr>`;
-    rows += strongRow(ociLabel, ociTotals);
-    rows += strongRow(tciLabel, tciValues);
-  }
-
-  const inner = `
-    <div class="mb-3">
-      <div class="text-lg font-bold text-slate-900">${esc(company)}</div>
-      <div class="text-sm font-semibold text-slate-700">${esc(title)}</div>
-      <div class="text-xs text-slate-500">${esc(periodText)}</div>
-    </div>
-
-    <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
-      <table class="w-full text-xs">
-        <thead class="bg-slate-50 text-slate-600">
-          <tr>
-            <th class="text-left py-2 px-2">Description</th>
-            ${th}
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-    </div>
-  `;
-
-  // ✅ A4/page layout wrapper
-  return `
-    <div class="mx-auto max-w-[900px]">
-      <div class="bg-white rounded border border-slate-200 p-4">
-        ${inner}
-      </div>
-    </div>
-  `;
 }
 
 // ✅ UPDATED: single BS renderer (supports internal 2/3 cols + external 1 col)
@@ -23247,6 +23112,190 @@ function renderBSScientificSinglePageHtml(bs) {
   `;
 }
 
+
+function renderPnLClassicHtml(stmt) {
+  const meta = stmt?.meta || {};
+  const cols = Array.isArray(stmt?.columns) && stmt.columns.length
+    ? stmt.columns
+    : [{ key: "cur", label: "Amount" }];
+
+  const company = meta.company_name || "Company";
+  const title =
+    meta.statement_title ||
+    (meta.template === "npo"
+      ? "Statement of Financial Performance"
+      : "Income Statement");
+  const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
+
+  const th = cols
+    .map(c => `<th class="text-right py-2 px-2">${esc("Amount")}</th>`)
+    .join("");
+
+  function rowCells(values, { bold = false, underline = false } = {}) {
+    return cols.map(c => {
+      const raw = (values && values[c.key]) ?? 0;
+      const v = Number(raw) || 0;
+      const cls = bold ? "font-semibold" : "";
+      const inner = underline
+        ? `<div class="inline-block border-b border-slate-400 pb-[1px]">${fmtBracket(v)}</div>`
+        : `${fmtBracket(v)}`;
+      return `<td class="text-right py-2 px-2 tabular-nums ${cls}">${inner}</td>`;
+    }).join("");
+  }
+
+  let rows = "";
+  const blocks = Array.isArray(stmt.blocks) ? stmt.blocks : [];
+
+  for (const b of blocks) {
+    const lines = Array.isArray(b.lines) ? b.lines : [];
+    const isSingle = !!b.values && lines.length === 0;
+
+    // ✅ UPDATED: render ANY single-value block (e.g., Gross profit)
+    if (isSingle) {
+      rows += `
+        <tr class="border-b border-slate-100">
+          <td class="py-2 px-2 font-semibold text-slate-800">${esc(b.label || b.title || "")}</td>
+          ${rowCells(b.values || {}, { bold: true, underline: true })}
+        </tr>
+      `;
+      continue;
+    }
+
+    rows += `
+      <tr>
+        <td class="pt-4 pb-2 px-2 font-semibold text-slate-800" colspan="${1 + cols.length}">
+          ${esc(b.label || b.title || "")}
+        </td>
+      </tr>
+    `;
+
+    for (const ln of lines) {
+      const name = ln.name || ln.label || "";
+      const indent = Math.max(0, Math.min(Number(ln.indent || 0), 10));
+      const padPx = indent * 14;
+
+      if (ln.is_subtotal) {
+        rows += `
+          <tr>
+            <td class="py-2 px-2 font-semibold text-slate-800">${esc(name)}</td>
+            ${rowCells(ln.values || {}, { bold: true, underline: true })}
+          </tr>
+        `;
+        continue;
+      }
+
+      const lessCls = ln.is_less_line ? "text-slate-600 italic" : "text-slate-800";
+      rows += `
+        <tr class="border-b border-slate-100">
+          <td class="py-2 px-2 ${lessCls}" style="padding-left:${padPx}px">${esc(name)}</td>
+          ${rowCells(ln.values || {})}
+        </tr>
+      `;
+    }
+
+    if (b.totals) {
+      rows += `
+        <tr>
+          <td class="py-2 px-2 font-semibold text-slate-900">${esc((b.label || "Total") + " total")}</td>
+          ${rowCells(b.totals, { bold: true, underline: true })}
+        </tr>
+      `;
+    }
+  }
+
+  if (stmt?.net_result?.values) {
+    rows += `
+      <tr><td class="pt-4" colspan="${1 + cols.length}"></td></tr>
+      <tr>
+        <td class="py-2 px-2 font-bold text-slate-900">${esc(stmt.net_result.label || "Net income")}</td>
+        ${rowCells(stmt.net_result.values, { bold: true, underline: true })}
+      </tr>
+    `;
+  }
+
+  const isIFRS = String(meta.template || "").toLowerCase() === "ifrs";
+
+  function strongRow(label, values) {
+    return `
+      <tr>
+        <td class="py-2 px-2 font-semibold text-slate-900">${esc(label)}</td>
+        ${rowCells(values || {}, { bold: true, underline: true })}
+      </tr>
+    `;
+  }
+
+  function findBlock(key) {
+    return blocks.find(b => String(b?.key || "").toLowerCase() === key);
+  }
+
+  if (isIFRS) {
+    const ociBlock = findBlock("oci");
+    const tciBlock = findBlock("tci");
+
+    const ociLabel =
+      ociBlock?.label ||
+      stmt?.oci?.label ||
+      "Other Comprehensive Income";
+
+    const ociTotals =
+      ociBlock?.totals ||
+      stmt?.oci?.total?.values ||
+      (() => {
+        const z = {};
+        for (const c of cols) z[c.key] = 0;
+        return z;
+      })();
+
+    const tciLabel =
+      tciBlock?.label ||
+      stmt?.total_comprehensive_income?.label ||
+      "Total Comprehensive Income";
+
+    const tciLine = Array.isArray(tciBlock?.lines) ? tciBlock.lines.find(x => x?.values) : null;
+
+    const tciValues =
+      tciLine?.values ||
+      stmt?.total_comprehensive_income?.values ||
+      stmt?.net_result?.values ||
+      ociTotals;
+
+    rows += `<tr><td class="pt-3" colspan="${1 + cols.length}"></td></tr>`;
+    rows += strongRow(ociLabel, ociTotals);
+    rows += strongRow(tciLabel, tciValues);
+  }
+
+  const inner = `
+    <div class="mb-3">
+      <div class="text-lg font-bold text-slate-900">${esc(company)}</div>
+      <div class="text-sm font-semibold text-slate-700">${esc(title)}</div>
+      <div class="text-xs text-slate-500">${esc(periodText)}</div>
+    </div>
+
+    <div class="border border-slate-100 rounded-lg overflow-hidden bg-white">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 text-slate-600">
+          <tr>
+            <th class="text-left py-2 px-2">Description</th>
+            ${th}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // ✅ A4/page layout wrapper
+  return `
+    <div class="mx-auto max-w-[900px]">
+      <div class="bg-white rounded border border-slate-200 p-4">
+        ${inner}
+      </div>
+    </div>
+  `;
+}
+
 function renderFullPnLHtml(stmt) {
   if (!stmt || !Array.isArray(stmt.sections)) return `<pre class="text-[11px] whitespace-pre-wrap">${esc(JSON.stringify(stmt,null,2))}</pre>`;
 
@@ -24209,93 +24258,117 @@ function renderStatementTableHtml(rows, typeKey) {
 }
 
 function renderSOCIEHtml(stmt) {
-  const meta = stmt?.meta || {};
-  const company = meta.company_name || "Company";
-  const currency = meta.currency || "";
-  const title = meta.statement_title || "Statement of Changes in Equity";
-  const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
+  function renderOneSOCIE(oneStmt, { heading = "" } = {}) {
+    const meta = oneStmt?.meta || {};
+    const company = meta.company_name || "Company";
+    const currency = meta.currency || "";
+    const title = meta.statement_title || "Statement of Changes in Equity";
+    const periodText = `For the period ${meta.period?.from || ""} to ${meta.period?.to || ""}`;
 
-  const cols = Array.isArray(stmt?.columns) && stmt.columns.length
-    ? stmt.columns
-    : [
-        { key: "capital", label: "Capital" },
-        { key: "retained_earnings", label: "Retained Earnings" },
-        { key: "total", label: "Total Equity" },
-      ];
+    const cols = Array.isArray(oneStmt?.columns) && oneStmt.columns.length
+      ? oneStmt.columns
+      : [
+          { key: "capital", label: "Capital" },
+          { key: "retained_earnings", label: "Retained Earnings" },
+          { key: "total", label: "Total Equity" },
+        ];
 
-  const rows = Array.isArray(stmt?.rows) ? stmt.rows : [];
+    const rows = Array.isArray(oneStmt?.rows) ? oneStmt.rows : [];
 
-  function rowCells(values, { bold = false, underline = false } = {}) {
-    return cols.map(c => {
-      const v = Number(values?.[c.key] || 0);
-      const cls = bold ? "font-semibold" : "";
-      const inner = underline
-        ? `<div class="inline-block border-b border-slate-400 pb-[1px]">${fmtBracket(v)}</div>`
-        : `${fmtBracket(v)}`;
-      return `<td class="text-right py-2 px-2 tabular-nums ${cls}">${inner}</td>`;
+    function rowCells(values, { bold = false, underline = false } = {}) {
+      return cols.map(c => {
+        const v = Number(values?.[c.key] || 0);
+        const cls = bold ? "font-semibold" : "";
+        const inner = underline
+          ? `<div class="inline-block border-b border-slate-400 pb-[1px]">${fmtBracket(v)}</div>`
+          : `${fmtBracket(v)}`;
+        return `<td class="text-right py-2 px-2 tabular-nums ${cls}">${inner}</td>`;
+      }).join("");
+    }
+
+    const body = rows.map(r => {
+      const key = String(r?.key || "").toLowerCase();
+      const label = r?.label || r?.name || "";
+
+      const isClosing = key === "closing_balance";
+      const isStrong =
+        isClosing ||
+        key === "profit_for_period" ||
+        key === "total_comprehensive_income";
+
+      return `
+        <tr class="${isClosing ? "font-bold" : "border-b border-slate-100"}">
+          <td class="py-2 px-2 ${isStrong ? "font-semibold text-slate-900" : ""}">
+            ${esc(label)}
+          </td>
+          ${rowCells(r?.values || {}, {
+            bold: isStrong,
+            underline: isClosing,
+          })}
+        </tr>
+      `;
     }).join("");
-  }
 
-  const body = rows.map(r => {
-    const key = String(r?.key || "").toLowerCase();
-    const label = r?.label || r?.name || "";
-
-    const isClosing = key === "closing_balance";
-    const isStrong =
-      isClosing ||
-      key === "profit_for_period" ||
-      key === "total_comprehensive_income";
+    const pageMax = cols.length > 4 ? "max-w-[1400px]" : "max-w-[900px]";
+    const tableMin = cols.length > 4 ? "min-w-[1150px]" : "";
 
     return `
-      <tr class="${isClosing ? "font-bold" : "border-b border-slate-100"}">
-        <td class="py-2 px-2 ${isStrong ? "font-semibold text-slate-900" : ""}">
-          ${esc(label)}
-        </td>
-        ${rowCells(r?.values || {}, {
-          bold: isStrong,
-          underline: isClosing,
-        })}
-      </tr>
-    `;
-  }).join("");
+      <div class="mx-auto w-full ${pageMax} ${heading ? "mt-6" : ""}">
+        <div class="bg-white rounded border border-slate-200 p-4">
+          <div class="mb-3">
+            ${heading ? `<div class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">${esc(heading)}</div>` : ""}
+            <div class="text-lg font-bold text-slate-900">${esc(company)}</div>
+            <div class="text-sm font-semibold text-slate-700">${esc(title)}</div>
+            <div class="text-xs text-slate-500">${esc(periodText)}</div>
+            ${currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(currency)})</div>` : ""}
+          </div>
 
-  const pageMax = cols.length > 4 ? "max-w-[1400px]" : "max-w-[900px]";
-  const tableMin = cols.length > 4 ? "min-w-[1150px]" : "";
-
-  return `
-    <div class="mx-auto w-full ${pageMax}">
-      <div class="bg-white rounded border border-slate-200 p-4">
-        <div class="mb-3">
-          <div class="text-lg font-bold text-slate-900">${esc(company)}</div>
-          <div class="text-sm font-semibold text-slate-700">${esc(meta.statement_title || title)}</div>
-          <div class="text-xs text-slate-500">${esc(periodText)}</div>
-          ${currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(currency)})</div>` : ""}
-        </div>
-
-        <div class="border border-slate-100 rounded-lg overflow-x-auto bg-white">
-          <table class="w-full ${tableMin} text-xs">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="text-left py-2 px-3 min-w-[240px] whitespace-nowrap">Description</th>
-                ${cols.map(c => `
-                  <th class="text-right py-2 px-3 whitespace-nowrap min-w-[150px]">
-                    ${esc(c.label || c.key)}
-                  </th>
-                `).join("")}
-              </tr>
-            </thead>
-            <tbody>
-              ${body || `
+          <div class="border border-slate-100 rounded-lg overflow-x-auto bg-white">
+            <table class="w-full ${tableMin} text-xs">
+              <thead class="bg-slate-50 text-slate-600">
                 <tr>
-                  <td colspan="${1 + cols.length}" class="py-3 px-2 text-slate-500">
-                    No SOCIE data provided.
-                  </td>
+                  <th class="text-left py-2 px-3 min-w-[240px] whitespace-nowrap">Description</th>
+                  ${cols.map(c => `
+                    <th class="text-right py-2 px-3 whitespace-nowrap min-w-[150px]">
+                      ${esc(c.label || c.key)}
+                    </th>
+                  `).join("")}
                 </tr>
-              `}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                ${body || `
+                  <tr>
+                    <td colspan="${1 + cols.length}" class="py-3 px-2 text-slate-500">
+                      No SOCIE data provided.
+                    </td>
+                  </tr>
+                `}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
+    `;
+  }
+
+  const comparisonStatements = Array.isArray(stmt?.comparison_statements)
+    ? stmt.comparison_statements
+    : [];
+
+  const comparisonHtml = comparisonStatements.map((s, idx) => {
+    const key = s?.meta?.key || (idx === 0 ? "pri" : `p${idx + 1}`);
+    const label =
+      key === "pri"
+        ? "Comparative period"
+        : `Comparative period ${idx + 1}`;
+
+    return renderOneSOCIE(s, { heading: label });
+  }).join("");
+
+  return `
+    <div class="space-y-4">
+      ${renderOneSOCIE(stmt, { heading: "Current period" })}
+      ${comparisonHtml}
     </div>
   `;
 }
@@ -26312,6 +26385,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
             template,
             basis: "external",
             compare: compare,
+            comparison_years: Number(opts.comparison_years || document.getElementById("stmtComparisonYears")?.value || 1),
             detail: "summary",
             cols_mode: 1,
           });
@@ -26356,7 +26430,8 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
           template,
           basis,
           view: bsView,
-          compare,      // ✅ use compare, not safeCompare
+          compare,
+          comparison_years: Number(opts.comparison_years || document.getElementById("stmtComparisonYears")?.value || 2),
           cols_mode,
           detail,
         });
@@ -26370,6 +26445,11 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
           template,
           basis,
           compare,
+          comparison_years: Number(
+            opts.comparison_years ||
+            document.getElementById("stmtComparisonYears")?.value ||
+            2
+          ),
           cols_mode,
           detail,
         });
@@ -26385,8 +26465,13 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
           template,
           basis,
           compare,
+          comparison_years: Number(
+            opts.comparison_years ||
+            document.getElementById("stmtComparisonYears")?.value ||
+            2
+          ),
           preview_columns: cfPreviewColumns,
-          cols_mode: cols_mode,     // ✅ ADD THIS
+          cols_mode: cols_mode,
         };
 
         // If calendar range exists, pass it as normal

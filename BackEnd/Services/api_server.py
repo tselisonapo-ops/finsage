@@ -73,7 +73,7 @@ from BackEnd.Services.company import apply_mode_defaults, company_policy, recomm
 from BackEnd.Services.reporting.balance_sheet_templates import get_balance_sheet_v3_exact
 from BackEnd.Services import accounting_classifiers as ac
 from BackEnd.Services.reporting.reporting_helpers import parse_date_arg
-
+from .reporting import reporting_helpers as rh
 from BackEnd.Services.invoice_pdf_service import generate_invoice_pdf
 from BackEnd.Services.bank_service import BankService
 from BackEnd.Services.coa_seed_service import seed_company_coa_once
@@ -8707,6 +8707,15 @@ def api_bs_full(company_id: int):
     basis = (request.args.get("basis") or "external").lower()
     compare = (request.args.get("compare") or "none").lower()
 
+    comparison_years = request.args.get("comparison_years") or request.args.get("years") or "1"
+
+    try:
+        comparison_years = int(comparison_years)
+    except Exception:
+        comparison_years = 1
+
+    comparison_years = max(1, min(comparison_years, 10))
+
     view = (request.args.get("view") or "external").lower()
     if view not in ("external", "internal"):
         view = "external"
@@ -8751,6 +8760,8 @@ def api_bs_full(company_id: int):
             company_id=company_id,
             as_of=as_of,
             prior_as_of=prior_as_of,
+            compare=compare,
+            comparison_years=comparison_years,
             view=view,
             basis=basis,
             include_net_profit_line=include_np,
@@ -8804,7 +8815,7 @@ def api_pnl(company_id: int):
 
     if basis not in ("external", "management"):
         basis = "external"
-    if compare not in ("none", "prior_period", "prior_year"):
+    if compare not in ("none", "prior_period", "prior_year", "multi_year"):
         compare = "none"
     if template not in ("ifrs", "npo"):
         template = "ifrs"
@@ -8825,6 +8836,13 @@ def api_pnl(company_id: int):
     layout_override = (request.args.get("layout") or "").lower().strip()
     if layout_override:
         layout = layout_override
+
+    try:
+        comparison_years = int(request.args.get("comparison_years") or request.args.get("years") or 1)
+    except ValueError:
+        comparison_years = 1
+
+    comparison_years = max(1, min(comparison_years, 10))
 
     # ----- MANAGEMENT / INTERNAL -----
     if detail == "full" or basis == "management":
@@ -8853,7 +8871,7 @@ def api_pnl(company_id: int):
 
     # ----- EXTERNAL / IAS 1 -----
     prior_from = prior_to = None
-    if compare != "none" and cols_mode == 1:
+    if compare != "none" and compare != "multi_year" and cols_mode == 1:
         # ✅ FY-aware compare range from the resolved meta
         prior_from, prior_to = resolve_compare_period(
             db_service, company_id, meta, compare, mode="range"
@@ -8870,6 +8888,7 @@ def api_pnl(company_id: int):
         detail=detail,
         prior_from=prior_from,
         prior_to=prior_to,
+        comparison_years=comparison_years,
     )
 
     if isinstance(stmt, dict):
@@ -8897,7 +8916,7 @@ def api_cashflow(company_id: int):
     basis    = (request.args.get("basis") or "external").lower()
 
     compare = (request.args.get("compare") or "none").lower()
-    if compare not in ("none", "prior_period", "prior_year"):
+    if compare not in ("none", "prior_period", "prior_year", "multi_year"):
         compare = "none"
 
     method = (request.args.get("method") or "direct").lower().strip()
@@ -8914,6 +8933,13 @@ def api_cashflow(company_id: int):
     if cols_mode not in (1, 2, 3):
         cols_mode = 1
 
+    try:
+        comparison_years = int(request.args.get("comparison_years") or request.args.get("years") or 1)
+    except Exception:
+        comparison_years = 1
+
+    comparison_years = max(1, min(comparison_years, 10))
+
     # preview columns
     preview_columns = request.args.get("preview_columns") or request.args.get("preview") or 2
     try:
@@ -8926,7 +8952,7 @@ def api_cashflow(company_id: int):
     if preview_columns == 2:
         compare = "none"
     else:
-        if compare != "none":
+        if compare != "none" and compare != "multi_year":
             prior_from, prior_to = resolve_compare_period(
                 db_service, company_id, meta, compare, mode="range"
             )
@@ -8943,6 +8969,7 @@ def api_cashflow(company_id: int):
         prior_to=prior_to,
         preview_columns=preview_columns,
         cols_mode=cols_mode,
+        comparison_years=comparison_years,
     )
 
     if isinstance(stmt, dict):
@@ -8957,7 +8984,6 @@ def api_socie(company_id: int):
     if not _company_guard(company_id):
         return jsonify({"error": "Not authorised for this company"}), 403
 
-    # FY-aware period resolver
     date_from, date_to, meta = resolve_company_period(
         db_service, company_id, request, mode="range"
     )
@@ -8972,8 +8998,10 @@ def api_socie(company_id: int):
 
     if basis not in ("external", "management"):
         basis = "external"
-    if compare not in ("none", "prior_period", "prior_year"):
+
+    if compare not in ("none", "prior_period", "prior_year", "multi_year"):
         compare = "none"
+
     if template not in ("ifrs", "npo"):
         template = "ifrs"
 
@@ -8981,17 +9009,36 @@ def api_socie(company_id: int):
         cols_mode = int(request.args.get("cols_mode") or 1)
     except ValueError:
         cols_mode = 1
+
     cols_mode = 1 if cols_mode not in (1, 2, 3) else cols_mode
 
-    # keep same behavior as your other statements
     if cols_mode != 1:
         compare = "none"
 
-    prior_from = prior_to = None
-    if compare != "none" and cols_mode == 1:
+    try:
+        comparison_years = int(
+            request.args.get("comparison_years") or request.args.get("years") or 1
+        )
+    except Exception:
+        comparison_years = 1
+
+    comparison_years = max(1, min(comparison_years, 10))
+
+    comparison_ranges = []
+
+    if compare == "multi_year":
+        for i in range(1, comparison_years):
+            comparison_ranges.append((
+                rh.shift_year(date_from, i),
+                rh.shift_year(date_to, i),
+            ))
+
+    elif compare != "none" and cols_mode == 1:
         prior_from, prior_to = resolve_compare_period(
             db_service, company_id, meta, compare, mode="range"
         )
+        if prior_from and prior_to:
+            comparison_ranges.append((prior_from, prior_to))
 
     try:
         stmt = db_service.get_socie_v1(
@@ -9002,8 +9049,7 @@ def api_socie(company_id: int):
             basis=basis,
             compare=compare,
             cols_mode=cols_mode,
-            prior_from=prior_from,
-            prior_to=prior_to,
+            comparison_ranges=comparison_ranges,
         )
 
         if isinstance(stmt, dict):
@@ -9011,6 +9057,8 @@ def api_socie(company_id: int):
             stmt["meta"].update(meta)
             stmt["meta"]["template"] = template
             stmt["meta"]["statement"] = "socie"
+            stmt["meta"]["compare"] = compare
+            stmt["meta"]["comparison_years"] = comparison_years
 
     except Exception as e:
         current_app.logger.exception("SOCIE build failed")
