@@ -103,7 +103,7 @@ def _financial_table(rows, amount_keys=None, amount_labels=None, page_width_mm=2
     )
 
     data.append(
-        [Paragraph("Movement", label_header_style)]
+        [Paragraph("Description", label_header_style)]
         + [Paragraph(escape(str(amount_labels.get(k, k))), header_style) for k in amount_keys]
     )
     row_types.append("header")
@@ -275,6 +275,39 @@ def _has_value(v: Any) -> bool:
     except Exception:
         return True
 
+def _pretty_date(v):
+    if not v:
+        return ""
+    try:
+        from datetime import datetime, date
+
+        if isinstance(v, date):
+            d = v
+        else:
+            d = datetime.strptime(str(v)[:10], "%Y-%m-%d").date()
+
+        return d.strftime("%d %B %Y")
+    except Exception:
+        return str(v)
+
+
+def _ias_period_label(meta):
+    stmt = str((meta or {}).get("statement") or "").lower()
+    period = (meta or {}).get("period") or {}
+
+    period_from = period.get("from")
+    period_to = period.get("to")
+
+    if stmt in ("bs", "balance_sheet"):
+        return f"As at {_pretty_date(period_to)}" if period_to else ""
+
+    if period_to:
+        return f"For the year ended {_pretty_date(period_to)}"
+
+    if period_from:
+        return f"For the period from {_pretty_date(period_from)}"
+
+    return ""
 
 def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str, Any]]]:
     cols = _payload_columns(payload)
@@ -555,14 +588,25 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     ws = wb.active
     ws.title = "Statement"
 
-    # Title block
-    ws["A1"] = title
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = company_name
-    ws["A2"].font = Font(bold=True, size=12)
-    ws["A3"] = f"Period: {period_from or ''} to {period_to or ''}"
-    ws["A4"] = f"Currency: {currency}"
+    # Title block - IAS style
+    ws["A1"] = str(company_name or "").upper()
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A1"].alignment = Alignment(horizontal="center")
 
+    ws["A2"] = str(title or "").upper()
+    ws["A2"].font = Font(bold=True, size=14)
+    ws["A2"].alignment = Alignment(horizontal="center")
+
+    ws["A3"] = _ias_period_label(meta)
+    ws["A3"].alignment = Alignment(horizontal="center")
+
+    ws["A4"] = f"(All amounts presented in {currency})" if currency else ""
+    ws["A4"].alignment = Alignment(horizontal="center")
+
+    max_col = max(1, len(headers))
+    for row in range(1, 5):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max_col)
+        
     # Header row
     start_row = 6
     for col_idx, header in enumerate(headers, start=1):
@@ -595,6 +639,83 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     for idx in range(2, len(headers) + 1):
         ws.column_dimensions[get_column_letter(idx)].width = 18
 
+    # SOCIE comparison statements - separate sheets
+    comparison_statements = payload.get("comparison_statements") or []
+
+    for idx, cmp_stmt in enumerate(comparison_statements, start=1):
+        sheet_name = "Comparative" if idx == 1 else f"Comparative {idx}"
+        ws_cmp = wb.create_sheet(title=sheet_name[:31])
+
+        cmp_meta = cmp_stmt.get("meta") or {}
+        cmp_title = _statement_title(cmp_meta)
+        cmp_company = cmp_meta.get("company_name") or company_name
+        cmp_currency = cmp_meta.get("currency") or currency
+
+        cmp_cols = _payload_columns(cmp_stmt)
+        if len(cmp_cols) == 1:
+            cmp_cols[0]["label"] = "Amount"
+
+        cmp_stmt = {**cmp_stmt, "columns": cmp_cols}
+        cmp_headers, cmp_flat_rows = _flatten_payload(cmp_stmt)
+        cmp_col_keys = [c.get("key") for c in cmp_cols]
+
+        cmp_max_col = max(1, len(cmp_headers))
+
+        ws_cmp["A1"] = str(cmp_company or "").upper()
+        ws_cmp["A1"].font = Font(bold=True, size=13)
+        ws_cmp["A1"].alignment = Alignment(horizontal="center")
+
+        ws_cmp["A2"] = str(cmp_title or "").upper()
+        ws_cmp["A2"].font = Font(bold=True, size=14)
+        ws_cmp["A2"].alignment = Alignment(horizontal="center")
+
+        ws_cmp["A3"] = _ias_period_label(cmp_meta)
+        ws_cmp["A3"].alignment = Alignment(horizontal="center")
+
+        ws_cmp["A4"] = f"(All amounts presented in {cmp_currency})" if cmp_currency else ""
+        ws_cmp["A4"].alignment = Alignment(horizontal="center")
+
+        for row in range(1, 5):
+            ws_cmp.merge_cells(start_row=row, start_column=1, end_row=row, end_column=cmp_max_col)
+
+        start_row_cmp = 6
+
+        for col_idx, header in enumerate(cmp_headers, start=1):
+            cell = ws_cmp.cell(row=start_row_cmp, column=col_idx, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = HEADER_FILL
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
+
+        current_row_cmp = start_row_cmp + 1
+
+        for item in cmp_flat_rows:
+            ws_cmp.cell(row=current_row_cmp, column=1, value=item["label"])
+            vals = item.get("values") or {}
+
+            for i, key in enumerate(cmp_col_keys, start=2):
+                val = _clean_number(vals.get(key))
+                cell = ws_cmp.cell(row=current_row_cmp, column=i, value=val)
+
+                if isinstance(val, (int, float)):
+                    cell.number_format = '#,##0.00'
+                    cell.alignment = Alignment(horizontal="right")
+                else:
+                    cell.alignment = Alignment(horizontal="left")
+
+            _xlsx_apply_row_style(
+                ws_cmp,
+                current_row_cmp,
+                item.get("row_type") or "normal",
+                len(cmp_headers),
+            )
+
+            current_row_cmp += 1
+
+        ws_cmp.column_dimensions["A"].width = 42
+        for col_idx in range(2, len(cmp_headers) + 1):
+            ws_cmp.column_dimensions[get_column_letter(col_idx)].width = 18
+
     out = BytesIO()
     wb.save(out)
     out.seek(0)
@@ -605,22 +726,18 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
-
 def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf") -> Response:
     meta = payload.get("meta") or {}
     title = _statement_title(meta)
     company_name = meta.get("company_name") or ""
     currency = meta.get("currency") or ""
-    period = meta.get("period") or {}
-    period_from = period.get("from")
-    period_to = period.get("to")
 
     cols = _payload_columns(payload)
     if len(cols) == 1:
         cols[0] = {**cols[0], "label": "Amount"}
 
     payload = {**payload, "columns": cols}
-    headers, flat_rows = _flatten_payload(payload)
+    _, flat_rows = _flatten_payload(payload)
     col_keys = [c.get("key") for c in cols]
 
     wide_table = len(cols) > 4
@@ -654,8 +771,10 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     meta_style = ParagraphStyle(
         "fs_meta",
         parent=styles["BodyText"],
+        fontName="Helvetica",
         fontSize=9,
         leading=11,
+        alignment=1,
     )
 
     story = []
@@ -665,21 +784,39 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     if company.get("logo_path") or company.get("logo_file") or company.get("logo_url") or company.get("company_logo"):
         _add_brand_header(story, doc, title, company)
     else:
-        story.append(Paragraph(escape(title), title_style))
-
         if company_name:
-            story.append(Paragraph(f"<b>{escape(company_name)}</b>", meta_style))
-            
-    if period_from or period_to:
-        label = (
-            f"Period: {period_from or ''} to {period_to or ''}"
-            if period_from
-            else f"As at: {period_to or ''}"
-        )
-        story.append(Paragraph(escape(label), meta_style))
+            company_style = ParagraphStyle(
+                "company_name",
+                parent=styles["BodyText"],
+                fontName="Helvetica-Bold",
+                fontSize=12,
+                alignment=1,  # centre
+                spaceAfter=4,
+            )
 
+            story.append(
+                Paragraph(
+                    escape(str(company_name).upper()),
+                    company_style
+                )
+            )
+
+        story.append(
+            Paragraph(
+                escape(title.upper()),
+                title_style
+            )
+        )
+    period_label = _ias_period_label(meta)
+
+    if period_label:
+        story.append(Paragraph(escape(period_label), meta_style))
+        
     if currency:
-        story.append(Paragraph(f"Currency: {escape(currency)}", meta_style))
+        story.append(Paragraph(
+            escape(f"(All amounts presented in {currency})"),
+            meta_style
+        ))
 
     story.append(Spacer(1, 10))
 
@@ -692,6 +829,48 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
     if tbl:
         story.append(tbl)
+
+    # ✅ SOCIE comparison statements: render each comparison as its own table
+    comparison_statements = payload.get("comparison_statements") or []
+
+    if comparison_statements:
+        for idx, cmp_stmt in enumerate(comparison_statements, start=1):
+            cmp_meta = cmp_stmt.get("meta") or {}
+            cmp_period = cmp_meta.get("period") or {}
+
+            heading = "Comparative period" if idx == 1 else f"Comparative period {idx}"
+
+            story.append(Spacer(1, 14))
+            story.append(Paragraph(f"<b>{escape(heading)}</b>", meta_style))
+
+            if cmp_period.get("from") or cmp_period.get("to"):
+                story.append(Paragraph(
+                    escape(_ias_period_label(cmp_meta)),
+                    meta_style,
+                ))
+
+            cmp_cols = _payload_columns(cmp_stmt)
+            if len(cmp_cols) == 1:
+                cmp_cols[0] = {**cmp_cols[0], "label": "Amount"}
+
+            cmp_payload = {**cmp_stmt, "columns": cmp_cols}
+            _, cmp_flat_rows = _flatten_payload(cmp_payload)
+            cmp_col_keys = [c.get("key") for c in cmp_cols]
+
+            cmp_amount_labels = {
+                c.get("key"): c.get("label") or c.get("key")
+                for c in cmp_cols
+            }
+
+            cmp_tbl = _financial_table(
+                cmp_flat_rows,
+                cmp_col_keys,
+                amount_labels=cmp_amount_labels,
+                page_width_mm=page_width_mm,
+            )
+
+            if cmp_tbl:
+                story.append(cmp_tbl)
 
     doc.build(story)
 

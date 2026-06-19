@@ -10,11 +10,11 @@ from BackEnd.Services.reporting.cashbook_reports import build_cashbook_report
 from BackEnd.Services.reporting.report_response import build_report_response
 from BackEnd.Services.reporting.tb_reports import build_trial_balance_report
 from BackEnd.Services.reporting.vat_reports import build_vat_report
-from BackEnd.Services.period_core import resolve_company_period
 from BackEnd.Services.utils.view_token import create_report_export_token, verify_report_export_token
 from BackEnd.Services.reporting.journal_reports import build_journal_register, export_xlsx
 from BackEnd.Services.credit_policy import can_manage_fs_notes
 from BackEnd.Services.company import company_policy
+from BackEnd.Services.period_core import resolve_compare_period, build_multi_year_ranges, resolve_company_period
 from BackEnd.Services.reporting.lease_reports import (
     build_lease_monthly_due_report,
     build_lease_payments_report,
@@ -59,6 +59,9 @@ from BackEnd.Services.reporting.disclosure_builders import (
    _money,
     build_ppe_note_export_payload,
     build_revenue_note_export_payload,
+    build_ppe_disclosure_multi_year,
+    build_revenue_disclosure_multi_year,
+    build_lease_disclosure_multi_year,
 )
 
 report_bp = Blueprint("report_bp", __name__)
@@ -174,6 +177,13 @@ def _statement_common_args():
         "basis": request.args.get("basis", "external"),
         "compare": request.args.get("compare", "none"),
     }
+
+def _comparison_years_arg(default=1):
+    try:
+        v = int(request.args.get("comparison_years") or request.args.get("years") or default)
+    except Exception:
+        v = default
+    return max(1, min(v, 10))
 
 def _export_statement_payload(payload, base_filename: str):
     fmt = (request.args.get("format") or "xlsx").strip().lower()
@@ -964,6 +974,7 @@ def export_balance_sheet(company_id):
             company_id=company_id,
             as_of=as_of,
             compare=args["compare"],
+            comparison_years=_comparison_years_arg(1),
             view=request.args.get("view") or args["basis"],
             basis=args["basis"],
             include_net_profit_line=str(
@@ -1002,6 +1013,7 @@ def export_income_statement(company_id):
             template=args["template"],
             basis=args["basis"],
             compare=args["compare"],
+            comparison_years=_comparison_years_arg(1),
             cols_mode=int(request.args.get("cols_mode") or request.args.get("cols") or 1),
             detail=request.args.get("detail", "summary"),
             prior_from=request.args.get("prior_from") or None,
@@ -1037,6 +1049,7 @@ def export_cash_flow(company_id):
             template=args["template"],
             basis=args["basis"],
             compare=args["compare"],
+            comparison_years=_comparison_years_arg(1),
             method=request.args.get("method", "direct"),
             cols_mode=int(request.args.get("cols_mode") or request.args.get("cols") or 1),
             preview_columns=int(request.args.get("preview_columns") or request.args.get("cols_mode") or 1),
@@ -1065,7 +1078,26 @@ def export_socie(company_id):
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
 
         args = _statement_common_args()
+        comparison_years = _comparison_years_arg(1)
 
+        comparison_ranges = None
+        prior_from = prior_to = None
+
+        if args["compare"] == "multi_year":
+            comparison_ranges = build_multi_year_ranges(
+                date_from,
+                date_to,
+                comparison_years,
+            )
+
+        elif args["compare"] != "none":
+            prior_from, prior_to = resolve_compare_period(
+                db,
+                company_id,
+                meta,
+                args["compare"],
+                mode="range",
+            )
         payload = db.get_socie_v1(
             company_id=company_id,
             date_from=date_from,
@@ -1073,9 +1105,10 @@ def export_socie(company_id):
             template=args["template"],
             basis=args["basis"],
             compare=args["compare"],
+            comparison_ranges=comparison_ranges,
             cols_mode=int(request.args.get("cols_mode") or request.args.get("cols") or 1),
-            prior_from=request.args.get("prior_from") or None,
-            prior_to=request.args.get("prior_to") or None,
+            prior_from=prior_from,
+            prior_to=prior_to,
         )
 
         payload.setdefault("meta", {})
@@ -1624,13 +1657,15 @@ def export_ppe_disclosure(company_id):
     try:
         db = _get_db()
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+        comparison_years = _comparison_years_arg(1)
         fmt = (request.args.get("format") or "xlsx").lower()
 
-        payload = build_ppe_disclosure(
-            db=db,
-            company_id=company_id,
-            date_from=date_from,
-            date_to=date_to,
+        payload = build_ppe_disclosure_multi_year(
+            db,
+            company_id,
+            date_from,
+            date_to,
+            comparison_years=comparison_years,
         )
 
         payload.setdefault("meta", {})
@@ -1665,17 +1700,24 @@ def export_lease_disclosure(company_id):
 
     try:
         db = _get_db()
-        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+        date_from, date_to, meta = resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
 
         fmt = (request.args.get("format") or "xlsx").lower()
+        comparison_years = _comparison_years_arg(1)
 
-        # ✅ PDF: proper FS note export with wording + designed tables
+        # PDF: FS note export with wording + designed tables
         if fmt == "pdf":
             lease_note = build_lease_note_export_payload(
                 db,
                 company_id,
                 date_from,
                 date_to,
+                comparison_years=comparison_years,
             )
 
             return export_fs_notes_pdf(
@@ -1683,13 +1725,14 @@ def export_lease_disclosure(company_id):
                 filename="lease_disclosure.pdf",
             )
 
-        # ✅ Excel/CSV/etc: keep existing table export
-        payload = build_lease_disclosure(
-            db=db,
-            company_id=company_id,
-            date_from=date_from,
-            date_to=date_to,
+        # Excel / table export
+        payload = build_lease_disclosure_multi_year(
+            db,
+            company_id,
+            date_from,
+            date_to,
             as_of=date_to,
+            comparison_years=comparison_years,
         )
 
         payload.setdefault("meta", {})
@@ -1710,6 +1753,7 @@ def export_revenue_disclosure(company_id):
     try:
         db = _get_db()
         date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+        comparison_years = _comparison_years_arg(1)
         fmt = (request.args.get("format") or "xlsx").lower()
 
         if fmt == "pdf":
@@ -1720,11 +1764,12 @@ def export_revenue_disclosure(company_id):
                 period_to=date_to,
             )
 
-            revenue_payload = build_revenue_disclosure(
+            revenue_payload =  build_revenue_disclosure_multi_year(
                 db=db,
                 company_id=company_id,
                 date_from=date_from,
                 date_to=date_to,
+                comparison_years=comparison_years,
             )
 
             source = revenue_payload.get("source") or {}

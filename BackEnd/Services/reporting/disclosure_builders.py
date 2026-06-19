@@ -167,6 +167,51 @@ def _ifrs16_maturity_rows(strict):
 
     return rows
 
+def _shift_year(d: date, years: int = 1) -> date:
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:
+        return d.replace(year=d.year - years, day=28)
+
+
+def _multi_year_ranges(date_from: date, date_to: date, comparison_years: int = 1):
+    try:
+        comparison_years = int(comparison_years or 1)
+    except Exception:
+        comparison_years = 1
+
+    comparison_years = max(1, min(comparison_years, 10))
+
+    return [
+        (_shift_year(date_from, i), _shift_year(date_to, i))
+        for i in range(1, comparison_years)
+    ]
+
+def _with_comparative_disclosures(
+    *,
+    build_fn,
+    db,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+    comparison_years: int = 1,
+    **kwargs,
+):
+    current = build_fn(db, company_id, date_from, date_to, **kwargs)
+
+    comparisons = []
+    for idx, (pf, pt) in enumerate(_multi_year_ranges(date_from, date_to, comparison_years), start=1):
+        key = "pri" if idx == 1 else f"p{idx}"
+        cmp_payload = build_fn(db, company_id, pf, pt, **kwargs)
+        cmp_payload.setdefault("meta", {})
+        cmp_payload["meta"]["key"] = key
+        comparisons.append(cmp_payload)
+
+    current["comparison_disclosures"] = comparisons
+    current.setdefault("meta", {})
+    current["meta"]["comparison_years"] = comparison_years
+    return current
+
 def build_lease_note_export_payload(db, company_id, period_from, period_to, *, cur=None):
     note = db.get_or_build_financial_statement_note(
         company_id,
@@ -844,3 +889,58 @@ def build_revenue_note_export_payload(policy_note, disclosure_data):
             },
         ],
     }
+
+def build_ppe_disclosure_multi_year(
+    db,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+    *,
+    comparison_years: int = 1,
+):
+    return _with_comparative_disclosures(
+        build_fn=build_ppe_disclosure,
+        db=db,
+        company_id=company_id,
+        date_from=date_from,
+        date_to=date_to,
+        comparison_years=comparison_years,
+    )
+
+
+def build_lease_disclosure_multi_year(
+    db,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+    *,
+    as_of: date | None = None,
+    comparison_years: int = 1,
+):
+    return _with_comparative_disclosures(
+        build_fn=build_lease_disclosure,
+        db=db,
+        company_id=company_id,
+        date_from=date_from,
+        date_to=date_to,
+        comparison_years=comparison_years,
+        as_of=as_of or date_to,
+    )
+
+
+def build_revenue_disclosure_multi_year(
+    db,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+    *,
+    comparison_years: int = 1,
+):
+    return _with_comparative_disclosures(
+        build_fn=build_revenue_disclosure,
+        db=db,
+        company_id=company_id,
+        date_from=date_from,
+        date_to=date_to,
+        comparison_years=comparison_years,
+    )

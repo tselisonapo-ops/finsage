@@ -130,6 +130,30 @@ def resolve_company_period(
     }
     return pr["from"], pr["to"], meta
 
+def shift_year(d: date, years: int = 1) -> date:
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:
+        return d.replace(year=d.year - years, day=28)
+
+
+def build_multi_year_ranges(date_from: date, date_to: date, comparison_years: int = 1):
+    try:
+        comparison_years = int(comparison_years or 1)
+    except Exception:
+        comparison_years = 1
+
+    comparison_years = max(1, min(comparison_years, 10))
+
+    ranges = []
+    for i in range(1, comparison_years):
+        ranges.append((
+            shift_year(date_from, i),
+            shift_year(date_to, i),
+        ))
+
+    return ranges
+
 def resolve_compare_period(db_service, company_id: int, meta: Dict[str, Any], compare: str, *, mode: str):
     """
     Returns:
