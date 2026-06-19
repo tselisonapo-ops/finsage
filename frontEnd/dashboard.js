@@ -24535,6 +24535,19 @@ async function downloadFile(url, filename) {
   a.click();
 }
 
+function getStatementExportDrivers() {
+  return {
+    preset: document.getElementById("stmtPreset")?.value || "this_year",
+    template: document.getElementById("stmtTemplate")?.value || "ifrs",
+    basis: document.getElementById("stmtBasis")?.value || "external",
+    compare: document.getElementById("stmtCompare")?.value || "none",
+    comparison_years: Number(document.getElementById("stmtComparisonYears")?.value || 1),
+    cols_mode: Number(document.getElementById("stmtColsMode")?.value || 1),
+    detail: document.getElementById("stmtDetail")?.value || "summary",
+    method: document.getElementById("stmtCfMethod")?.value || "direct",
+  };
+}
+
 async function exportStatement(stmtType, format) {
   const cid = typeof getActiveCompanyId === "function" ? getActiveCompanyId() : null;
   if (!cid) return alert("No active company.");
@@ -24631,13 +24644,20 @@ async function exportStatement(stmtType, format) {
       return alert("Unknown statement type.");
   }
 
+  const compareValue = document.getElementById("stmtCompare")?.value || "none";
+  const colsModeValue = document.getElementById("stmtColsMode")?.value || "1";
+  const comparisonYearsValue =
+    document.getElementById("stmtComparisonYears")?.value || "2";
+
   const params = {
     format: fmt,
     preset,
     template: document.getElementById("stmtTemplate")?.value || "ifrs",
     basis: document.getElementById("stmtBasis")?.value || "external",
-    compare: document.getElementById("stmtCompare")?.value || "none",
-    cols_mode: document.getElementById("stmtColsMode")?.value || "1",
+    compare: compareValue,
+    comparison_years: comparisonYearsValue,
+    cols_mode: colsModeValue,
+    cols: colsModeValue,
     detail: document.getElementById("stmtDetail")?.value || "summary",
   };
 
@@ -24651,7 +24671,10 @@ async function exportStatement(stmtType, format) {
 
   if (t === "cf") {
     params.method = document.getElementById("stmtCfMethod")?.value || "direct";
-    params.preview_columns = params.cols_mode;
+
+    // Important: preview_columns=2 disables comparison in your backend.
+    // So comparison exports must stay preview_columns=1.
+    params.preview_columns = compareValue === "none" ? colsModeValue : "1";
   }
 
   url = addQueryParamsAbs(url, params);
