@@ -1577,6 +1577,54 @@ class DatabaseService:
         );
 
         ALTER TABLE public.companies
+            ADD COLUMN IF NOT EXISTS first_reporting_period_start DATE NULL,
+            ADD COLUMN IF NOT EXISTS financial_year_end_month INT NULL,
+            ADD COLUMN IF NOT EXISTS financial_year_end_day INT NULL,
+            ADD COLUMN IF NOT EXISTS reporting_period_locked BOOLEAN NOT NULL DEFAULT FALSE;
+            
+        ALTER TABLE public.companies
+        DROP CONSTRAINT IF EXISTS chk_companies_fin_year_end_month;
+
+        ALTER TABLE public.companies
+        ADD CONSTRAINT chk_companies_fin_year_end_month
+        CHECK (
+            financial_year_end_month IS NULL
+            OR financial_year_end_month BETWEEN 1 AND 12
+        );
+
+        ALTER TABLE public.companies
+        DROP CONSTRAINT IF EXISTS chk_companies_fin_year_end_day;
+
+        ALTER TABLE public.companies
+        ADD CONSTRAINT chk_companies_fin_year_end_day
+        CHECK (
+            financial_year_end_day IS NULL
+            OR financial_year_end_day BETWEEN 1 AND 31
+        );
+
+        ALTER TABLE public.companies
+        DROP CONSTRAINT IF EXISTS chk_companies_reporting_start;
+
+        ALTER TABLE public.companies
+        ADD CONSTRAINT chk_companies_reporting_start
+        CHECK (
+            first_reporting_period_start IS NULL
+            OR first_reporting_period_start >= company_reg_date
+        );
+
+        -- ✅ put backfill here
+        UPDATE public.companies
+        SET
+            financial_year_end_month = 3,
+            financial_year_end_day = 31
+        WHERE financial_year_end_month IS NULL
+        AND financial_year_end_day IS NULL;
+
+        UPDATE public.companies
+        SET first_reporting_period_start = COALESCE(company_reg_date, created_at::date)
+        WHERE first_reporting_period_start IS NULL;
+
+        ALTER TABLE public.companies
             ADD COLUMN IF NOT EXISTS organization_type TEXT;
 
         ALTER TABLE public.companies
@@ -5259,6 +5307,10 @@ class DatabaseService:
             "credit_policy": "credit_policy",
             "vat_settings": "vat_settings",
 
+            # ✅ Reporting / company dates
+            "fin_year_start": "fin_year_start",
+            "company_reg_date": "company_reg_date",
+
             # ✅ JSONB + meta fields
             "registered_address_json": "registered_address_json",
             "postal_address_json": "postal_address_json",
@@ -5268,6 +5320,7 @@ class DatabaseService:
         }
 
         json_keys = {"registered_address_json", "postal_address_json", "vat_settings", "credit_policy"}
+        date_keys = {"company_reg_date"}
 
         sets: list[str] = []
         params: list[Any] = []
@@ -5278,18 +5331,17 @@ class DatabaseService:
 
             v = payload.get(k)
 
-            # ✅ JSONB handling
             if k in json_keys:
                 if v is None:
-                    # allow clearing the JSONB column
                     pass
                 elif isinstance(v, dict):
                     v = Json(v)
                 else:
-                    # don't store junk in JSONB
                     raise ValueError(f"{k} must be an object (dict) or null")
 
-            # ✅ Clean strings (works for non-JSON keys + meta fields)
+            elif k in date_keys:
+                v = _safe_date(v)
+
             elif isinstance(v, str):
                 v = v.strip()
                 if v == "":
@@ -5299,7 +5351,7 @@ class DatabaseService:
             params.append(v)
 
         if not sets:
-            return True  # nothing to update
+            return True
 
         params.append(cid)
         sql = f"UPDATE public.companies SET {', '.join(sets)} WHERE id=%s;"

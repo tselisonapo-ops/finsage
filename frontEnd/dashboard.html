@@ -8273,12 +8273,14 @@ html, body {
               </div>
             </div>
 
-            <!-- 6) REPORTING PERIODS (use datepickers) -->
+            <!-- 6) REPORTING PERIODS -->
             <div class="company-view mt-4 hidden" data-view="reporting">
               <div class="flex items-center justify-between">
                 <div>
                   <h4 class="font-semibold text-slate-800">Reporting periods</h4>
-                  <p class="text-xs text-slate-500 mt-1">Defaults for reporting ranges and fiscal year.</p>
+                  <p class="text-xs text-slate-500 mt-1">
+                    Configure the company’s first reporting period and financial year-end.
+                  </p>
                 </div>
                 <span id="reportingStatus" class="text-xs text-slate-500"></span>
               </div>
@@ -8286,27 +8288,59 @@ html, body {
               <form id="reportingForm" class="space-y-3 mt-3">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-[11px] text-slate-500 mb-1" for="rpDefaultFrom">Default report start date</label>
-                    <input id="rpDefaultFrom" type="date" class="w-full border rounded px-2 py-2 text-sm" />
-                  </div>
-                  <div>
-                    <label class="block text-[11px] text-slate-500 mb-1" for="rpDefaultTo">Default report end date</label>
-                    <input id="rpDefaultTo" type="date" class="w-full border rounded px-2 py-2 text-sm" />
+                    <label class="block text-[11px] text-slate-500 mb-1" for="rpFirstReportingStart">
+                      First reporting period start
+                    </label>
+                    <input id="rpFirstReportingStart" type="date" class="w-full border rounded px-2 py-2 text-sm" />
                   </div>
 
                   <div>
-                    <label class="block text-[11px] text-slate-500 mb-1" for="rpFiscalStart">Fiscal year start date</label>
-                    <input id="rpFiscalStart" type="date" class="w-full border rounded px-2 py-2 text-sm" />
+                    <label class="block text-[11px] text-slate-500 mb-1" for="rpFinancialYearEndMonth">
+                      Financial year-end month
+                    </label>
+                    <select id="rpFinancialYearEndMonth" class="w-full border rounded px-2 py-2 text-sm">
+                      <option value="">Select month</option>
+                      <option value="1">January</option>
+                      <option value="2">February</option>
+                      <option value="3">March</option>
+                      <option value="4">April</option>
+                      <option value="5">May</option>
+                      <option value="6">June</option>
+                      <option value="7">July</option>
+                      <option value="8">August</option>
+                      <option value="9">September</option>
+                      <option value="10">October</option>
+                      <option value="11">November</option>
+                      <option value="12">December</option>
+                    </select>
                   </div>
+
                   <div>
-                    <label class="block text-[11px] text-slate-500 mb-1" for="rpCloseDay">Month-end close target day</label>
-                    <input id="rpCloseDay" type="number" min="1" max="31" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. 5" />
+                    <label class="block text-[11px] text-slate-500 mb-1" for="rpFinancialYearEndDay">
+                      Financial year-end day
+                    </label>
+                    <input id="rpFinancialYearEndDay" type="number" min="1" max="31" class="w-full border rounded px-2 py-2 text-sm" placeholder="e.g. 31" />
                   </div>
+
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1" for="rpReportingLocked">
+                      Lock reporting period
+                    </label>
+                    <select id="rpReportingLocked" class="w-full border rounded px-2 py-2 text-sm">
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="rounded-lg border bg-slate-50 p-3 text-xs text-slate-600">
+                  Example: if first reporting start is <b>2024-01-01</b> and year-end is <b>31 March</b>,
+                  FinSage will treat the opening period as <b>01 Jan 2024 – 31 Mar 2024</b>.
                 </div>
 
                 <div class="flex justify-end gap-2 pt-2">
                   <button type="button" id="reportingReload" class="border rounded px-3 py-1 text-xs">Reset</button>
-                  <button type="submit" class="bg-emerald-600 text-white rounded px-3 py-1 text-xs">Save reporting defaults</button>
+                  <button type="submit" class="bg-emerald-600 text-white rounded px-3 py-1 text-xs">Save reporting periods</button>
                 </div>
               </form>
             </div>

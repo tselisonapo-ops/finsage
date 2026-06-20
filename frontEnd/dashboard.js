@@ -9016,6 +9016,10 @@ async function switchScreen(name) {
 
     showCompanyView?.(view);
 
+    if (view === "reporting") {
+      bindReportingPeriodsForm?.(cid);
+    }
+
     if (view === "structure") {
       try {
         bindCorporateStructureScreen?.();
@@ -10377,6 +10381,94 @@ function initCompanyProfileUI(companyId) {
   }
 }
 
+function bindReportingPeriodsForm(companyId) {
+  const form = document.getElementById("reportingForm");
+  const reload = document.getElementById("reportingReload");
+  const status = document.getElementById("reportingStatus");
+
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+
+  const setStatus = (msg, err = false) => {
+    if (!status) return;
+
+    status.textContent = msg || "";
+    status.classList.remove(
+      "text-red-600",
+      "text-emerald-600",
+      "text-slate-500"
+    );
+
+    status.classList.add(err ? "text-red-600" : "text-emerald-600");
+  };
+
+  async function fill() {
+    const data = await apiFetch(
+      ENDPOINTS.company(companyId),
+      { method: "GET" }
+    );
+
+    document.getElementById("rpFirstReportingStart").value =
+      data.first_reporting_period_start || "";
+
+    document.getElementById("rpFinancialYearEndMonth").value =
+      data.financial_year_end_month || "";
+
+    document.getElementById("rpFinancialYearEndDay").value =
+      data.financial_year_end_day || "";
+
+    document.getElementById("rpReportingLocked").value =
+      data.reporting_period_locked ? "true" : "false";
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const payload = {
+      first_reporting_period_start:
+        document.getElementById("rpFirstReportingStart")?.value || null,
+
+      financial_year_end_month:
+        Number(
+          document.getElementById("rpFinancialYearEndMonth")?.value || 0
+        ) || null,
+
+      financial_year_end_day:
+        Number(
+          document.getElementById("rpFinancialYearEndDay")?.value || 0
+        ) || null,
+
+      reporting_period_locked:
+        document.getElementById("rpReportingLocked")?.value === "true",
+    };
+
+    try {
+      setStatus("Saving...");
+
+      await apiFetch(
+        ENDPOINTS.company(companyId),
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      setStatus("Saved");
+    } catch (e) {
+      setStatus(e.message || "Save failed", true);
+    }
+  });
+
+  reload?.addEventListener("click", () => {
+    fill().catch((e) =>
+      setStatus(e.message || "Load failed", true)
+    );
+  });
+
+  fill().catch((e) =>
+    setStatus(e.message || "Load failed", true)
+  );
+}
 
 function toISODate(value) {
   if (!value) return "";
