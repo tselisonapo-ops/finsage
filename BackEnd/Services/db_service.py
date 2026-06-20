@@ -5261,6 +5261,14 @@ class DatabaseService:
         sql = """
             SELECT
             id, owner_user_id, name, country, currency,
+
+            fin_year_start,
+            company_reg_date,
+            first_reporting_period_start,
+            financial_year_end_month,
+            financial_year_end_day,
+            reporting_period_locked,
+
             company_email, company_phone,
             physical_address, postal_address,
             registered_address_json, postal_address_json,
@@ -5281,10 +5289,7 @@ class DatabaseService:
         if not isinstance(policy, dict):
             policy = {}
 
-        # ✅ normalize EVERYTHING (AR/AP/payment/ppe/aliases)
         policy = normalize_policy(policy)
-
-        # ✅ normalize + lock mode naming
         mode = normalize_policy_mode(policy)
         policy["mode"] = mode
 
@@ -5307,11 +5312,15 @@ class DatabaseService:
             "credit_policy": "credit_policy",
             "vat_settings": "vat_settings",
 
-            # ✅ Reporting / company dates
+            # Reporting / company dates
             "fin_year_start": "fin_year_start",
             "company_reg_date": "company_reg_date",
+            "first_reporting_period_start": "first_reporting_period_start",
+            "financial_year_end_month": "financial_year_end_month",
+            "financial_year_end_day": "financial_year_end_day",
+            "reporting_period_locked": "reporting_period_locked",
 
-            # ✅ JSONB + meta fields
+            # JSONB + meta fields
             "registered_address_json": "registered_address_json",
             "postal_address_json": "postal_address_json",
             "address_place_id": "address_place_id",
@@ -5320,7 +5329,9 @@ class DatabaseService:
         }
 
         json_keys = {"registered_address_json", "postal_address_json", "vat_settings", "credit_policy"}
-        date_keys = {"company_reg_date"}
+        date_keys = {"company_reg_date", "first_reporting_period_start"}
+        int_keys = {"financial_year_end_month", "financial_year_end_day"}
+        bool_keys = {"reporting_period_locked"}
 
         sets: list[str] = []
         params: list[Any] = []
@@ -5341,6 +5352,18 @@ class DatabaseService:
 
             elif k in date_keys:
                 v = _safe_date(v)
+
+            elif k in int_keys:
+                if v in (None, ""):
+                    v = None
+                else:
+                    v = int(v)
+
+            elif k in bool_keys:
+                if isinstance(v, str):
+                    v = v.strip().lower() in ("1", "true", "yes", "on")
+                else:
+                    v = bool(v)
 
             elif isinstance(v, str):
                 v = v.strip()

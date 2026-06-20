@@ -25,10 +25,15 @@ def get_company_context(db_service, company_id: int) -> Dict[str, Any]:
         "industry": industry,
         "sub_industry": sub_industry,
         "currency": c.get("currency") or "ZAR",
+
         "fin_year_start": c.get("fin_year_start"),
+        "first_reporting_period_start": c.get("first_reporting_period_start"),
+        "financial_year_end_month": c.get("financial_year_end_month"),
+        "financial_year_end_day": c.get("financial_year_end_day"),
+
         "template": template,
         "profile": profile,
-        "account_settings": acct_settings,  # ✅ add this
+        "account_settings": acct_settings,
     }
 
 def normalize_role(role: str) -> str:
