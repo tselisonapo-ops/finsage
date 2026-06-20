@@ -3885,12 +3885,27 @@ def update_company_profile(company_id: int):
         return jsonify(after_state), 200
 
     # no credit_policy in payload -> fall back to generic update (optional)
-    updated = db_service.update_company_profile(company_id, payload)
-    if not updated:
-        return jsonify({"error": "Update failed"}), 400
+    try:
+        updated = db_service.update_company_profile(company_id, payload)
 
-    after_state = db_service.get_company_profile(company_id) or {}
-    return jsonify(after_state), 200
+        if not updated:
+            return jsonify({
+                "error": "update_company_profile returned False"
+            }), 400
+
+        after_state = db_service.get_company_profile(company_id) or {}
+        return jsonify(after_state), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "Company update failed for company %s",
+            company_id
+        )
+
+        return jsonify({
+            "error": str(e)
+        }), 400
+
 
 @app.route("/api/companies/<int:company_id>/logo", methods=["POST", "OPTIONS"])
 @require_auth

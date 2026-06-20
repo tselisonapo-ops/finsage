@@ -5381,10 +5381,15 @@ class DatabaseService:
 
         try:
             self.execute_sql(sql, tuple(params))
-            return True
+            return {"ok": True}
+
         except Exception as e:
             print("update_company_profile failed:", e)
-            return False
+
+            return {
+                "ok": False,
+                "error": str(e)
+            }
         
     def dedupe_company_coa(self, company_id: int) -> int:
         schema = f"company_{company_id}"
