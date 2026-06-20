@@ -1752,9 +1752,26 @@ def export_revenue_disclosure(company_id):
 
     try:
         db = _get_db()
-        date_from, date_to, meta = resolve_company_period(db, company_id, request, mode="range")
+        date_from, date_to, meta = resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+
         comparison_years = _comparison_years_arg(1)
         fmt = (request.args.get("format") or "xlsx").lower()
+
+        payload = build_revenue_disclosure_multi_year(
+            db=db,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            comparison_years=comparison_years,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
 
         if fmt == "pdf":
             policy = db.get_or_build_financial_statement_note(
@@ -1764,51 +1781,12 @@ def export_revenue_disclosure(company_id):
                 period_to=date_to,
             )
 
-            revenue_payload =  build_revenue_disclosure_multi_year(
-                db=db,
-                company_id=company_id,
-                date_from=date_from,
-                date_to=date_to,
-                comparison_years=comparison_years,
-            )
-
-            source = revenue_payload.get("source") or {}
-            summary = source.get("summary") or {}
-
-            disclosure_data = {
-                "revenue_total": summary.get("total_revenue"),
-                "contract_assets": summary.get("contract_assets"),
-                "contract_liabilities": summary.get("contract_liabilities"),
-                "receivables": summary.get("gross_receivables_from_contracts"),
-                "over_time": sum(
-                    _money(r.get("amount"))
-                    for r in source.get("revenue_timing") or []
-                    if str(r.get("timing") or "").lower().replace("_", " ") == "over time"
-                ),
-                "point_in_time": sum(
-                    _money(r.get("amount"))
-                    for r in source.get("revenue_timing") or []
-                    if str(r.get("timing") or "").lower().replace("_", " ") == "point in time"
-                ),
-                "revenue_by_category": source.get("revenue_by_category") or [],
-            }
-
-            revenue_note = build_revenue_note_export_payload(policy, disclosure_data)
+            revenue_note = build_revenue_note_export_payload(policy, payload)
 
             return export_fs_notes_pdf(
                 [revenue_note],
                 filename="revenue_disclosure.pdf",
             )
-
-        payload = build_revenue_disclosure(
-            db=db,
-            company_id=company_id,
-            date_from=date_from,
-            date_to=date_to,
-        )
-
-        payload.setdefault("meta", {})
-        payload["meta"].update(meta or {})
 
         return _export_statement_payload(payload, "revenue_disclosure")
 

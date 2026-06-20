@@ -212,7 +212,15 @@ def _with_comparative_disclosures(
     current["meta"]["comparison_years"] = comparison_years
     return current
 
-def build_lease_note_export_payload(db, company_id, period_from, period_to, *, cur=None):
+def build_lease_note_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    cur=None,
+    comparison_years: int = 1,
+):
     note = db.get_or_build_financial_statement_note(
         company_id,
         "ifrs16_lease_policy",
@@ -221,18 +229,58 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
         cur=cur,
     )
 
-    lease_payload = build_lease_disclosure(
+    lease_payload = build_lease_disclosure_multi_year(
         db,
         company_id,
         period_from,
         period_to,
         as_of=period_to,
+        comparison_years=comparison_years,
     )
+
+    sections = []
+
+    summary_rows = lease_payload.get("comparison_summary_rows") or []
+    comparison_columns = lease_payload.get("comparison_columns") or []
+
+    if summary_rows:
+        sections.append({
+            "title": "Lease disclosure summary",
+            "rows": summary_rows,
+            "columns": comparison_columns,
+            "amount_keys": [
+                c["key"]
+                for c in comparison_columns
+            ],
+            "amount_labels": {
+                c["key"]: c["label"]
+                for c in comparison_columns
+            },
+        })
+
+    for sec in lease_payload.get("sections") or []:
+        columns = sec.get("columns") or [{"key": "amount", "label": "Amount"}]
+
+        sections.append({
+            "title": sec.get("title") or "",
+            "rows": sec.get("rows") or [],
+            "columns": columns,
+            "amount_keys": [
+                c["key"]
+                for c in columns
+                if c.get("key")
+            ],
+            "amount_labels": {
+                c["key"]: c.get("label") or c["key"]
+                for c in columns
+                if c.get("key")
+            },
+        })
 
     return {
         "title": "Leases",
         "text": note.get("content_text") or note.get("system_draft") or "",
-        "sections": lease_payload.get("sections") or [],
+        "sections": sections,
     }
 
 
@@ -275,11 +323,10 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         if n in ("plant", "plant & equipment", "plant and equipment", "equipment", "plant and machinery"):
             return "plant_machinery"
 
-        if n in ("motorcycle", "motorcycles", "motor bike", "motor bikes", "motorbike", "motorbikes", "bike", "bikes",):
+        if n in ("motorcycle", "motorcycles", "motor bike", "motor bikes", "motorbike", "motorbikes"):
             return "motorcycles"
 
-        # Bicycles
-        if n in ("bicycle", "bicycles", "bike", "bikes", "cycle", "cycles",):
+        if n in ("bicycle", "bicycles", "bike", "bikes", "cycle", "cycles"):
             return "bicycles"
 
         # Scooters
@@ -342,7 +389,6 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         {"key": "bicycles", "label": "Bicycles"},
         {"key": "scooters", "label": "Scooters"},
         {"key": "quad_bikes", "label": "Quad Bikes"},
-        {"key": "heavy_vehicles", "label": "Heavy Vehicles"},
         {"key": "heavy_vehicles", "label": "Heavy Vehicles"},
         {"key": "construction_equipment", "label": "Construction Equipment"},
         {"key": "mining_equipment", "label": "Mining Equipment"},
@@ -891,43 +937,51 @@ def build_revenue_note_export_payload(policy_note, disclosure_data):
 
     policy_text = p.get("content_text") or p.get("system_draft") or ""
 
+    sections = []
+
+    summary_rows = d.get("comparison_summary_rows") or []
+    comparison_columns = d.get("comparison_columns") or []
+
+    if summary_rows:
+        sections.append({
+            "title": "Revenue disclosure summary",
+            "rows": summary_rows,
+            "columns": comparison_columns,
+            "amount_keys": [
+                c["key"]
+                for c in comparison_columns
+                if c.get("key")
+            ],
+            "amount_labels": {
+                c["key"]: c.get("label") or c["key"]
+                for c in comparison_columns
+                if c.get("key")
+            },
+        })
+
+    rows = d.get("rows") or []
+
+    if rows:
+        sections.append({
+            "title": "Revenue disclosure detail",
+            "rows": rows,
+            "columns": d.get("columns") or [{"key": "amount", "label": "Amount"}],
+            "amount_keys": [
+                c["key"]
+                for c in (d.get("columns") or [{"key": "amount", "label": "Amount"}])
+                if c.get("key")
+            ],
+            "amount_labels": {
+                c["key"]: c.get("label") or c["key"]
+                for c in (d.get("columns") or [{"key": "amount", "label": "Amount"}])
+                if c.get("key")
+            },
+        })
+
     return {
         "title": "Revenue from contracts with customers",
         "text": policy_text.strip(),
-        "sections": [
-            {
-                "title": "Revenue recognised",
-                "rows": [
-                    _row("Revenue recognised during the period", d.get("revenue_total"), "total"),
-                ],
-                "amount_keys": ["amount"],
-            },
-            {
-                "title": "Contract balances",
-                "rows": [
-                    _row("Contract assets", d.get("contract_assets")),
-                    _row("Contract liabilities", d.get("contract_liabilities")),
-                    _row("Receivables", d.get("receivables")),
-                ],
-                "amount_keys": ["amount"],
-            },
-            {
-                "title": "Revenue timing",
-                "rows": [
-                    _row("Over time", d.get("over_time")),
-                    _row("Point in time", d.get("point_in_time")),
-                ],
-                "amount_keys": ["amount"],
-            },
-            {
-                "title": "Revenue by category",
-                "rows": [
-                    _row(c.get("category") or c.get("name") or "Other", c.get("amount"))
-                    for c in (d.get("revenue_by_category") or [])
-                ],
-                "amount_keys": ["amount"],
-            },
-        ],
+        "sections": sections,
     }
 
 def build_ppe_disclosure_multi_year(
@@ -938,7 +992,7 @@ def build_ppe_disclosure_multi_year(
     *,
     comparison_years: int = 1,
 ):
-    return _with_comparative_disclosures(
+    current = _with_comparative_disclosures(
         build_fn=build_ppe_disclosure,
         db=db,
         company_id=company_id,
@@ -946,6 +1000,66 @@ def build_ppe_disclosure_multi_year(
         date_to=date_to,
         comparison_years=comparison_years,
     )
+
+    payloads = [current] + (current.get("comparison_disclosures") or [])
+
+    comparison_columns = []
+    summary_map = {}
+
+    preferred_order = [
+        "Opening carrying amount",
+        "Additions",
+        "Disposals",
+        "Depreciation charge",
+        "Impairment",
+        "Revaluation movement",
+        "Closing carrying amount",
+    ]
+
+    for idx, p in enumerate(payloads):
+        meta = p.get("meta") or {}
+        year = str((meta.get("period") or {}).get("to") or "")[:4]
+        key = "cur" if idx == 0 else ("pri" if idx == 1 else f"p{idx}")
+
+        comparison_columns.append({
+            "key": key,
+            "label": year or key.upper(),
+        })
+
+        for r in p.get("rows") or []:
+            label = r.get("label") or ""
+            if not label:
+                continue
+
+            if label not in summary_map:
+                summary_map[label] = {
+                    "label": label,
+                    "values": {},
+                    "row_type": r.get("row_type") or "normal",
+                }
+
+            summary_map[label]["values"][key] = (r.get("values") or {}).get("total", 0)
+
+            if (r.get("row_type") or "").lower() == "total":
+                summary_map[label]["row_type"] = "total"
+
+    summary_rows = []
+
+    for label in preferred_order:
+        if label in summary_map:
+            summary_rows.append(summary_map[label])
+
+    for label, row in summary_map.items():
+        if label not in preferred_order:
+            summary_rows.append(row)
+
+    current["comparison_columns"] = comparison_columns
+    current["comparison_summary_rows"] = summary_rows
+
+    current.setdefault("meta", {})
+    current["meta"]["comparison_years"] = comparison_years
+
+    return current
 
 
 def build_lease_disclosure_multi_year(
@@ -957,7 +1071,7 @@ def build_lease_disclosure_multi_year(
     as_of: date | None = None,
     comparison_years: int = 1,
 ):
-    return _with_comparative_disclosures(
+    current = _with_comparative_disclosures(
         build_fn=build_lease_disclosure,
         db=db,
         company_id=company_id,
@@ -967,6 +1081,69 @@ def build_lease_disclosure_multi_year(
         as_of=as_of or date_to,
     )
 
+    payloads = [current] + (current.get("comparison_disclosures") or [])
+
+    comparison_columns = []
+    summary_map = {}
+
+    preferred_order = [
+        "Opening lease liability",
+        "Lease additions",
+        "Interest expense",
+        "Lease payments",
+        "Closing lease liability",
+        "Right-of-use assets",
+    ]
+
+    for idx, p in enumerate(payloads):
+        meta = p.get("meta") or {}
+        year = str((meta.get("period") or {}).get("to") or "")[:4]
+
+        key = "cur" if idx == 0 else ("pri" if idx == 1 else f"p{idx}")
+
+        comparison_columns.append({
+            "key": key,
+            "label": year or key.upper(),
+        })
+
+        for r in p.get("rows") or []:
+            label = r.get("label") or ""
+            if not label:
+                continue
+
+            if label not in summary_map:
+                summary_map[label] = {
+                    "label": label,
+                    "values": {},
+                    "row_type": r.get("row_type") or "normal",
+                }
+
+            summary_map[label]["values"][key] = (
+                (r.get("values") or {}).get("amount")
+                or (r.get("values") or {}).get("total")
+                or 0
+            )
+
+            if (r.get("row_type") or "").lower() == "total":
+                summary_map[label]["row_type"] = "total"
+
+    summary_rows = []
+
+    for label in preferred_order:
+        if label in summary_map:
+            summary_rows.append(summary_map[label])
+
+    for label, row in summary_map.items():
+        if label not in preferred_order:
+            summary_rows.append(row)
+
+    current["comparison_columns"] = comparison_columns
+    current["comparison_summary_rows"] = summary_rows
+
+    current.setdefault("meta", {})
+    current["meta"]["comparison_years"] = comparison_years
+
+    return current
 
 def build_revenue_disclosure_multi_year(
     db,
@@ -976,7 +1153,7 @@ def build_revenue_disclosure_multi_year(
     *,
     comparison_years: int = 1,
 ):
-    return _with_comparative_disclosures(
+    current = _with_comparative_disclosures(
         build_fn=build_revenue_disclosure,
         db=db,
         company_id=company_id,
@@ -984,3 +1161,71 @@ def build_revenue_disclosure_multi_year(
         date_to=date_to,
         comparison_years=comparison_years,
     )
+
+    payloads = [current] + (current.get("comparison_disclosures") or [])
+
+    comparison_columns = []
+    summary_map = {}
+
+    preferred_order = [
+        "Revenue recognised",
+        "Contract assets",
+        "Contract liabilities",
+        "Receivables from contracts with customers",
+        "Over time",
+        "Point in time",
+        "Transaction price allocated to unsatisfied or partially unsatisfied performance obligations",
+    ]
+
+    for idx, p in enumerate(payloads):
+        meta = p.get("meta") or {}
+        year = str((meta.get("period") or {}).get("to") or "")[:4]
+        key = "cur" if idx == 0 else ("pri" if idx == 1 else f"p{idx}")
+
+        comparison_columns.append({
+            "key": key,
+            "label": year or key.upper(),
+        })
+
+        for r in p.get("rows") or []:
+            label = r.get("label") or ""
+            if not label:
+                continue
+
+            # Skip section headers in comparison summary
+            if (r.get("row_type") or "").lower() == "header":
+                continue
+
+            if label not in summary_map:
+                summary_map[label] = {
+                    "label": label,
+                    "values": {},
+                    "row_type": r.get("row_type") or "normal",
+                }
+
+            summary_map[label]["values"][key] = (
+                (r.get("values") or {}).get("amount")
+                or (r.get("values") or {}).get("total")
+                or 0
+            )
+
+            if (r.get("row_type") or "").lower() == "total":
+                summary_map[label]["row_type"] = "total"
+
+    summary_rows = []
+
+    for label in preferred_order:
+        if label in summary_map:
+            summary_rows.append(summary_map[label])
+
+    for label, row in summary_map.items():
+        if label not in preferred_order:
+            summary_rows.append(row)
+
+    current["comparison_columns"] = comparison_columns
+    current["comparison_summary_rows"] = summary_rows
+
+    current.setdefault("meta", {})
+    current["meta"]["comparison_years"] = comparison_years
+
+    return current

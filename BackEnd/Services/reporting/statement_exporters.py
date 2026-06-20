@@ -609,6 +609,70 @@ def _xlsx_apply_row_style(ws, row_idx: int, row_type: str, max_col: int):
         cell = ws.cell(row=row_idx, column=c)
         cell.border = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
 
+def _write_statement_sheet(wb, sheet_name, payload, *, company_name="", currency=""):
+    meta = payload.get("meta") or {}
+    title = _statement_title(meta)
+
+    cols = _ias_export_columns(meta, _payload_columns(payload))
+    if len(cols) == 1:
+        cols[0]["label"] = "Amount"
+
+    payload = {**payload, "columns": cols}
+    headers, flat_rows = _flatten_payload(payload)
+    col_keys = [c.get("key") for c in cols]
+
+    ws = wb.create_sheet(title=sheet_name[:31])
+
+    ws["A1"] = str(company_name or meta.get("company_name") or "").upper()
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    ws["A2"] = str(title or "").upper()
+    ws["A2"].font = Font(bold=True, size=14)
+    ws["A2"].alignment = Alignment(horizontal="center")
+
+    ws["A3"] = _ias_period_label(meta)
+    ws["A3"].alignment = Alignment(horizontal="center")
+
+    ws["A4"] = f"(All amounts presented in {currency or meta.get('currency')})" if (currency or meta.get("currency")) else ""
+    ws["A4"].alignment = Alignment(horizontal="center")
+
+    max_col = max(1, len(headers))
+    for row in range(1, 5):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max_col)
+
+    start_row = 6
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=start_row, column=col_idx, value=header)
+        cell.font = Font(bold=True)
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
+
+    current_row = start_row + 1
+    for item in flat_rows:
+        ws.cell(row=current_row, column=1, value=item["label"])
+        vals = item.get("values") or {}
+
+        for i, key in enumerate(col_keys, start=2):
+            val = _clean_number(vals.get(key))
+            cell = ws.cell(row=current_row, column=i, value=val)
+
+            if isinstance(val, (int, float)):
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal="right")
+            else:
+                cell.alignment = Alignment(horizontal="left")
+
+        _xlsx_apply_row_style(ws, current_row, item.get("row_type") or "normal", len(headers))
+        current_row += 1
+
+    ws.column_dimensions["A"].width = 42
+    for idx in range(2, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(idx)].width = 18
+
+    return ws
+
 def build_pnl_export_summary_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Converts detailed P&L payload into IAS 1-style summary payload for exports.
@@ -719,59 +783,47 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     col_keys = [c.get("key") for c in cols]
 
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Statement"
+    default_ws = wb.active
+    wb.remove(default_ws)
 
-    # Title block - IAS style
-    ws["A1"] = str(company_name or "").upper()
-    ws["A1"].font = Font(bold=True, size=13)
-    ws["A1"].alignment = Alignment(horizontal="center")
+    is_pnl_export = str((meta.get("statement") or "")).lower() in (
+        "pnl",
+        "income_statement",
+        "profit_loss",
+    )
 
-    ws["A2"] = str(title or "").upper()
-    ws["A2"].font = Font(bold=True, size=14)
-    ws["A2"].alignment = Alignment(horizontal="center")
+    if is_pnl_export:
+        summary_payload = build_pnl_export_summary_payload(payload)
+        _write_statement_sheet(
+            wb,
+            "P&L Summary",
+            summary_payload,
+            company_name=company_name,
+            currency=currency,
+        )
 
-    ws["A3"] = _ias_period_label(meta)
-    ws["A3"].alignment = Alignment(horizontal="center")
+        detail_payload = dict(payload)
+        detail_payload.setdefault("meta", {})
+        detail_payload["meta"] = {
+            **(detail_payload.get("meta") or {}),
+            "statement_title": "Detailed Profit or Loss",
+        }
 
-    ws["A4"] = f"(All amounts presented in {currency})" if currency else ""
-    ws["A4"].alignment = Alignment(horizontal="center")
-
-    max_col = max(1, len(headers))
-    for row in range(1, 5):
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max_col)
-        
-    # Header row
-    start_row = 6
-    for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=start_row, column=col_idx, value=header)
-        cell.font = Font(bold=True)
-        cell.fill = HEADER_FILL
-        cell.alignment = Alignment(horizontal="center")
-        cell.border = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
-
-    # Data rows
-    current_row = start_row + 1
-    for item in flat_rows:
-        ws.cell(row=current_row, column=1, value=item["label"])
-        vals = item.get("values") or {}
-
-        for i, key in enumerate(col_keys, start=2):
-            val = _clean_number(vals.get(key))
-            cell = ws.cell(row=current_row, column=i, value=val)
-            if isinstance(val, (int, float)):
-                cell.number_format = '#,##0.00'
-                cell.alignment = Alignment(horizontal="right")
-            else:
-                cell.alignment = Alignment(horizontal="left")
-
-        _xlsx_apply_row_style(ws, current_row, item.get("row_type") or "normal", len(headers))
-        current_row += 1
-
-    # Widths
-    ws.column_dimensions["A"].width = 42
-    for idx in range(2, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(idx)].width = 18
+        _write_statement_sheet(
+            wb,
+            "Detailed P&L",
+            detail_payload,
+            company_name=company_name,
+            currency=currency,
+        )
+    else:
+        _write_statement_sheet(
+            wb,
+            "Statement",
+            payload,
+            company_name=company_name,
+            currency=currency,
+        )
 
     # SOCIE comparison statements - separate sheets
     comparison_statements = payload.get("comparison_statements") or []
@@ -970,11 +1022,13 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
     if tbl:
         story.append(tbl)
 
-    include_detail = str(
-        (payload.get("meta") or {}).get("include_detail_export")
-        or request.args.get("include_detail")
-        or ""
-    ).lower() in {"1", "true", "yes"}
+    is_pnl_export = str((payload.get("meta") or {}).get("statement") or "").lower() in (
+        "pnl",
+        "income_statement",
+        "profit_loss",
+    )
+
+    include_detail = is_pnl_export
 
     if include_detail and str((payload.get("meta") or {}).get("statement") or "").lower() in ("pnl", "income_statement", "profit_loss"):
         story.append(PageBreak())
