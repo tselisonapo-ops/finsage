@@ -235,6 +235,7 @@ def build_lease_note_export_payload(db, company_id, period_from, period_to, *, c
         "sections": lease_payload.get("sections") or [],
     }
 
+
 def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) -> Dict[str, Any]:
     """
     IAS 16 PPE disclosure.
@@ -274,6 +275,21 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         if n in ("plant", "plant & equipment", "plant and equipment", "equipment", "plant and machinery"):
             return "plant_machinery"
 
+        if n in ("motorcycle", "motorcycles", "motor bike", "motor bikes", "motorbike", "motorbikes", "bike", "bikes",):
+            return "motorcycles"
+
+        # Bicycles
+        if n in ("bicycle", "bicycles", "bike", "bikes", "cycle", "cycles",):
+            return "bicycles"
+
+        # Scooters
+        if n in ("scooter", "scooters", "motor scooter", "motor scooters",):
+            return "scooters"
+
+        # Quad bikes / ATVs
+        if n in ("quad bike", "quad bikes", "atv", "atvs", "all terrain vehicle", "all terrain vehicles",):
+            return "quad_bikes"
+        
         if n in ("vehicle", "vehicles", "motor vehicle", "motor vehicles"):
             return "vehicles"
 
@@ -322,6 +338,11 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         {"key": "buildings", "label": "Buildings"},
         {"key": "plant_machinery", "label": "Plant and Machinery"},
         {"key": "vehicles", "label": "Vehicles"},
+        {"key": "motorcycles", "label": "Motorcycles"},
+        {"key": "bicycles", "label": "Bicycles"},
+        {"key": "scooters", "label": "Scooters"},
+        {"key": "quad_bikes", "label": "Quad Bikes"},
+        {"key": "heavy_vehicles", "label": "Heavy Vehicles"},
         {"key": "heavy_vehicles", "label": "Heavy Vehicles"},
         {"key": "construction_equipment", "label": "Construction Equipment"},
         {"key": "mining_equipment", "label": "Mining Equipment"},
@@ -824,26 +845,45 @@ def build_ppe_note_export_payload(note, payload):
                     rows = sec.get("rows") or sec.get("lines") or []
                     break
 
+    summary_rows = payload.get("comparison_summary_rows") or []
+
+    sections = []
+
+    if summary_rows:
+        sections.append({
+            "title": "Property, plant and equipment summary",
+            "rows": summary_rows,
+            "columns": payload.get("comparison_columns") or [],
+            "amount_keys": [
+                c["key"]
+                for c in (payload.get("comparison_columns") or [])
+            ],
+            "amount_labels": {
+                c["key"]: c["label"]
+                for c in (payload.get("comparison_columns") or [])
+            },
+        })
+
+    if rows:
+        sections.append({
+            "title": "Property, plant and equipment movement",
+            "rows": rows,
+            "columns": payload.get("columns") or [],
+            "amount_keys": [
+                c["key"]
+                for c in (payload.get("columns") or [])
+            ],
+            "amount_labels": {
+                c["key"]: c["label"]
+                for c in (payload.get("columns") or [])
+            },
+        })
+
     return {
         "title": note.get("note_title") or "Property, plant and equipment",
         "text": note.get("content_text") or note.get("system_draft") or "",
-        "sections": [
-            {
-                "title": "Property, plant and equipment movement",
-                "rows": rows,
-                "columns": payload.get("columns") or [],
-                "amount_keys": [
-                    c["key"]
-                    for c in (payload.get("columns") or [])
-                ],
-                "amount_labels": {
-                    c["key"]: c["label"]
-                    for c in (payload.get("columns") or [])
-                },
-            }
-        ] if rows else [],
+        "sections": sections,
     }
-
 
 def build_revenue_note_export_payload(policy_note, disclosure_data):
     d = disclosure_data or {}

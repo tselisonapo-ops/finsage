@@ -3,7 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any, Dict, List, Tuple
 
-from flask import Response
+from flask import Response, request
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
@@ -12,13 +12,12 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.platypus import KeepTogether
 from xml.sax.saxutils import escape
 from BackEnd.Services.vat_pack_pdf_builder import _add_brand_header
-
 
 THIN = Side(style="thin", color="D9E2F3")
 HEADER_FILL = PatternFill("solid", fgColor="D9EAF7")
@@ -290,6 +289,58 @@ def _pretty_date(v):
     except Exception:
         return str(v)
 
+def _year_from_period(period):
+    if not isinstance(period, dict):
+        return None
+    to = period.get("to")
+    if not to:
+        return None
+    return str(to)[:4]
+
+
+def _ias_export_columns(meta, cols):
+    meta = meta or {}
+    cols = cols or []
+
+    cur_year = _year_from_period(meta.get("period"))
+
+    comparison_periods = meta.get("comparison_periods") or []
+    prior_period = meta.get("prior_period")
+
+    year_by_key = {}
+
+    if cur_year:
+        year_by_key["cur"] = cur_year
+
+    if isinstance(prior_period, dict):
+        y = _year_from_period(prior_period)
+        if y:
+            year_by_key["pri"] = y
+
+    for idx, p in enumerate(comparison_periods or [], start=1):
+        key = p.get("key") or ("pri" if idx == 1 else f"p{idx}")
+        y = _year_from_period({"to": p.get("to")})
+        if y:
+            year_by_key[key] = y
+
+    out = []
+
+    for c in cols:
+        key = c.get("key")
+
+        # ✅ Do not show variance column in IAS-style exports
+        if key in ("delta", "variance", "movement"):
+            continue
+
+        label = year_by_key.get(key) or c.get("label") or key
+
+        # fallback labels
+        if str(label).lower() in ("current", "amount"):
+            label = cur_year or label
+
+        out.append({**c, "label": label})
+
+    return out
 
 def _ias_period_label(meta):
     stmt = str((meta or {}).get("statement") or "").lower()
@@ -558,6 +609,92 @@ def _xlsx_apply_row_style(ws, row_idx: int, row_type: str, max_col: int):
         cell = ws.cell(row=row_idx, column=c)
         cell.border = Border(top=THIN, bottom=THIN, left=THIN, right=THIN)
 
+def build_pnl_export_summary_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Converts detailed P&L payload into IAS 1-style summary payload for exports.
+    Keeps the same columns/comparisons, but removes account-level detail.
+    """
+
+    if not isinstance(payload, dict):
+        return payload
+
+    meta = dict(payload.get("meta") or {})
+    if str(meta.get("statement") or "").lower() not in ("pnl", "income_statement", "profit_loss"):
+        return payload
+
+    sections = payload.get("sections") or []
+    if not isinstance(sections, list):
+        return payload
+
+    by_key = {
+        str(s.get("key") or "").lower(): s
+        for s in sections
+        if isinstance(s, dict)
+    }
+
+    def vals(*keys):
+        for key in keys:
+            sec = by_key.get(key)
+            if sec and isinstance(sec.get("totals"), dict):
+                return dict(sec.get("totals") or {})
+        return {}
+
+    def row(key, label, values, row_type="normal"):
+        return {
+            "key": key,
+            "label": label,
+            "values": values or {},
+            "row_type": row_type,
+        }
+
+    rows = []
+
+    rows.append(row("revenue", "Revenue", vals("revenue"), "normal"))
+
+    cogs_vals = vals("cogs", "cost_of_sales", "cost_of_revenue")
+    if cogs_vals:
+        rows.append(row("cost_of_sales", "Cost of sales", cogs_vals, "normal"))
+
+    gross_vals = vals("gross_profit")
+    if gross_vals:
+        rows.append(row("gross_profit", "Gross profit", gross_vals, "subtotal"))
+
+    exp_vals = vals("operating_expenses", "expenses")
+    if exp_vals:
+        rows.append(row("operating_expenses", "Operating expenses", exp_vals, "normal"))
+
+    op_vals = vals("operating_profit", "operating_income")
+    if op_vals:
+        rows.append(row("operating_profit", "Operating profit", op_vals, "subtotal"))
+
+    other_vals = vals("other", "other_income", "other_income_expense")
+    if other_vals:
+        rows.append(row("other_income_expense", "Other income/(expense)", other_vals, "normal"))
+
+    pbt_vals = vals("profit_before_tax")
+    if pbt_vals:
+        rows.append(row("profit_before_tax", "Profit before tax", pbt_vals, "subtotal"))
+
+    tax_vals = vals("tax", "income_tax")
+    if tax_vals:
+        rows.append(row("income_tax", "Income tax expense", tax_vals, "normal"))
+
+    net = payload.get("net_result") or {}
+    net_vals = dict(net.get("values") or {})
+    if net_vals:
+        rows.append(row("profit_for_the_year", net.get("label") or "Profit for the year", net_vals, "total"))
+
+    out = dict(payload)
+    out["rows"] = rows
+    out["sections"] = []
+    out.setdefault("meta", {})
+    out["meta"] = {
+        **meta,
+        "statement_title": "Statement of Profit or Loss",
+        "export_layout": "ias1_summary_pnl",
+    }
+
+    return out
 
 def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xlsx") -> Response:
     meta = payload.get("meta") or {}
@@ -571,10 +708,7 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     cols = _payload_columns(payload)
 
     # ✅ Apply single-column rename BEFORE flatten
-    if len(cols) == 1:
-        cols[0]["label"] = "Amount"
-
-    cols = _payload_columns(payload)
+    cols = _ias_export_columns(meta, _payload_columns(payload))
 
     if len(cols) == 1:
         cols[0]["label"] = "Amount"
@@ -727,20 +861,26 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
     )
 
 def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf") -> Response:
+    original_payload = payload
     meta = payload.get("meta") or {}
+
+    if str(meta.get("statement") or "").lower() in ("pnl", "income_statement", "profit_loss"):
+        payload = build_pnl_export_summary_payload(payload)
+        meta = payload.get("meta") or {}
     title = _statement_title(meta)
     company_name = meta.get("company_name") or ""
     currency = meta.get("currency") or ""
 
-    cols = _payload_columns(payload)
+    cols = _ias_export_columns(meta, _payload_columns(payload))
+
     if len(cols) == 1:
         cols[0] = {**cols[0], "label": "Amount"}
-
+        
     payload = {**payload, "columns": cols}
     _, flat_rows = _flatten_payload(payload)
     col_keys = [c.get("key") for c in cols]
 
-    wide_table = len(cols) > 4
+    wide_table = len(cols) > 6
     page_size = landscape(A4) if wide_table else A4
     page_width_mm = 260 if wide_table else 174
 
@@ -829,6 +969,37 @@ def export_statement_pdf(payload: Dict[str, Any], filename: str = "statement.pdf
 
     if tbl:
         story.append(tbl)
+
+    include_detail = str(
+        (payload.get("meta") or {}).get("include_detail_export")
+        or request.args.get("include_detail")
+        or ""
+    ).lower() in {"1", "true", "yes"}
+
+    if include_detail and str((payload.get("meta") or {}).get("statement") or "").lower() in ("pnl", "income_statement", "profit_loss"):
+        story.append(PageBreak())
+        detail_payload = dict(original_payload)
+        detail_payload.setdefault("meta", {})
+        detail_payload["meta"] = {
+            **(detail_payload.get("meta") or {}),
+            "statement_title": "Detailed Profit or Loss",
+        }
+
+        detail_cols = _ias_export_columns(detail_payload.get("meta") or {}, _payload_columns(detail_payload))
+        detail_payload = {**detail_payload, "columns": detail_cols}
+        _, detail_rows = _flatten_payload(detail_payload)
+        detail_col_keys = [c.get("key") for c in detail_cols]
+        detail_labels = {c.get("key"): c.get("label") or c.get("key") for c in detail_cols}
+
+        story.append(Paragraph("DETAILED PROFIT OR LOSS", title_style))
+        detail_tbl = _financial_table(
+            detail_rows,
+            detail_col_keys,
+            amount_labels=detail_labels,
+            page_width_mm=page_width_mm,
+        )
+        if detail_tbl:
+            story.append(detail_tbl)
 
     # ✅ SOCIE comparison statements: render each comparison as its own table
     comparison_statements = payload.get("comparison_statements") or []
