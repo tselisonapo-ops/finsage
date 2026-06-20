@@ -10756,15 +10756,41 @@ window.loadCompanyProfile = loadCompanyProfile;
         defaults.subtitle
       )}
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label class="block text-[11px] text-slate-500 mb-1">Name</label>
           <input name="name" class="w-full border rounded px-3 py-2 text-sm" required />
         </div>
 
         <div>
+          <label class="block text-[11px] text-slate-500 mb-1">Organisation Type</label>
+          <select
+            name="organizationType"
+            class="w-full border rounded px-3 py-2 text-sm bg-white"
+            required
+          >
+            <option value="">Select organisation type</option>
+            <option value="private_company">Private Company</option>
+            <option value="public_company">Public Company</option>
+            <option value="sole_trader">Sole Trader</option>
+            <option value="partnership">Partnership</option>
+            <option value="trust">Trust</option>
+            <option value="npo">NPO</option>
+            <option value="ngo">NGO</option>
+            <option value="body_corporate">Body Corporate</option>
+            <option value="club_association">Club / Association</option>
+            <option value="government_entity">Government Entity</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div>
           <label class="block text-[11px] text-slate-500 mb-1">Country</label>
-          <input name="country" class="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. ZA" />
+          <input
+            name="country"
+            class="w-full border rounded px-3 py-2 text-sm"
+            placeholder="e.g. ZA"
+          />
         </div>
 
         <div>
@@ -11020,7 +11046,8 @@ window.loadCompanyProfile = loadCompanyProfile;
       "Auto Electrical",
       "Tyre & Fitment",
       "Panel Beating",
-      "Spray Painting"
+      "Spray Painting",
+      "Parts & Spares"
     ],
 
     "Body Corporate": [],
@@ -11220,6 +11247,7 @@ window.loadCompanyProfile = loadCompanyProfile;
           subtitle: "Create a related legal entity and link it as a subsidiary.",
           relationship_type: "subsidiary",
           entity_kind: "company",
+          organizationType: "private_company",
           control_basis: "control",
           consolidation_method: "full",
           showOwnership: true,
@@ -11231,6 +11259,7 @@ window.loadCompanyProfile = loadCompanyProfile;
           subtitle: "Create a related legal entity and link it as a joint venture.",
           relationship_type: "joint_venture",
           entity_kind: "company",
+          organizationType: "private_company",
           control_basis: "joint_control",
           consolidation_method: "equity",
           showOwnership: true,
@@ -11242,6 +11271,7 @@ window.loadCompanyProfile = loadCompanyProfile;
           subtitle: "Create a related legal entity and link it as an associate.",
           relationship_type: "associate",
           entity_kind: "company",
+          organizationType: "private_company",
           control_basis: "significant_influence",
           consolidation_method: "equity",
           showOwnership: true,
@@ -11253,6 +11283,7 @@ window.loadCompanyProfile = loadCompanyProfile;
           subtitle: "Use this where the branch has its own legal or tax identity.",
           relationship_type: "branch",
           entity_kind: "branch_entity",
+          organizationType: "private_company",
           control_basis: "direct_branch",
           consolidation_method: "none",
           showOwnership: false,
@@ -11264,6 +11295,7 @@ window.loadCompanyProfile = loadCompanyProfile;
           subtitle: "",
           relationship_type: "subsidiary",
           entity_kind: "company",
+          organizationType: "private_company",
           control_basis: "",
           consolidation_method: "",
           showOwnership: true,
@@ -11362,7 +11394,11 @@ window.loadCompanyProfile = loadCompanyProfile;
     const entityKind = form.querySelector('[name="entity_kind"]');
     const own = form.querySelector('[name="ownership_percent"]');
     const vote = form.querySelector('[name="voting_percent"]');
+    const orgType = form.querySelector('[name="organizationType"]');
 
+    if (orgType && !orgType.value) {
+      orgType.value = defaults.organizationType || "private_company";
+    }
     if (control) control.value = defaults.control_basis || "";
     if (method) method.value = defaults.consolidation_method || "";
     if (rel) rel.value = defaults.relationship_type || "";
@@ -11419,6 +11455,10 @@ window.loadCompanyProfile = loadCompanyProfile;
 
     if (!payload.name) {
       alert("Name is required.");
+      return;
+    }
+    if (!payload.organizationType) {
+      alert("Organisation type is required.");
       return;
     }
     if (!payload.industry) {

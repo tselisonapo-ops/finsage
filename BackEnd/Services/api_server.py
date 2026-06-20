@@ -3160,6 +3160,20 @@ def create_related_company(parent_company_id: int):
             data,
         )
 
+        data.setdefault(
+            "organizationType",
+            data.get("organisationType")
+            or data.get("organization_type")
+            or data.get("organisation_type")
+            or "private_company"
+        )
+
+        if relationship_type == "branch":
+            data.setdefault("entity_kind", "branch_entity")
+            data.setdefault("organizationType", "private_company")
+        else:
+            data.setdefault("organizationType", "private_company")
+
         company_result = create_company_record_from_payload(
             data=data,
             owner_user_id=current_user["id"] if auto_membership else None,

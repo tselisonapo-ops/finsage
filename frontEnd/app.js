@@ -67,7 +67,8 @@ const INDUSTRY_CATALOG = {
     "Auto Electrical",
     "Tyre & Fitment",
     "Panel Beating",
-    "Spray Painting"
+    "Spray Painting",
+    "Parts & Spares"
   ],
 
   "Body Corporate": [],

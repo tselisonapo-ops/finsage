@@ -46,6 +46,13 @@ SUB_INDUSTRY_ALIASES = {
     "social club": "Social Club",
     "professionalassociation": "Professional Association",
     "professional association": "Professional Association",
+
+    "partsandspares": "Parts & Spares",
+    "parts spares": "Parts & Spares",
+    "parts & spares": "Parts & Spares",
+    "parts_spares": "Parts & Spares",
+    "spares": "Parts & Spares",
+    "automotive spares": "Parts & Spares",
 }
 
 
@@ -112,6 +119,7 @@ PROJECT_MATERIAL_SUB_INDUSTRIES = {
     "networking_infrastructure",
     "freight_logistics",
     "courier_last_mile",
+    "parts_spares",
 }
 
 
@@ -260,5 +268,8 @@ def project_work_unit_label(
 
     if sub_slug in {"repair_workshop", "vehicle_repairs", "panel_beating"}:
         return "Job Card / Work Order"
+
+    if sub_slug in {"parts_spares"}:
+        return "Parts Order / Sale"
 
     return "Project / Job"

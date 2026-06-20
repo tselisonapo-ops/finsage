@@ -147,6 +147,16 @@ def ensure_customer_workspace(
             or customer.get("name")
             or "Company"
         ),
+        "organizationType": (
+            onboarding_data.get("organizationType")
+            or onboarding_data.get("organisationType")
+            or onboarding_data.get("organization_type")
+            or onboarding_data.get("organisation_type")
+            or customer.get("organization_type")
+            or customer.get("organisation_type")
+            or customer.get("entity_type")
+            or ""
+        ),
         "country": (
             onboarding_data.get("country")
             or customer.get("country")
@@ -217,6 +227,8 @@ def ensure_customer_workspace(
     missing = []
     if not (company_payload.get("companyName") or "").strip():
         missing.append("companyName")
+    if not (company_payload.get("organizationType") or "").strip():
+        missing.append("organizationType")
     if not (company_payload.get("country") or "").strip():
         missing.append("country")
     if not (company_payload.get("industry") or "").strip():

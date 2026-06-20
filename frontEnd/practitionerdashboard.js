@@ -4117,7 +4117,8 @@ const INDUSTRY_CATALOG = {
     "Auto Electrical",
     "Tyre & Fitment",
     "Panel Beating",
-    "Spray Painting"
+    "Spray Painting",
+    "Parts & Spares"
   ],
 
   "Body Corporate": [],
@@ -4243,6 +4244,35 @@ const INDUSTRY_CATALOG = {
     "Professional Association"
   ],
 };
+
+const ORGANISATION_TYPE_OPTIONS = [
+  "Private Company",
+  "Public Company",
+  "Sole Trader",
+  "Partnership",
+  "NGO / Non-Profit",
+  "NPO",
+  "Trust",
+  "Co-operative",
+  "Body Corporate",
+  "Club / Association",
+  "Government Entity",
+  "Other",
+];
+
+function populateEngOrganisationTypeOptions(selectedValue = "") {
+  const el = document.getElementById("engOrganisationType");
+  if (!el) return;
+
+  el.innerHTML = `
+    <option value="">Select organisation type</option>
+    ${ORGANISATION_TYPE_OPTIONS.map((v) => `
+      <option value="${escapeHtml(v)}" ${v === selectedValue ? "selected" : ""}>
+        ${escapeHtml(v)}
+      </option>
+    `).join("")}
+  `;
+}
 
 const WORKSPACE_REQUIRED_ENGAGEMENT_TYPES = new Set([
   "bookkeeping",
@@ -5394,6 +5424,7 @@ function resetEngagementModalForm() {
     "engSubIndustry",
     "engCountry",
     "engCurrency",
+    "engOrganisationType",
   ];
 
   ids.forEach((id) => {
@@ -5440,7 +5471,8 @@ function getEffectiveCustomerWorkspaceDefaults(customer) {
       fin_year_start: "",
       currency: "",
       industry: "",
-      sub_industry: ""
+      sub_industry: "",
+      organisation_type: ""
     };
   }
 
@@ -5449,7 +5481,8 @@ function getEffectiveCustomerWorkspaceDefaults(customer) {
     fin_year_start: String(customer.fin_year_start || "").trim(),
     currency: String(customer.currency || "").trim(),
     industry: String(customer.industry || "").trim(),
-    sub_industry: String(customer.sub_industry || "").trim()
+    sub_industry: String(customer.sub_industry || "").trim(),
+    organisation_type: String(customer.organisation_type || customer.organization_type || "").trim(),
   };
 }
 
@@ -5492,13 +5525,20 @@ function readEngagementModalPayload() {
       document.getElementById("engFinancialYearStart")?.value?.trim() ||
       customerDefaults.fin_year_start ||
       null,
-
+    organisation_type:
+      document.getElementById("engOrganisationType")?.value?.trim() ||
+      customerDefaults.organisation_type ||
+      "",
     // add this from the start so TS knows it exists
     target_company: null
   };
 
   if (requiresWorkspace) {
     payload.target_company = {
+      organisation_type:
+        document.getElementById("engOrganisationType")?.value?.trim() ||
+        customerDefaults.organisation_type ||
+        "",
       country:
         document.getElementById("engCountry")?.value?.trim() ||
         customerDefaults.country ||
@@ -5641,6 +5681,21 @@ function toggleEngagementWorkspaceSetup() {
   const industryEl = document.getElementById("engIndustry");
   const subIndustryEl = document.getElementById("engSubIndustry");
 
+  const organisationTypeEl = document.getElementById("engOrganisationType");
+  populateEngOrganisationTypeOptions?.();
+
+  if (shouldShow && customer) {
+    if (organisationTypeEl && !organisationTypeEl.value) {
+      const orgType =
+        customer.organisation_type ||
+        customer.organization_type ||
+        customer.entity_type ||
+        "";
+      populateEngOrganisationTypeOptions(orgType);
+      organisationTypeEl.value = orgType;
+    }
+  }
+
   if (targetCompanyEl) {
     targetCompanyEl.value = customer?.company_master_id || "";
   }
@@ -5685,7 +5740,7 @@ function toggleEngagementWorkspaceSetup() {
   if (finYearStartEl) finYearStartEl.value = "";
   if (currencyEl) currencyEl.value = "";
   if (industryEl) industryEl.value = "";
-
+  if (organisationTypeEl) organisationTypeEl.value = "";
   if (subIndustryEl) {
     subIndustryEl.innerHTML = `<option value="">Select sub-industry</option>`;
     subIndustryEl.value = "";
@@ -5756,6 +5811,11 @@ function validateEngagementPayload(payload) {
       const subIndustry = String(payload?.target_company?.sub_industry || "").trim();
       const finYearStart = String(payload?.financial_year_start || "").trim();
 
+      const organisationType = String(payload?.target_company?.organisation_type || "").trim();
+
+      if (!organisationType) {
+        return "Organisation type is required to create or complete workspace setup for this engagement.";
+      }
       if (!country) return "Country is required to create or complete workspace setup for this engagement.";
       if (!finYearStart) return "Financial year start is required to create or complete workspace setup for this engagement.";
       if (!currency) return "Currency is required to create or complete workspace setup for this engagement.";
@@ -5784,7 +5844,7 @@ async function handleCreateEngagementSubmit() {
       if (!(workspace.currency || "").trim()) missing.push("currency");
       if (!(workspace.industry || "").trim()) missing.push("industry");
       if (!(workspace.sub_industry || "").trim()) missing.push("sub-industry");
-
+      if (!(workspace.organisation_type || "").trim()) missing.push("organisation type");
       if (missing.length) {
         setEngagementModalMsg(`Please complete: ${missing.join(", ")}.`, "error");
         return;

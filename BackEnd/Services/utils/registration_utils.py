@@ -54,6 +54,14 @@ def create_company_record_from_payload(
     vat            = data.get("vat")
     company_email  = data.get("companyEmail")
 
+    organization_type = (
+        data.get("organizationType")
+        or data.get("organisationType")
+        or data.get("organization_type")
+        or data.get("organisation_type")
+        or ""
+    ).strip().lower()
+
     ok, errors = validate_company_payload({
         "country": country,
         "companyRegNo": company_reg_no,
@@ -63,6 +71,27 @@ def create_company_record_from_payload(
     })
     if not ok:
         raise ValueError({"errors": errors})
+
+    ALLOWED_ORGANIZATION_TYPES = {
+        "private_company",
+        "public_company",
+        "sole_trader",
+        "partnership",
+        "ngo",
+        "npo",
+        "trust",
+        "cooperative",
+        "body_corporate",
+        "club_association",
+        "government_entity",
+        "other",
+    }
+
+    if not organization_type:
+        raise ValueError("Organisation type is required.")
+
+    if organization_type not in ALLOWED_ORGANIZATION_TYPES:
+        raise ValueError("Invalid organisation type selected.")
 
     industry = None
     sub_industry = None
@@ -146,6 +175,7 @@ def create_company_record_from_payload(
 
     company_id = db_service.insert_company(
         name=company_name,
+        organization_type=organization_type,
         client_code=data.get("clientCode") or f"C{int(time.time())}",
         industry=industry,
         sub_industry=sub_industry,
@@ -218,6 +248,7 @@ def create_company_record_from_payload(
 
     return {
         "company_id": company_id,
+        "organization_type": organization_type,
         "industry": industry,
         "sub_industry": sub_industry,
         "industry_slug": industry_slug,
