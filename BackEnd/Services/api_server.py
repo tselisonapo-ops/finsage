@@ -3440,6 +3440,10 @@ def api_get_company(company_id: int):
                 c.currency,
                 c.fin_year_start,
                 c.company_reg_date,
+                c.first_reporting_period_start,
+                c.financial_year_end_month,
+                c.financial_year_end_day,
+                c.reporting_period_locked,
 
                 c.company_reg_no,
                 c.tin,

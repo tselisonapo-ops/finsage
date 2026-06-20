@@ -39,6 +39,23 @@ def clamp_future(d: Optional[date]) -> Optional[date]:
         return None
     return min(d, date.today())  # ✅ compute "today" at runtime
 
+def company_fin_year_start_from_ctx(ctx: dict) -> Optional[date]:
+    """
+    Priority:
+    1) New reporting year-end fields
+    2) Old fin_year_start from company registration
+    """
+    try:
+        end_month = int(ctx.get("financial_year_end_month") or 0)
+        end_day = int(ctx.get("financial_year_end_day") or 0)
+
+        if 1 <= end_month <= 12 and 1 <= end_day <= 31:
+            fy_end = date(2000, end_month, end_day)
+            return fy_end + timedelta(days=1)
+    except Exception:
+        pass
+
+    return parse_date_maybe(ctx.get("fin_year_start"))
 
 def resolve_company_period(
     db_service,
@@ -57,7 +74,7 @@ def resolve_company_period(
     """
 
     ctx = get_company_context(db_service, company_id) or {}
-    fy = parse_date_maybe(ctx.get("fin_year_start"))
+    fy = company_fin_year_start_from_ctx(ctx)
 
     preset_raw = (request.args.get("preset") or "").strip().lower()
     preset = preset_raw or "this_year"
@@ -76,7 +93,15 @@ def resolve_company_period(
                 "preset": None,
                 "label": f"As at {as_of.isoformat()}",
                 "period": {"from": None, "to": as_of.isoformat()},
-                "fin_year_start": ctx.get("fin_year_start"),
+
+                "fin_year_start": fy.isoformat() if fy else ctx.get("fin_year_start"),
+                "first_reporting_period_start": (
+                    ctx.get("first_reporting_period_start").isoformat()
+                    if hasattr(ctx.get("first_reporting_period_start"), "isoformat")
+                    else ctx.get("first_reporting_period_start")
+                ),
+                "financial_year_end_month": ctx.get("financial_year_end_month"),
+                "financial_year_end_day": ctx.get("financial_year_end_day"),
             }
             return None, as_of, meta
 
@@ -92,8 +117,20 @@ def resolve_company_period(
         meta = {
             "preset": pr.get("preset"),
             "label": pr.get("label"),
-            "period": {"from": None, "to": pr["to"].isoformat()},
-            "fin_year_start": ctx.get("fin_year_start"),
+            "period": {
+                "from": pr["from"].isoformat(),
+                "to": pr["to"].isoformat()
+            },
+
+            # debugging / reporting metadata
+            "fin_year_start": fy.isoformat() if fy else ctx.get("fin_year_start"),
+            "first_reporting_period_start": (
+                ctx.get("first_reporting_period_start").isoformat()
+                if hasattr(ctx.get("first_reporting_period_start"), "isoformat")
+                else ctx.get("first_reporting_period_start")
+            ),
+            "financial_year_end_month": ctx.get("financial_year_end_month"),
+            "financial_year_end_day": ctx.get("financial_year_end_day"),
         }
         return None, pr["to"], meta
 
@@ -161,7 +198,7 @@ def resolve_compare_period(db_service, company_id: int, meta: Dict[str, Any], co
       - for as_of mode: prior_as_of
     """
     ctx = get_company_context(db_service, company_id) or {}
-    fy = parse_date_maybe(ctx.get("fin_year_start"))
+    fy = company_fin_year_start_from_ctx(ctx)
 
     preset = (meta or {}).get("preset") or "this_year"
 
@@ -234,7 +271,7 @@ def resolve_compare_period(db_service, company_id: int, meta: Dict[str, Any], co
 
 def resolve_compare_range(db_service, company_id: int, meta: dict, compare: str):
     ctx = get_company_context(db_service, company_id) or {}
-    fy = parse_date_maybe(ctx.get("fin_year_start"))
+    fy = company_fin_year_start_from_ctx(ctx)
 
     preset = (meta or {}).get("preset") or "this_year"
     cur = (meta or {}).get("period") or {}
