@@ -12863,12 +12863,24 @@ function bindAnalysisWidgetTabs() {
     btn.dataset.bound = "1";
 
     btn.addEventListener("click", async () => {
-      window.__FS_ANALYSIS_VIEW__ = btn.dataset.analysisView || "cash";
+      const view = btn.dataset.analysisView || "cash";
+
+      window.__FS_ANALYSIS_VIEW__ = view;
+
+      setAnalysisTabState(view);
+      renderAnalysisDots(view);
+      resetAnalysisProgress();
+
       await renderAnalysisWidget(CURRENT_PERIOD_KEY || "this_month");
+
+      startAnalysisAutoRotation();
     });
   });
 
-  setAnalysisTabState(window.__FS_ANALYSIS_VIEW__ || "cash");
+  const activeView = window.__FS_ANALYSIS_VIEW__ || "cash";
+
+  setAnalysisTabState(activeView);
+  renderAnalysisDots(activeView);
 }
 
 async function getDashboardSnapshot(periodKey = "this_month") {
@@ -13293,6 +13305,96 @@ window.renderProfitTrendChart = renderProfitTrendChart;
 window.renderMarginTrendChart = renderMarginTrendChart;
 window.renderAnalysisSummaryPanel = renderAnalysisSummaryPanel;
 
+const ANALYSIS_AUTO_VIEWS = ["cash", "revexp", "profit", "margin", "analysis"];
+
+let analysisAutoTimer = null;
+let analysisProgressTimer = null;
+let analysisAutoIndex = 0;
+let analysisProgressValue = 0;
+
+function renderAnalysisDots(activeView) {
+  const dots = document.getElementById("analysisCarouselDots");
+  if (!dots) return;
+
+  dots.innerHTML = ANALYSIS_AUTO_VIEWS.map(view => {
+    const active = view === activeView;
+    return `
+      <span class="inline-block rounded-full transition-all"
+            style="
+              width:${active ? "18px" : "7px"};
+              height:7px;
+              background:${active ? "var(--fs-teal)" : "#cbd5e1"};
+            ">
+      </span>
+    `;
+  }).join("");
+}
+
+function resetAnalysisProgress() {
+  analysisProgressValue = 0;
+
+  const bar = document.getElementById("analysisProgress");
+  if (bar) bar.style.width = "0%";
+
+  clearInterval(analysisProgressTimer);
+
+  analysisProgressTimer = setInterval(() => {
+    analysisProgressValue += 2;
+
+    const progressBar = document.getElementById("analysisProgress");
+    if (progressBar) {
+      progressBar.style.width = `${Math.min(analysisProgressValue, 100)}%`;
+    }
+
+    if (analysisProgressValue >= 100) {
+      clearInterval(analysisProgressTimer);
+    }
+  }, 80);
+}
+
+async function switchAnalysisViewAuto(view) {
+  window.__FS_ANALYSIS_VIEW__ = view;
+  setAnalysisTabState(view);
+  renderAnalysisDots(view);
+  resetAnalysisProgress();
+
+  const periodKey = document.getElementById("fsPeriodFilter")?.value || "this_month";
+  await renderAnalysisWidget(periodKey);
+}
+
+function startAnalysisAutoRotation() {
+  clearInterval(analysisAutoTimer);
+  clearInterval(analysisProgressTimer);
+
+  const currentView = window.__FS_ANALYSIS_VIEW__ || "cash";
+  analysisAutoIndex = Math.max(0, ANALYSIS_AUTO_VIEWS.indexOf(currentView));
+
+  renderAnalysisDots(currentView);
+  resetAnalysisProgress();
+
+  analysisAutoTimer = setInterval(async () => {
+    analysisAutoIndex = (analysisAutoIndex + 1) % ANALYSIS_AUTO_VIEWS.length;
+    await switchAnalysisViewAuto(ANALYSIS_AUTO_VIEWS[analysisAutoIndex]);
+  }, 4000);
+}
+
+function stopAnalysisAutoRotation() {
+  clearInterval(analysisAutoTimer);
+  clearInterval(analysisProgressTimer);
+}
+
+function bindAnalysisAutoRotationPause() {
+  const card = document.getElementById("analysisChartWrap")?.closest(".card");
+  if (!card) return;
+
+  card.addEventListener("mouseenter", stopAnalysisAutoRotation);
+  card.addEventListener("mouseleave", startAnalysisAutoRotation);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  bindAnalysisAutoRotationPause();
+  startAnalysisAutoRotation();
+});
 
 async function renderDashboardInsights(periodKey = "this_month") {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
