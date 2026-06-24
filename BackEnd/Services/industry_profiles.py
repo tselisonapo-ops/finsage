@@ -143,6 +143,70 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
     },
 
     # -----------------------------
+    # Design & Creative Services
+    # -----------------------------
+
+    "Interior Design": {
+        "pnl_layout": "project_wip",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+    },
+
+    "Architecture": {
+        "pnl_layout": "project_wip",
+        "is_service_only": False,
+        "uses_inventory": False,
+        "uses_cogs": True,
+        "default_inventory_mode": "none",
+        "default_valuation": None,
+    },
+
+    "Graphic Design": {
+        "pnl_layout": "service_gross_margin",
+        "is_service_only": True,
+        "uses_inventory": False,
+        "uses_cogs": True,
+        "default_inventory_mode": "none",
+        "default_valuation": None,
+        "pnl_labels": {
+            "cogs": "Production costs"
+        },
+    },
+
+    "Advertising Agency": {
+        "pnl_layout": "service_gross_margin",
+        "is_service_only": False,
+        "uses_inventory": False,
+        "uses_cogs": True,
+        "default_inventory_mode": "none",
+        "default_valuation": None,
+        "pnl_labels": {
+            "cogs": "Campaign costs"
+        },
+    },
+
+    "Creative Studio": {
+        "pnl_layout": "service_gross_margin",
+        "is_service_only": False,
+        "uses_inventory": False,
+        "uses_cogs": True,
+        "default_inventory_mode": "none",
+        "default_valuation": None,
+    },
+
+    "Landscape Design": {
+        "pnl_layout": "project_wip",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+    },
+
+    # -----------------------------
     # Uses inventory (MUST have defaults)
     # -----------------------------
     "Private School": {
@@ -288,6 +352,48 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "pos_mode": "retail",
     },
 
+    "Personal Care & Beauty Services": {
+        "pnl_layout": "trading_hunter",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+        "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Service consumables & product costs"},
+    },
+
+    "Health & Fitness": {
+        "pnl_layout": "service_gross_margin",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+        "pos_mode": "retail",
+        "pnl_labels": {"cogs": "Trainer, class & product costs"},
+    },
+
+    "Education & Training": {
+        "pnl_layout": "service_gross_margin",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+        "pnl_labels": {"cogs": "Training delivery costs"},
+    },
+
+    "Cleaning Services": {
+        "pnl_layout": "service_gross_margin",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+        "pnl_labels": {"cogs": "Cleaning job costs"},
+    },
+
     "Logistics & Transport": {
         "pnl_layout": "service_gross_margin",
         "is_service_only": False,
@@ -296,6 +402,38 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pnl_labels": {"cogs": "Cost of revenue"},
+    },
+
+    "Personal Trainer": {
+        "pnl_layout": "service_simple",
+        "is_service_only": True,
+        "uses_inventory": False,
+        "uses_cogs": True,
+        "default_inventory_mode": "none",
+        "default_valuation": None,
+        "pnl_labels": {"cogs": "Training delivery costs"},
+    },
+
+    "Tutoring Services": {
+        "pnl_layout": "service_simple",
+        "is_service_only": True,
+        "uses_inventory": False,
+        "uses_cogs": True,
+        "default_inventory_mode": "none",
+        "default_valuation": None,
+        "pnl_labels": {"cogs": "Tutor delivery costs"},
+    },
+    
+    "Design & Creative Services": {
+        "pnl_layout": "project_wip",
+        "is_service_only": False,
+        "uses_inventory": True,
+        "uses_cogs": True,
+        "default_inventory_mode": "internal",
+        "default_valuation": "fifo",
+        "pnl_labels": {
+            "cogs": "Direct project costs"
+        },
     },
 
     # -----------------------------

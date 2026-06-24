@@ -11038,142 +11038,203 @@ window.loadCompanyProfile = loadCompanyProfile;
     `;
   }
 
-  const INDUSTRY_CATALOG = {
-    "Agriculture": [],
+const INDUSTRY_CATALOG = {
+  "Agriculture": [],
 
-    "Automotive Services": [
-      "Auto Repair Workshop",
-      "Auto Electrical",
-      "Tyre & Fitment",
-      "Panel Beating",
-      "Spray Painting",
-      "Parts & Spares"
-    ],
+  "Automotive Services": [
+    "Auto Repair Workshop",
+    "Auto Electrical",
+    "Tyre & Fitment",
+    "Panel Beating",
+    "Spray Painting",
+    "Parts & Spares"
+  ],
 
-    "Body Corporate": [],
+  "Body Corporate": [],
 
-    "Call Center": [],
+  "Call Center": [],
 
-    "Car Dealership": [
-      "New Vehicles",
-      "Used Vehicles",
-      "Motorcycle Dealership"
-    ],
+  "Car Dealership": [
+    "New Vehicles",
+    "Used Vehicles",
+    "Motorcycle Dealership"
+  ],
 
-    "Construction": [
-      "Residential Building Contractor",
-      "Civil Engineering",
-      "Electrical & Mechanical",
-      "Plumbing & Drainage",
-      "Roadworks"
-    ],
+  "Construction": [
+    "Residential Building Contractor",
+    "Civil Engineering",
+    "Electrical & Mechanical",
+    "Plumbing & Drainage",
+    "Roadworks"
+  ],
 
-    "Engineering & Technical": [
-      "Mechanical Engineering",
-      "Electrical Engineering",
-      "Industrial Engineering",
-      "Technical Services"
-    ],
+  "Engineering & Technical": [
+    "Mechanical Engineering",
+    "Electrical Engineering",
+    "Industrial Engineering",
+    "Technical Services"
+  ],
 
-    "Hospitality": [
-      "Hotel",
-      "Events & Catering",
-      "Guest House / Lodge"
-    ],
+  "Hospitality": [
+    "Hotel",
+    "Events & Catering",
+    "Guest House / Lodge"
+  ],
 
-    "IT & Technology": [
-      "Software Development",
-      "Managed IT Services",
-      "Networking & Infrastructure",
-      "Cybersecurity"
-    ],
+  "IT & Technology": [
+    "Software Development",
+    "Managed IT Services",
+    "Networking & Infrastructure",
+    "Cybersecurity"
+  ],
 
-    "Logistics & Transport": [
-      "Freight / Logistics",
-      "Courier / Last Mile",
-      "Public Transport",
-      "Fleet Services"
-    ],
+  "Logistics & Transport": [
+    "Freight / Logistics",
+    "Courier / Last Mile",
+    "Public Transport",
+    "Fleet Services"
+  ],
 
-    "Management Services": [],
+  "Management Services": [],
 
-    "Manufacturing": [
-      "Light Manufacturing",
-      "Fabrication",
-      "Food Processing"
-    ],
+  "Manufacturing": [
+    "Light Manufacturing",
+    "Fabrication",
+    "Food Processing"
+  ],
 
-    "Mining": [
-      "Open-Pit Mining",
-      "Underground Mining",
-      "Quarrying & Aggregates",
-      "Coal Mining",
-      "Gold & PGM Mining"
-    ],
+  "Mining": [
+    "Open-Pit Mining",
+    "Underground Mining",
+    "Quarrying & Aggregates",
+    "Coal Mining",
+    "Gold & PGM Mining"
+  ],
 
-    "NPO Education": [
-      "Primary Education",
-      "Higher Education"
-    ],
+  "NPO Education": [
+    "Primary Education",
+    "Higher Education"
+  ],
 
-    "Private School": [],
+  "Private School": [],
 
-    "NPO Healthcare": [
-      "Clinic",
-      "Hospital"
-    ],
+  "NPO Healthcare": [
+    "Clinic",
+    "Hospital"
+  ],
 
-    "NPO IT": [],
+  "NPO IT": [],
 
-    "NPO Transport": [],
+  "NPO Transport": [
+    "Fleet Services",
+    "Public Transport"
+  ],
 
-    "Private Healthcare": [
-      "GP Clinic",
-      "Specialist Practice",
-      "Dentistry"
-    ],
+  "Private Healthcare": [
+    "GP Clinic",
+    "Specialist Practice",
+    "Dentistry"
+  ],
 
-    "Professional Services": [
-      "Auditing & Accounting",
-      "Architecture",
-      "Legal Services",
-      "Engineering Consulting",
-      "HR & Recruitment",
-      "Business Consulting"
-    ],
+  "Professional Services": [
+    "Auditing & Accounting",
+    "Architecture",
+    "Legal Services",
+    "Engineering Consulting",
+    "HR & Recruitment",
+    "Business Consulting"
+  ],
 
-    "Property Management": [],
+  "Property Management": [],
 
-    "Restaurant": [
-      "Fast Food",
-      "Casual Dining",
-      "Fine Dining"
-    ],
+  "Restaurant": [
+    "Fast Food",
+    "Casual Dining",
+    "Fine Dining"
+  ],
 
-    "Retail & Wholesale": [
-      "Wholesale",
-      "E-commerce Retail",
-      "Brick & Mortar Retail"
-    ],
+  "Retail & Wholesale": [
+    "Wholesale",
+    "E-commerce Retail",
+    "Brick & Mortar Retail"
+  ],
 
-    "Security Services": [
-      "Guarding",
-      "Alarm Monitoring",
-      "Technical Security Systems"
-    ],
+  "Security Services": [
+    "Guarding",
+    "Alarm Monitoring",
+    "Technical Security Systems"
+  ],
 
-    "Transport": [
-      "Courier / Last Mile",
-      "Freight / Logistics",
-      "Public Transport"
-    ],
+  "Design & Creative Services": [
+    "Interior Design",
+    "Architecture",
+    "Graphic Design",
+    "Advertising Agency",
+    "Creative Studio",
+    "Landscape Design"
+  ],
 
-    "Clubs & Associations": [
-      "Sports Club",
-      "Social Club",
-      "Professional Association"
-    ],
-  };
+  "Personal Care & Beauty Services": [
+    "Hair Salon",
+    "Barber Shop",
+    "Nail Salon",
+    "Beauty Spa",
+    "Makeup Artist",
+    "Wellness & Massage",
+    "Tattoo Studio"
+  ],
+
+  "Health & Fitness": [
+    "Gym",
+    "Personal Trainer",
+    "Fitness Studio",
+    "CrossFit Box",
+    "Sports Academy"
+  ],
+
+  "Education & Training": [
+    "Training Provider",
+    "Skills Development",
+    "Driving School",
+    "Tutoring Services",
+    "Corporate Training"
+  ],
+
+  "Cleaning Services": [
+    "Residential Cleaning",
+    "Commercial Cleaning",
+    "Industrial Cleaning",
+    "Pest Control"
+  ],
+
+  "Media & Entertainment": [
+    "Content Creator",
+    "Podcast Studio",
+    "Photography",
+    "Videography",
+    "Film Production",
+    "Music Production"
+  ],
+
+  "Telecommunications": [
+    "Internet Service Provider",
+    "Mobile Network Operator",
+    "Pay TV Operator"
+  ],
+
+  "Transport": [
+    "Courier / Last Mile",
+    "Freight / Logistics",
+    "Public Transport"
+  ],
+
+  "Clubs & Associations": [
+    "Sports Club",
+    "Social Club",
+    "Professional Association",
+    "Recreational Association"
+  ]
+};
 
   function getSortedIndustries() {
     return Object.keys(INDUSTRY_CATALOG).sort((a, b) => a.localeCompare(b));

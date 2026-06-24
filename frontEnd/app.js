@@ -146,7 +146,10 @@ const INDUSTRY_CATALOG = {
 
   "NPO IT": [],
 
-  "NPO Transport": [],
+  "NPO Transport": [
+    "Fleet Services",
+    "Public Transport"
+  ],
 
   "Private Healthcare": [
     "GP Clinic",
@@ -183,16 +186,75 @@ const INDUSTRY_CATALOG = {
     "Technical Security Systems"
   ],
 
+  "Design & Creative Services": [
+    "Interior Design",
+    "Architecture",
+    "Graphic Design",
+    "Advertising Agency",
+    "Creative Studio",
+    "Landscape Design"
+  ],
+
+  "Personal Care & Beauty Services": [
+    "Hair Salon",
+    "Barber Shop",
+    "Nail Salon",
+    "Beauty Spa",
+    "Makeup Artist",
+    "Wellness & Massage",
+    "Tattoo Studio"
+  ],
+
+  "Health & Fitness": [
+    "Gym",
+    "Personal Trainer",
+    "Fitness Studio",
+    "CrossFit Box",
+    "Sports Academy"
+  ],
+
+  "Education & Training": [
+    "Training Provider",
+    "Skills Development",
+    "Driving School",
+    "Tutoring Services",
+    "Corporate Training"
+  ],
+
+  "Cleaning Services": [
+    "Residential Cleaning",
+    "Commercial Cleaning",
+    "Industrial Cleaning",
+    "Pest Control"
+  ],
+
+  "Media & Entertainment": [
+    "Content Creator",
+    "Podcast Studio",
+    "Photography",
+    "Videography",
+    "Film Production",
+    "Music Production"
+  ],
+
+  "Telecommunications": [
+    "Internet Service Provider",
+    "Mobile Network Operator",
+    "Pay TV Operator"
+  ],
+
   "Transport": [
     "Courier / Last Mile",
     "Freight / Logistics",
     "Public Transport"
   ],
+
   "Clubs & Associations": [
     "Sports Club",
     "Social Club",
-    "Professional Association"
-  ],
+    "Professional Association",
+    "Recreational Association"
+  ]
 };
 
   /* =========================================================
