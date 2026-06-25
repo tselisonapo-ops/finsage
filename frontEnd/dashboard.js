@@ -60540,41 +60540,60 @@ function renderMovementsTable(items) {
   });
 }
 
-async function updateMovementLineCost(txId, lineId, oldCost) {
+function openMovementCostModal(line) {
+  window._MOV_COST_EDIT = line || null;
+
+  document.getElementById("movCostSku").textContent = line?.sku || "";
+  document.getElementById("movCostItem").textContent = line?.itemName || "";
+  document.getElementById("movCostQty").textContent = line?.qty ?? "";
+  document.getElementById("movCostOldCost").textContent = fmtMoney(line?.unitCost || 0);
+
+  document.getElementById("movCostNewCost").value = Number(line?.unitCost || 0).toFixed(2);
+  document.getElementById("movCostReason").value = "";
+
+  document.getElementById("movCostModal")?.classList.remove("hidden");
+}
+
+function closeMovementCostModal() {
+  document.getElementById("movCostModal")?.classList.add("hidden");
+  window._MOV_COST_EDIT = null;
+}
+
+async function submitMovementCostUpdate() {
+  const line = window._MOV_COST_EDIT;
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
-  if (!cid || !txId || !lineId) return;
 
-  const input = prompt(
-    `Enter correct PER UNIT cost.\nCurrent cost: ${oldCost}`,
-    String(oldCost || "")
-  );
+  if (!cid || !line?.txId || !line?.lineId) return;
 
-  if (input === null) return;
-
-  const newCost = Number(String(input).replace(",", "").trim());
+  const newCost = Number(String(document.getElementById("movCostNewCost")?.value || "").replace(",", "").trim());
+  const reason = String(document.getElementById("movCostReason")?.value || "").trim();
 
   if (!Number.isFinite(newCost) || newCost < 0) {
     alert("Please enter a valid unit cost.");
     return;
   }
 
-  if (!confirm(`Update this line unit cost from ${oldCost} to ${newCost}?`)) return;
-
-  try {
-    await apiFetch(ENDPOINTS.inventory.movementLineCost(cid, txId, lineId), {
-      method: "PATCH",
-      body: JSON.stringify({ unit_cost: newCost })
-    });
-
-    alert("Cost updated successfully.");
-    await openMovementDetail(txId);
-    await loadInventoryMovements?.();
-  } catch (err) {
-    alert(err?.message || "Failed to update cost.");
+  if (!reason) {
+    alert("Please enter a reason for the correction.");
+    return;
   }
+
+  await apiFetch(ENDPOINTS.inventory.movementLineCost(cid, line.txId, line.lineId), {
+    method: "PATCH",
+    body: JSON.stringify({
+      unit_cost: newCost,
+      reason
+    })
+  });
+
+  closeMovementCostModal();
+  await openMovementDetail(line.txId);
+  await loadInventoryMovements?.();
 }
 
-window.updateMovementLineCost = updateMovementLineCost;
+window.openMovementCostModal = openMovementCostModal;
+window.closeMovementCostModal = closeMovementCostModal;
+window.submitMovementCostUpdate = submitMovementCostUpdate;
 
 async function openMovementDetail(txId) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -60604,7 +60623,14 @@ async function openMovementDetail(txId) {
         <td class="px-2 py-1 text-right">
           <button
             class="px-2 py-1 border rounded text-[11px]"
-            onclick="updateMovementLineCost(${Number(tx.id)}, ${Number(l.id)}, ${Number(l.unit_cost || 0)})">
+            onclick='openMovementCostModal(${JSON.stringify({
+              txId: Number(tx.id),
+              lineId: Number(l.id),
+              sku: l.sku || "",
+              itemName: l.item_name || "",
+              qty: l.qty || 0,
+              unitCost: Number(l.unit_cost || 0)
+            })})'>
             Update Cost
           </button>
         </td>

@@ -10942,6 +10942,73 @@ html, body {
   </div>
 </div>
 
+<div id="movCostModal" class="hidden fixed inset-0 z-[90]">
+  <div class="absolute inset-0 bg-black/50" onclick="closeMovementCostModal()"></div>
+
+  <div class="absolute inset-0 flex items-start justify-center p-4 overflow-auto">
+    <div class="w-full max-w-lg bg-white rounded-xl shadow-lg border border-slate-200 mt-24">
+      <div class="px-4 py-3 border-b flex items-center justify-between">
+        <div class="font-semibold text-slate-800">Update Inventory Unit Cost</div>
+        <button onclick="closeMovementCostModal()" class="text-slate-500 hover:text-slate-800">✕</button>
+      </div>
+
+      <div class="p-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 text-xs">
+          <div>
+            <div class="text-slate-500 mb-1">SKU</div>
+            <div id="movCostSku" class="font-medium text-slate-800 border rounded px-2 py-2 bg-slate-50"></div>
+          </div>
+
+          <div>
+            <div class="text-slate-500 mb-1">Qty</div>
+            <div id="movCostQty" class="font-medium text-slate-800 border rounded px-2 py-2 bg-slate-50"></div>
+          </div>
+
+          <div class="md:col-span-2">
+            <div class="text-slate-500 mb-1">Item</div>
+            <div id="movCostItem" class="font-medium text-slate-800 border rounded px-2 py-2 bg-slate-50"></div>
+          </div>
+
+          <div>
+            <div class="text-slate-500 mb-1">Current Unit Cost</div>
+            <div id="movCostOldCost" class="font-medium text-slate-800 border rounded px-2 py-2 bg-slate-50"></div>
+          </div>
+
+          <label class="text-xs">
+            <div class="text-slate-600 mb-1">New Unit Cost</div>
+            <input
+              id="movCostNewCost"
+              type="number"
+              min="0"
+              step="0.000001"
+              class="w-full border rounded px-2 py-2 text-sm"
+            >
+          </label>
+        </div>
+
+        <label class="text-xs">
+          <div class="text-slate-600 mb-1">Reason for Correction</div>
+          <textarea
+            id="movCostReason"
+            rows="3"
+            class="w-full border rounded px-2 py-2 text-sm"
+            placeholder="Example: Captured total cost instead of per-unit cost."
+          ></textarea>
+        </label>
+      </div>
+
+      <div class="px-4 py-3 border-t flex items-center justify-end gap-2">
+        <button onclick="closeMovementCostModal()" class="px-3 py-2 text-sm border rounded">
+          Cancel
+        </button>
+        <button onclick="submitMovementCostUpdate()" class="px-4 py-2 text-sm bg-[var(--fs-navy)] text-white rounded">
+          Save Update
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="svcItemModal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/40">
   <div class="w-[92vw] max-w-xl rounded-xl bg-white p-4 shadow">
     <div class="flex items-start justify-between gap-3">
