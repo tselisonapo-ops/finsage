@@ -9579,6 +9579,94 @@ def receive_inventory(cid: int):
         current_app.logger.exception("receive_inventory failed")
         return jsonify({"error": str(e)}), 400
 
+@app.route("/api/companies/<int:cid>/inventory/movements/<int:tx_id>/lines/<int:line_id>/cost", methods=["PATCH"])
+@require_auth
+def update_inventory_movement_line_cost(cid, tx_id, line_id):
+    company_id = int(cid)
+    user, err = _company_auth_or_403(company_id)
+    if err:
+        return err
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        unit_cost = float(payload.get("unit_cost") or 0)
+
+        if unit_cost < 0:
+            return jsonify({"error": "unit_cost must be >= 0"}), 400
+
+        schema = f"company_{company_id}"
+
+        with db_service._conn_cursor() as (conn, cur):
+            cur.execute(
+                f"""
+                SELECT l.id, l.tx_id, l.item_id, l.qty, l.unit_cost, t.tx_type, t.posted_journal_id
+                FROM {schema}.inventory_tx_lines l
+                JOIN {schema}.inventory_tx t ON t.id = l.tx_id
+                WHERE l.company_id=%s AND l.tx_id=%s AND l.id=%s
+                FOR UPDATE
+                """,
+                (company_id, tx_id, line_id),
+            )
+            line = cur.fetchone()
+
+            if not line:
+                return jsonify({"error": "Movement line not found"}), 404
+
+            old_cost = float(line["unit_cost"] or 0)
+            item_id = int(line["item_id"])
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.inventory_tx_lines
+                SET unit_cost=%s
+                WHERE company_id=%s AND id=%s AND tx_id=%s
+                """,
+                (unit_cost, company_id, line_id, tx_id),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.inventory_layers
+                SET unit_cost=%s
+                WHERE company_id=%s
+                  AND tx_id=%s
+                  AND item_id=%s
+                  AND source='inventory_tx'
+                """,
+                (unit_cost, company_id, tx_id, item_id),
+            )
+
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(user.get("id") or 0),
+                module="inventory",
+                action="movement_line_cost_update",
+                severity="warning",
+                entity_type="inventory_tx_line",
+                entity_id=str(line_id),
+                after_json={
+                    "tx_id": tx_id,
+                    "line_id": line_id,
+                    "old_unit_cost": old_cost,
+                    "new_unit_cost": unit_cost,
+                },
+                message="Inventory movement line unit cost updated"
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "tx_id": tx_id,
+            "line_id": line_id,
+            "old_unit_cost": old_cost,
+            "new_unit_cost": unit_cost,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("update inventory movement line cost failed")
+        return jsonify({"error": str(e)}), 400
+    
 @app.route("/api/companies/<int:cid>/inventory/receipts", methods=["GET"])
 @require_auth
 def list_receipts_for_billing(cid: int):

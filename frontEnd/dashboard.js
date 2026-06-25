@@ -2014,6 +2014,9 @@ const ENDPOINTS = {
     item: (cid, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/items/${encodeURIComponent(itemId)}`,
 
+    movementLineCost: (cid, txId, lineId) =>
+      `/api/companies/${cid}/inventory/movements/${txId}/lines/${lineId}/cost`,
+
     createItem: (cid) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/inventory/items`,
 
@@ -60537,6 +60540,42 @@ function renderMovementsTable(items) {
   });
 }
 
+async function updateMovementLineCost(txId, lineId, oldCost) {
+  const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
+  if (!cid || !txId || !lineId) return;
+
+  const input = prompt(
+    `Enter correct PER UNIT cost.\nCurrent cost: ${oldCost}`,
+    String(oldCost || "")
+  );
+
+  if (input === null) return;
+
+  const newCost = Number(String(input).replace(",", "").trim());
+
+  if (!Number.isFinite(newCost) || newCost < 0) {
+    alert("Please enter a valid unit cost.");
+    return;
+  }
+
+  if (!confirm(`Update this line unit cost from ${oldCost} to ${newCost}?`)) return;
+
+  try {
+    await apiFetch(ENDPOINTS.inventory.movementLineCost(cid, txId, lineId), {
+      method: "PATCH",
+      body: JSON.stringify({ unit_cost: newCost })
+    });
+
+    alert("Cost updated successfully.");
+    await openMovementDetail(txId);
+    await loadInventoryMovements?.();
+  } catch (err) {
+    alert(err?.message || "Failed to update cost.");
+  }
+}
+
+window.updateMovementLineCost = updateMovementLineCost;
+
 async function openMovementDetail(txId) {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid || !txId) return;
@@ -60562,6 +60601,13 @@ async function openMovementDetail(txId) {
         <td class="px-2 py-1 text-right">${esc(l.qty ?? "")}</td>
         <td class="px-2 py-1 text-right">${fmtMoney(l.unit_cost || 0)}</td>
         <td class="px-2 py-1">${esc(l.memo || "")}</td>
+        <td class="px-2 py-1 text-right">
+          <button
+            class="px-2 py-1 border rounded text-[11px]"
+            onclick="updateMovementLineCost(${Number(tx.id)}, ${Number(l.id)}, ${Number(l.unit_cost || 0)})">
+            Update Cost
+          </button>
+        </td>
       </tr>
     `;
 
@@ -60578,6 +60624,7 @@ async function openMovementDetail(txId) {
               <th class="text-right px-2 py-1">Qty</th>
               <th class="text-right px-2 py-1">Cost</th>
               <th class="text-left px-2 py-1">Memo</th>
+              <th class="text-right px-2 py-1">Action</th>
             </tr>
           </thead>
           <tbody>${lines.map(row).join("")}</tbody>

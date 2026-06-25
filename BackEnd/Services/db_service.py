@@ -17754,6 +17754,12 @@ class DatabaseService:
         ALTER TABLE {schema}.inventory_layers ALTER COLUMN company_id SET DEFAULT {company_id};
         ALTER TABLE {schema}.inventory_layers ALTER COLUMN company_id SET NOT NULL;
 
+        ALTER TABLE {schema}.inventory_layers
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS cost_corrected_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS cost_corrected_by_user_id INT NULL;
+
         CREATE INDEX IF NOT EXISTS {schema}_inventory_layers_company_idx
         ON {schema}.inventory_layers(company_id);
 
@@ -17834,6 +17840,13 @@ class DatabaseService:
         ALTER TABLE {schema}.inventory_tx_lines ALTER COLUMN company_id SET NOT NULL;
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS funding_type TEXT NULL;
+
+        ALTER TABLE {schema}.inventory_tx_lines
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS cost_corrected_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS cost_corrected_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS cost_correction_reason TEXT NULL;
 
         -- ✅ make sure column exists before indexing
         ALTER TABLE {schema}.inventory_tx_lines
