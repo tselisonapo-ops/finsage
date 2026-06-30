@@ -6308,7 +6308,9 @@ class DatabaseService:
                         ''pos_sale'',
                         ''pos_payment'',
                         ''pos_return'',
-                        ''year_end''
+                        ''year_end'',
+                        ''year_end_reversal'',
+                        ''year_end_close''
                     ]::text[])
                 )',
                 '{schema}',
