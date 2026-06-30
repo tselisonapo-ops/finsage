@@ -15571,55 +15571,61 @@ window.IFRS_NOTE_TOPICS = window.IFRS_NOTE_TOPICS || [
 ];
 
 
-async function postJournalEntry(entryPayload) {
+async function postJournalEntry(entryPayload, opts = {}) {
   const payload = entryPayload || {};
   const txDate = String(payload.date || isoToday()).slice(0, 10);
+  const showAlerts = opts.showAlerts === true;
 
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) {
-    alert("No active company – please sign in again.");
+    if (showAlerts) alert("No active company – please sign in again.");
     return null;
   }
 
-  // ✅ UX pre-check (backend still enforces too)
   try {
     await assertNotLocked(txDate, "gl");
   } catch (e) {
-    alert(e?.message || String(e));
+    console.warn("GL lock pre-check failed:", e?.message || e);
+
+    if (showAlerts) {
+      alert(e?.message || String(e));
+    }
+
     return null;
   }
 
   const url = ENDPOINTS.journal.postBatch(cid);
 
   try {
-    // apiFetch returns JSON body directly (your implementation)
     const data = await apiFetch(url, {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
-    // Flask returns: {"ok": True, "journal_id": journal_id}
     const jid = data?.journal_id ?? data?.id ?? null;
 
-    // refresh bits (don’t pass booleans into allSettled)
     const jobs = [];
     if (typeof renderLedgerTable === "function") jobs.push(Promise.resolve().then(renderLedgerTable));
     if (typeof renderTB === "function") jobs.push(Promise.resolve().then(renderTB));
     if (typeof renderPnLMini === "function") jobs.push(Promise.resolve().then(renderPnLMini));
     if (typeof renderBSMini === "function") jobs.push(Promise.resolve().then(renderBSMini));
     if (typeof renderCashFlow === "function") jobs.push(Promise.resolve().then(renderCashFlow));
+
     await Promise.allSettled(jobs);
 
     return jid;
   } catch (e) {
-    // ✅ Nice lock message (in case lock was created after pre-check)
     if (e?.status === 409 || String(e?.message || "").toLowerCase().includes("period is locked")) {
-      alert(`This period is locked for GL on ${txDate}.`);
+      if (showAlerts) alert(`This period is locked for GL on ${txDate}.`);
       return null;
     }
 
     console.error("postJournalEntry failed", e);
-    alert(`Journal post failed: ${e?.message || "Unknown error"}`);
+
+    if (showAlerts) {
+      alert(`Journal post failed: ${e?.message || "Unknown error"}`);
+    }
+
     return null;
   }
 }
