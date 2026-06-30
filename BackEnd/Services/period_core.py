@@ -43,15 +43,29 @@ def company_fin_year_start_from_ctx(ctx: dict) -> Optional[date]:
     """
     Priority:
     1) New reporting year-end fields
-    2) Old fin_year_start from company registration
+    2) Old fin_year_start
     """
     try:
         end_month = int(ctx.get("financial_year_end_month") or 0)
         end_day = int(ctx.get("financial_year_end_day") or 0)
 
         if 1 <= end_month <= 12 and 1 <= end_day <= 31:
-            fy_end = date(2000, end_month, end_day)
-            return fy_end + timedelta(days=1)
+            today = date.today()
+
+            fy_start_month = end_month + 1
+            fy_start_year = today.year
+
+            if fy_start_month == 13:
+                fy_start_month = 1
+                fy_start_year = today.year
+
+            fy_start = date(fy_start_year, fy_start_month, 1)
+
+            if today < fy_start:
+                fy_start = date(fy_start_year - 1, fy_start_month, 1)
+
+            return fy_start
+
     except Exception:
         pass
 
