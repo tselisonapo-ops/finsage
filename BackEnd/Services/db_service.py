@@ -25590,11 +25590,8 @@ class DatabaseService:
             ON c.code = l.account
         WHERE l.date >= %s
         AND l.date <= %s
-        AND COALESCE(j.source, '') NOT IN (
-            'year_end',
-            'year_end_close',
-            'year_end_reversal'
-        )
+        AND COALESCE(j.source, '') NOT IN ('year_end', 'year_end_close')
+        AND COALESCE(j.reversal_of_journal_id, 0) = 0
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
