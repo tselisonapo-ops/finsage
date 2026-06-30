@@ -26543,6 +26543,13 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
   let to = null;
   let label = "";
 
+  console.log({
+      presetKey,
+      from,
+      to,
+      opts,
+  });
+
   if (presetKey === "custom") {
       if (!from || !to) {
           canvas.innerHTML =
