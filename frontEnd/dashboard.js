@@ -21811,6 +21811,20 @@ function bindReportsScreen() {
   const stmtFromDate = document.getElementById("stmtFromDate");
   const stmtToDate = document.getElementById("stmtToDate");
 
+  function bindStatementPreset() {
+    if (!presetSel || !customRangeWrap) return;
+
+    function updateCustomRange() {
+      const isCustom = presetSel.value === "custom";
+      customRangeWrap.classList.toggle("hidden", !isCustom);
+    }
+
+    presetSel.addEventListener("change", updateCustomRange);
+    updateCustomRange();
+  }
+
+  bindStatementPreset();
+
   function updateCustomDateVisibility() {
     const isCustom = presetSel?.value === "custom";
     stmtFromDate?.classList.toggle("hidden", !isCustom);

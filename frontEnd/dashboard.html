@@ -2592,9 +2592,22 @@ html, body {
                 <option value="custom">Custom period range</option>
               </select>
 
-              <input id="stmtFromDate" type="date" class="px-3 py-2 border rounded text-xs hidden" />
-              <input id="stmtToDate" type="date" class="px-3 py-2 border rounded text-xs hidden" />
+              <div id="stmtCustomRange" class="hidden flex items-center gap-2">
+                  <input
+                      id="stmtFromDate"
+                      type="date"
+                      class="px-3 py-2 border rounded text-xs"
+                  />
 
+                  <span class="text-xs text-slate-500">to</span>
+
+                  <input
+                      id="stmtToDate"
+                      type="date"
+                      class="px-3 py-2 border rounded text-xs"
+                  />
+              </div>
+              
               <!-- ✅ Cash Flow method (shown only when stmtType=cf) -->
               <select id="stmtCfMethod" class="px-3 py-2 border rounded text-xs" style="display:none;">
                 <option value="direct" selected>Direct method</option>
