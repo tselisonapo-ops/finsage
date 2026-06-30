@@ -21819,11 +21819,19 @@ function bindReportsScreen() {
 
   presetSel?.addEventListener("change", () => {
     updateCustomDateVisibility();
-    rerender({ debounceMs: 0 });
+
+    if (presetSel.value !== "custom") {
+      rerender({ debounceMs: 0 });
+    }
   });
 
-  stmtFromDate?.addEventListener("change", () => rerender({ debounceMs: 0 }));
-  stmtToDate?.addEventListener("change", () => rerender({ debounceMs: 0 }));
+  stmtFromDate?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") rerender({ debounceMs: 0 });
+  });
+
+  stmtToDate?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") rerender({ debounceMs: 0 });
+  });
 
   updateCustomDateVisibility();
 
