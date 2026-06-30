@@ -21808,6 +21808,7 @@ function bindReportsScreen() {
 
   const dashPeriodFilter = document.getElementById("fsPeriodFilter");
 
+  const stmtCustomRange = document.getElementById("stmtCustomRange");
   const stmtFromDate = document.getElementById("stmtFromDate");
   const stmtToDate = document.getElementById("stmtToDate");
 
@@ -21827,12 +21828,12 @@ function bindReportsScreen() {
 
   function updateCustomDateVisibility() {
     const isCustom = presetSel?.value === "custom";
-    stmtFromDate?.classList.toggle("hidden", !isCustom);
-    stmtToDate?.classList.toggle("hidden", !isCustom);
+    stmtCustomRange?.classList.toggle("hidden", !isCustom);
   }
 
   presetSel?.addEventListener("change", () => {
     updateCustomDateVisibility();
+    rerender({ debounceMs: 0 });
   });
 
   stmtFromDate?.addEventListener("change", () => rerender({ debounceMs: 0 }));
