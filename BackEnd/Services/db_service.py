@@ -5379,13 +5379,20 @@ class DatabaseService:
         params.append(cid)
         sql = f"UPDATE public.companies SET {', '.join(sets)} WHERE id=%s;"
 
+        # DEBUG
+        print("=" * 80)
+        print("UPDATE COMPANY PROFILE")
+        print("Payload:", payload)
+        print("SQL:", sql)
+        print("Params:", params)
+        print("=" * 80)
+
         try:
             self.execute_sql(sql, tuple(params))
-            return {"ok": True}
+            return True
 
         except Exception as e:
             print("update_company_profile failed:", e)
-
             return {
                 "ok": False,
                 "error": str(e)
