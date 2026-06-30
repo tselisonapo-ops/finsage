@@ -25590,7 +25590,11 @@ class DatabaseService:
             ON c.code = l.account
         WHERE l.date >= %s
         AND l.date <= %s
-        AND COALESCE(j.source, '') <> 'year_end'
+        AND COALESCE(j.source, '') NOT IN (
+            'year_end',
+            'year_end_close',
+            'year_end_reversal'
+        )
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
