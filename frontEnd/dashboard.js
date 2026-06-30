@@ -21982,9 +21982,19 @@ function bindReportsScreen() {
     const presetKey = presetSel?.value || "this_year";
     const t = (typeSel?.value || "pnl").toLowerCase();
 
-    const basis   = (basisSel?.value || "external");
+    const basis = (basisSel?.value || "external");
     const compare = (compareSel?.value || "none");
     const comparisonYearsSel = document.getElementById("stmtComparisonYears");
+
+    const opts = {
+      preset: presetKey,
+      template: (templateSel?.value || "ifrs"),
+      basis,
+      compare,
+      comparison_years: Number(comparisonYearsSel?.value || 2),
+      detail: (detailSel?.value || "summary"),
+      format: (formatSel?.value || "json"),
+    };
 
     const fromDate = document.getElementById("stmtFromDate")?.value || "";
     const toDate = document.getElementById("stmtToDate")?.value || "";
@@ -21994,17 +22004,6 @@ function bindReportsScreen() {
       opts.to = toDate;
     }
 
-    const opts = {
-      preset:   presetKey,
-      template: (templateSel?.value || "ifrs"),
-      basis,
-      compare,
-      comparison_years: Number(comparisonYearsSel?.value || 2),
-      detail:   (detailSel?.value || "summary"),
-      format:   (formatSel?.value || "json"),
-    };
-
-    // CF
     if (t === "cf") {
       const uiColsMode = Number(colsModeSel?.value || 1);
       opts.method = (cfMethodSel?.value || "direct");
@@ -22012,11 +22011,8 @@ function bindReportsScreen() {
       return opts;
     }
 
-    // ✅ Non-CF cols mode
     opts.cols_mode = normalizeColsMode();
 
-    // ✅ HARD GUARANTEE:
-    // external pnl/bs with compare MUST be 2 columns minimum
     if (basis === "external" && (t === "pnl" || t === "bs") && compare !== "none") {
       opts.cols_mode = Math.max(2, Number(opts.cols_mode || 1));
     }
