@@ -23542,6 +23542,12 @@ class DatabaseService:
                 currency,
                 fin_year_start,
                 company_reg_date,
+
+                first_reporting_period_start,
+                financial_year_end_month,
+                financial_year_end_day,
+                reporting_period_locked,
+
                 inventory_mode,
                 inventory_valuation,
                 vat_settings,
