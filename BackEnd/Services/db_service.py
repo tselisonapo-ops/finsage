@@ -5384,7 +5384,7 @@ class DatabaseService:
         WHERE id=%s
         RETURNING id;
         """
-        
+
         # DEBUG
         print("=" * 80)
         print("UPDATE COMPANY PROFILE")
@@ -5394,8 +5394,9 @@ class DatabaseService:
         print("=" * 80)
 
         try:
-            self.execute_sql(sql, tuple(params))
-            return True
+            result = self.execute_sql(sql, tuple(params))
+            print("UPDATE RETURNING RESULT:", result)
+            return bool(result)
 
         except Exception as e:
             print("update_company_profile failed:", e)
