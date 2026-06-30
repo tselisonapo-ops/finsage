@@ -26551,24 +26551,6 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
   });
 
   if (presetKey === "custom") {
-      if (!from || !to) {
-          canvas.innerHTML =
-              `<div class="text-xs text-red-500">
-                  Please select both From and To dates.
-              </div>`;
-          return;
-      }
-
-      if (from > to) {
-          canvas.innerHTML =
-              `<div class="text-xs text-red-500">
-                  From date cannot be after To date.
-              </div>`;
-          return;
-      }
-  }
-
-  if (presetKey === "custom") {
     from = customFrom;
     to = customTo;
     label = from && to ? `${from} → ${to}` : "Custom period range";
@@ -26577,6 +26559,18 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
     from = pr?.from || null;
     to = pr?.to || null;
     label = pr?.label || presetKey;
+  }
+
+  if (presetKey === "custom") {
+    if (!from || !to) {
+      canvas.innerHTML = `<div class="text-xs text-red-500">Please select both From and To dates.</div>`;
+      return;
+    }
+
+    if (from > to) {
+      canvas.innerHTML = `<div class="text-xs text-red-500">From date cannot be after To date.</div>`;
+      return;
+    }
   }
 
   // ----------------------------
