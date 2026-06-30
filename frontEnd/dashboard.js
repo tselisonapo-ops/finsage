@@ -956,6 +956,8 @@ const ENDPOINTS = {
   bs: (companyId, opts = {}) => {
     const {
       preset,
+      from,
+      to,
       asOf,
       format = "json",
       template,
@@ -969,8 +971,16 @@ const ENDPOINTS = {
     } = opts;
 
     const params = new URLSearchParams();
+
     if (preset) params.append("preset", preset);
-    if (asOf) params.append("as_of", asOf);
+
+    // ✅ support range mode
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    // ✅ fallback for old as_of mode
+    if (asOf && !to) params.append("as_of", asOf);
+
     if (format) params.append("format", format);
     if (template) params.append("template", template);
     if (basis) params.append("basis", basis);
@@ -979,11 +989,14 @@ const ENDPOINTS = {
     if (detail) params.append("detail", detail);
 
     params.set("include_np", "1");
+
     if (cols_mode != null) params.append("cols_mode", String(cols_mode));
+
     if (comparison_years != null) {
       params.append("comparison_years", String(comparison_years));
+    } else if (cols) {
+      params.append("cols", cols);
     }
-    else if (cols) params.append("cols", cols);
 
     const qs = params.toString();
     return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/bs${qs ? `?${qs}` : ""}`;
@@ -26826,7 +26839,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
         const bsView = isMgmt ? "internal" : "external";
 
         url = ENDPOINTS.bs(cid, {
-          preset: presetKey,
+          ...periodParams,
           asOf: to,
           format: "json",
           template,

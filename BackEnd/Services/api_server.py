@@ -8745,6 +8745,13 @@ def api_bs_full(company_id: int):
     date_from, as_of, meta = resolve_company_period(
         db_service, company_id, request, mode="range"
     )
+
+    if not as_of:
+        _, as_of, meta2 = resolve_company_period(
+            db_service, company_id, request, mode="as_of"
+        )
+        meta = meta or meta2
+
     if not as_of:
         return jsonify({"ok": False, "error": "as_of (or preset) is required"}), 400
 
