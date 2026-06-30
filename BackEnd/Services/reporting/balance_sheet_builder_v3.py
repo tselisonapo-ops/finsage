@@ -416,6 +416,7 @@ def build_balance_sheet_v3(
     *,
     company_id: int,
     as_of: date,
+    date_from: Optional[date] = None,
     prior_as_of: Optional[date] = None,
     comparison_as_of_dates: Optional[List[date]] = None,
     get_company_context_fn=None,
@@ -884,9 +885,12 @@ def build_balance_sheet_v3(
     # Optional net profit plug line (only if requested)
     if include_net_profit_line and get_pnl_full_fn is not None:
         # --- current year-to-date (YTD) ---
-        fy = parse_date_maybe(ctx.get("fin_year_start")) or date(as_of.year, 3, 1)
+        ytd_from = date_from
 
-        ytd_from = fin_year_start_for_as_of(as_of, fy)
+        if not ytd_from:
+            fy = parse_date_maybe(ctx.get("fin_year_start")) or date(as_of.year, 4, 1)
+            ytd_from = fin_year_start_for_as_of(as_of, fy)
+
         pnl_cur = get_pnl_full_fn(company_id, ytd_from, as_of) or {}
 
         net_obj_cur = pnl_cur.get("net_result") or {}

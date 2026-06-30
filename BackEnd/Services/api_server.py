@@ -4422,6 +4422,10 @@ def api_company_period_range(company_id: int):
             "preset": meta.get("preset"),
             "period": meta.get("period"),
             "fin_year_start": meta.get("fin_year_start"),
+            "first_reporting_period_start": meta.get("first_reporting_period_start"),
+            "financial_year_end_month": meta.get("financial_year_end_month"),
+            "financial_year_end_day": meta.get("financial_year_end_day"),
+            "is_custom_range": meta.get("is_custom_range"),
         }), 200
 
     except Exception as e:
@@ -8712,14 +8716,24 @@ def api_bs_mini(company_id: int):
     if not current_user or current_user.get("company_id") != company_id:
         return jsonify({"error": "Not authorised for this company"}), 403
 
-    _, as_of, meta = resolve_company_period(db_service, company_id, request, mode="as_of")
+    date_from, as_of, meta = resolve_company_period(
+        db_service,
+        company_id,
+        request,
+        mode="range",
+    )
+
     if not as_of:
         return jsonify({"error": "as_of required (or preset)"}), 400
 
     rows = db_service.get_bs_mini(company_id, as_of=as_of) or []
-    return jsonify({"meta": meta, "rows": rows}), 200
 
-from datetime import timedelta, date
+    meta = meta or {}
+    meta["from"] = date_from.isoformat() if date_from else None
+    meta["to"] = as_of.isoformat() if as_of else None
+    meta["as_of"] = as_of.isoformat() if as_of else None
+
+    return jsonify({"meta": meta, "rows": rows}), 200
 
 @app.route("/api/companies/<int:company_id>/bs", methods=["GET"])
 @require_auth
@@ -8728,8 +8742,8 @@ def api_bs_full(company_id: int):
         return jsonify({"ok": False, "error": "Not authorised for this company"}), 403
 
     # ✅ ONE source of truth for as_of
-    _, as_of, meta = resolve_company_period(
-        db_service, company_id, request, mode="as_of"
+    date_from, as_of, meta = resolve_company_period(
+        db_service, company_id, request, mode="range"
     )
     if not as_of:
         return jsonify({"ok": False, "error": "as_of (or preset) is required"}), 400
@@ -8792,6 +8806,7 @@ def api_bs_full(company_id: int):
             db=db_service,
             company_id=company_id,
             as_of=as_of,
+            date_from=date_from,
             prior_as_of=prior_as_of,
             compare=compare,
             comparison_years=comparison_years,

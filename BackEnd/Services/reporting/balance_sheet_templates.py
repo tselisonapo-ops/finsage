@@ -18,6 +18,7 @@ def get_balance_sheet_v3_exact(
     db,
     company_id: int,
     as_of: date,
+    date_from: Optional[date] = None,
     prior_as_of: Optional[date] = None,
     comparison_as_of_dates: Optional[List[date]] = None,
     compare: str = "none",
@@ -90,6 +91,7 @@ def get_balance_sheet_v3_exact(
     return build_balance_sheet_v3(
         company_id=company_id,
         as_of=as_of,
+        date_from=date_from,
         prior_as_of=prior_as_of,
         comparison_as_of_dates=comparison_as_of_dates,
         get_company_context_fn=_get_company_context_fn,
