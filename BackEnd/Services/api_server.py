@@ -9121,6 +9121,48 @@ def api_socie(company_id: int):
 
     return jsonify(stmt), 200
 
+@app.route("/api/companies/<int:company_id>/year-end-close", methods=["POST"])
+@require_auth
+def api_year_end_close(company_id: int):
+    if not _company_guard(company_id):
+        return jsonify({"ok": False, "error": "Not authorised"}), 403
+
+    payload = request.get_json(silent=True) or {}
+
+    period_from = parse_date_maybe(payload.get("period_from"))
+    period_to = parse_date_maybe(payload.get("period_to"))
+    preview = bool(payload.get("preview"))
+
+    if not period_from or not period_to:
+        return jsonify({
+            "ok": False,
+            "error": "period_from and period_to are required"
+        }), 400
+
+    try:
+        if preview:
+            result = db_service.preview_profit_loss_close_to_retained_earnings(
+                company_id=company_id,
+                period_from=period_from,
+                period_to=period_to,
+            )
+        else:
+            result = db_service.close_profit_loss_to_retained_earnings(
+                company_id=company_id,
+                period_from=period_from,
+                period_to=period_to,
+            )
+
+        return jsonify(result), 200 if result.get("ok") else 400
+
+    except Exception as e:
+        current_app.logger.exception("Year-end close failed")
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "type": type(e).__name__,
+        }), 500
+    
 def get_company_emails_by_role(company_id, role):
     sql = """
       SELECT email

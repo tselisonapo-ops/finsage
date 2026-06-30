@@ -2607,7 +2607,7 @@ html, body {
                       class="px-3 py-2 border rounded text-xs"
                   />
               </div>
-              
+
               <!-- ✅ Cash Flow method (shown only when stmtType=cf) -->
               <select id="stmtCfMethod" class="px-3 py-2 border rounded text-xs" style="display:none;">
                 <option value="direct" selected>Direct method</option>
@@ -8361,6 +8361,55 @@ html, body {
                 <div class="rounded-lg border bg-slate-50 p-3 text-xs text-slate-600">
                   Example: if first reporting start is <b>2024-01-01</b> and year-end is <b>31 March</b>,
                   FinSage will treat the opening period as <b>01 Jan 2024 – 31 Mar 2024</b>.
+                </div>
+
+                <div class="rounded-lg border bg-white p-3 mt-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h5 class="font-semibold text-slate-800 text-sm">Year-end close</h5>
+                      <p class="text-xs text-slate-500 mt-1">
+                        Transfer profit or loss for the selected reporting period into retained earnings.
+                      </p>
+                    </div>
+                    <span id="yearEndCloseStatus" class="text-xs text-slate-500"></span>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Close period from</label>
+                      <input id="yecPeriodFrom" type="date" class="w-full border rounded px-2 py-2 text-sm" />
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Close period to</label>
+                      <input id="yecPeriodTo" type="date" class="w-full border rounded px-2 py-2 text-sm" />
+                    </div>
+                  </div>
+
+                  <div id="yearEndClosePreview"
+                      class="hidden mt-4 rounded-xl border border-slate-200 bg-white overflow-hidden">
+
+                    <div class="px-4 py-3 border-b bg-slate-50">
+                      <h5 class="font-semibold text-slate-800">
+                        Year-end Closing Summary
+                      </h5>
+                      <p class="text-xs text-slate-500 mt-1">
+                        Review the financial summary before transferring the result to retained earnings.
+                      </p>
+                    </div>
+
+                    <div id="yearEndClosePreviewBody"></div>
+
+                  </div>
+
+                  <div class="flex justify-end gap-2 pt-3">
+                    <button type="button" id="yearEndClosePreviewBtn" class="border rounded px-3 py-1 text-xs">
+                      Preview close
+                    </button>
+                    <button type="button" id="yearEndClosePostBtn" class="bg-slate-900 text-white rounded px-3 py-1 text-xs">
+                      Close financial year
+                    </button>
+                  </div>
                 </div>
 
                 <div class="flex justify-end gap-2 pt-2">

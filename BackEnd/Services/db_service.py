@@ -25839,6 +25839,123 @@ class DatabaseService:
         row = self.fetch_one(sql, (account_code,))
         return float(row.get("closing_balance") or 0.0) if row else 0.0
 
+    def preview_profit_loss_close_to_retained_earnings(
+        self,
+        company_id: int,
+        period_from: date,
+        period_to: date,
+        retained_earnings_role: str = "equity_retained_earnings",
+        source: str = "year_end_close",
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        re = self.fetch_one(f"""
+            SELECT code, name
+            FROM {schema}.coa
+            WHERE role = %s
+            AND posting = TRUE
+            LIMIT 1;
+        """, [retained_earnings_role])
+
+        if not re:
+            raise ValueError(f"No posting account found with role '{retained_earnings_role}'.")
+
+        ref = f"YEC-{period_to.isoformat()}"
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.journal
+            WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
+            AND COALESCE(reversal_of_journal_id, 0) = 0
+            LIMIT 1;
+        """, [ref])
+
+        pl_rows = self.fetch_all(f"""
+            SELECT
+                l.account,
+                COALESCE(c.name, l.account) AS name,
+                COALESCE(c.section, '') AS section,
+                COALESCE(c.category, '') AS category,
+                SUM(l.debit) AS debit,
+                SUM(l.credit) AS credit,
+                SUM(l.credit - l.debit) AS net_credit
+            FROM {schema}.ledger l
+            LEFT JOIN {schema}.coa c
+                ON c.code = l.account
+            WHERE l.date BETWEEN %s AND %s
+            AND (
+                    l.account ILIKE 'PL_%%'
+                OR c.section ILIKE '%%profit%%'
+                OR c.section ILIKE '%%income%%'
+                OR c.section ILIKE '%%expense%%'
+                OR c.category ILIKE '%%income%%'
+                OR c.category ILIKE '%%expense%%'
+                OR c.category ILIKE '%%cost%%'
+            )
+            GROUP BY l.account, c.name, c.section, c.category
+            HAVING ABS(SUM(l.debit - l.credit)) > 0.005
+            ORDER BY l.account;
+        """, [period_from, period_to]) or []
+
+        total_revenue = 0.0
+        total_expenses = 0.0
+
+        revenue_accounts = 0
+        expense_accounts = 0
+
+        for r in pl_rows:
+            debit = float(r.get("debit") or 0.0)
+            credit = float(r.get("credit") or 0.0)
+            net_credit = credit - debit
+
+            txt = " ".join([
+                str(r.get("account") or ""),
+                str(r.get("name") or ""),
+                str(r.get("section") or ""),
+                str(r.get("category") or ""),
+            ]).lower()
+
+            is_revenue = (
+                net_credit > 0
+                and (
+                    "income" in txt
+                    or "revenue" in txt
+                    or "sales" in txt
+                    or str(r.get("account") or "").startswith("PL_REV")
+                    or str(r.get("account") or "").startswith("PL_OI")
+                )
+            )
+
+            if is_revenue:
+                total_revenue += net_credit
+                revenue_accounts += 1
+            else:
+                # expense / cost accounts usually have debit balances
+                total_expenses += abs(debit - credit)
+                expense_accounts += 1
+
+        net_profit = round(total_revenue - total_expenses, 2)
+
+        return {
+            "ok": True,
+            "preview": True,
+            "already_closed": bool(existing),
+            "existing_journal_id": existing.get("id") if existing else None,
+            "ref": ref,
+            "period_from": period_from.isoformat(),
+            "period_to": period_to.isoformat(),
+            "retained_earnings_code": re.get("code"),
+            "retained_earnings_name": re.get("name"),
+            "total_revenue": round(total_revenue, 2),
+            "total_expenses": round(total_expenses, 2),
+            "net_result": net_profit,
+            "net_result_label": "Profit" if net_profit >= 0 else "Loss",
+            "revenue_accounts": revenue_accounts,
+            "expense_accounts": expense_accounts,
+            "lines_count": len(pl_rows) + 1 if pl_rows else 0,
+            "can_close": bool(pl_rows) and not bool(existing) and abs(net_profit) >= 0.005,
+        }
+
     def close_profit_loss_to_retained_earnings(
         self,
         company_id: int,

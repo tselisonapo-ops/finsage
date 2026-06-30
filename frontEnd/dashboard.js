@@ -843,6 +843,9 @@ const ENDPOINTS = {
   companies: `${API_BASE}/api/companies`,
   company: (companyId) => `${API_BASE}/api/companies/${encodeURIComponent(companyId)}`,
 
+  yearEndClose: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/year-end-close`,
+
   companyStructure: {
     get: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
@@ -9034,6 +9037,7 @@ async function switchScreen(name) {
 
     if (view === "reporting") {
       bindReportingPeriodsForm?.(cid);
+      bindYearEndClose(cid);
     }
 
     if (view === "structure") {
@@ -10484,6 +10488,202 @@ function bindReportingPeriodsForm(companyId) {
   fill().catch((e) =>
     setStatus(e.message || "Load failed", true)
   );
+}
+
+function renderYearEndClosePreview(data) {
+  const body = document.getElementById("yearEndClosePreviewBody");
+  const card = document.getElementById("yearEndClosePreview");
+
+  if (!body || !card) return;
+
+  card.classList.remove("hidden");
+
+  const profit = Number(data.net_result || 0);
+
+  body.innerHTML = `
+    <div class="p-4">
+
+      <div class="grid grid-cols-2 gap-4 mb-5">
+
+        <div>
+          <div class="text-xs text-slate-500">Period</div>
+          <div class="font-medium">
+            ${esc(data.period_from)} → ${esc(data.period_to)}
+          </div>
+        </div>
+
+        <div>
+          <div class="text-xs text-slate-500">Reference</div>
+          <div class="font-medium">
+            ${esc(data.ref)}
+          </div>
+        </div>
+
+      </div>
+
+      <table class="w-full text-sm">
+
+        <tbody>
+
+          <tr class="border-b">
+            <td class="py-2 text-slate-600">
+              Total Revenue
+            </td>
+
+            <td class="py-2 text-right font-medium text-emerald-700">
+              ${fmt(data.total_revenue)}
+            </td>
+          </tr>
+
+          <tr class="border-b">
+            <td class="py-2 text-slate-600">
+              Total Expenses
+            </td>
+
+            <td class="py-2 text-right font-medium text-rose-700">
+              ${fmt(data.total_expenses)}
+            </td>
+          </tr>
+
+          <tr class="bg-slate-50">
+
+            <td class="py-3 font-semibold">
+              ${profit >= 0 ? "Net Profit" : "Net Loss"}
+            </td>
+
+            <td class="py-3 text-right font-bold text-lg ${
+              profit >= 0
+                ? "text-emerald-700"
+                : "text-red-700"
+            }">
+
+              ${fmt(Math.abs(profit))}
+
+            </td>
+
+          </tr>
+
+        </tbody>
+
+      </table>
+
+      <div class="mt-5 rounded-lg bg-amber-50 border border-amber-200 p-3">
+
+        <div class="font-medium text-amber-900">
+          Retained Earnings
+        </div>
+
+        <div class="text-sm mt-1">
+
+          ${esc(data.retained_earnings_name)}
+
+          <span class="text-slate-500">
+            (${esc(data.retained_earnings_code)})
+          </span>
+
+        </div>
+
+      </div>
+
+      ${
+        data.already_closed
+          ? `
+          <div class="mt-4 rounded-lg bg-red-50 border border-red-200 p-3 text-red-700">
+            This financial year has already been closed.
+          </div>
+          `
+          : ""
+      }
+
+    </div>
+  `;
+}
+
+function bindYearEndClose(companyId) {
+  const fromEl = document.getElementById("yecPeriodFrom");
+  const toEl = document.getElementById("yecPeriodTo");
+  const previewBtn = document.getElementById("yearEndClosePreviewBtn");
+  const postBtn = document.getElementById("yearEndClosePostBtn");
+  const previewBox = document.getElementById("yearEndClosePreview");
+  const status = document.getElementById("yearEndCloseStatus");
+
+  if (!fromEl || !toEl || !previewBtn || !postBtn) return;
+  if (previewBtn.dataset.bound === "1") return;
+  previewBtn.dataset.bound = "1";
+
+  const setStatus = (msg, err = false) => {
+    if (!status) return;
+    status.textContent = msg || "";
+    status.className = `text-xs ${err ? "text-red-600" : "text-emerald-600"}`;
+  };
+
+  function payload() {
+    return {
+      period_from: fromEl.value || null,
+      period_to: toEl.value || null,
+    };
+  }
+
+  function validate() {
+    const p = payload();
+    if (!p.period_from || !p.period_to) {
+      setStatus("Select from and to dates", true);
+      return null;
+    }
+    if (p.period_from > p.period_to) {
+      setStatus("From date cannot be after To date", true);
+      return null;
+    }
+    return p;
+  }
+
+  previewBtn.addEventListener("click", async () => {
+    const p = validate();
+    if (!p) return;
+
+    setStatus("Previewing...");
+
+    try {
+      const res = await apiFetch(ENDPOINTS.yearEndClose(companyId), {
+        method: "POST",
+        body: JSON.stringify({ ...p, preview: true }),
+      });
+
+      renderYearEndClosePreview(res);
+      postBtn.disabled = !res.can_close;
+      setStatus("Preview ready");
+    } catch (e) {
+      setStatus(e.message || "Preview failed", true);
+    }
+  });
+
+  postBtn.addEventListener("click", async () => {
+    const p = validate();
+    if (!p) return;
+
+    if (!confirm("Close this financial year? This will post a real journal.")) return;
+
+    setStatus("Closing...");
+
+    try {
+      const res = await apiFetch(ENDPOINTS.yearEndClose(companyId), {
+        method: "POST",
+        body: JSON.stringify(p), // ✅ no preview here
+      });
+
+      renderYearEndClosePreview({
+        ...res,
+        already_closed: true,
+        can_close: false,
+        net_result: res.net_profit,
+      });
+
+      postBtn.disabled = true;
+      setStatus(`Closed. Journal ${res.ref || res.journal_id || ""}`);
+    } catch (e) {
+      setStatus(e.message || "Close failed", true);
+    }
+  });
 }
 
 function toISODate(value) {
