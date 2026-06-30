@@ -5385,25 +5385,25 @@ class DatabaseService:
         RETURNING id;
         """
 
-        # DEBUG
-        print("=" * 80)
-        print("UPDATE COMPANY PROFILE")
-        print("Payload:", payload)
-        print("SQL:", sql)
-        print("Params:", params)
-        print("=" * 80)
+        print("=" * 80, flush=True)
+        print("UPDATE COMPANY PROFILE", flush=True)
+        print("Payload:", payload, flush=True)
+        print("SQL:", sql, flush=True)
+        print("Params:", params, flush=True)
+        print("=" * 80, flush=True)
 
         try:
+            print("ABOUT TO EXECUTE COMPANY UPDATE", flush=True)
+
             result = self.execute_sql(sql, tuple(params))
-            print("UPDATE RETURNING RESULT:", result)
+
+            print("UPDATE RETURNING RESULT:", result, flush=True)
+
             return bool(result)
 
         except Exception as e:
-            print("update_company_profile failed:", e)
-            return {
-                "ok": False,
-                "error": str(e)
-            }
+            print("update_company_profile failed:", e, flush=True)
+            return False
         
     def dedupe_company_coa(self, company_id: int) -> int:
         schema = f"company_{company_id}"
