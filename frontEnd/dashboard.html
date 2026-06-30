@@ -2589,7 +2589,11 @@ html, body {
                 <option value="ytd">Financial year to date</option>
                 <option value="this_year" selected>This financial year</option>
                 <option value="prev_year">Previous financial year</option>
+                <option value="custom">Custom period range</option>
               </select>
+
+              <input id="stmtFromDate" type="date" class="px-3 py-2 border rounded text-xs hidden" />
+              <input id="stmtToDate" type="date" class="px-3 py-2 border rounded text-xs hidden" />
 
               <!-- ✅ Cash Flow method (shown only when stmtType=cf) -->
               <select id="stmtCfMethod" class="px-3 py-2 border rounded text-xs" style="display:none;">

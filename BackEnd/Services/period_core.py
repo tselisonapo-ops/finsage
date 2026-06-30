@@ -99,6 +99,8 @@ def resolve_company_period(
     preset_raw = (request.args.get("preset") or "").strip().lower()
     preset = preset_raw or "this_year"
 
+    if preset in ("custom", "range", "period_range"):
+        preset = "custom"
     # ─────────────────────────────────────────────
     # Balance sheet (as-of)
     # ─────────────────────────────────────────────
@@ -157,13 +159,33 @@ def resolve_company_period(
         }
         return None, pr["to"], meta
 
+    if preset == "custom" and not (date_from and date_to):
+        return None, None, {
+            "preset": "custom",
+            "error": "Custom period requires from and to dates",
+        }
+
+    if date_from and date_to and date_from > date_to:
+        return None, None, {
+            "preset": preset,
+            "error": "from date cannot be after to date",
+        }
+
     # 1) If BOTH explicit dates are provided, do NOT override with preset
     if date_from and date_to:
         meta = {
-            "preset": None,
+            "preset": "custom" if preset == "custom" else None,
             "label": f"{date_from.isoformat()} → {date_to.isoformat()}",
             "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
             "fin_year_start": ctx.get("fin_year_start"),
+            "first_reporting_period_start": (
+                ctx.get("first_reporting_period_start").isoformat()
+                if hasattr(ctx.get("first_reporting_period_start"), "isoformat")
+                else ctx.get("first_reporting_period_start")
+            ),
+            "financial_year_end_month": ctx.get("financial_year_end_month"),
+            "financial_year_end_day": ctx.get("financial_year_end_day"),
+            "is_custom_range": True,
         }
         return date_from, date_to, meta
 
@@ -184,6 +206,13 @@ def resolve_company_period(
         "label": pr.get("label"),
         "period": {"from": pr["from"].isoformat(), "to": pr["to"].isoformat()},
         "fin_year_start": ctx.get("fin_year_start"),
+        "first_reporting_period_start": (
+            ctx.get("first_reporting_period_start").isoformat()
+            if hasattr(ctx.get("first_reporting_period_start"), "isoformat")
+            else ctx.get("first_reporting_period_start")
+        ),
+        "financial_year_end_month": ctx.get("financial_year_end_month"),
+        "financial_year_end_day": ctx.get("financial_year_end_day"),
     }
     return pr["from"], pr["to"], meta
 

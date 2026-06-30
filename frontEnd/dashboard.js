@@ -21808,6 +21808,24 @@ function bindReportsScreen() {
 
   const dashPeriodFilter = document.getElementById("fsPeriodFilter");
 
+  const stmtFromDate = document.getElementById("stmtFromDate");
+  const stmtToDate = document.getElementById("stmtToDate");
+
+  function updateCustomDateVisibility() {
+    const isCustom = presetSel?.value === "custom";
+    stmtFromDate?.classList.toggle("hidden", !isCustom);
+    stmtToDate?.classList.toggle("hidden", !isCustom);
+  }
+
+  presetSel?.addEventListener("change", () => {
+    updateCustomDateVisibility();
+  });
+
+  stmtFromDate?.addEventListener("change", () => rerender({ debounceMs: 0 }));
+  stmtToDate?.addEventListener("change", () => rerender({ debounceMs: 0 }));
+
+  updateCustomDateVisibility();
+
   // ✅ Bind the "Generate Notes" button (IFRS16 disclosure)
   if (typeof bindGenerateNotesBtnReportsScreen === "function") {
     bindGenerateNotesBtnReportsScreen();
@@ -21966,6 +21984,14 @@ function bindReportsScreen() {
     const basis   = (basisSel?.value || "external");
     const compare = (compareSel?.value || "none");
     const comparisonYearsSel = document.getElementById("stmtComparisonYears");
+
+    const fromDate = document.getElementById("stmtFromDate")?.value || "";
+    const toDate = document.getElementById("stmtToDate")?.value || "";
+
+    if (presetKey === "custom") {
+      opts.from = fromDate;
+      opts.to = toDate;
+    }
 
     const opts = {
       preset:   presetKey,
@@ -26503,18 +26529,47 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
     updateStmtViewerMethodVisibility(t);
   }
 
+  const presetKey = (opts.preset ?? document.getElementById("stmtPreset")?.value ?? "this_year");
+
+  const customFrom = opts.from || document.getElementById("stmtFromDate")?.value || "";
+  const customTo = opts.to || document.getElementById("stmtToDate")?.value || "";
+
+  let from = null;
+  let to = null;
+  let label = "";
+
+  if (presetKey === "custom") {
+      if (!from || !to) {
+          canvas.innerHTML =
+              `<div class="text-xs text-red-500">
+                  Please select both From and To dates.
+              </div>`;
+          return;
+      }
+
+      if (from > to) {
+          canvas.innerHTML =
+              `<div class="text-xs text-red-500">
+                  From date cannot be after To date.
+              </div>`;
+          return;
+      }
+  }
+
+  if (presetKey === "custom") {
+    from = customFrom;
+    to = customTo;
+    label = from && to ? `${from} → ${to}` : "Custom period range";
+  } else {
+    const pr = computePeriodRange(presetKey);
+    from = pr?.from || null;
+    to = pr?.to || null;
+    label = pr?.label || presetKey;
+  }
+
   // ----------------------------
   // Period (calendar OR backend-driven FY presets)
   // ----------------------------
-  const presetKey = (opts.preset ?? document.getElementById("stmtPreset")?.value ?? "this_year");
-  const pr = computePeriodRange(presetKey);
-
-  // calendar range if available
-  const from = pr?.from || null;
-  const to   = pr?.to   || null;
-
-  // label from UI for now; backend may return a better one in meta.label
-  let label = pr?.label || presetKey;
 
   const lbl = document.getElementById("stmtPeriodLabel");
   if (lbl) lbl.textContent = label;
@@ -26530,11 +26585,19 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
 
   // ✅ DO NOT block if from/to missing — FY presets are backend-resolved
   const periodParams = {};
-  if (from && to) {
+
+  if (presetKey === "custom") {
+    periodParams.preset = "custom";
+    if (from && to) {
+      periodParams.from = from;
+      periodParams.to = to;
+    }
+  } else if (from && to) {
     periodParams.from = from;
     periodParams.to = to;
   } else {
-    periodParams.preset = pr?.preset || presetKey; // this_year / prev_year / ytd...
+    const pr = computePeriodRange(presetKey);
+    periodParams.preset = pr?.preset || presetKey;
   }
 
   // ----------------------------
