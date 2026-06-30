@@ -5377,8 +5377,14 @@ class DatabaseService:
             return True
 
         params.append(cid)
-        sql = f"UPDATE public.companies SET {', '.join(sets)} WHERE id=%s;"
 
+        sql = f"""
+        UPDATE public.companies
+        SET {', '.join(sets)}
+        WHERE id=%s
+        RETURNING id;
+        """
+        
         # DEBUG
         print("=" * 80)
         print("UPDATE COMPANY PROFILE")
