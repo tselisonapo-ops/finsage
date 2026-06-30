@@ -25839,6 +25839,151 @@ class DatabaseService:
         row = self.fetch_one(sql, (account_code,))
         return float(row.get("closing_balance") or 0.0) if row else 0.0
 
+    def close_profit_loss_to_retained_earnings(
+        self,
+        company_id: int,
+        period_from: date,
+        period_to: date,
+        retained_earnings_role: str = "equity_retained_earnings",
+        source: str = "year_end_close",
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        re = self.fetch_one(f"""
+            SELECT code, name
+            FROM {schema}.coa
+            WHERE role = %s
+            AND posting = TRUE
+            LIMIT 1;
+        """, [retained_earnings_role])
+
+        if not re:
+            raise ValueError(f"No posting account found with role '{retained_earnings_role}'.")
+
+        retained_earnings_code = re["code"]
+
+        ref = f"YEC-{period_to.isoformat()}"
+        memo = f"Year-end close {period_from.isoformat()} to {period_to.isoformat()}"
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.journal
+            WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
+            AND COALESCE(reversal_of_journal_id, 0) = 0
+            LIMIT 1;
+        """, [ref])
+
+        if existing:
+            return {
+                "ok": False,
+                "error": f"Year-end close already exists for {period_to.isoformat()}",
+                "journal_id": existing.get("id"),
+            }
+
+        pl_rows = self.fetch_all(f"""
+            SELECT
+                l.account,
+                COALESCE(c.name, l.account) AS name,
+                SUM(l.debit) AS debit,
+                SUM(l.credit) AS credit,
+                SUM(l.credit - l.debit) AS net_credit
+            FROM {schema}.ledger l
+            LEFT JOIN {schema}.coa c
+                ON c.code = l.account
+            WHERE l.date BETWEEN %s AND %s
+            AND (
+                    l.account ILIKE 'PL_%%'
+                OR c.section ILIKE '%%profit%%'
+                OR c.section ILIKE '%%income%%'
+                OR c.section ILIKE '%%expense%%'
+                OR c.category ILIKE '%%income%%'
+                OR c.category ILIKE '%%expense%%'
+                OR c.category ILIKE '%%cost%%'
+            )
+            GROUP BY l.account, c.name
+            HAVING ABS(SUM(l.debit - l.credit)) > 0.005
+            ORDER BY l.account;
+        """, [period_from, period_to]) or []
+
+        if not pl_rows:
+            return {"ok": False, "error": "No P&L balances found to close."}
+
+        lines = []
+        net_profit = 0.0
+
+        for r in pl_rows:
+            account = str(r.get("account") or "").strip()
+            debit = float(r.get("debit") or 0.0)
+            credit = float(r.get("credit") or 0.0)
+
+            raw_balance = round(debit - credit, 2)
+            net_profit += float(r.get("net_credit") or 0.0)
+
+            if abs(raw_balance) < 0.005:
+                continue
+
+            if raw_balance > 0:
+                lines.append({
+                    "account_code": account,
+                    "description": f"Close {r.get('name') or account}",
+                    "debit": 0.0,
+                    "credit": raw_balance,
+                })
+            else:
+                lines.append({
+                    "account_code": account,
+                    "description": f"Close {r.get('name') or account}",
+                    "debit": abs(raw_balance),
+                    "credit": 0.0,
+                })
+
+        net_profit = round(net_profit, 2)
+
+        if abs(net_profit) < 0.005:
+            return {"ok": False, "error": "Net profit/loss is zero; nothing to close."}
+
+        if net_profit > 0:
+            lines.append({
+                "account_code": retained_earnings_code,
+                "description": "Transfer net profit to retained earnings",
+                "debit": 0.0,
+                "credit": net_profit,
+            })
+        else:
+            lines.append({
+                "account_code": retained_earnings_code,
+                "description": "Transfer net loss to retained earnings",
+                "debit": abs(net_profit),
+                "credit": 0.0,
+            })
+
+        entry = {
+            "date": period_to.isoformat(),
+            "ref": ref,
+            "description": memo,
+            "source": source,
+            "source_id": None,
+            "gross_amount": abs(net_profit),
+            "net_amount": abs(net_profit),
+            "vat_amount": 0.0,
+            "currency": "LSL",
+            "lines": lines,
+        }
+
+        journal_id = self.post_journal(company_id, entry)
+
+        return {
+            "ok": True,
+            "journal_id": journal_id,
+            "ref": ref,
+            "period_from": period_from.isoformat(),
+            "period_to": period_to.isoformat(),
+            "net_profit": net_profit,
+            "retained_earnings_code": retained_earnings_code,
+            "retained_earnings_name": re.get("name"),
+            "lines_count": len(lines),
+        }
+
     def ensure_overdraft_account(self, company_id: int, od_code: str = "2105") -> None:
         """
         Creates the overdraft COA account if it doesn't exist yet.
