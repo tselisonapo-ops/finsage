@@ -25588,15 +25588,16 @@ class DatabaseService:
         FROM {schema}.ledger l
         LEFT JOIN {schema}.journal j
             ON j.id = l.journal_id
+        LEFT JOIN {schema}.journal orig_j
+            ON orig_j.id = j.reversal_of_journal_id
         LEFT JOIN {schema}.coa c
             ON c.code = l.account
-            WHERE l.date >= %s
-            AND l.date <= %s
-            AND COALESCE(j.source, '') NOT IN (
-                'year_end',
-                'year_end_close',
-                'year_end_reversal'
-            )
+        WHERE l.date >= %s
+        AND l.date <= %s
+        AND NOT (
+            COALESCE(j.source, '') IN ('year_end', 'year_end_close')
+            OR COALESCE(orig_j.source, '') IN ('year_end', 'year_end_close')
+        )
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
