@@ -25590,10 +25590,13 @@ class DatabaseService:
             ON j.id = l.journal_id
         LEFT JOIN {schema}.coa c
             ON c.code = l.account
-        WHERE l.date >= %s
-        AND l.date <= %s
-        AND COALESCE(j.source, '') NOT IN ('year_end', 'year_end_close')
-        AND COALESCE(j.reversal_of_journal_id, 0) = 0
+            WHERE l.date >= %s
+            AND l.date <= %s
+            AND COALESCE(j.source, '') NOT IN (
+                'year_end',
+                'year_end_close',
+                'year_end_reversal'
+            )
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
