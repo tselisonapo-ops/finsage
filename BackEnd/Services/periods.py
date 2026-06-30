@@ -115,58 +115,117 @@ def parse_yyyy_mm_dd(s):
 
 def resolve_period(
     *,
-    fin_year_start: Optional[date],
+    fin_year_start: Optional[date] = None,
     preset: Optional[str],
     date_from: Optional[date],
     date_to: Optional[date],
-    as_of: Optional[date] = None
+    as_of: Optional[date] = None,
+    first_reporting_period_start: Optional[date] = None,
+    financial_year_end_month: Optional[int] = None,
+    financial_year_end_day: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """
-    Priority:
-    1) explicit from/to (if provided)
-    2) preset (computed using fin_year_start)
-    3) default = this_year (FY)
-    """
+
     today = as_of or date.today()
 
     if date_from and date_to:
-        return {"from": date_from, "to": date_to, "label": f"{date_from} → {date_to}", "preset": None}
+        return {
+            "from": date_from,
+            "to": date_to,
+            "label": f"{date_from} → {date_to}",
+            "preset": None,
+        }
 
     p = (preset or "").strip().lower() or "this_year"
 
-    # Month presets
     if p == "this_month":
-        f = _start_of_month(today); t = _end_of_month(today)
+        f = _start_of_month(today)
+        t = _end_of_month(today)
+
     elif p == "prev_month":
         prev_end = _start_of_month(today) - timedelta(days=1)
-        f = _start_of_month(prev_end); t = _end_of_month(prev_end)
+        f = _start_of_month(prev_end)
+        t = _end_of_month(prev_end)
 
-    # Quarter presets
     elif p == "this_quarter":
-        f = _start_of_quarter(today); t = _end_of_quarter(today)
+        f = _start_of_quarter(today)
+        t = _end_of_quarter(today)
+
     elif p == "prev_quarter":
         prev_end = _start_of_quarter(today) - timedelta(days=1)
-        f = _start_of_quarter(prev_end); t = _end_of_quarter(prev_end)
+        f = _start_of_quarter(prev_end)
+        t = _end_of_quarter(prev_end)
+
     elif p == "last_2_quarters":
         this_q_start = _start_of_quarter(today)
         prev_q_end = this_q_start - timedelta(days=1)
         prev_q_start = _start_of_quarter(prev_q_end)
         prev2_end = prev_q_start - timedelta(days=1)
         prev2_start = _start_of_quarter(prev2_end)
-        f = prev2_start; t = _end_of_quarter(today)
+        f = prev2_start
+        t = _end_of_quarter(today)
 
-    # FY presets
     else:
-        fy_start = _fy_start_for_asof(fin_year_start, today)
-        fy_end = _fy_end(fy_start)
+        first_start = parse_date_maybe(first_reporting_period_start)
+
+        if financial_year_end_month and financial_year_end_day:
+            end_month = int(financial_year_end_month)
+            end_day = int(financial_year_end_day)
+
+            fy_start_month = 1 if end_month == 12 else end_month + 1
+
+            candidate_start = date(today.year, fy_start_month, 1)
+
+            if candidate_start > today:
+                candidate_start = date(today.year - 1, fy_start_month, 1)
+
+            if end_month == 12:
+                candidate_end = date(candidate_start.year, 12, 31)
+            else:
+                candidate_end = date(candidate_start.year + 1, end_month, end_day)
+
+            fy_start = candidate_start
+            fy_end = candidate_end
+
+            # Opening stub period
+            if first_start:
+                opening_end = date(first_start.year, end_month, end_day)
+
+                if first_start <= today <= opening_end:
+                    fy_start = first_start
+                    fy_end = opening_end
+
+        else:
+            fy_start = _fy_start_for_asof(fin_year_start, today)
+            fy_end = _fy_end(fy_start)
 
         if p == "ytd":
-            f = fy_start; t = today
-        elif p == "prev_year":
-            prev_fy_end = fy_start - timedelta(days=1)
-            prev_fy_start = _fy_start_for_asof(fin_year_start, prev_fy_end)
-            f = prev_fy_start; t = _fy_end(prev_fy_start)
-        else:  # this_year default
-            f = fy_start; t = fy_end
+            f = fy_start
+            t = today
 
-    return {"from": f, "to": t, "label": f"{f} → {t}", "preset": p}
+        elif p == "prev_year":
+            prev_ref = fy_start - timedelta(days=1)
+
+            prev = resolve_period(
+                fin_year_start=fin_year_start,
+                preset="this_year",
+                date_from=None,
+                date_to=None,
+                as_of=prev_ref,
+                first_reporting_period_start=first_start,
+                financial_year_end_month=financial_year_end_month,
+                financial_year_end_day=financial_year_end_day,
+            )
+
+            f = prev["from"]
+            t = prev["to"]
+
+        else:
+            f = fy_start
+            t = fy_end
+
+    return {
+        "from": f,
+        "to": t,
+        "label": f"{f} → {t}",
+        "preset": p,
+    }

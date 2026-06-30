@@ -90,6 +90,12 @@ def resolve_company_period(
     ctx = get_company_context(db_service, company_id) or {}
     fy = company_fin_year_start_from_ctx(ctx)
 
+    # ─────────────────────────────────────────────
+    # Range statements (P&L, TB, CF, VAT, Ledger ranges, Journals etc.)
+    # ─────────────────────────────────────────────
+    date_from = clamp_future(parse_date_arg(request, "from"))
+    date_to   = clamp_future(parse_date_arg(request, "to"))
+
     preset_raw = (request.args.get("preset") or "").strip().lower()
     preset = preset_raw or "this_year"
 
@@ -123,9 +129,12 @@ def resolve_company_period(
         pr = resolve_period(
             fin_year_start=fy,
             preset=preset,
-            date_from=None,
-            date_to=None,
-            as_of=None,  # ✅ anchor to server today
+            date_from=date_from,
+            date_to=date_to,
+            as_of=None,
+            first_reporting_period_start=ctx.get("first_reporting_period_start"),
+            financial_year_end_month=ctx.get("financial_year_end_month"),
+            financial_year_end_day=ctx.get("financial_year_end_day"),
         )
 
         meta = {
@@ -148,12 +157,6 @@ def resolve_company_period(
         }
         return None, pr["to"], meta
 
-    # ─────────────────────────────────────────────
-    # Range statements (P&L, TB, CF, VAT, Ledger ranges, Journals etc.)
-    # ─────────────────────────────────────────────
-    date_from = clamp_future(parse_date_arg(request, "from"))
-    date_to   = clamp_future(parse_date_arg(request, "to"))
-
     # 1) If BOTH explicit dates are provided, do NOT override with preset
     if date_from and date_to:
         meta = {
@@ -170,7 +173,10 @@ def resolve_company_period(
         preset=preset,
         date_from=date_from,
         date_to=date_to,
-        as_of=None,  # ✅ anchor to server today
+        as_of=None,
+        first_reporting_period_start=ctx.get("first_reporting_period_start"),
+        financial_year_end_month=ctx.get("financial_year_end_month"),
+        financial_year_end_day=ctx.get("financial_year_end_day"),
     )
 
     meta = {
@@ -214,6 +220,12 @@ def resolve_compare_period(db_service, company_id: int, meta: Dict[str, Any], co
     ctx = get_company_context(db_service, company_id) or {}
     fy = company_fin_year_start_from_ctx(ctx)
 
+    period_kwargs = {
+        "first_reporting_period_start": ctx.get("first_reporting_period_start"),
+        "financial_year_end_month": ctx.get("financial_year_end_month"),
+        "financial_year_end_day": ctx.get("financial_year_end_day"),
+    }
+
     preset = (meta or {}).get("preset") or "this_year"
 
     if compare == "none":
@@ -237,7 +249,14 @@ def resolve_compare_period(db_service, company_id: int, meta: Dict[str, Any], co
 
         # prior_period: previous period end based on preset
         prior_preset = COMPARE_PRESET_MAP.get(preset, "prev_month")
-        pr = resolve_period(fin_year_start=fy, preset=prior_preset, date_from=None, date_to=None, as_of=None)
+        pr = resolve_period(
+            fin_year_start=fy,
+            preset=prior_preset,
+            date_from=None,
+            date_to=None,
+            as_of=None,
+            **period_kwargs,
+        )
         return pr["to"]
 
     # -------------------
@@ -255,7 +274,14 @@ def resolve_compare_period(db_service, company_id: int, meta: Dict[str, Any], co
         # Use preset mapping if available
         prior_preset = COMPARE_PRESET_MAP.get(preset)
         if prior_preset and prior_preset != "prev_year_ytd":
-            pr = resolve_period(fin_year_start=fy, preset=prior_preset, date_from=None, date_to=None, as_of=None)
+            pr = resolve_period(
+                fin_year_start=fy,
+                preset=prior_preset,
+                date_from=None,
+                date_to=None,
+                as_of=None,
+                **period_kwargs,
+            )            
             return pr["from"], pr["to"]
 
         # Special case: YTD → previous FY YTD
@@ -287,6 +313,12 @@ def resolve_compare_range(db_service, company_id: int, meta: dict, compare: str)
     ctx = get_company_context(db_service, company_id) or {}
     fy = company_fin_year_start_from_ctx(ctx)
 
+    period_kwargs = {
+        "first_reporting_period_start": ctx.get("first_reporting_period_start"),
+        "financial_year_end_month": ctx.get("financial_year_end_month"),
+        "financial_year_end_day": ctx.get("financial_year_end_day"),
+    }
+
     preset = (meta or {}).get("preset") or "this_year"
     cur = (meta or {}).get("period") or {}
     cur_from = parse_date_maybe(cur.get("from"))
@@ -308,7 +340,14 @@ def resolve_compare_range(db_service, company_id: int, meta: dict, compare: str)
 
         mapped = PRIOR_PERIOD_MAP.get(preset)
         if mapped:
-            pr = resolve_period(fin_year_start=fy, preset=mapped, date_from=None, date_to=None, as_of=cur_to)
+            pr = resolve_period(
+                fin_year_start=fy,
+                preset=mapped,
+                date_from=None,
+                date_to=None,
+                as_of=cur_to,
+                **period_kwargs,
+            )
             return pr["from"], pr["to"]
 
         # fallback: shift by same span
@@ -327,7 +366,23 @@ def resolve_compare_range(db_service, company_id: int, meta: dict, compare: str)
     return None, None
 
 
-def resolve_compare_asof(*, fin_year_start, preset: str, as_of: date, compare: str):
+def resolve_compare_asof(
+    *,
+    fin_year_start,
+    preset: str,
+    as_of: date,
+    compare: str,
+    first_reporting_period_start=None,
+    financial_year_end_month=None,
+    financial_year_end_day=None,
+):
+
+    period_kwargs = {
+        "first_reporting_period_start": first_reporting_period_start,
+        "financial_year_end_month": financial_year_end_month,
+        "financial_year_end_day": financial_year_end_day,
+    }
+
     if compare == "none":
         return None
 
@@ -339,19 +394,19 @@ def resolve_compare_asof(*, fin_year_start, preset: str, as_of: date, compare: s
 
     if compare == "prior_period":
         if preset == "this_month":
-            pr = resolve_period(fin_year_start=fin_year_start, preset="prev_month", date_from=None, date_to=None, as_of=as_of)
+            pr = resolve_period(fin_year_start=fin_year_start, preset="prev_month", date_from=None, date_to=None, as_of=as_of, **period_kwargs)
             return pr["to"]
         if preset == "this_quarter":
-            pr = resolve_period(fin_year_start=fin_year_start, preset="prev_quarter", date_from=None, date_to=None, as_of=as_of)
+            pr = resolve_period(fin_year_start=fin_year_start, preset="prev_quarter", date_from=None, date_to=None, as_of=as_of, **period_kwargs)
             return pr["to"]
         if preset in ("this_year", "ytd"):
             # previous FY end
-            fy = resolve_period(fin_year_start=fin_year_start, preset="this_year", date_from=None, date_to=None, as_of=as_of)
+            fy = resolve_period(fin_year_start=fin_year_start, preset="this_year", date_from=None, date_to=None, as_of=as_of, **period_kwargs)
             prev_fy_end = fy["from"] - timedelta(days=1)
             return prev_fy_end
 
         # fallback: previous month end
-        pr = resolve_period(fin_year_start=fin_year_start, preset="prev_month", date_from=None, date_to=None, as_of=as_of)
+        pr = resolve_period(fin_year_start=fin_year_start, preset="prev_month", date_from=None, date_to=None, as_of=as_of, **period_kwargs)
         return pr["to"]
 
     return None
