@@ -25584,10 +25584,13 @@ class DatabaseService:
             MAX(l.date)                     AS max_date
 
         FROM {schema}.ledger l
+        LEFT JOIN {schema}.journal j
+            ON j.id = l.journal_id
         LEFT JOIN {schema}.coa c
             ON c.code = l.account
         WHERE l.date >= %s
         AND l.date <= %s
+        AND COALESCE(j.source, '') <> 'year_end'
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
