@@ -24889,9 +24889,21 @@ async function exportStatement(stmtType, format) {
     CURRENT_PERIOD_KEY ||
     "this_year";
 
-  const pr = computePeriodRange(preset) || {};
-  const from = pr.from || null;
-  const to = pr.to || null;
+  let from = null;
+  let to = null;
+
+  if (String(preset).toLowerCase() === "custom") {
+    from = document.getElementById("stmtFromDate")?.value || null;
+    to = document.getElementById("stmtToDate")?.value || null;
+
+    if (!from || !to) {
+      return alert("Custom period requires From and To dates.");
+    }
+  } else {
+    const pr = computePeriodRange(preset) || {};
+    from = pr.from || null;
+    to = pr.to || null;
+  }
 
   if (typeof updateStmtViewerMethodVisibility === "function") {
     updateStmtViewerMethodVisibility(t);
