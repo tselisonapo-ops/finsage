@@ -25962,7 +25962,7 @@ class DatabaseService:
         period_from: date,
         period_to: date,
         retained_earnings_role: str = "equity_retained_earnings",
-        source: str = "year_end_close",
+        source: str = "year_end",
     ) -> Dict[str, Any]:
         schema = self.company_schema(company_id)
 
