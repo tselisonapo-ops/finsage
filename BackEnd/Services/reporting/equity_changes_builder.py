@@ -14,6 +14,12 @@ def _d(x: Any) -> Decimal:
 def _money(x: Decimal) -> float:
     return float(x.quantize(Decimal("0.01")))
 
+def _equity_present_balance(x: Any) -> Decimal:
+    """
+    Equity accounts are credit balances in the ledger.
+    For SOCIE presentation, show them as positive.
+    """
+    return abs(_d(x))
 
 def _equity_bucket_for_account(row: dict) -> str | None:
     role = str(row.get("role") or "").strip().lower()
@@ -271,19 +277,24 @@ def build_statement_of_changes_in_equity(
     # If explicit closing balances were supplied, prefer them for capital/premium/reserve truth
     explicit_closing = {bk: Decimal("0") for bk in bucket_keys}
     explicit_found = set()
+
     for acc in closing_equity_accounts:
         bucket = _equity_bucket_for_account(acc)
-        if not bucket:
+        if not bucket or bucket not in explicit_closing:
             continue
-        explicit_closing[bucket] += _d(acc.get("balance"))
+
+        explicit_closing[bucket] += _equity_present_balance(acc.get("balance"))
         explicit_found.add(bucket)
 
-    # For unclosed-profit reporting, ledger RE usually excludes current-year profit.
-    # So only replace non-RE structural buckets directly from closing balances.
-    for bk in ("ordinary_share_capital", "preference_share_capital", "share_premium", "reserves"):
+    for bk in (
+        "ordinary_share_capital",
+        "owner_capital",
+        "preference_share_capital",
+        "share_premium",
+        "reserves",
+    ):
         if bk in explicit_found:
             rows["closing_balance"]["values"][bk] = explicit_closing[bk]
-
     # Totals
     final_rows = []
     for rk in row_keys:
