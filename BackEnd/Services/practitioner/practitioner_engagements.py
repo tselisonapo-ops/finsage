@@ -431,7 +431,7 @@ def create_engagement_route(cid: int):
 
             current_app.logger.warning("create_engagement_route: before create_engagement_acceptance")
             acceptance_id = db_service.create_engagement_acceptance(
-                cur,
+                cur3,
                 company_id,
                 engagement_id=engagement_id,
                 acceptance_type="acceptance",
