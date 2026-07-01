@@ -906,6 +906,12 @@ def build_cashflow_indirect_v2(
                     "values": _val(inventory_effect, 0.0),
                 },
                 {
+                    "code": "WC_PREPAIDS",
+                    "name": "Change in prepaid expenses",
+                    "row_type": "normal",
+                    "values": _val(prepaids_effect, 0.0),
+                },
+                {
                     "code": "WC_VAT",
                     "name": "Change in VAT / tax balances",
                     "row_type": "normal",
