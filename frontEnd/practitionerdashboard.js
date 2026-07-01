@@ -2042,15 +2042,25 @@ async function apiFetch(url, options = {}) {
       responseJson: json,
     });
 
-    const detail =
-      json?.error ||
-      json?.message ||
-      json?.detail ||
-      json?.description ||
-      (typeof json === "object" && json ? JSON.stringify(json) : null) ||
-      text ||
-      `${res.status} ${res.statusText}` ||
-      "Request failed";
+    let detail = "";
+
+    if (typeof json?.error === "string") {
+      detail = json.error;
+    } else if (json?.error?.message) {
+      detail = json.error.message;
+
+      if (Array.isArray(json.error.missing_fields)) {
+        detail += ` Missing: ${json.error.missing_fields.join(", ")}`;
+      }
+    } else if (json?.message) {
+      detail = json.message;
+    } else if (json?.detail) {
+      detail = json.detail;
+    } else if (text) {
+      detail = text;
+    } else {
+      detail = `${res.status} ${res.statusText}` || "Request failed";
+    }
 
     throw new Error(detail);
   }
