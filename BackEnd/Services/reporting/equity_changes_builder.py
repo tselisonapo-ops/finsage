@@ -16,49 +16,49 @@ def _money(x: Decimal) -> float:
 
 
 def _equity_bucket_for_account(row: dict) -> str | None:
-    code = str(row.get("code") or "").strip()
     role = str(row.get("role") or "").strip().lower()
-    category = str(row.get("category") or "").strip().lower()
     name = str(row.get("name") or "").strip().lower()
+    category = str(row.get("category") or "").strip().lower()
 
-    if role == "equity_share_capital_ordinary":
-        return "ordinary_share_capital"
-    if role == "equity_share_capital_preference":
-        return "preference_share_capital"
-    if role == "equity_share_premium":
-        return "share_premium"
-    if role == "equity_retained_earnings":
-        return "retained_earnings"
-    if role in {
-        "equity_revaluation_reserve",
-        "equity_fx_translation_reserve",
-    }:
-        return "reserves"
+    role_map = {
+        "equity_share_capital": "ordinary_share_capital",
+        "equity_share_capital_ordinary": "ordinary_share_capital",
+        "equity_preference_share_capital": "preference_share_capital",
+        "equity_share_capital_preference": "preference_share_capital",
+        "equity_share_premium": "share_premium",
 
-    if code == "BS_EQ_3000":
-        return "ordinary_share_capital"
-    if code == "BS_EQ_3003":
-        return "preference_share_capital"
-    if code == "BS_EQ_3005":
-        return "share_premium"
-    if code == "BS_EQ_3001":
-        return "retained_earnings"
-    if code.startswith("BS_EQ_33"):
-        return "reserves"
+        "equity_owner_capital": "owner_capital",
+        "equity_general": "owner_capital",
 
+        "equity_retained_earnings": "retained_earnings",
+        "equity_accumulated_surplus": "retained_earnings",
+        "equity_current_year_surplus": "retained_earnings",
+
+        "equity_revaluation_reserve": "reserves",
+        "equity_fx_translation_reserve": "reserves",
+        "equity_oci_reserve": "reserves",
+        "equity_regulatory_reserve": "reserves",
+        "equity_restricted_funds": "reserves",
+    }
+
+    if role in role_map:
+        return role_map[role]
+
+    # fallback only if role missing
+    if "owner" in name and "capital" in name:
+        return "owner_capital"
     if "retained" in name:
         return "retained_earnings"
-    if "premium" in name:
+    if "share premium" in name:
         return "share_premium"
     if "preference" in name and "share" in name:
         return "preference_share_capital"
-    if "share capital" in name or ("capital" in category and "share" in name):
+    if "share capital" in name:
         return "ordinary_share_capital"
-    if "reserve" in name or "oci" in category:
+    if "reserve" in name or "fund" in category:
         return "reserves"
 
     return None
-
 
 def build_statement_of_changes_in_equity(
     *,
@@ -100,6 +100,7 @@ def build_statement_of_changes_in_equity(
     SOCIE_COLUMNS_BY_ORG = {
         "private_company": [
             ("ordinary_share_capital", "Ordinary Share Capital"),
+            ("owner_capital", "Owner's Capital"),
             ("preference_share_capital", "Preference Share Capital"),
             ("share_premium", "Share Premium"),
             ("retained_earnings", "Retained Earnings"),
@@ -217,21 +218,31 @@ def build_statement_of_changes_in_equity(
         # Net credit balance logic for equity movement
         net = credit - debit
 
-        if code in {"BS_EQ_3000", "BS_EQ_3003", "BS_EQ_3005"}:
-            if bucket:
-                rows["share_issues"]["values"][bucket] += net
+        if bucket in {
+            "ordinary_share_capital",
+            "preference_share_capital",
+            "share_premium",
+            "owner_capital",
+        }:
+            rows["share_issues"]["values"][bucket] += net
             continue
 
-        if code in {"BS_EQ_3002"} or role == "equity_dividends":
-            rows["dividends"]["values"]["retained_earnings"] += net
+        if role == "equity_dividends":
+            target_bucket = "retained_earnings" if "retained_earnings" in bucket_keys else bucket
+            if target_bucket in bucket_keys:
+                rows["dividends"]["values"][target_bucket] += net
             continue
 
-        if code in {"BS_EQ_3006"} or role == "equity_drawings":
-            rows["drawings"]["values"]["retained_earnings"] += net
+        if role == "equity_drawings":
+            target_bucket = "owner_capital" if "owner_capital" in bucket_keys else "retained_earnings"
+            if target_bucket in bucket_keys:
+                rows["drawings"]["values"][target_bucket] += net
             continue
 
-        if code in {"BS_EQ_3105"} or role == "equity_opening_balance":
-            rows["prior_adjustments"]["values"]["retained_earnings"] += net
+        if role == "equity_opening_balance":
+            target_bucket = "retained_earnings" if "retained_earnings" in bucket_keys else bucket
+            if target_bucket in bucket_keys:
+                rows["prior_adjustments"]["values"][target_bucket] += net
             continue
 
         if bucket == "reserves":
