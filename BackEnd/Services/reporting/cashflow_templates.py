@@ -154,6 +154,38 @@ def _aggregate_cf_detail_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, An
         if abs(float(row.get("amount") or 0.0)) > 0.000001
     ]
 
+def _has_non_zero(values: dict) -> bool:
+    if not values:
+        return False
+
+    return any(
+        abs(float(v or 0.0)) > 0.000001
+        for v in values.values()
+        if isinstance(v, (int, float))
+    )
+
+
+def _filter_statement_lines(lines):
+    out = []
+
+    for line in lines:
+        row_type = str(line.get("row_type") or "").lower()
+
+        # Always keep structural rows
+        if row_type in ("header", "subtotal", "total"):
+            out.append(line)
+            continue
+
+        # Keep rows with expandable detail
+        if line.get("detail"):
+            out.append(line)
+            continue
+
+        # Keep only rows with a value
+        if _has_non_zero(line.get("values", {})):
+            out.append(line)
+
+    return out
 # -----------------------------
 # Types (hooks)
 # -----------------------------
@@ -918,7 +950,7 @@ def build_cashflow_indirect_v2(
                     "values": _val(vat_effect, 0.0),
                 },
             ]
-
+        lines = _filter_statement_lines(lines)
         return {
             "total": net_operating,
             "lines": lines,
