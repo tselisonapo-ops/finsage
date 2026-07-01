@@ -588,6 +588,7 @@ def build_cashflow_indirect_v2(
             "receivables": 0.0,
             "payables": 0.0,
             "inventory": 0.0,
+            "prepaids": 0.0,
             "vat": 0.0,
         }
 
@@ -695,6 +696,8 @@ def build_cashflow_indirect_v2(
                 wc["payables"] += delta
             elif bucket == "inventory":
                 wc["inventory"] += delta
+            elif bucket == "prepaids":
+                wc["prepaids"] += delta
             elif bucket in ("vat_input", "vat_output", "tax_payable", "tax_receivable"):
                 wc["vat"] += delta
 
@@ -702,6 +705,7 @@ def build_cashflow_indirect_v2(
         inventory_effect   = -wc["inventory"]
         vat_effect         = -wc["vat"]
         payables_effect    = +wc["payables"]
+        prepaids_effect = -wc["prepaids"]
 
         operating_profit_before_wc = net_profit + adjustments_total
         cash_generated_from_ops = (
@@ -709,6 +713,7 @@ def build_cashflow_indirect_v2(
             + receivables_effect
             + payables_effect
             + inventory_effect
+            + prepaids_effect
             + vat_effect
         )
         net_operating = cash_generated_from_ops
@@ -816,6 +821,12 @@ def build_cashflow_indirect_v2(
                     ),
                 },
                 {
+                    "code": "WC_PREPAIDS",
+                    "name": "Change in prepaid expenses",
+                    "row_type": "normal",
+                    "values": _val(prepaids_effect, 0.0),
+                },
+                {
                     "code": "CASH_GEN_OPS",
                     "name": "Cash generated from operations",
                     "row_type": "subtotal",
@@ -918,6 +929,7 @@ def build_cashflow_indirect_v2(
                     {"code": "WC_AR", "name": "Change in receivables", "amount": receivables_effect},
                     {"code": "WC_INV", "name": "Change in inventory", "amount": inventory_effect},
                     {"code": "WC_AP", "name": "Change in payables", "amount": payables_effect},
+                    {"code": "WC_PREPAIDS", "name": "Change in prepaid expenses", "amount": prepaids_effect},
                     {"code": "WC_VAT", "name": "Change in VAT / tax balances", "amount": vat_effect},
                 ],
             },
