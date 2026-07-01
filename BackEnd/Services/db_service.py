@@ -22517,20 +22517,25 @@ class DatabaseService:
             ('management_accounts', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
             ('vat', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
             ('payroll', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
-            ('tax', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+
+            ('tax', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
             ('tax_compliance', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
+
             ('annual_financial_statements', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
             ('year_end_financials', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
             ('compilation', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
-            ('review', TRUE, TRUE, 'draft', 'planning', 'normal', TRUE),
-            ('audit', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
-            ('audit_support', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
-            ('internal_audit', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
-            ('independent_review', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
+
+            ('review', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+            ('audit', FALSE, FALSE, 'draft', 'planning', 'high', TRUE),
+            ('audit_support', FALSE, FALSE, 'draft', 'planning', 'high', TRUE),
+            ('internal_audit', FALSE, FALSE, 'draft', 'planning', 'high', TRUE),
+            ('independent_review', FALSE, FALSE, 'draft', 'planning', 'high', TRUE),
+
             ('advisory', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
             ('consulting', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
             ('secretarial', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
             ('compliance', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),
+
             ('cleanup', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
             ('migration', TRUE, TRUE, 'draft', 'planning', 'high', TRUE),
             ('training', FALSE, FALSE, 'draft', 'planning', 'normal', TRUE),

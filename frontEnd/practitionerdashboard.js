@@ -4331,18 +4331,18 @@ const INDUSTRY_CATALOG = {
 };
 
 const ORGANISATION_TYPE_OPTIONS = [
-  "Private Company",
-  "Public Company",
-  "Sole Trader",
-  "Partnership",
-  "NGO / Non-Profit",
-  "NPO",
-  "Trust",
-  "Co-operative",
-  "Body Corporate",
-  "Club / Association",
-  "Government Entity",
-  "Other",
+  { value: "private_company", label: "Private Company" },
+  { value: "public_company", label: "Public Company" },
+  { value: "sole_trader", label: "Sole Trader" },
+  { value: "partnership", label: "Partnership" },
+  { value: "non_profit", label: "NGO / Non-Profit" },
+  { value: "npo", label: "NPO" },
+  { value: "trust", label: "Trust" },
+  { value: "cooperative", label: "Co-operative" },
+  { value: "body_corporate", label: "Body Corporate" },
+  { value: "club_association", label: "Club / Association" },
+  { value: "government_entity", label: "Government Entity" },
+  { value: "other", label: "Other" },
 ];
 
 function populateEngOrganisationTypeOptions(selectedValue = "") {
@@ -4351,9 +4351,10 @@ function populateEngOrganisationTypeOptions(selectedValue = "") {
 
   el.innerHTML = `
     <option value="">Select organisation type</option>
-    ${ORGANISATION_TYPE_OPTIONS.map((v) => `
-      <option value="${escapeHtml(v)}" ${v === selectedValue ? "selected" : ""}>
-        ${escapeHtml(v)}
+    ${ORGANISATION_TYPE_OPTIONS.map((o) => `
+      <option value="${escapeHtml(o.value)}"
+              ${o.value === selectedValue ? "selected" : ""}>
+        ${escapeHtml(o.label)}
       </option>
     `).join("")}
   `;
