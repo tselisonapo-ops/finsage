@@ -3569,7 +3569,9 @@ const ENGAGEMENT_CAPABILITIES = {
   management_accounts: ["posting", "reporting", "workspace"],
   vat: ["posting", "workspace", "tax"],
   payroll: ["posting", "workspace", "payroll"],
-  tax: ["posting", "working_papers", "reporting", "workspace", "tax"],
+
+  tax: ["working_papers", "reporting", "tax"],
+
   tax_compliance: ["posting", "workspace", "tax"],
   cleanup: ["posting", "workspace"],
   migration: ["posting", "workspace"],
@@ -3690,8 +3692,8 @@ function populateEngagementTypeOptions(categoryValue = "", selectedValue = "") {
   }
 }
 
-function engagementTypeRequiresWorkspace(typeOrRow) {
-  return engagementSupportsCapability(typeOrRow, "workspace");
+function engagementTypeRequiresWorkspace(type) {
+  return getEngagementCapabilities(type).has("posting");
 }
 
 function normalizeRoleKey(v) {
@@ -5607,11 +5609,15 @@ function readEngagementModalPayload() {
   };
 
   if (requiresWorkspace) {
+    const orgType =
+      document.getElementById("engOrganisationType")?.value?.trim() ||
+      customerDefaults.organisation_type ||
+      "";
+
     payload.target_company = {
-      organisation_type:
-        document.getElementById("engOrganisationType")?.value?.trim() ||
-        customerDefaults.organisation_type ||
-        "",
+      organisation_type: orgType,
+      organizationType: orgType,
+
       country:
         document.getElementById("engCountry")?.value?.trim() ||
         customerDefaults.country ||
