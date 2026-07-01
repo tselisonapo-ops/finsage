@@ -66345,44 +66345,99 @@ class DatabaseService:
         row = cur.fetchone()
         return row["id"] if row else None
 
-    def create_engagement_acceptance(
-        self,
-        company_id: int,
-        data: dict,
-        *,
-        user_id: int | None = None,
-    ) -> dict:
-        schema = self.company_schema(company_id)
-        data = data or {}
+    def create_engagement_acceptance(self, *args, user_id: int | None = None, **kwargs) -> dict | int:
+        """
+        Supports both:
 
-        engagement_id = int(data.get("engagement_id") or 0)
-        if engagement_id <= 0:
+        1) Managed transaction:
+        create_engagement_acceptance(company_id, data, user_id=...)
+
+        2) Existing transaction/cursor:
+        create_engagement_acceptance(cur, company_id, engagement_id=..., ...)
+        """
+
+        def build_acceptance_payload(data: dict) -> dict:
+            data = data or {}
+
+            return {
+                "engagement_id": int(data.get("engagement_id") or 0),
+                "acceptance_type": data.get("acceptance_type") or "acceptance",
+                "status": data.get("status") or "draft",
+
+                "requested_by_user_id": (
+                    data.get("requested_by_user_id")
+                    or data.get("actor_user_id")
+                    or user_id
+                ),
+                "assigned_partner_user_id": data.get("assigned_partner_user_id"),
+
+                # Acceptance assessment fields
+                "risk_level": data.get("risk_level") or "normal",
+                "independence_cleared": bool(data.get("independence_cleared")),
+                "conflicts_checked": bool(data.get("conflicts_checked")),
+                "competence_confirmed": bool(data.get("competence_confirmed")),
+                "capacity_confirmed": bool(data.get("capacity_confirmed")),
+                "client_risk_notes": data.get("client_risk_notes") or "",
+                "service_complexity_notes": data.get("service_complexity_notes") or "",
+                "preconditions_notes": data.get("preconditions_notes") or "",
+                "decision_notes": data.get("decision_notes") or "",
+
+                "valid_from": data.get("valid_from"),
+                "valid_to": data.get("valid_to"),
+
+                "created_by_user_id": (
+                    data.get("created_by_user_id")
+                    or data.get("actor_user_id")
+                    or user_id
+                ),
+                "updated_by_user_id": (
+                    data.get("updated_by_user_id")
+                    or data.get("actor_user_id")
+                    or user_id
+                ),
+            }
+
+        # STYLE 2: create_engagement_acceptance(cur, company_id, ...)
+        if len(args) >= 2 and hasattr(args[0], "execute"):
+            cur = args[0]
+            company_id = int(args[1])
+            data = build_acceptance_payload(kwargs)
+
+            if data["engagement_id"] <= 0:
+                raise ValueError("engagement_id is required")
+
+            return self.create_engagement_acceptance_item(
+                cur,
+                company_id,
+                **data,
+            )
+
+        # STYLE 1: create_engagement_acceptance(company_id, data, user_id=...)
+        if len(args) < 2:
+            raise TypeError("create_engagement_acceptance requires company_id and data")
+
+        company_id = int(args[0])
+        data = build_acceptance_payload(args[1])
+        schema = self.company_schema(company_id)
+
+        if data["engagement_id"] <= 0:
             raise ValueError("engagement_id is required")
 
         with self._conn_cursor() as (conn, cur):
             item_id = self.create_engagement_acceptance_item(
                 cur,
                 company_id,
-                engagement_id=engagement_id,
-                acceptance_type=data.get("acceptance_type") or "acceptance",
-                status=data.get("status") or "draft",
-                requested_by_user_id=data.get("requested_by_user_id") or user_id,
-                assigned_partner_user_id=data.get("assigned_partner_user_id"),
-                decision_notes=data.get("decision_notes"),
-                valid_from=data.get("valid_from"),
-                valid_to=data.get("valid_to"),
-                created_by_user_id=data.get("created_by_user_id") or user_id,
-                updated_by_user_id=data.get("updated_by_user_id") or user_id,
+                **data,
             )
 
             row = self.fetch_one(
                 f"""
                 SELECT *
                 FROM {schema}.engagement_acceptance
-                WHERE company_id=%s AND id=%s
+                WHERE company_id = %s AND id = %s
                 LIMIT 1
                 """,
-                (int(company_id), int(item_id)),
+                (company_id, int(item_id)),
                 cur=cur,
             )
 

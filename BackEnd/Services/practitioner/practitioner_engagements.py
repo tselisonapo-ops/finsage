@@ -431,19 +431,12 @@ def create_engagement_route(cid: int):
 
             current_app.logger.warning("create_engagement_route: before create_engagement_acceptance")
             acceptance_id = db_service.create_engagement_acceptance(
-                cur3,
+                cur,
                 company_id,
                 engagement_id=engagement_id,
                 acceptance_type="acceptance",
+                status="draft",
                 assigned_partner_user_id=partner_user_id,
-                risk_level="normal",
-                independence_cleared=False,
-                conflicts_checked=False,
-                competence_confirmed=False,
-                capacity_confirmed=False,
-                client_risk_notes="",
-                service_complexity_notes="",
-                preconditions_notes="",
                 decision_notes="",
                 valid_from=body.get("start_date"),
                 valid_to=body.get("end_date"),
