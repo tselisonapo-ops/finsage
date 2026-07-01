@@ -2034,9 +2034,20 @@ async function apiFetch(url, options = {}) {
   }
 
   if (!res.ok) {
+    console.error("API ERROR DETAILS:", {
+      url,
+      status: res.status,
+      statusText: res.statusText,
+      responseText: text,
+      responseJson: json,
+    });
+
     const detail =
       json?.error ||
       json?.message ||
+      json?.detail ||
+      json?.description ||
+      (typeof json === "object" && json ? JSON.stringify(json) : null) ||
       text ||
       `${res.status} ${res.statusText}` ||
       "Request failed";
@@ -5922,6 +5933,7 @@ async function handleCreateEngagementSubmit() {
     if (saveBtn) saveBtn.disabled = true;
     setEngagementModalMsg("Creating engagement...");
 
+    console.log("Create engagement payload:", payload);
     const out = await createEngagementApi(payload);
     const row = out?.row || null;
     const acceptanceId = out?.acceptance_id || null;
@@ -5950,13 +5962,19 @@ async function handleCreateEngagementSubmit() {
       closeEngagementModal();
       resetEngagementModalForm();
     }, 500);
-  } catch (err) {
-    console.error(err);
-    setEngagementModalMsg(
-      err.message || "Failed to create engagement.",
-      "error"
-    );
-  } finally {
+    } catch (err) {
+      const msg =
+        err?.message ||
+        (typeof err === "object" ? JSON.stringify(err) : String(err)) ||
+        "Failed to create engagement.";
+
+      console.error("Create engagement failed:", {
+        message: msg,
+        error: err,
+      });
+
+      setEngagementModalMsg(msg, "error");
+    } finally {
     if (saveBtn) saveBtn.disabled = false;
   }
 }
