@@ -883,18 +883,7 @@ def build_balance_sheet_v3(
             
 
     # Optional net profit plug line (only if requested)
-    pl_has_balance = False
-
-    for code, row in cur_by.items():
-        if str(code).startswith("PL_"):
-            bal = float(_tb_debit(row) or 0.0) - float(_tb_credit(row) or 0.0)
-            if abs(bal) > 0.01:
-                pl_has_balance = True
-                break
-
-    if include_net_profit_line \
-        and get_pnl_full_fn is not None \
-        and pl_has_balance:
+    if include_net_profit_line and get_pnl_full_fn is not None:
         # --- current year-to-date (YTD) ---
         ytd_from = date_from
 
@@ -903,7 +892,7 @@ def build_balance_sheet_v3(
             ytd_from = fin_year_start_for_as_of(as_of, fy)
 
         pnl_cur = get_pnl_full_fn(company_id, ytd_from, as_of) or {}
-
+        print("Net result:", pnl_cur.get("net_result"))
         net_obj_cur = pnl_cur.get("net_result") or {}
         net_cur = float(
             net_obj_cur.get("amount")
@@ -911,10 +900,10 @@ def build_balance_sheet_v3(
             or 0.0
         )
 
-        # --- prior year-to-date (only if prior_as_of exists) ---
+        # --- prior year-to-date ---
         net_pri = 0.0
         if has_prior and prior_as_of:
-            ytd_from_pri = fin_year_start_for_as_of(prior_as_of, fy)  # ✅ FY-aware
+            ytd_from_pri = fin_year_start_for_as_of(prior_as_of, fy)
             pnl_pri = get_pnl_full_fn(company_id, ytd_from_pri, prior_as_of) or {}
 
             net_obj_pri = pnl_pri.get("net_result") or {}
@@ -923,6 +912,28 @@ def build_balance_sheet_v3(
                 or (net_obj_pri.get("values") or {}).get("cur")
                 or 0.0
             )
+
+        # only add profit/loss line if P&L is still open
+        if abs(net_cur) > 0.01:
+            if view == "external":
+                v = {"cur": net_cur} if not has_prior else {
+                    "cur": net_cur,
+                    "pri": net_pri,
+                    "delta": float(net_cur - net_pri),
+                }
+            else:
+                v = {"noncur": 0.0, "cur": 0.0, "total": net_cur}
+                if has_prior:
+                    v["pri_total"] = net_pri
+                    v["delta"] = float(net_cur - net_pri)
+
+            eq_lines.append({
+                "code": "NET_PROFIT",
+                "name": "Profit/(loss) for the year to date",
+                "values": v,
+                "is_contra": False,
+                "meta": {"is_plug": True, "source": "pnl_ytd"},
+            })
 
         # -------------------------
         # Hide zero lines for external reporting only
