@@ -883,14 +883,18 @@ def build_balance_sheet_v3(
             
 
     # Optional net profit plug line (only if requested)
-    period_closed = False
+    pl_has_balance = False
 
-    if ctx.get("period_closed"):
-        period_closed = True
+    for code, row in cur_by.items():
+        if str(code).startswith("PL_"):
+            bal = float(_tb_debit(row) or 0.0) - float(_tb_credit(row) or 0.0)
+            if abs(bal) > 0.01:
+                pl_has_balance = True
+                break
 
     if include_net_profit_line \
         and get_pnl_full_fn is not None \
-        and not period_closed:
+        and pl_has_balance:
         # --- current year-to-date (YTD) ---
         ytd_from = date_from
 
