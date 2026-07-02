@@ -25604,9 +25604,11 @@ class DatabaseService:
             ON c.code = l.account
         WHERE l.date >= %s
         AND l.date <= %s
-        AND NOT (
-            COALESCE(j.source, '') IN ('year_end', 'year_end_close')
-            OR COALESCE(orig_j.source, '') IN ('year_end', 'year_end_close')
+        AND COALESCE(j.reversal_of_journal_id, 0) = 0
+        AND NOT EXISTS (
+            SELECT 1
+            FROM {schema}.journal r
+            WHERE r.reversal_of_journal_id = j.id
         )
         GROUP BY
             l.account,
