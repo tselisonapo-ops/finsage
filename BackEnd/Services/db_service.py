@@ -25610,6 +25610,7 @@ class DatabaseService:
             FROM {schema}.journal r
             WHERE r.reversal_of_journal_id = j.id
         )
+        AND COALESCE(j.source, '') NOT IN ('year_end', 'year_end_close')
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
