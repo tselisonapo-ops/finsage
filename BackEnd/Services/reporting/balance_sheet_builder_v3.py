@@ -945,28 +945,6 @@ def build_balance_sheet_v3(
             ncl_lines = rh.filter_zero_lines(ncl_lines)
             eq_lines = rh.filter_zero_lines(eq_lines)
             
-        # --- build values for BS columns ---
-        if view == "external":
-            v = {"cur": net_cur} if not has_prior else {
-                "cur": net_cur,
-                "pri": net_pri,
-                "delta": float(net_cur - net_pri),
-            }
-        else:
-            v = {"noncur": 0.0, "cur": 0.0, "total": net_cur}
-            if has_prior:
-                v["pri_total"] = net_pri
-                v["delta"] = float(net_cur - net_pri)
-
-        # --- append equity plug line ---
-        eq_lines.append({
-            "code": "NET_PROFIT",
-            "name": "Profit/(loss) for the year to date",
-            "values": v,
-            "is_contra": False,
-            "meta": {"is_plug": True, "source": "pnl_ytd"},
-        })
-
     # -------------------------
     # Totals (contra-aware)
     # -------------------------
