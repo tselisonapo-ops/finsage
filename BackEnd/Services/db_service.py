@@ -25878,10 +25878,15 @@ class DatabaseService:
         ref = f"YEC-{period_to.isoformat()}"
 
         existing = self.fetch_one(f"""
-            SELECT id
-            FROM {schema}.journal
-            WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
-            AND COALESCE(reversal_of_journal_id, 0) = 0
+            SELECT j.id
+            FROM {schema}.journal j
+            WHERE LOWER(TRIM(j.ref)) = LOWER(TRIM(%s))
+            AND COALESCE(j.reversal_of_journal_id, 0) = 0
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.journal r
+                WHERE r.reversal_of_journal_id = j.id
+            )
             LIMIT 1;
         """, [ref])
 
