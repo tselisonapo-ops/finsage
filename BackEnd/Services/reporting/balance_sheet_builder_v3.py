@@ -883,7 +883,14 @@ def build_balance_sheet_v3(
             
 
     # Optional net profit plug line (only if requested)
-    if include_net_profit_line and get_pnl_full_fn is not None:
+    period_closed = False
+
+    if ctx.get("period_closed"):
+        period_closed = True
+
+    if include_net_profit_line \
+        and get_pnl_full_fn is not None \
+        and not period_closed:
         # --- current year-to-date (YTD) ---
         ytd_from = date_from
 
