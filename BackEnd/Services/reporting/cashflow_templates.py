@@ -681,6 +681,82 @@ def build_cashflow_indirect_v2(
         }
 
         journals = get_journals_period_fn(company_id, df, dt)
+
+        def _cash_paid_by_name(*needles: str) -> float:
+            total = 0.0
+
+            for j in journals:
+                lines = j.get("journal_lines") or []
+                cash_lines = [ln for ln in lines if ac._is_cash_bank(ln)]
+                if not cash_lines:
+                    continue
+
+                noncash_lines = [ln for ln in lines if not ac._is_cash_bank(ln)]
+
+                cash_out = sum(
+                    float(cl.get("credit") or 0.0) - float(cl.get("debit") or 0.0)
+                    for cl in cash_lines
+                )
+
+                if cash_out <= 0:
+                    continue
+
+                for ln in noncash_lines:
+                    name = str(
+                        ln.get("account_name")
+                        or ln.get("name")
+                        or ln.get("account")
+                        or ln.get("account_code")
+                        or ""
+                    ).lower()
+
+                    if any(n in name for n in needles):
+                        amt = float(ln.get("debit") or 0.0) - float(ln.get("credit") or 0.0)
+                        if amt > 0:
+                            total += amt
+
+            return total
+
+        def _cash_received_by_name(*needles: str) -> float:
+            total = 0.0
+
+            for j in journals:
+                lines = j.get("journal_lines") or []
+                cash_lines = [ln for ln in lines if ac._is_cash_bank(ln)]
+                if not cash_lines:
+                    continue
+
+                noncash_lines = [ln for ln in lines if not ac._is_cash_bank(ln)]
+
+                cash_in = sum(
+                    float(cl.get("debit") or 0.0) - float(cl.get("credit") or 0.0)
+                    for cl in cash_lines
+                )
+
+                if cash_in <= 0:
+                    continue
+
+                for ln in noncash_lines:
+                    name = str(
+                        ln.get("account_name")
+                        or ln.get("name")
+                        or ln.get("account")
+                        or ln.get("account_code")
+                        or ""
+                    ).lower()
+
+                    if any(n in name for n in needles):
+                        amt = float(ln.get("credit") or 0.0) - float(ln.get("debit") or 0.0)
+                        if amt > 0:
+                            total += amt
+
+            return total
+        
+        interest_paid = _cash_paid_by_name("interest")
+        tax_paid = _cash_paid_by_name("income tax", "tax expense", "tax payable")
+        interest_received = _cash_received_by_name("interest income", "interest received")
+        dividends_received = _cash_received_by_name("dividend income", "dividends received")
+
         all_codes = set(tb_open.keys()) | set(tb_close.keys())
         
         # --- Get depreciation/amortisation from TB + COA metadata ---
@@ -722,7 +798,8 @@ def build_cashflow_indirect_v2(
             # only expense-side accounts belong in operating adjustments
             name_l = name.lower()
 
-            # Non-cash add-backs / deductions for indirect cash flow
+            # IAS 7 indirect method adjustments:
+            # Add back non-cash expenses/losses, deduct non-operating income/gains.
             if (
                 role.startswith("depreciation_expense")
                 or role.startswith("amortisation_expense")
@@ -731,42 +808,74 @@ def build_cashflow_indirect_v2(
                 or "amortization" in name_l
             ):
                 adj_amt = abs(delta)
+                detail_group = "Depreciation and amortisation"
 
             elif "impairment" in name_l:
                 adj_amt = abs(delta)
+                detail_group = "Impairment losses"
+
+            elif (
+                "expected credit loss" in name_l
+                or "ecl" in name_l
+                or "bad debt" in name_l
+                or "doubtful debt" in name_l
+            ):
+                adj_amt = abs(delta)
+                detail_group = "Expected credit losses / bad debts"
+
+            elif "inventory" in name_l and ("write-down" in name_l or "write down" in name_l):
+                adj_amt = abs(delta)
+                detail_group = "Inventory write-downs"
+
+            elif "provision" in name_l and ("reversal" not in name_l):
+                adj_amt = abs(delta)
+                detail_group = "Provision expense"
+
+            elif "provision" in name_l and "reversal" in name_l:
+                adj_amt = -abs(delta)
+                detail_group = "Provision reversals"
 
             elif "loss" in name_l and "disposal" in name_l:
                 adj_amt = abs(delta)
+                detail_group = "Loss on disposal"
 
             elif "gain" in name_l and "disposal" in name_l:
                 adj_amt = -abs(delta)
+                detail_group = "Gain on disposal"
 
-            elif role in ("loan_interest_expense", "lease_interest_expense"):
+            elif "fair value loss" in name_l or ("fair value" in name_l and "loss" in name_l):
                 adj_amt = abs(delta)
+                detail_group = "Fair value losses"
+
+            elif "fair value gain" in name_l or ("fair value" in name_l and "gain" in name_l):
+                adj_amt = -abs(delta)
+                detail_group = "Fair value gains"
+
+            elif "foreign exchange loss" in name_l or "forex loss" in name_l or "fx loss" in name_l:
+                adj_amt = abs(delta)
+                detail_group = "Foreign exchange losses"
+
+            elif "foreign exchange gain" in name_l or "forex gain" in name_l or "fx gain" in name_l:
+                adj_amt = -abs(delta)
+                detail_group = "Foreign exchange gains"
+
+            elif "interest income" in name_l:
+                adj_amt = -abs(delta)
+                detail_group = "Interest income"
+
+            elif "dividend income" in name_l:
+                adj_amt = -abs(delta)
+                detail_group = "Dividend income"
+
+            elif "deferred tax" in name_l:
+                adj_amt = abs(delta) if delta >= 0 else -abs(delta)
+                detail_group = "Deferred tax"
 
             if adj_amt is not None and abs(adj_amt) > 0.000001:
                 adjustments_total += adj_amt
                 resolved_adjustments.append(name)
-                detail_group = "Other non-cash items"
 
-                if (
-                    "depreciation" in name_l
-                    or "amortisation" in name_l
-                    or "amortization" in name_l
-                ):
-                    detail_group = "Depreciation and amortisation"
-
-                elif role in ("loan_interest_expense", "lease_interest_expense") or "interest" in name_l:
-                    detail_group = "Interest expense"
-
-                elif "impairment" in name_l:
-                    detail_group = "Impairment losses"
-
-                elif "loss" in name_l and "disposal" in name_l:
-                    detail_group = "Loss on disposal"
-
-                elif "gain" in name_l and "disposal" in name_l:
-                    detail_group = "Gain on disposal"
+                detail_group = detail_group if "detail_group" in locals() else "Other non-cash items"
 
                 adjustment_lines.append({
                     "account_name": detail_group,
@@ -835,8 +944,13 @@ def build_cashflow_indirect_v2(
             + prepaids_effect
             + vat_effect
         )
-        net_operating = cash_generated_from_ops
-
+        net_operating = (
+            cash_generated_from_ops
+            - interest_paid
+            - tax_paid
+            + interest_received
+            + dividends_received
+        )
         if is_ws_2 or is_ws_3:
             lines = [
                 {
@@ -958,6 +1072,30 @@ def build_cashflow_indirect_v2(
                     ),
                 },
                 {
+                    "code": "INTEREST_PAID",
+                    "name": "Interest paid",
+                    "row_type": "normal",
+                    "values": _val(-interest_paid, 0.0),
+                },
+                {
+                    "code": "TAX_PAID",
+                    "name": "Income taxes paid",
+                    "row_type": "normal",
+                    "values": _val(-tax_paid, 0.0),
+                },
+                {
+                    "code": "INTEREST_RECEIVED",
+                    "name": "Interest received",
+                    "row_type": "normal",
+                    "values": _val(interest_received, 0.0),
+                },
+                {
+                    "code": "DIVIDENDS_RECEIVED",
+                    "name": "Dividends received",
+                    "row_type": "normal",
+                    "values": _val(dividends_received, 0.0),
+                },
+                {
                     "code": "NET_CASH_OP",
                     "name": "Net cash from operating activities",
                     "row_type": "total",
@@ -1035,6 +1173,54 @@ def build_cashflow_indirect_v2(
                     "name": "Change in VAT / tax balances",
                     "row_type": "normal",
                     "values": _val(vat_effect, 0.0),
+                },
+                {
+                    "code": "CASH_GEN_OPS",
+                    "name": "Cash generated from operations",
+                    "row_type": "subtotal",
+                    "values": _val(cash_generated_from_ops, 0.0),
+                },
+                {
+                    "code": "INTEREST_PAID",
+                    "name": "Interest paid",
+                    "row_type": "normal",
+                    "values": _val(-interest_paid, 0.0),
+                },
+                {
+                    "code": "TAX_PAID",
+                    "name": "Income taxes paid",
+                    "row_type": "normal",
+                    "values": _val(-tax_paid, 0.0),
+                },
+                {
+                    "code": "INTEREST_RECEIVED",
+                    "name": "Interest received",
+                    "row_type": "normal",
+                    "values": _val(
+                        interest_received,
+                        0.0,
+                        interest_received,
+                        ws_show_total=True,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "DIVIDENDS_RECEIVED",
+                    "name": "Dividends received",
+                    "row_type": "normal",
+                    "values": _val(
+                        dividends_received,
+                        0.0,
+                        dividends_received,
+                        ws_show_total=True,
+                        ws_show_breakdown=True,
+                    ),
+                },
+                {
+                    "code": "NET_CASH_OP",
+                    "name": "Net cash from operating activities",
+                    "row_type": "total",
+                    "values": _val(net_operating, 0.0),
                 },
             ]
         lines = _filter_statement_lines(lines)
@@ -1140,6 +1326,10 @@ def build_cashflow_indirect_v2(
             "WC_PREPAIDS",
             "WC_VAT",
             "CASH_GEN_OPS",
+            "INTEREST_PAID",
+            "TAX_PAID",
+            "INTEREST_RECEIVED",
+            "DIVIDENDS_RECEIVED",
             "NET_CASH_OP",
         ):
             return code
