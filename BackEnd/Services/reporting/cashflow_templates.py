@@ -108,7 +108,14 @@ def _cf_group_label(row: Dict[str, Any]) -> str:
         return "Lease liability payments"
 
     if "loan" in role or "borrow" in role or "loan payable" in name.lower():
-        return "Borrowings"
+        if float(row.get("amount") or 0.0) < 0:
+            return "Repayment of loan payable"
+        return "Proceeds from loan payable"
+
+    if "long-term loan" in name.lower():
+        if float(row.get("amount") or 0.0) < 0:
+            return "Repayment of long-term loan"
+        return "Proceeds from long-term loan"
 
     if "vat" in bucket or "vat" in name.lower():
         return "VAT paid / received"
