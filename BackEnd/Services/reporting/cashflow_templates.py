@@ -1064,6 +1064,60 @@ def build_cashflow_indirect_v2(
                 })
         return {"totals": sec_totals, "lines": sec_lines}
 
+    def _line_amount(line: Dict[str, Any]) -> float:
+        values = line.get("values") or {}
+        return float(
+            values.get("cur")
+            or values.get("tot")
+            or values.get("brk")
+            or 0.0
+        )
+
+    def _line_key(line: Dict[str, Any]) -> str:
+        code = str(line.get("code") or "").strip()
+        name = str(line.get("name") or "").strip()
+        return f"{code}::{name}"
+
+    def _merge_comparative_lines(
+        current_lines: List[Dict[str, Any]],
+        comparison_blocks: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        merged: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+
+        def ensure_line(line: Dict[str, Any]) -> Dict[str, Any]:
+            key = _line_key(line)
+
+            if key not in merged:
+                merged[key] = {
+                    **line,
+                    "values": {},
+                    "detail": {},
+                }
+                order.append(key)
+
+            return merged[key]
+
+        for line in current_lines or []:
+            row = ensure_line(line)
+            row["values"]["cur"] = _line_amount(line)
+
+            if line.get("detail"):
+                row["detail"]["cur"] = (line.get("detail") or {}).get("cur", [])
+
+        for idx, block in enumerate(comparison_blocks or [], start=1):
+            col_key = "pri" if idx == 1 else f"p{idx}"
+
+            for line in block.get("lines") or []:
+                row = ensure_line(line)
+                row["values"][col_key] = _line_amount(line)
+
+                if line.get("detail"):
+                    row.setdefault("detail", {})
+                    row["detail"][col_key] = (line.get("detail") or {}).get("cur", [])
+
+        return [merged[k] for k in order]
+
     # Current
     cf_cur = _build_cash_journal_analysis(
         get_journals_period_fn=get_journals_period_fn,
@@ -1122,7 +1176,7 @@ def build_cashflow_indirect_v2(
     operating = {
         "key": "operating",
         "label": "Cash flows from operating activities",
-        "lines": op_cur["lines"],
+        "lines": _merge_comparative_lines(op_cur["lines"], op_comparisons),
         "totals": _val(
             float(op_cur["total"]),
             operating_comparison_totals,
