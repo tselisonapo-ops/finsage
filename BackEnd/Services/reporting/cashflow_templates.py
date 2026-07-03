@@ -186,6 +186,88 @@ def _filter_statement_lines(lines):
             out.append(line)
 
     return out
+
+def _build_cash_journal_analysis(
+    *,
+    get_journals_period_fn: GetJournalsPeriodFn,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+) -> Dict[str, Any]:
+    journals = get_journals_period_fn(company_id, date_from, date_to)
+
+    sec_totals = {"operating": 0.0, "investing": 0.0, "financing": 0.0}
+    sec_lines = {"operating": [], "investing": [], "financing": []}
+
+    for j in journals:
+        lines = j.get("journal_lines") or []
+
+        cash_lines = [ln for ln in lines if ac._is_cash_bank(ln)]
+        if not cash_lines:
+            continue
+
+        cash_change = sum(
+            float(cl.get("debit") or 0.0) - float(cl.get("credit") or 0.0)
+            for cl in cash_lines
+        )
+
+        noncash = [ln for ln in lines if not ac._is_cash_bank(ln)]
+        if not noncash:
+            continue
+
+        effects = [
+            float(ln.get("credit") or 0.0) - float(ln.get("debit") or 0.0)
+            for ln in noncash
+        ]
+
+        sum_effects = float(sum(effects))
+        scale = 1.0
+
+        if abs(sum_effects) > 1e-9 and abs(sum_effects - cash_change) > 0.01:
+            scale = cash_change / sum_effects
+
+        for ln, eff in zip(noncash, effects):
+            amount = float(eff) * float(scale)
+
+            if abs(amount) < 0.000001:
+                continue
+
+            sec = ac._classify_cf_section(ln)
+
+            if sec == "ignore":
+                continue
+
+            if sec not in ("operating", "investing", "financing"):
+                sec = "operating"
+
+            meta = ac.resolve_account_cf_meta(ln)
+
+            row = {
+                "date": j.get("date"),
+                "ref": j.get("ref"),
+                "description": j.get("description"),
+                "account_name": ln.get("account_name") or ln.get("name") or ln.get("account") or ln.get("account_code") or "",
+                "memo": ln.get("memo") or "",
+                "amount": amount,
+                "cf_bucket": meta.get("bucket"),
+                "cf_role": meta.get("role"),
+                "cf_section": meta.get("section"),
+                "account_code": ln.get("account") or ln.get("account_code") or ln.get("code") or "",
+            }
+
+            sec_totals[sec] += amount
+            sec_lines[sec].append(row)
+
+    return {
+        "totals": sec_totals,
+        "lines": sec_lines,
+        "net_change": (
+            sec_totals["operating"]
+            + sec_totals["investing"]
+            + sec_totals["financing"]
+        ),
+    }
+
 # -----------------------------
 # Types (hooks)
 # -----------------------------
@@ -269,64 +351,12 @@ def build_cashflow_full_v2(
         return out
 
     def _calc_period_cf(df: date, dt: date) -> Dict[str, Any]:
-        journals = get_journals_period_fn(company_id, df, dt)
-
-        sec_totals = {"operating": 0.0, "investing": 0.0, "financing": 0.0}
-        sec_lines = {"operating": [], "investing": [], "financing": []}
-
-        for j in journals:
-            jdate = j.get("date")
-            jref = j.get("ref")
-            jdesc = j.get("description")
-            lines = (j.get("journal_lines") or [])
-
-            cash_lines = [ln for ln in lines if ac._is_cash_bank(ln)]
-            if not cash_lines:
-                continue
-
-            cash_change = 0.0
-            for cl in cash_lines:
-                cash_change += float(cl.get("debit") or 0.0) - float(cl.get("credit") or 0.0)
-
-            noncash = [ln for ln in lines if not ac._is_cash_bank(ln)]
-            if not noncash:
-                continue
-
-            effects = []
-            for ln in noncash:
-                effects.append(float(ln.get("credit") or 0.0) - float(ln.get("debit") or 0.0))
-
-            sum_effects = float(sum(effects))
-            scale = 1.0
-            if abs(sum_effects) > 1e-9 and abs(sum_effects - cash_change) > 0.01:
-                scale = cash_change / sum_effects
-
-            for ln, eff in zip(noncash, effects):
-                adj = float(eff) * float(scale)
-
-                sec = ac._classify_cf_section(ln)
-                if sec == "ignore":
-                    continue
-                if sec not in ("operating", "investing", "financing"):
-                    sec = "operating"
-
-                sec_totals[sec] += adj
-                meta = ac.resolve_account_cf_meta(ln)
-
-                sec_lines[sec].append({
-                    "date": jdate,
-                    "ref": jref,
-                    "description": jdesc,
-                    "account_name": ln.get("account_name") or ln.get("name") or (ln.get("account") or ln.get("account_code") or ""),
-                    "memo": ln.get("memo") or "",
-                    "amount": adj,
-                    "cf_bucket": meta.get("bucket"),
-                    "cf_role": meta.get("role"),
-                    "cf_section": meta.get("section"),
-                    "account_code": ln.get("account") or ln.get("account_code") or ln.get("code") or "",
-                })
-
-        return {"totals": sec_totals, "lines": sec_lines}
+        return _build_cash_journal_analysis(
+            get_journals_period_fn=get_journals_period_fn,
+            company_id=company_id,
+            date_from=df,
+            date_to=dt,
+        )
 
     # Snapshots
     open_as_of_cur = date_from - timedelta(days=1)
@@ -1029,17 +1059,55 @@ def build_cashflow_indirect_v2(
         return {"totals": sec_totals, "lines": sec_lines}
 
     # Current
+    cf_cur = _build_cash_journal_analysis(
+        get_journals_period_fn=get_journals_period_fn,
+        company_id=company_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
     op_cur = _operating_indirect(date_from, date_to)
-    jf_cur = _cash_journal_sections(date_from, date_to)
+    jf_cur = {
+        "totals": {
+            "investing": float(cf_cur["totals"].get("investing") or 0.0),
+            "financing": float(cf_cur["totals"].get("financing") or 0.0),
+        },
+        "lines": {
+            "investing": cf_cur["lines"].get("investing", []),
+            "financing": cf_cur["lines"].get("financing", []),
+        },
+    }
+
+    # Force indirect operating cash to reconcile with direct operating cash
+    op_cur["total"] = float(cf_cur["totals"].get("operating") or 0.0)
 
     # Comparisons
     op_comparisons = []
     jf_comparisons = []
 
     for pf, pt in comparison_ranges:
-        op_comparisons.append(_operating_indirect(pf, pt))
-        jf_comparisons.append(_cash_journal_sections(pf, pt))
+        cf_cmp = _build_cash_journal_analysis(
+            get_journals_period_fn=get_journals_period_fn,
+            company_id=company_id,
+            date_from=pf,
+            date_to=pt,
+        )
 
+        op_cmp = _operating_indirect(pf, pt)
+        op_cmp["total"] = float(cf_cmp["totals"].get("operating") or 0.0)
+
+        op_comparisons.append(op_cmp)
+
+        jf_comparisons.append({
+            "totals": {
+                "investing": float(cf_cmp["totals"].get("investing") or 0.0),
+                "financing": float(cf_cmp["totals"].get("financing") or 0.0),
+            },
+            "lines": {
+                "investing": cf_cmp["lines"].get("investing", []),
+                "financing": cf_cmp["lines"].get("financing", []),
+            },
+        })
     operating_comparison_totals = [
         float(op.get("total") or 0.0)
         for op in op_comparisons
