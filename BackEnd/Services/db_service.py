@@ -53691,7 +53691,28 @@ class DatabaseService:
         schema = self.company_schema(company_id)
         self.ensure_ppe_reporting_views(cur, company_id)
 
-        params = [start_date, end_date]
+        ppe_roles = (
+            "ppe_cost",
+            "ppe_land",
+            "ppe_buildings",
+            "ppe_plant_machinery",
+            "ppe_motor_vehicles",
+            "ppe_computer_equipment",
+            "ppe_furniture_fittings",
+            "ppe_office_equipment",
+            "ppe_tools",
+            "ppe_construction_equipment",
+            "ppe_accumulated_depreciation",
+            "accumulated_depreciation_buildings",
+            "accumulated_depreciation_motor_vehicles",
+            "accumulated_depreciation_computer_equipment",
+            "accumulated_depreciation_office_equipment",
+            "accumulated_depreciation_office_furniture",
+            "accumulated_depreciation_tools",
+            "accumulated_depreciation_ppe",
+        )
+
+        params = [start_date, end_date, list(ppe_roles)]
         class_filter_sql = ""
         if asset_classes:
             class_filter_sql = "WHERE c.asset_class = ANY(%s)"

@@ -110,6 +110,7 @@ def get_disclosure(company_id: int):
     except ValueError as exc:
         return _err(str(exc), 400)
     except Exception as exc:
+        current_app.logger.exception("Failed to load PPE disclosure")
         return _err("Failed to load PPE disclosure", 500, error=str(exc))
     finally:
         if conn:
