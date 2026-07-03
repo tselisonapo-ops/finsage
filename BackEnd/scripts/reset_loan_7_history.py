@@ -108,7 +108,8 @@ with db_service._conn_cursor() as (conn, cur):
             Json({"migration_backfill": True, "no_new_gl": True}),
         ))
 
-        payment_id = cur.fetchone()[0]
+        row = cur.fetchone()
+        payment_id = row["id"] if isinstance(row, dict) else row[0]
 
         db_service._allocate_loan_payment(
             cur,
