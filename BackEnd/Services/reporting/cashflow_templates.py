@@ -809,7 +809,7 @@ def build_cashflow_indirect_v2(
                 {
                     "code": "NONCASH",
                     "name": "Non-cash and other operating adjustments",
-                    "row_type": "normal",
+                    "row_type": "breakdown",
                     "values": _val(
                         adjustments_total,
                         adjustments_total,
@@ -817,6 +817,10 @@ def build_cashflow_indirect_v2(
                         ws_show_total=True,
                         ws_show_breakdown=True,
                     ),
+                    "detail": {
+                        "cur": adjustment_lines,
+                        "pri": [],
+                    },
                 },
                 {
                     "code": "OP_BEFORE_WC",
@@ -932,8 +936,12 @@ def build_cashflow_indirect_v2(
                 {
                     "code": "NONCASH",
                     "name": "Non-cash and other operating adjustments",
-                    "row_type": "normal",
+                    "row_type": "breakdown",
                     "values": _val(adjustments_total, 0.0),
+                    "detail": {
+                        "cur": adjustment_lines,
+                        "pri": [],
+                    },
                 },
                 {
                     "code": "OP_BEFORE_WC",
@@ -1120,8 +1128,8 @@ def build_cashflow_indirect_v2(
             row = ensure_line(line)
             row["values"]["cur"] = _line_amount(line)
 
-            if line.get("detail"):
-                row["detail"]["cur"] = (line.get("detail") or {}).get("cur", [])
+        if line.get("detail"):
+            row["detail"]["cur"] = (line.get("detail") or {}).get("cur", [])
 
         for idx, block in enumerate(comparison_blocks or [], start=1):
             col_key = "pri" if idx == 1 else f"p{idx}"
