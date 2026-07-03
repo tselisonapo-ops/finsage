@@ -25664,7 +25664,15 @@ function renderNotesIntoStatementViewer(noteKey, html, meta = {}) {
 
 function renderPPENoteHTML(payload) {
   const sections = payload?.sections?.sections || [];
-  const columns  = payload?.sections?.columns || [];
+  const columns = (payload?.sections?.columns || []).filter(c => {
+    const x = String(c || "").toLowerCase();
+    return !(
+      x.includes("right-of-use") ||
+      x.includes("right of use") ||
+      x.includes("rou") ||
+      x.includes("ifrs 16")
+    );
+  });
   const period   = payload?.sections?.period || {};
   const revals   = Array.isArray(payload?.revaluation_note) ? payload.revaluation_note : [];
   const summary  = payload?.summary || {};

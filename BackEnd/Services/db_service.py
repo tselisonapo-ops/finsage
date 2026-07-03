@@ -53799,8 +53799,14 @@ class DatabaseService:
                 OR UPPER(REPLACE(TRIM(COALESCE(c.standard, '')), ' ', '')) = 'IAS16'
             )
             AND COALESCE(c.is_contra, FALSE) = FALSE
+            AND NOT (
+                c.name ILIKE '%%right-of-use%%'
+                OR c.name ILIKE '%%right of use%%'
+                OR c.name ILIKE '%%ROU%%'
+                OR c.standard ILIKE '%%IFRS 16%%'
+            )
             AND (
-                    c.code ILIKE 'BS_NCA_%%'
+                c.code ILIKE 'BS_NCA_%%'
                 OR COALESCE(c.category, '') ILIKE '%%Non-Current%%'
                 OR COALESCE(c.section, '') ILIKE '%%Property, Plant%%'
             )
@@ -54101,14 +54107,63 @@ class DatabaseService:
         # -------------------------------------------------
         # NET CARRYING AMOUNT
         # -------------------------------------------------
-        rows.append(make_row("carrying_opening", "Net carrying amount at beginning of year", lambda r: n(r["opening_carrying"])))
-        rows.append(make_row("carrying_revaluation_up", "Revaluation increase recognised", lambda r: n(r["revaluation_upward"])))
-        rows.append(make_row("carrying_revaluation_down", "Revaluation decrease recognised", lambda r: n(r["revaluation_downward"])))
-        rows.append(make_row("carrying_transfers_in", "Transfers in", lambda r: n(r["transfers_in_carrying"])))
-        rows.append(make_row("carrying_transfers_out", "Transfers out", lambda r: n(r["transfers_out_carrying"])))
-        rows.append(make_row("carrying_disposals", "Disposals", lambda r: n(r["disposals_carrying"])))
-        rows.append(make_row("carrying_closing", "Net carrying amount at end of year", lambda r: n(r["closing_carrying"])))
+        rows.append(make_row("carrying_opening", "Opening carrying amount", lambda r: n(r["opening_carrying"])))
 
+        rows.append(make_row(
+            "carrying_additions",
+            "Additions",
+            lambda r: n(r["additions_cost"]) + n(r["subsequent_additions_cost"])
+        ))
+
+        rows.append(make_row(
+            "carrying_revaluation_up",
+            "Revaluation increase / fair value gain",
+            lambda r: n(r["revaluation_upward"])
+        ))
+
+        rows.append(make_row(
+            "carrying_revaluation_down",
+            "Revaluation decrease / fair value loss",
+            lambda r: n(r["revaluation_downward"])
+        ))
+
+        rows.append(make_row(
+            "carrying_depreciation",
+            "Depreciation",
+            lambda r: -abs(n(r["depreciation_charge"]))
+        ))
+
+        rows.append(make_row(
+            "carrying_impairment_losses",
+            "Impairment losses",
+            lambda r: -abs(n(r["impairment_losses"]))
+        ))
+
+        rows.append(make_row(
+            "carrying_impairment_reversals",
+            "Impairment reversals",
+            lambda r: n(r["impairment_reversals"])
+        ))
+
+        rows.append(make_row(
+            "carrying_transfers_in",
+            "Transfers in",
+            lambda r: n(r["transfers_in_carrying"])
+        ))
+
+        rows.append(make_row(
+            "carrying_transfers_out",
+            "Transfers out",
+            lambda r: n(r["transfers_out_carrying"])
+        ))
+
+        rows.append(make_row(
+            "carrying_disposals",
+            "Disposals",
+            lambda r: n(r["disposals_carrying"])
+        ))
+
+        rows.append(make_row("carrying_closing", "Closing carrying amount", lambda r: n(r["closing_carrying"])))
         # spacer
         if include_reserve_section:
             rows.append({"row_key": "sep_4", "label": "", "values": {c: None for c in columns}})
@@ -54339,11 +54394,15 @@ class DatabaseService:
                 },
                 {
                     "section_key": "carrying_amount",
-                    "title": "Net carrying amount",
+                    "title": "Carrying amount (Net book value)",
                     "rows": pick([
                         "carrying_opening",
+                        "carrying_additions",
                         "carrying_revaluation_up",
                         "carrying_revaluation_down",
+                        "carrying_depreciation",
+                        "carrying_impairment_losses",
+                        "carrying_impairment_reversals",
                         "carrying_transfers_in",
                         "carrying_transfers_out",
                         "carrying_disposals",
