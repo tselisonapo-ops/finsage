@@ -26182,6 +26182,17 @@ class DatabaseService:
 
         yec_id = int(yec["id"])
 
+        self.execute(f"""
+            UPDATE {schema}.period_locks
+            SET status = 'inactive',
+                reason = COALESCE(reason, '') || ' | Reopened by YEC journal_id={yec_id}'
+            WHERE company_id = %s
+            AND module = 'gl'
+            AND status = 'active'
+            AND lock_from = %s
+            AND lock_to = %s;
+        """, [company_id, period_from, period_to])
+
         reversal_id = self.reverse_journal(
             company_id,
             yec_id,
@@ -26190,17 +26201,6 @@ class DatabaseService:
                 "reason": f"Reopen year-end period {period_from.isoformat()} to {period_to.isoformat()}",
             },
         )
-
-        self.execute(f"""
-            UPDATE {schema}.period_locks
-            SET status = 'inactive',
-                reason = COALESCE(reason, '') || ' | Reopened by REV-{yec_id}'
-            WHERE company_id = %s
-            AND module = 'gl'
-            AND status = 'active'
-            AND lock_from = %s
-            AND lock_to = %s;
-        """, [company_id, period_from, period_to])
 
         return {
             "ok": True,
