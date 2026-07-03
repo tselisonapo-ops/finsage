@@ -21038,23 +21038,6 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
           amount: amt,
         });
       }
-
-      const detailCur =
-        ln?.detail?.[currentKey] ||
-        ln?.detail?.cur ||
-        [];
-
-      if (Array.isArray(detailCur)) {
-        for (const d of detailCur) {
-          const dAmt = Number(d?.amount || 0);
-          if (Math.abs(dAmt) > 0.000001) {
-            out.push({
-              name: d?.account_name || d?.description || d?.ref || "Cash flow item",
-              amount: dAmt,
-            });
-          }
-        }
-      }
     }
 
     return out;
