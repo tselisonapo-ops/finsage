@@ -21002,53 +21002,77 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
 
   const fmtAmt = (x) => fmtBracket(Number(x || 0));
 
-  // compare columns from payload (if compare is enabled, backend should send 2 cols)
-  const cols = Array.isArray(stmt?.columns)
+  const cols = Array.isArray(stmt?.columns) && stmt.columns.length
     ? stmt.columns
     : [{ key: "cur", label: "Current" }];
 
-  const hasCompare = cols.length > 1;
+  const currentKey = cols[0]?.key || "cur";
+
   const sections = Array.isArray(stmt?.sections) ? stmt.sections : [];
   const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
+
   const op  = byKey.operating || {};
   const inv = byKey.investing || {};
   const fin = byKey.financing || {};
 
-  // Direct method detail list is in: lines[0].detail[curKey]
-  function detailList(sec, key) {
+  function valObj(amount) {
+    return { [currentKey]: Number(amount || 0) };
+  }
+
+  function extractLines(sec) {
     const lines = Array.isArray(sec?.lines) ? sec.lines : [];
+    const out = [];
 
-    // New builder structure: real rows are directly in section.lines
-    const directRows = lines
-      .filter(r => r?.row_type !== "header" && r?.row_type !== "subtotal" && r?.row_type !== "total")
-      .map(r => ({
-        account_name: r.name || r.account_name || r.description || r.ref || "",
-        amount: Number(r?.values?.[key] ?? r?.values?.cur ?? 0),
-        detail: r.detail || null,
-      }))
-      .filter(r => Math.abs(Number(r.amount || 0)) > 0.000001);
+    for (const ln of lines) {
+      const amt = Number(
+        ln?.values?.[currentKey] ??
+        ln?.values?.cur ??
+        ln?.values?.tot ??
+        ln?.amount ??
+        0
+      );
 
-    if (directRows.length) return directRows;
+      if (Math.abs(amt) > 0.000001 && String(ln?.name || "").toLowerCase() !== "details") {
+        out.push({
+          name: ln?.name || ln?.account_name || ln?.description || ln?.ref || "Cash flow item",
+          amount: amt,
+        });
+      }
 
-    // Old builder structure fallback
-    const first = lines[0] || null;
-    const list = first?.detail?.[key] || [];
-    return Array.isArray(list) ? list : [];
+      const detailCur =
+        ln?.detail?.[currentKey] ||
+        ln?.detail?.cur ||
+        [];
+
+      if (Array.isArray(detailCur)) {
+        for (const d of detailCur) {
+          const dAmt = Number(d?.amount || 0);
+          if (Math.abs(dAmt) > 0.000001) {
+            out.push({
+              name: d?.account_name || d?.description || d?.ref || "Cash flow item",
+              amount: dAmt,
+            });
+          }
+        }
+      }
+    }
+
+    return out;
   }
 
   function sectionHeader(title) {
     return `
       <tr>
-        <td colspan="${1 + cols.length}"
-            class="pt-3 pb-1 font-semibold text-slate-800 uppercase text-[11px]">
+        <td colspan="${1 + cols.length}" class="pt-3 pb-1 font-semibold text-slate-800 uppercase text-[11px]">
           ${esc(title)}
         </td>
       </tr>
     `;
   }
 
-  // ✅ DETAIL ROWS: show CURRENT only; prior column blank (exactly what you asked)
-  function detailRow(name, values = {}) {
+  function detailRow(name, amount) {
+    const values = valObj(amount);
+
     return `
       <tr class="border-b border-slate-100">
         <td class="py-[2px] pr-3">${esc(name)}</td>
@@ -21061,7 +21085,6 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
     `;
   }
 
-  // ✅ TOTAL/SUBTOTAL ROWS: show BOTH current & prior when compare exists
   function totalRow(label, values = {}, { double = false } = {}) {
     const cls = double
       ? "font-semibold border-t-2 border-slate-400"
@@ -21072,44 +21095,35 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
         <td class="py-2 pr-3">${esc(label)}</td>
         ${cols.map(c => `
           <td class="py-2 text-right tabular-nums">
-            ${fmtAmt(Number(values?.[c.key] ?? 0))}
+            ${fmtAmt(Number(values?.[c.key] ?? values?.cur ?? values?.tot ?? 0))}
           </td>
         `).join("")}
       </tr>
     `;
   }
 
-  const currentKey = cols[0]?.key || "cur";
+  function renderRows(sec, emptyText) {
+    const rows = extractLines(sec);
 
-  const opDetails  = detailList(op, currentKey);
-  const invDetails = detailList(inv, currentKey);
-  const finDetails = detailList(fin, currentKey);
-  const opRows = opDetails.length
-    ? opDetails.slice(0, 40).map(d =>
-        detailRow(
-          d.account_name || d.description || d.ref || "",
-          { [currentKey]: d.amount }
-        )
-      ).join("")
-    : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
+    if (!rows.length) {
+      return `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">${esc(emptyText)}</td></tr>`;
+    }
 
-  const invRows = invDetails.length
-    ? invDetails.slice(0, 40).map(d =>
-       detailRow(
-          d.account_name || d.description || d.ref || "",
-          { [currentKey]: d.amount }
-        )
-      ).join("")
-    : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No investing activity.</td></tr>`;
+    return rows
+      .slice(0, 80)
+      .map(r => detailRow(r.name, r.amount))
+      .join("");
+  }
 
-  const finRows = finDetails.length
-    ? finDetails.slice(0, 40).map(d =>
-        detailRow(
-          d.account_name || d.description || d.ref || "",
-          { [currentKey]: d.amount }
-        )
-      ).join("")
-    : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No financing activity.</td></tr>`;
+  const openingObj =
+    stmt?.opening_balance ||
+    stmt?.cash_position?.opening ||
+    {};
+
+  const closingObj =
+    stmt?.closing_balance ||
+    stmt?.cash_position?.closing ||
+    {};
 
   return `
     <div class="w-full flex justify-center print:block">
@@ -21118,7 +21132,7 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
           <div class="text-sm font-bold tracking-wide">${esc(String(company).toUpperCase())}</div>
           <div class="text-xs font-semibold">${esc("STATEMENT OF CASH FLOWS (Direct method)")}</div>
           <div class="text-xs">
-            ${esc(periodFrom && periodTo ? `For the period ${periodFrom} to ${periodTo}` : (periodTo ? `For the period ended ${periodTo}` : ""))}
+            ${esc(periodFrom && periodTo ? `For the period ${periodFrom} to ${periodTo}` : "")}
           </div>
           ${currency ? `<div class="text-[11px] text-slate-500">(All amounts in ${esc(currency)})</div>` : ""}
           ${periodLabel ? `<div class="text-[11px] text-slate-500">Period preset: ${esc(periodLabel)}</div>` : ""}
@@ -21129,50 +21143,35 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
             <thead class="bg-slate-50 text-slate-600 print:bg-white">
               <tr>
                 <th class="text-left py-2 px-2">Description</th>
-                ${cols.map(c => `
-                  <th class="text-right py-2 px-2">
-                    ${esc(c.label || c.key)}
-                  </th>
-                `).join("")}
+                ${cols.map(c => `<th class="text-right py-2 px-2">${esc(c.label || c.key)}</th>`).join("")}
               </tr>
             </thead>
-              <tbody>
-                ${sectionHeader("Cash flows from operating activities")}
-                ${opRows}
-                ${totalRow(op?.label || "Net cash from operating activities", op?.totals)}
+            <tbody>
+              ${sectionHeader("Cash flows from operating activities")}
+              ${renderRows(op, "No operating activity.")}
+              ${totalRow("Net cash from operating activities", op?.totals)}
 
-                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
+              <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-                ${sectionHeader("Cash flows from investing activities")}
-                ${invRows}
-                ${totalRow(inv?.label || "Net cash from investing activities", inv?.totals)}
+              ${sectionHeader("Cash flows from investing activities")}
+              ${renderRows(inv, "No investing activity.")}
+              ${totalRow("Net cash from investing activities", inv?.totals)}
 
-                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
+              <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-                ${sectionHeader("Cash flows from financing activities")}
-                ${finRows}
-                ${totalRow(fin?.label || "Net cash from financing activities", fin?.totals)}
+              ${sectionHeader("Cash flows from financing activities")}
+              ${renderRows(fin, "No financing activity.")}
+              ${totalRow("Net cash from financing activities", fin?.totals)}
 
-                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
+              <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-                ${totalRow(
-                  stmt?.net_change?.label || "Net change in cash and cash equivalents",
-                  stmt?.net_change?.values,
-                  { double: true }
-                )}
+              ${totalRow(stmt?.net_change?.label || "Net change in cash and cash equivalents", stmt?.net_change?.values, { double: true })}
 
-                <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
+              <tr><td colspan="${1 + cols.length}" class="py-2"></td></tr>
 
-                ${totalRow(
-                  stmt?.opening_balance?.label || "Opening cash and cash equivalents",
-                  stmt?.opening_balance?.values
-                )}
-
-                ${totalRow(
-                  stmt?.closing_balance?.label || "Closing cash and cash equivalents",
-                  stmt?.closing_balance?.values
-                )}
-              </tbody>
+              ${totalRow(openingObj?.label || "Opening cash and cash equivalents", openingObj?.values)}
+              ${totalRow(closingObj?.label || "Closing cash and cash equivalents", closingObj?.values)}
+            </tbody>
           </table>
         </div>
       </div>
