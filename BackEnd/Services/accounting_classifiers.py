@@ -1249,6 +1249,33 @@ def _coa_role_from_text(
             return "depreciation_expense_ppe"
 
     # ----------------------------
+    # PPE asset cost side
+    # ----------------------------
+    if is_asset and not is_accum and not is_rou and not is_intangible:
+        if is_land:
+            return "ppe_land"
+        if is_buildings:
+            return "ppe_buildings"
+        if is_heavy_vehicles:
+            return "ppe_heavy_vehicles"
+        if is_motor_vehicles:
+            return "ppe_motor_vehicles"
+        if is_mining_equipment:
+            return "ppe_mining_equipment"
+        if is_construction_equipment:
+            return "ppe_construction_equipment"
+        if is_manufacturing_equipment:
+            return "ppe_plant_machinery"
+        if is_computers:
+            return "ppe_computer_equipment"
+        if is_office_equipment:
+            return "ppe_office_equipment"
+        if is_furniture:
+            return "ppe_furniture_fittings"
+        if is_tools:
+            return "ppe_tools"
+    
+    # ----------------------------
     # Asset contra side
     # ----------------------------
     if is_asset and is_accum:

@@ -25669,7 +25669,9 @@ function renderPPENoteHTML(payload) {
   const revals   = Array.isArray(payload?.revaluation_note) ? payload.revaluation_note : [];
   const summary  = payload?.summary || {};
 
-  const sectionHtml = sections.map(sec => {
+  const sectionHtml = sections
+    .filter(sec => sec?.section_key !== "carrying_amount")
+    .map(sec => {
     const rows = Array.isArray(sec?.rows) ? sec.rows : [];
     if (!rows.length) return "";
 
@@ -25701,7 +25703,13 @@ function renderPPENoteHTML(payload) {
     `;
   }).join("");
 
-  const carryingHtml = `
+  const carryingSection = sections.find(s => s?.section_key === "carrying_amount");
+
+  const carryingRows = Array.isArray(carryingSection?.rows)
+    ? carryingSection.rows
+    : [];
+
+  const carryingHtml = carryingRows.length ? `
     <div class="border rounded-lg p-3">
       <div class="font-semibold mb-2">Carrying amount (Net book value)</div>
       <div class="overflow-auto">
@@ -25709,53 +25717,24 @@ function renderPPENoteHTML(payload) {
           <thead>
             <tr class="bg-slate-50">
               <th class="p-2 border text-left">Movement</th>
-              <th class="p-2 border text-right">Amount</th>
+              ${columns.map(c => `<th class="p-2 border text-right">${escHtml(c)}</th>`).join("")}
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td class="p-2 border">Opening carrying amount</td>
-              <td class="p-2 border text-right">${fmtMoney(summary?.opening_carrying || 0)}</td>
-            </tr>
-              <tr>
-                <td class="p-2 border">Additions / revaluations</td>
-                <td class="p-2 border text-right">${fmtMoney(
-                  Number(summary?.additions_cost || 0) +
-                  Number(summary?.subsequent_additions_cost || 0) +
-                  Number(summary?.revaluation_upward || 0) -
-                  Number(summary?.revaluation_downward || 0)
-                )}</td>
+            ${carryingRows.map(r => `
+              <tr ${String(r.row_key || "").includes("closing") ? `class="font-semibold"` : ""}>
+                <td class="p-2 border">${escHtml(r.label || "")}</td>
+                ${columns.map(c => {
+                  const v = r?.values?.[c];
+                  return `<td class="p-2 border text-right">${v == null ? "" : fmtMoney(v)}</td>`;
+                }).join("")}
               </tr>
-
-              <tr>
-                <td class="p-2 border">Depreciation</td>
-                <td class="p-2 border text-right">${fmtMoney(-(summary?.depreciation_charge || 0))}</td>
-              </tr>
-
-              <tr>
-                <td class="p-2 border">Impairment losses</td>
-                <td class="p-2 border text-right">${fmtMoney(-(summary?.impairment_losses || 0))}</td>
-              </tr>
-
-              <tr>
-                <td class="p-2 border">Impairment reversals</td>
-                <td class="p-2 border text-right">${fmtMoney(summary?.impairment_reversals || 0)}</td>
-              </tr>
-
-              <tr>
-                <td class="p-2 border">Disposals</td>
-                <td class="p-2 border text-right">${fmtMoney(-(summary?.disposals_carrying || 0))}</td>
-              </tr>
-
-              <tr class="font-semibold">
-                <td class="p-2 border">Closing carrying amount</td>
-                <td class="p-2 border text-right">${fmtMoney(summary?.closing_carrying || 0)}</td>
-              </tr>
+            `).join("")}
           </tbody>
         </table>
       </div>
     </div>
-  `;
+  ` : "";
 
   const revalHtml = revals.length ? `
     <div class="border rounded-lg p-3">

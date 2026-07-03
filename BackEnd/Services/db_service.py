@@ -53115,6 +53115,52 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
+    def get_ppe_gl_carrying_amount(self, cur, company_id: int, end_date):
+        schema = self.company_schema(company_id)
+
+        ppe_roles = (
+            "ppe_cost",
+            "ppe_land",
+            "ppe_buildings",
+            "ppe_plant_machinery",
+            "ppe_motor_vehicles",
+            "ppe_computer_equipment",
+            "ppe_furniture_fittings",
+            "ppe_office_equipment",
+            "ppe_tools",
+            "ppe_construction_equipment",
+            "ppe_accumulated_depreciation",
+            "accumulated_depreciation_buildings",
+            "accumulated_depreciation_motor_vehicles",
+            "accumulated_depreciation_computer_equipment",
+            "accumulated_depreciation_office_equipment",
+            "accumulated_depreciation_office_furniture",
+            "accumulated_depreciation_tools",
+            "accumulated_depreciation_ppe",
+        )
+
+        cur.execute(f"""
+            SELECT COALESCE(SUM(l.debit - l.credit), 0)::numeric(18,2) AS balance
+            FROM {schema}.ledger l
+            JOIN {schema}.coa c 
+                ON c.code = l.account
+            WHERE l.date <= %s
+            AND COALESCE(c.section, '') ILIKE '%%asset%%'
+            AND (
+                    c.role = ANY(%s)
+                OR UPPER(TRIM(COALESCE(c.standard, ''))) = 'IAS 16'
+            )
+            AND NOT (
+                    c.name ILIKE '%%right-of-use%%'
+                OR c.name ILIKE '%%ROU%%'
+                OR c.name ILIKE '%%intangible%%'
+                OR c.name ILIKE '%%software%%'
+            )
+        """, (end_date, list(ppe_roles)))
+
+        row = cur.fetchone()
+        return row["balance"] if isinstance(row, dict) else row[0]
+
     def ensure_ppe_reporting_views(self,cur, company_id: int) -> None:
         """
         Creates / refreshes PPE reporting views in the tenant schema.
@@ -53714,6 +53760,12 @@ class DatabaseService:
             SELECT asset_class FROM opening
             UNION
             SELECT asset_class FROM period_mov
+            UNION
+            SELECT DISTINCT
+                COALESCE(NULLIF(c.asset_class, ''), c.reporting_description, c.name) AS asset_class
+            FROM {schema}.coa c
+            WHERE UPPER(TRIM(COALESCE(c.standard, ''))) = 'IAS 16'
+            AND COALESCE(c.section, '') ILIKE '%%asset%%'
         )
         SELECT
             c.asset_class,
