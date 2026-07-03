@@ -268,6 +268,27 @@ def _build_cash_journal_analysis(
         ),
     }
 
+def _aggregate_adjustment_lines(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[str, Dict[str, Any]] = {}
+
+    for row in lines or []:
+        name = row.get("account_name") or row.get("name") or "Other non-cash items"
+
+        if name not in grouped:
+            grouped[name] = {
+                **row,
+                "account_name": name,
+                "name": name,
+                "amount": 0.0,
+            }
+
+        grouped[name]["amount"] += float(row.get("amount") or 0.0)
+
+    return [
+        row for row in grouped.values()
+        if abs(float(row.get("amount") or 0.0)) > 0.000001
+    ]
+
 # -----------------------------
 # Types (hooks)
 # -----------------------------
@@ -719,13 +740,36 @@ def build_cashflow_indirect_v2(
             if adj_amt is not None and abs(adj_amt) > 0.000001:
                 adjustments_total += adj_amt
                 resolved_adjustments.append(name)
+                detail_group = "Other non-cash items"
+
+                if (
+                    "depreciation" in name_l
+                    or "amortisation" in name_l
+                    or "amortization" in name_l
+                ):
+                    detail_group = "Depreciation and amortisation"
+
+                elif role in ("loan_interest_expense", "lease_interest_expense") or "interest" in name_l:
+                    detail_group = "Interest expense"
+
+                elif "impairment" in name_l:
+                    detail_group = "Impairment losses"
+
+                elif "loss" in name_l and "disposal" in name_l:
+                    detail_group = "Loss on disposal"
+
+                elif "gain" in name_l and "disposal" in name_l:
+                    detail_group = "Gain on disposal"
+
                 adjustment_lines.append({
-                    "account_name": name,
+                    "account_name": detail_group,
                     "amount": adj_amt,
-                    "code": code,
+                    "code": detail_group.upper().replace(" ", "_"),
                     "role": role,
                     "bucket": bucket,
                 })
+
+        adjustment_lines = _aggregate_adjustment_lines(adjustment_lines)
 
         dep_journal_exists = any(
             str(j.get("source") or "").lower() == "asset_depreciation"
@@ -1128,8 +1172,8 @@ def build_cashflow_indirect_v2(
             row = ensure_line(line)
             row["values"]["cur"] = _line_amount(line)
 
-        if line.get("detail"):
-            row["detail"]["cur"] = (line.get("detail") or {}).get("cur", [])
+            if line.get("detail"):
+                row["detail"]["cur"] = (line.get("detail") or {}).get("cur", [])
 
         for idx, block in enumerate(comparison_blocks or [], start=1):
             col_key = "pri" if idx == 1 else f"p{idx}"
