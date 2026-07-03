@@ -1074,8 +1074,18 @@ def build_cashflow_indirect_v2(
         )
 
     def _line_key(line: Dict[str, Any]) -> str:
-        code = str(line.get("code") or "").strip()
-        name = str(line.get("name") or "").strip()
+        code = str(line.get("code") or "").strip().upper()
+        name = str(line.get("name") or "").strip().lower()
+
+        if code == "NONCASH":
+            return "NONCASH::TOTAL"
+
+        if "depreciation" in name or "amortisation" in name or "amortization" in name:
+            return "NONCASH::DEPRECIATION_AMORTISATION"
+
+        if code.startswith("WC_"):
+            return code
+
         return f"{code}::{name}"
 
     def _merge_comparative_lines(
@@ -1089,8 +1099,14 @@ def build_cashflow_indirect_v2(
             key = _line_key(line)
 
             if key not in merged:
+                display_name = line.get("name") or ""
+
+                if key == "NONCASH::DEPRECIATION_AMORTISATION":
+                    display_name = "Depreciation and amortisation"
+
                 merged[key] = {
                     **line,
+                    "name": display_name,
                     "values": {},
                     "detail": {},
                 }
