@@ -26182,7 +26182,7 @@ class DatabaseService:
 
         yec_id = int(yec["id"])
 
-        lock_sql = f"""
+        self.execute_sql(f"""
             UPDATE {schema}.period_locks
             SET status = 'inactive',
                 reason = COALESCE(reason, '') || ' | Reopened by YEC journal_id={yec_id}'
@@ -26191,25 +26191,16 @@ class DatabaseService:
             AND status = 'active'
             AND lock_from = %s
             AND lock_to = %s;
-        """
+        """, (company_id, period_from, period_to))
 
-        params = (company_id, period_from, period_to)
-
-        with self._conn_cursor() as (conn, cur):
-            self.execute_sql(lock_sql, params, cur=cur, conn=conn, commit=False)
-
-            reversal_id = self.reverse_journal(
-                company_id,
-                yec_id,
-                {
-                    "date": period_to.isoformat(),
-                    "reason": f"Reopen year-end period {period_from.isoformat()} to {period_to.isoformat()}",
-                },
-                cur=cur,
-                conn=conn,
-            )
-
-            conn.commit()
+        reversal_id = self.reverse_journal(
+            company_id,
+            yec_id,
+            {
+                "date": period_to.isoformat(),
+                "reason": f"Reopen year-end period {period_from.isoformat()} to {period_to.isoformat()}",
+            },
+        )
 
         return {
             "ok": True,
