@@ -88,6 +88,18 @@ def get_balance_sheet_v3_exact(
             ctx=ctx,
         )
 
+    period_lock = db.fetch_one(f"""
+        SELECT id
+        FROM {db.company_schema(company_id)}.period_locks
+        WHERE company_id = %s
+        AND module = 'gl'
+        AND status = 'active'
+        AND %s BETWEEN lock_from AND lock_to
+        LIMIT 1
+    """, [company_id, as_of])
+
+    bs_include_net_profit_line = bool(include_net_profit_line) and not bool(period_lock)
+
     return build_balance_sheet_v3(
         company_id=company_id,
         as_of=as_of,
@@ -97,7 +109,7 @@ def get_balance_sheet_v3_exact(
         get_company_context_fn=_get_company_context_fn,
         get_trial_balance_fn=_get_trial_balance_fn,
         get_pnl_full_fn=_get_pnl_full_fn,
-        include_net_profit_line=bool(include_net_profit_line),
+        include_net_profit_line=bs_include_net_profit_line,
         view=view,
         basis=basis,
     )

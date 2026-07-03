@@ -846,19 +846,22 @@ const ENDPOINTS = {
   yearEndClose: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/year-end-close`,
 
+  yearEndReopen: (companyId) =>
+    `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/year-end-close/reopen`,
+  
   companyStructure: {
-    get: (companyId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
+      get: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
 
-    relatedCompanies: (companyId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
+      relatedCompanies: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
 
-    branches: (companyId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
+      branches: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
 
-    segments: (companyId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
-  },
+      segments: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
+    },
   // --- Management packs ---
   managementPacks: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/management_packs`,
@@ -10606,6 +10609,7 @@ function bindYearEndClose(companyId) {
   const postBtn = document.getElementById("yearEndClosePostBtn");
   const previewBox = document.getElementById("yearEndClosePreview");
   const status = document.getElementById("yearEndCloseStatus");
+  const reopenBtn = document.getElementById("yearEndReopenBtn");
 
   if (!fromEl || !toEl || !previewBtn || !postBtn) return;
   if (previewBtn.dataset.bound === "1") return;
@@ -10684,6 +10688,35 @@ function bindYearEndClose(companyId) {
       setStatus(e.message || "Close failed", true);
     }
   });
+
+  reopenBtn?.addEventListener("click", async () => {
+    const p = validate();
+    if (!p) return;
+
+    if (!confirm("Reopen this financial year for adjustments? This will reverse the active year-end close journal.")) return;
+
+    setStatus("Reopening...");
+
+    try {
+      const res = await apiFetch(ENDPOINTS.yearEndReopen(companyId), {
+        method: "POST",
+        body: JSON.stringify(p),
+      });
+
+      renderYearEndClosePreview({
+        ...res,
+        already_closed: false,
+        can_close: true,
+        net_result: 0,
+        ref: `YEC-${p.period_to}`,
+      });
+
+      postBtn.disabled = false;
+      setStatus(`Reopened. Reversal journal ${res.reversal_journal_id || ""}`);
+    } catch (e) {
+      setStatus(e.message || "Reopen failed", true);
+    }
+  });  
 }
 
 function toISODate(value) {

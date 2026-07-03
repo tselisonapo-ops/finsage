@@ -26122,6 +26122,22 @@ class DatabaseService:
 
         journal_id = self.post_journal(company_id, entry)
 
+        # Mark the GL period as closed/locked after successful year-end close
+        self.execute(f"""
+            INSERT INTO {schema}.period_locks
+                (company_id, module, lock_from, lock_to, status, reason, created_by)
+            VALUES
+                (%s, %s, %s, %s, %s, %s, %s)
+        """, [
+            company_id,
+            "gl",
+            period_from,
+            period_to,
+            "active",
+            f"Year-end close {ref} journal_id={journal_id}",
+            None,
+        ])
+
         return {
             "ok": True,
             "journal_id": journal_id,
@@ -26132,6 +26148,67 @@ class DatabaseService:
             "retained_earnings_code": retained_earnings_code,
             "retained_earnings_name": re.get("name"),
             "lines_count": len(lines),
+        }
+
+    def reopen_year_end_period(
+        self,
+        company_id: int,
+        period_from: date,
+        period_to: date,
+        user_id: int | None = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+        ref = f"YEC-{period_to.isoformat()}"
+
+        yec = self.fetch_one(f"""
+            SELECT j.id
+            FROM {schema}.journal j
+            WHERE LOWER(TRIM(j.ref)) = LOWER(TRIM(%s))
+            AND COALESCE(j.reversal_of_journal_id, 0) = 0
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.journal r
+                WHERE r.reversal_of_journal_id = j.id
+            )
+            ORDER BY j.id DESC
+            LIMIT 1;
+        """, [ref])
+
+        if not yec:
+            return {
+                "ok": False,
+                "error": f"No active year-end close found for {period_to.isoformat()}",
+            }
+
+        yec_id = int(yec["id"])
+
+        reversal_id = self.reverse_journal(
+            company_id,
+            yec_id,
+            {
+                "date": period_to.isoformat(),
+                "reason": f"Reopen year-end period {period_from.isoformat()} to {period_to.isoformat()}",
+            },
+        )
+
+        self.execute(f"""
+            UPDATE {schema}.period_locks
+            SET status = 'inactive',
+                reason = COALESCE(reason, '') || ' | Reopened by REV-{yec_id}'
+            WHERE company_id = %s
+            AND module = 'gl'
+            AND status = 'active'
+            AND lock_from = %s
+            AND lock_to = %s;
+        """, [company_id, period_from, period_to])
+
+        return {
+            "ok": True,
+            "reopened": True,
+            "period_from": period_from.isoformat(),
+            "period_to": period_to.isoformat(),
+            "reversed_journal_id": yec_id,
+            "reversal_journal_id": reversal_id,
         }
 
     def ensure_overdraft_account(self, company_id: int, od_code: str = "2105") -> None:
