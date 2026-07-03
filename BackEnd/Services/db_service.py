@@ -26123,7 +26123,7 @@ class DatabaseService:
         journal_id = self.post_journal(company_id, entry)
 
         # Mark the GL period as closed/locked after successful year-end close
-        self.execute(f"""
+        self.execute_sql(f"""
             INSERT INTO {schema}.period_locks
                 (company_id, module, lock_from, lock_to, status, reason, created_by)
             VALUES
