@@ -2096,9 +2096,9 @@ html, body {
 
         <!-- General Journal -->
         <section id="screen-journal" class="screen">
-          <div class="flex flex-col xl:flex-row gap-4">
+          <div class="flex flex-col xl:flex-row gap-4 items-start w-full">
             <!-- Journal form card (takes all remaining space) -->
-            <div class="card p-4 flex-1">
+            <div class="card p-4 flex-1 min-w-0 w-full">
               <h3 class="font-bold">General Journal</h3>
               <form id="jrnlForm"
                     class="w-full grid grid-cols-1 md:grid-cols-12 gap-2 mt-3 text-left">
@@ -2332,7 +2332,7 @@ html, body {
             </div>
 
             <!-- Batch summary card: fixed-ish width on desktop -->
-            <div class="card p-4 w-full xl:w-64">
+            <div class="card p-4 w-full xl:w-64 xl:flex-shrink-0">
               <h3 class="font-bold mb-2">Batch Summary</h3>
               <div class="text-sm">
                 <div>Lines: <span id="sumLines">0</span></div>
