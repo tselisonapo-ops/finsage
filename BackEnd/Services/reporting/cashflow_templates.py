@@ -1142,6 +1142,25 @@ def build_cashflow_indirect_v2(
 
         return f"{code}::{name}"
 
+    def _merge_detail_lines_by_code(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        grouped: Dict[str, Dict[str, Any]] = {}
+
+        for row in lines or []:
+            key = str(row.get("code") or row.get("account_name") or row.get("name") or "").strip()
+
+            if key not in grouped:
+                grouped[key] = {
+                    **row,
+                    "amount": 0.0,
+                }
+
+            grouped[key]["amount"] += float(row.get("amount") or 0.0)
+
+        return [
+            row for row in grouped.values()
+            if abs(float(row.get("amount") or 0.0)) > 0.000001
+        ]
+
     def _merge_comparative_lines(
         current_lines: List[Dict[str, Any]],
         comparison_blocks: List[Dict[str, Any]],
@@ -1173,7 +1192,9 @@ def build_cashflow_indirect_v2(
             row["values"]["cur"] = _line_amount(line)
 
             if line.get("detail"):
-                row["detail"]["cur"] = (line.get("detail") or {}).get("cur", [])
+                row["detail"]["cur"] = _merge_detail_lines_by_code(
+                    (line.get("detail") or {}).get("cur", [])
+                )
 
         for idx, block in enumerate(comparison_blocks or [], start=1):
             col_key = "pri" if idx == 1 else f"p{idx}"
@@ -1184,8 +1205,9 @@ def build_cashflow_indirect_v2(
 
                 if line.get("detail"):
                     row.setdefault("detail", {})
-                    row["detail"][col_key] = (line.get("detail") or {}).get("cur", [])
-
+                    row["detail"][col_key] = _merge_detail_lines_by_code(
+                        (line.get("detail") or {}).get("cur", [])
+                    )
         return [merged[k] for k in order]
 
     # Current
