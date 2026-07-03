@@ -406,10 +406,6 @@ def build_cashflow_full_v2(
                 "name": row.get("account_name") or row.get("name") or "Cash flow item",
                 "row_type": "normal",
                 "values": _val(amt, []),
-                "detail": {
-                    "cur": row.get("detail") or [],
-                    "pri": [],
-                },
             })
 
         return {
