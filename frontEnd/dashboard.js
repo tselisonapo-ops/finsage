@@ -21016,7 +21016,22 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
 
   // Direct method detail list is in: lines[0].detail[curKey]
   function detailList(sec, key) {
-    const first = Array.isArray(sec?.lines) ? sec.lines[0] : null;
+    const lines = Array.isArray(sec?.lines) ? sec.lines : [];
+
+    // New builder structure: real rows are directly in section.lines
+    const directRows = lines
+      .filter(r => r?.row_type !== "header" && r?.row_type !== "subtotal" && r?.row_type !== "total")
+      .map(r => ({
+        account_name: r.name || r.account_name || r.description || r.ref || "",
+        amount: Number(r?.values?.[key] ?? r?.values?.cur ?? 0),
+        detail: r.detail || null,
+      }))
+      .filter(r => Math.abs(Number(r.amount || 0)) > 0.000001);
+
+    if (directRows.length) return directRows;
+
+    // Old builder structure fallback
+    const first = lines[0] || null;
     const list = first?.detail?.[key] || [];
     return Array.isArray(list) ? list : [];
   }
@@ -21073,7 +21088,7 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
     ? opDetails.slice(0, 40).map(d =>
         detailRow(
           d.account_name || d.description || d.ref || "",
-          { cur: d.amount }
+          { [currentKey]: d.amount }
         )
       ).join("")
     : `<tr><td colspan="${1 + cols.length}" class="text-xs text-slate-400 py-2">No operating activity.</td></tr>`;
@@ -21082,7 +21097,7 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
     ? invDetails.slice(0, 40).map(d =>
        detailRow(
           d.account_name || d.description || d.ref || "",
-          { cur: d.amount }
+          { [currentKey]: d.amount }
         )
       ).join("")
     : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No investing activity.</td></tr>`;
@@ -21091,7 +21106,7 @@ function renderCashFlowDirectFullHtml(stmt, { periodLabel = "" } = {}) {
     ? finDetails.slice(0, 40).map(d =>
         detailRow(
           d.account_name || d.description || d.ref || "",
-          { cur: d.amount }
+          { [currentKey]: d.amount }
         )
       ).join("")
     : `<tr><td colspan="${hasCompare ? 3 : 2}" class="text-xs text-slate-400 py-2">No financing activity.</td></tr>`;
