@@ -392,8 +392,8 @@ def build_cashflow_full_v2(
             for r in comparison_results
         ]
 
-        cur_detail_lines = rh.filter_zero_lines(
-            _aggregate_cf_detail_lines(cur["lines"].get(key, []))
+        cur_detail_lines = _aggregate_cf_detail_lines(
+            cur["lines"].get(key, [])
         )
 
         lines = []
