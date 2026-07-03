@@ -618,6 +618,19 @@ def build_balance_sheet_v3(
 
         return out
 
+    def _period_is_closed_from_tb() -> bool:
+        ref = f"YEC-{as_of.isoformat()}"
+
+        for row in cur_rows:
+            row_ref = str(row.get("ref") or row.get("journal_ref") or "").strip()
+            source = str(row.get("source") or "").strip().lower()
+
+            if row_ref == ref or source in ("year_end", "year_end_close"):
+                return True
+
+        # fallback: retained earnings has movement and PL still has P&L result
+        return False
+
     def _make_line(code: str, name: str, values: Dict[str, float], row_any: Dict[str, Any], *, is_contra: bool) -> Dict[str, Any]:
         return {
             "code": code,
@@ -883,7 +896,9 @@ def build_balance_sheet_v3(
             
 
     # Optional net profit plug line (only if requested)
-    if include_net_profit_line and get_pnl_full_fn is not None:
+    period_closed = _period_is_closed_from_tb()
+
+    if include_net_profit_line and get_pnl_full_fn is not None and not period_closed:
         # --- current year-to-date (YTD) ---
         ytd_from = date_from
 
