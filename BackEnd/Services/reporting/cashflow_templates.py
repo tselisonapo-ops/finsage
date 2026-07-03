@@ -419,9 +419,9 @@ def build_cashflow_full_v2(
             "totals": _val(cur_amt, comparison_amounts),
         }
 
-    operating = _section_block("operating", "Net cash from operating activities")
-    investing = _section_block("investing", "Net cash from investing activities")
-    financing = _section_block("financing", "Net cash from financing activities")
+    operating = _section_block("operating", "Cash flows from operating activities")
+    investing = _section_block("investing", "Cash flows from investing activities")
+    financing = _section_block("financing", "Cash flows from financing activities")
 
     net_cur = (
         float(cur["totals"]["operating"]) +
