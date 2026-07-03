@@ -25611,6 +25611,15 @@ class DatabaseService:
             WHERE r.reversal_of_journal_id = j.id
         )
         AND COALESCE(j.source, '') NOT IN ('year_end', 'year_end_close')
+        AND (
+            l.account ILIKE 'PL_%%'
+            OR COALESCE(c.section, '') ILIKE '%%income%%'
+            OR COALESCE(c.section, '') ILIKE '%%revenue%%'
+            OR COALESCE(c.section, '') ILIKE '%%expense%%'
+            OR COALESCE(c.section, '') ILIKE '%%depreciation%%'
+        )
+        AND l.account NOT ILIKE 'BS_%%'
+        AND COALESCE(c.role, '') NOT ILIKE 'accumulated_depreciation%%'
         GROUP BY
             l.account,
             c.name, c.section, c.category, c.standard,
@@ -53212,6 +53221,8 @@ class DatabaseService:
                 ab.asset_name,
                 ab.asset_class,
                 ab.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 COALESCE(ab.acquisition_date, DATE '1900-01-01') AS event_date,
 
                 'opening'::text AS movement_type,
@@ -53246,6 +53257,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 ac.acquisition_date AS event_date,
 
                 'addition'::text AS movement_type,
@@ -53274,6 +53287,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 sm.event_date AS event_date,
 
                 CASE
@@ -53378,6 +53393,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                d.period_start,
+                d.period_end,
                 d.period_end AS event_date,
 
                 'depreciation'::text AS movement_type,
@@ -53396,6 +53413,8 @@ class DatabaseService:
             JOIN {schema}.assets a
             ON a.id = d.asset_id
             WHERE COALESCE(d.status,'draft') = 'posted'
+            AND d.period_start IS NOT NULL
+            AND d.period_end IS NOT NULL
         ),
 
         revaluation_rows AS (
@@ -53406,6 +53425,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 r.revaluation_date AS event_date,
 
                 CASE
@@ -53438,6 +53459,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 i.impairment_date AS event_date,
 
                 CASE
@@ -53476,6 +53499,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 d.disposal_date AS event_date,
 
                 'disposal'::text AS movement_type,
@@ -53504,6 +53529,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 h.classification_date AS event_date,
 
                 'held_for_sale_transfer_out'::text AS movement_type,
@@ -53535,6 +53562,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 t.transfer_date AS event_date,
 
                 'transfer'::text AS movement_type,
@@ -53563,6 +53592,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 st.transfer_date AS event_date,
 
                 CASE
@@ -53609,6 +53640,8 @@ class DatabaseService:
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
                 rr.event_date AS event_date,
 
                 CONCAT('reserve_', rr.event_type)::text AS movement_type,
@@ -53774,7 +53807,17 @@ class DatabaseService:
 
             FROM {schema}.vw_ppe_movements m
             CROSS JOIN p
-            WHERE m.event_date BETWEEN p.start_date AND p.end_date
+            WHERE
+            (
+                m.movement_type <> 'depreciation'
+                AND m.event_date BETWEEN p.start_date AND p.end_date
+            )
+            OR
+            (
+                m.movement_type = 'depreciation'
+                AND m.period_start >= p.start_date
+                AND m.period_end <= p.end_date
+            )
             GROUP BY m.asset_class
         ),
         classes AS (

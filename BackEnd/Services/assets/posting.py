@@ -3419,15 +3419,20 @@ def generate_depreciation_run(
         # -------------------------
         # ✅ avoid duplicates for same asset+effective period
         # -------------------------
+        
         cur.execute(_q(schema, """
-          SELECT 1
-          FROM {schema}.asset_depreciation
-          WHERE company_id=%s AND asset_id=%s
-            AND period_start=%s AND period_end=%s
-            AND status <> 'void'
-          LIMIT 1
-        """), (company_id, asset_id, eff_ps, period_end))
-        if cur.fetchone():
+        SELECT id, period_start, period_end
+        FROM {schema}.asset_depreciation
+        WHERE company_id=%s
+        AND asset_id=%s
+        AND status <> 'void'
+        AND period_start <= %s
+        AND period_end >= %s
+        LIMIT 1
+        """), (company_id, asset_id, period_end, eff_ps))
+
+        existing = cur.fetchone()
+        if existing:
             continue
 
         # -------------------------
@@ -3552,73 +3557,9 @@ def generate_depreciation_run(
         residual_basis = residual_end
         method_basis   = method_2 if (seg2_ps and seg2_pe) else method_1
 
-        # ✅ accumulated dep as at day BEFORE eff_ps
-        as_at_prev = eff_ps - timedelta(days=1)
-        accum_prev = get_latest_accum_dep(cur, schema, company_id, asset_id, as_at_prev)
-
-        if accum_prev is None:
-            cur.execute(_q(schema, """
-              SELECT COALESCE(opening_accum_dep,0) AS x
-              FROM {schema}.assets
-              WHERE company_id=%s AND id=%s
-            """), (company_id, asset_id))
-            accum_prev = Decimal((cur.fetchone() or {}).get("x") or 0)
-
         if method_basis == "SL" and life_basis <= 0:
             current_app.logger.warning("DEP SKIP invalid SL life asset_id=%s life=%s", asset_id, life_basis)
             continue
-
-        # Carrying amount at start (before this period dep)
-        ca_start = carrying_amount(cur, schema, company_id, asset_id, eff_ps)
-
-        # Pro-rate factor for SL
-        frac_m = _month_fraction(eff_ps, period_end)
-
-        dep_amt = Decimal("0")
-
-        if method_basis == "SL":
-            monthly_amt = calc_monthly_dep(a, cost_basis, residual_basis)
-            current_app.logger.info("DEP SL asset_id=%s life=%s cost_basis=%s residual=%s monthly=%s frac=%s",
-                                    asset_id, life_basis, cost_basis, residual_basis, monthly_amt, frac_m)
-            dep_amt = _round2(monthly_amt * frac_m)
-
-        elif method_basis == "RB":
-            dep_amt = rb_depreciation(a, ca_start, eff_ps, period_end)
-            current_app.logger.info("DEP RB asset_id=%s rate=%s ca_start=%s eff_ps=%s pe=%s dep=%s",
-                                    asset_id, a.get("rb_rate_percent"), ca_start, eff_ps, period_end, dep_amt)
-        elif method_basis == "UOP":
-            units_used = get_units_used(
-                cur, schema, company_id, asset_id, eff_ps, period_end,
-                include_draft=include_draft_usage
-            )
-            dep_amt = uop_depreciation(a, cost_basis, residual_basis, units_used)
-
-        # Cap so we don't go below residual
-        max_dep = max(Decimal("0"), ca_start - residual_basis)
-        dep_amt = min(dep_amt, _round2(max_dep))
-
-        if dep_amt <= 0:
-            current_app.logger.info(
-                "DEP SKIP asset_id=%s name=%s method=%s cost_basis=%s residual=%s ca_start=%s life=%s frac=%s start=%s eff_ps=%s pe=%s",
-                asset_id,
-                a.get("asset_name"),
-                method_basis,
-                str(cost_basis),
-                str(residual_basis),
-                str(ca_start),
-                str(life_basis),
-                str(frac_m),
-                str(start),
-                str(eff_ps),
-                str(period_end),
-            )
-            continue
-
-        if dep_amt <= 0:
-            continue
-
-        accum_after = _round2(accum_prev + dep_amt)
-        ca_after    = _round2(max(Decimal("0"), ca_start - dep_amt))
 
         # -------------------------
         # ✅ extra basis columns
@@ -3935,14 +3876,18 @@ def generate_single_asset_depreciation(
 
     # Avoid duplicates
     cur.execute(_q(schema, """
-      SELECT 1
-      FROM {schema}.asset_depreciation
-      WHERE company_id=%s AND asset_id=%s
-        AND period_start=%s AND period_end=%s
-        AND status <> 'void'
-      LIMIT 1
-    """), (company_id, asset_id, period_start, period_end))
-    if cur.fetchone():
+    SELECT id, period_start, period_end
+    FROM {schema}.asset_depreciation
+    WHERE company_id=%s
+    AND asset_id=%s
+    AND status <> 'void'
+    AND period_start <= %s
+    AND period_end >= %s
+    LIMIT 1
+    """), (company_id, asset_id, period_end, period_start))
+
+    existing = cur.fetchone()
+    if existing:
         return None
 
     cost_basis = get_cost_total(cur, schema, company_id, asset_id, period_end)
@@ -4039,9 +3984,6 @@ def generate_single_asset_depreciation(
         ))
 
     return cur.fetchone()["id"]
-
-from datetime import datetime
-from decimal import Decimal
 
 def preview_depreciation_run(
     cur,
