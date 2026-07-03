@@ -392,30 +392,32 @@ def build_cashflow_full_v2(
             for r in comparison_results
         ]
 
-        detail = {
-            "cur": rh.filter_zero_lines(
-                _aggregate_cf_detail_lines(cur["lines"].get(key, []))
-            )
-        }
+        cur_detail_lines = rh.filter_zero_lines(
+            _aggregate_cf_detail_lines(cur["lines"].get(key, []))
+        )
 
-        for idx, r in enumerate(comparison_results, start=1):
-            dkey = "pri" if idx == 1 else f"p{idx}"
-            detail[dkey] = rh.filter_zero_lines(
-                _aggregate_cf_detail_lines(r["lines"].get(key, []))
-            )
+        lines = []
+
+        for row in cur_detail_lines:
+            amt = float(row.get("amount") or 0.0)
+
+            lines.append({
+                "code": row.get("account_code") or "DETAIL",
+                "name": row.get("account_name") or row.get("name") or "Cash flow item",
+                "row_type": "normal",
+                "values": _val(amt, []),
+                "detail": {
+                    "cur": row.get("detail") or [],
+                    "pri": [],
+                },
+            })
 
         return {
             "key": key,
             "label": label,
-            "lines": [{
-                "code": "DETAIL",
-                "name": "Details",
-                "values": _val(cur_amt, comparison_amounts),
-                "detail": detail,
-            }],
+            "lines": lines,
             "totals": _val(cur_amt, comparison_amounts),
         }
-
 
     operating = _section_block("operating", "Net cash from operating activities")
     investing = _section_block("investing", "Net cash from investing activities")
