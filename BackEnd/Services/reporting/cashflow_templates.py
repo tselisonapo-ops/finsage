@@ -692,21 +692,29 @@ def build_cashflow_indirect_v2(
             adj_amt = None
 
             # only expense-side accounts belong in operating adjustments
-            if kind == "expense":
-                if (
-                    role.startswith("depreciation_expense")
-                    or role.startswith("amortisation_expense")
-                ):
-                    adj_amt = abs(delta)
+            name_l = name.lower()
 
-                elif "loss" in name.lower() and "disposal" in name.lower():
-                    adj_amt = abs(delta)
+            # Non-cash add-backs / deductions for indirect cash flow
+            if (
+                role.startswith("depreciation_expense")
+                or role.startswith("amortisation_expense")
+                or "depreciation" in name_l
+                or "amortisation" in name_l
+                or "amortization" in name_l
+            ):
+                adj_amt = abs(delta)
 
-                elif "gain" in name.lower() and "disposal" in name.lower():
-                    adj_amt = -abs(delta)
+            elif "impairment" in name_l:
+                adj_amt = abs(delta)
 
-                elif role in ("loan_interest_expense", "lease_interest_expense"):
-                    adj_amt = abs(delta)
+            elif "loss" in name_l and "disposal" in name_l:
+                adj_amt = abs(delta)
+
+            elif "gain" in name_l and "disposal" in name_l:
+                adj_amt = -abs(delta)
+
+            elif role in ("loan_interest_expense", "lease_interest_expense"):
+                adj_amt = abs(delta)
 
             if adj_amt is not None and abs(adj_amt) > 0.000001:
                 adjustments_total += adj_amt
