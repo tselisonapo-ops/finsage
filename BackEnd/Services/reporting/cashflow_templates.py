@@ -809,7 +809,7 @@ def build_cashflow_indirect_v2(
                 {
                     "code": "NONCASH",
                     "name": "Non-cash and other operating adjustments",
-                    "row_type": "breakdown",
+                    "row_type": "normal",
                     "values": _val(
                         adjustments_total,
                         adjustments_total,
@@ -817,10 +817,6 @@ def build_cashflow_indirect_v2(
                         ws_show_total=True,
                         ws_show_breakdown=True,
                     ),
-                    "detail": {
-                        "cur": adjustment_lines,
-                        "pri": [],
-                    },
                 },
                 {
                     "code": "OP_BEFORE_WC",
@@ -936,12 +932,8 @@ def build_cashflow_indirect_v2(
                 {
                     "code": "NONCASH",
                     "name": "Non-cash and other operating adjustments",
-                    "row_type": "breakdown",
+                    "row_type": "normal",
                     "values": _val(adjustments_total, 0.0),
-                    "detail": {
-                        "cur": adjustment_lines,
-                        "pri": [],
-                    },
                 },
                 {
                     "code": "OP_BEFORE_WC",
@@ -1077,14 +1069,24 @@ def build_cashflow_indirect_v2(
         code = str(line.get("code") or "").strip().upper()
         name = str(line.get("name") or "").strip().lower()
 
-        if code == "NONCASH":
-            return "NONCASH::TOTAL"
+        if code in (
+            "NET_PROFIT",
+            "ADJUST_HDR",
+            "NONCASH",
+            "OP_BEFORE_WC",
+            "WC_HDR",
+            "WC_AR",
+            "WC_AP",
+            "WC_INV",
+            "WC_PREPAIDS",
+            "WC_VAT",
+            "CASH_GEN_OPS",
+            "NET_CASH_OP",
+        ):
+            return code
 
         if "depreciation" in name or "amortisation" in name or "amortization" in name:
-            return "NONCASH::DEPRECIATION_AMORTISATION"
-
-        if code.startswith("WC_"):
-            return code
+            return "NONCASH"
 
         return f"{code}::{name}"
 
