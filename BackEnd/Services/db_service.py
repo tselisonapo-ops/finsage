@@ -53783,12 +53783,22 @@ class DatabaseService:
             SELECT asset_class FROM period_mov
             UNION
             SELECT DISTINCT
-                COALESCE(NULLIF(c.reporting_description, ''), c.name) AS asset_class
+                CASE
+                    WHEN c.role IN ('land', 'ppe_land') THEN 'Land'
+                    WHEN c.role IN ('buildings', 'ppe_buildings') THEN 'Buildings'
+                    WHEN c.role IN ('motor_vehicles', 'ppe_motor_vehicles') THEN 'Vehicles'
+                    WHEN c.role IN ('computer_equipment', 'ppe_computer_equipment') THEN 'Computer Equipment'
+                    WHEN c.role IN ('office_equipment', 'ppe_office_equipment') THEN 'Office Equipment'
+                    WHEN c.role IN ('office_furniture', 'ppe_furniture_fittings') THEN 'Furniture & Fittings'
+                    WHEN c.role IN ('ppe_plant_machinery', 'manufacturing_equipment') THEN 'Plant and Machinery'
+                    ELSE COALESCE(NULLIF(TRIM(c.reporting_description), ''), c.name)
+                END AS asset_class
             FROM {schema}.coa c
             WHERE (
                     c.role = ANY(%s)
                 OR UPPER(REPLACE(TRIM(COALESCE(c.standard, '')), ' ', '')) = 'IAS16'
             )
+            AND COALESCE(c.is_contra, FALSE) = FALSE
             AND (
                     c.code ILIKE 'BS_NCA_%%'
                 OR COALESCE(c.category, '') ILIKE '%%Non-Current%%'
