@@ -53762,10 +53762,17 @@ class DatabaseService:
             SELECT asset_class FROM period_mov
             UNION
             SELECT DISTINCT
-                COALESCE(NULLIF(c.asset_class, ''), c.reporting_description, c.name) AS asset_class
+                COALESCE(NULLIF(c.reporting_description, ''), c.name) AS asset_class
             FROM {schema}.coa c
-            WHERE UPPER(TRIM(COALESCE(c.standard, ''))) = 'IAS 16'
-            AND COALESCE(c.section, '') ILIKE '%%asset%%'
+            WHERE (
+                    c.role = ANY(%s)
+                OR UPPER(REPLACE(TRIM(COALESCE(c.standard, '')), ' ', '')) = 'IAS16'
+            )
+            AND (
+                    c.code ILIKE 'BS_NCA_%%'
+                OR COALESCE(c.category, '') ILIKE '%%Non-Current%%'
+                OR COALESCE(c.section, '') ILIKE '%%Property, Plant%%'
+            )
         )
         SELECT
             c.asset_class,
