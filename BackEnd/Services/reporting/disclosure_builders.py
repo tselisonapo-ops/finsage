@@ -329,6 +329,15 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         if n in ("bicycle", "bicycles", "bike", "bikes", "cycle", "cycles"):
             return "bicycles"
 
+        if n in ("bicycle fleet", "delivery bicycle", "delivery bicycles"):
+            return "bicycles"
+
+        if n in ("motorcycle fleet", "motorbike fleet", "delivery motorcycles"):
+            return "motorcycles"
+
+        if n in ("safety equipment", "helmets", "helmet"):
+            return "safety_equipment"
+
         # Scooters
         if n in ("scooter", "scooters", "motor scooter", "motor scooters",):
             return "scooters"
@@ -387,6 +396,7 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         {"key": "vehicles", "label": "Vehicles"},
         {"key": "motorcycles", "label": "Motorcycles"},
         {"key": "bicycles", "label": "Bicycles"},
+        {"key": "safety_equipment", "label": "Safety Equipment"},
         {"key": "scooters", "label": "Scooters"},
         {"key": "quad_bikes", "label": "Quad Bikes"},
         {"key": "heavy_vehicles", "label": "Heavy Vehicles"},
