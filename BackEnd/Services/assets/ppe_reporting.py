@@ -1544,8 +1544,24 @@ def asset_group_subsequent_measurement_preview(company_id, asset_id):
 
                 for comp in components:
                     comp_id = str(comp["id"])
+                    component_input = component_payloads.get(comp_id) or {}
+
+                    fair_value = component_input.get("fair_value")
+                    if fair_value is None:
+                        fair_value = (component_input.get("meta_json") or {}).get("fair_value")
+
                     comp_payload = dict(body)
-                    comp_payload.update(component_payloads.get(comp_id) or {})
+                    comp_payload["asset_id"] = int(comp["id"])
+
+                    comp_meta = dict(body.get("meta_json") or {})
+                    comp_meta["fair_value"] = fair_value
+                    comp_meta["reason"] = (
+                        component_input.get("reason")
+                        or (component_input.get("meta_json") or {}).get("reason")
+                        or comp_meta.get("reason")
+                    )
+
+                    comp_payload["meta_json"] = comp_meta
 
                     out = posting.build_sm_preview(
                         company_id=company_id,
@@ -1565,14 +1581,44 @@ def asset_group_subsequent_measurement_preview(company_id, asset_id):
                         "asset_id": int(comp["id"]),
                         "asset_name": comp.get("asset_name"),
                         "component_type": comp.get("component_type"),
+                        "fair_value": fair_value,
                         "preview": out,
                     })
+
+                combined_lines = []
+                before_total = 0.0
+                after_total = 0.0
+
+                for p in previews:
+                    prev = p.get("preview") or {}
+                    impact = prev.get("impact") or {}
+
+                    before_total += float(
+                        impact.get("carrying_amount_before")
+                        or impact.get("carrying_before")
+                        or 0
+                    )
+
+                    after_total += float(
+                        impact.get("carrying_amount_after")
+                        or impact.get("carrying_after")
+                        or 0
+                    )
+
+                    for line in prev.get("lines") or []:
+                        combined_lines.append(line)
 
                 return jsonify({
                     "ok": True,
                     "asset_group_id": int(asset_id),
                     "asset_group_name": parent.get("asset_name"),
                     "components": previews,
+                    "impact": {
+                        "carrying_amount_before": round(before_total, 2),
+                        "carrying_amount_after": round(after_total, 2),
+                        "delta": round(after_total - before_total, 2),
+                    },
+                    "lines": combined_lines,
                     "total_debit": round(totals["debit"], 2),
                     "total_credit": round(totals["credit"], 2),
                 }), 200

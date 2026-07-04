@@ -35556,6 +35556,12 @@ async function saveEditModal() {
     singleWrap.classList.toggle("hidden", isGroup);
     groupWrap.classList.toggle("hidden", !isGroup);
 
+    const fairValueInput = $("smFairValue");
+    const reasonInput = $("smFairValueReason");
+
+    fairValueInput?.closest("div")?.classList.toggle("hidden", isGroup);
+    reasonInput?.closest("div")?.classList.toggle("hidden", isGroup);
+
     if (!isGroup) {
       groupWrap.innerHTML = "";
       return;
@@ -36194,7 +36200,7 @@ async function saveEditModal() {
         clearSmPreview();
         throw new Error("Select a type before preview.");
       }
-      
+
       const assetId = Number(SELECTED_SM_ASSET?.id || payload.asset_id || 0);
 
       const url = selectedAssetIsComponentGroup()
@@ -36326,7 +36332,12 @@ async function saveEditModal() {
     renderAssetMeta(a);
     renderGroupFairValueFields();
 
-    if (a && $("smEventType")?.value === "fair_value_valuation" && !$("smFairValue")?.value) {
+    if (
+      a &&
+      !a.is_component_group &&
+      $("smEventType")?.value === "fair_value_valuation" &&
+      !$("smFairValue")?.value
+    ) {
       $("smFairValue").value = Number(a.carrying_amount ?? a.nbv ?? 0);
     }
 
