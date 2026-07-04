@@ -950,16 +950,16 @@ def build_balance_sheet_v3(
                 "meta": {"is_plug": True, "source": "pnl_ytd"},
             })
 
-        # -------------------------
-        # Hide zero lines for external reporting only
-        # -------------------------
-        if view == "external":
-            non_current_assets = rh.filter_zero_lines(non_current_assets)
-            ca_lines = rh.filter_zero_lines(ca_lines)
-            cl_lines = rh.filter_zero_lines(cl_lines)
-            ncl_lines = rh.filter_zero_lines(ncl_lines)
-            eq_lines = rh.filter_zero_lines(eq_lines)
-            
+    # -------------------------
+    # Hide zero lines for external reporting only
+    # -------------------------
+    if view == "external":
+        non_current_assets = rh.filter_zero_lines(non_current_assets)
+        ca_lines = rh.filter_zero_lines(ca_lines)
+        cl_lines = rh.filter_zero_lines(cl_lines)
+        ncl_lines = rh.filter_zero_lines(ncl_lines)
+        eq_lines = rh.filter_zero_lines(eq_lines)
+        
     # -------------------------
     # Totals (contra-aware)
     # -------------------------

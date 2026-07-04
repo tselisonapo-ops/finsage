@@ -27356,7 +27356,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
       });
 
       if (typeof renderer === "function") {
-        canvas.innerHTML = renderer(dacleanData, { periodLabel: label, preview_columns, cols_mode});
+        canvas.innerHTML = renderer(cleanData, { periodLabel: label, preview_columns, cols_mode});
         return;
       }
 

@@ -14,12 +14,8 @@ def _d(x: Any) -> Decimal:
 def _money(x: Decimal) -> float:
     return float(x.quantize(Decimal("0.01")))
 
-def _equity_present_balance(x: Any) -> Decimal:
-    """
-    Equity accounts are credit balances in the ledger.
-    For SOCIE presentation, show them as positive.
-    """
-    return abs(_d(x))
+def _equity_balance(x: Any) -> Decimal:
+    return _d(x)
 
 def _equity_bucket_for_account(row: dict) -> str | None:
     role = str(row.get("role") or "").strip().lower()
@@ -290,7 +286,7 @@ def build_statement_of_changes_in_equity(
         if not bucket or bucket not in explicit_closing:
             continue
 
-        explicit_closing[bucket] += _equity_present_balance(acc.get("balance"))
+        explicit_closing[bucket] += _equity_balance(acc.get("balance"))
         explicit_found.add(bucket)
 
     for bk in (
@@ -298,6 +294,7 @@ def build_statement_of_changes_in_equity(
         "owner_capital",
         "preference_share_capital",
         "share_premium",
+        "treasury_shares",
         "reserves",
     ):
         if bk in explicit_found:
@@ -314,6 +311,35 @@ def build_statement_of_changes_in_equity(
             "values": values,
         })
 
+    # Hide columns with no data, but always keep total
+    active_bucket_keys = [
+        bk for bk in bucket_keys
+        if any(rows[rk]["values"].get(bk, Decimal("0")) != 0 for rk in row_keys)
+    ]
+
+    active_columns = [
+        {"key": key, "label": label}
+        for key, label in bucket_pairs
+        if key in active_bucket_keys
+    ]
+    active_columns.append({"key": "total", "label": "Total"})
+
+    final_rows = []
+    for rk in row_keys:
+        total = sum(rows[rk]["values"][bk] for bk in active_bucket_keys)
+        values = {bk: _money(rows[rk]["values"][bk]) for bk in active_bucket_keys}
+        values["total"] = _money(total)
+
+        # hide rows with no movement/balance except opening and closing
+        if rk not in ("opening_balance", "closing_balance") and total == 0:
+            continue
+
+        final_rows.append({
+            "key": rk,
+            "label": row_labels[rk],
+            "values": values,
+        })
+
     return {
         "meta": {
             "company_id": company_id,
@@ -322,6 +348,6 @@ def build_statement_of_changes_in_equity(
             "period": {"from": period_from, "to": period_to},
             "statement": "socie",
         },
-        "columns": columns,
-        "rows": final_rows,
+    "columns": active_columns,
+    "rows": final_rows,
     }
