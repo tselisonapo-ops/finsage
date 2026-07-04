@@ -1056,8 +1056,23 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       if (assetId == null) throw new Error("Asset created but response did not include id.");
 
       if (isCompoundLandBuilding) {
-        onResolve({ action: "create_asset", assetId });
-        onClose();
+        setCreatedAssetId(String(assetId));
+
+        const compoundAcqIds =
+          (created as { acquisition_ids?: Array<number | string> })?.acquisition_ids ??
+          (created as { data?: { acquisition_ids?: Array<number | string> } })?.data?.acquisition_ids ??
+          [];
+
+        const firstAcqId = compoundAcqIds[0];
+
+        if (firstAcqId == null) {
+          throw new Error("Compound acquisition created but no acquisition draft id was returned.");
+        }
+
+        setCreatedAcqId(String(firstAcqId));
+        setStep(2);
+
+        await loadJournalPreview(String(companyId), String(firstAcqId));
         return;
       }
 
