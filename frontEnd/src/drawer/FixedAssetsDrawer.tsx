@@ -238,6 +238,10 @@ function assetsCreateUrl(companyId: number | string): string {
   return `/api/companies/${encodeURIComponent(String(companyId))}/assets`;
 }
 
+function compoundAssetCreateUrl(companyId: number | string): string {
+  return `/api/companies/${encodeURIComponent(String(companyId))}/assets/compound-acquisition`;
+}
+
 function coaListUrl(companyId: number | string): string {
   if (ENDPOINTS?.coa?.list) return ENDPOINTS.coa.list(companyId);
   return `/api/companies/${encodeURIComponent(String(companyId))}/coa`;
@@ -470,7 +474,22 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
   const isLandOnly = selectedClassGroup === "land";
   const isBuilding = selectedClassGroup === "buildings";
   const isCompoundLandBuilding = selectedClassGroup === "land and buildings";
+  const componentTotalCost = useMemo(
+    () => components.reduce((s, c) => s + Number(c.cost || 0), 0),
+    [components]
+  );
+  useEffect(() => {
+    if (!isCompoundLandBuilding) return;
 
+    setForm((p) => ({
+      ...p,
+      cost: componentTotalCost,
+      asset_class: "Land and buildings",
+      depreciation_method: "APP",
+      useful_life_months: 0,
+      residual_value: 0,
+    }));
+  }, [isCompoundLandBuilding, componentTotalCost]);
   const isLandOrBuilding = isLandOnly || isBuilding || isCompoundLandBuilding;
 
   const isIntangibleAsset =
@@ -809,7 +828,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       return setErr("Asset class group is required.");
     }
 
-    if (!String(form.asset_class || "").trim()) {
+    if (!isCompoundLandBuilding && !String(form.asset_class || "").trim()) {
       return setErr("Asset class is required.");
     }
 
@@ -990,20 +1009,57 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
         other_credit_account_code: !isOpeningBalance && fundingSource === "other" ? otherCreditAccountCode.trim() : null,
       };
 
-      const res = await apiFetchFn(assetsCreateUrl(companyId), {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const submitPayload = isCompoundLandBuilding
+        ? {
+            ...payload,
+            cost: componentTotalCost,
+            asset_class: "Land and buildings",
+            asset_class_group: "Land and buildings",
+            depreciation_method: "APP",
+            useful_life_months: 0,
+            residual_value: 0,
+            components,
+            acquisition: buildAcqPayload(form.asset_code),
+          }
+        : payload;
+
+      const res = await apiFetchFn(
+        isCompoundLandBuilding
+          ? compoundAssetCreateUrl(companyId)
+          : assetsCreateUrl(companyId),
+        {
+          method: "POST",
+          body: JSON.stringify(submitPayload),
+        }
+      );
 
       const created = res as {
         id?: number | string;
         asset_id?: number | string;
+        parent_asset_id?: number | string;
         opening_journal_id?: number | string;
-        data?: { id?: number | string; asset_id?: number | string; opening_journal_id?: number | string };
+        data?: {
+          id?: number | string;
+          asset_id?: number | string;
+          parent_asset_id?: number | string;
+          opening_journal_id?: number | string;
+        };
       };
 
-      const assetId = created.id ?? created.asset_id ?? created.data?.id ?? created.data?.asset_id;
+      const assetId =
+        created.id ??
+        created.asset_id ??
+        created.parent_asset_id ??
+        created.data?.id ??
+        created.data?.asset_id ??
+        created.data?.parent_asset_id;
       if (assetId == null) throw new Error("Asset created but response did not include id.");
+
+      if (isCompoundLandBuilding) {
+        onResolve({ action: "create_asset", assetId });
+        onClose();
+        return;
+      }
 
       if (isOpeningBalance) {
         onResolve({ action: "create_asset", assetId });
@@ -1311,20 +1367,40 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           </div>
 
           {/* Asset name / class label */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isCompoundLandBuilding ? "1fr" : "1fr 1fr", gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, marginBottom: 4 }}>Asset name *</div>
               <input
                 value={form.asset_name}
-                onChange={(e) => setForm((p) => ({ ...p, asset_name: e.target.value }))}
+                onChange={(e) => {
+                  const assetName = e.target.value;
+
+                  setForm((p) => ({
+                    ...p,
+                    asset_name: assetName,
+                  }));
+
+                  if (isCompoundLandBuilding) {
+                    setComponents((prev) =>
+                      prev.map((c) => ({
+                        ...c,
+                        asset_name:
+                          c.component_type === "land"
+                            ? `${assetName || "Property"} - Land`
+                            : `${assetName || "Property"} - Building`,
+                      }))
+                    );
+                  }
+                }}                
                 placeholder="e.g. Motor Vehicle - Toyota"
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
             </div>
 
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class *</div>
-              <input
+            {!isCompoundLandBuilding ? (
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Asset class *</div>
+                <input
                 value={form.asset_class}
                 onChange={(e) => {
                   const assetClass = e.target.value;
@@ -1349,13 +1425,14 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
                 style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
               />
             </div>
+          ) : null}
           </div>
 
           <div style={{ fontSize: 11, opacity: 0.75, marginTop: -6 }}>
             Use class label for the company’s own name. The group keeps reporting consistent.
           </div>
 
-          {supportsRevaluationModel ? (
+          {supportsRevaluationModel && !isCompoundLandBuilding ? (
             <div
               style={{
                 display: "flex",
@@ -1451,95 +1528,132 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           </div>
 
           {/* Cost / residual */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>{isOpeningBalance ? "Historical cost *" : "Cost *"}</div>
-              <input
-                value={String(form.cost)}
-                onChange={(e) => setForm((p) => ({ ...p, cost: toNum(e.target.value) }))}
-                placeholder="0.00"
-                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              />
-            </div>
+          {!isCompoundLandBuilding ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>{isOpeningBalance ? "Historical cost *" : "Cost *"}</div>
+                <input
+                  value={String(form.cost)}
+                  onChange={(e) => setForm((p) => ({ ...p, cost: toNum(e.target.value) }))}
+                  placeholder="0.00"
+                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                />
+              </div>
 
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Residual value</div>
-              <input
-                value={String(form.residual_value)}
-                onChange={(e) => setForm((p) => ({ ...p, residual_value: toNum(e.target.value) }))}
-                placeholder="0.00"
-                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              />
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>Residual value</div>
+                <input
+                  value={String(form.residual_value)}
+                  onChange={(e) => setForm((p) => ({ ...p, residual_value: toNum(e.target.value) }))}
+                  placeholder="0.00"
+                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                />
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {isCompoundLandBuilding ? (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 10,
-                padding: 10,
+                gap: 12,
+                padding: 12,
                 border: "1px solid rgba(0,0,0,0.10)",
-                borderRadius: 10,
+                borderRadius: 12,
                 background: "rgba(0,0,0,0.03)",
               }}
             >
+              <div style={{ fontWeight: 800 }}>Components</div>
+
               {components.map((c, idx) => (
-                <div key={c.component_type}>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>
-                    {c.component_type === "land" ? "Land cost *" : "Building cost *"}
+                <div
+                  key={c.component_type}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: c.component_type === "building" ? "1fr 1fr 1fr" : "1fr 1fr 1fr",
+                    gap: 10,
+                    padding: 10,
+                    border: "1px solid rgba(0,0,0,0.08)",
+                    borderRadius: 10,
+                    background: "#fff",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Component</div>
+                    <input
+                      value={c.asset_name}
+                      readOnly
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px", background: "rgba(0,0,0,0.04)" }}
+                    />
                   </div>
 
-                  <input
-                    value={String(c.cost)}
-                    onChange={(e) => {
-                      const cost = toNum(e.target.value);
-                      setComponents((prev) =>
-                        prev.map((x, i) => (i === idx ? { ...x, cost } : x))
-                      );
-                    }}
-                    placeholder="0.00"
-                    style={{
-                      width: "100%",
-                      border: "1px solid rgba(0,0,0,0.15)",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                    }}
-                  />
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Cost *</div>
+                    <input
+                      value={String(c.cost)}
+                      onChange={(e) => {
+                        const cost = toNum(e.target.value);
+                        setComponents((prev) =>
+                          prev.map((x, i) => (i === idx ? { ...x, cost } : x))
+                        );
+                        setForm((p) => ({
+                          ...p,
+                          cost: components.reduce((s, x, i) => s + (i === idx ? cost : Number(x.cost || 0)), 0),
+                        }));
+                      }}
+                      placeholder="0.00"
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Measurement model</div>
+                    <select
+                      value={c.measurement_model}
+                      onChange={(e) => {
+                        const measurement_model = e.target.value as "cost" | "revaluation";
+                        setComponents((prev) =>
+                          prev.map((x, i) => (i === idx ? { ...x, measurement_model } : x))
+                        );
+                      }}
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    >
+                      <option value="cost">Cost</option>
+                      <option value="revaluation">Revaluation</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation</div>
+                    <input
+                      value={c.depreciation_method === "APP" ? "APP / Not depreciated" : c.depreciation_method}
+                      readOnly
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px", background: "rgba(0,0,0,0.04)" }}
+                    />
+                  </div>
 
                   {c.component_type === "building" ? (
-                    <>
-                      <div style={{ fontSize: 12, marginBottom: 4, marginTop: 8 }}>
-                        Building useful life months *
-                      </div>
-
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>Useful life months *</div>
                       <input
                         value={String(c.useful_life_months)}
                         onChange={(e) => {
-                          const useful_life_months = Math.max(
-                            0,
-                            Math.floor(toNum(e.target.value))
-                          );
-
+                          const useful_life_months = Math.max(0, Math.floor(toNum(e.target.value)));
                           setComponents((prev) =>
-                            prev.map((x, i) =>
-                              i === idx ? { ...x, useful_life_months } : x
-                            )
+                            prev.map((x, i) => (i === idx ? { ...x, useful_life_months } : x))
                           );
                         }}
                         placeholder="e.g. 600"
-                        style={{
-                          width: "100%",
-                          border: "1px solid rgba(0,0,0,0.15)",
-                          borderRadius: 10,
-                          padding: "10px 12px",
-                        }}
+                        style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
                       />
-                    </>
+                    </div>
                   ) : null}
                 </div>
               ))}
+
+              <div style={{ fontSize: 13, fontWeight: 800 }}>
+                Total acquisition cost: {componentTotalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
             </div>
           ) : null}
 
@@ -1703,127 +1817,141 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
           ) : null}
 
           {/* Depreciation */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation method</div>
-              <select
-                value={form.depreciation_method}
-                  onChange={(e) => {
-                    const m = e.target.value as DepreciationMethod;
+          {!isCompoundLandBuilding ? (
+            <>
+              {/* Depreciation */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation method</div>
+                  <select
+                    value={form.depreciation_method}
+                    onChange={(e) => {
+                      const m = e.target.value as DepreciationMethod;
 
-                    if (m === "APP") {
+                      if (m === "APP") {
+                        setForm((p) => ({
+                          ...p,
+                          depreciation_method: "APP",
+                          useful_life_months: 0,
+                          rb_rate_percent: null,
+                          uop_total_units: null,
+                          uop_usage_mode: null,
+                          uop_opening_reading: null,
+                          uop_unit_name: null,
+                        }));
+                        return;
+                      }
+
                       setForm((p) => ({
                         ...p,
-                        depreciation_method: "APP",
-                        useful_life_months: 0,
-                        rb_rate_percent: null,
-                        uop_total_units: null,
-                        uop_usage_mode: null,
-                        uop_opening_reading: null,
-                        uop_unit_name: null,
+                        depreciation_method: m,
+                        useful_life_months: m === "SL" ? p.useful_life_months || 60 : 0,
+                        rb_rate_percent: m === "RB" ? p.rb_rate_percent ?? 20 : null,
+                        uop_total_units: m === "UOP" ? p.uop_total_units ?? 0 : null,
+                        uop_usage_mode: m === "UOP" ? p.uop_usage_mode ?? "DELTA" : null,
+                        uop_opening_reading: m === "UOP" ? p.uop_opening_reading ?? null : null,
+                        uop_unit_name: m === "UOP" ? p.uop_unit_name ?? "" : "",
                       }));
-                      return;
-                    }
-
-                    setForm((p) => ({
-                      ...p,
-                      depreciation_method: m,
-                      useful_life_months: m === "SL" ? p.useful_life_months || 60 : 0,
-                      rb_rate_percent: m === "RB" ? p.rb_rate_percent ?? 20 : null,
-                      uop_total_units: m === "UOP" ? p.uop_total_units ?? 0 : null,
-                      uop_usage_mode: m === "UOP" ? p.uop_usage_mode ?? "DELTA" : null,
-                      uop_opening_reading: m === "UOP" ? p.uop_opening_reading ?? null : null,
-                    }));
-                  }}
-                style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-              >
-                <option value="">Select depreciation method...</option>
-                <option value="SL">Straight-line (SL)</option>
-                <option value="RB">Reducing balance (RB)</option>
-                <option value="UOP">Units of Production (UOP)</option>
-                <option value="APP">Appreciation / Not depreciated</option>
-              </select>
-            </div>
-
-            {!isLandOnly && form.depreciation_method === "SL" ? (
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Useful life (months) *</div>
-                <input
-                  value={String(form.useful_life_months)}
-                  onChange={(e) => setForm((p) => ({ ...p, useful_life_months: Math.max(0, Math.floor(toNum(e.target.value))) }))}
-                  placeholder="e.g. 60"
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                />
-              </div>
-            ) : !isLandOnly && form.depreciation_method === "RB" ? (
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation rate (% p.a.) *</div>
-                <input
-                  value={String(form.rb_rate_percent ?? "")}
-                  onChange={(e) => setForm((p) => ({ ...p, rb_rate_percent: toNum(e.target.value) }))}
-                  placeholder="e.g. 20"
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                />
-              </div>
-            ) : null}
-          </div>
-
-          {form.depreciation_method === "UOP" ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Total units (lifetime) *</div>
-                <input
-                  value={String(form.uop_total_units ?? "")}
-                  onChange={(e) => setForm((p) => ({ ...p, uop_total_units: toNum(e.target.value) }))}
-                  placeholder="e.g. 200000"
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                />
-              </div>
-
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Unit name</div>
-                <input
-                  value={String(form.uop_unit_name ?? "")}
-                  onChange={(e) => setForm((p) => ({ ...p, uop_unit_name: e.target.value }))}
-                  placeholder="e.g. km, hours, units"
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                />
-              </div>
-
-              <div>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>Usage capture mode</div>
-                <select
-                  value={(form.uop_usage_mode || "DELTA") as "DELTA" | "READING"}
-                  onChange={(e) => {
-                    const m = e.target.value as "DELTA" | "READING";
-                    setForm((p) => ({
-                      ...p,
-                      uop_usage_mode: m,
-                      uop_opening_reading: m === "READING" ? p.uop_opening_reading ?? null : null,
-                    }));
-                  }}
-                  style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                >
-                  <option value="DELTA">Period usage</option>
-                  <option value="READING">Meter reading</option>
-                </select>
-              </div>
-
-              {(form.uop_usage_mode || "DELTA") === "READING" ? (
-                <div>
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>Opening reading</div>
-                  <input
-                    value={form.uop_opening_reading == null ? "" : String(form.uop_opening_reading)}
-                    onChange={(e) => {
-                      const raw = e.target.value.trim();
-                      setForm((p) => ({ ...p, uop_opening_reading: raw ? toNum(raw) : null }));
                     }}
-                    placeholder="e.g. 25"
                     style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
-                  />
+                  >
+                    <option value="">Select depreciation method...</option>
+                    <option value="SL">Straight-line (SL)</option>
+                    <option value="RB">Reducing balance (RB)</option>
+                    <option value="UOP">Units of Production (UOP)</option>
+                    <option value="APP">Appreciation / Not depreciated</option>
+                  </select>
+                </div>
+
+                {!isLandOnly && form.depreciation_method === "SL" ? (
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Useful life (months) *</div>
+                    <input
+                      value={String(form.useful_life_months)}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          useful_life_months: Math.max(0, Math.floor(toNum(e.target.value))),
+                        }))
+                      }
+                      placeholder="e.g. 60"
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
+                ) : !isLandOnly && form.depreciation_method === "RB" ? (
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Depreciation rate (% p.a.) *</div>
+                    <input
+                      value={String(form.rb_rate_percent ?? "")}
+                      onChange={(e) => setForm((p) => ({ ...p, rb_rate_percent: toNum(e.target.value) }))}
+                      placeholder="e.g. 20"
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              {form.depreciation_method === "UOP" ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Total units (lifetime) *</div>
+                    <input
+                      value={String(form.uop_total_units ?? "")}
+                      onChange={(e) => setForm((p) => ({ ...p, uop_total_units: toNum(e.target.value) }))}
+                      placeholder="e.g. 200000"
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Unit name</div>
+                    <input
+                      value={String(form.uop_unit_name ?? "")}
+                      onChange={(e) => setForm((p) => ({ ...p, uop_unit_name: e.target.value }))}
+                      placeholder="e.g. km, hours, units"
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>Usage capture mode</div>
+                    <select
+                      value={(form.uop_usage_mode || "DELTA") as "DELTA" | "READING"}
+                      onChange={(e) => {
+                        const m = e.target.value as "DELTA" | "READING";
+                        setForm((p) => ({
+                          ...p,
+                          uop_usage_mode: m,
+                          uop_opening_reading: m === "READING" ? p.uop_opening_reading ?? null : null,
+                        }));
+                      }}
+                      style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                    >
+                      <option value="DELTA">Period usage</option>
+                      <option value="READING">Meter reading</option>
+                    </select>
+                  </div>
+
+                  {(form.uop_usage_mode || "DELTA") === "READING" ? (
+                    <div>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>Opening reading</div>
+                      <input
+                        value={form.uop_opening_reading == null ? "" : String(form.uop_opening_reading)}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          setForm((p) => ({
+                            ...p,
+                            uop_opening_reading: raw ? toNum(raw) : null,
+                          }));
+                        }}
+                        placeholder="e.g. 25"
+                        style={{ width: "100%", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "10px 12px" }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
-            </div>
+            </>
           ) : null}
 
           {/* Asset account only */}
