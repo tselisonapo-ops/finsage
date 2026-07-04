@@ -36190,7 +36190,8 @@ async function saveEditModal() {
   // =========================================================
   let assetsCache = [];
   let assetsLoaded = false;
-
+  let SELECTED_SM_ASSET = null;
+  
   function assetName(a) {
     return (
       a?.asset_name ||
