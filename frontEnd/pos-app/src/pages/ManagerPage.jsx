@@ -169,10 +169,11 @@ function defaultPosDateFilter() {
 
 export function ManagerPage() {
   const company = getCompanyContext();
-  const isVatRegistered =
+  const isVatRegistered = Boolean(
+    receiptSettings?.vat_registered === true ||
     company?.vat_registered === true ||
-    company?.is_vat_registered === true ||
-    String(company?.tax_registration_type || "").toLowerCase() === "vat";
+    String(company?.vat || "").trim()
+  );
     
   const fsToken =
     sessionStorage.getItem("fs_user_token") ||

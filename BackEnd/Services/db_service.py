@@ -38600,58 +38600,59 @@ class DatabaseService:
     def pos_get_receipt_settings(self, company_id: int) -> dict:
         schema = self.company_schema(company_id)
 
-        row = self.fetch_one(f"""
+        company = self.get_company(company_id)
+        vat_registered = bool(company and company.get("vat_registered"))
+
+        row = self.fetch_one(
+            f"""
             SELECT *
             FROM {schema}.pos_receipt_settings
             WHERE company_id = %s
             AND is_active = TRUE
             ORDER BY id DESC
             LIMIT 1
-        """, (int(company_id),))
-
+            """,
+            (int(company_id),)
+        )
         if row:
-            row.setdefault("pricing_tax_mode", "no_vat")
-            row.setdefault("receipt_tax_display", "none")
-            row.setdefault("tax_invoice_wording", row.get("receipt_title", "Receipt"))
-            row.setdefault("slip_template", "classic")
-            row.setdefault("order_template", "restaurant_order")
-            row.setdefault("kitchen_ticket_template", "kitchen_ticket")
+            row["vat_registered"] = vat_registered
+
+            if not vat_registered:
+                row["pricing_tax_mode"] = "no_vat"
+                row["receipt_tax_display"] = "none"
+                row["tax_invoice_wording"] = "Receipt"
+                row["show_vat_no"] = False
 
             return row
 
         return {
             "company_id": int(company_id),
+            "vat_registered": vat_registered,
 
-            "receipt_title": "Tax Invoice / Receipt",
+            "receipt_title": "Tax Invoice / Receipt" if vat_registered else "Receipt",
             "footer_message": "Thank you for your business.",
             "returns_policy": "Returns accepted within 7 days with original receipt. Items must be unused and in original condition.",
             "refund_policy": "Refunds are issued via the original payment method. Management reserves the right to refuse non-compliant returns.",
-            "vat_note": "This document is not a tax invoice unless VAT details are displayed.",
 
-            "show_vat_no": True,
+            "vat_note": (
+                "This document is not a tax invoice unless VAT details are displayed."
+                if vat_registered
+                else "No VAT charged."
+            ),
+
+            "show_vat_no": vat_registered,
             "show_cashier_name": True,
             "show_customer_name": True,
             "is_active": True,
 
-            # Tax
-            "pricing_tax_mode": "inclusive",
-            "receipt_tax_display": "vat_line",
-            "tax_invoice_wording": "Tax Invoice / Receipt",
+            "pricing_tax_mode": "inclusive" if vat_registered else "no_vat",
+            "receipt_tax_display": "vat_line" if vat_registered else "none",
+            "tax_invoice_wording": "Tax Invoice / Receipt" if vat_registered else "Receipt",
 
-            "receipt_title": "Receipt",
-            "vat_note": "No VAT charged.",
-            "show_vat_no": False,
-
-            "pricing_tax_mode": "no_vat",
-            "receipt_tax_display": "none",
-            "tax_invoice_wording": "Receipt",
-
-            # Templates
             "slip_template": "classic",
             "order_template": "restaurant_order",
             "kitchen_ticket_template": "kitchen_ticket",
 
-            # Branding
             "show_logo": True,
             "logo_position": "top_center",
             "company_motto": "",
