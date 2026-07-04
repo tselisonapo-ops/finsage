@@ -37928,7 +37928,7 @@ async function saveEditModal() {
     },
     close: hide,
   };
-}
+};
 
 (function () {
   const $ = (sel, root = document) => root.querySelector(sel);
