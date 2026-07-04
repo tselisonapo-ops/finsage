@@ -23570,11 +23570,19 @@ class DatabaseService:
             WHERE id = %s
             LIMIT 1;
         """
+
         row = self.fetch_one(sql, (company_id,))
         if not row:
             return None
 
-        row["industry_profile"] = get_industry_profile(row.get("industry"), row.get("sub_industry"))
+        row["industry_profile"] = get_industry_profile(
+            row.get("industry"),
+            row.get("sub_industry"),
+        )
+
+        # Explicit VAT registration flag
+        row["vat_registered"] = bool(str(row.get("vat") or "").strip())
+
         return row
 
     def _get_gl_balance(self, company_id: int, account_code: str) -> float:
@@ -38722,22 +38730,12 @@ class DatabaseService:
         return row
 
     def _company_is_vat_registered(self, company_id: int) -> bool:
-        row = self.fetch_one("""
-            SELECT *
-            FROM public.companies
-            WHERE id = %s
-            LIMIT 1
-        """, (int(company_id),))
+        company = self.get_company(company_id)
 
-        if not row:
+        if not company:
             return False
 
-        return bool(
-            row.get("vat_registered")
-            or row.get("is_vat_registered")
-            or row.get("vat_no")
-            or row.get("vat_number")
-        )
+        return bool(str(company.get("vat") or "").strip())
 
     def _normalise_pos_tax_settings(self, company_id: int, data: dict) -> dict:
         data = dict(data or {})
