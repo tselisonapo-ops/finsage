@@ -1850,6 +1850,14 @@ def get_revaluation(cur, company_id, reval_id):
 
 def create_revaluation(cur, company_id, payload):
     schema = company_schema(company_id)
+
+    # ✅ Validate required fields first
+    if not payload.get("asset_id"):
+        raise ValueError("asset_id is required")
+
+    if not payload.get("revaluation_date"):
+        raise ValueError("revaluation_date is required")
+
     cur.execute(_q(schema, """
       INSERT INTO {schema}.asset_revaluations(
         company_id, asset_id, revaluation_date,
@@ -1862,7 +1870,9 @@ def create_revaluation(cur, company_id, payload):
       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,'gross_restated'),%s,%s,COALESCE(%s,'draft'),%s)
       RETURNING id
     """), (
-      company_id, payload["asset_id"], payload["revaluation_date"],
+      company_id,
+      payload["asset_id"],
+      payload["revaluation_date"],
       payload.get("carrying_amount_before", 0),
       payload.get("cost_before"),
       payload.get("accum_dep_before"),
@@ -1880,6 +1890,7 @@ def create_revaluation(cur, company_id, payload):
       payload.get("status", "draft"),
       payload.get("created_by"),
     ))
+
     return cur.fetchone()["id"]
 
 def void_revaluation(cur, company_id, reval_id):

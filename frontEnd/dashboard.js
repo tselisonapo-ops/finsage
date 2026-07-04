@@ -35387,6 +35387,12 @@ async function saveEditModal() {
       valuationPostNew:
         (A.valuation?.postNew?.(cid) || `/api/companies/${cid}/asset-revaluations/post`),
 
+      createValuationDraft:
+        A.valuation?.create?.(cid) || `/api/companies/${cid}/asset-revaluations`,
+
+      valuationCreate: 
+        A.valuation?.create?.(cid) || `/api/companies/${cid}/revaluations`,
+
       valuationGet: (id) =>
         (A.valuation?.get?.(cid, id) || `/api/companies/${cid}/asset-revaluations/${id}`),
 
@@ -35681,7 +35687,6 @@ async function saveEditModal() {
       ? (asset.asset_name || asset.name || `Asset #${asset.id}`)
       : "selected asset";
 
-    $("valuationRevaluationId").value = "";
     $("valuationAssetId").value = $("smAssetId")?.value || "";
     $("valuationDate").value = $("smEventDate")?.value || "";
     $("valuationEffectiveDate").value = $("smEventDate")?.value || "";
@@ -35865,6 +35870,31 @@ async function saveEditModal() {
       `;
       tb.appendChild(tr);
     }
+  }
+
+  async function createRevaluationDraftFromSM() {
+    const payload = buildRevaluationPayloadFromSM();
+
+    if (!payload.asset_id) throw new Error("Asset is required.");
+    if (!payload.revaluation_date) throw new Error("Valuation date is required.");
+    if (!(Number(payload.fair_value) > 0)) {
+      throw new Error("Fair value must be greater than 0.");
+    }
+
+    const { valuationCreate } = EP();
+
+    const out = await api(valuationCreate, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const id = Number(out?.id || out?.item?.id || out?.data?.id || 0) || 0;
+
+    if (!id) throw new Error("Draft revaluation was created but no id was returned.");
+
+    $("valuationRevaluationId").value = String(id);
+
+    return id;
   }
 
   function syncPolicyToUI() {
@@ -36895,7 +36925,15 @@ async function saveEditModal() {
           const fv = Number(payload?.meta_json?.fair_value || 0);
           if (fv <= 0) throw new Error("Fair value must be > 0");
 
+          setMsg($("smFormMsg"), "Creating valuation draft…", "info");
+
+          const revaluationId = await createRevaluationDraftFromSM();
+
           openValuationModalFromSM();
+
+          $("valuationRevaluationId").value = String(revaluationId);
+
+          setMsg($("smFormMsg"), "", "info");
           return;
         }
 
