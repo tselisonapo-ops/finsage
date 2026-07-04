@@ -36905,10 +36905,21 @@ async function saveEditModal() {
       throw new Error("Selected asset standard is not supported for valuation flow.");
     }
 
-    const payload = buildRevaluationPayloadFromSM();
+    const payload = selectedAssetIsComponentGroup()
+      ? buildGroupRevaluationPayloadFromSM()
+      : buildRevaluationPayloadFromSM();
+
     if (!payload.asset_id) throw new Error("Asset is required.");
     if (!payload.revaluation_date) throw new Error("Valuation date is required.");
-    if (!(Number(payload.fair_value) > 0)) throw new Error("Fair value must be greater than 0.");
+
+    if (selectedAssetIsComponentGroup()) {
+      const vals = Object.values(payload.components || {});
+      if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
+        throw new Error("Enter fair value for each component.");
+      }
+    } else if (!(Number(payload.fair_value) > 0)) {
+      throw new Error("Fair value must be greater than 0.");
+    }
 
     const { valuationPost } = EP();
     const existingId = Number($("valuationRevaluationId")?.value || 0) || 0;
