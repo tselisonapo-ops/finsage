@@ -249,26 +249,65 @@ def create_journal(cur, schema, company_id, date, ref, description, currency, so
     """), (company_id, date, ref, description, currency, source, source_id))
     return cur.fetchone()["id"]
 
+def _norm_class_key(s) -> str:
+    return (
+        str(s or "")
+        .strip()
+        .lower()
+        .replace("&", "and")
+        .replace("/", " ")
+        .replace("-", " ")
+        .replace("_", " ")
+    )
+
+def _class_key(s) -> str:
+    return "_".join(_norm_class_key(s).split())
+
+
 def asset_class_key(asset_row: dict, policy: dict) -> str:
-    """
-    Returns normalized class key like 'vehicles', 'construction_equipment', etc.
-    Uses asset_row fields + policy.classification mapping.
-    """
-    # Prefer an explicit class field if you already store it
-    direct = (asset_row.get("class_key") or asset_row.get("asset_class") or asset_row.get("class") or "").strip().lower()
-    if direct and direct in (policy.get("classification", {}).get("classes", {}) or {}):
-        return direct
-
-    # Otherwise map from a more specific category/type name
-    category = (asset_row.get("category") or asset_row.get("category_name") or asset_row.get("type") or "").strip().lower()
-
     classes = (policy.get("classification", {}).get("classes", {}) or {})
+
+    # normalized lookup of policy keys
+    normalized_policy_keys = {
+        _class_key(k): k
+        for k in classes.keys()
+    }
+
+    # 1) Try direct asset class fields
+    direct_raw = (
+        asset_row.get("class_key")
+        or asset_row.get("asset_class")
+        or asset_row.get("class")
+        or asset_row.get("category")
+        or asset_row.get("category_name")
+        or asset_row.get("type")
+        or ""
+    )
+
+    direct_norm = _class_key(direct_raw)
+
+    if direct_norm in normalized_policy_keys:
+        return normalized_policy_keys[direct_norm]
+
+    # 2) Try includes mapping
+    raw_values = [
+        asset_row.get("asset_class"),
+        asset_row.get("class"),
+        asset_row.get("category"),
+        asset_row.get("category_name"),
+        asset_row.get("type"),
+    ]
+
+    raw_norms = {_class_key(x) for x in raw_values if x}
+
     for key, cfg in classes.items():
-        inc = [str(x).strip().lower() for x in (cfg.get("includes") or [])]
-        if category in inc:
+        includes = cfg.get("includes") or []
+        include_norms = {_class_key(x) for x in includes if x}
+
+        if raw_norms & include_norms:
             return key
 
-    return direct or "unknown"
+    return direct_norm or "unknown"
 
 def resolve_opening_equity_account(cur, schema: str, company_id: int) -> str:
     cur.execute(_q(schema, """
@@ -441,6 +480,12 @@ def assert_capitalization_allowed(amount: float, event_type: str, policy: dict) 
         if float(amount or 0.0) < threshold:
             raise ValueError(f"Amount {amount:.2f} is below capitalization threshold {threshold:.2f}; expense it instead of capitalizing.")
 
+def assert_not_component_group(asset_row: dict) -> None:
+    if bool(asset_row.get("is_component_group")):
+        raise ValueError(
+            "This is an asset group. Select a component asset or use the group split flow."
+        )
+    
 def assert_sm_eligible(company_id: int, asset_row: dict, event_type: str, amount: float, policy: dict) -> None:
     cls_key = asset_class_key(asset_row, policy)
     std, model = asset_standard_and_model(asset_row, policy)
@@ -530,7 +575,7 @@ def build_sm_preview(
             f"Asset company mismatch: asset belongs to company_id={asset_company_id}, "
             f"but preview requested for company_id={company_id}."
         )
-
+    assert_not_component_group(asset_row)
     # Use your role helper
     role = user_role(user or {})
     if role and role not in ("owner", "admin", "cfo", "ceo", "manager", "senior", "accountant"):

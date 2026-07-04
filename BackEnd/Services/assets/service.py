@@ -807,6 +807,134 @@ def normalize_asset_class_group(asset_class="", asset_name="", category=""):
 
     return "Other PPE"
 
+def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor_user_id=None) -> dict:
+    components = payload.get("components") or []
+
+    if len(components) < 2:
+        raise ValueError("Compound acquisition requires at least two components.")
+
+    total_cost = Decimal(str(payload.get("cost") or 0))
+    component_total = sum(Decimal(str(c.get("cost") or 0)) for c in components)
+
+    if total_cost <= 0:
+        raise ValueError("Total cost must be greater than 0.")
+
+    if component_total.quantize(Decimal("0.01")) != total_cost.quantize(Decimal("0.01")):
+        raise ValueError("Component costs must equal total cost.")
+
+    base_code = str(payload.get("asset_code") or "").strip()
+    base_name = str(payload.get("asset_name") or "").strip()
+
+    if not base_code:
+        raise ValueError("asset_code is required.")
+    if not base_name:
+        raise ValueError("asset_name is required.")
+
+    # Parent/group asset: register grouping only
+    parent_payload = dict(payload)
+    parent_payload.update({
+        "asset_code": base_code,
+        "asset_name": base_name,
+        "asset_class": "Land and buildings",
+        "asset_class_group": "Land and buildings",
+        "cost": total_cost,
+        "residual_value": Decimal("0"),
+        "depreciation_method": "APP",
+        "useful_life_months": 0,
+        "rb_rate_percent": None,
+        "uop_total_units": None,
+        "uop_unit_name": None,
+        "uop_usage_mode": None,
+        "uop_opening_reading": None,
+        "is_component_group": True,
+        "is_component": False,
+        "parent_asset_id": None,
+        "component_type": "group",
+        "component_no": 0,
+        "created_by_user_id": actor_user_id,
+        "updated_by_user_id": actor_user_id,
+        "status": "active",
+    })
+
+    parent_id = create_asset(cur, company_id, parent_payload)
+
+    child_ids = []
+    acquisition_ids = []
+
+    for idx, component in enumerate(components, start=1):
+        ctype = str(component.get("component_type") or "").strip().lower()
+        if not ctype:
+            raise ValueError("Each component requires component_type.")
+
+        comp_cost = Decimal(str(component.get("cost") or 0))
+        if comp_cost <= 0:
+            raise ValueError(f"{ctype} component cost must be greater than 0.")
+
+        child_payload = dict(payload)
+        child_payload.update(component)
+
+        child_payload.update({
+            "asset_code": f"{base_code}-{idx:02d}",
+            "asset_name": component.get("asset_name") or f"{base_name} - {ctype.title()}",
+            "asset_class": component.get("asset_class") or ctype.title(),
+            "asset_class_group": component.get("asset_class_group") or ctype.title(),
+            "cost": comp_cost,
+            "residual_value": Decimal(str(component.get("residual_value") or 0)),
+            "parent_asset_id": parent_id,
+            "is_component": True,
+            "is_component_group": False,
+            "component_no": idx,
+            "component_type": ctype,
+            "created_by_user_id": actor_user_id,
+            "updated_by_user_id": actor_user_id,
+            "status": "active",
+        })
+
+        if ctype == "land":
+            child_payload["depreciation_method"] = "APP"
+            child_payload["useful_life_months"] = 0
+            child_payload["rb_rate_percent"] = None
+            child_payload["uop_total_units"] = None
+            child_payload["uop_unit_name"] = None
+            child_payload["uop_usage_mode"] = None
+            child_payload["uop_opening_reading"] = None
+
+        child_id = create_asset(cur, company_id, child_payload)
+        child_ids.append(child_id)
+
+        acq_payload = dict(payload.get("acquisition") or {})
+        acq_payload.update({
+            "acquisition_date": payload.get("acquisition_date"),
+            "posting_date": payload.get("posting_date"),
+            "amount": comp_cost,
+            "reference": payload.get("reference") or payload.get("acquisition_ref") or f"COMP-ASSET-{parent_id}",
+            "notes": payload.get("notes"),
+            "status": "draft",
+            "supplier_id": payload.get("supplier_id"),
+            "vendor_invoice_no": payload.get("vendor_invoice_no"),
+            "grn_no": payload.get("grn_no"),
+            "bank_account_id": payload.get("bank_account_id"),
+            "funding_source": payload.get("funding_source") or "bank_cash",
+            "credit_account_code": payload.get("other_credit_account_code") or payload.get("credit_account_code"),
+            "vat_input_claimable": payload.get("vat_input_claimable"),
+            "vat_recovery_reason": payload.get("vat_recovery_reason"),
+            "vat_recovery_percent": payload.get("vat_recovery_percent"),
+            "source_company_id": payload.get("source_company_id"),
+            "engagement_company_id": payload.get("engagement_company_id"),
+            "engagement_id": payload.get("engagement_id"),
+            "created_by_user_id": actor_user_id,
+            "updated_by_user_id": actor_user_id,
+        })
+
+        acq_id = create_acquisition(cur, company_id, child_id, acq_payload)
+        acquisition_ids.append(acq_id)
+
+    return {
+        "parent_asset_id": int(parent_id),
+        "component_asset_ids": [int(x) for x in child_ids],
+        "acquisition_ids": [int(x) for x in acquisition_ids],
+    }
+
 def create_asset(cur, company_id, payload):
     schema = company_schema(company_id)
 
@@ -967,7 +1095,9 @@ def create_asset(cur, company_id, payload):
     cur.execute(_q(schema, """
       INSERT INTO {schema}.assets(
         company_id,
-        asset_code, asset_name, asset_class, asset_class_group, category, location, serial_no, notes,
+        asset_code, asset_name, asset_class, asset_class_group,
+        parent_asset_id, is_component, is_component_group, component_type, component_no,
+        category, location, serial_no, notes,
         source_company_id,
         engagement_company_id,
         engagement_id,
@@ -997,7 +1127,9 @@ def create_asset(cur, company_id, payload):
         )
         VALUES (
             %s,
-            %s,%s,%s,%s,%s,%s,%s,%s,
+            %s,%s,%s,%s,
+            %s,%s,%s,%s,%s,
+            %s,%s,%s,%s,
             %s, %s, %s, %s, %s,
             %s,%s,%s,%s,
             %s,%s,%s,%s,
@@ -1021,6 +1153,11 @@ def create_asset(cur, company_id, payload):
         (
             company_id,
             payload["asset_code"], asset_name, asset_class, asset_class_group,
+            payload.get("parent_asset_id"),
+            bool(payload.get("is_component") or False),
+            bool(payload.get("is_component_group") or False),
+            payload.get("component_type"),
+            payload.get("component_no"),
             category, payload.get("location"), payload.get("serial_no"), payload.get("notes"),
             payload.get("source_company_id"),
             payload.get("engagement_company_id"),
@@ -1056,6 +1193,11 @@ def create_asset(cur, company_id, payload):
 # ✅ whitelist for safe updates
 _ASSET_UPDATE_ALLOWED = {
     "asset_code", "asset_name", "asset_class", "asset_class_group", "category",
+    "parent_asset_id",
+    "is_component",
+    "is_component_group",
+    "component_type",
+    "component_no",
     "location", "serial_no", "notes",
     "acquisition_date", "available_for_use_date",
     "cost", "residual_value", "vat_input_claimable",
@@ -1205,6 +1347,19 @@ def _D(x) -> Decimal:
 def _q2(x: Decimal) -> Decimal:
     return x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+def list_asset_components(cur, company_id: int, parent_asset_id: int) -> list[dict]:
+    schema = company_schema(company_id)
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id = %s
+          AND parent_asset_id = %s
+          AND COALESCE(is_component, FALSE) = TRUE
+        ORDER BY component_no NULLS LAST, id
+    """), (company_id, parent_asset_id))
+
+    return cur.fetchall() or []
 
 def create_acquisition(cur, company_id, asset_id, payload):
     schema = company_schema(company_id)

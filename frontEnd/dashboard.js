@@ -33961,6 +33961,7 @@ async function postLeaseJournal(lease) {
   }
 
   let USAGE_ASSET_ID = 0;
+  let SELECTED_SM_ASSET = null;
 
   function ensureUsageModal() {
     let modal = document.getElementById("faUsageModal");
@@ -35396,6 +35397,12 @@ async function saveEditModal() {
       valuationCreate: 
         A.valuation?.create?.(cid) || `/api/companies/${cid}/revaluations`,
 
+      previewSM:
+          `/api/companies/${CID}/subsequent-measurements/preview`,
+
+      smGroupPreview: (assetId) =>
+          `/api/companies/${CID}/assets/${assetId}/subsequent-measurement/group-preview`,
+
       valuationGet: (id) =>
         (A.valuation?.get?.(cid, id) || `/api/companies/${cid}/asset-revaluations/${id}`),
 
@@ -35474,6 +35481,17 @@ async function saveEditModal() {
     }
 
     el.innerHTML = opts.join("");
+  }
+
+  function selectedAssetIsComponentGroup() {
+    const opt = $("smAssetId")?.selectedOptions?.[0];
+    if (!opt) return false;
+
+    return (
+      opt.dataset.isComponentGroup === "true" ||
+      opt.dataset.is_component_group === "true" ||
+      opt.dataset.componentGroup === "true"
+    );
   }
 
   async function fetchAssetClasses() {
@@ -36078,14 +36096,18 @@ async function saveEditModal() {
         return null;
       }
 
-      const { previewSM } = EP();
+      const assetId = Number(SELECTED_SM_ASSET?.id || payload.asset_id || 0);
+
+      const url = selectedAssetIsComponentGroup()
+        ? EP().smGroupPreview(assetId)
+        : EP().previewSM;
 
       if (msg) {
         msg.textContent = "Loading preview…";
         msg.className = "mt-2 text-xs text-slate-500";
       }
 
-      const out = await api(previewSM, {
+      const out = await api(url, {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -36176,12 +36198,17 @@ async function saveEditModal() {
     assetsLoaded = true;
   }
 
-
+  function selectedAssetIsComponentGroup() {
+    return !!SELECTED_SM_ASSET?.is_component_group;
+  }
 
   function setSelectedAsset(assetOrId) {
+
     invalidateSmPreview();
     const id = Number(typeof assetOrId === "object" ? assetOrId?.id : assetOrId) || 0;
     const a = assetsCache.find(x => Number(x?.id || 0) === id) || null;
+
+    SELECTED_SM_ASSET = a;
 
     $("smAssetId").value = id ? String(id) : "";
 

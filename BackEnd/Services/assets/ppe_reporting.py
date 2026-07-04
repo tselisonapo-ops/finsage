@@ -662,7 +662,53 @@ def assets_get_or_update(company_id, asset_id):
         current_app.logger.exception("update_asset failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route("/api/companies/<int:company_id>/assets/compound-acquisition", methods=["POST", "OPTIONS"])
+@require_auth
+def asset_compound_acquisition_create(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
 
+    payload = request.jwt_payload or {}
+    actor_user_id = _actor_user_id(payload)
+
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    body = request.get_json(force=True) or {}
+    body = _apply_engagement_bridge(body, user_id=actor_user_id)
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                out = service.create_compound_asset_acquisition(
+                    cur,
+                    company_id,
+                    body,
+                    actor_user_id=actor_user_id,
+                )
+
+                _audit_safe(
+                    company_id=company_id,
+                    payload=payload,
+                    module="ppe",
+                    action="create_compound_asset_acquisition",
+                    entity_type="asset_group",
+                    entity_id=str(out.get("parent_asset_id")),
+                    entity_ref=body.get("asset_name") or body.get("parent", {}).get("asset_name"),
+                    before_json={"request": body},
+                    after_json=out,
+                    message=f"Created compound asset acquisition {out.get('parent_asset_id')}",
+                    cur=cur,
+                )
+
+                conn.commit()
+                return jsonify({"ok": True, **out}), 201
+
+    except Exception as e:
+        current_app.logger.exception("create compound asset acquisition failed")
+        return _json_error(str(e), 400)
+    
 # -------------------------
 # ACQUISITIONS
 # -------------------------
@@ -1461,6 +1507,80 @@ def depreciation_post_batch(company_id: int):
 # -------------------------
 # REVALUATIONS CRUD + VOID + POST
 # -------------------------
+@ppe_bp.route("/api/companies/<int:company_id>/assets/<int:asset_id>/subsequent-measurement/group-preview", methods=["POST", "OPTIONS"])
+@require_auth
+def asset_group_subsequent_measurement_preview(company_id, asset_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    body = request.get_json(force=True) or {}
+
+    try:
+        policy_doc = posting.company_asset_rules(company_id)
+        schema = company_schema(company_id)
+
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                parent = service.get_asset(cur, company_id, asset_id)
+                if not parent:
+                    return _json_error("Asset group not found", 404)
+
+                if not bool(parent.get("is_component_group")):
+                    return _json_error("Selected asset is not a component group.", 400)
+
+                components = service.list_asset_components(cur, company_id, asset_id)
+                if not components:
+                    return _json_error("No component assets found for this group.", 400)
+
+                previews = []
+                totals = {"debit": 0.0, "credit": 0.0}
+
+                component_payloads = body.get("components") or {}
+
+                for comp in components:
+                    comp_id = str(comp["id"])
+                    comp_payload = dict(body)
+                    comp_payload.update(component_payloads.get(comp_id) or {})
+
+                    out = posting.build_sm_preview(
+                        company_id=company_id,
+                        asset_row=comp,
+                        payload=comp_payload,
+                        policy=policy_doc,
+                        cur=cur,
+                        schema=schema,
+                        user=payload,
+                    )
+
+                    lines = out.get("lines") or []
+                    totals["debit"] += sum(float(x.get("debit") or 0) for x in lines)
+                    totals["credit"] += sum(float(x.get("credit") or 0) for x in lines)
+
+                    previews.append({
+                        "asset_id": int(comp["id"]),
+                        "asset_name": comp.get("asset_name"),
+                        "component_type": comp.get("component_type"),
+                        "preview": out,
+                    })
+
+                return jsonify({
+                    "ok": True,
+                    "asset_group_id": int(asset_id),
+                    "asset_group_name": parent.get("asset_name"),
+                    "components": previews,
+                    "total_debit": round(totals["debit"], 2),
+                    "total_credit": round(totals["credit"], 2),
+                }), 200
+
+    except Exception as e:
+        current_app.logger.exception("group subsequent measurement preview failed")
+        return _json_error(str(e), 400)
+    
 @ppe_bp.route("/api/companies/<int:company_id>/revaluations", methods=["GET", "POST", "OPTIONS"])
 @require_auth
 def revaluations_list_or_create(company_id):

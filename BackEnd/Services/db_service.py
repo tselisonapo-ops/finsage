@@ -12884,6 +12884,31 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS is_qualifying_asset BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS ready_for_use_date DATE NULL;
 
+        -- ==================================================
+        -- Asset Component Accounting (IAS 16)
+        -- ==================================================
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS parent_asset_id INT NULL;
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS is_component BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS is_component_group BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS component_type TEXT NULL;
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS component_no INT NULL;
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS component_group_name TEXT NULL;
+
+        ALTER TABLE {schema}.assets
+        ADD COLUMN IF NOT EXISTS component_percentage NUMERIC(5,2) NULL;
+
         -- optional safety: only allow the two modes
         -- ==================================================
         -- UOP usage mode rules (corrected)

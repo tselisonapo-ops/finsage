@@ -128,6 +128,17 @@ type CoaRow = {
 
 type DepreciationMethod = "" | "SL" | "RB" | "UOP" | "APP";
 
+type AssetComponentDraft = {
+  component_type: "land" | "building" | string;
+  asset_name: string;
+  asset_class_group: string;
+  asset_class: string;
+  cost: number;
+  depreciation_method: DepreciationMethod;
+  useful_life_months: number;
+  measurement_model: "cost" | "revaluation";
+};
+
 type VatRecoveryReason =
   | ""
   | "commercial_vehicle"
@@ -140,9 +151,14 @@ type VatRecoveryReason =
   | "not_registered_or_exempt";
 
 const ASSET_CLASS_GROUPS = [
+  "Land",
+  "Buildings",
   "Land and buildings",
   "Plant and machinery",
   "Vehicles",
+  "Motorcycles / bikes",
+  "Bicycles",
+  "Scooters",
   "Heavy vehicles",
   "Construction equipment",
   "Mining equipment",
@@ -391,6 +407,8 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
   const [saving, setSaving] = useState(false);
   const [posting, setPosting] = useState(false);
 
+  const [components, setComponents] = useState<AssetComponentDraft[]>([]);
+
   const [form, setForm] = useState<CreateAssetPayload>(() => ({
     entry_mode: "acquisition",
 
@@ -448,17 +466,19 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
   const selectedClassGroup = String(form.asset_class_group || "").toLowerCase();
   const selectedClassLabel = String(form.asset_class || "").toLowerCase();
-  const isLandOnly =
-    selectedClassGroup === "land and buildings" &&
-    selectedClassLabel.includes("land") &&
-    !selectedClassLabel.includes("building");
-  const isLandAndBuildings = selectedClassGroup === "land and buildings";
+
+  const isLandOnly = selectedClassGroup === "land";
+  const isBuilding = selectedClassGroup === "buildings";
+  const isCompoundLandBuilding = selectedClassGroup === "land and buildings";
+
+  const isLandOrBuilding = isLandOnly || isBuilding || isCompoundLandBuilding;
+
   const isIntangibleAsset =
     selectedClassGroup.includes("intangible") ||
     selectedClassLabel.includes("intangible") ||
     String(form.asset_account_code || "").toLowerCase().includes("intangible");
 
-  const supportsRevaluationModel = isLandAndBuildings || isIntangibleAsset;
+  const supportsRevaluationModel = isLandOrBuilding || isIntangibleAsset;
 
   /** -----------------------------
    *  Build acquisition payload
@@ -792,6 +812,25 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     if (!String(form.asset_class || "").trim()) {
       return setErr("Asset class is required.");
     }
+
+    if (isCompoundLandBuilding) {
+      const landComponent = components.find((c) => c.component_type === "land");
+      const buildingComponent = components.find((c) => c.component_type === "building");
+
+      const landCost = Number(landComponent?.cost || 0);
+      const buildingCost = Number(buildingComponent?.cost || 0);
+
+      if (landCost <= 0) return setErr("Land cost must be greater than 0.");
+      if (buildingCost <= 0) return setErr("Building cost must be greater than 0.");
+
+      if (landCost + buildingCost !== Number(form.cost || 0)) {
+        return setErr("Land cost + Building cost must equal total cost.");
+      }
+      if (Number(buildingComponent?.useful_life_months || 0) <= 0) {
+        return setErr("Building useful life is required.");
+      }
+    }
+
     if (!form.acquisition_date) return setErr("Acquisition date is required.");
 
     const resolvedPostingDate =
@@ -1226,7 +1265,33 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               <select
                 value={String(form.asset_class_group || "")}
                 onChange={(e) => {
-                  const group = e.target.value;
+                const group = e.target.value;
+                  if (String(group).toLowerCase() === "land and buildings") {
+                    setComponents([
+                      {
+                        component_type: "land",
+                        asset_name: `${form.asset_name || "Property"} - Land`,
+                        asset_class_group: "Land",
+                        asset_class: "Land",
+                        cost: 0,
+                        depreciation_method: "APP",
+                        useful_life_months: 0,
+                        measurement_model: form.measurement_model || "cost",
+                      },
+                      {
+                        component_type: "building",
+                        asset_name: `${form.asset_name || "Property"} - Building`,
+                        asset_class_group: "Buildings",
+                        asset_class: "Building",
+                        cost: 0,
+                        depreciation_method: "SL",
+                        useful_life_months: 600,
+                        measurement_model: form.measurement_model || "cost",
+                      },
+                    ]);
+                  } else {
+                    setComponents([]);
+                  }
                   setForm((p) => ({
                     ...p,
                     asset_class_group: group,
@@ -1407,6 +1472,76 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               />
             </div>
           </div>
+
+          {isCompoundLandBuilding ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+                padding: 10,
+                border: "1px solid rgba(0,0,0,0.10)",
+                borderRadius: 10,
+                background: "rgba(0,0,0,0.03)",
+              }}
+            >
+              {components.map((c, idx) => (
+                <div key={c.component_type}>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>
+                    {c.component_type === "land" ? "Land cost *" : "Building cost *"}
+                  </div>
+
+                  <input
+                    value={String(c.cost)}
+                    onChange={(e) => {
+                      const cost = toNum(e.target.value);
+                      setComponents((prev) =>
+                        prev.map((x, i) => (i === idx ? { ...x, cost } : x))
+                      );
+                    }}
+                    placeholder="0.00"
+                    style={{
+                      width: "100%",
+                      border: "1px solid rgba(0,0,0,0.15)",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                    }}
+                  />
+
+                  {c.component_type === "building" ? (
+                    <>
+                      <div style={{ fontSize: 12, marginBottom: 4, marginTop: 8 }}>
+                        Building useful life months *
+                      </div>
+
+                      <input
+                        value={String(c.useful_life_months)}
+                        onChange={(e) => {
+                          const useful_life_months = Math.max(
+                            0,
+                            Math.floor(toNum(e.target.value))
+                          );
+
+                          setComponents((prev) =>
+                            prev.map((x, i) =>
+                              i === idx ? { ...x, useful_life_months } : x
+                            )
+                          );
+                        }}
+                        placeholder="e.g. 600"
+                        style={{
+                          width: "100%",
+                          border: "1px solid rgba(0,0,0,0.15)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                        }}
+                      />
+                    </>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {/* IAS 23 / VAT checkbox */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
