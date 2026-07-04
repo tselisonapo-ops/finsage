@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional, List, Tuple, Dict, Any
 from BackEnd.Services.utils.industry_utils import normalize_industry_pair, slugify, TEMPLATE_INDUSTRY_ALIASES, SUB_INDUSTRY_ALIASES
 from BackEnd.Services.industry_profiles import get_industry_profile
-
+from BackEnd.Services.db_service import db_service
 # ==============================================================
 #                       CONFIG / CONSTANTS
 # ==============================================================
@@ -2544,41 +2544,44 @@ def _template_row_to_dict(r, industry, subindustry):
         "posting": bool(posting),
     }
 
-def get_industry_template(industry: str, subindustry: Optional[str] = None) -> ListAccountRow:
+def get_industry_template(industry: str, subindustry: Optional[str] = None):
     ind_norm, sub_norm, ind_slug, sub_slug = normalize_industry_pair(industry, subindustry)
 
     ind_key = (ind_norm or "").strip()
     ind_template = TEMPLATE_INDUSTRY_ALIASES.get(ind_key.lower(), ind_key)
 
-    sub_key = canonical_subindustry_key(ind_template, sub_norm)
+    # 1) Try exact sub-industry
+    rows = db_service.fetch_all("""
+        SELECT *
+        FROM public.coa_pool
+        WHERE industry = %s
+          AND sub_industry = %s
+        ORDER BY template_code::int
+    """, (ind_template, sub_norm))
 
-    # ===== DEBUG =====
-    print("ind_template =", ind_template)
-    print("sub_key =", sub_key)
-
-    print("Industry exists:", ind_template in INDUSTRY_TEMPLATES)
-    print("Sub parent exists:", ind_template in SUBINDUSTRY_TEMPLATES)
-    print("Slug industry exists:", ind_slug in INDUSTRY_TEMPLATES)
-    print("Slug sub parent exists:", ind_slug in SUBINDUSTRY_TEMPLATES)
-
-    print("Sub map keys:", list(SUBINDUSTRY_TEMPLATES.get(ind_template, {}).keys()))
-    # =================
-
-    rows = _choose_template(ind_template, sub_key)
     if rows:
         return rows
 
-    # fallback to slug keys
-    rows = _choose_template(ind_slug, sub_slug)
+    # 2) Try industry base rows
+    rows = db_service.fetch_all("""
+        SELECT *
+        FROM public.coa_pool
+        WHERE industry = %s
+          AND (sub_industry IS NULL OR sub_industry = '')
+        ORDER BY template_code::int
+    """, (ind_template,))
+
     if rows:
         return rows
 
-    # fallback industry only
-    rows = _choose_template(ind_template, None)
-    if rows:
-        return rows
+    # 3) Try general pool
+    rows = db_service.fetch_all("""
+        SELECT *
+        FROM public.coa_pool
+        WHERE is_general = true
+        ORDER BY template_code::int
+    """)
 
-    rows = _choose_template(ind_slug, None)
     return rows or []
 
 def initialize_coa(db_service, company_id: int, industry: str, sub_industry: Optional[str] = None) -> int:
