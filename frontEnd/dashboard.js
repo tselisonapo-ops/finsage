@@ -1398,9 +1398,12 @@ const ENDPOINTS = {
     // VALUATION FLOW
     // -------------------------
     valuation: {
+      create: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revaluations`,
+      
       post: (companyId, revaluationId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-revaluations/${encodeURIComponent(revaluationId)}/post`,
-
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revaluations/${encodeURIComponent(revaluationId)}/post`,
+      
       get: (companyId, revaluationId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-revaluations/${encodeURIComponent(revaluationId)}`,
 
@@ -1852,8 +1855,8 @@ const ENDPOINTS = {
 
   valuation: {
     post: (companyId, revaluationId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-revaluations/${encodeURIComponent(revaluationId)}/post`,
-
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revaluations/${encodeURIComponent(revaluationId)}/post`,
+    
     get: (companyId, revaluationId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-revaluations/${encodeURIComponent(revaluationId)}`,
 
