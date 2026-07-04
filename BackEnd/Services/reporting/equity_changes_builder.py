@@ -15,7 +15,7 @@ def _money(x: Decimal) -> float:
     return float(x.quantize(Decimal("0.01")))
 
 def _equity_balance(x: Any) -> Decimal:
-    return _d(x)
+    return -_d(x)
 
 def _is_treasury_bucket(bucket: str | None) -> bool:
     return bucket == "treasury_shares"
