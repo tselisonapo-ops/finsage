@@ -67,6 +67,24 @@ def _equity_bucket_for_account(row: dict) -> str | None:
 
     return None
 
+def _socie_present(bucket: str, amount: Decimal) -> Decimal:
+    # SOCIE equity columns should match Balance Sheet presentation
+    if bucket in {
+        "ordinary_share_capital",
+        "owner_capital",
+        "preference_share_capital",
+        "share_premium",
+        "reserves",
+    }:
+        return -amount
+
+    # contra-equity should stay negative
+    if bucket == "treasury_shares":
+        return -abs(amount)
+
+    # retained earnings should respect its actual sign
+    return amount
+
 def build_statement_of_changes_in_equity(
     *,
     company_id: int,
@@ -224,7 +242,7 @@ def build_statement_of_changes_in_equity(
         bucket = _equity_bucket_for_account(acc_stub)
 
         # Net credit balance logic for equity movement
-        net = debit - credit
+        net = credit - debit
 
         if _is_treasury_bucket(bucket):
             net = -abs(net)
@@ -335,11 +353,15 @@ def build_statement_of_changes_in_equity(
     final_rows = []
     for rk in row_keys:
         total = sum(rows[rk]["values"][bk] for bk in active_bucket_keys)
-        values = {bk: _money(rows[rk]["values"][bk]) for bk in active_bucket_keys}
-        values["total"] = _money(total)
+        presented_values = {
+            bk: _socie_present(bk, rows[rk]["values"][bk])
+            for bk in active_bucket_keys
+        }
 
+        values = {bk: _money(presented_values[bk]) for bk in active_bucket_keys}
+        values["total"] = _money(sum(presented_values.values()))
         # hide rows with no movement/balance except opening and closing
-        if rk not in ("opening_balance", "closing_balance") and total == 0:
+        if rk not in ("opening_balance", "closing_balance") and sum(presented_values.values()) == 0:
             continue
 
         final_rows.append({
