@@ -35988,12 +35988,37 @@ async function saveEditModal() {
     }
   }
 
+  function buildGroupRevaluationPayloadFromSM() {
+    const asset = selectedSmAsset();
+    const payload = smPayloadFromUI();
+
+    return {
+      asset_id: Number($("smAssetId")?.value || 0) || null,
+      group_asset_id: Number($("smAssetId")?.value || 0) || null,
+      event_type: "valuation",
+      source_event_type: String($("smEventType")?.value || "").trim().toLowerCase(),
+      revaluation_date: $("smEventDate")?.value || null,
+      reason: $("smFairValueReason")?.value || $("smNotes")?.value || null,
+      notes: $("smNotes")?.value || null,
+      components: payload.components || {},
+      asset_snapshot: asset || null,
+    };
+  }
+
   async function createRevaluationDraftFromSM() {
-    const payload = buildRevaluationPayloadFromSM();
+    const payload = selectedAssetIsComponentGroup()
+      ? buildGroupRevaluationPayloadFromSM()
+      : buildRevaluationPayloadFromSM();
 
     if (!payload.asset_id) throw new Error("Asset is required.");
     if (!payload.revaluation_date) throw new Error("Valuation date is required.");
-    if (!(Number(payload.fair_value) > 0)) {
+
+    if (selectedAssetIsComponentGroup()) {
+      const vals = Object.values(payload.components || {});
+      if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
+        throw new Error("Enter fair value for each component.");
+      }
+    } else if (!(Number(payload.fair_value) > 0)) {
       throw new Error("Fair value must be greater than 0.");
     }
 
@@ -36004,7 +36029,10 @@ async function saveEditModal() {
       body: JSON.stringify(payload),
     });
 
-    const id = Number(out?.id || out?.item?.id || out?.data?.id || 0) || 0;
+    const id =
+      Number(out?.id || out?.item?.id || out?.data?.id || 0) ||
+      Number(out?.group_revaluation_id || out?.data?.group_revaluation_id || 0) ||
+      0;
 
     if (!id) throw new Error("Draft revaluation was created but no id was returned.");
 
@@ -37094,8 +37122,15 @@ async function saveEditModal() {
           if (!payload.event_date) throw new Error("Date is required");
           if (!payload.asset_id) throw new Error("Asset is required");
 
-          const fv = Number(payload?.meta_json?.fair_value || 0);
-          if (fv <= 0) throw new Error("Fair value must be > 0");
+          if (selectedAssetIsComponentGroup()) {
+            const vals = Object.values(payload.components || {});
+            if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
+              throw new Error("Enter fair value for each component.");
+            }
+          } else {
+            const fv = Number(payload?.meta_json?.fair_value || 0);
+            if (fv <= 0) throw new Error("Fair value must be > 0");
+          }
 
           setMsg($("smFormMsg"), "Creating valuation draft…", "info");
 

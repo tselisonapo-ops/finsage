@@ -935,6 +935,26 @@ def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor
     if component_total.quantize(Decimal("0.01")) != total_cost.quantize(Decimal("0.01")):
         raise ValueError("Component costs must equal total cost.")
 
+    vat_claimable = bool(payload.get("vat_input_claimable"))
+
+    vat_rate = Decimal(str(
+        payload.get("vat_rate")
+        or payload.get("tax_rate")
+        or payload.get("vat_percent")
+        or 15
+    ))
+
+    vat_factor = Decimal("1") + (vat_rate / Decimal("100"))
+
+    def _money(x):
+        return Decimal(str(x or 0)).quantize(Decimal("0.01"))
+
+    def capitalised_cost(gross):
+        gross = Decimal(str(gross or 0))
+        if vat_claimable:
+            return (gross / vat_factor).quantize(Decimal("0.01"))
+        return gross.quantize(Decimal("0.01"))
+
     base_code = str(payload.get("asset_code") or "").strip()
     base_name = str(payload.get("asset_name") or "").strip()
 
@@ -950,7 +970,7 @@ def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor
         "asset_name": base_name,
         "asset_class": "Land and buildings",
         "asset_class_group": "Land and buildings",
-        "cost": total_cost,
+        "cost": capitalised_cost(total_cost),
         "residual_value": Decimal("0"),
         "depreciation_method": "APP",
         "useful_life_months": 0,
@@ -979,8 +999,10 @@ def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor
         if not ctype:
             raise ValueError("Each component requires component_type.")
 
-        comp_cost = Decimal(str(component.get("cost") or 0))
-        if comp_cost <= 0:
+        gross_cost = Decimal(str(component.get("cost") or 0))
+        comp_cost = capitalised_cost(gross_cost)
+
+        if gross_cost <= 0:
             raise ValueError(f"{ctype} component cost must be greater than 0.")
 
         child_payload = dict(payload)
@@ -1019,7 +1041,7 @@ def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor
         acq_payload.update({
             "acquisition_date": payload.get("acquisition_date"),
             "posting_date": payload.get("posting_date"),
-            "amount": comp_cost,
+            "amount": gross_cost,
             "reference": payload.get("reference") or payload.get("acquisition_ref") or f"COMP-ASSET-{parent_id}",
             "notes": payload.get("notes"),
             "status": "draft",
@@ -2168,6 +2190,105 @@ def void_revaluation(cur, company_id, reval_id):
       SET status='void'
       WHERE company_id=%s AND id=%s AND status <> 'posted'
     """), (company_id, reval_id))
+
+def create_group_revaluation_drafts(cur, company_id, payload, *, user=None):
+    from . import posting
+    schema = company_schema(company_id)
+
+    group_asset_id = int(payload.get("group_asset_id") or payload.get("asset_id") or 0)
+    if not group_asset_id:
+        raise ValueError("group_asset_id is required")
+
+    if not payload.get("revaluation_date"):
+        raise ValueError("revaluation_date is required")
+
+    parent = get_asset(cur, company_id, group_asset_id)
+    if not parent or not bool(parent.get("is_component_group")):
+        raise ValueError("Selected asset is not a component group")
+
+    components = list_asset_components(cur, company_id, group_asset_id)
+    if not components:
+        raise ValueError("No component assets found for this group")
+
+    component_values = payload.get("components") or {}
+    ids = []
+
+    policy_doc = posting.company_asset_rules(company_id)
+
+    for comp in components:
+        comp_id = str(comp["id"])
+        component_input = component_values.get(comp_id) or {}
+
+        fair_value = component_input.get("fair_value")
+        if fair_value is None:
+            fair_value = (component_input.get("meta_json") or {}).get("fair_value")
+
+        if not fair_value or Decimal(str(fair_value)) <= 0:
+            raise ValueError(f"Fair value is required for component {comp.get('asset_name')}")
+
+        comp_payload = {
+            "asset_id": int(comp["id"]),
+            "event_type": "revaluation",
+            "event_date": payload.get("revaluation_date"),
+            "meta_json": {
+                "fair_value": Decimal(str(fair_value)),
+                "reason": payload.get("reason") or payload.get("notes"),
+            },
+            "notes": payload.get("notes"),
+        }
+
+        preview = posting.build_sm_preview(
+            company_id=company_id,
+            asset_row=comp,
+            payload=comp_payload,
+            policy=policy_doc,
+            cur=cur,
+            schema=schema,
+            user=user,
+        )
+
+        impact = preview.get("impact") or {}
+
+        before = Decimal(str(
+            impact.get("carrying_amount_before")
+            or impact.get("carrying_before")
+            or 0
+        ))
+
+        after = Decimal(str(
+            impact.get("carrying_amount_after")
+            or impact.get("carrying_after")
+            or fair_value
+        ))
+
+        delta = after - before
+
+        new_id = create_revaluation(cur, company_id, {
+            "asset_id": int(comp["id"]),
+            "revaluation_date": payload.get("revaluation_date"),
+            "carrying_amount_before": before,
+            "cost_before": comp.get("cost"),
+            "accum_dep_before": comp.get("accumulated_depreciation") or comp.get("acc_dep") or 0,
+            "fair_value": after,
+            "carrying_amount_after": after,
+            "revaluation_change": delta,
+            "oci_revaluation_surplus": delta if delta > 0 else 0,
+            "pnl_revaluation_gain": 0,
+            "pnl_revaluation_loss": abs(delta) if delta < 0 else 0,
+            "method": payload.get("method") or "gross_restated",
+            "reason": payload.get("reason"),
+            "notes": payload.get("notes"),
+            "status": "draft",
+            "created_by": payload.get("created_by"),
+        })
+
+        ids.append(int(new_id))
+
+    return {
+        "group_asset_id": group_asset_id,
+        "component_revaluation_ids": ids,
+        "id": ids[0] if ids else None,
+    }
 
 # -------------------------
 # IMPAIRMENTS (CRUD)

@@ -1661,7 +1661,18 @@ def revaluations_list_or_create(company_id):
 
         with get_conn(company_id) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                new_id = service.create_revaluation(cur, company_id, payload_in)
+                if payload_in.get("group_asset_id") and payload_in.get("components"):
+                    out = service.create_group_revaluation_drafts(
+                        cur,
+                        company_id,
+                        payload_in,
+                        user=payload,
+                    )
+                    new_id = out["id"]
+                    after_json = out
+                else:
+                    new_id = service.create_revaluation(cur, company_id, payload_in)
+                    after_json = {"revaluation_id": int(new_id)}
 
                 # ✅ AUDIT
                 _audit_safe(
@@ -1673,13 +1684,13 @@ def revaluations_list_or_create(company_id):
                     entity_id=str(new_id),
                     entity_ref=f"REVAL-{new_id}",
                     before_json={"request": payload_in},
-                    after_json={"revaluation_id": int(new_id)},
+                    after_json=after_json,
                     message=f"Created revaluation {new_id}",
                     cur=cur,
                 )
 
                 conn.commit()
-                return jsonify({"ok": True, "id": new_id}), 201
+                return jsonify({"ok": True, **after_json}), 201
     except Exception as e:
         current_app.logger.exception("create_revaluation failed")
         return _json_error(str(e), 400)
