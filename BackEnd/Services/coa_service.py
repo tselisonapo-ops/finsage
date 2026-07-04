@@ -2350,17 +2350,30 @@ def get_industry_catalog() -> Dict[str, List[str]]:
     return {i: list_subindustries(i) for i in list_industries()}
 
 def _choose_template(industry: str, subindustry: Optional[str]) -> ListAccountRow:
-    """
-    Selection logic:
-      - If subindustry is provided and exists, return subindustry rows.
-      - Else return the base industry rows.
-    """
-    if subindustry:
-        sub_map = SUBINDUSTRY_TEMPLATES.get(industry, {})
-        rows = sub_map.get(subindustry)
+    industry_keys = [
+        industry,
+        slugify(industry),
+        TEMPLATE_INDUSTRY_ALIASES.get((industry or "").strip().lower()),
+    ]
+
+    subindustry_keys = [
+        subindustry,
+        slugify(subindustry),
+    ] if subindustry else []
+
+    for ind_key in filter(None, industry_keys):
+        if subindustry:
+            sub_map = SUBINDUSTRY_TEMPLATES.get(ind_key, {})
+            for sub_key in filter(None, subindustry_keys):
+                rows = sub_map.get(sub_key)
+                if rows:
+                    return rows
+
+        rows = INDUSTRY_TEMPLATES.get(ind_key)
         if rows:
             return rows
-    return INDUSTRY_TEMPLATES.get(industry, [])
+
+    return []
 
 def build_coa(industry: str, subindustry: Optional[str] = None) -> ListAccountRow:
     """
@@ -2532,18 +2545,40 @@ def _template_row_to_dict(r, industry, subindustry):
     }
 
 def get_industry_template(industry: str, subindustry: Optional[str] = None) -> ListAccountRow:
-    # 1) normalize display names (UI)
-    ind_norm, sub_norm, _, _ = normalize_industry_pair(industry, subindustry)
+    ind_norm, sub_norm, ind_slug, sub_slug = normalize_industry_pair(industry, subindustry)
 
-    # 2) map UI/display industry -> template industry key
     ind_key = (ind_norm or "").strip()
     ind_template = TEMPLATE_INDUSTRY_ALIASES.get(ind_key.lower(), ind_key)
 
-    # 3) canonicalize subindustry key for this industry_template
     sub_key = canonical_subindustry_key(ind_template, sub_norm)
 
-    # 4) choose template using TEMPLATE keys
+    # ===== DEBUG =====
+    print("ind_template =", ind_template)
+    print("sub_key =", sub_key)
+
+    print("Industry exists:", ind_template in INDUSTRY_TEMPLATES)
+    print("Sub parent exists:", ind_template in SUBINDUSTRY_TEMPLATES)
+    print("Slug industry exists:", ind_slug in INDUSTRY_TEMPLATES)
+    print("Slug sub parent exists:", ind_slug in SUBINDUSTRY_TEMPLATES)
+
+    print("Sub map keys:", list(SUBINDUSTRY_TEMPLATES.get(ind_template, {}).keys()))
+    # =================
+
     rows = _choose_template(ind_template, sub_key)
+    if rows:
+        return rows
+
+    # fallback to slug keys
+    rows = _choose_template(ind_slug, sub_slug)
+    if rows:
+        return rows
+
+    # fallback industry only
+    rows = _choose_template(ind_template, None)
+    if rows:
+        return rows
+
+    rows = _choose_template(ind_slug, None)
     return rows or []
 
 def initialize_coa(db_service, company_id: int, industry: str, sub_industry: Optional[str] = None) -> int:
