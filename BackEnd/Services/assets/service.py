@@ -732,9 +732,9 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
     ))
 
     rows = fetchall(cur)
-    return collapse_component_assets_for_register(cur, schema, company_id, rows)
+    return collapse_component_assets_for_register(cur, schema, company_id, rows, as_at=as_at)
 
-def collapse_component_assets_for_register(cur, schema: str, company_id: int, rows: list[dict]) -> list[dict]:
+def collapse_component_assets_for_register(cur, schema: str, company_id: int, rows: list[dict], as_at=None) -> list[dict]:
     parent_ids = sorted({
         int(r.get("parent_asset_id"))
         for r in rows
@@ -773,11 +773,51 @@ def collapse_component_assets_for_register(cur, schema: str, company_id: int, ro
         if not parent:
             continue
 
+        # ✅ fetch ALL components, not only components present in current list page
+        cur.execute(_q(schema, """
+            SELECT
+                a.*,
+
+                COALESCE((
+                    SELECT SUM(jl.debit - jl.credit)::numeric
+                    FROM {schema}.journal_lines jl
+                    JOIN {schema}.journal j ON j.id = jl.journal_id
+                    WHERE j.company_id = a.company_id
+                    AND j.date <= %s
+                    AND COALESCE(j.is_reversal, FALSE) = FALSE
+                    AND jl.account_code = a.asset_account_code
+                    AND j.source = 'asset_acquisition'
+                    AND j.source_id IN (
+                        SELECT acq.id
+                        FROM {schema}.asset_acquisitions acq
+                        WHERE acq.company_id = a.company_id
+                            AND acq.asset_id = a.id
+                            AND LOWER(acq.status) = 'posted'
+                    )
+                ), a.cost, 0)::numeric(18,2) AS cost_total,
+
+                COALESCE((
+                    SELECT d.accumulated_depreciation::numeric
+                    FROM {schema}.asset_depreciation d
+                    WHERE d.company_id = a.company_id
+                    AND d.asset_id = a.id
+                    AND d.status = 'posted'
+                    ORDER BY d.period_end DESC, d.id DESC
+                    LIMIT 1
+                ), COALESCE(a.opening_accum_dep, 0))::numeric(18,2) AS acc_dep
+
+            FROM {schema}.assets a
+            WHERE a.company_id = %s
+            AND a.parent_asset_id = %s
+            AND COALESCE(a.is_component, FALSE) = TRUE
+            ORDER BY a.component_no NULLS LAST, a.id
+        """), (as_at, company_id, pid))
+
+        comps = fetchall(cur) or []
+
         total_cost = sum(float(c.get("cost_total") or c.get("cost") or 0) for c in comps)
-        total_acc_dep = sum(float(c.get("accumulated_depreciation") or c.get("acc_dep") or 0) for c in comps)
-        total_carrying = sum(float(c.get("carrying_amount") or c.get("nbv") or 0) for c in comps)
-        total_reval = sum(float(c.get("reval_net") or 0) for c in comps)
-        total_impairment = sum(float(c.get("imp_net") or 0) for c in comps)
+        total_acc_dep = sum(float(c.get("acc_dep") or 0) for c in comps)
+        total_carrying = total_cost - total_acc_dep
 
         row = dict(parent)
         row.update({
@@ -787,19 +827,14 @@ def collapse_component_assets_for_register(cur, schema: str, company_id: int, ro
             "asset_code": parent.get("asset_code"),
             "asset_class": parent.get("asset_class") or "Land and buildings",
             "asset_class_group": parent.get("asset_class_group") or "Land and buildings",
-
             "is_component_group": True,
             "is_component": False,
-
             "cost_total": total_cost,
             "cost": total_cost,
             "accumulated_depreciation": total_acc_dep,
             "acc_dep": total_acc_dep,
             "carrying_amount": total_carrying,
             "nbv": total_carrying,
-            "reval_net": total_reval,
-            "imp_net": total_impairment,
-
             "components": comps,
             "component_count": len(comps),
             "status": parent.get("status") or "active",

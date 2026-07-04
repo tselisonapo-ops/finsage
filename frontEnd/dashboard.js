@@ -35398,10 +35398,10 @@ async function saveEditModal() {
         A.valuation?.create?.(cid) || `/api/companies/${cid}/revaluations`,
 
       previewSM:
-          `/api/companies/${CID}/subsequent-measurements/preview`,
+          `/api/companies/${cid}/subsequent-measurements/preview`,
 
       smGroupPreview: (assetId) =>
-          `/api/companies/${CID}/assets/${assetId}/subsequent-measurement/group-preview`,
+          `/api/companies/${cid}/assets/${assetId}/subsequent-measurement/group-preview`,
 
       valuationGet: (id) =>
         (A.valuation?.get?.(cid, id) || `/api/companies/${cid}/asset-revaluations/${id}`),
