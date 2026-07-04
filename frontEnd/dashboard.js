@@ -20899,7 +20899,84 @@ async function renderBSMini(periodKey = CURRENT_PERIOD_KEY) {
   }
 }
 
+function stmtNum(v) {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
 
+function stmtIsZero(v) {
+  return Math.abs(stmtNum(v)) < 0.005;
+}
+
+function stmtLineHasValue(line, cols = []) {
+  if (!line) return false;
+
+  const values = line.values || {};
+
+  // check active statement columns first
+  for (const c of cols || []) {
+    if (!stmtIsZero(values?.[c.key])) return true;
+  }
+
+  // fallback for older shapes
+  const fallback = [
+    line.amount,
+    line.balance,
+    line.current,
+    line.previous,
+    line.total,
+    values.cur,
+    values.pri,
+    values.tot,
+    values.total,
+    values.noncur,
+    values.c1,
+    values.c2,
+    values.c3,
+  ];
+
+  return fallback.some(v => !stmtIsZero(v));
+}
+
+function stmtKeepLine(line, cols = []) {
+  const rt = String(line?.row_type || line?.type || line?.meta?.row_type || "").toLowerCase();
+
+  // keep structural rows
+  if (
+    rt === "header" ||
+    rt === "section" ||
+    rt === "subtotal" ||
+    rt === "total" ||
+    line?.is_total ||
+    line?.is_subtotal ||
+    line?.is_grand_total
+  ) {
+    return true;
+  }
+
+  return stmtLineHasValue(line, cols);
+}
+
+function filterStatementZeroLines(stmt) {
+  if (!stmt || typeof stmt !== "object") return stmt;
+
+  const cols = Array.isArray(stmt.columns) ? stmt.columns : [];
+
+  if (Array.isArray(stmt.sections)) {
+    stmt.sections = stmt.sections.map(sec => ({
+      ...sec,
+      lines: Array.isArray(sec.lines)
+        ? sec.lines.filter(line => stmtKeepLine(line, cols))
+        : sec.lines
+    }));
+  }
+
+  if (Array.isArray(stmt.rows)) {
+    stmt.rows = stmt.rows.filter(row => stmtKeepLine(row, cols));
+  }
+
+  return stmt;
+}
 // ==============================
 // Cash flow (simple placeholder)
 // ==============================
@@ -27178,6 +27255,12 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
 
     const data = await apiFetch(url);
 
+    const cleanData = filterStatementZeroLines(
+      data && typeof data === "object"
+        ? structuredClone(data)
+        : data
+    );
+
     try {
       await renderStatementInterpretation(t, data, {
         cid,
@@ -27223,7 +27306,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
       Array.isArray(data?.rows)
     ) {
       if (typeof renderSOCIEHtml === "function") {
-        canvas.innerHTML = renderSOCIEHtml(data);
+        canvas.innerHTML = renderSOCIEHtml(cleanData);
         return;
       }
 
@@ -27273,7 +27356,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
       });
 
       if (typeof renderer === "function") {
-        canvas.innerHTML = renderer(data, { periodLabel: label, preview_columns, cols_mode});
+        canvas.innerHTML = renderer(dacleanData, { periodLabel: label, preview_columns, cols_mode});
         return;
       }
 
@@ -27381,11 +27464,11 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
       const isExternal = (basisFromMeta === "external");
 
       if (isExternal) {
-        canvas.innerHTML = renderBSScientificSinglePageHtml(data);
+        canvas.innerHTML = renderBSScientificSinglePageHtml(cleanData);
         return;
       }
 
-      canvas.innerHTML = renderBSScientificTwoColumnHtml(data, {
+      canvas.innerHTML = renderBSScientificTwoColumnHtml(cleanData, {
         cols_mode: colsFromUI || colsFromPayload,
         basis
       });
@@ -27409,12 +27492,12 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
       }
 
       if (basisFromMeta === "external" && typeof renderStatementV2Html === "function") {
-        canvas.innerHTML = renderStatementV2Html(data); // ✅ no adapter
+        canvas.innerHTML = renderStatementV2Html(cleanData); // ✅ no adapter
         return;
       }
 
       if (typeof renderPnLClassicHtml === "function") {
-        canvas.innerHTML = renderPnLClassicHtml(data);
+        canvas.innerHTML = renderPnLClassicHtml(cleanData);
         return;
       }
     }

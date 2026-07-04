@@ -61,6 +61,8 @@ def _equity_bucket_for_account(row: dict) -> str | None:
         return "preference_share_capital"
     if "share capital" in name:
         return "ordinary_share_capital"
+    if "treasury" in name or "buyback" in name or "buy-back" in name:
+        return "treasury_shares"
     if "reserve" in name or "fund" in category:
         return "reserves"
 
@@ -110,6 +112,7 @@ def build_statement_of_changes_in_equity(
             ("preference_share_capital", "Preference Share Capital"),
             ("share_premium", "Share Premium"),
             ("retained_earnings", "Retained Earnings"),
+            ("treasury_shares", "Treasury Shares / Share Buyback Reserve"),
             ("reserves", "Reserves"),
         ],
         "public_company": [
@@ -249,6 +252,10 @@ def build_statement_of_changes_in_equity(
             target_bucket = "retained_earnings" if "retained_earnings" in bucket_keys else bucket
             if target_bucket in bucket_keys:
                 rows["prior_adjustments"]["values"][target_bucket] += net
+            continue
+
+        if bucket == "treasury_shares":
+            rows["share_issues"]["values"][bucket] += net
             continue
 
         if bucket == "reserves":
