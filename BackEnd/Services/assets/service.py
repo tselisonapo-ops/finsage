@@ -731,7 +731,85 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
         offset,
     ))
 
-    return fetchall(cur)
+    rows = fetchall(cur)
+    return collapse_component_assets_for_register(cur, schema, company_id, rows)
+
+def collapse_component_assets_for_register(cur, schema: str, company_id: int, rows: list[dict]) -> list[dict]:
+    parent_ids = sorted({
+        int(r.get("parent_asset_id"))
+        for r in rows
+        if r.get("parent_asset_id") and bool(r.get("is_component"))
+    })
+
+    if not parent_ids:
+        return [r for r in rows if not bool(r.get("is_component"))]
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id = %s
+          AND id = ANY(%s)
+    """), (company_id, parent_ids))
+
+    parents = {
+        int(p["id"]): p
+        for p in fetchall(cur)
+    }
+
+    grouped = {}
+    standalone = []
+
+    for r in rows:
+        if bool(r.get("is_component")) and r.get("parent_asset_id"):
+            pid = int(r["parent_asset_id"])
+            grouped.setdefault(pid, []).append(r)
+        else:
+            standalone.append(r)
+
+    out = []
+
+    for pid, comps in grouped.items():
+        parent = parents.get(pid)
+        if not parent:
+            continue
+
+        total_cost = sum(float(c.get("cost_total") or c.get("cost") or 0) for c in comps)
+        total_acc_dep = sum(float(c.get("accumulated_depreciation") or c.get("acc_dep") or 0) for c in comps)
+        total_carrying = sum(float(c.get("carrying_amount") or c.get("nbv") or 0) for c in comps)
+        total_reval = sum(float(c.get("reval_net") or 0) for c in comps)
+        total_impairment = sum(float(c.get("imp_net") or 0) for c in comps)
+
+        row = dict(parent)
+        row.update({
+            "id": pid,
+            "asset_id": pid,
+            "asset_name": parent.get("asset_name"),
+            "asset_code": parent.get("asset_code"),
+            "asset_class": parent.get("asset_class") or "Land and buildings",
+            "asset_class_group": parent.get("asset_class_group") or "Land and buildings",
+
+            "is_component_group": True,
+            "is_component": False,
+
+            "cost_total": total_cost,
+            "cost": total_cost,
+            "accumulated_depreciation": total_acc_dep,
+            "acc_dep": total_acc_dep,
+            "carrying_amount": total_carrying,
+            "nbv": total_carrying,
+            "reval_net": total_reval,
+            "imp_net": total_impairment,
+
+            "components": comps,
+            "component_count": len(comps),
+            "status": parent.get("status") or "active",
+        })
+
+        out.append(row)
+
+    out.extend([r for r in standalone if not bool(r.get("is_component"))])
+
+    return sorted(out, key=lambda x: int(x.get("id") or 0), reverse=True)
 
 def is_asset_class_potentially_qualifying(asset: dict) -> bool:
     txt = " ".join([
