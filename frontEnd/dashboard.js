@@ -33668,21 +33668,46 @@ async function postLeaseJournal(lease) {
     // Toolbar: Asset Records (Docs + Verifications picker)
     let FA_ASSET_RECORDS_PICKER = null;
 
-    $("faBtnAssetRecords")?.addEventListener("click", async () => {
-      try {
-        const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.cid;
-        if (!cid) return alert("Missing company id.");
+    if (!document.body.dataset.faAssetRecordsBound) {
+      document.body.dataset.faAssetRecordsBound = "1";
 
-        // bind once
-        if (!FA_ASSET_RECORDS_PICKER) {
-          FA_ASSET_RECORDS_PICKER = bindAssetRecordsPickerModal({ cid });
+      document.addEventListener("click", async (e) => {
+        if (e.target?.closest?.("#faSettingsModal, #smModal")) return;
+
+        const btn = e.target?.closest?.("#faBtnAssetRecords");
+        if (!btn) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        // ✅ do not open records while another FA modal is already open
+        const blocked =
+          !document.getElementById("faSubsequentModal")?.classList.contains("hidden") ||
+          !document.getElementById("faDepModal")?.classList.contains("hidden") ||
+          !document.getElementById("faOpsModal")?.classList.contains("hidden") ||
+          !document.getElementById("faEditModal")?.classList.contains("hidden");
+
+        if (blocked) return;
+
+        try {
+          const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.cid;
+          if (!cid) return alert("Missing company id.");
+
+          if (typeof window.bindAssetRecordsPickerModal !== "function") {
+            return alert("Asset Records picker is not loaded.");
+          }
+
+          if (!FA_ASSET_RECORDS_PICKER) {
+            FA_ASSET_RECORDS_PICKER = window.bindAssetRecordsPickerModal({ cid });
+          }
+
+          await FA_ASSET_RECORDS_PICKER.open();
+        } catch (e) {
+          console.error("[FA] Asset Records open failed:", e);
+          alert(e?.message || "Failed to open Asset Records.");
         }
-
-        await FA_ASSET_RECORDS_PICKER.open();
-      } catch (e) {
-        alert(e?.message || "Failed to open Asset Records.");
-      }
-    });
+      }, true);
+    }
 
     // Search
     $("faSearch")?.addEventListener("input", (e) => {
@@ -36897,7 +36922,12 @@ async function saveEditModal() {
       if (jsonEl) jsonEl.value = JSON.stringify(currentPolicy, null, 2);
     });
 
-    $("smBtnNew")?.addEventListener("click", () => openSmModal(null));
+    $("smBtnNew")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      openSmModal(null);
+    });
     $("smClose")?.addEventListener("click", closeSmModal);
     $("smBackdrop")?.addEventListener("click", closeSmModal);
 
@@ -37119,578 +37149,587 @@ async function saveEditModal() {
 })();
 
 
-function bindAssetDocsAndVerificationsPanel({ cid, assetId }) {
-  const $ = (id) => document.getElementById(id);
+  function bindAssetDocsAndVerificationsPanel({ cid, assetId }) {
+    const $ = (id) => document.getElementById(id);
 
-  const listEl  = $("assetPanelList");
-  const msgEl   = $("assetPanelMsg");
-  const countEl = $("assetPanelCount");
+    const listEl  = $("assetPanelList");
+    const msgEl   = $("assetPanelMsg");
+    const countEl = $("assetPanelCount");
 
-  // tabs + toolbars
-  const tabDocs      = $("tabDocs");
-  const tabVers      = $("tabVers");
-  const docsToolbar  = $("docsToolbar");
-  const versToolbar  = $("versToolbar");
-  const btnRefresh   = $("assetPanelRefresh");
+    // tabs + toolbars
+    const tabDocs      = $("tabDocs");
+    const tabVers      = $("tabVers");
+    const docsToolbar  = $("docsToolbar");
+    const versToolbar  = $("versToolbar");
+    const btnRefresh   = $("assetPanelRefresh");
 
-  // paging
-  const btnPrev      = $("assetPrev");
-  const btnNext      = $("assetNext");
+    // paging
+    const btnPrev      = $("assetPrev");
+    const btnNext      = $("assetNext");
 
-  // docs filters
-  const docQ              = $("docQ");
-  const docType           = $("docType");
-  const docIncludeArchived= $("docIncludeArchived");
-  const docAddBtn         = $("docAddBtn");
+    // docs filters
+    const docQ              = $("docQ");
+    const docType           = $("docType");
+    const docIncludeArchived= $("docIncludeArchived");
+    const docAddBtn         = $("docAddBtn");
 
-  // ver filters
-  const verStatus         = $("verStatus");
-  const verIncludeArchived= $("verIncludeArchived");
-  const verAddBtn         = $("verAddBtn");
+    // ver filters
+    const verStatus         = $("verStatus");
+    const verIncludeArchived= $("verIncludeArchived");
+    const verAddBtn         = $("verAddBtn");
 
-  // doc modal
-  const docModal      = $("docModal");
-  const docModalTitle = $("docModalTitle");
-  const docModalMsg   = $("docModalMsg");
-  const docModalClose = $("docModalClose");
-  const docId         = $("docId");
-  const docFormType   = $("docFormType");
-  const docFileName   = $("docFileName");
-  const docUrl        = $("docUrl");
-  const docRef        = $("docRef");
-  const docNotes      = $("docNotes");
-  const docSaveBtn    = $("docSaveBtn");
-  const docDeleteBtn  = $("docDeleteBtn");
+    // doc modal
+    const docModal      = $("docModal");
+    const docModalTitle = $("docModalTitle");
+    const docModalMsg   = $("docModalMsg");
+    const docModalClose = $("docModalClose");
+    const docId         = $("docId");
+    const docFormType   = $("docFormType");
+    const docFileName   = $("docFileName");
+    const docUrl        = $("docUrl");
+    const docRef        = $("docRef");
+    const docNotes      = $("docNotes");
+    const docSaveBtn    = $("docSaveBtn");
+    const docDeleteBtn  = $("docDeleteBtn");
 
-  // ver modal
-  const verModal      = $("verModal");
-  const verModalTitle = $("verModalTitle");
-  const verModalMsg   = $("verModalMsg");
-  const verModalClose = $("verModalClose");
-  const verId         = $("verId");
-  const verDate       = $("verDate");
-  const verFormStatus = $("verFormStatus");
-  const verLocation   = $("verLocation");
-  const verCustodian  = $("verCustodian");
-  const verBy         = $("verBy");
-  const verNotes      = $("verNotes");
-  const verSaveBtn    = $("verSaveBtn");
-  const verVoidBtn    = $("verVoidBtn");
+    // ver modal
+    const verModal      = $("verModal");
+    const verModalTitle = $("verModalTitle");
+    const verModalMsg   = $("verModalMsg");
+    const verModalClose = $("verModalClose");
+    const verId         = $("verId");
+    const verDate       = $("verDate");
+    const verFormStatus = $("verFormStatus");
+    const verLocation   = $("verLocation");
+    const verCustodian  = $("verCustodian");
+    const verBy         = $("verBy");
+    const verNotes      = $("verNotes");
+    const verSaveBtn    = $("verSaveBtn");
+    const verVoidBtn    = $("verVoidBtn");
 
-  // If panel isn't mounted, exit gracefully
-  if (!listEl || !msgEl || !countEl) {
-    console.warn("[FA] Asset records panel DOM not found yet.");
-    return { reload() {} };
-  }
-
-  const docSrcUrl  = $("docSrcUrl");
-  const docSrcFile = $("docSrcFile");
-  const docUrlWrap = $("docUrlWrap");
-  const docFileWrap= $("docFileWrap");
-  const docFile    = $("docFile");
-
-  function setDocSource(mode){
-    const isFile = mode === "file";
-    docUrlWrap?.classList.toggle("hidden", isFile);
-    docFileWrap?.classList.toggle("hidden", !isFile);
-
-    if (isFile) {
-      if (docUrl) docUrl.value = "";
-    } else {
-      if (docFile) docFile.value = "";
+    // If panel isn't mounted, exit gracefully
+    if (!listEl || !msgEl || !countEl) {
+      console.warn("[FA] Asset records panel DOM not found yet.");
+      return { reload() {} };
     }
-  }
 
-  docSrcUrl?.addEventListener("change", () => setDocSource("url"));
-  docSrcFile?.addEventListener("change", () => setDocSource("file"));
+    const docSrcUrl  = $("docSrcUrl");
+    const docSrcFile = $("docSrcFile");
+    const docUrlWrap = $("docUrlWrap");
+    const docFileWrap= $("docFileWrap");
+    const docFile    = $("docFile");
 
-  // default
-  setDocSource("url");
+    function setDocSource(mode){
+      const isFile = mode === "file";
+      docUrlWrap?.classList.toggle("hidden", isFile);
+      docFileWrap?.classList.toggle("hidden", !isFile);
 
-  const EP  = window.ENDPOINTS || window.endpoints || window.ENDPOINTS_FALLBACK || ENDPOINTS;
-  const A   = EP?.assets;
-  const DOC = A?.assetDocs;
-  const VER = A?.assetVer;
-
-  // show errors in-panel instead of throwing
-  if (!A || !DOC || !VER) {
-    msgEl.textContent = "Asset endpoints not available (ENDPOINTS.assets.* missing).";
-    console.error("[FA] Missing endpoints:", { A, DOC, VER, EP });
-    return { reload() {} };
-  }
-
-  const state = {
-    tab: "docs",
-    limit: 20,
-    offset: 0,
-    lastCount: 0,
-  };
-
-  function showModal(el) { el.classList.remove("hidden"); }
-  function hideModal(el) { el.classList.add("hidden"); }
-  function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
-
-  function setTab(tab) {
-    state.tab = tab;
-    state.offset = 0;
-    msgEl.textContent = "";
-    listEl.innerHTML = "";
-    countEl.textContent = "Loading...";
-
-    if (tab === "docs") {
-      tabDocs.className = "px-3 py-1.5 text-sm bg-slate-900 text-white";
-      tabVers.className = "px-3 py-1.5 text-sm bg-white";
-      docsToolbar.classList.remove("hidden");
-      versToolbar.classList.add("hidden");
-    } else {
-      tabVers.className = "px-3 py-1.5 text-sm bg-slate-900 text-white";
-      tabDocs.className = "px-3 py-1.5 text-sm bg-white";
-      versToolbar.classList.remove("hidden");
-      docsToolbar.classList.add("hidden");
+      if (isFile) {
+        if (docUrl) docUrl.value = "";
+      } else {
+        if (docFile) docFile.value = "";
+      }
     }
-    load();
-  }
 
-  async function load() {
-    msgEl.textContent = "";
+    docSrcUrl?.addEventListener("change", () => setDocSource("url"));
+    docSrcFile?.addEventListener("change", () => setDocSource("file"));
 
-    // ✅ Resolve endpoints safely (and correctly nested)
-    const EP = window.ENDPOINTS || window.endpoints || ENDPOINTS;
-    const A  = EP?.assets;
+    // default
+    setDocSource("url");
 
-    try {
-      if (!A) throw new Error("ENDPOINTS.assets is missing");
+    const EP  = window.ENDPOINTS || window.endpoints || window.ENDPOINTS_FALLBACK || ENDPOINTS;
+    const A   = EP?.assets;
+    const DOC = A?.assetDocs;
+    const VER = A?.assetVer;
 
-      if (state.tab === "docs") {
-        if (!A.assetDocs?.list) throw new Error("ENDPOINTS.assets.assetDocs.list is missing");
+    // show errors in-panel instead of throwing
+    if (!A || !DOC || !VER) {
+      msgEl.textContent = "Asset endpoints not available (ENDPOINTS.assets.* missing).";
+      console.error("[FA] Missing endpoints:", { A, DOC, VER, EP });
+      return { reload() {} };
+    }
+
+    const state = {
+      tab: "docs",
+      limit: 20,
+      offset: 0,
+      lastCount: 0,
+    };
+
+    function showModal(el) { el.classList.remove("hidden"); }
+    function hideModal(el) { el.classList.add("hidden"); }
+    function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+
+    function setTab(tab) {
+      state.tab = tab;
+      state.offset = 0;
+      msgEl.textContent = "";
+      listEl.innerHTML = "";
+      countEl.textContent = "Loading...";
+
+      if (tab === "docs") {
+        tabDocs.className = "px-3 py-1.5 text-sm bg-slate-900 text-white";
+        tabVers.className = "px-3 py-1.5 text-sm bg-white";
+        docsToolbar.classList.remove("hidden");
+        versToolbar.classList.add("hidden");
+      } else {
+        tabVers.className = "px-3 py-1.5 text-sm bg-slate-900 text-white";
+        tabDocs.className = "px-3 py-1.5 text-sm bg-white";
+        versToolbar.classList.remove("hidden");
+        docsToolbar.classList.add("hidden");
+      }
+      load();
+    }
+
+    async function load() {
+      msgEl.textContent = "";
+
+      // ✅ Resolve endpoints safely (and correctly nested)
+      const EP = window.ENDPOINTS || window.endpoints || ENDPOINTS;
+      const A  = EP?.assets;
+
+      try {
+        if (!A) throw new Error("ENDPOINTS.assets is missing");
+
+        if (state.tab === "docs") {
+          if (!A.assetDocs?.list) throw new Error("ENDPOINTS.assets.assetDocs.list is missing");
+
+          const params = {
+            limit: state.limit,
+            offset: state.offset,
+            doc_type: docType.value || "",
+            q: docQ.value || "",
+            include_archived: docIncludeArchived.checked ? "true" : "",
+          };
+
+          const out = await apiFetch(A.assetDocs.list(cid, assetId, params));
+          const rows = out?.data || [];
+          state.lastCount = rows.length;
+
+          renderDocs(rows);
+          countEl.textContent = `${rows.length} document(s)`;
+          return;
+        }
+
+        // verifications
+        if (!A.assetVer?.list) throw new Error("ENDPOINTS.assets.assetVer.list is missing");
 
         const params = {
           limit: state.limit,
           offset: state.offset,
-          doc_type: docType.value || "",
-          q: docQ.value || "",
-          include_archived: docIncludeArchived.checked ? "true" : "",
+          status: verStatus.value || "",
+          include_archived: verIncludeArchived.checked ? "true" : "",
         };
 
-        const out = await apiFetch(A.assetDocs.list(cid, assetId, params));
+        const out = await apiFetch(A.assetVer.list(cid, assetId, params));
         const rows = out?.data || [];
         state.lastCount = rows.length;
 
-        renderDocs(rows);
-        countEl.textContent = `${rows.length} document(s)`;
+        renderVers(rows);
+        countEl.textContent = `${rows.length} verification(s)`;
+
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+        countEl.textContent = "0 items";
+        listEl.innerHTML = "";
+      }
+    }
+
+    function renderDocs(rows) {
+      if (!rows.length) {
+        listEl.innerHTML = `<div class="py-6 text-sm text-slate-500">No documents found.</div>`;
+        return;
+      }
+      listEl.innerHTML = rows.map((r) => {
+        const archived = !!r.is_archived || String(r.status || "").toLowerCase() === "archived";
+        const url = r.file_url ? `<a class="text-blue-600 hover:underline" href="${esc(r.file_url)}" target="_blank" rel="noreferrer">Open</a>` : `<span class="text-slate-400">No link</span>`;
+        return `
+          <div class="py-3 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="font-medium truncate">${esc(r.file_name || `DOC-${r.id}`)}</div>
+              <div class="text-xs text-slate-500">
+                <span class="uppercase">${esc(r.doc_type || "other")}</span>
+                ${r.reference ? ` • Ref: ${esc(r.reference)}` : ""}
+                ${archived ? ` • <span class="text-amber-600">Archived</span>` : ""}
+              </div>
+              ${r.notes ? `<div class="text-sm text-slate-700 mt-1">${esc(r.notes)}</div>` : ""}
+              <div class="text-xs mt-1">${url}</div>
+            </div>
+
+            <div class="flex gap-2 shrink-0">
+              <button class="btn" data-doc-edit="${r.id}">Edit</button>
+              ${archived
+                ? `<button class="btn" data-doc-unarchive="${r.id}">Unarchive</button>`
+                : `<button class="btn" data-doc-archive="${r.id}">Archive</button>`}
+              <button class="btn" data-doc-delete="${r.id}">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // bind actions
+      listEl.querySelectorAll("[data-doc-edit]").forEach((b) =>
+        b.addEventListener("click", () => openDocModalEdit(Number(b.dataset.docEdit)))
+      );
+      listEl.querySelectorAll("[data-doc-archive]").forEach((b) =>
+        b.addEventListener("click", () => archiveDoc(Number(b.dataset.docArchive)))
+      );
+      listEl.querySelectorAll("[data-doc-unarchive]").forEach((b) =>
+        b.addEventListener("click", () => unarchiveDoc(Number(b.dataset.docUnarchive)))
+      );
+      listEl.querySelectorAll("[data-doc-delete]").forEach((b) =>
+        b.addEventListener("click", () => deleteDoc(Number(b.dataset.docDelete)))
+      );
+    }
+
+    function renderVers(rows) {
+      if (!rows.length) {
+        listEl.innerHTML = `<div class="py-6 text-sm text-slate-500">No verifications found.</div>`;
+        return;
+      }
+      listEl.innerHTML = rows.map((r) => {
+        const archived = !!r.is_archived || String(r.status || "").toLowerCase() === "archived";
+        const st = String(r.status || "").toLowerCase() || "open";
+        return `
+          <div class="py-3 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="font-medium">Verification #${esc(r.id)}</div>
+              <div class="text-xs text-slate-500">
+                ${r.verification_date ? esc(String(r.verification_date).slice(0,10)) : ""}
+                • Status: <span class="uppercase">${esc(st)}</span>
+                ${archived ? ` • <span class="text-amber-600">Archived</span>` : ""}
+              </div>
+              <div class="text-sm text-slate-700 mt-1">
+                ${r.location ? `Location: ${esc(r.location)} • ` : ""}
+                ${r.custodian ? `Custodian: ${esc(r.custodian)}` : ""}
+              </div>
+              ${r.notes ? `<div class="text-sm text-slate-700 mt-1">${esc(r.notes)}</div>` : ""}
+            </div>
+
+            <div class="flex gap-2 shrink-0">
+              <button class="btn" data-ver-edit="${r.id}">Edit</button>
+              ${archived
+                ? `<button class="btn" data-ver-unarchive="${r.id}">Unarchive</button>`
+                : `<button class="btn" data-ver-archive="${r.id}">Archive</button>`}
+              <button class="btn" data-ver-void="${r.id}">Void</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // bind actions
+      listEl.querySelectorAll("[data-ver-edit]").forEach((b) =>
+        b.addEventListener("click", () => openVerModalEdit(Number(b.dataset.verEdit)))
+      );
+      listEl.querySelectorAll("[data-ver-archive]").forEach((b) =>
+        b.addEventListener("click", () => archiveVer(Number(b.dataset.verArchive)))
+      );
+      listEl.querySelectorAll("[data-ver-unarchive]").forEach((b) =>
+        b.addEventListener("click", () => unarchiveVer(Number(b.dataset.verUnarchive)))
+      );
+      listEl.querySelectorAll("[data-ver-void]").forEach((b) =>
+        b.addEventListener("click", () => voidVer(Number(b.dataset.verVoid)))
+      );
+    }
+
+    // ---------- docs actions ----------
+    function openDocModalCreate() {
+      docModalTitle.textContent = "Add document";
+      docModalMsg.textContent = "";
+      docId.value = "";
+      docFormType.value = "invoice";
+      docFileName.value = "";
+      docUrl.value = "";
+      docRef.value = "";
+      docNotes.value = "";
+      docDeleteBtn.classList.add("hidden");
+      showModal(docModal);
+    }
+
+    async function openDocModalEdit(id) {
+      docModalTitle.textContent = `Edit document #${id}`;
+      docModalMsg.textContent = "";
+
+      try {
+        const out = await apiFetch(DOC.get(cid, assetId, id));
+        const r = out?.data || {};
+
+        docId.value = String(r.id || id);
+        docFormType.value = r.doc_type || "other";
+        docFileName.value = r.file_name || "";
+        docUrl.value = r.file_url || "";
+        docRef.value = r.reference || "";
+        docNotes.value = r.notes || "";
+
+        docDeleteBtn.classList.remove("hidden");
+        showModal(docModal);
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    async function saveDoc() {
+      docModalMsg.textContent = "";
+      const id = Number(docId.value || 0);
+
+      const useFile = !!docSrcFile?.checked;
+
+      // basic validation
+      const name = (docFileName.value || "").trim();
+      if (!name) {
+        docModalMsg.textContent = "File name is required.";
         return;
       }
 
-      // verifications
-      if (!A.assetVer?.list) throw new Error("ENDPOINTS.assets.assetVer.list is missing");
+      // ---- FILE UPLOAD PATH ----
+      if (useFile) {
+        const f = docFile?.files?.[0];
+        if (!f) {
+          docModalMsg.textContent = "Please choose a file to upload.";
+          return;
+        }
 
-      const params = {
-        limit: state.limit,
-        offset: state.offset,
-        status: verStatus.value || "",
-        include_archived: verIncludeArchived.checked ? "true" : "",
+        // If you don't have an upload route yet, stop here clearly:
+        docModalMsg.textContent = "Upload not wired yet (need backend upload endpoint).";
+        return;
+      }
+
+      // ---- URL PATH (existing) ----
+      const body = {
+        doc_type: (docFormType.value || "").trim().toLowerCase(),
+        file_name: name,
+        file_url: (docUrl.value || "").trim() || null,
+        reference: (docRef.value || "").trim() || null,
+        notes: (docNotes.value || "").trim() || null,
       };
 
-      const out = await apiFetch(A.assetVer.list(cid, assetId, params));
-      const rows = out?.data || [];
-      state.lastCount = rows.length;
-
-      renderVers(rows);
-      countEl.textContent = `${rows.length} verification(s)`;
-
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-      countEl.textContent = "0 items";
-      listEl.innerHTML = "";
-    }
-  }
-
-  function renderDocs(rows) {
-    if (!rows.length) {
-      listEl.innerHTML = `<div class="py-6 text-sm text-slate-500">No documents found.</div>`;
-      return;
-    }
-    listEl.innerHTML = rows.map((r) => {
-      const archived = !!r.is_archived || String(r.status || "").toLowerCase() === "archived";
-      const url = r.file_url ? `<a class="text-blue-600 hover:underline" href="${esc(r.file_url)}" target="_blank" rel="noreferrer">Open</a>` : `<span class="text-slate-400">No link</span>`;
-      return `
-        <div class="py-3 flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="font-medium truncate">${esc(r.file_name || `DOC-${r.id}`)}</div>
-            <div class="text-xs text-slate-500">
-              <span class="uppercase">${esc(r.doc_type || "other")}</span>
-              ${r.reference ? ` • Ref: ${esc(r.reference)}` : ""}
-              ${archived ? ` • <span class="text-amber-600">Archived</span>` : ""}
-            </div>
-            ${r.notes ? `<div class="text-sm text-slate-700 mt-1">${esc(r.notes)}</div>` : ""}
-            <div class="text-xs mt-1">${url}</div>
-          </div>
-
-          <div class="flex gap-2 shrink-0">
-            <button class="btn" data-doc-edit="${r.id}">Edit</button>
-            ${archived
-              ? `<button class="btn" data-doc-unarchive="${r.id}">Unarchive</button>`
-              : `<button class="btn" data-doc-archive="${r.id}">Archive</button>`}
-            <button class="btn" data-doc-delete="${r.id}">Delete</button>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    // bind actions
-    listEl.querySelectorAll("[data-doc-edit]").forEach((b) =>
-      b.addEventListener("click", () => openDocModalEdit(Number(b.dataset.docEdit)))
-    );
-    listEl.querySelectorAll("[data-doc-archive]").forEach((b) =>
-      b.addEventListener("click", () => archiveDoc(Number(b.dataset.docArchive)))
-    );
-    listEl.querySelectorAll("[data-doc-unarchive]").forEach((b) =>
-      b.addEventListener("click", () => unarchiveDoc(Number(b.dataset.docUnarchive)))
-    );
-    listEl.querySelectorAll("[data-doc-delete]").forEach((b) =>
-      b.addEventListener("click", () => deleteDoc(Number(b.dataset.docDelete)))
-    );
-  }
-
-  function renderVers(rows) {
-    if (!rows.length) {
-      listEl.innerHTML = `<div class="py-6 text-sm text-slate-500">No verifications found.</div>`;
-      return;
-    }
-    listEl.innerHTML = rows.map((r) => {
-      const archived = !!r.is_archived || String(r.status || "").toLowerCase() === "archived";
-      const st = String(r.status || "").toLowerCase() || "open";
-      return `
-        <div class="py-3 flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="font-medium">Verification #${esc(r.id)}</div>
-            <div class="text-xs text-slate-500">
-              ${r.verification_date ? esc(String(r.verification_date).slice(0,10)) : ""}
-              • Status: <span class="uppercase">${esc(st)}</span>
-              ${archived ? ` • <span class="text-amber-600">Archived</span>` : ""}
-            </div>
-            <div class="text-sm text-slate-700 mt-1">
-              ${r.location ? `Location: ${esc(r.location)} • ` : ""}
-              ${r.custodian ? `Custodian: ${esc(r.custodian)}` : ""}
-            </div>
-            ${r.notes ? `<div class="text-sm text-slate-700 mt-1">${esc(r.notes)}</div>` : ""}
-          </div>
-
-          <div class="flex gap-2 shrink-0">
-            <button class="btn" data-ver-edit="${r.id}">Edit</button>
-            ${archived
-              ? `<button class="btn" data-ver-unarchive="${r.id}">Unarchive</button>`
-              : `<button class="btn" data-ver-archive="${r.id}">Archive</button>`}
-            <button class="btn" data-ver-void="${r.id}">Void</button>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    // bind actions
-    listEl.querySelectorAll("[data-ver-edit]").forEach((b) =>
-      b.addEventListener("click", () => openVerModalEdit(Number(b.dataset.verEdit)))
-    );
-    listEl.querySelectorAll("[data-ver-archive]").forEach((b) =>
-      b.addEventListener("click", () => archiveVer(Number(b.dataset.verArchive)))
-    );
-    listEl.querySelectorAll("[data-ver-unarchive]").forEach((b) =>
-      b.addEventListener("click", () => unarchiveVer(Number(b.dataset.verUnarchive)))
-    );
-    listEl.querySelectorAll("[data-ver-void]").forEach((b) =>
-      b.addEventListener("click", () => voidVer(Number(b.dataset.verVoid)))
-    );
-  }
-
-  // ---------- docs actions ----------
-  function openDocModalCreate() {
-    docModalTitle.textContent = "Add document";
-    docModalMsg.textContent = "";
-    docId.value = "";
-    docFormType.value = "invoice";
-    docFileName.value = "";
-    docUrl.value = "";
-    docRef.value = "";
-    docNotes.value = "";
-    docDeleteBtn.classList.add("hidden");
-    showModal(docModal);
-  }
-
-  async function openDocModalEdit(id) {
-    docModalTitle.textContent = `Edit document #${id}`;
-    docModalMsg.textContent = "";
-
-    try {
-      const out = await apiFetch(DOC.get(cid, assetId, id));
-      const r = out?.data || {};
-
-      docId.value = String(r.id || id);
-      docFormType.value = r.doc_type || "other";
-      docFileName.value = r.file_name || "";
-      docUrl.value = r.file_url || "";
-      docRef.value = r.reference || "";
-      docNotes.value = r.notes || "";
-
-      docDeleteBtn.classList.remove("hidden");
-      showModal(docModal);
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  async function saveDoc() {
-    docModalMsg.textContent = "";
-    const id = Number(docId.value || 0);
-
-    const useFile = !!docSrcFile?.checked;
-
-    // basic validation
-    const name = (docFileName.value || "").trim();
-    if (!name) {
-      docModalMsg.textContent = "File name is required.";
-      return;
+      try {
+        if (id > 0) {
+          await apiFetch(DOC.update(cid, assetId, id), { method: "PUT", body: JSON.stringify(body) });
+        } else {
+          await apiFetch(DOC.create(cid, assetId), { method: "POST", body: JSON.stringify(body) });
+        }
+        hideModal(docModal);
+        await load();
+      } catch (e) {
+        docModalMsg.textContent = String(e?.message || e);
+      }
     }
 
-    // ---- FILE UPLOAD PATH ----
-    if (useFile) {
-      const f = docFile?.files?.[0];
-      if (!f) {
-        docModalMsg.textContent = "Please choose a file to upload.";
+    async function deleteDoc(id) {
+      if (!confirm("Delete this document?")) return;
+      try {
+        await apiFetch(DOC.del(cid, assetId, id), { method: "DELETE" });
+        await load();
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    async function archiveDoc(id) {
+      try {
+        await apiFetch(DOC.archive(cid, assetId, id), { method: "POST", body: "{}" });
+        await load();
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    async function unarchiveDoc(id) {
+      try {
+        await apiFetch(DOC.unarchive(cid, assetId, id), { method: "POST", body: "{}" });
+        await load();
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    // ---------- ver actions ----------
+    function openVerModalCreate() {
+      verModalTitle.textContent = "New verification";
+      verModalMsg.textContent = "";
+      verId.value = "";
+      verDate.valueAsDate = new Date();
+      verFormStatus.value = "open";
+      verLocation.value = "";
+      verCustodian.value = "";
+      verBy.value = "";
+      verNotes.value = "";
+      verVoidBtn.classList.add("hidden");
+      showModal(verModal);
+    }
+
+    async function openVerModalEdit(id) {
+      verModalTitle.textContent = `Edit verification #${id}`;
+      verModalMsg.textContent = "";
+      try {
+        const out = await apiFetch(ENDPOINTS.assetVer.get(cid, assetId, id));
+        const r = out?.data || {};
+        verId.value = String(r.id || id);
+        verDate.value = r.verification_date ? String(r.verification_date).slice(0,10) : "";
+        verFormStatus.value = (r.status || "open").toLowerCase();
+        verLocation.value = r.location || "";
+        verCustodian.value = r.custodian || "";
+        verBy.value = r.verified_by || "";
+        verNotes.value = r.notes || "";
+        verVoidBtn.classList.remove("hidden");
+        showModal(verModal);
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    async function saveVer() {
+      verModalMsg.textContent = "";
+      const id = Number(verId.value || 0);
+      const body = {
+        verification_date: verDate.value || null,
+        status: (verFormStatus.value || "").trim().toLowerCase(),
+        location: (verLocation.value || "").trim() || null,
+        custodian: (verCustodian.value || "").trim() || null,
+        verified_by: (verBy.value || "").trim() || null,
+        notes: (verNotes.value || "").trim() || null,
+      };
+      if (!body.verification_date) {
+        verModalMsg.textContent = "Verification date is required.";
         return;
       }
-
-      // If you don't have an upload route yet, stop here clearly:
-      docModalMsg.textContent = "Upload not wired yet (need backend upload endpoint).";
-      return;
+      try {
+        if (id > 0) {
+          await apiFetch(ENDPOINTS.assetVer.update(cid, assetId, id), { method: "PUT", body: JSON.stringify(body) });
+        } else {
+          await apiFetch(ENDPOINTS.assetVer.create(cid, assetId), { method: "POST", body: JSON.stringify(body) });
+        }
+        hideModal(verModal);
+        await load();
+      } catch (e) {
+        verModalMsg.textContent = String(e?.message || e);
+      }
     }
 
-    // ---- URL PATH (existing) ----
-    const body = {
-      doc_type: (docFormType.value || "").trim().toLowerCase(),
-      file_name: name,
-      file_url: (docUrl.value || "").trim() || null,
-      reference: (docRef.value || "").trim() || null,
-      notes: (docNotes.value || "").trim() || null,
+    async function voidVer(id) {
+      if (!confirm("Void this verification?")) return;
+      try {
+        await apiFetch(ENDPOINTS.assetVer.void(cid, assetId, id), { method: "POST", body: "{}" });
+        await load();
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    async function archiveVer(id) {
+      try {
+        await apiFetch(ENDPOINTS.assetVer.archive(cid, assetId, id), { method: "POST", body: "{}" });
+        await load();
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    async function unarchiveVer(id) {
+      try {
+        await apiFetch(ENDPOINTS.assetVer.unarchive(cid, assetId, id), { method: "POST", body: "{}" });
+        await load();
+      } catch (e) {
+        msgEl.textContent = String(e?.message || e);
+      }
+    }
+
+    // ---------- paging ----------
+    if (btnPrev) {
+      btnPrev.addEventListener("click", () => {
+        if (state.offset === 0) return;
+        state.offset = Math.max(0, state.offset - state.limit);
+        load();
+      });
+    }
+
+    if (btnNext) {
+      btnNext.addEventListener("click", () => {
+        if (state.lastCount < state.limit) return;
+        state.offset += state.limit;
+        load();
+      });
+    }
+
+    // ---------- events ----------
+    tabDocs.addEventListener("click", () => setTab("docs"));
+    tabVers.addEventListener("click", () => setTab("vers"));
+
+    btnRefresh.addEventListener("click", load);
+
+    docAddBtn.addEventListener("click", openDocModalCreate);
+    docModalClose.addEventListener("click", () => hideModal(docModal));
+    docSaveBtn.addEventListener("click", saveDoc);
+    docDeleteBtn.addEventListener("click", () => {
+      const id = Number(docId.value || 0);
+      if (id > 0) deleteDoc(id);
+    });
+
+    verAddBtn.addEventListener("click", openVerModalCreate);
+    verModalClose.addEventListener("click", () => hideModal(verModal));
+    verSaveBtn.addEventListener("click", saveVer);
+    verVoidBtn.addEventListener("click", () => {
+      const id = Number(verId.value || 0);
+      if (id > 0) voidVer(id);
+    });
+
+    // filter triggers
+    let t = null;
+    docQ.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => { state.offset = 0; load(); }, 250);
+    });
+    docType.addEventListener("change", () => { state.offset = 0; load(); });
+    docIncludeArchived.addEventListener("change", () => { state.offset = 0; load(); });
+
+    verStatus.addEventListener("change", () => { state.offset = 0; load(); });
+    verIncludeArchived.addEventListener("change", () => { state.offset = 0; load(); });
+
+    // init
+    setTab("docs");
+
+    // return API if you want to control it outside
+    return { reload: load, setTab };
+  }
+
+  window.bindAssetRecordsPickerModal = function bindAssetRecordsPickerModal({ cid }) {
+    const $ = (id) => document.getElementById(id);
+
+    const modal = $("faAssetRecordsModal");
+    const back = $("faAssetRecordsBackdrop");
+    const btnClose = $("faAssetRecordsClose");
+    const btnRefresh = $("faAssetRecordsRefresh");
+
+    const qEl = $("faAssetPickQ");
+    const statusEl = $("faAssetPickStatus");
+    const listEl = $("faAssetPickList");
+    const countEl = $("faAssetPickCount");
+    const prevBtn = $("faAssetPickPrev");
+    const nextBtn = $("faAssetPickNext");
+
+    const hintEl = $("faAssetPickHint");
+    const mountEl = $("faAssetRecordsMount");
+
+    const state = {
+      limit: 20,
+      offset: 0,
+      lastCount: 0,
+      activeAssetId: null,
+      panel: null,
     };
 
-    try {
-      if (id > 0) {
-        await apiFetch(DOC.update(cid, assetId, id), { method: "PUT", body: JSON.stringify(body) });
-      } else {
-        await apiFetch(DOC.create(cid, assetId), { method: "POST", body: JSON.stringify(body) });
-      }
-      hideModal(docModal);
-      await load();
-    } catch (e) {
-      docModalMsg.textContent = String(e?.message || e);
-    }
+  if (!modal) throw new Error("faAssetRecordsModal not found");
+
+  function show() {
+    modal.classList.remove("hidden");
+    document.body.classList.add("overflow-hidden");
   }
 
-  async function deleteDoc(id) {
-    if (!confirm("Delete this document?")) return;
-    try {
-      await apiFetch(DOC.del(cid, assetId, id), { method: "DELETE" });
-      await load();
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
+  function hide() {
+    modal.classList.add("hidden");
+    document.body.classList.remove("overflow-hidden");
   }
-
-  async function archiveDoc(id) {
-    try {
-      await apiFetch(DOC.archive(cid, assetId, id), { method: "POST", body: "{}" });
-      await load();
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  async function unarchiveDoc(id) {
-    try {
-      await apiFetch(DOC.unarchive(cid, assetId, id), { method: "POST", body: "{}" });
-      await load();
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  // ---------- ver actions ----------
-  function openVerModalCreate() {
-    verModalTitle.textContent = "New verification";
-    verModalMsg.textContent = "";
-    verId.value = "";
-    verDate.valueAsDate = new Date();
-    verFormStatus.value = "open";
-    verLocation.value = "";
-    verCustodian.value = "";
-    verBy.value = "";
-    verNotes.value = "";
-    verVoidBtn.classList.add("hidden");
-    showModal(verModal);
-  }
-
-  async function openVerModalEdit(id) {
-    verModalTitle.textContent = `Edit verification #${id}`;
-    verModalMsg.textContent = "";
-    try {
-      const out = await apiFetch(ENDPOINTS.assetVer.get(cid, assetId, id));
-      const r = out?.data || {};
-      verId.value = String(r.id || id);
-      verDate.value = r.verification_date ? String(r.verification_date).slice(0,10) : "";
-      verFormStatus.value = (r.status || "open").toLowerCase();
-      verLocation.value = r.location || "";
-      verCustodian.value = r.custodian || "";
-      verBy.value = r.verified_by || "";
-      verNotes.value = r.notes || "";
-      verVoidBtn.classList.remove("hidden");
-      showModal(verModal);
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  async function saveVer() {
-    verModalMsg.textContent = "";
-    const id = Number(verId.value || 0);
-    const body = {
-      verification_date: verDate.value || null,
-      status: (verFormStatus.value || "").trim().toLowerCase(),
-      location: (verLocation.value || "").trim() || null,
-      custodian: (verCustodian.value || "").trim() || null,
-      verified_by: (verBy.value || "").trim() || null,
-      notes: (verNotes.value || "").trim() || null,
-    };
-    if (!body.verification_date) {
-      verModalMsg.textContent = "Verification date is required.";
-      return;
-    }
-    try {
-      if (id > 0) {
-        await apiFetch(ENDPOINTS.assetVer.update(cid, assetId, id), { method: "PUT", body: JSON.stringify(body) });
-      } else {
-        await apiFetch(ENDPOINTS.assetVer.create(cid, assetId), { method: "POST", body: JSON.stringify(body) });
-      }
-      hideModal(verModal);
-      await load();
-    } catch (e) {
-      verModalMsg.textContent = String(e?.message || e);
-    }
-  }
-
-  async function voidVer(id) {
-    if (!confirm("Void this verification?")) return;
-    try {
-      await apiFetch(ENDPOINTS.assetVer.void(cid, assetId, id), { method: "POST", body: "{}" });
-      await load();
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  async function archiveVer(id) {
-    try {
-      await apiFetch(ENDPOINTS.assetVer.archive(cid, assetId, id), { method: "POST", body: "{}" });
-      await load();
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  async function unarchiveVer(id) {
-    try {
-      await apiFetch(ENDPOINTS.assetVer.unarchive(cid, assetId, id), { method: "POST", body: "{}" });
-      await load();
-    } catch (e) {
-      msgEl.textContent = String(e?.message || e);
-    }
-  }
-
-  // ---------- paging ----------
-  if (btnPrev) {
-    btnPrev.addEventListener("click", () => {
-      if (state.offset === 0) return;
-      state.offset = Math.max(0, state.offset - state.limit);
-      load();
-    });
-  }
-
-  if (btnNext) {
-    btnNext.addEventListener("click", () => {
-      if (state.lastCount < state.limit) return;
-      state.offset += state.limit;
-      load();
-    });
-  }
-
-  // ---------- events ----------
-  tabDocs.addEventListener("click", () => setTab("docs"));
-  tabVers.addEventListener("click", () => setTab("vers"));
-
-  btnRefresh.addEventListener("click", load);
-
-  docAddBtn.addEventListener("click", openDocModalCreate);
-  docModalClose.addEventListener("click", () => hideModal(docModal));
-  docSaveBtn.addEventListener("click", saveDoc);
-  docDeleteBtn.addEventListener("click", () => {
-    const id = Number(docId.value || 0);
-    if (id > 0) deleteDoc(id);
-  });
-
-  verAddBtn.addEventListener("click", openVerModalCreate);
-  verModalClose.addEventListener("click", () => hideModal(verModal));
-  verSaveBtn.addEventListener("click", saveVer);
-  verVoidBtn.addEventListener("click", () => {
-    const id = Number(verId.value || 0);
-    if (id > 0) voidVer(id);
-  });
-
-  // filter triggers
-  let t = null;
-  docQ.addEventListener("input", () => {
-    clearTimeout(t);
-    t = setTimeout(() => { state.offset = 0; load(); }, 250);
-  });
-  docType.addEventListener("change", () => { state.offset = 0; load(); });
-  docIncludeArchived.addEventListener("change", () => { state.offset = 0; load(); });
-
-  verStatus.addEventListener("change", () => { state.offset = 0; load(); });
-  verIncludeArchived.addEventListener("change", () => { state.offset = 0; load(); });
-
-  // init
-  setTab("docs");
-
-  // return API if you want to control it outside
-  return { reload: load, setTab };
-}
-
-function bindAssetRecordsPickerModal({ cid }) {
-  const $ = (id) => document.getElementById(id);
-
-  const modal = $("faAssetRecordsModal");
-  const back = $("faAssetRecordsBackdrop");
-  const btnClose = $("faAssetRecordsClose");
-  const btnRefresh = $("faAssetRecordsRefresh");
-
-  const qEl = $("faAssetPickQ");
-  const statusEl = $("faAssetPickStatus");
-  const listEl = $("faAssetPickList");
-  const countEl = $("faAssetPickCount");
-  const prevBtn = $("faAssetPickPrev");
-  const nextBtn = $("faAssetPickNext");
-
-  const hintEl = $("faAssetPickHint");
-  const mountEl = $("faAssetRecordsMount");
-
-  const state = {
-    limit: 20,
-    offset: 0,
-    lastCount: 0,
-    activeAssetId: null,
-    panel: null,
-  };
-
-  function show() { modal.classList.remove("hidden"); }
-  function hide() { modal.classList.add("hidden"); }
 
   function esc(s) {
     return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
@@ -37883,7 +37922,7 @@ function bindAssetRecordsPickerModal({ cid }) {
   btnRefresh.addEventListener("click", loadAssets);
 
   return {
-    open: async () => {
+    open: async function () {
       show();
       await loadAssets();
     },
