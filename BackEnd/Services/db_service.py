@@ -19223,14 +19223,14 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS instagram_handle TEXT DEFAULT '';
 
         ALTER TABLE {schema}.pos_receipt_settings
-        ADD COLUMN IF NOT EXISTS pricing_tax_mode TEXT DEFAULT 'inclusive';
+        ADD COLUMN IF NOT EXISTS pricing_tax_mode TEXT DEFAULT 'no_vat';
 
         ALTER TABLE {schema}.pos_receipt_settings
-        ADD COLUMN IF NOT EXISTS receipt_tax_display TEXT DEFAULT 'vat_line';
+        ADD COLUMN IF NOT EXISTS receipt_tax_display TEXT DEFAULT 'none';
 
         ALTER TABLE {schema}.pos_receipt_settings
-        ADD COLUMN IF NOT EXISTS tax_invoice_wording TEXT DEFAULT 'Tax Invoice / Receipt';
-
+        ADD COLUMN IF NOT EXISTS tax_invoice_wording TEXT DEFAULT 'Receipt';
+        
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_receipt_settings_company_uniq
         ON {schema}.pos_receipt_settings(company_id)
         WHERE is_active = TRUE;
@@ -38602,10 +38602,9 @@ class DatabaseService:
         """, (int(company_id),))
 
         if row:
-            row.setdefault("pricing_tax_mode", "inclusive")
-            row.setdefault("receipt_tax_display", "vat_line")
-            row.setdefault("tax_invoice_wording", row.get("receipt_title", "Tax Invoice / Receipt"))
-
+            row.setdefault("pricing_tax_mode", "no_vat")
+            row.setdefault("receipt_tax_display", "none")
+            row.setdefault("tax_invoice_wording", row.get("receipt_title", "Receipt"))
             row.setdefault("slip_template", "classic")
             row.setdefault("order_template", "restaurant_order")
             row.setdefault("kitchen_ticket_template", "kitchen_ticket")
@@ -38631,6 +38630,14 @@ class DatabaseService:
             "receipt_tax_display": "vat_line",
             "tax_invoice_wording": "Tax Invoice / Receipt",
 
+            "receipt_title": "Receipt",
+            "vat_note": "No VAT charged.",
+            "show_vat_no": False,
+
+            "pricing_tax_mode": "no_vat",
+            "receipt_tax_display": "none",
+            "tax_invoice_wording": "Receipt",
+
             # Templates
             "slip_template": "classic",
             "order_template": "restaurant_order",
@@ -38649,7 +38656,7 @@ class DatabaseService:
 
     def pos_save_receipt_settings(self, company_id: int, data: dict) -> dict:
         schema = self.company_schema(company_id)
-
+        data = self._normalise_pos_tax_settings(company_id, data)
         row = self.fetch_one(f"""
             INSERT INTO {schema}.pos_receipt_settings
             (
@@ -38702,18 +38709,59 @@ class DatabaseService:
             bool(data.get("show_vat_no", True)),
             bool(data.get("show_cashier_name", True)),
             bool(data.get("show_customer_name", True)),
-            data.get("pricing_tax_mode", "inclusive"),
-            data.get("receipt_tax_display", "vat_line"),
-            data.get(
-                "tax_invoice_wording",
-                data.get("receipt_title", "Tax Invoice / Receipt"),
-            ),
+            data.get("pricing_tax_mode", "no_vat"),
+            data.get("receipt_tax_display", "none"),
+            data.get("tax_invoice_wording",
+            data.get("receipt_title", "Receipt")),
+
             data.get("slip_template", "classic"),
             data.get("order_template", "restaurant_order"),
             data.get("kitchen_ticket_template", "kitchen_ticket"),
         ))
 
         return row
+
+    def _company_is_vat_registered(self, company_id: int) -> bool:
+        row = self.fetch_one("""
+            SELECT *
+            FROM public.companies
+            WHERE id = %s
+            LIMIT 1
+        """, (int(company_id),))
+
+        if not row:
+            return False
+
+        return bool(
+            row.get("vat_registered")
+            or row.get("is_vat_registered")
+            or row.get("vat_no")
+            or row.get("vat_number")
+        )
+
+    def _normalise_pos_tax_settings(self, company_id: int, data: dict) -> dict:
+        data = dict(data or {})
+
+        is_vat_registered = self._company_is_vat_registered(company_id)
+
+        if not is_vat_registered:
+            data["pricing_tax_mode"] = "no_vat"
+            data["receipt_tax_display"] = "none"
+            data["tax_invoice_wording"] = "Receipt"
+            data["show_vat_no"] = False
+            data["vat_note"] = "No VAT charged."
+
+        else:
+            if data.get("pricing_tax_mode") not in ("inclusive", "exclusive"):
+                data["pricing_tax_mode"] = "inclusive"
+
+            if data.get("receipt_tax_display") not in ("total_only", "vat_line", "cost_vat_total"):
+                data["receipt_tax_display"] = "vat_line"
+
+            if not data.get("tax_invoice_wording"):
+                data["tax_invoice_wording"] = "Tax Invoice / Receipt"
+
+        return data
 
     def pos_update_receipt_settings(self, company_id: int, data: dict) -> dict:
         existing = self.pos_get_receipt_settings(company_id)

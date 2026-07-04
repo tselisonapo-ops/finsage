@@ -169,7 +169,11 @@ function defaultPosDateFilter() {
 
 export function ManagerPage() {
   const company = getCompanyContext();
-
+  const isVatRegistered =
+    company?.vat_registered === true ||
+    company?.is_vat_registered === true ||
+    String(company?.tax_registration_type || "").toLowerCase() === "vat";
+    
   const fsToken =
     sessionStorage.getItem("fs_user_token") ||
     localStorage.getItem("fs_user_token") ||
@@ -369,9 +373,17 @@ export function ManagerPage() {
   }
 
   async function saveReceiptSettings(payload) {
-    const res = await posApi.saveReceiptSettings(payload);
-    console.log("SAVE RESPONSE", res);
-    setReceiptSettings(res.receipt_settings || res.settings || res.data || res || payload);
+    const safePayload = !isVatRegistered
+      ? {
+          ...payload,
+          pricing_tax_mode: "no_vat",
+          receipt_tax_display: "none",
+          tax_invoice_wording: "Receipt",
+        }
+      : payload;
+
+    const res = await posApi.saveReceiptSettings(safePayload);
+    setReceiptSettings(res.receipt_settings || res.settings || res.data || res || safePayload);
     setMessage("Receipt settings saved.");
   }
 
@@ -1479,10 +1491,14 @@ export function ManagerPage() {
                       icon: "🧮",
                       title: "Pricing Tax Mode",
                       key: "pricing_tax_mode",
-                      value: "inclusive",
-                      text: "Choose whether selling prices include VAT or VAT is added separately.",
+                      value: isVatRegistered ? "inclusive" : "no_vat",
+                      text: isVatRegistered
+                        ? "Choose whether selling prices include VAT or VAT is added separately."
+                        : "Company is not VAT registered. POS will not compute VAT.",
                       type: "select",
+                      disabled: !isVatRegistered,
                       options: [
+                        { value: "no_vat", label: "No VAT / Not VAT Registered" },
                         { value: "inclusive", label: "VAT Inclusive" },
                         { value: "exclusive", label: "VAT Exclusive" },
                       ],
@@ -1491,10 +1507,12 @@ export function ManagerPage() {
                       icon: "🧾",
                       title: "Receipt VAT Display",
                       key: "receipt_tax_display",
-                      value: "Show VAT Line",
+                      value: isVatRegistered ? "vat_line" : "none",
                       text: "Choose how VAT appears on customer receipts.",
                       type: "select",
+                      disabled: !isVatRegistered,
                       options: [
+                        { value: "none", label: "No VAT Line" },
                         { value: "total_only", label: "Total Only" },
                         { value: "vat_line", label: "Show VAT Line" },
                         { value: "cost_vat_total", label: "Cost + VAT + Total" },
@@ -1504,13 +1522,13 @@ export function ManagerPage() {
                       icon: "📄",
                       title: "Receipt Wording",
                       key: "tax_invoice_wording",
-                      value: "Tax Invoice / Receipt",
+                      value: isVatRegistered ? "Tax Invoice / Receipt" : "Receipt",
                       text: "Choose the wording printed at the top of the receipt.",
                       type: "select",
                       options: [
+                        { value: "Receipt", label: "Receipt" },
                         { value: "Tax Invoice / Receipt", label: "Tax Invoice / Receipt" },
                         { value: "Tax Invoice", label: "Tax Invoice" },
-                        { value: "Receipt", label: "Receipt" },
                         { value: "Pro-forma", label: "Pro-forma" },
                       ],
                     },
@@ -4356,7 +4374,8 @@ function GenericPosSettingsTab({
           {active.type === "select" && (
             <select
               className="scan-input"
-              value={form?.[active.key] ?? active.defaultValue ?? ""}
+              disabled={!!active.disabled}
+              value={form?.[active.key] ?? active.value ?? active.defaultValue ?? ""}
               onChange={(e) => update(active.key, e.target.value)}
             >
               {(active.options || []).map((opt) => (
