@@ -35543,6 +35543,70 @@ async function saveEditModal() {
     return assetsCache.find(x => Number(x?.id || 0) === id) || null;
   }
 
+  function renderGroupFairValueFields() {
+    const asset = selectedSmAsset();
+    const singleWrap = $("smSingleFairValueWrap");
+    const groupWrap = $("smGroupFairValueWrap");
+
+    if (!singleWrap || !groupWrap) return;
+
+    const isGroup = !!asset?.is_component_group;
+    const comps = Array.isArray(asset?.components) ? asset.components : [];
+
+    singleWrap.classList.toggle("hidden", isGroup);
+    groupWrap.classList.toggle("hidden", !isGroup);
+
+    if (!isGroup) {
+      groupWrap.innerHTML = "";
+      return;
+    }
+
+    groupWrap.innerHTML = `
+      <div class="text-xs text-slate-500">
+        This is a combined Land and Building asset. Enter fair value separately per component.
+      </div>
+
+      ${comps.map((c) => {
+        const id = Number(c.id || c.asset_id || 0);
+        const name = c.asset_name || c.name || `Component #${id}`;
+        const carrying = Number(c.carrying_amount ?? c.nbv ?? c.cost_total ?? c.cost ?? 0);
+
+        return `
+          <div class="border rounded-lg p-3 bg-slate-50" data-sm-group-component="${id}">
+            <div class="font-medium text-sm">${esc(name)}</div>
+            <div class="text-xs text-slate-500 mt-1">
+              Carrying amount before: ${fmtMoney2(carrying)}
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Fair value *</label>
+                <input
+                  class="w-full border rounded px-3 py-2"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  data-sm-component-fv="${id}"
+                  value=""
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Component type</label>
+                <input
+                  class="w-full border rounded px-3 py-2 bg-white"
+                  type="text"
+                  readonly
+                  value="${esc(c.component_type || c.asset_class || "")}"
+                />
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    `;
+  }
+
   function assetStandardKey(asset) {
     const raw =
       asset?.accounting_standard ||
@@ -36116,11 +36180,21 @@ async function saveEditModal() {
     try {
       const payload = smPayloadFromUI();
 
-      if (!payload.asset_id || !payload.event_date || !payload.event_type) {
+      if (!payload.event_date) {
         clearSmPreview();
-        return null;
+        throw new Error("Date is required before preview.");
       }
 
+      if (!payload.asset_id) {
+        clearSmPreview();
+        throw new Error("Select an asset before preview.");
+      }
+
+      if (!payload.event_type) {
+        clearSmPreview();
+        throw new Error("Select a type before preview.");
+      }
+      
       const assetId = Number(SELECTED_SM_ASSET?.id || payload.asset_id || 0);
 
       const url = selectedAssetIsComponentGroup()
@@ -36183,6 +36257,7 @@ async function saveEditModal() {
     $("smEstimateFields")?.classList.toggle("hidden", t !== "change_estimate");
     $("smHfsFields")?.classList.toggle("hidden", !t.startsWith("held_for_sale_"));
     $("smFairValueFields")?.classList.toggle("hidden", !(t === "revaluation" || t === "fair_value_valuation"));
+    renderGroupFairValueFields();
   }
 
   // =========================================================
@@ -36191,7 +36266,7 @@ async function saveEditModal() {
   let assetsCache = [];
   let assetsLoaded = false;
   let SELECTED_SM_ASSET = null;
-  
+
   function assetName(a) {
     return (
       a?.asset_name ||
@@ -36249,6 +36324,7 @@ async function saveEditModal() {
     }
 
     renderAssetMeta(a);
+    renderGroupFairValueFields();
 
     if (a && $("smEventType")?.value === "fair_value_valuation" && !$("smFairValue")?.value) {
       $("smFairValue").value = Number(a.carrying_amount ?? a.nbv ?? 0);
@@ -36596,12 +36672,15 @@ async function saveEditModal() {
       if (!payload.debit_account_code) throw new Error("Selected asset account is missing");
       if (!payload.credit_account_code) throw new Error("Bank account is required");
     }
-
-    if (
-      (payload.event_type === "revaluation" || payload.event_type === "fair_value_valuation") &&
-      !(Number(payload?.meta_json?.fair_value || 0) > 0)
-    ) {
-      throw new Error("Fair value must be > 0");
+    if (payload.event_type === "revaluation" || payload.event_type === "fair_value_valuation") {
+      if (selectedAssetIsComponentGroup()) {
+        const vals = Object.values(payload.components || {});
+        if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
+          throw new Error("Enter fair value for each component.");
+        }
+      } else if (!(Number(payload?.meta_json?.fair_value || 0) > 0)) {
+        throw new Error("Fair value must be > 0");
+      }
     }
 
     if (smPreviewState.ok && smPreviewState.payloadHash === hash) {
@@ -36661,6 +36740,26 @@ async function saveEditModal() {
     if ($("smFairValue")?.value) {
       meta_json.fair_value = Number($("smFairValue").value);
     }
+    if (selectedAssetIsComponentGroup() && (t === "revaluation" || t === "fair_value_valuation")) {
+      const components = {};
+
+      document.querySelectorAll("[data-sm-component-fv]").forEach((el) => {
+        const componentId = String(el.dataset.smComponentFv || "");
+        const fairValue = Number(el.value || 0);
+
+        if (componentId) {
+          components[componentId] = {
+            fair_value: fairValue,
+            meta_json: {
+              fair_value: fairValue,
+              reason: $("smFairValueReason")?.value || null,
+            },
+          };
+        }
+      });
+
+      meta_json.components = components;
+    }
     if ($("smFairValueReason")?.value) {
       meta_json.reason = $("smFairValueReason").value;
     }
@@ -36671,6 +36770,7 @@ async function saveEditModal() {
       asset_id: Number($("smAssetId")?.value || 0) || null,
       notes: $("smNotes")?.value || null,
       meta_json: Object.keys(meta_json).length ? meta_json : null,
+      components: meta_json.components || null,
     };
 
     if (t === "add_cost") {
