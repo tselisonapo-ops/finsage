@@ -202,7 +202,7 @@ def build_statement_of_changes_in_equity(
         bucket = _equity_bucket_for_account(acc)
         if not bucket:
             continue
-        rows["opening_balance"]["values"][bucket] += _d(acc.get("balance"))
+        rows["opening_balance"]["values"][bucket] += _equity_balance(acc.get("balance"))
 
     # Journal movement classification
     for jl in movement_journal_lines:
