@@ -17,6 +17,9 @@ def _money(x: Decimal) -> float:
 def _equity_balance(x: Any) -> Decimal:
     return _d(x)
 
+def _is_treasury_bucket(bucket: str | None) -> bool:
+    return bucket == "treasury_shares"
+
 def _equity_bucket_for_account(row: dict) -> str | None:
     role = str(row.get("role") or "").strip().lower()
     name = str(row.get("name") or "").strip().lower()
@@ -221,7 +224,10 @@ def build_statement_of_changes_in_equity(
         bucket = _equity_bucket_for_account(acc_stub)
 
         # Net credit balance logic for equity movement
-        net = credit - debit
+        net = debit - credit
+
+        if _is_treasury_bucket(bucket):
+            net = -abs(net)
 
         if bucket in {
             "ordinary_share_capital",
@@ -294,11 +300,13 @@ def build_statement_of_changes_in_equity(
         "owner_capital",
         "preference_share_capital",
         "share_premium",
+        "retained_earnings",
         "treasury_shares",
         "reserves",
     ):
         if bk in explicit_found:
             rows["closing_balance"]["values"][bk] = explicit_closing[bk]
+            
     # Totals
     final_rows = []
     for rk in row_keys:
