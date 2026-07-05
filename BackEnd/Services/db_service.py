@@ -53481,13 +53481,14 @@ class DatabaseService:
                 0::numeric(18,2) AS impairment_delta,
                 0::numeric(18,2) AS revaluation_reserve_delta,
                 (-COALESCE(d.depreciation_amount,0))::numeric(18,2) AS carrying_delta
-            FROM {schema}.asset_depreciation d
-            JOIN {schema}.assets a
-            ON a.id = d.asset_id
-            WHERE COALESCE(d.status,'draft') = 'posted'
-            AND d.period_start IS NOT NULL
-            AND d.period_end IS NOT NULL
-        ),
+                FROM {schema}.asset_depreciation d
+                JOIN {schema}.assets a
+                ON a.id = d.asset_id
+                WHERE d.status = 'posted'
+                AND d.posted_journal_id IS NOT NULL
+                AND d.period_start IS NOT NULL
+                AND d.period_end IS NOT NULL
+                ),
 
         revaluation_rows AS (
             SELECT
