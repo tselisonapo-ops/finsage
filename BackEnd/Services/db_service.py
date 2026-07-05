@@ -53295,7 +53295,7 @@ class DatabaseService:
                 ab.category,
                 NULL::date AS period_start,
                 NULL::date AS period_end,
-                COALESCE(ab.acquisition_date, DATE '1900-01-01') AS event_date,
+                DATE '1900-01-01' AS event_date,
 
                 'opening'::text AS movement_type,
                 'assets'::text  AS source_table,
@@ -53887,8 +53887,8 @@ class DatabaseService:
             OR
             (
                 m.movement_type = 'depreciation'
-                AND m.period_start >= p.start_date
-                AND m.period_end <= p.end_date
+                AND m.period_end >= p.start_date
+                AND m.period_start <= p.end_date
             )
             GROUP BY m.asset_class
         ),

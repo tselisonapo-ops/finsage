@@ -443,7 +443,7 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
             + _n(r.get("subsequent_additions_cost"))
         )
 
-        disposals = _n(r.get("disposals_carrying"))
+        disposals = -abs(_n(r.get("disposals_carrying")))
 
         depreciation = _n(r.get("depreciation_charge"))
 
@@ -457,14 +457,45 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
             + _n(r.get("revaluation_downward"))
         )
 
+        opening = _n(r.get("opening_carrying"))
+
+        additions = (
+            _n(r.get("additions_cost"))
+            + _n(r.get("subsequent_additions_cost"))
+        )
+
+        disposals = -abs(_n(r.get("disposals_carrying")))
+
+        depreciation = -abs(_n(r.get("depreciation_charge")))
+
+        impairment_raw = (
+            _n(r.get("impairment_losses"))
+            - _n(r.get("impairment_reversals"))
+        )
+        impairment = -abs(impairment_raw) if impairment_raw > 0 else abs(impairment_raw)
+
+        revaluation = (
+            _n(r.get("revaluation_upward"))
+            + _n(r.get("revaluation_downward"))
+        )
+
+        closing = (
+            opening
+            + additions
+            + disposals
+            + depreciation
+            + impairment
+            + revaluation
+        )
+
         values = {
-            "opening_carrying": _n(r.get("opening_carrying")),
+            "opening_carrying": opening,
             "additions": additions,
             "disposals": disposals,
-            "depreciation": -abs(depreciation),
-            "impairment": -abs(impairment),
+            "depreciation": depreciation,
+            "impairment": impairment,
             "revaluation": revaluation,
-            "closing_carrying": _n(r.get("closing_carrying")),
+            "closing_carrying": closing,
         }
 
         for movement, amount in values.items():
