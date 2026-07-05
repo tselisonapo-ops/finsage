@@ -33863,11 +33863,25 @@ async function postLeaseJournal(lease) {
         : "text-sm text-slate-500";
   }
 
+  function csvDate(value) {
+    if (!value) return "";
+
+    const d = new Date(value);
+
+    if (Number.isNaN(d.getTime())) {
+      return String(value).slice(0, 10);
+    }
+
+    return d.toISOString().slice(0, 10);
+  }
+
   function exportRegisterCSV(rows) {
     const cols = [
       ["Asset Name", r => r.asset_name || r.name || ""],
       ["Class", r => r.asset_class || r.class_name || ""],
-      ["Acquired", r => (r.acquisition_date || r.available_for_use_date || "").toString().slice(0,10)],
+      ["Acquired", r =>
+          csvDate(r.acquisition_date || r.available_for_use_date)
+      ],
       ["Cost", r => assetNums(r).cost],
       ["Accum Dep", r => assetNums(r).accDep],
       ["Carrying", r => assetNums(r).carrying],
