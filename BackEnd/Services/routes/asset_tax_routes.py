@@ -20,7 +20,11 @@ def api_asset_tax_profiles(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -42,7 +46,11 @@ def api_asset_tax_backfill_profiles(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -70,7 +78,11 @@ def api_asset_tax_update_profile(company_id: int, profile_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
     if deny:
         return deny
 
@@ -103,7 +115,11 @@ def api_asset_tax_rules(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )    
     if deny:
         return deny
 
@@ -128,13 +144,17 @@ def api_asset_tax_authorities(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(user, company_id)
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )    
     if deny:
         return deny
 
     try:
         items = db_service.asset_tax_get_authorities()
-        
+
         return jsonify({"ok": True, "items": items}), 200
     except Exception as e:
         current_app.logger.exception("asset_tax_authorities failed")
