@@ -20,6 +20,20 @@ def api_asset_tax_profiles(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+
+    if not user:
+        user = {
+            "id": getattr(g, "user_id", None),
+            "company_id": getattr(g, "company_id", None),
+            "role": getattr(g, "role", None),
+            "email": getattr(g, "email", None),
+        }
+
+    if not user.get("id"):
+        user["id"] = getattr(g, "user_id", None)
+
+    if not user.get("company_id"):
+        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -46,6 +60,20 @@ def api_asset_tax_backfill_profiles(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+
+    if not user:
+        user = {
+            "id": getattr(g, "user_id", None),
+            "company_id": getattr(g, "company_id", None),
+            "role": getattr(g, "role", None),
+            "email": getattr(g, "email", None),
+        }
+
+    if not user.get("id"):
+        user["id"] = getattr(g, "user_id", None)
+
+    if not user.get("company_id"):
+        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -78,6 +106,20 @@ def api_asset_tax_update_profile(company_id: int, profile_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+
+    if not user:
+        user = {
+            "id": getattr(g, "user_id", None),
+            "company_id": getattr(g, "company_id", None),
+            "role": getattr(g, "role", None),
+            "email": getattr(g, "email", None),
+        }
+
+    if not user.get("id"):
+        user["id"] = getattr(g, "user_id", None)
+
+    if not user.get("company_id"):
+        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -115,6 +157,21 @@ def api_asset_tax_rules(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+
+    if not user:
+        user = {
+            "id": getattr(g, "user_id", None),
+            "company_id": getattr(g, "company_id", None),
+            "role": getattr(g, "role", None),
+            "email": getattr(g, "email", None),
+        }
+
+    if not user.get("id"):
+        user["id"] = getattr(g, "user_id", None)
+
+    if not user.get("company_id"):
+        user["company_id"] = getattr(g, "company_id", None)
+
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -144,6 +201,20 @@ def api_asset_tax_authorities(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+
+    if not user:
+        user = {
+            "id": getattr(g, "user_id", None),
+            "company_id": getattr(g, "company_id", None),
+            "role": getattr(g, "role", None),
+            "email": getattr(g, "email", None),
+        }
+
+    if not user.get("id"):
+        user["id"] = getattr(g, "user_id", None)
+
+    if not user.get("company_id"):
+        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
