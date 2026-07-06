@@ -57473,6 +57473,57 @@ class DatabaseService:
 
         return {"runs": runs}
         
+    def asset_tax_computation(self, company_id: int) -> dict:
+        recon = self.asset_tax_reconciliation(company_id)
+        runs = recon.get("runs", [])
+
+        book_dep = sum(float(r.get("book_depreciation") or 0) for r in runs)
+        cap_allowance = sum(float(r.get("capital_allowance") or 0) for r in runs)
+
+        accounting_profit = 0.0
+        taxable_income = accounting_profit + book_dep - cap_allowance
+
+        return {
+            "accounting_profit": accounting_profit,
+            "book_depreciation_addback": book_dep,
+            "capital_allowance_deduction": cap_allowance,
+            "estimated_taxable_income": taxable_income,
+            "runs": runs,
+        }
+
+
+    def asset_tax_deferred_tax(self, company_id: int, tax_rate: float = 27.0) -> dict:
+        recon = self.asset_tax_reconciliation(company_id)
+        runs = recon.get("runs", [])
+
+        carrying = sum(float(r.get("accounting_carrying_amount") or 0) for r in runs)
+        tax_wdv = sum(float(r.get("closing_tax_wdv") or 0) for r in runs)
+        temp_diff = carrying - tax_wdv
+        deferred_tax = temp_diff * (tax_rate / 100.0)
+
+        return {
+            "tax_rate": tax_rate,
+            "accounting_carrying_amount": carrying,
+            "tax_wdv": tax_wdv,
+            "temporary_difference": temp_diff,
+            "deferred_tax": deferred_tax,
+            "runs": runs,
+        }
+
+
+    def asset_tax_return_support(self, company_id: int) -> dict:
+        recon = self.asset_tax_reconciliation(company_id)
+        runs = recon.get("runs", [])
+
+        return {
+            "runs": runs,
+            "totals": {
+                "book_depreciation_addback": sum(float(r.get("book_depreciation") or 0) for r in runs),
+                "capital_allowance_deduction": sum(float(r.get("capital_allowance") or 0) for r in runs),
+                "net_tax_adjustment": sum(float(r.get("net_tax_adjustment") or 0) for r in runs),
+            },
+        }
+
     def ensure_asset_tax_profile_for_asset(self, company_id: int, asset_id: int) -> int | None:
         schema = self.company_schema(company_id)
         ta = self.asset_tax_authority_for_company(company_id)

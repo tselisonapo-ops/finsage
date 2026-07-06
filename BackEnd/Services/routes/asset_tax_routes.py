@@ -283,3 +283,69 @@ def api_asset_tax_reconciliation(company_id: int):
     except Exception as e:
         current_app.logger.exception("asset_tax_reconciliation failed")
         return _json_error(str(e), 400)
+    
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/computation",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_computation(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.asset_tax_computation(company_id)
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_computation failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/deferred-tax",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_deferred_tax(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        tax_rate = float(request.args.get("tax_rate") or 27)
+        result = db_service.asset_tax_deferred_tax(company_id, tax_rate=tax_rate)
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_deferred_tax failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/return-support",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_return_support(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.asset_tax_return_support(company_id)
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_return_support failed")
+        return _json_error(str(e), 400)

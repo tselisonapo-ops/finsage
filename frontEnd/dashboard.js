@@ -2502,6 +2502,15 @@ const ENDPOINTS = {
 
       return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/reconciliation${qs.toString() ? `?${qs}` : ""}`;
     },
+ 
+    computation: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/computation`,
+
+    deferredTax: (cid, taxRate = 27) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/deferred-tax?tax_rate=${encodeURIComponent(taxRate)}`,
+
+    returnSupport: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/return-support`,
   },
 
   supportUser: {
@@ -58969,19 +58978,10 @@ async function renderARStatements() {
     if (state.tab === "profiles") return renderProfiles();
     if (state.tab === "runs") return renderRuns();
     if (state.tab === "recon") return renderTaxReconciliation();
-    if (state.tab === "computation") return renderPlaceholder("Tax Computation", "This will start from accounting profit and apply tax adjustments.");
-    if (state.tab === "deferred") return renderPlaceholder("Deferred Tax", "This will compare carrying amount against tax WDV.");
-    if (state.tab === "returns") return renderPlaceholder("Tax Returns", "This will generate RSL, SARS and BURS return support.");
+    if (state.tab === "computation") return renderTaxComputation();
+    if (state.tab === "deferred") return renderDeferredTax();
+    if (state.tab === "returns") return renderTaxReturns();
     if (state.tab === "settings") return renderSettings();
-  }
-
-  function renderPlaceholder(title, msg) {
-    $id("taxReconPanel").innerHTML = `
-      <div class="card tax-placeholder">
-        <h3>${title}</h3>
-        <p>${msg}</p>
-      </div>
-    `;
   }
 
   function filteredProfiles() {
@@ -59370,6 +59370,172 @@ async function renderARStatements() {
       </div>
     `;
   }
+
+  async function loadReconData() {
+    const companyId = cid();
+    const res = await apiJson(ENDPOINTS.assetTax.reconciliation(companyId));
+    state.reconciliation = res.runs || [];
+    return state.reconciliation;
+  }
+
+  function reconTotals(rows = []) {
+    return rows.reduce((a, r) => {
+      a.bookDep += Number(r.book_depreciation || 0);
+      a.capAllowance += Number(r.capital_allowance || 0);
+      a.taxAdj += Number(r.net_tax_adjustment || 0);
+      a.carrying += Number(r.accounting_carrying_amount || 0);
+      a.taxWdv += Number(r.closing_tax_wdv || 0);
+      a.tempDiff += Number(r.temporary_difference || 0);
+      return a;
+    }, {
+      bookDep: 0,
+      capAllowance: 0,
+      taxAdj: 0,
+      carrying: 0,
+      taxWdv: 0,
+      tempDiff: 0,
+    });
+  }
+
+  async function renderTaxComputation() {
+    const rows = await loadReconData();
+    const t = reconTotals(rows);
+
+    const accountingProfit = 0;
+    const addBackBookDep = t.bookDep;
+    const deductCapitalAllowance = t.capAllowance;
+    const estimatedTaxableIncome = accountingProfit + addBackBookDep - deductCapitalAllowance;
+
+    $id("taxReconPanel").innerHTML = `
+      <div class="tax-recon-summary">
+        <div class="tax-stat-card"><span>Accounting Profit</span><strong>${money(accountingProfit)}</strong></div>
+        <div class="tax-stat-card"><span>Add Back Book Dep.</span><strong>${money(addBackBookDep)}</strong></div>
+        <div class="tax-stat-card"><span>Less Capital Allowance</span><strong>${money(deductCapitalAllowance)}</strong></div>
+        <div class="tax-stat-card"><span>Estimated Taxable Income</span><strong>${money(estimatedTaxableIncome)}</strong></div>
+      </div>
+
+      <div class="card tax-recon-card">
+        <h3 class="font-bold text-[var(--fs-navy)] mb-2">Tax Computation</h3>
+        <p class="text-sm text-slate-500 mb-4">
+          This is the asset-related computation only. Accounting profit and other tax adjustments will be connected later.
+        </p>
+
+        <table class="tax-recon-table">
+          <tbody>
+            <tr><td>Accounting profit / loss before tax</td><td class="text-right">${money(accountingProfit)}</td></tr>
+            <tr><td>Add back: Accounting depreciation</td><td class="text-right">${money(addBackBookDep)}</td></tr>
+            <tr><td>Less: Tax capital allowances</td><td class="text-right">(${money(deductCapitalAllowance)})</td></tr>
+            <tr><td><b>Estimated taxable income / loss</b></td><td class="text-right"><b>${money(estimatedTaxableIncome)}</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function renderDeferredTax() {
+    const rows = await loadReconData();
+    const t = reconTotals(rows);
+
+    const taxRate = 27;
+    const deferredTax = t.tempDiff * (taxRate / 100);
+
+    $id("taxReconPanel").innerHTML = `
+      <div class="tax-recon-summary">
+        <div class="tax-stat-card"><span>Carrying Amount</span><strong>${money(t.carrying)}</strong></div>
+        <div class="tax-stat-card"><span>Tax WDV</span><strong>${money(t.taxWdv)}</strong></div>
+        <div class="tax-stat-card"><span>Temporary Difference</span><strong>${money(t.tempDiff)}</strong></div>
+        <div class="tax-stat-card"><span>Deferred Tax @ ${taxRate}%</span><strong>${money(deferredTax)}</strong></div>
+      </div>
+
+      <div class="card tax-recon-card">
+        <h3 class="font-bold text-[var(--fs-navy)] mb-2">Deferred Tax</h3>
+        <p class="text-sm text-slate-500 mb-4">
+          Based on accounting carrying amount less tax written-down value from calculated allowance runs.
+        </p>
+
+        <table class="tax-recon-table">
+          <thead>
+            <tr>
+              <th>Authority</th>
+              <th>Tax Year</th>
+              <th>Carrying Amount</th>
+              <th>Tax WDV</th>
+              <th>Temporary Difference</th>
+              <th>Deferred Tax</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length ? rows.map((r) => {
+              const diff = Number(r.temporary_difference || 0);
+              return `
+                <tr>
+                  <td>${r.tax_authority_code}</td>
+                  <td>${r.tax_year}</td>
+                  <td>${money(r.accounting_carrying_amount)}</td>
+                  <td>${money(r.closing_tax_wdv)}</td>
+                  <td>${money(diff)}</td>
+                  <td>${money(diff * taxRate / 100)}</td>
+                </tr>
+              `;
+            }).join("") : `
+              <tr><td colspan="6" class="text-center text-slate-500 py-6">No calculated tax runs found.</td></tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function renderTaxReturns() {
+    const rows = await loadReconData();
+    const t = reconTotals(rows);
+
+    $id("taxReconPanel").innerHTML = `
+      <div class="tax-recon-summary">
+        <div class="tax-stat-card"><span>Runs Available</span><strong>${rows.length}</strong></div>
+        <div class="tax-stat-card"><span>Book Depreciation</span><strong>${money(t.bookDep)}</strong></div>
+        <div class="tax-stat-card"><span>Capital Allowance</span><strong>${money(t.capAllowance)}</strong></div>
+        <div class="tax-stat-card"><span>Tax Adjustment</span><strong>${money(t.taxAdj)}</strong></div>
+      </div>
+
+      <div class="card tax-recon-card">
+        <h3 class="font-bold text-[var(--fs-navy)] mb-2">Tax Return Support</h3>
+        <p class="text-sm text-slate-500 mb-4">
+          Use this schedule as support for RSL, SARS or BURS income tax returns.
+        </p>
+
+        <table class="tax-recon-table">
+          <thead>
+            <tr>
+              <th>Authority</th>
+              <th>Tax Year</th>
+              <th>Assets</th>
+              <th>Book Depreciation Add-back</th>
+              <th>Capital Allowance Deduction</th>
+              <th>Net Adjustment</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length ? rows.map((r) => `
+              <tr>
+                <td>${r.tax_authority_code}</td>
+                <td>${r.tax_year}</td>
+                <td>${r.asset_count || 0}</td>
+                <td>${money(r.book_depreciation)}</td>
+                <td>${money(r.capital_allowance)}</td>
+                <td>${money(r.net_tax_adjustment)}</td>
+                <td><span class="tax-badge ${r.status === "calculated" ? "ok" : "warn"}">${r.status}</span></td>
+              </tr>
+            `).join("") : `
+              <tr><td colspan="7" class="text-center text-slate-500 py-6">No calculated tax runs found.</td></tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
 
   function renderSettings() {
     $id("taxReconPanel").innerHTML = `
