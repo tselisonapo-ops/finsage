@@ -1375,6 +1375,121 @@ html, body {
 .tax-check span{margin:0;font-size:13px;text-transform:none;letter-spacing:0;color:#0f172a}
 .tax-notes{display:block;margin-top:12px}
 @media(max-width:800px){.tax-recon-hero{flex-direction:column}.tax-recon-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.tax-recon-toolbar,.tax-profile-readonly,.tax-form-grid{grid-template-columns:1fr}}
+
+.tax-modal-card{
+  width:min(920px,calc(100vw - 28px));
+}
+
+.tax-modal-grid{
+  display:grid;
+  gap:12px;
+  background:#f8fafc;
+}
+
+.tax-config-card{
+  background:#fff;
+  border:1px solid var(--fs-border);
+  border-radius:14px;
+  padding:14px;
+}
+
+.tax-card-title{
+  font-size:13px;
+  font-weight:800;
+  color:var(--fs-navy);
+  margin-bottom:10px;
+}
+
+.tax-card-title-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+
+.tax-card-help{
+  font-size:12px;
+  color:var(--fs-muted);
+  margin-top:-6px;
+  margin-bottom:8px;
+}
+
+.tax-summary-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+
+.tax-summary-grid div{
+  background:#f8fafc;
+  border:1px solid var(--fs-border);
+  border-radius:12px;
+  padding:10px;
+}
+
+.tax-summary-grid span,
+.tax-rule-mini span,
+.tax-preview-row span{
+  display:block;
+  font-size:10px;
+  color:var(--fs-muted);
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.tax-summary-grid strong,
+.tax-preview-row strong{
+  display:block;
+  margin-top:4px;
+  font-size:13px;
+  color:#0f172a;
+}
+
+.tax-rule-info,
+.tax-preview-box{
+  margin-top:12px;
+  border:1px solid var(--fs-border);
+  border-radius:12px;
+  padding:12px;
+  background:#f8fafc;
+  font-size:13px;
+  color:#334155;
+}
+
+.tax-rule-mini-grid,
+.tax-preview-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+
+.tax-rule-mini,
+.tax-preview-row{
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  padding:10px;
+}
+
+.tax-warning{
+  margin-top:10px;
+  padding:10px;
+  border-radius:10px;
+  background:#fffbeb;
+  color:#92400e;
+  border:1px solid #fde68a;
+  font-size:12px;
+}
+
+.mb-3{ margin-bottom:12px; }
+
+@media(max-width:800px){
+  .tax-summary-grid,
+  .tax-rule-mini-grid,
+  .tax-preview-grid{
+    grid-template-columns:1fr;
+  }
+} 
   </style>
 
 </head>
@@ -2757,31 +2872,102 @@ html, body {
                 <button id="taxProfileCloseBtn" class="btn">✕</button>
               </div>
 
-              <div class="tax-modal-body">
+              <div class="tax-modal-body tax-modal-grid">
                 <input type="hidden" id="taxProfileId" />
 
-                <div class="tax-profile-readonly">
-                  <div><span>Asset</span><strong id="taxProfileAssetName">—</strong></div>
-                  <div><span>Asset Class</span><strong id="taxProfileAssetClass">—</strong></div>
-                  <div><span>Accounting Cost</span><strong id="taxProfileBookCost">—</strong></div>
-                </div>
+                <section class="tax-config-card">
+                  <div class="tax-card-title">Asset Summary</div>
 
-                <div class="tax-form-grid">
-                  <label><span>Tax Authority</span><select id="taxProfileAuthority" class="input"></select></label>
-                  <label><span>Allowance Rule</span><select id="taxProfileRule" class="input"></select></label>
-                  <label><span>Tax Cost</span><input id="taxProfileTaxCost" class="input" type="number" step="0.01" min="0" /></label>
-                  <label><span>Tax Start Date</span><input id="taxProfileStartDate" class="input" type="date" /></label>
-                  <label><span>Qualifying %</span><input id="taxProfileQualifying" class="input" type="number" step="0.01" min="0" max="100" /></label>
-                  <label><span>Private Use %</span><input id="taxProfilePrivateUse" class="input" type="number" step="0.01" min="0" max="100" /></label>
+                  <div class="tax-summary-grid">
+                    <div><span>Name</span><strong id="taxProfileAssetName">—</strong></div>
+                    <div><span>Code</span><strong id="taxProfileAssetCode">—</strong></div>
+                    <div><span>Class</span><strong id="taxProfileAssetClass">—</strong></div>
+                    <div><span>Group</span><strong id="taxProfileAssetGroup">—</strong></div>
+                    <div><span>Book Cost</span><strong id="taxProfileBookCost">—</strong></div>
+                    <div><span>Acquired</span><strong id="taxProfileAcquired">—</strong></div>
+                  </div>
+                </section>
 
-                  <label class="tax-check"><input id="taxProfileDepreciable" type="checkbox" /><span>Tax depreciable</span></label>
-                  <label class="tax-check"><input id="taxProfileActive" type="checkbox" /><span>Active</span></label>
-                </div>
+                <section class="tax-config-card">
+                  <div class="tax-card-title-row">
+                    <div>
+                      <div class="tax-card-title">Tax Classification</div>
+                      <p id="taxRuleSuggestion" class="tax-card-help">Choose the correct tax treatment for this asset.</p>
+                    </div>
+                    <button id="taxAutoDetectBtn" type="button" class="btn text-xs">Auto Detect</button>
+                  </div>
 
-                <label class="tax-notes">
-                  <span>Notes</span>
-                  <textarea id="taxProfileNotes" class="input" rows="3"></textarea>
-                </label>
+                  <div class="tax-form-grid">
+                    <label>
+                      <span>Tax Authority</span>
+                      <select id="taxProfileAuthority" class="input"></select>
+                    </label>
+
+                    <label>
+                      <span>Allowance Rule</span>
+                      <select id="taxProfileRule" class="input"></select>
+                    </label>
+                  </div>
+
+                  <div id="taxRuleInfo" class="tax-rule-info">
+                    Select an allowance rule to preview method, rate and treatment.
+                  </div>
+                </section>
+
+                <section class="tax-config-card">
+                  <div class="tax-card-title">Tax Adjustments</div>
+
+                  <label class="tax-check mb-3">
+                    <input id="taxSameAsAccountingCost" type="checkbox" checked />
+                    <span>Tax cost same as accounting cost</span>
+                  </label>
+
+                  <div class="tax-form-grid">
+                    <label>
+                      <span>Tax Cost</span>
+                      <input id="taxProfileTaxCost" class="input" type="number" step="0.01" min="0" />
+                    </label>
+
+                    <label>
+                      <span>Tax Start Date</span>
+                      <input id="taxProfileStartDate" class="input" type="date" />
+                    </label>
+
+                    <label>
+                      <span>Qualifying %</span>
+                      <input id="taxProfileQualifying" class="input" type="number" step="0.01" min="0" max="100" />
+                    </label>
+
+                    <label>
+                      <span>Private Use %</span>
+                      <input id="taxProfilePrivateUse" class="input" type="number" step="0.01" min="0" max="100" />
+                    </label>
+
+                    <label class="tax-check">
+                      <input id="taxProfileDepreciable" type="checkbox" />
+                      <span>Tax depreciable</span>
+                    </label>
+
+                    <label class="tax-check">
+                      <input id="taxProfileActive" type="checkbox" />
+                      <span>Active</span>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="tax-config-card">
+                  <div class="tax-card-title">Live Preview</div>
+                  <div id="taxTreatmentPreview" class="tax-preview-box">
+                    Select a rule to see the expected allowance treatment.
+                  </div>
+                </section>
+
+                <section class="tax-config-card">
+                  <label class="tax-notes">
+                    <span>Notes</span>
+                    <textarea id="taxProfileNotes" class="input" rows="3"></textarea>
+                  </label>
+                </section>
               </div>
 
               <div class="tax-modal-foot">

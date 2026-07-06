@@ -58632,6 +58632,199 @@ async function renderARStatements() {
     return v ? String(v).slice(0, 10) : "";
   }
 
+  function getRuleById(ruleId) {
+    return state.rules.find((r) => Number(r.id) === Number(ruleId)) || null;
+  }
+
+  function ruleLabel(r) {
+    if (!r) return "Select allowance rule";
+
+    const method = r.method ? String(r.method).toUpperCase() : "";
+    const rate =
+      r.rate_percent != null
+        ? `${Number(r.rate_percent).toFixed(2).replace(/\.00$/, "")}%`
+        : r.annual_allowance_percent != null
+          ? `${Number(r.annual_allowance_percent).toFixed(2).replace(/\.00$/, "")}%`
+          : "";
+
+    const life =
+      r.useful_life_years != null
+        ? `${Number(r.useful_life_years).toFixed(2).replace(/\.00$/, "")} yrs`
+        : "";
+
+    const bits = [method, rate, life].filter(Boolean).join(" · ");
+
+    return `${r.rule_name || r.rule_code || "Rule"}${bits ? ` — ${bits}` : ""}`;
+  }
+
+  function suggestRule(profile) {
+    const hay = [
+      profile.asset_name,
+      profile.asset_code,
+      profile.asset_class,
+      profile.asset_class_group,
+      profile.category,
+    ].join(" ").toLowerCase();
+
+    const sameAuthorityRules = state.rules.filter(
+      (r) => Number(r.tax_authority_id) === Number(profile.tax_authority_id)
+    );
+
+    const tests = [
+      {
+        keys: ["bigboy", "motorcycle", "scooter", "bike"],
+        prefer: ["motorcycle", "scooter"],
+        fallback: ["vehicle", "group 1"],
+      },
+      {
+        keys: ["bicycle", "delivery bicycle", "cycle"],
+        prefer: ["bicycle"],
+        fallback: ["general", "group 3"],
+      },
+      {
+        keys: ["printer", "photocopier", "copy"],
+        prefer: ["photocop", "office equipment", "office"],
+        fallback: ["equipment"],
+      },
+      {
+        keys: ["computer", "laptop", "server", "tablet", "it"],
+        prefer: ["computer", "server", "tablet"],
+        fallback: ["office", "equipment"],
+      },
+      {
+        keys: ["vehicle", "car", "truck", "delivery vehicle", "van"],
+        prefer: ["delivery vehicle", "motor vehicle", "passenger car", "vehicle"],
+        fallback: ["group 1"],
+      },
+      {
+        keys: ["furniture", "chair", "desk", "fixture"],
+        prefer: ["furniture", "fixture"],
+        fallback: ["office"],
+      },
+      {
+        keys: ["building", "industrial building", "commercial building"],
+        prefer: ["building"],
+        fallback: ["group 4"],
+      },
+    ];
+
+    function matchRule(words) {
+      return sameAuthorityRules.find((r) => {
+        const rhay = [
+          r.rule_name,
+          r.rule_code,
+          r.asset_category_hint,
+          r.notes,
+        ].join(" ").toLowerCase();
+
+        return words.some((x) => rhay.includes(x));
+      });
+    }
+
+    for (const t of tests) {
+      if (!t.keys.some((k) => hay.includes(k))) continue;
+
+      const preferred = matchRule(t.prefer);
+      if (preferred) {
+        return {
+          rule: preferred,
+          confidence: "High",
+          reason: `Asset details match ${t.keys.join(" / ")}.`,
+        };
+      }
+
+      const fallback = matchRule(t.fallback);
+      if (fallback) {
+        return {
+          rule: fallback,
+          confidence: "Medium",
+          reason: `Fallback match used because no exact rule was found.`,
+        };
+      }
+    }
+
+    return {
+      rule: null,
+      confidence: "Low",
+      reason: "No strong rule match found. Please select manually.",
+    };
+  }
+
+  function selectedModalRule() {
+    return getRuleById($id("taxProfileRule")?.value);
+  }
+
+  function calcPreview(profile, rule) {
+    const taxCost = Number($id("taxProfileTaxCost")?.value || profile?.tax_cost || 0);
+    const qualifying = Number($id("taxProfileQualifying")?.value || 100);
+    const privateUse = Number($id("taxProfilePrivateUse")?.value || 0);
+
+    const qualifyingBase = taxCost * (qualifying / 100) * ((100 - privateUse) / 100);
+
+    const rate = Number(
+      rule?.rate_percent ??
+      rule?.annual_allowance_percent ??
+      0
+    );
+
+    const annualAllowance =
+      String(rule?.method || "").toUpperCase() === "IMMEDIATE"
+        ? qualifyingBase
+        : qualifyingBase * (rate / 100);
+
+    return {
+      taxCost,
+      qualifyingBase,
+      rate,
+      annualAllowance,
+    };
+  }
+
+  function updateRuleInfoAndPreview() {
+    const profile = state.selected || {};
+    const rule = selectedModalRule();
+    const life = rule.useful_life_years != null
+      ? `${Number(rule.useful_life_years).toFixed(2).replace(/\.00$/, "")} years`
+      : "—";
+    const info = $id("taxRuleInfo");
+    const preview = $id("taxTreatmentPreview");
+
+    if (!rule) {
+      if (info) info.innerHTML = "Select an allowance rule to preview method, rate and treatment.";
+      if (preview) preview.innerHTML = "Select a rule to see the expected allowance treatment.";
+      return;
+    }
+
+    const method = String(rule.method || "—").toUpperCase();
+    const rate = rule.rate_percent ?? rule.annual_allowance_percent ?? null;
+    const calc = calcPreview(profile, rule);
+
+    if (info) {
+      info.innerHTML = `
+        <div class="tax-rule-mini-grid">
+          <div class="tax-rule-mini"><span>Rule</span><strong>${rule.rule_name || "—"}</strong></div>
+          <div class="tax-rule-mini"><span>Method</span><strong>${method}</strong></div>
+          <div class="tax-rule-mini"><span>Rate</span><strong>${rate != null ? `${rate}%` : "—"}</strong></div>
+          <div class="tax-rule-mini"><span>Useful Life</span><strong>${life}</strong></div>
+        </div>
+        <div class="tax-warning">
+          ${rule.notes || "Review the selected tax treatment before saving."}
+        </div>
+      `;
+    }
+
+    if (preview) {
+      preview.innerHTML = `
+        <div class="tax-preview-grid">
+          <div class="tax-preview-row"><span>Allowance Base</span><strong>${money(calc.qualifyingBase)}</strong></div>
+          <div class="tax-preview-row"><span>Method</span><strong>${method}</strong></div>
+          <div class="tax-preview-row"><span>Rate</span><strong>${calc.rate ? `${calc.rate}%` : "—"}</strong></div>
+          <div class="tax-preview-row"><span>Estimated Year 1 Allowance</span><strong>${money(calc.annualAllowance)}</strong></div>
+        </div>
+      `;
+    }
+  }
+
   async function apiJson(url, opts = {}) {
     return await window.apiFetch(url, opts);
   }
@@ -58841,11 +59034,19 @@ async function renderARStatements() {
     state.selected = p;
 
     $id("taxProfileId").value = p.profile_id;
+
     $id("taxProfileAssetName").textContent = p.asset_name || "—";
+    $id("taxProfileAssetCode").textContent = p.asset_code || "—";
     $id("taxProfileAssetClass").textContent = p.asset_class || "—";
+    $id("taxProfileAssetGroup").textContent = p.asset_class_group || p.category || "—";
     $id("taxProfileBookCost").textContent = money(p.cost || p.opening_cost || 0);
+    $id("taxProfileAcquired").textContent = date10(p.available_for_use_date || p.acquisition_date) || "—";
+
     $id("taxProfileModalTitle").textContent = `Configure: ${p.asset_name || "Asset"}`;
     $id("taxProfileModalSub").textContent = `${p.tax_authority_code || ""} asset tax profile`;
+
+    const bookCost = Number(p.cost || p.opening_cost || 0);
+    const taxCost = Number(p.tax_cost || 0);
 
     $id("taxProfileTaxCost").value = p.tax_cost ?? "";
     $id("taxProfileStartDate").value = date10(p.tax_start_date);
@@ -58855,7 +59056,13 @@ async function renderARStatements() {
     $id("taxProfileActive").checked = !!p.is_active;
     $id("taxProfileNotes").value = p.notes || "";
 
+    const sameCost = !taxCost || Math.abs(taxCost - bookCost) < 0.01;
+    $id("taxSameAsAccountingCost").checked = sameCost;
+    $id("taxProfileTaxCost").readOnly = sameCost;
+    if (sameCost) $id("taxProfileTaxCost").value = bookCost.toFixed(2);
+
     fillModalSelects(p);
+
     $id("taxProfileModal").classList.remove("hidden");
   }
 
@@ -58864,15 +59071,32 @@ async function renderARStatements() {
     const ruleSel = $id("taxProfileRule");
 
     authSel.innerHTML = state.authorities.map((a) =>
-      `<option value="${a.id}" ${Number(a.id) === Number(p.tax_authority_id) ? "selected" : ""}>${a.code} - ${a.name}</option>`
+      `<option value="${a.id}" ${Number(a.id) === Number(p.tax_authority_id) ? "selected" : ""}>
+        ${a.code} - ${a.name}
+      </option>`
     ).join("");
 
     const authId = Number(authSel.value || p.tax_authority_id || 0);
     const rules = state.rules.filter((r) => Number(r.tax_authority_id) === authId);
 
     ruleSel.innerHTML = `<option value="">Select allowance rule</option>` + rules.map((r) =>
-      `<option value="${r.id}" ${Number(r.id) === Number(p.allowance_rule_id) ? "selected" : ""}>${r.rule_name}${r.rate_percent ? ` (${r.rate_percent}%)` : ""}</option>`
+      `<option value="${r.id}" ${Number(r.id) === Number(p.allowance_rule_id) ? "selected" : ""}>
+        ${ruleLabel(r)}
+      </option>`
     ).join("");
+
+    const suggestion = suggestRule(p);
+    const sEl = $id("taxRuleSuggestion");
+
+    if (sEl) {
+      if (suggestion.rule) {
+        sEl.innerHTML = `Suggested: <b>${ruleLabel(suggestion.rule)}</b> · Confidence: ${suggestion.confidence}`;
+      } else {
+        sEl.textContent = suggestion.reason;
+      }
+    }
+
+    updateRuleInfoAndPreview();
   }
 
   function closeModal() {
@@ -58937,6 +59161,38 @@ async function renderARStatements() {
       const res = await apiJson(ENDPOINTS.assetTax.rules(companyId, authId));
       state.rules = res.items || [];
       fillModalSelects({ ...state.selected, tax_authority_id: authId });
+    });
+
+    $id("taxProfileRule")?.addEventListener("change", updateRuleInfoAndPreview);
+    $id("taxProfileTaxCost")?.addEventListener("input", updateRuleInfoAndPreview);
+    $id("taxProfileQualifying")?.addEventListener("input", updateRuleInfoAndPreview);
+    $id("taxProfilePrivateUse")?.addEventListener("input", updateRuleInfoAndPreview);
+
+    $id("taxSameAsAccountingCost")?.addEventListener("change", () => {
+      const p = state.selected || {};
+      const same = $id("taxSameAsAccountingCost").checked;
+      const bookCost = Number(p.cost || p.opening_cost || 0);
+
+      $id("taxProfileTaxCost").readOnly = same;
+
+      if (same) {
+        $id("taxProfileTaxCost").value = bookCost.toFixed(2);
+      }
+
+      updateRuleInfoAndPreview();
+    });
+
+    $id("taxAutoDetectBtn")?.addEventListener("click", () => {
+      const p = state.selected || {};
+      const suggestion = suggestRule(p);
+
+      if (!suggestion.rule) {
+        alert(suggestion.reason);
+        return;
+      }
+
+      $id("taxProfileRule").value = suggestion.rule.id;
+      updateRuleInfoAndPreview();
     });
   }
 
