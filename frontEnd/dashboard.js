@@ -58628,38 +58628,42 @@ async function renderARStatements() {
     return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function toDateInputValue(v) {
-    if (!v) return "";
+  function parseAnyDate(v) {
+    if (!v) return null;
 
-    // Already yyyy-mm-dd
-    const s = String(v);
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const s = String(v).trim();
 
+    // yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      const [y, m, d] = s.slice(0, 10).split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    // Flask/RFC date: Mon, 02 Feb 2026 00:00:00 GMT
     const d = new Date(s);
-    if (Number.isNaN(d.getTime())) return "";
+    if (!Number.isNaN(d.getTime())) return d;
 
-    return d.toISOString().slice(0, 10);
+    return null;
+  }
+
+  function toDateInputValue(v) {
+    const d = parseAnyDate(v);
+    if (!d) return "";
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+
+    return `${yyyy}-${mm}-${dd}`;
   }
 
   function displayDate(v) {
-    if (!v) return "—";
+    const d = parseAnyDate(v);
+    if (!d) return "—";
 
-    const s = String(v);
-    let d;
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-      d = new Date(`${s.slice(0, 10)}T00:00:00`);
-    } else {
-      d = new Date(s);
-    }
-
-    if (Number.isNaN(d.getTime())) return "—";
-
-    return d.toLocaleDateString("en-ZA", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+    return `${String(d.getDate()).padStart(2, "0")} ${months[d.getMonth()]} ${d.getFullYear()}`;
   }
 
   function getRuleById(ruleId) {
