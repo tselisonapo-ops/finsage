@@ -58633,19 +58633,21 @@ async function renderARStatements() {
   }
 
   async function apiJson(url, opts = {}) {
-    if (typeof api === "function") return api(url, opts);
-
-    const res = await fetch(url, {
+    const data = await apiFetch(url, {
       ...opts,
-      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.headers || {}),
+      },
     });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) throw new Error(data.error || `Request failed ${res.status}`);
+    if (data?.ok === false) {
+      throw new Error(data.error || "Request failed");
+    }
+
     return data;
   }
-
+  
   async function loadAll() {
     const companyId = cid();
     if (!companyId) throw new Error("No active company selected.");
