@@ -299,8 +299,17 @@ def api_asset_tax_computation(company_id: int):
         return deny
 
     try:
-        result = db_service.asset_tax_computation(company_id)
+        tax_authority_id = request.args.get("tax_authority_id", type=int)
+        tax_year = request.args.get("tax_year", type=int)
+
+        result = db_service.asset_tax_computation(
+            company_id=company_id,
+            tax_authority_id=tax_authority_id,
+            tax_year=tax_year,
+        )
+
         return jsonify({"ok": True, **result}), 200
+
     except Exception as e:
         current_app.logger.exception("asset_tax_computation failed")
         return _json_error(str(e), 400)

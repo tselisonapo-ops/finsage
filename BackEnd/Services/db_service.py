@@ -57473,24 +57473,64 @@ class DatabaseService:
 
         return {"runs": runs}
         
-    def asset_tax_computation(self, company_id: int) -> dict:
-        recon = self.asset_tax_reconciliation(company_id)
+    def asset_tax_computation(self, company_id: int, tax_authority_id=None, tax_year=None) -> dict:
+        recon = self.asset_tax_reconciliation(
+            company_id,
+            tax_authority_id=tax_authority_id,
+            tax_year=tax_year,
+        )
+
         runs = recon.get("runs", [])
+        if not runs:
+            return {
+                "accounting_profit": 0,
+                "book_depreciation_addback": 0,
+                "capital_allowance_deduction": 0,
+                "estimated_taxable_income": 0,
+                "runs": [],
+            }
+
+        # use selected/latest run period
+        run = runs[0]
+
+        date_from = run["tax_year_start"]
+        date_to = run["tax_year_end"]
+
+        if isinstance(date_from, str):
+            date_from = date.fromisoformat(date_from[:10])
+
+        if isinstance(date_to, str):
+            date_to = date.fromisoformat(date_to[:10])
+
+        pnl = self.get_pnl_full(
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            template="ifrs",
+            basis="external",
+        ) or {}
+
+        net_obj = pnl.get("net_result") or {}
+        accounting_profit = float(
+            net_obj.get("amount")
+            or (net_obj.get("values") or {}).get("cur")
+            or 0
+        )
 
         book_dep = sum(float(r.get("book_depreciation") or 0) for r in runs)
         cap_allowance = sum(float(r.get("capital_allowance") or 0) for r in runs)
 
-        accounting_profit = 0.0
         taxable_income = accounting_profit + book_dep - cap_allowance
 
         return {
+            "tax_year_start": date_from,
+            "tax_year_end": date_to,
             "accounting_profit": accounting_profit,
             "book_depreciation_addback": book_dep,
             "capital_allowance_deduction": cap_allowance,
             "estimated_taxable_income": taxable_income,
             "runs": runs,
         }
-
 
     def asset_tax_deferred_tax(self, company_id: int, tax_rate: float = 27.0) -> dict:
         recon = self.asset_tax_reconciliation(company_id)
