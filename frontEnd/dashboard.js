@@ -58667,12 +58667,17 @@ async function renderARStatements() {
     render();
   }
 
-  function setTab(tab) {
+  async function setTaxReconTab(tab) {
     state.tab = tab;
 
     document.querySelectorAll(".tax-recon-tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.taxTab === tab);
     });
+
+    if (tab === "profiles") {
+      await loadAll();
+      return;
+    }
 
     render();
   }
@@ -58906,7 +58911,10 @@ async function renderARStatements() {
 
     document.addEventListener("click", (e) => {
       const tab = e.target.closest("[data-tax-tab]");
-      if (tab) setTab(tab.dataset.taxTab);
+    if (tab) {
+      e.preventDefault();
+      setTaxReconTab(tab.dataset.taxTab).catch(console.error);
+    }     
 
       const cfg = e.target.closest("[data-tax-configure]");
       if (cfg) openModal(cfg.dataset.taxConfigure);
