@@ -2485,6 +2485,15 @@ const ENDPOINTS = {
 
     authorities: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-tax/authorities`,
+  
+    runs: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/runs`,
+
+    run: (cid, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/runs/${encodeURIComponent(runId)}`,
+
+    calculateRun: (cid, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/runs/${encodeURIComponent(runId)}/calculate`,
   },
 
   supportUser: {
