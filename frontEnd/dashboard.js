@@ -58783,20 +58783,44 @@ async function renderARStatements() {
   function updateRuleInfoAndPreview() {
     const profile = state.selected || {};
     const rule = selectedModalRule();
-    const life = rule.useful_life_years != null
-      ? `${Number(rule.useful_life_years).toFixed(2).replace(/\.00$/, "")} years`
-      : "—";
+
     const info = $id("taxRuleInfo");
     const preview = $id("taxTreatmentPreview");
 
     if (!rule) {
-      if (info) info.innerHTML = "Select an allowance rule to preview method, rate and treatment.";
-      if (preview) preview.innerHTML = "Select a rule to see the expected allowance treatment.";
+      if (info) {
+        info.innerHTML = `
+          <div class="text-sm text-slate-500">
+            Select an allowance rule to preview method, rate and treatment.
+          </div>
+        `;
+      }
+
+      if (preview) {
+        preview.innerHTML = `
+          <div class="text-sm text-slate-500">
+            Select a rule to see the expected allowance treatment.
+          </div>
+        `;
+      }
+
       return;
     }
 
     const method = String(rule.method || "—").toUpperCase();
-    const rate = rule.rate_percent ?? rule.annual_allowance_percent ?? null;
+
+    const rate =
+      rule.rate_percent != null
+        ? rule.rate_percent
+        : rule.annual_allowance_percent != null
+          ? rule.annual_allowance_percent
+          : null;
+
+    const life =
+      rule.useful_life_years != null
+        ? `${Number(rule.useful_life_years).toFixed(2).replace(/\.00$/, "")} years`
+        : "—";
+
     const calc = calcPreview(profile, rule);
 
     if (info) {
