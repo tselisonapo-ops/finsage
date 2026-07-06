@@ -58628,8 +58628,38 @@ async function renderARStatements() {
     return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function date10(v) {
-    return v ? String(v).slice(0, 10) : "";
+  function toDateInputValue(v) {
+    if (!v) return "";
+
+    // Already yyyy-mm-dd
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "";
+
+    return d.toISOString().slice(0, 10);
+  }
+
+  function displayDate(v) {
+    if (!v) return "—";
+
+    const s = String(v);
+    let d;
+
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      d = new Date(`${s.slice(0, 10)}T00:00:00`);
+    } else {
+      d = new Date(s);
+    }
+
+    if (Number.isNaN(d.getTime())) return "—";
+
+    return d.toLocaleDateString("en-ZA", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   }
 
   function getRuleById(ruleId) {
@@ -59010,7 +59040,7 @@ async function renderARStatements() {
           <td>${p.tax_authority_code || "—"}</td>
           <td><div>${p.rule_name || "Not selected"}</div><div class="text-xs text-slate-500">${p.method || ""}${p.rate_percent ? ` · ${p.rate_percent}%` : ""}</div></td>
           <td>${money(p.tax_cost)}</td>
-          <td>${date10(p.tax_start_date) || "—"}</td>
+          <td>${displayDate(p.tax_start_date)}</td>
           <td>${money(p.private_use_percent)}%</td>
           <td><span class="tax-badge ${ok ? "ok" : "warn"}">${ok ? "Configured" : "Not configured"}</span></td>
           <td><button class="btn text-xs" data-tax-configure="${p.profile_id}">Configure</button></td>
@@ -59064,7 +59094,8 @@ async function renderARStatements() {
     $id("taxProfileAssetClass").textContent = p.asset_class || "—";
     $id("taxProfileAssetGroup").textContent = p.asset_class_group || p.category || "—";
     $id("taxProfileBookCost").textContent = money(p.cost || p.opening_cost || 0);
-    $id("taxProfileAcquired").textContent = date10(p.available_for_use_date || p.acquisition_date) || "—";
+    $id("taxProfileAcquired").textContent =
+      displayDate(p.available_for_use_date || p.acquisition_date);
 
     $id("taxProfileModalTitle").textContent = `Configure: ${p.asset_name || "Asset"}`;
     $id("taxProfileModalSub").textContent = `${p.tax_authority_code || ""} asset tax profile`;
@@ -59073,7 +59104,7 @@ async function renderARStatements() {
     const taxCost = Number(p.tax_cost || 0);
 
     $id("taxProfileTaxCost").value = p.tax_cost ?? "";
-    $id("taxProfileStartDate").value = date10(p.tax_start_date);
+    $id("taxProfileStartDate").value = toDateInputValue(p.tax_start_date);
     $id("taxProfileQualifying").value = p.qualifying_percent ?? 100;
     $id("taxProfilePrivateUse").value = p.private_use_percent ?? 0;
     $id("taxProfileDepreciable").checked = !!p.is_tax_depreciable;
