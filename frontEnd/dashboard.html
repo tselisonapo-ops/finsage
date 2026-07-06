@@ -1332,304 +1332,49 @@ html, body {
     }
   }
 
-  .tax-recon-wrap{
-    display:flex;
-    flex-direction:column;
-    gap:16px;
-  }
-
-  .tax-recon-hero{
-    display:flex;
-    justify-content:space-between;
-    gap:16px;
-    align-items:flex-start;
-    background:linear-gradient(135deg,#ffffff,#f8fafc);
-    border:1px solid rgba(148,163,184,.28);
-    border-radius:18px;
-    padding:18px;
-    box-shadow:0 8px 22px rgba(15,23,42,.045);
-  }
-
-  .tax-recon-kicker{
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.08em;
-    color:var(--fs-muted);
-    font-weight:700;
-  }
-
-  .tax-recon-hero h2{
-    margin:4px 0;
-    color:var(--fs-navy);
-    font-size:22px;
-    font-weight:800;
-  }
-
-  .tax-recon-hero p{
-    color:var(--fs-muted);
-    font-size:13px;
-  }
-
-  .tax-recon-actions{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-  }
-
-  .tax-recon-tabs{
-    display:flex;
-    gap:8px;
-    overflow-x:auto;
-  }
-
-  .tax-recon-tab{
-    border:1px solid var(--fs-border);
-    background:#fff;
-    border-radius:999px;
-    padding:8px 12px;
-    font-size:13px;
-    font-weight:700;
-  }
-
-  .tax-recon-tab.active{
-    background:rgba(0,200,200,.12);
-    color:var(--fs-navy);
-    border-color:rgba(0,200,200,.35);
-  }
-
-  .tax-recon-tab:disabled{
-    opacity:.45;
-    cursor:not-allowed;
-  }
-
-  .tax-recon-summary{
-    display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:12px;
-  }
-
-  .tax-stat-card{
-    background:#fff;
-    border:1px solid var(--fs-border);
-    border-radius:14px;
-    padding:14px;
-  }
-
-  .tax-stat-card span{
-    display:block;
-    font-size:11px;
-    color:var(--fs-muted);
-    text-transform:uppercase;
-    letter-spacing:.05em;
-  }
-
-  .tax-stat-card strong{
-    display:block;
-    margin-top:5px;
-    font-size:20px;
-    color:var(--fs-navy);
-  }
-
-  .tax-recon-card{
-    padding:16px;
-  }
-
-  .tax-recon-toolbar{
-    display:grid;
-    grid-template-columns:1fr 220px;
-    gap:10px;
-    margin-bottom:12px;
-  }
-
-  .tax-recon-status{
-    font-size:12px;
-    color:var(--fs-muted);
-    margin-bottom:10px;
-  }
-
-  .tax-recon-table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:13px;
-  }
-
-  .tax-recon-table th{
-    text-align:left;
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.05em;
-    color:var(--fs-muted);
-    border-bottom:1px solid var(--fs-border);
-    padding:10px;
-  }
-
-  .tax-recon-table td{
-    border-bottom:1px solid #eef2f7;
-    padding:10px;
-    vertical-align:middle;
-  }
-
-  .tax-recon-table tbody tr:hover{
-    background:rgba(0,200,200,.05);
-  }
-
-  .tax-badge{
-    display:inline-flex;
-    padding:4px 8px;
-    border-radius:999px;
-    font-size:11px;
-    font-weight:700;
-    border:1px solid var(--fs-border);
-  }
-
-  .tax-badge.ok{
-    background:#ecfdf5;
-    color:#047857;
-    border-color:#a7f3d0;
-  }
-
-  .tax-badge.warn{
-    background:#fffbeb;
-    color:#92400e;
-    border-color:#fde68a;
-  }
-
-  .tax-modal{
-    position:fixed;
-    inset:0;
-    z-index:120;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:18px;
-  }
-
-  .tax-modal.hidden{
-    display:none !important;
-  }
-
-  .tax-modal-backdrop{
-    position:absolute;
-    inset:0;
-    background:rgba(15,23,42,.45);
-  }
-
-  .tax-modal-card{
-    position:relative;
-    width:min(760px,calc(100vw - 28px));
-    max-height:calc(100dvh - 32px);
-    overflow:auto;
-    background:#fff;
-    border-radius:18px;
-    border:1px solid var(--fs-border);
-    box-shadow:0 24px 80px rgba(15,23,42,.22);
-  }
-
-  .tax-modal-head,
-  .tax-modal-foot{
-    display:flex;
-    justify-content:space-between;
-    gap:12px;
-    align-items:center;
-    padding:16px;
-    border-bottom:1px solid var(--fs-border);
-  }
-
-  .tax-modal-foot{
-    border-bottom:0;
-    border-top:1px solid var(--fs-border);
-    justify-content:flex-end;
-  }
-
-  .tax-modal-head h3{
-    margin:0;
-    color:var(--fs-navy);
-    font-weight:800;
-  }
-
-  .tax-modal-head p{
-    margin:3px 0 0;
-    color:var(--fs-muted);
-    font-size:12px;
-  }
-
-  .tax-modal-body{
-    padding:16px;
-  }
-
-  .tax-profile-readonly{
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:10px;
-    margin-bottom:14px;
-  }
-
-  .tax-profile-readonly div{
-    background:#f8fafc;
-    border:1px solid var(--fs-border);
-    border-radius:12px;
-    padding:10px;
-  }
-
-  .tax-profile-readonly span,
-  .tax-form-grid label > span,
-  .tax-notes > span{
-    display:block;
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.05em;
-    color:var(--fs-muted);
-    margin-bottom:5px;
-  }
-
-  .tax-profile-readonly strong{
-    font-size:13px;
-    color:#0f172a;
-  }
-
-  .tax-form-grid{
-    display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:12px;
-  }
-
-  .tax-check{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    border:1px solid var(--fs-border);
-    border-radius:12px;
-    padding:10px;
-  }
-
-  .tax-check span{
-    margin:0;
-    font-size:13px;
-    text-transform:none;
-    letter-spacing:0;
-    color:#0f172a;
-  }
-
-  .tax-notes{
-    display:block;
-    margin-top:12px;
-  }
-
-  @media(max-width:800px){
-    .tax-recon-hero{
-      flex-direction:column;
-    }
-
-    .tax-recon-summary{
-      grid-template-columns:repeat(2,minmax(0,1fr));
-    }
-
-    .tax-recon-toolbar,
-    .tax-profile-readonly,
-    .tax-form-grid{
-      grid-template-columns:1fr;
-    }
-  }
+.tax-recon-wrap{display:flex;flex-direction:column;gap:16px}
+.tax-recon-hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;background:linear-gradient(135deg,#fff,#f8fafc);border:1px solid rgba(148,163,184,.28);border-radius:18px;padding:18px;box-shadow:0 8px 22px rgba(15,23,42,.045)}
+.tax-recon-kicker{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--fs-muted);font-weight:700}
+.tax-recon-hero h2{margin:4px 0;color:var(--fs-navy);font-size:22px;font-weight:800}
+.tax-recon-hero p{color:var(--fs-muted);font-size:13px}
+.tax-recon-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tax-recon-tabs{display:flex;gap:8px;overflow-x:auto}
+.tax-recon-tab{border:1px solid var(--fs-border);background:#fff;border-radius:999px;padding:8px 12px;font-size:13px;font-weight:700}
+.tax-recon-tab.active{background:rgba(0,200,200,.12);color:var(--fs-navy);border-color:rgba(0,200,200,.35)}
+.tax-recon-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.tax-stat-card{background:#fff;border:1px solid var(--fs-border);border-radius:14px;padding:14px}
+.tax-stat-card span{display:block;font-size:11px;color:var(--fs-muted);text-transform:uppercase;letter-spacing:.05em}
+.tax-stat-card strong{display:block;margin-top:5px;font-size:20px;color:var(--fs-navy)}
+.tax-recon-card{padding:16px}
+.tax-recon-toolbar{display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:12px}
+.tax-recon-status{font-size:12px;color:var(--fs-muted);margin-bottom:10px}
+.tax-recon-table{width:100%;border-collapse:collapse;font-size:13px}
+.tax-recon-table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--fs-muted);border-bottom:1px solid var(--fs-border);padding:10px}
+.tax-recon-table td{border-bottom:1px solid #eef2f7;padding:10px;vertical-align:middle}
+.tax-recon-table tbody tr:hover{background:rgba(0,200,200,.05)}
+.tax-badge{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid var(--fs-border)}
+.tax-badge.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.tax-badge.warn{background:#fffbeb;color:#92400e;border-color:#fde68a}
+.tax-placeholder{padding:28px;text-align:center;color:var(--fs-muted)}
+.tax-placeholder h3{font-size:18px;color:var(--fs-navy);font-weight:800;margin-bottom:6px}
+.tax-modal{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;padding:18px}
+.tax-modal.hidden{display:none!important}
+.tax-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45)}
+.tax-modal-card{position:relative;width:min(760px,calc(100vw - 28px));max-height:calc(100dvh - 32px);overflow:auto;background:#fff;border-radius:18px;border:1px solid var(--fs-border);box-shadow:0 24px 80px rgba(15,23,42,.22)}
+.tax-modal-head,.tax-modal-foot{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px;border-bottom:1px solid var(--fs-border)}
+.tax-modal-foot{border-bottom:0;border-top:1px solid var(--fs-border);justify-content:flex-end}
+.tax-modal-head h3{margin:0;color:var(--fs-navy);font-weight:800}
+.tax-modal-head p{margin:3px 0 0;color:var(--fs-muted);font-size:12px}
+.tax-modal-body{padding:16px}
+.tax-profile-readonly{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.tax-profile-readonly div{background:#f8fafc;border:1px solid var(--fs-border);border-radius:12px;padding:10px}
+.tax-profile-readonly span,.tax-form-grid label>span,.tax-notes>span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--fs-muted);margin-bottom:5px}
+.tax-profile-readonly strong{font-size:13px;color:#0f172a}
+.tax-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.tax-check{display:flex;align-items:center;gap:8px;border:1px solid var(--fs-border);border-radius:12px;padding:10px}
+.tax-check span{margin:0;font-size:13px;text-transform:none;letter-spacing:0;color:#0f172a}
+.tax-notes{display:block;margin-top:12px}
+@media(max-width:800px){.tax-recon-hero{flex-direction:column}.tax-recon-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.tax-recon-toolbar,.tax-profile-readonly,.tax-form-grid{grid-template-columns:1fr}}
   </style>
 
 </head>
@@ -2975,8 +2720,10 @@ html, body {
             <div class="tax-recon-hero">
               <div>
                 <div class="tax-recon-kicker">Income Tax Workspace</div>
-                <h2>Asset Tax Profiles</h2>
-                <p>Configure tax authority, allowance class, tax cost and private-use adjustments before running capital allowances.</p>
+                <h2 id="taxReconHeading">Asset Tax Profiles</h2>
+                <p id="taxReconSubheading">
+                  Configure tax authority, allowance class, tax cost and private-use adjustments before running capital allowances.
+                </p>
               </div>
 
               <div class="tax-recon-actions">
@@ -2987,61 +2734,15 @@ html, body {
 
             <div class="tax-recon-tabs">
               <button class="tax-recon-tab active" data-tax-tab="profiles">Asset Tax Profiles</button>
-              <button class="tax-recon-tab" data-tax-tab="runs" disabled>Capital Allowance Runs</button>
-              <button class="tax-recon-tab" data-tax-tab="recon" disabled>Tax Reconciliation</button>
+              <button class="tax-recon-tab" data-tax-tab="runs">Capital Allowance Runs</button>
+              <button class="tax-recon-tab" data-tax-tab="recon">Tax Reconciliation</button>
+              <button class="tax-recon-tab" data-tax-tab="computation">Tax Computation</button>
+              <button class="tax-recon-tab" data-tax-tab="deferred">Deferred Tax</button>
+              <button class="tax-recon-tab" data-tax-tab="returns">Tax Returns</button>
               <button class="tax-recon-tab" data-tax-tab="settings">Settings</button>
             </div>
 
-            <div class="tax-recon-summary">
-              <div class="tax-stat-card">
-                <span>Total Profiles</span>
-                <strong id="taxStatTotal">0</strong>
-              </div>
-              <div class="tax-stat-card">
-                <span>Configured</span>
-                <strong id="taxStatConfigured">0</strong>
-              </div>
-              <div class="tax-stat-card">
-                <span>Not Configured</span>
-                <strong id="taxStatMissing">0</strong>
-              </div>
-              <div class="tax-stat-card">
-                <span>Tax Authority</span>
-                <strong id="taxStatAuthority">—</strong>
-              </div>
-            </div>
-
-            <div class="card tax-recon-card">
-              <div class="tax-recon-toolbar">
-                <input id="taxReconSearch" class="input" placeholder="Search asset, code, class..." />
-                <select id="taxReconStatusFilter" class="input">
-                  <option value="">All statuses</option>
-                  <option value="configured">Configured</option>
-                  <option value="not_configured">Not configured</option>
-                </select>
-              </div>
-
-              <div id="taxReconStatus" class="tax-recon-status">Loading asset tax profiles...</div>
-
-              <div class="overflow-x-auto">
-                <table class="tax-recon-table">
-                  <thead>
-                    <tr>
-                      <th>Asset</th>
-                      <th>Class</th>
-                      <th>Authority</th>
-                      <th>Rule</th>
-                      <th>Tax Cost</th>
-                      <th>Tax Start</th>
-                      <th>Private Use</th>
-                      <th>Status</th>
-                      <th class="text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="taxReconRows"></tbody>
-                </table>
-              </div>
-            </div>
+            <div id="taxReconPanel"></div>
           </div>
 
           <div id="taxProfileModal" class="tax-modal hidden">
@@ -3060,60 +2761,21 @@ html, body {
                 <input type="hidden" id="taxProfileId" />
 
                 <div class="tax-profile-readonly">
-                  <div>
-                    <span>Asset</span>
-                    <strong id="taxProfileAssetName">—</strong>
-                  </div>
-                  <div>
-                    <span>Asset Class</span>
-                    <strong id="taxProfileAssetClass">—</strong>
-                  </div>
-                  <div>
-                    <span>Accounting Cost</span>
-                    <strong id="taxProfileBookCost">—</strong>
-                  </div>
+                  <div><span>Asset</span><strong id="taxProfileAssetName">—</strong></div>
+                  <div><span>Asset Class</span><strong id="taxProfileAssetClass">—</strong></div>
+                  <div><span>Accounting Cost</span><strong id="taxProfileBookCost">—</strong></div>
                 </div>
 
                 <div class="tax-form-grid">
-                  <label>
-                    <span>Tax Authority</span>
-                    <select id="taxProfileAuthority" class="input"></select>
-                  </label>
+                  <label><span>Tax Authority</span><select id="taxProfileAuthority" class="input"></select></label>
+                  <label><span>Allowance Rule</span><select id="taxProfileRule" class="input"></select></label>
+                  <label><span>Tax Cost</span><input id="taxProfileTaxCost" class="input" type="number" step="0.01" min="0" /></label>
+                  <label><span>Tax Start Date</span><input id="taxProfileStartDate" class="input" type="date" /></label>
+                  <label><span>Qualifying %</span><input id="taxProfileQualifying" class="input" type="number" step="0.01" min="0" max="100" /></label>
+                  <label><span>Private Use %</span><input id="taxProfilePrivateUse" class="input" type="number" step="0.01" min="0" max="100" /></label>
 
-                  <label>
-                    <span>Allowance Rule</span>
-                    <select id="taxProfileRule" class="input"></select>
-                  </label>
-
-                  <label>
-                    <span>Tax Cost</span>
-                    <input id="taxProfileTaxCost" class="input" type="number" step="0.01" min="0" />
-                  </label>
-
-                  <label>
-                    <span>Tax Start Date</span>
-                    <input id="taxProfileStartDate" class="input" type="date" />
-                  </label>
-
-                  <label>
-                    <span>Qualifying %</span>
-                    <input id="taxProfileQualifying" class="input" type="number" step="0.01" min="0" max="100" />
-                  </label>
-
-                  <label>
-                    <span>Private Use %</span>
-                    <input id="taxProfilePrivateUse" class="input" type="number" step="0.01" min="0" max="100" />
-                  </label>
-
-                  <label class="tax-check">
-                    <input id="taxProfileDepreciable" type="checkbox" />
-                    <span>Tax depreciable</span>
-                  </label>
-
-                  <label class="tax-check">
-                    <input id="taxProfileActive" type="checkbox" />
-                    <span>Active</span>
-                  </label>
+                  <label class="tax-check"><input id="taxProfileDepreciable" type="checkbox" /><span>Tax depreciable</span></label>
+                  <label class="tax-check"><input id="taxProfileActive" type="checkbox" /><span>Active</span></label>
                 </div>
 
                 <label class="tax-notes">

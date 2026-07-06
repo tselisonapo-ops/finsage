@@ -8787,19 +8787,16 @@ async function switchScreen(name) {
   }
 
   if (base === "tax-recon") {
-      setScreenTitle?.("Income Tax Workspace");
-      setScreenSubtitle?.("Capital allowances, reconciliations and tax returns.");
-
-      try {
-          if (typeof ensureCompanyDataLoaded === "function") {
-              await ensureCompanyDataLoaded();
-          }
-      } catch (e) {
-          console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e);
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
       }
+    } catch (e) {
+      console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e);
+    }
 
-      await window.bindTaxReconScreen?.();
-      return;
+    await window.bindTaxReconScreen?.();
+    return;
   }
 
   // Lessors binder
@@ -58601,7 +58598,10 @@ async function renderARStatements() {
 }
 
 (function () {
-  let taxReconState = {
+  const $id = (id) => document.getElementById(id);
+
+  const state = {
+    tab: "profiles",
     profiles: [],
     authorities: [],
     rules: [],
@@ -58609,23 +58609,27 @@ async function renderARStatements() {
     bound: false,
   };
 
-  const $id = (id) => document.getElementById(id);
+  function cid() {
+    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+  }
+
+  function companyCountry() {
+    return String(window.CURRENT_COMPANY?.country || window.CURRENT_COMPANY?.country_code || "").toUpperCase();
+  }
+
+  function defaultAuthorityCode() {
+    const c = companyCountry();
+    if (c === "ZA" || c === "SOUTH AFRICA") return "SARS";
+    if (c === "BW" || c === "BOTSWANA") return "BURS";
+    return "RSL";
+  }
 
   function money(v) {
-    const n = Number(v || 0);
-    return n.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   function date10(v) {
-    if (!v) return "";
-    return String(v).slice(0, 10);
-  }
-
-  function getCid() {
-    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+    return v ? String(v).slice(0, 10) : "";
   }
 
   async function apiJson(url, opts = {}) {
@@ -58633,301 +58637,310 @@ async function renderARStatements() {
 
     const res = await fetch(url, {
       ...opts,
-      headers: {
-        "Content-Type": "application/json",
-        ...(opts.headers || {}),
-      },
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
       credentials: "include",
     });
 
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) {
-      throw new Error(data.error || `Request failed ${res.status}`);
-    }
+    if (!res.ok || data.ok === false) throw new Error(data.error || `Request failed ${res.status}`);
     return data;
   }
 
-  async function loadTaxReconData() {
-    const cid = getCid();
-    if (!cid) throw new Error("No active company selected.");
+  async function loadAll() {
+    const companyId = cid();
+    if (!companyId) throw new Error("No active company selected.");
 
     const [profilesRes, authoritiesRes] = await Promise.all([
-      apiJson(ENDPOINTS.assetTax.profiles(cid)),
-      apiJson(ENDPOINTS.assetTax.authorities(cid)),
+      apiJson(ENDPOINTS.assetTax.profiles(companyId)),
+      apiJson(ENDPOINTS.assetTax.authorities(companyId)),
     ]);
 
-    taxReconState.profiles = profilesRes.items || [];
-    taxReconState.authorities = authoritiesRes.items || [];
+    state.profiles = profilesRes.items || [];
+    state.authorities = authoritiesRes.items || [];
 
-    const firstAuthorityId =
-      taxReconState.profiles[0]?.tax_authority_id ||
-      taxReconState.authorities[0]?.id ||
+    const authId =
+      state.profiles[0]?.tax_authority_id ||
+      state.authorities.find((a) => a.code === defaultAuthorityCode())?.id ||
+      state.authorities[0]?.id ||
       "";
 
-    const rulesRes = await apiJson(ENDPOINTS.assetTax.rules(cid, firstAuthorityId));
-    taxReconState.rules = rulesRes.items || [];
+    const rulesRes = await apiJson(ENDPOINTS.assetTax.rules(companyId, authId));
+    state.rules = rulesRes.items || [];
 
-    renderTaxRecon();
+    render();
+  }
+
+  function setTab(tab) {
+    state.tab = tab;
+
+    document.querySelectorAll(".tax-recon-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.taxTab === tab);
+    });
+
+    render();
+  }
+
+  function render() {
+    const titles = {
+      profiles: ["Asset Tax Profiles", "Configure tax authority, allowance class, tax cost and private-use adjustments before running capital allowances."],
+      runs: ["Capital Allowance Runs", "Create annual allowance runs for RSL, SARS or BURS."],
+      recon: ["Tax Reconciliation", "Compare accounting depreciation to tax capital allowances."],
+      computation: ["Tax Computation", "Build taxable income from accounting profit, add-backs and deductions."],
+      deferred: ["Deferred Tax", "Compare accounting carrying amounts to tax written down values."],
+      returns: ["Tax Returns", "Prepare return support schedules for RSL, SARS and BURS."],
+      settings: ["Tax Settings", "Manage tax authorities, rules and default mappings."],
+    };
+
+    const [h, p] = titles[state.tab] || titles.profiles;
+    if ($id("taxReconHeading")) $id("taxReconHeading").textContent = h;
+    if ($id("taxReconSubheading")) $id("taxReconSubheading").textContent = p;
+
+    if (state.tab === "profiles") return renderProfiles();
+    if (state.tab === "runs") return renderPlaceholder("Capital Allowance Runs", "Next backend step: create run, calculate run lines, approve and lock run.");
+    if (state.tab === "recon") return renderPlaceholder("Tax Reconciliation", "This will use asset_tax_run_lines vs asset_depreciation.");
+    if (state.tab === "computation") return renderPlaceholder("Tax Computation", "This will start from accounting profit and apply tax adjustments.");
+    if (state.tab === "deferred") return renderPlaceholder("Deferred Tax", "This will compare carrying amount against tax WDV.");
+    if (state.tab === "returns") return renderPlaceholder("Tax Returns", "This will generate RSL, SARS and BURS return support.");
+    if (state.tab === "settings") return renderSettings();
+  }
+
+  function renderPlaceholder(title, msg) {
+    $id("taxReconPanel").innerHTML = `
+      <div class="card tax-placeholder">
+        <h3>${title}</h3>
+        <p>${msg}</p>
+      </div>
+    `;
   }
 
   function filteredProfiles() {
-    const q = ($id("taxReconSearch")?.value || "").trim().toLowerCase();
-    const status = ($id("taxReconStatusFilter")?.value || "").trim();
+    const q = ($id("taxReconSearch")?.value || "").toLowerCase();
+    const status = $id("taxReconStatusFilter")?.value || "";
 
-    return taxReconState.profiles.filter((p) => {
-      const hay = [
-        p.asset_code,
-        p.asset_name,
-        p.asset_class,
-        p.asset_class_group,
-        p.rule_name,
-        p.tax_authority_code,
-      ].join(" ").toLowerCase();
-
+    return state.profiles.filter((p) => {
+      const hay = [p.asset_code, p.asset_name, p.asset_class, p.asset_class_group, p.rule_name, p.tax_authority_code].join(" ").toLowerCase();
       if (q && !hay.includes(q)) return false;
       if (status && p.config_status !== status) return false;
-
       return true;
     });
   }
 
-  function renderSummary(rows) {
-    const total = taxReconState.profiles.length;
-    const configured = taxReconState.profiles.filter((p) => p.config_status === "configured").length;
+  function renderProfiles() {
+    const total = state.profiles.length;
+    const configured = state.profiles.filter((p) => p.config_status === "configured").length;
     const missing = total - configured;
+    const auth = state.profiles[0]?.tax_authority_code || defaultAuthorityCode();
 
-    const auth =
-      taxReconState.profiles[0]?.tax_authority_code ||
-      taxReconState.authorities[0]?.code ||
-      "—";
+    $id("taxReconPanel").innerHTML = `
+      <div class="tax-recon-summary">
+        <div class="tax-stat-card"><span>Total Profiles</span><strong>${total}</strong></div>
+        <div class="tax-stat-card"><span>Configured</span><strong>${configured}</strong></div>
+        <div class="tax-stat-card"><span>Not Configured</span><strong>${missing}</strong></div>
+        <div class="tax-stat-card"><span>Tax Authority</span><strong>${auth}</strong></div>
+      </div>
 
-    if ($id("taxStatTotal")) $id("taxStatTotal").textContent = total;
-    if ($id("taxStatConfigured")) $id("taxStatConfigured").textContent = configured;
-    if ($id("taxStatMissing")) $id("taxStatMissing").textContent = missing;
-    if ($id("taxStatAuthority")) $id("taxStatAuthority").textContent = auth;
+      <div class="card tax-recon-card">
+        <div class="tax-recon-toolbar">
+          <input id="taxReconSearch" class="input" placeholder="Search asset, code, class..." />
+          <select id="taxReconStatusFilter" class="input">
+            <option value="">All statuses</option>
+            <option value="configured">Configured</option>
+            <option value="not_configured">Not configured</option>
+          </select>
+        </div>
 
-    if ($id("taxReconStatus")) {
-      $id("taxReconStatus").textContent =
-        rows.length === total
-          ? `${total} asset tax profile(s) loaded.`
-          : `${rows.length} of ${total} profile(s) shown.`;
-    }
+        <div id="taxReconStatus" class="tax-recon-status">${total} profile(s) loaded.</div>
+
+        <div class="overflow-x-auto">
+          <table class="tax-recon-table">
+            <thead>
+              <tr>
+                <th>Asset</th><th>Class</th><th>Authority</th><th>Rule</th>
+                <th>Tax Cost</th><th>Tax Start</th><th>Private Use</th><th>Status</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="taxReconRows"></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    $id("taxReconSearch")?.addEventListener("input", drawRows);
+    $id("taxReconStatusFilter")?.addEventListener("change", drawRows);
+    drawRows();
   }
 
-  function renderTaxRecon() {
+  function drawRows() {
+    const rows = filteredProfiles();
     const tbody = $id("taxReconRows");
     if (!tbody) return;
 
-    const rows = filteredProfiles();
-    renderSummary(rows);
+    $id("taxReconStatus").textContent = `${rows.length} of ${state.profiles.length} profile(s) shown.`;
 
     if (!rows.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="9" class="text-center text-slate-500 py-6">
-            No asset tax profiles found. Click Sync Assets.
-          </td>
-        </tr>
-      `;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-slate-500 py-6">No profiles found. Click Sync Assets.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = rows.map((p) => {
-      const configured = p.config_status === "configured";
+      const ok = p.config_status === "configured";
       return `
         <tr>
-          <td>
-            <div class="font-semibold text-slate-800">${p.asset_name || "—"}</div>
-            <div class="text-xs text-slate-500">${p.asset_code || ""}</div>
-          </td>
-          <td>
-            <div>${p.asset_class || "—"}</div>
-            <div class="text-xs text-slate-500">${p.asset_class_group || ""}</div>
-          </td>
+          <td><div class="font-semibold">${p.asset_name || "—"}</div><div class="text-xs text-slate-500">${p.asset_code || ""}</div></td>
+          <td><div>${p.asset_class || "—"}</div><div class="text-xs text-slate-500">${p.asset_class_group || ""}</div></td>
           <td>${p.tax_authority_code || "—"}</td>
-          <td>
-            <div>${p.rule_name || "Not selected"}</div>
-            <div class="text-xs text-slate-500">${p.method || ""}${p.rate_percent ? ` · ${p.rate_percent}%` : ""}</div>
-          </td>
+          <td><div>${p.rule_name || "Not selected"}</div><div class="text-xs text-slate-500">${p.method || ""}${p.rate_percent ? ` · ${p.rate_percent}%` : ""}</div></td>
           <td>${money(p.tax_cost)}</td>
           <td>${date10(p.tax_start_date) || "—"}</td>
           <td>${money(p.private_use_percent)}%</td>
-          <td>
-            <span class="tax-badge ${configured ? "ok" : "warn"}">
-              ${configured ? "Configured" : "Not configured"}
-            </span>
-          </td>
-          <td class="text-right">
-            <button class="btn text-xs" data-tax-configure="${p.profile_id}">
-              Configure
-            </button>
-          </td>
+          <td><span class="tax-badge ${ok ? "ok" : "warn"}">${ok ? "Configured" : "Not configured"}</span></td>
+          <td><button class="btn text-xs" data-tax-configure="${p.profile_id}">Configure</button></td>
         </tr>
       `;
     }).join("");
   }
 
-  function fillSelects(profile) {
+  function renderSettings() {
+    $id("taxReconPanel").innerHTML = `
+      <div class="card tax-recon-card">
+        <h3 class="font-bold text-[var(--fs-navy)] mb-2">Tax Settings</h3>
+        <p class="text-sm text-slate-500 mb-4">Detected company country: <b>${companyCountry() || "Unknown"}</b>. Default authority: <b>${defaultAuthorityCode()}</b>.</p>
+        <div class="overflow-x-auto">
+          <table class="tax-recon-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Country</th><th>Currency</th></tr></thead>
+            <tbody>
+              ${state.authorities.map((a) => `
+                <tr><td>${a.code}</td><td>${a.name}</td><td>${a.country_code}</td><td>${a.currency_code || "—"}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  async function backfill() {
+    const companyId = cid();
+    if (!companyId) return alert("No active company selected.");
+
+    const res = await apiJson(ENDPOINTS.assetTax.backfillProfiles(companyId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    alert(`Sync complete. Created ${res.created || 0} profile(s).`);
+    await loadAll();
+  }
+
+  function openModal(profileId) {
+    const p = state.profiles.find((x) => Number(x.profile_id) === Number(profileId));
+    if (!p) return;
+
+    state.selected = p;
+
+    $id("taxProfileId").value = p.profile_id;
+    $id("taxProfileAssetName").textContent = p.asset_name || "—";
+    $id("taxProfileAssetClass").textContent = p.asset_class || "—";
+    $id("taxProfileBookCost").textContent = money(p.cost || p.opening_cost || 0);
+    $id("taxProfileModalTitle").textContent = `Configure: ${p.asset_name || "Asset"}`;
+    $id("taxProfileModalSub").textContent = `${p.tax_authority_code || ""} asset tax profile`;
+
+    $id("taxProfileTaxCost").value = p.tax_cost ?? "";
+    $id("taxProfileStartDate").value = date10(p.tax_start_date);
+    $id("taxProfileQualifying").value = p.qualifying_percent ?? 100;
+    $id("taxProfilePrivateUse").value = p.private_use_percent ?? 0;
+    $id("taxProfileDepreciable").checked = !!p.is_tax_depreciable;
+    $id("taxProfileActive").checked = !!p.is_active;
+    $id("taxProfileNotes").value = p.notes || "";
+
+    fillModalSelects(p);
+    $id("taxProfileModal").classList.remove("hidden");
+  }
+
+  function fillModalSelects(p) {
     const authSel = $id("taxProfileAuthority");
     const ruleSel = $id("taxProfileRule");
 
-    if (authSel) {
-      authSel.innerHTML = taxReconState.authorities.map((a) => `
-        <option value="${a.id}" ${Number(a.id) === Number(profile.tax_authority_id) ? "selected" : ""}>
-          ${a.code} - ${a.name}
-        </option>
-      `).join("");
-    }
+    authSel.innerHTML = state.authorities.map((a) =>
+      `<option value="${a.id}" ${Number(a.id) === Number(p.tax_authority_id) ? "selected" : ""}>${a.code} - ${a.name}</option>`
+    ).join("");
 
-    if (ruleSel) {
-      const authId = Number(authSel?.value || profile.tax_authority_id || 0);
-      const rules = taxReconState.rules.filter((r) => Number(r.tax_authority_id) === authId);
+    const authId = Number(authSel.value || p.tax_authority_id || 0);
+    const rules = state.rules.filter((r) => Number(r.tax_authority_id) === authId);
 
-      ruleSel.innerHTML = `
-        <option value="">Select allowance rule</option>
-        ${rules.map((r) => `
-          <option value="${r.id}" ${Number(r.id) === Number(profile.allowance_rule_id) ? "selected" : ""}>
-            ${r.rule_name}${r.rate_percent ? ` (${r.rate_percent}%)` : ""}
-          </option>
-        `).join("")}
-      `;
-    }
+    ruleSel.innerHTML = `<option value="">Select allowance rule</option>` + rules.map((r) =>
+      `<option value="${r.id}" ${Number(r.id) === Number(p.allowance_rule_id) ? "selected" : ""}>${r.rule_name}${r.rate_percent ? ` (${r.rate_percent}%)` : ""}</option>`
+    ).join("");
   }
 
-  async function openTaxProfileModal(profileId) {
-    const profile = taxReconState.profiles.find((p) => Number(p.profile_id) === Number(profileId));
-    if (!profile) return;
-
-    taxReconState.selected = profile;
-
-    $id("taxProfileId").value = profile.profile_id;
-    $id("taxProfileAssetName").textContent = profile.asset_name || "—";
-    $id("taxProfileAssetClass").textContent = profile.asset_class || "—";
-    $id("taxProfileBookCost").textContent = money(profile.cost || profile.opening_cost || 0);
-
-    $id("taxProfileModalTitle").textContent = `Configure: ${profile.asset_name || "Asset"}`;
-    $id("taxProfileModalSub").textContent = `${profile.tax_authority_code || ""} asset tax profile`;
-
-    $id("taxProfileTaxCost").value = profile.tax_cost ?? "";
-    $id("taxProfileStartDate").value = date10(profile.tax_start_date);
-    $id("taxProfileQualifying").value = profile.qualifying_percent ?? 100;
-    $id("taxProfilePrivateUse").value = profile.private_use_percent ?? 0;
-    $id("taxProfileDepreciable").checked = !!profile.is_tax_depreciable;
-    $id("taxProfileActive").checked = !!profile.is_active;
-    $id("taxProfileNotes").value = profile.notes || "";
-
-    fillSelects(profile);
-
-    $id("taxProfileModal")?.classList.remove("hidden");
+  function closeModal() {
+    $id("taxProfileModal").classList.add("hidden");
+    state.selected = null;
   }
 
-  function closeTaxProfileModal() {
-    $id("taxProfileModal")?.classList.add("hidden");
-    taxReconState.selected = null;
-  }
-
-  async function saveTaxProfile() {
-    const cid = getCid();
-    const profileId = $id("taxProfileId")?.value;
-    if (!cid || !profileId) return;
+  async function saveModal() {
+    const companyId = cid();
+    const profileId = $id("taxProfileId").value;
 
     const payload = {
-      tax_authority_id: Number($id("taxProfileAuthority")?.value || 0) || null,
-      allowance_rule_id: Number($id("taxProfileRule")?.value || 0) || null,
-      tax_cost: $id("taxProfileTaxCost")?.value || null,
-      tax_start_date: $id("taxProfileStartDate")?.value || null,
-      qualifying_percent: $id("taxProfileQualifying")?.value || 100,
-      private_use_percent: $id("taxProfilePrivateUse")?.value || 0,
-      is_tax_depreciable: !!$id("taxProfileDepreciable")?.checked,
-      is_active: !!$id("taxProfileActive")?.checked,
-      notes: $id("taxProfileNotes")?.value || null,
+      tax_authority_id: Number($id("taxProfileAuthority").value),
+      allowance_rule_id: Number($id("taxProfileRule").value) || null,
+      tax_cost: $id("taxProfileTaxCost").value || null,
+      tax_start_date: $id("taxProfileStartDate").value || null,
+      qualifying_percent: $id("taxProfileQualifying").value || 100,
+      private_use_percent: $id("taxProfilePrivateUse").value || 0,
+      is_tax_depreciable: $id("taxProfileDepreciable").checked,
+      is_active: $id("taxProfileActive").checked,
+      notes: $id("taxProfileNotes").value || null,
     };
 
-    $id("taxProfileSaveBtn").disabled = true;
-
-    try {
-      await apiJson(ENDPOINTS.assetTax.updateProfile(cid, profileId), {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
-
-      closeTaxProfileModal();
-      await loadTaxReconData();
-    } catch (e) {
-      alert(e.message || "Failed to save tax profile.");
-    } finally {
-      $id("taxProfileSaveBtn").disabled = false;
-    }
-  }
-
-  async function backfillProfiles() {
-    const cid = getCid();
-    if (!cid) return alert("No active company selected.");
-
-    try {
-      const res = await apiJson(ENDPOINTS.assetTax.backfillProfiles(cid), {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-
-      alert(`Sync complete. Created ${res.created || 0} profile(s).`);
-      await loadTaxReconData();
-    } catch (e) {
-      alert(e.message || "Failed to sync assets.");
-    }
-  }
-
-  function bindTaxReconEventsOnce() {
-    if (taxReconState.bound) return;
-    taxReconState.bound = true;
-
-    $id("taxReconRefreshBtn")?.addEventListener("click", loadTaxReconData);
-    $id("taxReconBackfillBtn")?.addEventListener("click", backfillProfiles);
-
-    $id("taxReconSearch")?.addEventListener("input", renderTaxRecon);
-    $id("taxReconStatusFilter")?.addEventListener("change", renderTaxRecon);
-
-    $id("taxReconRows")?.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-tax-configure]");
-      if (!btn) return;
-      openTaxProfileModal(btn.dataset.taxConfigure);
+    await apiJson(ENDPOINTS.assetTax.updateProfile(companyId, profileId), {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     });
 
-    $id("taxProfileCloseBtn")?.addEventListener("click", closeTaxProfileModal);
-    $id("taxProfileCancelBtn")?.addEventListener("click", closeTaxProfileModal);
+    closeModal();
+    await loadAll();
+  }
+
+  function bindOnce() {
+    if (state.bound) return;
+    state.bound = true;
+
+    document.addEventListener("click", (e) => {
+      const tab = e.target.closest("[data-tax-tab]");
+      if (tab) setTab(tab.dataset.taxTab);
+
+      const cfg = e.target.closest("[data-tax-configure]");
+      if (cfg) openModal(cfg.dataset.taxConfigure);
+    });
+
+    $id("taxReconRefreshBtn")?.addEventListener("click", loadAll);
+    $id("taxReconBackfillBtn")?.addEventListener("click", backfill);
+
+    $id("taxProfileCloseBtn")?.addEventListener("click", closeModal);
+    $id("taxProfileCancelBtn")?.addEventListener("click", closeModal);
+    $id("taxProfileSaveBtn")?.addEventListener("click", saveModal);
 
     $id("taxProfileModal")?.addEventListener("click", (e) => {
-      if (e.target?.dataset?.taxClose) closeTaxProfileModal();
+      if (e.target?.dataset?.taxClose) closeModal();
     });
 
-    $id("taxProfileSaveBtn")?.addEventListener("click", saveTaxProfile);
-
     $id("taxProfileAuthority")?.addEventListener("change", async () => {
-      const cid = getCid();
-      const authId = $id("taxProfileAuthority")?.value;
-      const res = await apiJson(ENDPOINTS.assetTax.rules(cid, authId));
-      taxReconState.rules = res.items || [];
-      fillSelects(taxReconState.selected || {});
+      const companyId = cid();
+      const authId = $id("taxProfileAuthority").value;
+      const res = await apiJson(ENDPOINTS.assetTax.rules(companyId, authId));
+      state.rules = res.items || [];
+      fillModalSelects({ ...state.selected, tax_authority_id: authId });
     });
   }
 
-  window.bindTaxReconScreen = async function bindTaxReconScreen() {
-    bindTaxReconEventsOnce();
-
-    try {
-      if ($id("taxReconStatus")) {
-        $id("taxReconStatus").textContent = "Loading asset tax profiles...";
-      }
-
-      await loadTaxReconData();
-    } catch (e) {
-      console.warn("[TaxRecon] load failed", e);
-      if ($id("taxReconStatus")) {
-        $id("taxReconStatus").textContent = e.message || "Failed to load tax recon workspace.";
-      }
-    }
+  window.bindTaxReconScreen = async function () {
+    bindOnce();
+    await loadAll();
   };
 })();
+
 // ✅ Period Locks (Control Room)
 // Requires:
 // - getControlsMount()
