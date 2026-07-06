@@ -57111,6 +57111,327 @@ class DatabaseService:
             "valuations": [dict(x) for x in (cur.fetchall() or [])]
         }
 
+    def asset_tax_list_runs(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                r.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+                COUNT(l.id) AS line_count,
+                COALESCE(SUM(l.total_capital_allowance), 0) AS total_capital_allowance,
+                COALESCE(SUM(l.closing_tax_wdv), 0) AS closing_tax_wdv
+            FROM {schema}.asset_tax_runs r
+            JOIN public.tax_authorities ta ON ta.id = r.tax_authority_id
+            LEFT JOIN {schema}.asset_tax_run_lines l ON l.run_id = r.id
+            WHERE r.company_id = %s
+            GROUP BY r.id, ta.code, ta.name
+            ORDER BY r.tax_year DESC, ta.code
+        """, (company_id,))
+
+
+    def asset_tax_create_run(self, company_id: int, payload: dict) -> dict:
+        schema = self.company_schema(company_id)
+
+        tax_authority_id = int(payload.get("tax_authority_id"))
+        tax_year = int(payload.get("tax_year"))
+        tax_year_start = payload.get("tax_year_start")
+        tax_year_end = payload.get("tax_year_end")
+
+        if not tax_year_start or not tax_year_end:
+            raise ValueError("tax_year_start and tax_year_end are required")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.asset_tax_runs (
+                company_id,
+                tax_authority_id,
+                tax_year,
+                tax_year_start,
+                tax_year_end,
+                status,
+                notes
+            )
+            VALUES (%s,%s,%s,%s,%s,'draft',%s)
+            ON CONFLICT (company_id, tax_authority_id, tax_year)
+            DO UPDATE SET
+                tax_year_start = EXCLUDED.tax_year_start,
+                tax_year_end = EXCLUDED.tax_year_end,
+                notes = EXCLUDED.notes
+            RETURNING *
+        """, (
+            company_id,
+            tax_authority_id,
+            tax_year,
+            tax_year_start,
+            tax_year_end,
+            payload.get("notes"),
+        ))
+
+
+    def asset_tax_calculate_run(self, company_id: int, run_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.asset_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+        """, (company_id, run_id))
+
+        if not run:
+            raise ValueError("Tax run not found")
+
+        if run["status"] == "locked":
+            raise ValueError("Cannot recalculate a locked tax run")
+
+        tax_year = int(run["tax_year"])
+        tax_authority_id = int(run["tax_authority_id"])
+        start_date = run["tax_year_start"]
+        end_date = run["tax_year_end"]
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute(f"""
+                DELETE FROM {schema}.asset_tax_run_lines
+                WHERE run_id = %s
+            """, (run_id,))
+
+            cur.execute(f"""
+                INSERT INTO {schema}.asset_tax_run_lines (
+                    run_id,
+                    company_id,
+                    asset_tax_profile_id,
+                    asset_id,
+                    tax_authority_id,
+                    allowance_rule_id,
+                    tax_year,
+
+                    opening_tax_wdv,
+                    additions,
+                    disposal_proceeds,
+                    disposal_tax_value,
+                    allowance_base,
+                    initial_allowance,
+                    annual_allowance,
+                    total_capital_allowance,
+                    closing_tax_wdv,
+
+                    book_depreciation,
+                    accounting_carrying_amount,
+                    tax_adjustment,
+                    temporary_difference,
+
+                    calculation_method,
+                    rate_percent,
+                    notes
+                )
+                SELECT
+                    %s AS run_id,
+                    p.company_id,
+                    p.id AS asset_tax_profile_id,
+                    p.asset_id,
+                    p.tax_authority_id,
+                    p.allowance_rule_id,
+                    %s AS tax_year,
+
+                    0 AS opening_tax_wdv,
+
+                    CASE
+                        WHEN p.tax_start_date BETWEEN %s AND %s
+                        THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                        ELSE 0
+                    END AS additions,
+
+                    0 AS disposal_proceeds,
+                    0 AS disposal_tax_value,
+
+                    (
+                        COALESCE(
+                            NULLIF(0,0),
+                            CASE
+                                WHEN p.tax_start_date <= %s
+                                THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                                ELSE 0
+                            END
+                        )
+                        * (COALESCE(p.qualifying_percent,100) / 100.0)
+                        * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
+                    ) AS allowance_base,
+
+                    0 AS initial_allowance,
+
+                    ROUND((
+                        (
+                            COALESCE(
+                                CASE
+                                    WHEN p.tax_start_date <= %s
+                                    THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                                    ELSE 0
+                                END,
+                                0
+                            )
+                            * (COALESCE(p.qualifying_percent,100) / 100.0)
+                            * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
+                        )
+                        * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
+                    )::numeric, 2) AS annual_allowance,
+
+                    ROUND((
+                        (
+                            COALESCE(
+                                CASE
+                                    WHEN p.tax_start_date <= %s
+                                    THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                                    ELSE 0
+                                END,
+                                0
+                            )
+                            * (COALESCE(p.qualifying_percent,100) / 100.0)
+                            * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
+                        )
+                        * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
+                    )::numeric, 2) AS total_capital_allowance,
+
+                    GREATEST(
+                        0,
+                        ROUND((
+                            COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                            -
+                            (
+                                (
+                                    COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                                    * (COALESCE(p.qualifying_percent,100) / 100.0)
+                                    * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
+                                )
+                                * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
+                            )
+                        )::numeric, 2)
+                    ) AS closing_tax_wdv,
+
+                    COALESCE(dep.book_depreciation, 0) AS book_depreciation,
+                    COALESCE(dep.carrying_amount, a.cost, a.opening_cost, 0) AS accounting_carrying_amount,
+
+                    COALESCE(dep.book_depreciation, 0)
+                    -
+                    ROUND((
+                        (
+                            COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                            * (COALESCE(p.qualifying_percent,100) / 100.0)
+                            * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
+                        )
+                        * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
+                    )::numeric, 2) AS tax_adjustment,
+
+                    COALESCE(dep.carrying_amount, a.cost, a.opening_cost, 0)
+                    -
+                    GREATEST(
+                        0,
+                        ROUND((
+                            COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                            -
+                            (
+                                (
+                                    COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
+                                    * (COALESCE(p.qualifying_percent,100) / 100.0)
+                                    * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
+                                )
+                                * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
+                            )
+                        )::numeric, 2)
+                    ) AS temporary_difference,
+
+                    r.method AS calculation_method,
+                    COALESCE(r.rate_percent, r.annual_allowance_percent, 0) AS rate_percent,
+
+                    'Calculated from asset tax profile'
+                FROM {schema}.asset_tax_profiles p
+                JOIN {schema}.assets a ON a.id = p.asset_id
+                LEFT JOIN public.tax_allowance_rules r ON r.id = p.allowance_rule_id
+                LEFT JOIN LATERAL (
+                    SELECT
+                        SUM(d.depreciation_amount) AS book_depreciation,
+                        MIN(d.carrying_amount) AS carrying_amount
+                    FROM {schema}.asset_depreciation d
+                    WHERE d.asset_id = p.asset_id
+                    AND d.period_start >= %s
+                    AND d.period_end <= %s
+                ) dep ON TRUE
+                WHERE p.company_id = %s
+                AND p.tax_authority_id = %s
+                AND p.is_active = TRUE
+                AND p.is_tax_depreciable = TRUE
+                AND p.allowance_rule_id IS NOT NULL
+            """, (
+                run_id,
+                tax_year,
+                start_date,
+                end_date,
+                end_date,
+                end_date,
+                end_date,
+                start_date,
+                end_date,
+                company_id,
+                tax_authority_id,
+            ))
+
+            line_count = cur.rowcount or 0
+
+            cur.execute(f"""
+                UPDATE {schema}.asset_tax_runs
+                SET status = 'calculated',
+                    calculated_at = NOW()
+                WHERE id = %s
+                AND company_id = %s
+                RETURNING *
+            """, (run_id, company_id))
+
+            updated_run = cur.fetchone()
+            conn.commit()
+
+        return {
+            "run": updated_run,
+            "line_count": line_count,
+        }
+
+
+    def asset_tax_get_run(self, company_id: int, run_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT
+                r.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name
+            FROM {schema}.asset_tax_runs r
+            JOIN public.tax_authorities ta ON ta.id = r.tax_authority_id
+            WHERE r.company_id = %s
+            AND r.id = %s
+        """, (company_id, run_id))
+
+        if not run:
+            raise ValueError("Tax run not found")
+
+        lines = self.fetch_all(f"""
+            SELECT
+                l.*,
+                a.asset_name,
+                a.asset_code,
+                a.asset_class,
+                rr.rule_name,
+                rr.rule_code
+            FROM {schema}.asset_tax_run_lines l
+            JOIN {schema}.assets a ON a.id = l.asset_id
+            LEFT JOIN public.tax_allowance_rules rr ON rr.id = l.allowance_rule_id
+            WHERE l.run_id = %s
+            ORDER BY a.asset_name
+        """, (run_id,))
+
+        return {
+            "run": run,
+            "lines": lines,
+        }
+
     def ensure_asset_tax_profile_for_asset(self, company_id: int, asset_id: int) -> int | None:
         schema = self.company_schema(company_id)
         ta = self.asset_tax_authority_for_company(company_id)

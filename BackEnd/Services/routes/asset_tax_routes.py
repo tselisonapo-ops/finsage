@@ -182,3 +182,74 @@ def api_asset_tax_authorities(company_id: int):
     except Exception as e:
         current_app.logger.exception("asset_tax_authorities failed")
         return _json_error(str(e), 400)
+    
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/runs",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_runs(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = db_service.asset_tax_list_runs(company_id)
+            return jsonify({"ok": True, "items": items}), 200
+
+        payload = request.get_json(silent=True) or {}
+        item = db_service.asset_tax_create_run(company_id, payload)
+        return jsonify({"ok": True, "item": item}), 201
+
+    except Exception as e:
+        current_app.logger.exception("asset_tax_runs failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/runs/<int:run_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_get_run(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        item = db_service.asset_tax_get_run(company_id, run_id)
+        return jsonify({"ok": True, **item}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_get_run failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/runs/<int:run_id>/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_calculate_run(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.asset_tax_calculate_run(company_id, run_id)
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_calculate_run failed")
+        return _json_error(str(e), 400)

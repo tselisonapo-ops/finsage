@@ -58949,7 +58949,7 @@ async function renderARStatements() {
     if ($id("taxReconSubheading")) $id("taxReconSubheading").textContent = p;
 
     if (state.tab === "profiles") return renderProfiles();
-    if (state.tab === "runs") return renderPlaceholder("Capital Allowance Runs", "Next backend step: create run, calculate run lines, approve and lock run.");
+    if (state.tab === "runs") return renderRuns();
     if (state.tab === "recon") return renderPlaceholder("Tax Reconciliation", "This will use asset_tax_run_lines vs asset_depreciation.");
     if (state.tab === "computation") return renderPlaceholder("Tax Computation", "This will start from accounting profit and apply tax adjustments.");
     if (state.tab === "deferred") return renderPlaceholder("Deferred Tax", "This will compare carrying amount against tax WDV.");
@@ -59051,6 +59051,206 @@ async function renderARStatements() {
         </tr>
       `;
     }).join("");
+  }
+
+  async function loadRuns() {
+    const companyId = cid();
+    const res = await apiJson(ENDPOINTS.assetTax.runs(companyId));
+    state.runs = res.items || [];
+  }
+
+  async function createRun() {
+    const companyId = cid();
+
+    const payload = {
+      tax_authority_id: Number($id("taxRunAuthority").value),
+      tax_year: Number($id("taxRunYear").value),
+      tax_year_start: $id("taxRunStart").value,
+      tax_year_end: $id("taxRunEnd").value,
+      notes: $id("taxRunNotes").value || null,
+    };
+
+    await apiJson(ENDPOINTS.assetTax.runs(companyId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    await loadRuns();
+    renderRuns();
+  }
+
+  async function calculateRun(runId) {
+    const companyId = cid();
+
+    await apiJson(ENDPOINTS.assetTax.calculateRun(companyId, runId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    await loadRuns();
+    renderRuns();
+  }
+
+  async function openRun(runId) {
+    const companyId = cid();
+    const res = await apiJson(ENDPOINTS.assetTax.run(companyId, runId));
+
+    const lines = res.lines || [];
+
+    $id("taxReconPanel").innerHTML = `
+      <div class="card tax-recon-card">
+        <div class="flex justify-between items-center mb-3">
+          <div>
+            <h3 class="font-bold text-[var(--fs-navy)]">
+              ${res.run.tax_authority_code} ${res.run.tax_year} Capital Allowance Run
+            </h3>
+            <p class="text-sm text-slate-500">${res.run.status}</p>
+          </div>
+          <button class="btn" data-tax-tab="runs">Back</button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="tax-recon-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Rule</th>
+                <th>Opening WDV</th>
+                <th>Additions</th>
+                <th>Base</th>
+                <th>Rate</th>
+                <th>Allowance</th>
+                <th>Closing WDV</th>
+                <th>Book Dep</th>
+                <th>Tax Adj</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${lines.map((l) => `
+                <tr>
+                  <td>
+                    <div class="font-semibold">${l.asset_name || "—"}</div>
+                    <div class="text-xs text-slate-500">${l.asset_code || ""}</div>
+                  </td>
+                  <td>${l.rule_name || "—"}</td>
+                  <td>${money(l.opening_tax_wdv)}</td>
+                  <td>${money(l.additions)}</td>
+                  <td>${money(l.allowance_base)}</td>
+                  <td>${money(l.rate_percent)}%</td>
+                  <td>${money(l.total_capital_allowance)}</td>
+                  <td>${money(l.closing_tax_wdv)}</td>
+                  <td>${money(l.book_depreciation)}</td>
+                  <td>${money(l.tax_adjustment)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  async function renderRuns() {
+    if (!state.authorities?.length) {
+      const companyId = cid();
+      const authoritiesRes = await apiJson(ENDPOINTS.assetTax.authorities(companyId));
+      state.authorities = authoritiesRes.items || [];
+    }
+
+    await loadRuns();
+
+    const defaultAuth =
+      state.authorities.find((a) => a.code === defaultAuthorityCode()) ||
+      state.authorities[0];
+
+    const year = new Date().getFullYear();
+
+    $id("taxReconPanel").innerHTML = `
+      <div class="card tax-recon-card mb-3">
+        <h3 class="font-bold text-[var(--fs-navy)] mb-3">Create Capital Allowance Run</h3>
+
+        <div class="tax-form-grid">
+          <label>
+            <span>Tax Authority</span>
+            <select id="taxRunAuthority" class="input">
+              ${state.authorities.map((a) => `
+                <option value="${a.id}" ${defaultAuth?.id === a.id ? "selected" : ""}>
+                  ${a.code} - ${a.name}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+
+          <label>
+            <span>Tax Year</span>
+            <input id="taxRunYear" class="input" type="number" value="${year}" />
+          </label>
+
+          <label>
+            <span>Tax Year Start</span>
+            <input id="taxRunStart" class="input" type="date" value="${year}-01-01" />
+          </label>
+
+          <label>
+            <span>Tax Year End</span>
+            <input id="taxRunEnd" class="input" type="date" value="${year}-12-31" />
+          </label>
+        </div>
+
+        <label class="tax-notes">
+          <span>Notes</span>
+          <textarea id="taxRunNotes" class="input" rows="2"></textarea>
+        </label>
+
+        <div class="mt-3">
+          <button id="taxRunCreateBtn" class="btn-highlight">Create Run</button>
+        </div>
+      </div>
+
+      <div class="card tax-recon-card">
+        <h3 class="font-bold text-[var(--fs-navy)] mb-3">Existing Runs</h3>
+
+        <div class="overflow-x-auto">
+          <table class="tax-recon-table">
+            <thead>
+              <tr>
+                <th>Authority</th>
+                <th>Tax Year</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Lines</th>
+                <th>Total Allowance</th>
+                <th>Closing WDV</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(state.runs || []).length ? state.runs.map((r) => `
+                <tr>
+                  <td>${r.tax_authority_code}</td>
+                  <td>${r.tax_year}</td>
+                  <td>${displayDate(r.tax_year_start)} - ${displayDate(r.tax_year_end)}</td>
+                  <td><span class="tax-badge ${r.status === "calculated" ? "ok" : "warn"}">${r.status}</span></td>
+                  <td>${r.line_count || 0}</td>
+                  <td>${money(r.total_capital_allowance)}</td>
+                  <td>${money(r.closing_tax_wdv)}</td>
+                  <td>
+                    <button class="btn text-xs" data-tax-run-open="${r.id}">Open</button>
+                    <button class="btn text-xs" data-tax-run-calc="${r.id}">Calculate</button>
+                  </td>
+                </tr>
+              `).join("") : `
+                <tr><td colspan="8" class="text-center text-slate-500 py-6">No runs yet.</td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    $id("taxRunCreateBtn")?.addEventListener("click", () => {
+      createRun().catch((e) => alert(e.message));
+    });
   }
 
   function renderSettings() {
@@ -59192,16 +59392,47 @@ async function renderARStatements() {
     if (state.bound) return;
     state.bound = true;
 
-    document.addEventListener("click", (e) => {
-      const tab = e.target.closest("[data-tax-tab]");
+  document.addEventListener("click", (e) => {
+
+    // -------------------------
+    // Tabs
+    // -------------------------
+    const tab = e.target.closest("[data-tax-tab]");
     if (tab) {
       e.preventDefault();
       setTaxReconTab(tab.dataset.taxTab).catch(console.error);
-    }     
+      return;
+    }
 
-      const cfg = e.target.closest("[data-tax-configure]");
-      if (cfg) openModal(cfg.dataset.taxConfigure);
-    });
+    // -------------------------
+    // Configure profile
+    // -------------------------
+    const cfg = e.target.closest("[data-tax-configure]");
+    if (cfg) {
+      openModal(cfg.dataset.taxConfigure);
+      return;
+    }
+
+    // -------------------------
+    // Open allowance run
+    // -------------------------
+    const openRunBtn = e.target.closest("[data-tax-run-open]");
+    if (openRunBtn) {
+      openRun(openRunBtn.dataset.taxRunOpen).catch(console.error);
+      return;
+    }
+
+    // -------------------------
+    // Calculate allowance run
+    // -------------------------
+    const calcRunBtn = e.target.closest("[data-tax-run-calc]");
+    if (calcRunBtn) {
+      calculateRun(calcRunBtn.dataset.taxRunCalc)
+        .catch(err => alert(err.message));
+      return;
+    }
+
+  });
 
     $id("taxReconRefreshBtn")?.addEventListener("click", loadAll);
     $id("taxReconBackfillBtn")?.addEventListener("click", backfill);
