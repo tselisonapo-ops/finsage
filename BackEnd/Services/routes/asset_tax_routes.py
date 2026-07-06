@@ -9,6 +9,24 @@ from BackEnd.Services.utils.http_helpers import _opt
 
 bp_asset_tax = Blueprint("asset_tax", __name__)
 
+def _asset_tax_user():
+    user = getattr(g, "current_user", None) or {}
+    user = dict(user) if isinstance(user, dict) else {}
+
+    uid = (
+        user.get("user_id")
+        or user.get("id")
+        or getattr(g, "user_id", None)
+    )
+
+    if uid:
+        user["user_id"] = int(uid)
+        user["sub"] = int(uid)
+
+    if not user.get("company_id"):
+        user["company_id"] = getattr(g, "company_id", None) or user.get("company_id")
+
+    return user
 
 @bp_asset_tax.route(
     "/api/companies/<int:company_id>/asset-tax/profiles",
@@ -19,21 +37,8 @@ def api_asset_tax_profiles(company_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
-    user = getattr(g, "current_user", None) or {}
+    user = _asset_tax_user()
 
-    if not user:
-        user = {
-            "id": getattr(g, "user_id", None),
-            "company_id": getattr(g, "company_id", None),
-            "role": getattr(g, "role", None),
-            "email": getattr(g, "email", None),
-        }
-
-    if not user.get("id"):
-        user["id"] = getattr(g, "user_id", None)
-
-    if not user.get("company_id"):
-        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -59,21 +64,8 @@ def api_asset_tax_backfill_profiles(company_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
-    user = getattr(g, "current_user", None) or {}
+    user = _asset_tax_user()
 
-    if not user:
-        user = {
-            "id": getattr(g, "user_id", None),
-            "company_id": getattr(g, "company_id", None),
-            "role": getattr(g, "role", None),
-            "email": getattr(g, "email", None),
-        }
-
-    if not user.get("id"):
-        user["id"] = getattr(g, "user_id", None)
-
-    if not user.get("company_id"):
-        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -105,21 +97,8 @@ def api_asset_tax_update_profile(company_id: int, profile_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
-    user = getattr(g, "current_user", None) or {}
+    user = _asset_tax_user()
 
-    if not user:
-        user = {
-            "id": getattr(g, "user_id", None),
-            "company_id": getattr(g, "company_id", None),
-            "role": getattr(g, "role", None),
-            "email": getattr(g, "email", None),
-        }
-
-    if not user.get("id"):
-        user["id"] = getattr(g, "user_id", None)
-
-    if not user.get("company_id"):
-        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
@@ -156,27 +135,13 @@ def api_asset_tax_rules(company_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
-    user = getattr(g, "current_user", None) or {}
-
-    if not user:
-        user = {
-            "id": getattr(g, "user_id", None),
-            "company_id": getattr(g, "company_id", None),
-            "role": getattr(g, "role", None),
-            "email": getattr(g, "email", None),
-        }
-
-    if not user.get("id"):
-        user["id"] = getattr(g, "user_id", None)
-
-    if not user.get("company_id"):
-        user["company_id"] = getattr(g, "company_id", None)
+    user = _asset_tax_user()
 
     deny = _deny_if_wrong_company(
         user,
         company_id,
         db_service=db_service,
-    )    
+    )
     if deny:
         return deny
 
@@ -200,26 +165,13 @@ def api_asset_tax_authorities(company_id: int):
     if request.method == "OPTIONS":
         return _opt()
 
-    user = getattr(g, "current_user", None) or {}
+    user = _asset_tax_user()
 
-    if not user:
-        user = {
-            "id": getattr(g, "user_id", None),
-            "company_id": getattr(g, "company_id", None),
-            "role": getattr(g, "role", None),
-            "email": getattr(g, "email", None),
-        }
-
-    if not user.get("id"):
-        user["id"] = getattr(g, "user_id", None)
-
-    if not user.get("company_id"):
-        user["company_id"] = getattr(g, "company_id", None)
     deny = _deny_if_wrong_company(
         user,
         company_id,
         db_service=db_service,
-    )    
+    )
     if deny:
         return deny
 
