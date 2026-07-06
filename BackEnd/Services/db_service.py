@@ -57432,6 +57432,47 @@ class DatabaseService:
             "lines": lines,
         }
 
+    def asset_tax_reconciliation(self, company_id: int, tax_authority_id: int | None = None, tax_year: int | None = None) -> dict:
+        schema = self.company_schema(company_id)
+
+        params = [company_id]
+        where = ["r.company_id = %s", "r.status IN ('calculated','approved','locked')"]
+
+        if tax_authority_id:
+            where.append("r.tax_authority_id = %s")
+            params.append(int(tax_authority_id))
+
+        if tax_year:
+            where.append("r.tax_year = %s")
+            params.append(int(tax_year))
+
+        runs = self.fetch_all(f"""
+            SELECT
+                r.id,
+                r.tax_year,
+                r.tax_year_start,
+                r.tax_year_end,
+                r.status,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+
+                COUNT(l.id) AS asset_count,
+                COALESCE(SUM(l.book_depreciation), 0) AS book_depreciation,
+                COALESCE(SUM(l.total_capital_allowance), 0) AS capital_allowance,
+                COALESCE(SUM(l.tax_adjustment), 0) AS net_tax_adjustment,
+                COALESCE(SUM(l.accounting_carrying_amount), 0) AS accounting_carrying_amount,
+                COALESCE(SUM(l.closing_tax_wdv), 0) AS closing_tax_wdv,
+                COALESCE(SUM(l.temporary_difference), 0) AS temporary_difference
+            FROM {schema}.asset_tax_runs r
+            JOIN public.tax_authorities ta ON ta.id = r.tax_authority_id
+            LEFT JOIN {schema}.asset_tax_run_lines l ON l.run_id = r.id
+            WHERE {" AND ".join(where)}
+            GROUP BY r.id, ta.code, ta.name
+            ORDER BY r.tax_year DESC, ta.code
+        """, tuple(params))
+
+        return {"runs": runs}
+        
     def ensure_asset_tax_profile_for_asset(self, company_id: int, asset_id: int) -> int | None:
         schema = self.company_schema(company_id)
         ta = self.asset_tax_authority_for_company(company_id)

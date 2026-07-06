@@ -253,3 +253,33 @@ def api_asset_tax_calculate_run(company_id: int, run_id: int):
     except Exception as e:
         current_app.logger.exception("asset_tax_calculate_run failed")
         return _json_error(str(e), 400)
+    
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/reconciliation",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_reconciliation(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _asset_tax_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        tax_authority_id = request.args.get("tax_authority_id")
+        tax_year = request.args.get("tax_year")
+
+        result = db_service.asset_tax_reconciliation(
+            company_id,
+            tax_authority_id=int(tax_authority_id) if tax_authority_id else None,
+            tax_year=int(tax_year) if tax_year else None,
+        )
+
+        return jsonify({"ok": True, **result}), 200
+
+    except Exception as e:
+        current_app.logger.exception("asset_tax_reconciliation failed")
+        return _json_error(str(e), 400)

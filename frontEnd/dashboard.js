@@ -2494,6 +2494,14 @@ const ENDPOINTS = {
 
     calculateRun: (cid, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/runs/${encodeURIComponent(runId)}/calculate`,
+  
+    reconciliation: (cid, params = {}) => {
+      const qs = new URLSearchParams();
+      if (params.tax_authority_id) qs.set("tax_authority_id", params.tax_authority_id);
+      if (params.tax_year) qs.set("tax_year", params.tax_year);
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/reconciliation${qs.toString() ? `?${qs}` : ""}`;
+    },
   },
 
   supportUser: {
@@ -58614,6 +58622,7 @@ async function renderARStatements() {
     profiles: [],
     authorities: [],
     rules: [],
+    reconciliation: [],
     selected: null,
     bound: false,
   };
@@ -58959,7 +58968,7 @@ async function renderARStatements() {
 
     if (state.tab === "profiles") return renderProfiles();
     if (state.tab === "runs") return renderRuns();
-    if (state.tab === "recon") return renderPlaceholder("Tax Reconciliation", "This will use asset_tax_run_lines vs asset_depreciation.");
+    if (state.tab === "recon") return renderTaxReconciliation();
     if (state.tab === "computation") return renderPlaceholder("Tax Computation", "This will start from accounting profit and apply tax adjustments.");
     if (state.tab === "deferred") return renderPlaceholder("Deferred Tax", "This will compare carrying amount against tax WDV.");
     if (state.tab === "returns") return renderPlaceholder("Tax Returns", "This will generate RSL, SARS and BURS return support.");
@@ -59262,6 +59271,106 @@ async function renderARStatements() {
     });
   }
 
+  async function renderTaxReconciliation() {
+    const companyId = cid();
+
+    if (!state.authorities?.length) {
+      const authoritiesRes = await apiJson(ENDPOINTS.assetTax.authorities(companyId));
+      state.authorities = authoritiesRes.items || [];
+    }
+
+    const res = await apiJson(ENDPOINTS.assetTax.reconciliation(companyId));
+    state.reconciliation = res.runs || [];
+
+    const totals = state.reconciliation.reduce((a, r) => {
+      a.book += Number(r.book_depreciation || 0);
+      a.tax += Number(r.capital_allowance || 0);
+      a.adjustment += Number(r.net_tax_adjustment || 0);
+      a.temp += Number(r.temporary_difference || 0);
+      return a;
+    }, { book: 0, tax: 0, adjustment: 0, temp: 0 });
+
+    $id("taxReconPanel").innerHTML = `
+      <div class="tax-recon-summary">
+        <div class="tax-stat-card">
+          <span>Book Depreciation</span>
+          <strong>${money(totals.book)}</strong>
+        </div>
+        <div class="tax-stat-card">
+          <span>Capital Allowance</span>
+          <strong>${money(totals.tax)}</strong>
+        </div>
+        <div class="tax-stat-card">
+          <span>Tax Adjustment</span>
+          <strong>${money(totals.adjustment)}</strong>
+        </div>
+        <div class="tax-stat-card">
+          <span>Temporary Difference</span>
+          <strong>${money(totals.temp)}</strong>
+        </div>
+      </div>
+
+      <div class="card tax-recon-card">
+        <div class="flex justify-between items-center mb-3">
+          <div>
+            <h3 class="font-bold text-[var(--fs-navy)]">Book vs Tax Depreciation Reconciliation</h3>
+            <p class="text-sm text-slate-500">
+              This compares accounting depreciation to capital allowances from calculated tax runs.
+            </p>
+          </div>
+          <button class="btn" data-tax-tab="runs">Go to Runs</button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="tax-recon-table">
+            <thead>
+              <tr>
+                <th>Authority</th>
+                <th>Tax Year</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Assets</th>
+                <th>Book Depreciation</th>
+                <th>Capital Allowance</th>
+                <th>Tax Adjustment</th>
+                <th>Carrying Amount</th>
+                <th>Tax WDV</th>
+                <th>Temp Difference</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.reconciliation.length ? state.reconciliation.map((r) => `
+                <tr>
+                  <td>${r.tax_authority_code}</td>
+                  <td>${r.tax_year}</td>
+                  <td>${displayDate(r.tax_year_start)} - ${displayDate(r.tax_year_end)}</td>
+                  <td>
+                    <span class="tax-badge ${r.status === "calculated" ? "ok" : "warn"}">
+                      ${r.status}
+                    </span>
+                  </td>
+                  <td>${r.asset_count || 0}</td>
+                  <td>${money(r.book_depreciation)}</td>
+                  <td>${money(r.capital_allowance)}</td>
+                  <td>${money(r.net_tax_adjustment)}</td>
+                  <td>${money(r.accounting_carrying_amount)}</td>
+                  <td>${money(r.closing_tax_wdv)}</td>
+                  <td>${money(r.temporary_difference)}</td>
+                </tr>
+              `).join("") : `
+                <tr>
+                  <td colspan="11" class="text-center text-slate-500 py-6">
+                    No calculated tax runs found. Create and calculate a capital allowance run first.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderSettings() {
     $id("taxReconPanel").innerHTML = `
       <div class="card tax-recon-card">
@@ -59401,47 +59510,47 @@ async function renderARStatements() {
     if (state.bound) return;
     state.bound = true;
 
-  document.addEventListener("click", (e) => {
+    document.addEventListener("click", (e) => {
 
-    // -------------------------
-    // Tabs
-    // -------------------------
-    const tab = e.target.closest("[data-tax-tab]");
-    if (tab) {
-      e.preventDefault();
-      setTaxReconTab(tab.dataset.taxTab).catch(console.error);
-      return;
-    }
+      // -------------------------
+      // Tabs
+      // -------------------------
+      const tab = e.target.closest("[data-tax-tab]");
+      if (tab) {
+        e.preventDefault();
+        setTaxReconTab(tab.dataset.taxTab).catch(console.error);
+        return;
+      }
 
-    // -------------------------
-    // Configure profile
-    // -------------------------
-    const cfg = e.target.closest("[data-tax-configure]");
-    if (cfg) {
-      openModal(cfg.dataset.taxConfigure);
-      return;
-    }
+      // -------------------------
+      // Configure profile
+      // -------------------------
+      const cfg = e.target.closest("[data-tax-configure]");
+      if (cfg) {
+        openModal(cfg.dataset.taxConfigure);
+        return;
+      }
 
-    // -------------------------
-    // Open allowance run
-    // -------------------------
-    const openRunBtn = e.target.closest("[data-tax-run-open]");
-    if (openRunBtn) {
-      openRun(openRunBtn.dataset.taxRunOpen).catch(console.error);
-      return;
-    }
+      // -------------------------
+      // Open allowance run
+      // -------------------------
+      const openRunBtn = e.target.closest("[data-tax-run-open]");
+      if (openRunBtn) {
+        openRun(openRunBtn.dataset.taxRunOpen).catch(console.error);
+        return;
+      }
 
-    // -------------------------
-    // Calculate allowance run
-    // -------------------------
-    const calcRunBtn = e.target.closest("[data-tax-run-calc]");
-    if (calcRunBtn) {
-      calculateRun(calcRunBtn.dataset.taxRunCalc)
-        .catch(err => alert(err.message));
-      return;
-    }
+      // -------------------------
+      // Calculate allowance run
+      // -------------------------
+      const calcRunBtn = e.target.closest("[data-tax-run-calc]");
+      if (calcRunBtn) {
+        calculateRun(calcRunBtn.dataset.taxRunCalc)
+          .catch(err => alert(err.message));
+        return;
+      }
 
-  });
+    });
 
     $id("taxReconRefreshBtn")?.addEventListener("click", loadAll);
     $id("taxReconBackfillBtn")?.addEventListener("click", backfill);
