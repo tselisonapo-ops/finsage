@@ -2503,8 +2503,13 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/reconciliation${qs.toString() ? `?${qs}` : ""}`;
     },
  
-    computation: (cid) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/computation`,
+    computation: (cid, params = {}) => {
+      const qs = new URLSearchParams();
+      if (params.tax_authority_id) qs.set("tax_authority_id", params.tax_authority_id);
+      if (params.tax_year) qs.set("tax_year", params.tax_year);
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/computation${qs.toString() ? `?${qs}` : ""}`;
+    },
 
     deferredTax: (cid, taxRate = 27) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/asset-tax/deferred-tax?tax_rate=${encodeURIComponent(taxRate)}`,
@@ -59398,13 +59403,13 @@ async function renderARStatements() {
   }
 
   async function renderTaxComputation() {
-    const rows = await loadReconData();
-    const t = reconTotals(rows);
+    const companyId = cid();
+    const res = await apiJson(ENDPOINTS.assetTax.computation(companyId));
 
-    const accountingProfit = 0;
-    const addBackBookDep = t.bookDep;
-    const deductCapitalAllowance = t.capAllowance;
-    const estimatedTaxableIncome = accountingProfit + addBackBookDep - deductCapitalAllowance;
+    const accountingProfit = Number(res.accounting_profit || 0);
+    const addBackBookDep = Number(res.book_depreciation_addback || 0);
+    const deductCapitalAllowance = Number(res.capital_allowance_deduction || 0);
+    const estimatedTaxableIncome = Number(res.estimated_taxable_income || 0);
 
     $id("taxReconPanel").innerHTML = `
       <div class="tax-recon-summary">
@@ -59417,7 +59422,7 @@ async function renderARStatements() {
       <div class="card tax-recon-card">
         <h3 class="font-bold text-[var(--fs-navy)] mb-2">Tax Computation</h3>
         <p class="text-sm text-slate-500 mb-4">
-          This is the asset-related computation only. Accounting profit and other tax adjustments will be connected later.
+          Period: ${displayDate(res.tax_year_start)} - ${displayDate(res.tax_year_end)}
         </p>
 
         <table class="tax-recon-table">
