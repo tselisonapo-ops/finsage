@@ -178,6 +178,42 @@ def _parse_reporting_code(code: str) -> Tuple[Optional[str], Optional[int]]:
         return (None, None)
     return (m.group(1), int(m.group(2)))
 
+def _extract_pnl_profit(pnl: dict) -> float:
+    if not pnl:
+        return 0.0
+
+    candidates = [
+        pnl.get("net_result"),
+        pnl.get("profit_loss"),
+        pnl.get("profit_or_loss"),
+        pnl.get("net_profit"),
+        pnl.get("net_income"),
+        pnl.get("totals"),
+        pnl.get("summary"),
+    ]
+
+    for obj in candidates:
+        if isinstance(obj, dict):
+            for key in ("amount", "cur", "current", "value", "profit", "net_profit", "net_result"):
+                if key in obj and obj.get(key) is not None:
+                    try:
+                        return float(obj.get(key) or 0)
+                    except Exception:
+                        pass
+
+            vals = obj.get("values")
+            if isinstance(vals, dict):
+                for key in ("cur", "current", "amount"):
+                    if vals.get(key) is not None:
+                        return float(vals.get(key) or 0)
+
+        elif obj is not None:
+            try:
+                return float(obj or 0)
+            except Exception:
+                pass
+
+    return 0.0
 # ------------------------------------------------------------
 # Cashflow metadata derivation (authoritative)
 # ------------------------------------------------------------
@@ -57153,11 +57189,6 @@ class DatabaseService:
                 notes
             )
             VALUES (%s,%s,%s,%s,%s,'draft',%s)
-            ON CONFLICT (company_id, tax_authority_id, tax_year)
-            DO UPDATE SET
-                tax_year_start = EXCLUDED.tax_year_start,
-                tax_year_end = EXCLUDED.tax_year_end,
-                notes = EXCLUDED.notes
             RETURNING *
         """, (
             company_id,
@@ -57510,12 +57541,8 @@ class DatabaseService:
             basis="external",
         ) or {}
 
-        net_obj = pnl.get("net_result") or {}
-        accounting_profit = float(
-            net_obj.get("amount")
-            or (net_obj.get("values") or {}).get("cur")
-            or 0
-        )
+        current_app.logger.warning("ASSET_TAX_PNL_KEYS=%s", list((pnl or {}).keys()))
+        accounting_profit = _extract_pnl_profit(pnl)
 
         book_dep = sum(float(r.get("book_depreciation") or 0) for r in runs)
         cap_allowance = sum(float(r.get("capital_allowance") or 0) for r in runs)
@@ -57531,7 +57558,7 @@ class DatabaseService:
             "estimated_taxable_income": taxable_income,
             "runs": runs,
         }
-
+        
     def asset_tax_deferred_tax(self, company_id: int, tax_rate: float = 27.0) -> dict:
         recon = self.asset_tax_reconciliation(company_id)
         runs = recon.get("runs", [])
